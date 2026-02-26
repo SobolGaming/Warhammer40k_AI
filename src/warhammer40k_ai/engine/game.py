@@ -9232,7 +9232,7 @@ class Game(
             reroll_rules.append(pa_rule)
 
         from ..engine.roll_utils import command_reroll_available
-        command_reroll_ok = command_reroll_available(self, player, roll_type="charge")
+        command_reroll_ok = command_reroll_available(self, player, roll_type="charge", unit=charging_unit)
         roll_spec = {
             "dice_count": dice_count,
             "faces": 6,

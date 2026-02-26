@@ -1269,6 +1269,35 @@ class Player:
             return True
         return False
 
+    def _target_unit_has_mirror_of_fates(self, target_unit) -> bool:
+        if target_unit is None:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        members = self._attached_members(target_unit)
+        for u in members:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_mirror_of_fates_free_command_reroll_once_per_battle_round", False)):
+                continue
+            if not self._unit_is_alive_or_unknown(u):
+                continue
+            get_bearer = getattr(u, "_get_enhancement_bearer_model", None)
+            if callable(get_bearer) and get_bearer() is None:
+                continue
+            return True
+        return False
+
+    def _target_unit_can_use_mirror_of_fates_command_reroll(self, target_unit) -> bool:
+        if not self._target_unit_has_mirror_of_fates(target_unit):
+            return False
+        br = self._battle_round()
+        if br <= 0:
+            return False
+        return int(self._ability_used_battle_round.get("MIRROR_OF_FATES", 0) or 0) != br
+
     def _target_unit_has_faultless_opportunist(self, target_unit) -> bool:
         if target_unit is None:
             return False
@@ -1601,6 +1630,21 @@ class Player:
         if int(self._ability_used_battle_round.get("GIFT_OF_FORESIGHT", 0) or 0) == br:
             return 0
         return 1
+
+    def _preview_mirror_of_fates_discount(self, *, stratagem=None, target_unit=None) -> int:
+        """
+        Mirror of Fates (Lords of Dread):
+        Once per battle round, you can target the bearer's unit with Command Re-roll for 0CP.
+        """
+        if stratagem is None or target_unit is None:
+            return 0
+        name = str(getattr(stratagem, "name", "") or "").strip().lower()
+        if name not in ("command re-roll", "command reroll"):
+            return 0
+        if not self._target_unit_can_use_mirror_of_fates_command_reroll(target_unit):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
 
     def _preview_ancestral_crest_discount(self, *, stratagem=None, target_unit=None) -> int:
         """
@@ -2117,6 +2161,11 @@ class Player:
         if gof:
             discount += int(gof)
             logger.info("Gift of Foresight: %s uses Command Re-roll for 0CP.", self.name)
+
+        mof = self._preview_mirror_of_fates_discount(stratagem=stratagem, target_unit=target_unit)
+        if mof:
+            discount += int(mof)
+            logger.info("Mirror of Fates: %s uses Command Re-roll for 0CP.", self.name)
 
         ac = self._preview_ancestral_crest_discount(stratagem=stratagem, target_unit=target_unit)
         if ac:
@@ -2971,6 +3020,23 @@ class Player:
                 if br > 0:
                     self._ability_used_battle_round["GIFT_OF_FORESIGHT"] = br
                 logger.info("Gift of Foresight: %s uses Command Re-roll for 0CP.", self.name)
+
+        # Decide whether to apply Mirror of Fates if available.
+        mof_discount = int(self._preview_mirror_of_fates_discount(stratagem=stratagem, target_unit=target_unit) or 0)
+        if mof_discount:
+            ctx = {
+                "ability_name": "Mirror of Fates",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            use_mof = self._should_use_optional_ability("MIRROR_OF_FATES", ctx)
+            if use_mof or getattr(self, "decision_hook", None) is None:
+                applied_discount += int(mof_discount)
+                br = self._battle_round()
+                if br > 0:
+                    self._ability_used_battle_round["MIRROR_OF_FATES"] = br
+                reasons.append("Mirror of Fates: Command Re-roll for 0CP (used)")
 
         # Decide whether to apply Ancestral Crest if available.
         ac_available = bool(self._preview_ancestral_crest_discount(stratagem=stratagem, target_unit=target_unit))

@@ -1365,6 +1365,8 @@ class StratagemManager(
         self._heroic_intervention_units_this_phase: set[str] = set()
         # Track Rapid Ingress targets per phase for named exceptions.
         self._rapid_ingress_units_this_phase: set[str] = set()
+        # Track Command Re-roll targets per phase for named exceptions.
+        self._command_reroll_units_this_phase: set[str] = set()
         # CSM: Daemonforge allows one Counter-offensive repeat per Fight phase.
         self._daemonforge_used_phase_key: str = ""
         # Once-per-battle limits (e.g., INSANE BRAVERY once per battle)
@@ -2388,7 +2390,14 @@ class StratagemManager(
         cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         preview_cost = getattr(self.player, "preview_stratagem_cp_cost", None)
         if callable(preview_cost):
-            prev = preview_cost(stratagem, target_unit=target_unit, enemy_unit=enemy_unit)
+            preview_kwargs: Dict[str, Any] = {
+                "target_unit": target_unit,
+                "enemy_unit": enemy_unit,
+            }
+            name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+            if name_u == "COMMAND RE-ROLL":
+                preview_kwargs["assume_optional_discounts"] = True
+            prev = preview_cost(stratagem, **preview_kwargs)
             return int((prev or {}).get("cost", cost))
         return cost
 
@@ -2644,6 +2653,28 @@ class StratagemManager(
         if uid:
             self._rapid_ingress_units_this_phase.add(uid)
 
+    def _command_reroll_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
+        can_use_fn = getattr(self.player, "_target_unit_can_use_mirror_of_fates_command_reroll", None)
+        if not callable(can_use_fn):
+            return False
+        if target_unit is not None:
+            uid = self._heroic_intervention_target_id(target_unit)
+            if not uid or uid in self._command_reroll_units_this_phase:
+                return False
+            return bool(can_use_fn(target_unit))
+        for cand in list(candidates or []):
+            uid = self._heroic_intervention_target_id(cand)
+            if not uid or uid in self._command_reroll_units_this_phase:
+                continue
+            if bool(can_use_fn(cand)):
+                return True
+        return False
+
+    def _record_command_reroll_use(self, unit) -> None:
+        uid = self._heroic_intervention_target_id(unit)
+        if uid:
+            self._command_reroll_units_this_phase.add(uid)
+
     def _grenade_mortal_wound_threshold(self, target_unit) -> int:
         threshold = 4
         if target_unit is None:
@@ -2709,7 +2740,16 @@ class StratagemManager(
         phase_name = context.get("phase_name") or self._current_phase_name or ""
 
         if name_u and name_u in self._used_stratagems_this_phase:
-            if name_u == "HEROIC INTERVENTION":
+            if name_u == "COMMAND RE-ROLL":
+                if self._command_reroll_repeat_allowed(
+                    target_unit=context.get("target_unit") or context.get("unit"),
+                    candidates=context.get("candidates"),
+                ):
+                    pass
+                else:
+                    result["reason"] = "Already used this phase"
+                    return result
+            elif name_u == "HEROIC INTERVENTION":
                 if self._heroic_intervention_repeat_allowed(
                     target_unit=context.get("target_unit") or context.get("unit"),
                     candidates=context.get("candidates"),
@@ -4737,6 +4777,13 @@ class StratagemManager(
                 self._rapid_ingress_units_this_phase = set()
             else:
                 self._rapid_ingress_units_this_phase.clear()
+        except Exception:
+            raise
+        try:
+            if not hasattr(self, "_command_reroll_units_this_phase"):
+                self._command_reroll_units_this_phase = set()
+            else:
+                self._command_reroll_units_this_phase.clear()
         except Exception:
             raise
         # Chaos Daemons: CORRUPT REALSPACE (start of any Command phase)
@@ -11161,10 +11208,17 @@ class StratagemManager(
         s = self.get_by_name('COMMAND RE-ROLL')
         if not s:
             return
+        target_unit = unit
+        try:
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            target_unit = get_root() if callable(get_root) else unit
+        except Exception:
+            target_unit = unit
         # Core rules: cannot use the same stratagem more than once per phase (per player).
         try:
             if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
-                return
+                if not self._command_reroll_repeat_allowed(target_unit=target_unit):
+                    return
         except Exception:
             raise
         phase_name = self._current_phase_name
@@ -11172,18 +11226,31 @@ class StratagemManager(
             return
         if not s.is_turn_allowed(True):
             return
-        if self.player.command_points < s.cp_cost:
+        eff_cost = int(getattr(s, "cp_cost", 0) or 0)
+        preview_cost = getattr(self.player, "preview_stratagem_cp_cost", None)
+        if callable(preview_cost):
+            try:
+                preview = preview_cost(
+                    s,
+                    target_unit=target_unit,
+                    assume_optional_discounts=True,
+                ) or {}
+                eff_cost = int(preview.get("cost", eff_cost) or eff_cost)
+            except Exception:
+                raise
+        if int(getattr(self.player, "command_points", 0) or 0) < int(eff_cost or 0):
             return
         # Queue re-roll opportunity with a callable to execute reroll if chosen
         self._queue_reaction({
             'event': 'roll_made',
             'stratagem': s.name,
-            'unit': unit,
+            'unit': target_unit,
+            'target_unit': target_unit,
             'roll_type': roll_type,
             'value': value,
             'dice': dice,
             'phase_name': phase_name,
-            'cp_cost': s.cp_cost,
+            'cp_cost': int(eff_cost),
             'reroll': reroll,
         })
 
@@ -12048,7 +12115,12 @@ class StratagemManager(
             if phase_name:
                 key = (s.name or "").strip().upper()
                 if key and key in self._used_stratagems_this_phase:
-                    if key == "HEROIC INTERVENTION" and self._heroic_intervention_repeat_allowed(
+                    if key == "COMMAND RE-ROLL" and self._command_reroll_repeat_allowed(
+                        target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
+                        candidates=kwargs.get("candidates"),
+                    ):
+                        pass
+                    elif key == "HEROIC INTERVENTION" and self._heroic_intervention_repeat_allowed(
                         target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
                         candidates=kwargs.get("candidates"),
                         enemy_unit=kwargs.get("enemy_unit"),
@@ -12966,7 +13038,7 @@ class StratagemManager(
             # Find the pending roll context if not provided
             roll_type = kwargs.get('roll_type')
             reroll_cb = kwargs.get('reroll')
-            unit = kwargs.get('unit')
+            unit = kwargs.get('target_unit') or kwargs.get('unit')
             dice = kwargs.get('dice')
             value = kwargs.get('value')
             if not reroll_cb:
@@ -12974,7 +13046,7 @@ class StratagemManager(
                     if r.get('stratagem', '').upper() == 'COMMAND RE-ROLL':
                         reroll_cb = r.get('reroll')
                         roll_type = roll_type or r.get('roll_type')
-                        unit = unit or r.get('unit')
+                        unit = unit or r.get('target_unit') or r.get('unit')
                         dice = dice or r.get('dice')
                         value = value or r.get('value')
                         break
@@ -13015,6 +13087,7 @@ class StratagemManager(
                         break
                 try:
                     self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+                    self._record_command_reroll_use(unit)
                 except Exception:
                     raise
                 return True

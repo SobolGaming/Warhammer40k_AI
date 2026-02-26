@@ -223,6 +223,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_saga_of_the_hunter_enhancements(player=player, phase=phase)
         self._on_phase_start_ironstorm_spearhead_enhancements(player=player, phase=phase)
         self._on_phase_start_godhammer_assault_force_enhancements(player=player, phase=phase)
+        self._on_phase_start_lords_of_dread_enhancements(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
                 if p is None:
@@ -1924,6 +1925,141 @@ class GamePhaseHandlersMixin:
                 payload={"unit_id": unit_id, "ability_key": ability_key},
                 instance_key=str(unit_id or ""),
             )
+
+    def _on_phase_start_lords_of_dread_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname not in ("COMMAND_PHASE", "CHARGE_PHASE"):
+            return
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            if pname == "CHARGE_PHASE" and player is not None and p is not player:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            ck_mgr = getattr(army, "chaos_knights_detachments", None)
+            if ck_mgr is None or not bool(getattr(ck_mgr, "is_lords_of_dread", lambda: False)()):
+                continue
+
+            seen: set[str] = set()
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not root.is_alive():
+                    continue
+                rid = str(maybe_entity_id(root) or "")
+                if rid in seen:
+                    continue
+                seen.add(rid)
+                if not self._unit_on_battlefield_for_reposition(root):
+                    continue
+
+                if pname == "CHARGE_PHASE":
+                    can_use = getattr(root, "can_use_enhancement_charge_after_advance_once", None)
+                    if not callable(can_use) or not bool(can_use()):
+                        continue
+                    sr = getattr(root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    ability_name = str(
+                        sr.get("enhancement_charge_after_advance_source", "")
+                        or "Throne Mechanicum of Skulls"
+                    ).strip() or "Throne Mechanicum of Skulls"
+                    ability_key = str(
+                        sr.get("enhancement_charge_after_advance_once_key", "")
+                        or "throne_mechanicum_of_skulls"
+                    ).strip().lower() or "throne_mechanicum_of_skulls"
+                    unit_id = maybe_entity_id(root)
+                    ctx = {
+                        "ability_name": ability_name,
+                        "phase": "Charge phase",
+                        "unit": getattr(root, "name", ""),
+                        "unit_id": unit_id,
+                        "ability_key": ability_key,
+                    }
+                    message = (
+                        f"Use {ability_name} for {getattr(root, 'name', 'Unit')}? (Once per battle)\n"
+                        "Until end of phase: this unit can declare a charge in a turn in which it Advanced."
+                    )
+                    self._queue_optional_ability_confirmation(
+                        player=p,
+                        ability_key="enhancement_charge_after_advance_once",
+                        ability_name=ability_name,
+                        message=message,
+                        context=ctx,
+                        payload={"unit_id": unit_id, "ability_key": ability_key},
+                        instance_key=f"{unit_id}:{ability_key}",
+                    )
+                    continue
+
+                can_use_putrid = getattr(root, "can_use_enhancement_putrid_carapace", None)
+                if not callable(can_use_putrid) or not bool(can_use_putrid()):
+                    continue
+                bearer_fn = getattr(root, "_putrid_carapace_bearer_model", None)
+                bearer = bearer_fn() if callable(bearer_fn) else None
+                if bearer is None:
+                    continue
+                try:
+                    base = int(getattr(bearer, "_base_wounds", getattr(bearer, "wounds", 0)) or 0)
+                except Exception:
+                    base = 0
+                try:
+                    current = int(getattr(bearer, "wounds", 0) or 0)
+                except Exception:
+                    current = 0
+                lost = max(0, int(base - current))
+                if lost <= 0:
+                    continue
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                ability_name = str(
+                    sr.get("enhancement_putrid_carapace_source", "")
+                    or "Putrid Carapace"
+                ).strip() or "Putrid Carapace"
+                ability_key = str(
+                    sr.get("enhancement_putrid_carapace_once_key", "")
+                    or "putrid_carapace"
+                ).strip().lower() or "putrid_carapace"
+                unit_id = maybe_entity_id(root)
+                model_id = maybe_entity_id(bearer)
+                ctx = {
+                    "ability_name": ability_name,
+                    "phase": "Command phase",
+                    "unit": getattr(root, "name", ""),
+                    "model": getattr(bearer, "name", ""),
+                    "unit_id": unit_id,
+                    "model_id": model_id,
+                    "ability_key": ability_key,
+                    "heal_roll": "D6",
+                    "max_heal": int(lost),
+                }
+                message = (
+                    f"Use {ability_name} for {getattr(bearer, 'name', 'Model')} "
+                    f"({getattr(root, 'name', 'Unit')})? (Once per battle)\n"
+                    "The bearer regains up to D6 lost wounds."
+                )
+                self._queue_optional_ability_confirmation(
+                    player=p,
+                    ability_key="putrid_carapace",
+                    ability_name=ability_name,
+                    message=message,
+                    context=ctx,
+                    payload={
+                        "unit_id": unit_id,
+                        "model_id": model_id,
+                        "ability_key": ability_key,
+                        "heal_roll": "D6",
+                        "max_heal": int(lost),
+                    },
+                    instance_key=f"{unit_id}:{ability_key}",
+                )
 
     def _on_phase_start_post_shoot_leadership_debuff_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear post-shoot Leadership/Battle-shock debuffs at the start of the owner's Shooting phase."""
@@ -11423,6 +11559,15 @@ class GamePhaseHandlersMixin:
                         "enhancement_fight_first_active",
                         "enhancement_fight_first_expires_phase",
                         "enhancement_fight_first_source",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("enhancement_charge_after_advance_once_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "enhancement_charge_after_advance_once_active",
+                        "enhancement_charge_after_advance_once_expires_phase",
+                        "enhancement_charge_after_advance_once_turn_owner",
+                        "enhancement_charge_after_advance_once_turn",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("enhancement_rage_fuelled_warrior_expires_phase", "") or "").strip().upper()

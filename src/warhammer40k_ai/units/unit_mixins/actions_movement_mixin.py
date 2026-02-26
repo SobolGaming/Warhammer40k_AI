@@ -1250,6 +1250,7 @@ class ActionsMovementMixin:
             and (
                 bool(special_rules.get("enhancement_armour_of_antoninus", False))
                 or bool(special_rules.get("enhancement_artisan_of_war", False))
+                or bool(special_rules.get("enhancement_putrid_carapace", False))
             )
         )
         cache_key = f"model_save_characteristic:{get_entity_id(model)}"
@@ -1258,6 +1259,32 @@ class ActionsMovementMixin:
 
         best_value: Optional[int] = None
         best_source: Optional[str] = None
+
+        # Chaos Knights (Lords of Dread): Putrid Carapace sets bearer's Save characteristic.
+        try:
+            if isinstance(special_rules, dict) and bool(special_rules.get("enhancement_putrid_carapace", False)):
+                bearer_id = str(
+                    special_rules.get("enhancement_putrid_carapace_bearer_model_id", "")
+                    or special_rules.get("enhancement_bearer_model_id", "")
+                    or ""
+                ).strip()
+                model_id = str(get_entity_id(model) or "")
+                if (not bearer_id) or (model_id and model_id == bearer_id):
+                    alive_attr = getattr(model, "is_alive", True)
+                    model_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    if model_alive:
+                        try:
+                            save_value = int(special_rules.get("enhancement_putrid_carapace_save_characteristic", 2) or 2)
+                        except Exception:
+                            save_value = 2
+                        if save_value > 0 and (best_value is None or save_value < best_value):
+                            best_value = int(save_value)
+                            best_source = (
+                                str(special_rules.get("enhancement_putrid_carapace_source", "") or "Putrid Carapace").strip()
+                                or "Putrid Carapace"
+                            )
+        except Exception:
+            pass
 
         # Space Marines (Blade of Ultramar / Gladius Task Force): bearer save override.
         try:
@@ -2075,6 +2102,34 @@ class ActionsMovementMixin:
                 }
             )
 
+        # Chaos Knights (Lords of Dread): Blessing of the Dark Master.
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("enhancement_blessing_of_the_dark_master")):
+            bearer_id = str(
+                sr.get("enhancement_blessing_of_the_dark_master_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            model_id = str(get_entity_id(model) or "")
+            if (not bearer_id) or (model_id and model_id == bearer_id):
+                usage = str(sr.get("enhancement_blessing_of_the_dark_master_damage_zero_usage", "battle") or "battle").strip().lower()
+                if usage not in {"battle", "battle_round"}:
+                    usage = "battle"
+                source = str(sr.get("enhancement_blessing_of_the_dark_master_source", "") or "Blessing of the Dark Master").strip()
+                if not source:
+                    source = "Blessing of the Dark Master"
+                key = f"model_allocated_damage_zero:blessing_of_the_dark_master:{usage}:{bearer_id or model_id or 'bearer'}"
+                if key not in seen:
+                    seen.add(key)
+                    specs.append(
+                        {
+                            "source": source,
+                            "key": key,
+                            "usage": usage,
+                            "optional": True,
+                        }
+                    )
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
@@ -2401,6 +2456,30 @@ class ActionsMovementMixin:
                 key = (owner_id, ability_key)
                 if key in seen:
                     continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "ability_key": ability_key,
+                        "owner_id": owner_id,
+                    }
+                )
+
+        # Chaos Knights (Lords of Dread): Throne Mechanicum of Skulls activation
+        # grants charge-after-advance for the remainder of the Charge phase.
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("enhancement_charge_after_advance_once_active")):
+            source = str(sr.get("enhancement_charge_after_advance_source", "") or "Throne Mechanicum of Skulls").strip()
+            if not source:
+                source = "Throne Mechanicum of Skulls"
+            owner_id = str(get_entity_id(root) or "")
+            if not owner_id:
+                owner_id = str(get_entity_id(self) or "")
+            ability_key = str(sr.get("enhancement_charge_after_advance_once_key", "") or "throne_mechanicum_of_skulls").strip().lower()
+            if not ability_key:
+                ability_key = "throne_mechanicum_of_skulls"
+            key = (owner_id, ability_key)
+            if key not in seen:
                 seen.add(key)
                 specs.append(
                     {
@@ -12373,6 +12452,16 @@ class ActionsMovementMixin:
             if callable(twisted_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(twisted_apply_fn(self, game=game)):
+                    return True
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("enhancement_charge_after_advance_once_active")):
+                expires_phase = str(sr.get("enhancement_charge_after_advance_once_expires_phase", "") or "").strip().upper()
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if not expires_phase or not phase_name or expires_phase == phase_name:
                     return True
         except Exception:
             pass

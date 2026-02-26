@@ -17,7 +17,7 @@ _COMMAND_REROLL_TYPES = {
 }
 
 
-def command_reroll_available(game: object, player: object, *, roll_type: str) -> bool:
+def command_reroll_available(game: object, player: object, *, roll_type: str, unit: Optional[object] = None) -> bool:
     if game is None or player is None:
         return False
     rt = str(roll_type or "").strip().lower()
@@ -41,8 +41,12 @@ def command_reroll_available(game: object, player: object, *, roll_type: str) ->
         is_active_turn = bool(getattr(game, "get_current_player", lambda: None)() is player)
     except Exception:
         is_active_turn = False
+    ctx = {"phase_name": phase_name}
+    if unit is not None:
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
     try:
-        availability = mgr._evaluate_availability(strat, {"phase_name": phase_name}, is_active_turn=is_active_turn)
+        availability = mgr._evaluate_availability(strat, ctx, is_active_turn=is_active_turn)
     except Exception:
         availability = {"available": False}
     return bool(availability.get("available", False))

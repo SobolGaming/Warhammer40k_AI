@@ -995,7 +995,13 @@ class AttackResolutionManager:
             "roll_type": "attacks",
             "handler_key": "attack_counts",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
-            "command_reroll_allowed": command_reroll_available(game, attacker_unit.get_parent_army().player, roll_type="attacks") if player_id else False,
+            "unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else None,
+            "command_reroll_allowed": command_reroll_available(
+                game,
+                attacker_unit.get_parent_army().player,
+                roll_type="attacks",
+                unit=attacker_unit,
+            ) if player_id else False,
             "command_reroll_mode": "whole",
         }
         if not bool(getattr(game, "is_authoritative", True)):
@@ -1137,7 +1143,7 @@ class AttackResolutionManager:
             "handler_key": "attack_hits",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
             "reroll_rules": reroll_rules,
-            "command_reroll_allowed": command_reroll_available(game, player, roll_type="hit") if player_id else False,
+            "command_reroll_allowed": command_reroll_available(game, player, roll_type="hit", unit=attacker_unit) if player_id else False,
             "command_reroll_mode": "one",
             "unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else None,
         }
@@ -1353,7 +1359,7 @@ class AttackResolutionManager:
             "handler_key": "attack_wounds",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
             "reroll_rules": reroll_rules,
-            "command_reroll_allowed": command_reroll_available(game, player, roll_type="wound") if player_id else False,
+            "command_reroll_allowed": command_reroll_available(game, player, roll_type="wound", unit=attacker_unit) if player_id else False,
             "command_reroll_mode": "one",
             "unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else None,
         }
@@ -1719,7 +1725,7 @@ class AttackResolutionManager:
             "handler_key": "attack_saves",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
             "reroll_rules": reroll_rules,
-            "command_reroll_allowed": command_reroll_available(game, player, roll_type="save") if player_id else False,
+            "command_reroll_allowed": command_reroll_available(game, player, roll_type="save", unit=target_unit) if player_id else False,
             "command_reroll_mode": "one",
             "unit_id": get_entity_id(target_unit) if target_unit is not None else None,
         }
@@ -2166,7 +2172,7 @@ class AttackResolutionManager:
             "handler_key": "attack_hazardous",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
             "reroll_rules": reroll_rules,
-            "command_reroll_allowed": command_reroll_available(game, player, roll_type="hazardous") if player_id else False,
+            "command_reroll_allowed": command_reroll_available(game, player, roll_type="hazardous", unit=attacker_unit) if player_id else False,
             "command_reroll_mode": "one",
             "unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else None,
         }
@@ -2433,7 +2439,7 @@ class AttackResolutionManager:
                     "handler_key": "attack_damage",
                     "handler_payload": {"sequence_id": int(seq.sequence_id)},
                     "reroll_rules": reroll_rules,
-                    "command_reroll_allowed": command_reroll_available(game, player, roll_type="damage") if player_id else False,
+                    "command_reroll_allowed": command_reroll_available(game, player, roll_type="damage", unit=attacker_unit) if player_id else False,
                     "command_reroll_mode": "whole",
                     "unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else None,
                 }

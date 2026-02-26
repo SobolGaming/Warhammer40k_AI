@@ -3775,6 +3775,8 @@ class GameReactiveDecisionsMixin:
             "elders_guidance",
             "troubling_visions",
             "student_of_the_codex",
+            "putrid_carapace",
+            "enhancement_charge_after_advance_once",
         ):
             return
         selected = None
@@ -5439,6 +5441,110 @@ class GameReactiveDecisionsMixin:
                 self._log_action(
                     f"{getattr(root, 'name', 'Unit')} uses {ability_name} (charge after Advance; +1 Hit/Wound)."
                 )
+            except Exception:
+                pass
+            return
+
+        if ability_key == "enhancement_charge_after_advance_once":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            try:
+                if not getattr(root, "deployed", True):
+                    return
+                if root.is_in_reserves() or root.is_embarked:
+                    return
+            except Exception:
+                pass
+            can_use = getattr(root, "can_use_enhancement_charge_after_advance_once", None)
+            if not callable(can_use) or not bool(can_use()):
+                return
+            activate = getattr(root, "activate_enhancement_charge_after_advance_once", None)
+            if not callable(activate) or not bool(activate(game=self)):
+                return
+            ability_name = str(ctx.get("ability_name", "") or "Throne Mechanicum of Skulls").strip() or "Throne Mechanicum of Skulls"
+            try:
+                from ...utility.event_bus import append_action
+
+                player_obj = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+                if player_obj is not None:
+                    append_action(
+                        player_obj,
+                        f"{ability_name}: {getattr(root, 'name', 'Unit')} can declare a charge after Advancing this phase.",
+                    )
+            except Exception:
+                pass
+            return
+
+        if ability_key == "putrid_carapace":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            try:
+                if not getattr(root, "deployed", True):
+                    return
+                if root.is_in_reserves() or root.is_embarked:
+                    return
+            except Exception:
+                pass
+            can_use = getattr(root, "can_use_enhancement_putrid_carapace", None)
+            if not callable(can_use) or not bool(can_use()):
+                return
+            heal_roll = str(payload.get("heal_roll") or ctx.get("heal_roll") or "D6").strip().upper() or "D6"
+            try:
+                rolled = int(get_roll(heal_roll) or 0)
+            except Exception:
+                rolled = 0
+            try:
+                max_heal = int(payload.get("max_heal") or ctx.get("max_heal") or 0)
+            except Exception:
+                max_heal = 0
+            heal_amount = int(rolled)
+            if max_heal > 0:
+                heal_amount = min(int(heal_amount), int(max_heal))
+            activate = getattr(root, "activate_enhancement_putrid_carapace", None)
+            if not callable(activate):
+                return
+            healed = int(activate(heal_amount=int(max(0, heal_amount))) or 0)
+            ability_name = str(ctx.get("ability_name", "") or "Putrid Carapace").strip() or "Putrid Carapace"
+            bearer_name = str(ctx.get("model", "") or "Bearer").strip() or "Bearer"
+            player_obj = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            try:
+                from ...utility.event_bus import append_action, append_dice
+
+                if player_obj is not None:
+                    append_dice(
+                        player_obj,
+                        f"{ability_name} roll: {heal_roll}={int(rolled)}",
+                    )
+                    if healed > 0:
+                        append_action(
+                            player_obj,
+                            f"{ability_name}: {bearer_name} regains {int(healed)} wounds.",
+                        )
+                    else:
+                        append_action(
+                            player_obj,
+                            f"{ability_name}: no wounds regained.",
+                        )
             except Exception:
                 pass
             return

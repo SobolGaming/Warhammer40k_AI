@@ -619,6 +619,10 @@ class Enhancement:
             is_iconoclast_fiefdom = bool(ck_mgr and ck_mgr.is_iconoclast_fiefdom())
         except Exception:
             is_iconoclast_fiefdom = False
+        try:
+            is_lords_of_dread = bool(ck_mgr and ck_mgr.is_lords_of_dread())
+        except Exception:
+            is_lords_of_dread = False
         ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
         try:
             is_valourstrike_lance = bool(ik_mgr and ik_mgr.is_valourstrike_lance())
@@ -5838,6 +5842,155 @@ class Enhancement:
             )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "throne mechanicum of skulls" or enh_id == "000010308002":
+            if not is_lords_of_dread:
+                return
+            unit.special_rules["enhancement_lords_throne_mechanicum_of_skulls"] = True
+            unit.special_rules["enhancement_charge_reroll"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(
+                params.get("once_per_battle_key", "throne_mechanicum_of_skulls") or "throne_mechanicum_of_skulls"
+            ).strip().lower()
+            if not once_key:
+                once_key = "throne_mechanicum_of_skulls"
+            source_name = str(getattr(self, "name", "") or "Throne Mechanicum of Skulls").strip()
+            if not source_name:
+                source_name = "Throne Mechanicum of Skulls"
+            unit.special_rules["enhancement_charge_after_advance_once_per_battle"] = True
+            unit.special_rules["enhancement_charge_after_advance_once_key"] = once_key
+            unit.special_rules["enhancement_charge_after_advance_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_lords_throne_mechanicum_of_skulls_bearer_model_id"] = bearer_id
+
+        if name == "blade of celerity" or enh_id == "000010308003":
+            if not is_lords_of_dread:
+                return
+            unit.special_rules["enhancement_lords_blade_of_celerity"] = True
+            unit.special_rules["bearer_unit_assault_ranged"] = True
+            unit.special_rules["enhancement_fight_first_once_per_battle"] = True
+            unit.special_rules["enhancement_lords_blade_of_celerity_source"] = (
+                str(getattr(self, "name", "") or "Blade of Celerity").strip() or "Blade of Celerity"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_lords_blade_of_celerity_bearer_model_id"] = bearer_id
+
+        if name == "warp-borne stalker" or enh_id == "000010308004":
+            if not is_lords_of_dread:
+                return
+            unit.special_rules["enhancement_warp_borne_stalker"] = True
+            unit.special_rules["bearer_unit_deep_strike"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(params.get("once_per_battle_key", "warp_borne_stalker") or "warp_borne_stalker").strip().lower()
+            if not once_key:
+                once_key = "warp_borne_stalker"
+            unit.special_rules["enhancement_warp_borne_stalker_once_key"] = once_key
+            unit.special_rules["enhancement_warp_borne_stalker_source"] = (
+                str(getattr(self, "name", "") or "Warp-borne Stalker").strip() or "Warp-borne Stalker"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_warp_borne_stalker_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("deep_strike", None)
+                cache.pop("opponent_turn_strategic_reserves_ability", None)
+
+        if name == "putrid carapace" or enh_id == "000010308005":
+            if not is_lords_of_dread:
+                return
+            unit.special_rules["enhancement_putrid_carapace"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            save_value = _coerce_int(params.get("save_characteristic", 2) or 2, default=2)
+            unit.special_rules["enhancement_putrid_carapace_save_characteristic"] = int(max(2, min(7, save_value)))
+            once_key = str(params.get("once_per_battle_key", "putrid_carapace") or "putrid_carapace").strip().lower()
+            if not once_key:
+                once_key = "putrid_carapace"
+            unit.special_rules["enhancement_putrid_carapace_once_key"] = once_key
+            unit.special_rules["enhancement_putrid_carapace_source"] = (
+                str(getattr(self, "name", "") or "Putrid Carapace").strip() or "Putrid Carapace"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_putrid_carapace_bearer_model_id"] = bearer_id
+
+        if name == "mirror of fates" or enh_id == "000010308006":
+            if not is_lords_of_dread:
+                return
+            unit.special_rules["enhancement_mirror_of_fates"] = True
+            unit.special_rules["enhancement_mirror_of_fates_free_command_reroll_once_per_battle_round"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            aura_range = _coerce_int(params.get("aura_range", 12) or params.get("range", 12), default=12)
+            cp_increase = _coerce_int(params.get("cp_increase", 1) or 1, default=1)
+            ability_name = str(params.get("ability_name", "Lord of Deceit (Aura)") or "Lord of Deceit (Aura)").strip()
+            if not ability_name:
+                ability_name = "Lord of Deceit (Aura)"
+            unit.special_rules["enhancement_mirror_of_fates_range"] = int(max(1, aura_range))
+            unit.special_rules["enhancement_mirror_of_fates_cp_increase"] = int(max(1, cp_increase))
+            unit.special_rules["enhancement_mirror_of_fates_source"] = (
+                str(getattr(self, "name", "") or "Mirror of Fates").strip() or "Mirror of Fates"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_mirror_of_fates_bearer_model_id"] = bearer_id
+            spec = {
+                "range": int(max(1, aura_range)),
+                "keyword": "",
+                "name": ability_name,
+                "description": str(getattr(self, "description", "") or ""),
+                "optional": False,
+                "limit": "",
+                "max_cp": None,
+                "cp_increase": int(max(1, cp_increase)),
+                "usage_key": "STRATAGEM_CP_INCREASE:MIRROR_OF_FATES",
+            }
+            if bearer_id:
+                spec["source_model_id"] = bearer_id
+            existing_specs = list(unit.special_rules.get("stratagem_target_cp_increase_aura", []) or [])
+            deduped_specs: list[dict] = []
+            seen_spec_keys: set[tuple[str, str]] = set()
+            for existing_spec in existing_specs + [spec]:
+                if not isinstance(existing_spec, dict):
+                    continue
+                key = (
+                    str(existing_spec.get("usage_key", "") or "").strip().upper(),
+                    str(existing_spec.get("source_model_id", "") or "").strip().lower(),
+                )
+                if key in seen_spec_keys:
+                    continue
+                seen_spec_keys.add(key)
+                deduped_specs.append(existing_spec)
+            unit.special_rules["stratagem_target_cp_increase_aura"] = deduped_specs
+
+        if name == "blessing of the dark master" or enh_id == "000010308007":
+            if not is_lords_of_dread:
+                return
+            unit.special_rules["enhancement_blessing_of_the_dark_master"] = True
+            unit.special_rules["enhancement_blessing_of_the_dark_master_stealth"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            usage = str(params.get("damage_zero_usage", "battle") or "battle").strip().lower()
+            if usage not in {"battle", "battle_round"}:
+                usage = "battle"
+            unit.special_rules["enhancement_blessing_of_the_dark_master_damage_zero_usage"] = usage
+            unit.special_rules["enhancement_blessing_of_the_dark_master_source"] = (
+                str(getattr(self, "name", "") or "Blessing of the Dark Master").strip() or "Blessing of the Dark Master"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_blessing_of_the_dark_master_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("stealth", None)
+                for cache_key in list(cache.keys()):
+                    if str(cache_key).startswith("model_allocated_damage_zero_specs:"):
+                        cache.pop(cache_key, None)
 
         if name == "bearer of the iron chalice" or enh_id == "000010493002":
             if not is_valourstrike_lance:

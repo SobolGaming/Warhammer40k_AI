@@ -727,6 +727,146 @@ class KeywordsDetachmentsMixin:
         root.special_rules = sr
         return True
 
+    def has_enhancement_charge_after_advance_once_per_battle(self) -> bool:
+        """Return True if this unit has a once-per-battle enhancement that can grant charge-after-Advance."""
+        sr = getattr(self, "special_rules", None)
+        return bool(isinstance(sr, dict) and sr.get("enhancement_charge_after_advance_once_per_battle"))
+
+    def _enhancement_charge_after_advance_once_key(self) -> str:
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict):
+            key = str(sr.get("enhancement_charge_after_advance_once_key", "") or "").strip().lower()
+            if key:
+                return key
+        return "throne_mechanicum_of_skulls"
+
+    def can_use_enhancement_charge_after_advance_once(self) -> bool:
+        if not self.has_enhancement_charge_after_advance_once_per_battle():
+            return False
+        bearer = self._get_enhancement_bearer_model()
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        try:
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                return False
+        except Exception:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            root = self
+        key = self._enhancement_charge_after_advance_once_key()
+        if bool(getattr(root, "has_used_unit_once_per_battle", lambda _k: False)(key)):
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "advanced_this_round", False)):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("enhancement_charge_after_advance_once_active")):
+            return False
+        return True
+
+    def activate_enhancement_charge_after_advance_once(self, *, game=None) -> bool:
+        """Activate the once-per-battle charge-after-Advance enhancement until end of Charge phase."""
+        if not self.can_use_enhancement_charge_after_advance_once():
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        key = self._enhancement_charge_after_advance_once_key()
+        source = str(sr.get("enhancement_charge_after_advance_source", "") or "Throne Mechanicum of Skulls").strip()
+        if not source:
+            source = "Throne Mechanicum of Skulls"
+        sr["enhancement_charge_after_advance_once_active"] = True
+        sr["enhancement_charge_after_advance_once_expires_phase"] = "CHARGE_PHASE"
+        sr["enhancement_charge_after_advance_source"] = source
+        if game is not None:
+            sr["enhancement_charge_after_advance_once_turn"] = int(getattr(game, "turn", 0) or 0)
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            sr["enhancement_charge_after_advance_once_turn_owner"] = str(getattr(current_player, "id", "") or "")
+        root.special_rules = sr
+        root.mark_unit_once_per_battle_used(key, ability_name=source)
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.pop("leading_once_per_battle_advance_and_charge_specs", None)
+        return True
+
+    def _putrid_carapace_bearer_model(self):
+        sr = getattr(self, "special_rules", None)
+        bearer_id = ""
+        if isinstance(sr, dict):
+            bearer_id = str(
+                sr.get("enhancement_putrid_carapace_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+        if bearer_id:
+            for model in list(getattr(self, "models", []) or []):
+                if str(get_entity_id(model) or "") != bearer_id:
+                    continue
+                return model
+        return self._get_enhancement_bearer_model()
+
+    def _putrid_carapace_once_key(self) -> str:
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict):
+            key = str(sr.get("enhancement_putrid_carapace_once_key", "") or "").strip().lower()
+            if key:
+                return key
+        return "putrid_carapace"
+
+    def can_use_enhancement_putrid_carapace(self) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_putrid_carapace")):
+            return False
+        key = self._putrid_carapace_once_key()
+        if bool(getattr(self, "has_used_unit_once_per_battle", lambda _k: False)(key)):
+            return False
+        bearer = self._putrid_carapace_bearer_model()
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+            return False
+        base = int(getattr(bearer, "_base_wounds", getattr(bearer, "wounds", 0)) or 0)
+        current = int(getattr(bearer, "wounds", 0) or 0)
+        return bool(base > current)
+
+    def activate_enhancement_putrid_carapace(self, *, heal_amount: int) -> int:
+        """Consume Putrid Carapace once-per-battle and heal the bearer up to `heal_amount` lost wounds."""
+        if not self.can_use_enhancement_putrid_carapace():
+            return 0
+        bearer = self._putrid_carapace_bearer_model()
+        if bearer is None:
+            return 0
+        try:
+            amount = int(heal_amount or 0)
+        except Exception:
+            amount = 0
+        amount = max(0, int(amount))
+        base = int(getattr(bearer, "_base_wounds", getattr(bearer, "wounds", 0)) or 0)
+        current = int(getattr(bearer, "wounds", 0) or 0)
+        lost = max(0, int(base - current))
+        healed = min(int(amount), int(lost))
+        if healed > 0:
+            heal_fn = getattr(bearer, "heal", None)
+            if callable(heal_fn):
+                heal_fn(int(healed))
+        sr = getattr(self, "special_rules", None)
+        source = "Putrid Carapace"
+        if isinstance(sr, dict):
+            source = str(sr.get("enhancement_putrid_carapace_source", "") or source).strip() or source
+        self.mark_unit_once_per_battle_used(self._putrid_carapace_once_key(), ability_name=source)
+        return int(healed)
+
     def _seductive_gambit_active(self) -> bool:
         try:
             army = self.get_parent_army()

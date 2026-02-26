@@ -3695,6 +3695,72 @@ _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS.values()
 }
 
+_CHAOS_KNIGHTS_LORDS_OF_DREAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010308002": EnhancementToolDescriptor(
+        enhancement_id="000010308002",
+        name="Throne Mechanicum of Skulls",
+        timing="passive_and_start_of_charge_phase",
+        target="bearer_unit",
+        duration="constant_and_until_end_of_phase",
+        effect="reroll_charge_and_optional_charge_after_advance_once_per_battle",
+        once_per_battle=True,
+        effect_params={"once_per_battle_key": "throne_mechanicum_of_skulls"},
+    ),
+    "000010308003": EnhancementToolDescriptor(
+        enhancement_id="000010308003",
+        name="Blade of Celerity",
+        timing="passive_and_start_of_fight_phase",
+        target="bearer_unit",
+        duration="constant_and_until_end_of_phase",
+        effect="grant_assault_and_optional_fights_first_once_per_battle",
+        once_per_battle=True,
+    ),
+    "000010308004": EnhancementToolDescriptor(
+        enhancement_id="000010308004",
+        name="Warp-borne Stalker",
+        timing="passive_and_end_of_opponent_turn",
+        target="bearer",
+        duration="constant_and_instant",
+        effect="grant_deep_strike_and_optional_strategic_reserves_once_per_battle",
+        once_per_battle=True,
+        effect_params={"once_per_battle_key": "warp_borne_stalker"},
+    ),
+    "000010308005": EnhancementToolDescriptor(
+        enhancement_id="000010308005",
+        name="Putrid Carapace",
+        timing="passive_and_start_of_command_phase",
+        target="bearer",
+        duration="constant_and_instant",
+        effect="set_save_characteristic_and_optional_regain_wounds_once_per_battle",
+        once_per_battle=True,
+        effect_params={"save_characteristic": 2, "heal_roll": "D6", "once_per_battle_key": "putrid_carapace"},
+    ),
+    "000010308006": EnhancementToolDescriptor(
+        enhancement_id="000010308006",
+        name="Mirror of Fates",
+        timing="passive",
+        target="bearer_unit_and_enemy_units_within_range",
+        duration="constant_and_once_per_battle_round",
+        effect="command_reroll_cost_set_zero_once_per_battle_round_and_stratagem_cp_increase_aura",
+        range_in=12.0,
+        effect_params={"aura_range": 12, "cp_increase": 1, "ability_name": "Lord of Deceit (Aura)"},
+    ),
+    "000010308007": EnhancementToolDescriptor(
+        enhancement_id="000010308007",
+        name="Blessing of the Dark Master",
+        timing="passive_and_after_saving_throw",
+        target="bearer",
+        duration="constant_and_instant_once_per_battle",
+        effect="grant_stealth_and_optional_set_allocated_attack_damage_to_zero",
+        once_per_battle=True,
+        effect_params={"damage_zero_usage": "battle"},
+    ),
+}
+
+_CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CHAOS_KNIGHTS_LORDS_OF_DREAD_DESCRIPTORS.values()
+}
+
 _VEILED_BLADE_ELIMINATION_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009757002": EnhancementToolDescriptor(
         enhancement_id="000009757002",
@@ -4011,6 +4077,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _CHAOS_KNIGHTS_LORDS_OF_DREAD_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _VEILED_BLADE_ELIMINATION_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4091,6 +4160,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _RUBRICAE_PHALANX_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME.get(key)
+        or _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME.get(key)
         or _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME.get(key)
     )

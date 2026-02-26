@@ -6474,6 +6474,22 @@ class PositioningMixin:
             if isinstance(sr, dict):
                 if sr.get("bearer_unit_deep_strike") or sr.get("realm_of_chaos_temp_deep_strike"):
                     found = True
+                elif sr.get("enhancement_warp_borne_stalker"):
+                    bearer_id = str(
+                        sr.get("enhancement_warp_borne_stalker_bearer_model_id", "")
+                        or sr.get("enhancement_bearer_model_id", "")
+                        or ""
+                    ).strip()
+                    if not bearer_id:
+                        found = True
+                    else:
+                        for model in list(getattr(self, "models", []) or []):
+                            model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "")
+                            if model_id != bearer_id:
+                                continue
+                            alive_attr = getattr(model, "is_alive", True)
+                            found = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                            break
                 elif sr.get("cloudstrike_temp_deep_strike"):
                     found = True
                     try:
@@ -7282,6 +7298,9 @@ class PositioningMixin:
             return True
         # Enhancement: Ghostweave Cloak grants Stealth to the bearer model.
         if isinstance(sr, dict) and sr.get("enhancement_ghostweave_cloak_stealth"):
+            return True
+        # Chaos Knights (Lords of Dread): Blessing of the Dark Master grants Stealth to the bearer model.
+        if isinstance(sr, dict) and sr.get("enhancement_blessing_of_the_dark_master_stealth"):
             return True
         # Enhancement: Phial of the Abyss grants Stealth to models in the bearer's unit.
         if isinstance(sr, dict) and sr.get("enhancement_phial_of_the_abyss"):

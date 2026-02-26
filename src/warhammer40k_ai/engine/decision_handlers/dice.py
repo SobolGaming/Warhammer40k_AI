@@ -141,7 +141,11 @@ def _validate_select_reroll(game: object, request: DecisionRequest, result: Deci
             phase_name = getattr(game, "_current_phase_label", lambda: "")()
         except Exception:
             phase_name = ""
+        unit = resolve_unit(game, state.spec.get("unit_id"))
         ctx = {"phase_name": phase_name}
+        if unit is not None:
+            ctx["unit"] = unit
+            ctx["target_unit"] = unit
         is_active_turn = False
         try:
             is_active_turn = bool(getattr(game, "get_current_player", lambda: None)() is player)
@@ -186,16 +190,27 @@ def _apply_select_reroll(game: object, request: DecisionRequest, result: Decisio
         player = resolve_player(game, getattr(result, "player_id", None))
         mgr_strat = getattr(player, "stratagems", None) if player is not None else None
         strat = None
+        unit = resolve_unit(game, state.spec.get("unit_id")) if state is not None else None
         try:
             if mgr_strat is not None:
                 strat = mgr_strat.get_by_name("COMMAND RE-ROLL")
         except Exception:
             strat = None
         if strat is not None and player is not None:
-            cp_cost = int(getattr(strat, "cp_cost", 1) or 1)
-            player.spend_command_points(cp_cost, reason=f"Stratagem: {strat.name}", source="stratagem")
+            apply_cp = getattr(player, "apply_stratagem_cp_cost", None)
+            cp_info = (
+                apply_cp(strat, target_unit=unit)
+                if callable(apply_cp)
+                else {"cost": int(getattr(strat, "cp_cost", 1) or 1)}
+            )
+            cp_cost = int((cp_info or {}).get("cost", getattr(strat, "cp_cost", 1) or 1) or 0)
+            if not player.spend_command_points(cp_cost, reason=f"Stratagem: {strat.name}", source="stratagem"):
+                raise RuntimeError("Command Re-roll CP spend failed.")
             try:
                 mgr_strat._used_stratagems_this_phase.add((strat.name or "").strip().upper())
+                record_use = getattr(mgr_strat, "_record_command_reroll_use", None)
+                if callable(record_use):
+                    record_use(unit)
             except Exception:
                 pass
     if action_id == "flux_reroll":
