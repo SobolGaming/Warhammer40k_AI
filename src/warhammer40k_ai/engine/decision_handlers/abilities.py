@@ -15091,6 +15091,66 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{source}: {tname} is pinned until your next turn.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "post_shoot_shocked":
+        if chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            source = str(ctx.get("ability_name", "") or "Shocked").strip() or "Shocked"
+            try:
+                move_penalty = int(ctx.get("move_penalty", -2) or -2)
+            except Exception:
+                move_penalty = -2
+            try:
+                advance_penalty = int(ctx.get("advance_penalty", -2) or -2)
+            except Exception:
+                advance_penalty = -2
+            try:
+                charge_penalty = int(ctx.get("charge_penalty", advance_penalty) or advance_penalty)
+            except Exception:
+                charge_penalty = int(advance_penalty)
+            apply_fn = getattr(target_root, "apply_shocked", None)
+            if callable(apply_fn):
+                apply_fn(
+                    owner_id=owner_id,
+                    turn=turn,
+                    source=source,
+                    move_penalty=int(move_penalty),
+                    advance_penalty=int(advance_penalty),
+                    charge_penalty=int(charge_penalty),
+                )
+            else:
+                sr = getattr(target_root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["shocked_active"] = True
+                sr["shocked_owner"] = owner_id
+                sr["shocked_turn"] = int(turn or 0)
+                sr["shocked_source"] = source
+                sr["shocked_move_penalty"] = int(move_penalty)
+                sr["shocked_advance_penalty"] = int(advance_penalty)
+                sr["shocked_charge_penalty"] = int(charge_penalty)
+                target_root.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{source}: {tname} is shocked until end of your opponent's next turn.",
+                )
+            except Exception:
+                pass
     if ctx.get("necrons_command_phase_enhancement"):
         army = _resolve_army(game, request, payload)
         mgr = getattr(army, "necrons_detachments", None) if army is not None else None

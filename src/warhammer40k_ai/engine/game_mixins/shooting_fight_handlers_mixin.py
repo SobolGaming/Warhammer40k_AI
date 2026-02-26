@@ -2124,6 +2124,109 @@ class GameShootingFightHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_unit_shooting_resolved_post_shoot_shocked(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot shocked requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _is_monster_or_vehicle(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_keyword("MONSTER") or unit.has_keyword("VEHICLE"))
+            except Exception:
+                pass
+            try:
+                return bool(unit.has_any_keyword("MONSTER") or unit.has_any_keyword("VEHICLE"))
+            except Exception:
+                return False
+
+        specs = attacker_unit.unit_post_shoot_shocked_specs() or []
+        if not specs:
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for spec in specs:
+            exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
+            try:
+                move_penalty = int(spec.get("move_penalty", -2) or -2)
+            except Exception:
+                move_penalty = -2
+            try:
+                advance_penalty = int(spec.get("advance_penalty", -2) or -2)
+            except Exception:
+                advance_penalty = -2
+            try:
+                charge_penalty = int(spec.get("charge_penalty", advance_penalty) or advance_penalty)
+            except Exception:
+                charge_penalty = int(advance_penalty)
+
+            candidates: list[Any] = []
+            for target_unit, hits in (hits_by_target or {}).items():
+                if target_unit is None:
+                    continue
+                if int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(target_unit):
+                    continue
+                if exclude_mv and _is_monster_or_vehicle(target_unit):
+                    continue
+                candidates.append(target_unit)
+            if not candidates:
+                continue
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            ability_name = str(spec.get("source", "") or "Shocked").strip() or "Shocked"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a unit to shock.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "source_unit_id": get_entity_id(attacker_unit),
+                    "ability": "post_shoot_shocked",
+                    "ability_name": ability_name,
+                    "move_penalty": int(move_penalty),
+                    "advance_penalty": int(advance_penalty),
+                    "charge_penalty": int(charge_penalty),
+                },
+            )
+            self.request_decision(request)
+
     def _on_unit_shooting_resolved_harvester_of_souls(
         self,
         attacker_unit=None,

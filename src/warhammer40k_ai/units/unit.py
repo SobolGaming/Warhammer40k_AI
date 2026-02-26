@@ -3334,6 +3334,14 @@ class Unit(
         r"(?P<advance>\d+) from advance and charge rolls made for it",
         re.IGNORECASE,
     )
+    _POST_SHOOT_SHOCKED_RE = re.compile(
+        r"in your shooting phase after this unit has shot select one enemy unit "
+        r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
+        r"until the end of your opponent(?: s|s) next turn that enemy unit is shocked "
+        r"while a unit is shocked subtract (?P<move>\d+) from (?:its|that unit s) move characteristic and subtract "
+        r"(?P<advance>\d+) from advance and charge rolls made for it",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_NO_COVER_WEAPON_RE = re.compile(
         r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks made with "
         r"(?:a|an|the) (?P<weapon>[a-z0-9 ]+) until the (?P<duration>end of the phase|start of your next shooting phase) "

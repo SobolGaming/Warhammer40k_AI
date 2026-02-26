@@ -5214,6 +5214,7 @@ def _classify_ability_base(
     start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
     post_shoot_afflicted_support = _post_shoot_afflicted_support(description)
+    post_shoot_shocked_support = _post_shoot_shocked_support(description)
     post_shoot_shoot_again_support = _post_shoot_shoot_again_support(description)
     post_shoot_disembark_wound_reroll_support = _post_shoot_disembark_wound_reroll_support(description)
     post_shoot_ap_bonus_support = _post_shoot_ap_bonus_support(description)
@@ -5504,6 +5505,8 @@ def _classify_ability_base(
         return post_shoot_battleshock_support
     if post_shoot_afflicted_support:
         return post_shoot_afflicted_support
+    if post_shoot_shocked_support:
+        return post_shoot_shocked_support
     if post_shoot_shoot_again_support:
         return post_shoot_shoot_again_support
     if post_shoot_disembark_wound_reroll_support:
@@ -9435,6 +9438,36 @@ def _post_shoot_afflicted_support(description: str) -> Optional[Tuple[str, str]]
     return (
         "Supported",
         "Post-shoot selection: choose a hit enemy unit; it is marked Afflicted until the start of your next turn.",
+    )
+
+
+def _post_shoot_shocked_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase after this unit has shot select one enemy unit "
+        r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
+        r"until the end of your opponent(?: s|s) next turn that enemy unit is shocked "
+        r"while a unit is shocked subtract (?P<move>\d+) from (?:its|that unit s) move characteristic "
+        r"and subtract (?P<advance>\d+) from advance and charge rolls made for it"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    excluded_mv = bool(str(m.group("exclude") or "").strip()) or ("excluding monsters and vehicles" in norm)
+    move_pen = str(m.group("move") or "2")
+    adv_pen = str(m.group("advance") or "2")
+    if excluded_mv:
+        return (
+            "Supported",
+            f"After shooting: select a hit enemy non-MONSTER/non-VEHICLE unit; it is shocked until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls.",
+        )
+    return (
+        "Supported",
+        f"After shooting: select a hit enemy unit; it is shocked until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls.",
     )
 
 

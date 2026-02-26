@@ -588,6 +588,102 @@ class StateAttachmentMixin:
             sr.pop(key, None)
         self.special_rules = sr
 
+    def apply_shocked(
+        self,
+        *,
+        owner_id: str,
+        turn: int,
+        source: str,
+        move_penalty: int,
+        advance_penalty: int,
+        charge_penalty: int,
+    ) -> None:
+        """Apply shocked penalties (Move -X, Advance -Y, Charge -Z) until end of opponent's next turn."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if sr.get("shocked_active"):
+            self.clear_shocked()
+            sr = getattr(self, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+
+        sr["shocked_active"] = True
+        sr["shocked_owner"] = str(owner_id or "")
+        sr["shocked_turn"] = int(turn or 0)
+        sr["shocked_source"] = str(source or "Shocked").strip() or "Shocked"
+        sr["shocked_move_penalty"] = int(move_penalty or 0)
+        sr["shocked_advance_penalty"] = int(advance_penalty or 0)
+        sr["shocked_charge_penalty"] = int(charge_penalty or 0)
+
+        from ...utility.modifiers import Modifier, ModifierOp
+        self.add_characteristic_modifier(
+            "movement",
+            Modifier(ModifierOp.ADD, int(move_penalty or 0), source="ability:electro_shock"),
+        )
+
+        adv_mods = list(sr.get("advance_roll_modifiers", []) or [])
+        adv_mods.append(
+            {
+                "value": int(advance_penalty or 0),
+                "source": sr["shocked_source"],
+                "tag": "ability:electro_shock",
+            }
+        )
+        sr["advance_roll_modifiers"] = adv_mods
+
+        charge_mods = list(sr.get("charge_roll_modifiers", []) or [])
+        charge_mods.append(
+            {
+                "value": int(charge_penalty or 0),
+                "source": sr["shocked_source"],
+                "tag": "ability:electro_shock",
+            }
+        )
+        sr["charge_roll_modifiers"] = charge_mods
+        self.special_rules = sr
+
+    def clear_shocked(self) -> None:
+        """Clear shocked penalties from this unit."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        self.remove_characteristic_modifiers_by_source("ability:electro_shock")
+
+        adv_mods = list(sr.get("advance_roll_modifiers", []) or [])
+        kept_adv = []
+        for item in adv_mods:
+            if isinstance(item, dict) and item.get("tag") == "ability:electro_shock":
+                continue
+            kept_adv.append(item)
+        if kept_adv:
+            sr["advance_roll_modifiers"] = kept_adv
+        else:
+            sr.pop("advance_roll_modifiers", None)
+
+        charge_mods = list(sr.get("charge_roll_modifiers", []) or [])
+        kept_charge = []
+        for item in charge_mods:
+            if isinstance(item, dict) and item.get("tag") == "ability:electro_shock":
+                continue
+            kept_charge.append(item)
+        if kept_charge:
+            sr["charge_roll_modifiers"] = kept_charge
+        else:
+            sr.pop("charge_roll_modifiers", None)
+
+        for key in (
+            "shocked_active",
+            "shocked_owner",
+            "shocked_turn",
+            "shocked_source",
+            "shocked_move_penalty",
+            "shocked_advance_penalty",
+            "shocked_charge_penalty",
+        ):
+            sr.pop(key, None)
+        self.special_rules = sr
+
     def apply_movement_phase_visible_wound_bonus(
         self,
         *,

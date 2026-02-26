@@ -5088,6 +5088,86 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_post_shoot_shocked_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: after this unit has shot, select a hit enemy non-MONSTER/non-VEHICLE
+        unit; target is shocked until end of opponent's next turn.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - move_penalty: int
+            - advance_penalty: int
+            - charge_penalty: int
+            - exclude_monster_vehicle: bool
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_post_shoot_shocked_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int, int, bool]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._POST_SHOOT_SHOCKED_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                source = str(name or "Shocked").strip() or "Shocked"
+                try:
+                    move_penalty = -int(m.group("move") or 0)
+                except Exception:
+                    move_penalty = -2
+                try:
+                    advance_penalty = -int(m.group("advance") or 0)
+                except Exception:
+                    advance_penalty = -2
+                charge_penalty = int(advance_penalty)
+                exclude_mv = bool(m.group("exclude")) or ("excluding monsters and vehicles" in normalized)
+                key = (
+                    source.lower(),
+                    int(move_penalty),
+                    int(advance_penalty),
+                    int(charge_penalty),
+                    bool(exclude_mv),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "move_penalty": int(move_penalty),
+                        "advance_penalty": int(advance_penalty),
+                        "charge_penalty": int(charge_penalty),
+                        "exclude_monster_vehicle": bool(exclude_mv),
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_post_shoot_no_overwatch_specs(self) -> List[dict]:
         """
         Unit-specific rule: after this unit has shot, select a hit enemy unit that cannot be targeted with Fire Overwatch.

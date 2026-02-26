@@ -7102,6 +7102,7 @@ class GameView:
                 "battle_protocols",
                 "canticles_of_the_omnissiah",
                 "canticles_machine_vengeance_target",
+                "post_shoot_shocked",
                 "void_mine",
             ):
                 return
@@ -15409,6 +15410,10 @@ class GameView:
             title = ability_name or "Invocation of Machine Vengeance"
             subtitle = "Select one enemy unit to be the Machine Vengeance target."
             header = f"{getattr(source_unit, 'name', 'Model')} selects a Machine Vengeance target."
+        elif str(ability_key) == "post_shoot_shocked":
+            title = ability_name or "Electro-shock"
+            subtitle = "Select one hit enemy non-MONSTER/non-VEHICLE unit to shock."
+            header = f"{getattr(source_unit, 'name', 'Unit')} selects an Electro-shock target."
         elif str(ability_key) == "void_mine":
             title = ability_name or "Void Mine"
             subtitle = "Select one enemy model moved over this move, or None."

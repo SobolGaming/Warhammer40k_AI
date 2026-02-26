@@ -2553,6 +2553,81 @@ class GamePhaseHandlersMixin:
                     sr.pop(key, None)
                 unit.special_rules = sr
 
+    def _on_phase_end_shocked_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear shocked effects at the end of the opponent's next turn (end of Fight phase)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if player is None:
+            return
+        current_owner = str(getattr(player, "id", "") or "")
+        if not current_owner:
+            return
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Shocked cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Shocked cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not sr.get("shocked_active"):
+                    continue
+                owner_id = str(sr.get("shocked_owner", "") or "")
+                if not owner_id or owner_id == current_owner:
+                    continue
+                try:
+                    marked_turn = int(sr.get("shocked_turn", 0) or 0)
+                except Exception:
+                    marked_turn = 0
+                if marked_turn and current_turn < marked_turn:
+                    continue
+                clear_fn = getattr(unit, "clear_shocked", None)
+                if callable(clear_fn):
+                    clear_fn()
+                    continue
+                try:
+                    unit.remove_characteristic_modifiers_by_source("ability:electro_shock")
+                except Exception:
+                    pass
+                adv_mods = list(sr.get("advance_roll_modifiers", []) or [])
+                kept_adv = []
+                for item in adv_mods:
+                    if isinstance(item, dict) and item.get("tag") == "ability:electro_shock":
+                        continue
+                    kept_adv.append(item)
+                if kept_adv:
+                    sr["advance_roll_modifiers"] = kept_adv
+                else:
+                    sr.pop("advance_roll_modifiers", None)
+                charge_mods = list(sr.get("charge_roll_modifiers", []) or [])
+                kept_charge = []
+                for item in charge_mods:
+                    if isinstance(item, dict) and item.get("tag") == "ability:electro_shock":
+                        continue
+                    kept_charge.append(item)
+                if kept_charge:
+                    sr["charge_roll_modifiers"] = kept_charge
+                else:
+                    sr.pop("charge_roll_modifiers", None)
+                for key in (
+                    "shocked_active",
+                    "shocked_owner",
+                    "shocked_turn",
+                    "shocked_source",
+                    "shocked_move_penalty",
+                    "shocked_advance_penalty",
+                    "shocked_charge_penalty",
+                ):
+                    sr.pop(key, None)
+                unit.special_rules = sr
+
     def _on_phase_start_misfortune_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear Misfortune effects at the start of the owner's Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
