@@ -48,6 +48,14 @@ It is intended to complement `docs/NETWORK_GAMEPLAY.md` and the decision mapping
 ## 2) Server-Driven Setup Autosteps (Sequential)
 
 The server automatically advances setup until **DECLARE_BATTLE_FORMATIONS**.
+This progression is orchestrated through the shared `AuthoritativeSessionDriver`
+(`src/warhammer40k_ai/engine/authoritative_session_driver.py`), so setup
+sequencing logic is not owned exclusively by `NetworkServer`.
+
+Local runtime parity note:
+- `scripts/main.py` uses `LocalAuthoritativeRuntime` (`src/warhammer40k_ai/engine/local_runtime.py`)
+  to run the same driver-managed pre-formation setup phases in-process
+  (no websocket loopback).
 
 1. MUSTER_ARMIES → server advances immediately once both players are ready.
 2. SELECT_MISSION_OBJECTIVES

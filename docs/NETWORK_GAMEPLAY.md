@@ -21,6 +21,7 @@ Status: Implemented (transport, lobby, army submission, start flow, spectator ga
 - Network protocol messages exist in `src/warhammer40k_ai/network/messages.py`.
 - Command processing + resync helpers exist in `src/warhammer40k_ai/network/protocol.py`.
 - WebSocket transport lives in `src/warhammer40k_ai/network/transport.py` and requires `websockets`.
+- Shared command channel abstractions live in `src/warhammer40k_ai/engine/command_channel.py`.
 - Lobby state + transitions live in `src/warhammer40k_ai/network/lobby.py`.
 - Control envelope helpers live in `src/warhammer40k_ai/network/control.py`.
 - Server/client orchestration lives in `src/warhammer40k_ai/network/server.py` and `src/warhammer40k_ai/network/client.py`.
@@ -33,9 +34,47 @@ Status: Implemented (transport, lobby, army submission, start flow, spectator ga
 - Single authoritative server hosts one or more game sessions.
 - Clients connect over TLS-secured WebSockets and exchange JSON messages.
 - Game state updates flow as: Client Command -> Server validation -> Command broadcast + Event broadcast.
+- Runtime fan-out uses channel adapters:
+  - `NetworkCommandChannel` for websocket transport.
+  - `InProcessCommandChannel` for local/in-process composition.
+- Shared HUD projection uses `UI/session_presentation_orchestrator.py` so local and network clients consume the same presentation envelope flow.
+- UI action intake routes through shared intent gateways (`engine/player_intent_gateway.py`) before authoritative validation.
 - Clients keep a local game state by replaying accepted commands from the server.
 - Spectators receive snapshots/events only; commands from spectators are rejected.
 - The pygame UI pumps networking each frame via `NetworkGameSession.poll_messages()`, which uses non-blocking queue reads and yields when empty so the background receiver task can enqueue newly arrived messages.
+
+## Transport vs Orchestration Split
+
+- Transport concerns:
+  - connection lifecycle, TLS, ping/pong, framing, delivery.
+  - implemented by `network/transport.py` + `NetworkCommandChannel`.
+- Orchestration concerns:
+  - setup progression, decision lifecycle, phase sequencing.
+  - implemented by authoritative runtime/server components.
+- This split keeps orchestration reusable across local and network runtimes while preserving one authoritative flow.
+
+## Ordering and Idempotency Contract
+
+- Authoritative presentation/event fan-out uses a canonical envelope contract
+  (`src/warhammer40k_ai/engine/presentation_envelope.py`).
+- Contract fields:
+  - `schema_version` (major.minor)
+  - `stream_id` (deterministic stream identity)
+  - `sequence_id` (monotonic per stream)
+  - `payload` (event/update body)
+- Compatibility rule:
+  - major mismatch = reject/fail-fast
+  - minor bump = additive-compatible
+- Client application semantics:
+  - duplicate `sequence_id` values are idempotent no-ops
+  - out-of-order/gap handling triggers resync/rebuild behavior
+
+## Parity Hardening Utilities
+
+- Presentation transcript hydration/reconnect checks use
+  `UI/presentation_state_hydrator.py`.
+- Shadow/diff cutover comparisons use `scripts/presentation_shadow_diff.py`
+  to compare local vs network presentation transcripts by sequence/payload.
 
 ## Transport and Security
 

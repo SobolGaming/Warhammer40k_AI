@@ -7,6 +7,7 @@ This document is a *high-level* map of the codebase. Detailed designs live in `d
 ## High-level runtime modes
 
 - **Local interactive game**: `python3 scripts/main.py ...` runs the engine and pygame UI in one process.
+  - Local composition uses `engine/local_runtime.py` (`LocalAuthoritativeRuntime`) for shared authoritative setup orchestration without websocket loopback.
 - **Network play**: `python3 -m warhammer40k_ai.network.cli server|client|client-ui ...`.
 - **Headless/controller-driven**: the engine can be driven purely by Commands + DecisionResults (see `docs/NETWORK_SAVELOAD_DESIGN.md`).
 
@@ -64,6 +65,8 @@ Purpose: **rules execution and authoritative state transitions**.
 Key responsibilities:
 - Game state lifecycle (`game.py` facade + `game_mixins/`, `phase.py`, `turn_manager.py`, setup/deployment managers)
 - Command validation & dispatch (`command_dispatcher.py`, `commands.py`, `command_kinds.py`)
+- Shared authoritative orchestration (`authoritative_session_driver.py`) and channel adapters (`command_channel.py`)
+- Local authoritative runtime composition (`local_runtime.py`)
 - Decision system (`decision_requests.py`, `decisions.py`, `decision_kinds.py`, `decision_dispatcher.py`, `decision_handlers/`)
 - Decision controllers & routing (`decision_controller.py`) for UI/AI/network integration
 - Deterministic randomness (`random_source.py`) and dice plumbing (`dice_rolls.py`, `roll_handlers.py`)
@@ -155,6 +158,8 @@ Responsibilities:
 - render the battlefield and unit panels
 - show dialogs that correspond to engine DecisionRequests
 - convert user choices into deterministic Commands
+- project authoritative game updates through shared UI/HUD orchestration (`session_presentation_orchestrator.py`)
+- rebuild HUD state from authoritative presentation transcripts (`presentation_state_hydrator.py`)
 - avoid importing GUI backends at package import time; entry points should import GUI modules lazily so headless tooling/tests remain stable
 
 See also: `docs/DIALOG_MANAGER.md` and dialog mapping in `docs/NETWORK_SAVELOAD_DESIGN.md`.

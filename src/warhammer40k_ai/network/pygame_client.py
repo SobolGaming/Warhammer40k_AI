@@ -8,6 +8,7 @@ import pygame
 
 from ..UI.game_ui import GameView
 from ..UI.human_interface import HumanUIInterface
+from ..UI.session_presentation_orchestrator import SessionPresentationOrchestrator
 from ..UI.window import create_pygame_screen
 from .client import NetworkClient
 from .game_session import NetworkGameSession, GameUpdate
@@ -56,6 +57,10 @@ async def run_pygame_network_client(
     await client.send_hello(display_name)
     screen = create_pygame_screen()
     session = NetworkGameSession(client, allow_commands=(role != "spectator"))
+    presentation_orchestrator = SessionPresentationOrchestrator(
+        stream_id="network:authoritative",
+        viewer_player_id=client.player_id,
+    )
 
     async def _wait_control(expected_type: str) -> None:
         while True:
@@ -72,10 +77,12 @@ async def run_pygame_network_client(
             return
         await client.send_auth(join_code=join_code, reconnect_token=reconnect_token)
         await _wait_control("auth")
+        presentation_orchestrator.set_viewer_player_id(client.player_id)
         session.allow_commands = client.role != "spectator"
         if role:
             await client.send_role_select(role)
             await _wait_control("role_select")
+        presentation_orchestrator.set_viewer_player_id(client.player_id)
         session.allow_commands = client.role != "spectator"
         if army_file:
             list_text = Path(army_file).read_text(encoding="utf-8")
@@ -99,8 +106,12 @@ async def run_pygame_network_client(
                 return
             if game_view is None:
                 game_view = GameView(screen, None, game, getattr(game, "map", None), players[0], players[1], ui_interface)
-            else:
-                game_view.set_game(game, getattr(game, "map", None), players[0], players[1])
+                presentation_orchestrator.bind_game_view(game_view)
+            presentation_orchestrator.publish_game_loaded(
+                game=game,
+                game_map=getattr(game, "map", None),
+                players=[players[0], players[1]],
+            )
 
         session.on_game_loaded = _refresh_view
         if session.game is not None and session.game_proxy is not None:

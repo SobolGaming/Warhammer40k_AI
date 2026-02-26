@@ -20,6 +20,7 @@ from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
 from warhammer40k_ai.battlefield.map import Map
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.engine.deployment import HumanDeploymentDecisionMaker
+from warhammer40k_ai.engine.local_runtime import LocalAuthoritativeRuntime
 
 
 def setup_logging(log_level) -> logging.Logger:
@@ -77,7 +78,7 @@ def initialize_game(
     return screen, game, game_map, player1, player2
 
 
-def execute_setup_phases(game: Game, player_configs: dict, ui_interface) -> None:
+def execute_setup_phases(game: Game, player_configs: dict, ui_interface, runtime: LocalAuthoritativeRuntime | None = None) -> None:
     """Execute all setup phases automatically."""
     setup_kwargs = {
         "player1_army_file": player_configs.get("player1_army_file"),
@@ -85,6 +86,10 @@ def execute_setup_phases(game: Game, player_configs: dict, ui_interface) -> None
     }
 
     while game.is_in_setup_phase():
+        if runtime is not None and runtime.is_driver_managed_setup_phase():
+            runtime.run_setup_autosteps()
+            continue
+
         current_phase = game.get_current_setup_phase()
 
         if current_phase.name == "DEPLOY_ARMIES":
@@ -120,13 +125,24 @@ def run_game_loop(player_configs: dict) -> None:
         player_configs["player1_army_file"],
         player_configs["player2_army_file"],
     )
+    runtime = LocalAuthoritativeRuntime(game)
+    runtime.register_local_player_facade("local_player1", player1.id)
+    runtime.register_local_player_facade("local_player2", player2.id)
 
     from warhammer40k_ai.UI.game_ui import GameView
     from warhammer40k_ai.UI.human_interface import HumanUIInterface
+    from warhammer40k_ai.UI.session_presentation_orchestrator import SessionPresentationOrchestrator
 
     screen_width, screen_height = screen.get_size()
     ui_interface = HumanUIInterface(screen_width, screen_height)
-    game_view = GameView(screen, None, game, game_map, player1, player2, ui_interface)
+    game_view = GameView(screen, None, runtime.game_proxy, game_map, player1, player2, ui_interface)
+    presentation_orchestrator = SessionPresentationOrchestrator(stream_id="local:authoritative")
+    presentation_orchestrator.bind_game_view(game_view)
+    presentation_orchestrator.publish_game_loaded(
+        game=runtime.game_proxy,
+        game_map=game_map,
+        players=[player1, player2],
+    )
 
     running = True
     setup_complete = False
@@ -221,7 +237,7 @@ def run_game_loop(player_configs: dict) -> None:
             execute_human_turn(game, current_player, ui_interface)
 
         if not manual_phases and game.is_in_setup_phase() and not setup_complete:
-            execute_setup_phases(game, player_configs, ui_interface)
+            execute_setup_phases(game, player_configs, ui_interface, runtime=runtime)
             setup_complete = True
             if game_view:
                 game_view.refresh_roster_panes()

@@ -6,15 +6,13 @@ import ssl
 from typing import Any, Dict, Optional
 
 from ..engine.game import Battlefield, BattlefieldSize, Game
+from ..engine.authoritative_session_driver import AuthoritativeSessionDriver
+from ..engine.command_channel import NetworkCommandChannel
 from ..battlefield.map import Map
 from ..engine.event_log import DeterministicEventLog
-from ..engine.phase import SetupPhase
 from ..engine.command_kinds import (
-    CMD_ADVANCE_SETUP_PHASE,
-    CMD_EXECUTE_SETUP_PHASE,
     CMD_REQUEST_DECISION,
     CMD_RESOLVE_DECISION,
-    CMD_SELECT_MISSION,
 )
 from ..engine.commands import GameCommand
 from ..engine.command_dispatcher import CommandResult
@@ -101,12 +99,12 @@ class NetworkServer:
             max_message_size=max_message_size,
         )
         self._running = False
+        self._game_channel = NetworkCommandChannel(self.transport)
         self._state = new_lobby_state(join_code=join_code)
         self._game: Optional[Game] = None
         self._player_ids: Dict[str, str] = {}
         self._waha_helper = WahaHelper()
         self._setup_task: Optional[asyncio.Task] = None
-        self._setup_lock = asyncio.Lock()
         self._formation_buffering = False
         self._suppress_decision_broadcast: set[str] = set()
         self._formation_decision_types = {
@@ -118,6 +116,19 @@ class NetworkServer:
             DECISION_CHOOSE_PLAGUE,
             DECISION_CHOOSE_PLAYER_COLOR,
         }
+        self._session_driver = AuthoritativeSessionDriver(
+            get_game=lambda: self._game,
+            is_running=lambda: self._running,
+            apply_command=self._apply_server_command_default,
+            apply_command_with_broadcast=self._apply_server_command_with_broadcast,
+            choose_random_mission=self._choose_random_mission,
+            queue_formation_decisions=self._queue_formation_decisions,
+            pending_formation_decisions=self._pending_formation_decisions,
+            wait_for_formation_decisions=self._wait_for_formation_decisions,
+            broadcast_resync_all=self._broadcast_resync_all,
+            set_formation_buffering=self._set_formation_buffering,
+            should_wait_for_formation_decisions=lambda: True,
+        )
 
     @property
     def lobby_state(self) -> LobbyState:
@@ -314,55 +325,16 @@ class NetworkServer:
         self._setup_task = asyncio.create_task(self._run_setup_sequence())
 
     async def _run_setup_sequence(self) -> None:
-        async with self._setup_lock:
-            game = self._game
-            if game is None:
-                return
-            if bool(getattr(game, "setup_complete", False)):
-                return
+        await self._session_driver.run_setup_sequence()
 
-            if game.get_current_setup_phase() == SetupPhase.MUSTER_ARMIES:
-                await self._apply_server_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
+    def _set_formation_buffering(self, value: bool) -> None:
+        self._formation_buffering = bool(value)
 
-            while self._running and self._game is game and game.is_in_setup_phase():
-                phase = game.get_current_setup_phase()
-                if phase == SetupPhase.SELECT_MISSION_OBJECTIVES:
-                    combo, layout = self._choose_random_mission(game)
-                    await self._apply_server_command(
-                        GameCommand.create(
-                            CMD_SELECT_MISSION,
-                            payload={"combination": dict(combo or {}), "layout": layout},
-                        )
-                    )
-                    await self._apply_server_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE))
-                    await self._apply_server_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
-                    continue
-                if phase == SetupPhase.CREATE_BATTLEFIELD:
-                    await self._apply_server_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE))
-                    await self._apply_server_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
-                    continue
-                if phase == SetupPhase.DETERMINE_ATTACKER_AND_DEFENDER:
-                    await self._apply_server_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE))
-                    await self._apply_server_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
-                    continue
-                if phase == SetupPhase.DECLARE_BATTLE_FORMATIONS:
-                    await self._queue_formation_decisions()
-                    pending = self._pending_formation_decisions()
-                    if pending:
-                        self._formation_buffering = True
-                        await self._wait_for_formation_decisions()
-                        if not self._running or self._game is None:
-                            self._formation_buffering = False
-                            return
-                        await self._apply_server_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE), broadcast=False)
-                        await self._apply_server_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE), broadcast=False)
-                        self._formation_buffering = False
-                        await self._broadcast_resync_all(reason="formation_reveal")
-                    else:
-                        await self._apply_server_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE))
-                        await self._apply_server_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
-                    break
-                break
+    async def _apply_server_command_default(self, command: GameCommand):
+        return await self._apply_server_command(command, broadcast=True)
+
+    async def _apply_server_command_with_broadcast(self, command: GameCommand, broadcast: bool):
+        return await self._apply_server_command(command, broadcast=broadcast)
 
     def _choose_random_mission(self, game: Game) -> tuple[dict, int]:
         combos = iter_mission_combinations()
@@ -848,7 +820,7 @@ class NetworkServer:
         await self._send_game_message(connection_id, ErrorMessage(errors=[message], context={"scope": "server"}))
 
     async def _send_game_message(self, connection_id: str, message: Any) -> None:
-        await self.transport.send(connection_id, message)
+        await self._game_channel.send(connection_id, message)
 
     async def _broadcast_game_message(self, message: Any) -> None:
-        await self.transport.broadcast(message)
+        await self._game_channel.broadcast(message)

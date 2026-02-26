@@ -1,6 +1,9 @@
 import asyncio
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.command_kinds import CMD_RESOLVE_DECISION
+from warhammer40k_ai.engine.decision_kinds import DECISION_REQUEST_DICE_ROLL
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.network.game_session import NetworkGameSession
 from warhammer40k_ai.network.messages import PROTOCOL_VERSION
 from warhammer40k_ai.network.transport import TransportEvent
@@ -63,5 +66,55 @@ def test_poll_messages_yields_when_queue_empty() -> None:
         # A subsequent poll should then process the enqueued message.
         await session.poll_messages()
         assert ("control", "lobby_state") in client.handled
+
+    asyncio.run(run())
+
+
+def test_auto_dice_fallback_uses_shared_controller_when_game_has_no_controller_hub() -> None:
+    class _FakeEventSystem:
+        def __init__(self) -> None:
+            self._handlers: list[tuple[str, object, str | None]] = []
+
+        def subscribe(self, event_name: str, handler, group: str | None = None) -> None:
+            self._handlers.append((event_name, handler, group))
+
+        def unsubscribe_group(self, group: str) -> None:
+            self._handlers = [entry for entry in self._handlers if entry[2] != group]
+
+        def emit(self, event_name: str, **kwargs) -> None:
+            for name, handler, _group in list(self._handlers):
+                if name == event_name:
+                    handler(**kwargs)
+
+    async def run() -> None:
+        client = _FakeClient()
+        client.player_id = "p1"
+        session = NetworkGameSession(client, allow_commands=True)
+
+        player = SimpleNamespace(id="p1", has_control=lambda: True)
+        fake_game = SimpleNamespace(
+            auto_resolve_dice_rolls=True,
+            event_system=_FakeEventSystem(),
+            entity_registry=None,
+            players=[player],
+        )
+        session._set_game(fake_game)
+
+        request = DecisionRequest.create(
+            DECISION_REQUEST_DICE_ROLL,
+            "Roll now",
+            player_id="p1",
+            options=[
+                DecisionOption.create("Roll", payload={"action_id": "roll"}),
+            ],
+            context={"roll_id": 1},
+        )
+        fake_game.event_system.emit("decision_requested", request=request, game=fake_game)
+
+        assert len(session._outgoing) == 1
+        queued = session._outgoing[0]
+        assert queued.kind == CMD_RESOLVE_DECISION
+        assert queued.payload.get("decision_id") == request.decision_id
+        assert queued.payload.get("option_id") == request.options[0].option_id
 
     asyncio.run(run())

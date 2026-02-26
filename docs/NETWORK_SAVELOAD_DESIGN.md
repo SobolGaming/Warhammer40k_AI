@@ -558,6 +558,26 @@ Message payloads:
 - Error: { errors[], context? }
 - Resync: { snapshot, events[], reason?, since_event_id? }
 
+### Presentation Envelope Contract
+
+Canonical schema artifact: `src/warhammer40k_ai/engine/presentation_envelope.py`
+
+Envelope fields:
+- `schema_version` (major.minor; current major is authoritative)
+- `stream_id` (deterministic per stream)
+- `sequence_id` (monotonic per stream)
+- `payload` (serialized update body)
+
+Compatibility policy:
+- major mismatch: fail-fast, request resync or reject payload.
+- minor version changes: additive-only; consumers accept same-major updates.
+
+Ordering/idempotency policy:
+- duplicate `sequence_id` in a stream: ignore (idempotent apply).
+- gap/out-of-order detection: trigger resync/rebuild path.
+- reconnect/rehydration of presentation state uses `UI/presentation_state_hydrator.py`
+  to rebuild `game_loaded` + pending decision surfaces from transcript order.
+
 Round-trip validation (default):
 - Server compares client_last_event_id to its current event_id.
 - If mismatched or out of range, respond with Resync instead of applying the command.
