@@ -3652,6 +3652,49 @@ _WARPBANE_TASK_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _WARPBANE_TASK_FORCE_DESCRIPTORS.values()
 }
 
+_CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010312002": EnhancementToolDescriptor(
+        enhancement_id="000010312002",
+        name="Preyslayer's Mantle",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="grant_super_heavy_walker",
+    ),
+    "000010312003": EnhancementToolDescriptor(
+        enhancement_id="000010312003",
+        name="Final Howl (Aura)",
+        timing="passive_aura",
+        target="friendly_war_dog_models_within_range",
+        duration="constant",
+        effect="reroll_wound_roll_of_1",
+        range_in=6.0,
+        effect_params={"reroll_wound_values": (1,), "requires_keyword": "WAR DOG"},
+    ),
+    "000010312004": EnhancementToolDescriptor(
+        enhancement_id="000010312004",
+        name="Loping Predator",
+        timing="passive",
+        target="bearer_ranged_weapons",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={"attack_type": "ranged", "keywords": ("ASSAULT",)},
+    ),
+    "000010312005": EnhancementToolDescriptor(
+        enhancement_id="000010312005",
+        name="Panoply of the Cursed Knight",
+        timing="passive_defensive",
+        target="attacks_targeting_bearer",
+        duration="constant",
+        effect="worsen_incoming_ap",
+        effect_params={"ap_worsen": 1},
+    ),
+}
+
+_CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS.values()
+}
+
 _VEILED_BLADE_ELIMINATION_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009757002": EnhancementToolDescriptor(
         enhancement_id="000009757002",
@@ -3965,6 +4008,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _WARPBANE_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _VEILED_BLADE_ELIMINATION_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4044,6 +4090,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _GRAND_COVEN_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_BY_NAME.get(key)
+        or _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME.get(key)
         or _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME.get(key)
     )

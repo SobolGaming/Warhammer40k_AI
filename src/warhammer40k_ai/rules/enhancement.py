@@ -608,6 +608,10 @@ class Enhancement:
             is_grizzled_company = False
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
+            is_houndpack_lance = bool(ck_mgr and ck_mgr.is_houndpack_lance())
+        except Exception:
+            is_houndpack_lance = False
+        try:
             is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
         except Exception:
             is_infernal_lance = False
@@ -5727,6 +5731,37 @@ class Enhancement:
                 source="Supa-Cybork Body",
                 tag="supa_cybork_body",
             )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "preyslayer's mantle" or enh_id == "000010312002":
+            if not is_houndpack_lance:
+                return
+            unit.special_rules["enhancement_houndpack_preyslayers_mantle"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "final howl (aura)" or enh_id == "000010312003":
+            if not is_houndpack_lance:
+                return
+            unit.special_rules["enhancement_houndpack_final_howl"] = True
+            unit.special_rules["enhancement_houndpack_final_howl_range"] = 6.0
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "loping predator" or enh_id == "000010312004":
+            if not is_houndpack_lance:
+                return
+            unit.special_rules["enhancement_houndpack_loping_predator"] = True
+            unit.special_rules["bearer_unit_assault_ranged"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "panoply of the cursed knight" or enh_id == "000010312005":
+            if not is_houndpack_lance:
+                return
+            unit.special_rules["enhancement_houndpack_panoply_of_the_cursed_knight"] = True
+            unit.special_rules["enhancement_houndpack_panoply_ap_worsen"] = 1
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

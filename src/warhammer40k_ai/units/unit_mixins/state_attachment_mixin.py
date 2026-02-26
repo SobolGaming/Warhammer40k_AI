@@ -3588,6 +3588,20 @@ class StateAttachmentMixin:
         except Exception:
             found = False
 
+        if not found:
+            try:
+                checker = getattr(self, "_attached_unit_has_active_enhancement", None)
+                if callable(checker):
+                    found = bool(
+                        checker(
+                            "enhancement_houndpack_preyslayers_mantle",
+                            enhancement_id="000010312002",
+                            enhancement_name="Preyslayer's Mantle",
+                        )
+                    )
+            except Exception:
+                found = False
+
         if not hasattr(self, '_ability_cache'):
             self._ability_cache = {}
         self._ability_cache['super_heavy_walker'] = bool(found)

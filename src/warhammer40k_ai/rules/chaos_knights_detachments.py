@@ -25,6 +25,10 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
     ICONOCLAST_DARK_SACRIFICE_ABILITY = "iconoclast_dark_sacrifice"
     ICONOCLAST_PAVE_THE_WAY_SELECTION_ABILITY = "iconoclast_pave_the_way_selection"
     TRAITORIS_PARAGONS_ABILITY = "traitoris_paragons_of_terror_bonus"
+    HOUNDPACK_PREYSLAYERS_MANTLE_ENHANCEMENT_ID = "000010312002"
+    HOUNDPACK_FINAL_HOWL_ENHANCEMENT_ID = "000010312003"
+    HOUNDPACK_LOPING_PREDATOR_ENHANCEMENT_ID = "000010312004"
+    HOUNDPACK_PANOPLY_ENHANCEMENT_ID = "000010312005"
     ICONOCLAST_PROFANE_ALTAR_ENHANCEMENT_ID = "000009765002"
     ICONOCLAST_PAVE_THE_WAY_ENHANCEMENT_ID = "000009765003"
     ICONOCLAST_TYRANTS_BANNER_ENHANCEMENT_ID = "000009765004"
@@ -232,6 +236,90 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             enhancement_id=self.ICONOCLAST_PAVE_THE_WAY_ENHANCEMENT_ID,
             enhancement_name="Pave the Way",
         )
+
+    def _houndpack_unit_has_active_enhancement(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        enhancement_id: str,
+        enhancement_name: str,
+    ) -> bool:
+        return self._iconoclast_unit_has_active_enhancement(
+            unit,
+            flag_key=flag_key,
+            enhancement_id=enhancement_id,
+            enhancement_name=enhancement_name,
+        )
+
+    def _houndpack_final_howl_active(self, source_unit) -> bool:
+        return self._houndpack_unit_has_active_enhancement(
+            source_unit,
+            flag_key="enhancement_houndpack_final_howl",
+            enhancement_id=self.HOUNDPACK_FINAL_HOWL_ENHANCEMENT_ID,
+            enhancement_name="Final Howl (Aura)",
+        )
+
+    def _houndpack_panoply_active(self, source_unit) -> bool:
+        return self._houndpack_unit_has_active_enhancement(
+            source_unit,
+            flag_key="enhancement_houndpack_panoply_of_the_cursed_knight",
+            enhancement_id=self.HOUNDPACK_PANOPLY_ENHANCEMENT_ID,
+            enhancement_name="Panoply of the Cursed Knight",
+        )
+
+    def houndpack_final_howl_applies(self, *, attacker_unit=None, source_unit=None) -> bool:
+        if not self.is_houndpack_lance():
+            return False
+        attacker_root = self._unit_root(attacker_unit)
+        source_root = self._unit_root(source_unit)
+        if attacker_root is None or source_root is None:
+            return False
+        if not self._unit_belongs_to_army(attacker_root) or not self._unit_belongs_to_army(source_root):
+            return False
+        if not self._unit_has_war_dog_keyword(attacker_root):
+            return False
+        if not self._unit_has_war_dog_keyword(source_root):
+            return False
+        if not self._houndpack_final_howl_active(source_root):
+            return False
+        if not self._unit_on_battlefield(attacker_root) or not self._unit_on_battlefield(source_root):
+            return False
+        source_sr = self._unit_sr(source_root)
+        try:
+            aura_range = float(source_sr.get("enhancement_houndpack_final_howl_range", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            aura_range = 6.0
+        return bool(
+            unit_within_range_of_unit(
+                source_root,
+                attacker_root,
+                float(max(0.0, aura_range)),
+                use_attached_aggregate=True,
+            )
+        )
+
+    def houndpack_panoply_ap_worsen(self, attacker_model, target_unit, *, weapon_profile=None, game=None) -> tuple[int, str]:
+        del weapon_profile
+        del game
+        if not self.is_houndpack_lance():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        if not self._unit_belongs_to_army(target_root):
+            return 0, ""
+        if not self._houndpack_panoply_active(target_root):
+            return 0, ""
+        if not self._unit_on_battlefield(target_root):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._unit_root(attacker_unit)
+        if attacker_root is not None and self._unit_belongs_to_army(attacker_root):
+            return 0, ""
+        return 1, "Panoply of the Cursed Knight"
 
     @staticmethod
     def _iter_alive_models(unit) -> list:

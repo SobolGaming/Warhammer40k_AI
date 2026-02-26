@@ -3993,6 +3993,16 @@ class PositioningMixin:
             rules = list(rules or []) + [
                 {"attack_type": "ranged", "keyword": "SUSTAINED HITS 1", "source": "Peerless Eradicator"}
             ]
+        if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(
+            model,
+            flag_key="enhancement_houndpack_loping_predator",
+            enhancement_id="000010312004",
+            enhancement_name="loping predator",
+            require_leading=False,
+        ):
+            rules = list(rules or []) + [
+                {"attack_type": "ranged", "keyword": "ASSAULT", "source": "Loping Predator"}
+            ]
         if is_ranged_attack and self._attached_unit_has_active_enhancement(
             "enhancement_hunters_eye",
             enhancement_id="000010629004",

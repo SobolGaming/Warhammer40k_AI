@@ -3430,6 +3430,17 @@ class WargearProfile:
                             )
                             if bonus:
                                 ap_val += int(bonus)
+                        ck_mgr = getattr(target_army, "chaos_knights_detachments", None) if target_army is not None else None
+                        panoply_fn = getattr(ck_mgr, "houndpack_panoply_ap_worsen", None) if ck_mgr is not None else None
+                        if callable(panoply_fn):
+                            bonus, _source = panoply_fn(
+                                attacker,
+                                target_root,
+                                weapon_profile=self,
+                                game=getattr(getattr(target_army, "player", None), "game", None),
+                            )
+                            if bonus:
+                                ap_val += int(bonus)
         except Exception:
             pass
         try:

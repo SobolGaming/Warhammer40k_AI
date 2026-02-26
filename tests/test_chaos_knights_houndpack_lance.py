@@ -7,7 +7,11 @@ from warhammer40k_ai.engine.decisions import DecisionQueue, DecisionResult
 from warhammer40k_ai.engine.event.system import EventSystem
 from warhammer40k_ai.roster.army import Army, ArmyValidationError
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.enhancement import Enhancement
+from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
+from warhammer40k_ai.utility.aura_effects import get_aura_attack_modifiers
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import Wargear
 
 
 class _RegistryStub:
@@ -24,9 +28,11 @@ class _RegistryStub:
 
 
 class _MapStub:
-    @staticmethod
-    def get_friendly_units(_attacker_unit):
-        return []
+    def __init__(self, friendly_units=None):
+        self._friendly_units = list(friendly_units or [])
+
+    def get_friendly_units(self, _attacker_unit):
+        return list(self._friendly_units)
 
 
 class _GameStub:
@@ -97,6 +103,11 @@ def _make_unit(name, *, faction_name, keywords=None, faction_keywords=None):
     unit.reserve_status = "deployed"
     unit.round_state.shot_this_round = False
     return unit
+
+
+def _set_unit_position(unit, x: float, y: float, z: float = 0.0):
+    for model in list(getattr(unit, "models", []) or []):
+        model.set_location(float(x), float(y), float(z), 0.0)
 
 
 class TestChaosKnightsHoundpackLance(unittest.TestCase):
@@ -288,6 +299,145 @@ class TestChaosKnightsHoundpackLance(unittest.TestCase):
             target=target_unit,
         )
         self.assertEqual(int(bonuses_blocked.get("sustained_hits_value", 0) or 0), 0)
+
+    def test_houndpack_enhancement_descriptors_exist(self):
+        expected = {
+            "000010312002": ("Preyslayer's Mantle", "grant_super_heavy_walker"),
+            "000010312003": ("Final Howl (Aura)", "reroll_wound_roll_of_1"),
+            "000010312004": ("Loping Predator", "grant_weapon_keywords"),
+            "000010312005": ("Panoply of the Cursed Knight", "worsen_incoming_ap"),
+        }
+        for enhancement_id, (name, effect) in expected.items():
+            desc = get_enhancement_tool_descriptor(enhancement_id=enhancement_id)
+            self.assertIsNotNone(desc)
+            self.assertEqual(str(getattr(desc, "name", "") or ""), name)
+            self.assertEqual(str(getattr(desc, "effect", "") or ""), effect)
+
+    def test_preyslayers_mantle_grants_super_heavy_walker(self):
+        ck_army, _ck_player, _enemy_army, _enemy_player = self._setup_players()
+        bearer_unit = self._make_war_dog("War Dog Alpha")
+        ck_army.add_unit(bearer_unit)
+
+        self.assertFalse(bool(bearer_unit.has_super_heavy_walker()))
+        bearer_unit._get_enhancement_bearer_model = lambda: bearer_unit.models[0]
+        Enhancement(
+            id="000010312002",
+            name="Preyslayer's Mantle",
+            faction_id="QT",
+            detachment="Houndpack Lance",
+            description="",
+        ).apply_to_unit(bearer_unit)
+
+        self.assertTrue(bool(bearer_unit.has_super_heavy_walker()))
+
+    def test_loping_predator_grants_assault_to_bearer_ranged_weapons(self):
+        ck_army, _ck_player, _enemy_army, _enemy_player = self._setup_players()
+        bearer_unit = self._make_war_dog("War Dog Alpha")
+        ck_army.add_unit(bearer_unit)
+
+        bearer_unit._get_enhancement_bearer_model = lambda: bearer_unit.models[0]
+        Enhancement(
+            id="000010312004",
+            name="Loping Predator",
+            faction_id="QT",
+            detachment="Houndpack Lance",
+            description="",
+        ).apply_to_unit(bearer_unit)
+
+        weapon = Wargear(
+            {
+                "name": "Test Cannon",
+                "type": "Ranged",
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "6",
+                "AP": "-1",
+                "D": "2",
+                "description": "",
+            }
+        )
+        profile = next(iter(weapon.profiles.values()))
+        bearer_unit.round_state.advanced_this_round = True
+        self.assertTrue(bool(bearer_unit.can_shoot_after_advance(profile)))
+
+    def test_final_howl_aura_grants_wound_reroll_ones_within_six(self):
+        ck_army, _ck_player, enemy_army, _enemy_player = self._setup_players()
+        source = self._make_war_dog("War Dog Alpha")
+        attacker = self._make_war_dog("War Dog Beta")
+        target = _make_unit("Enemy Unit", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+        ck_army.add_unit(source)
+        ck_army.add_unit(attacker)
+        ck_army.add_unit(self._make_war_dog("War Dog Gamma"))
+        enemy_army.add_unit(target)
+
+        _set_unit_position(source, 0.0, 0.0, 0.0)
+        _set_unit_position(attacker, 5.0, 0.0, 0.0)
+        _set_unit_position(target, 12.0, 0.0, 0.0)
+
+        source._get_enhancement_bearer_model = lambda: source.models[0]
+        Enhancement(
+            id="000010312003",
+            name="Final Howl (Aura)",
+            faction_id="QT",
+            detachment="Houndpack Lance",
+            description="",
+        ).apply_to_unit(source)
+
+        weapon_profile = SimpleNamespace(name="Test Gun")
+        aura_map = _MapStub([source, attacker])
+        mods_in = get_aura_attack_modifiers(attacker, target, weapon_profile, game_map=aura_map)
+        self.assertTrue(bool(mods_in.reroll_wound_ones))
+
+        _set_unit_position(attacker, 20.0, 0.0, 0.0)
+        mods_out = get_aura_attack_modifiers(attacker, target, weapon_profile, game_map=aura_map)
+        self.assertFalse(bool(mods_out.reroll_wound_ones))
+
+    def test_panoply_of_the_cursed_knight_worsens_incoming_ap(self):
+        ck_army, _ck_player, enemy_army, _enemy_player = self._setup_players()
+        defender = self._make_war_dog("War Dog Defender")
+        attacker = _make_unit(
+            "Enemy Character",
+            faction_name="Enemy",
+            keywords=["CHARACTER", "INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        ck_army.add_unit(defender)
+        ck_army.add_unit(self._make_war_dog("War Dog 2"))
+        ck_army.add_unit(self._make_war_dog("War Dog 3"))
+        enemy_army.add_unit(attacker)
+
+        defender._get_enhancement_bearer_model = lambda: defender.models[0]
+        Enhancement(
+            id="000010312005",
+            name="Panoply of the Cursed Knight",
+            faction_id="QT",
+            detachment="Houndpack Lance",
+            description="",
+        ).apply_to_unit(defender)
+
+        weapon = Wargear(
+            {
+                "name": "Test Rifle",
+                "type": "Ranged",
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "6",
+                "AP": "-2",
+                "D": "2",
+                "description": "",
+            }
+        )
+        profile = next(iter(weapon.profiles.values()))
+
+        ap_vs_bearer = profile.get_effective_ap(attacker.models[0], defender)
+        self.assertEqual(int(ap_vs_bearer or 0), -1)
+
+        bearer_model = defender.models[0]
+        bearer_model.take_damage(int(getattr(bearer_model, "wounds", 0) or 0), game_map=None)
+        ap_after_destroyed = profile.get_effective_ap(attacker.models[0], defender)
+        self.assertEqual(int(ap_after_destroyed or 0), -2)
 
 
 if __name__ == "__main__":

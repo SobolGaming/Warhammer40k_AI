@@ -1450,6 +1450,29 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
         )
         break
 
+    # Chaos Knights (Houndpack Lance): Final Howl (Aura)
+    # While a friendly WAR DOG model is within 6" of the bearer, re-roll Wound rolls of 1.
+    for source in list(friendly_units or []):
+        source_army = source.get_parent_army() if hasattr(source, "get_parent_army") else None
+        ck_mgr = getattr(source_army, "chaos_knights_detachments", None) if source_army is not None else None
+        applies_fn = getattr(ck_mgr, "houndpack_final_howl_applies", None) if ck_mgr is not None else None
+        if not callable(applies_fn):
+            continue
+        if not bool(applies_fn(attacker_unit=attacker_unit, source_unit=source)):
+            continue
+        aura_key = _norm_name("Final Howl (Aura)")
+        if aura_key and aura_key in applied_aura_names:
+            break
+        if aura_key:
+            applied_aura_names.add(aura_key)
+        out = out.merge(
+            AuraAttackModifiers(
+                reroll_wound_ones=True,
+                reroll_wound_reasons=("Aura: re-roll Wound rolls of 1 from Final Howl (Aura)",),
+            )
+        )
+        break
+
     for source in friendly_units:
         if nurgles_gift_aura_key not in applied_aura_names and _source_is_nurgles_gift_source(source, game_map=game_map):
             ng_mods = _nurgles_gift(attacker_unit, target_unit, source, game_map=game_map)
