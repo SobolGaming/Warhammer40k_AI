@@ -10,7 +10,11 @@ GROUP1_HARLEQUIN_CORSAIR_CASES = [
     ("Cruel Amusement", "Death Jester"),
     ("Dance of Death", "Troupe"),
     ("Death is Not Enough", "Death Jester"),
+    ("Fury of the Void (Psychic)", "Kharseth"),
+    ("Hallucinogen Grenades", "Starfangs"),
     ("Piratical Raiders", "Corsair Voidscarred"),
+    ("Prince of Corsairs", "Prince Yriel"),
+    ("Raid and Run", "Corsair Skyreavers"),
     ("Treacherous Illusion (Psychic)", "Shadowseer"),
 ]
 

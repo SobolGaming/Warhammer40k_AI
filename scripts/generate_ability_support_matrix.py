@@ -4120,7 +4120,15 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "After deployment, if this unit is on the battlefield (or embarked in a transport on the battlefield), redeploy up to three friendly AELDARI units; selected units may be placed into Strategic Reserves regardless of limits.",
         ),
+        ("DRU", "Prince of Corsairs"): (
+            "Supported",
+            "After deployment, if this unit is on the battlefield (or embarked in a transport on the battlefield), redeploy up to three friendly AELDARI units; selected units may be placed into Strategic Reserves regardless of limits.",
+        ),
         ("AE", "Raid and Run"): (
+            "Supported",
+            "End of Fight phase: if this unit was eligible to fight this phase, it can make a D3+3\" move (Normal move if not engaged; Fall Back move if engaged).",
+        ),
+        ("DRU", "Raid and Run"): (
             "Supported",
             "End of Fight phase: if this unit was eligible to fight this phase, it can make a D3+3\" move (Normal move if not engaged; Fall Back move if engaged).",
         ),
@@ -4128,7 +4136,15 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of opponent Shooting phase: optional selection of a visible friendly AELDARI INFANTRY unit within 36\"; selected unit gains Stealth until end of phase.",
         ),
+        ("DRU", "Hallucinogen Grenades"): (
+            "Supported",
+            "Start of opponent Shooting phase: optional selection of a visible friendly AELDARI INFANTRY unit within 36\"; selected unit gains Stealth until end of phase.",
+        ),
         ("AE", "Fury of the Void (Psychic)"): (
+            "Supported",
+            "After shooting with Dread of the Deep Void hits: select a hit enemy unit to become riven; until end of turn friendly AELDARI attacks targeting that unit gain +1 Strength.",
+        ),
+        ("DRU", "Fury of the Void (Psychic)"): (
             "Supported",
             "After shooting with Dread of the Deep Void hits: select a hit enemy unit to become riven; until end of turn friendly AELDARI attacks targeting that unit gain +1 Strength.",
         ),
