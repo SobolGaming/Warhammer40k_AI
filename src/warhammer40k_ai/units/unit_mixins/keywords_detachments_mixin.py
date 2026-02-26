@@ -4284,6 +4284,9 @@ class KeywordsDetachmentsMixin:
     def get_strategic_reserves_round_bonus_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:
+        "If this model starts the game in Hover mode and in Strategic Reserves, it can be set up in the Reinforcements
+        step of your first, second or third Movement phase, regardless of any mission rules."
+        and:
         "If this unit starts the game in Strategic Reserves, it can be set up in the Reinforcements step of your first,
         second or third Movement phase, regardless of any mission rules. If this unit is in Strategic Reserves, for the
         purposes of setting up this unit on the battlefield, treat the current battle round number as being one higher
@@ -4322,16 +4325,31 @@ class KeywordsDetachmentsMixin:
                 normalized = normalized.lower()
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
-                if "starts the game in strategic reserves" not in normalized:
+                if "strategic reserves" not in normalized:
                     continue
                 if "reinforcements step" not in normalized:
                     continue
                 if "first second or third" not in normalized or "movement phase" not in normalized:
                     continue
-                if "battle round number as being one higher" not in normalized and "battle round as being one higher" not in normalized:
+                starts_in_strategic_reserves = "starts the game in strategic reserves" in normalized
+                starts_in_hover_and_strategic_reserves = (
+                    "starts the game in hover mode and in strategic reserves" in normalized
+                    or "starts the game in hover mode and is in strategic reserves" in normalized
+                )
+                has_round_number_bonus_clause = (
+                    "battle round number as being one higher" in normalized
+                    or "battle round as being one higher" in normalized
+                )
+                if not (
+                    starts_in_strategic_reserves
+                    or starts_in_hover_and_strategic_reserves
+                    or has_round_number_bonus_clause
+                ):
                     continue
                 source = str(name or "Strategic Reserves").strip() or "Strategic Reserves"
                 rule = {"source": source, "round_bonus": 1, "ability_key": "strategic_reserves_round_bonus"}
+                if starts_in_hover_and_strategic_reserves:
+                    rule["requires_hover_mode"] = True
                 break
             if rule is not None:
                 break
@@ -4466,6 +4484,10 @@ class KeywordsDetachmentsMixin:
                 except Exception:
                     in_strategic = False
                 if in_strategic:
+                    requires_hover_mode = bool(rule.get("requires_hover_mode", False)) if isinstance(rule, dict) else False
+                    if requires_hover_mode and not bool(getattr(root, "hover_mode", False)):
+                        rule = None
+                if rule is not None and in_strategic:
                     try:
                         total_bonus += int(rule.get("round_bonus", 1) or 0)
                     except Exception:

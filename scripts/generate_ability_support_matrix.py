@@ -8868,18 +8868,38 @@ def _strategic_reserves_early_arrival_support(description: str) -> Optional[Tupl
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    pattern = (
-        r"if this unit starts the game in strategic reserves it can be set up in the reinforcements step of your first "
-        r"second or third movement phase(?: regardless of any mission rules)? if this unit is in strategic reserves "
-        r"for the purposes of setting up this unit on the battlefield treat the (?:current )?battle round number "
+    round_bonus_pattern = (
+        r"if this (?:unit|model) starts the game in strategic reserves it can be set up in the reinforcements step of your first "
+        r"second or third movement phase(?: regardless of any mission rules)? if this (?:unit|model) is in strategic reserves "
+        r"for the purposes of setting up this (?:unit|model) on the battlefield treat the (?:current )?battle round number "
         r"as being one higher than it actually is"
     )
-    if not re.fullmatch(pattern, norm):
-        return None
-    return (
-        "Supported",
-        "Strategic Reserves: may arrive in battle rounds 1-3; treat battle round as +1 when setting up.",
+    if re.fullmatch(round_bonus_pattern, norm):
+        return (
+            "Supported",
+            "Strategic Reserves: may arrive in battle rounds 1-3; treat battle round as +1 when setting up.",
+        )
+
+    hover_mode_pattern = (
+        r"if this (?:unit|model) starts the game in hover mode and (?:in|is in) strategic reserves it can be set up in the reinforcements "
+        r"step of your first second or third movement phase(?: regardless of any mission rules)?"
     )
+    if re.fullmatch(hover_mode_pattern, norm):
+        return (
+            "Supported",
+            "Strategic Reserves: may arrive in battle rounds 1-3 if it started in Hover mode and in Strategic Reserves.",
+        )
+
+    direct_early_arrival_pattern = (
+        r"if this (?:unit|model) starts the game in strategic reserves it can be set up in the reinforcements step of your first "
+        r"second or third movement phase(?: regardless of any mission rules)?"
+    )
+    if re.fullmatch(direct_early_arrival_pattern, norm):
+        return (
+            "Supported",
+            "Strategic Reserves: may arrive in battle rounds 1-3 regardless of mission restrictions.",
+        )
+    return None
 
 
 def _opponent_turn_destroyed_reposition_support(description: str) -> Optional[Tuple[str, str]]:

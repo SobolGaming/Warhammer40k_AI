@@ -13,6 +13,10 @@ ABILITY_TEXT = (
     "purposes of setting up this unit on the battlefield, treat the current battle round number as being one higher "
     "than it actually is."
 )
+HOVER_ABILITY_TEXT = (
+    "If this model starts the game in Hover mode and in Strategic Reserves, it can be set up in the Reinforcements "
+    "step of your first, second or third Movement phase, regardless of any mission rules."
+)
 
 
 class TestStrategicReservesEarlyArrival(unittest.TestCase):
@@ -36,6 +40,7 @@ class TestStrategicReservesEarlyArrival(unittest.TestCase):
         unit.attached_to = None
         unit.can_be_attached_to = []
         unit.embarked_in = None
+        unit.hover_mode = False
         unit._ability_cache = {}
         unit.is_alive = lambda: True
         unit.get_parent_army = lambda: army
@@ -79,6 +84,36 @@ class TestStrategicReservesEarlyArrival(unittest.TestCase):
         unit._started_in_reserves = False
 
         self.assertFalse(unit.can_arrive_from_reserves(1))
+        self.assertEqual(unit.get_strategic_reserves_setup_turn(current_turn=1), 1)
+
+    def test_hover_mode_strategic_reserves_rule_allows_turn_one_arrival(self):
+        army = Army("Test", detachment_type="Other")
+        army.faction_id = "TEST"
+
+        ability = Ability("Aerial Deployment", "TEST", HOVER_ABILITY_TEXT, "Datasheet", "")
+        unit = self._make_unit("Aircraft", army, abilities=[ability])
+        unit._started_in_reserves = True
+        unit.hover_mode = True
+
+        rule = unit.get_strategic_reserves_round_bonus_rule()
+        self.assertTrue(bool(rule))
+        self.assertTrue(bool(rule.get("requires_hover_mode", False)))
+        self.assertTrue(unit.can_arrive_from_reserves(1))
+        self.assertTrue(unit.can_arrive_from_reserves(2))
+        self.assertTrue(unit.can_arrive_from_reserves(3))
+        self.assertFalse(unit.can_arrive_from_reserves(4))
+
+    def test_hover_mode_strategic_reserves_rule_requires_hover_mode(self):
+        army = Army("Test", detachment_type="Other")
+        army.faction_id = "TEST"
+
+        ability = Ability("Aerial Deployment", "TEST", HOVER_ABILITY_TEXT, "Datasheet", "")
+        unit = self._make_unit("Aircraft", army, abilities=[ability])
+        unit._started_in_reserves = True
+        unit.hover_mode = False
+
+        self.assertFalse(unit.can_arrive_from_reserves(1))
+        self.assertTrue(unit.can_arrive_from_reserves(2))
         self.assertEqual(unit.get_strategic_reserves_setup_turn(current_turn=1), 1)
 
 
