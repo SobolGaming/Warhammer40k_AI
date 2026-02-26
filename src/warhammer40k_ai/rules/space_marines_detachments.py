@@ -5950,6 +5950,94 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
     def lightning_assault_charge_after_fall_back_applies(self, unit) -> bool:
         return self.lightning_assault_charge_after_advance_applies(unit)
 
+    def stormlance_portents_of_wisdom_reroll_advance_applies(self, unit) -> bool:
+        if not self.is_stormlance_task_force():
+            return False
+        if unit is None:
+            return False
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_portents_of_wisdom",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        member_is_leader = bool(getattr(member, "is_attached_leader", False))
+        if not member_is_leader:
+            try:
+                attached_leaders = list(getattr(root, "attached_leaders", []) or [])
+            except Exception:
+                attached_leaders = []
+            attached_leader_ids = {
+                str(get_entity_id(leader) or "")
+                for leader in attached_leaders
+                if leader is not None
+            }
+            member_id = str(get_entity_id(member) or "")
+            if not member_id or member_id not in attached_leader_ids:
+                return False
+        return self._company_of_hunters_member_has_live_bearer(member, sr)
+
+    def stormlance_feinting_withdrawal_shoot_after_fall_back_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        if not self.is_stormlance_task_force():
+            return False
+        if unit is None:
+            return False
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_feinting_withdrawal",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        member_is_leader = bool(getattr(member, "is_attached_leader", False))
+        if not member_is_leader:
+            try:
+                attached_leaders = list(getattr(root, "attached_leaders", []) or [])
+            except Exception:
+                attached_leaders = []
+            attached_leader_ids = {
+                str(get_entity_id(leader) or "")
+                for leader in attached_leaders
+                if leader is not None
+            }
+            member_id = str(get_entity_id(member) or "")
+            if not member_id or member_id not in attached_leader_ids:
+                return False
+        if not self._company_of_hunters_member_has_live_bearer(member, sr):
+            return False
+        return bool(sr.get("enhancement_feinting_withdrawal_shoot_after_fall_back", True))
+
+    def stormlance_hunters_instincts_strategic_reserves_round_bonus(self, unit, *, game=None) -> int:
+        if not self.is_stormlance_task_force():
+            return 0
+        if unit is None:
+            return 0
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_stormlance_hunters_instincts",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0
+        if not self._company_of_hunters_member_has_live_bearer(member, sr):
+            return 0
+        in_strategic_fn = getattr(root, "is_in_strategic_reserves", None)
+        if callable(in_strategic_fn):
+            if not bool(in_strategic_fn()):
+                return 0
+        else:
+            if str(getattr(root, "reserve_status", "") or "").strip().lower() != "strategic_reserves":
+                return 0
+        try:
+            bonus = int(sr.get("enhancement_stormlance_hunters_instincts_round_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        return max(0, int(bonus))
+
     def righteous_fervour_reroll_advance_applies(self, unit) -> bool:
         if not self.is_companions_of_vehemence():
             return False

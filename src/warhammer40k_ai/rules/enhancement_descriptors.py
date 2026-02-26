@@ -2258,6 +2258,54 @@ _SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_STORMLANCE_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008486002": EnhancementToolDescriptor(
+        enhancement_id="000008486002",
+        name="Fury of the Storm",
+        timing="passive_and_charge_move_end",
+        target="bearer_model_melee_weapons",
+        duration="constant_with_charge_move_end_bonus_until_end_of_turn",
+        effect="bearer_melee_strength_and_ap_bonus_with_charge_upgrade",
+        effect_params={
+            "base_bearer_melee_strength_bonus": 1,
+            "base_bearer_melee_ap_bonus": 1,
+            "charged_bearer_melee_strength_bonus": 2,
+            "charged_bearer_melee_ap_bonus": 2,
+        },
+    ),
+    "000008486003": EnhancementToolDescriptor(
+        enhancement_id="000008486003",
+        name="Portents of Wisdom",
+        timing="while_bearer_is_leading",
+        target="bearer_led_unit",
+        duration="constant_while_bearer_is_leading",
+        effect="reroll_advance_rolls_for_bearer_led_unit",
+        effect_params={"requires_bearer_leading": True},
+    ),
+    "000008486004": EnhancementToolDescriptor(
+        enhancement_id="000008486004",
+        name="Feinting Withdrawal",
+        timing="while_bearer_is_leading",
+        target="bearer_led_unit",
+        duration="constant_while_bearer_is_leading",
+        effect="allow_bearer_led_unit_to_shoot_after_fall_back",
+        effect_params={"requires_bearer_leading": True, "shoot_after_fall_back": True},
+    ),
+    "000008486005": EnhancementToolDescriptor(
+        enhancement_id="000008486005",
+        name="Hunter's Instincts",
+        timing="movement_phase_while_in_strategic_reserves",
+        target="bearer_unit_in_strategic_reserves",
+        duration="constant_while_in_strategic_reserves",
+        effect="add_setup_round_for_bearer_unit_in_strategic_reserves",
+        effect_params={"strategic_reserves_setup_round_bonus": 1},
+    ),
+}
+
+_SPACE_MARINES_STORMLANCE_TASK_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_STORMLANCE_TASK_FORCE_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_COMPANY_OF_HUNTERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008778002": EnhancementToolDescriptor(
         enhancement_id="000008778002",
@@ -3112,6 +3160,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_STORMLANCE_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_COMPANY_OF_HUNTERS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3201,6 +3252,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_SAGA_OF_THE_BOLD_BY_NAME.get(key)
         or _SPACE_MARINES_SAGA_OF_THE_HUNTER_BY_NAME.get(key)
         or _SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_BY_NAME.get(key)
+        or _SPACE_MARINES_STORMLANCE_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANY_OF_HUNTERS_BY_NAME.get(key)
         or _SPACE_MARINES_SHADOWMARK_TALON_BY_NAME.get(key)
         or _SPACE_MARINES_SPEARPOINT_TASK_FORCE_BY_NAME.get(key)

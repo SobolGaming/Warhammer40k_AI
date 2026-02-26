@@ -2420,6 +2420,16 @@ class ActionsMovementMixin:
                     )
                     if callable(apply_fn) and not bool(apply_fn(root)):
                         continue
+                if name_key == "portents of wisdom":
+                    army = root.get_parent_army() if root is not None else None
+                    sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                    apply_fn = (
+                        getattr(sm_mgr, "stormlance_portents_of_wisdom_reroll_advance_applies", None)
+                        if sm_mgr is not None
+                        else None
+                    )
+                    if callable(apply_fn) and not bool(apply_fn(root)):
+                        continue
                 text = u._normalize_rules_text(desc or name or "")
                 if not text:
                     continue
@@ -5388,6 +5398,14 @@ class ActionsMovementMixin:
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "spearpoint_stormseers_wisdom_reroll_advance_applies", None):
                 if mgr.spearpoint_stormseers_wisdom_reroll_advance_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "stormlance_portents_of_wisdom_reroll_advance_applies", None):
+                if mgr.stormlance_portents_of_wisdom_reroll_advance_applies(self):
                     return True
         except Exception:
             pass
@@ -10137,27 +10155,50 @@ class ActionsMovementMixin:
             except Exception:
                 return False
 
-        # Spearpoint Paragon: bearer always has +1S/+1AP; after ending a Charge move this
-        # temporary bonus adds +1S/+1AP more so the total becomes +2/+2 until turn end.
+        # Enhancements with baseline +1S/+1AP and a charge-move upgrade to +2S/+2AP.
+        enhancement_charge_bonus_specs = (
+            (
+                "enhancement_spearpoint_paragon",
+                "enhancement_spearpoint_paragon_charge_extra_strength_bonus",
+                "enhancement_spearpoint_paragon_charge_extra_ap_bonus",
+                "enhancement_spearpoint_paragon_source",
+                "Spearpoint Paragon",
+            ),
+            (
+                "enhancement_fury_of_the_storm",
+                "enhancement_fury_of_the_storm_charge_extra_strength_bonus",
+                "enhancement_fury_of_the_storm_charge_extra_ap_bonus",
+                "enhancement_fury_of_the_storm_source",
+                "Fury of the Storm",
+            ),
+        )
         for unit in members:
             if unit is None:
                 continue
             sr = getattr(unit, "special_rules", None)
-            if not isinstance(sr, dict) or not bool(sr.get("enhancement_spearpoint_paragon")):
+            if not isinstance(sr, dict):
                 continue
+            matched_spec = None
+            for spec in enhancement_charge_bonus_specs:
+                if bool(sr.get(spec[0])):
+                    matched_spec = spec
+                    break
+            if matched_spec is None:
+                continue
+            _flag_key, strength_key, ap_key, source_key, fallback_source = matched_spec
             try:
-                extra_strength_bonus = int(sr.get("enhancement_spearpoint_paragon_charge_extra_strength_bonus", 1) or 1)
+                extra_strength_bonus = int(sr.get(strength_key, 1) or 1)
             except Exception:
                 extra_strength_bonus = 1
             try:
-                extra_ap_bonus = int(sr.get("enhancement_spearpoint_paragon_charge_extra_ap_bonus", 1) or 1)
+                extra_ap_bonus = int(sr.get(ap_key, 1) or 1)
             except Exception:
                 extra_ap_bonus = 1
             if extra_strength_bonus <= 0 and extra_ap_bonus <= 0:
                 continue
-            source = str(sr.get("enhancement_spearpoint_paragon_source", "") or "Spearpoint Paragon").strip()
+            source = str(sr.get(source_key, "") or fallback_source).strip()
             if not source:
-                source = "Spearpoint Paragon"
+                source = fallback_source
             bearer = None
             bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
             if bearer_id:
@@ -10984,7 +11025,22 @@ class ActionsMovementMixin:
         return any(m in t for m in markers)
 
     def _has_simple_eligibility_rule(self, patterns: List[str]) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
         for name, desc in self._iter_ability_entries_for_rules():
+            name_key = str(name or "").strip().lower().replace("\u2019", "'").replace("\u0192?T", "'")
+            if name_key == "feinting withdrawal":
+                army = root.get_parent_army() if root is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                apply_fn = (
+                    getattr(sm_mgr, "stormlance_feinting_withdrawal_shoot_after_fall_back_applies", None)
+                    if sm_mgr is not None
+                    else None
+                )
+                if callable(apply_fn) and not bool(apply_fn(root)):
+                    continue
             text = self._normalize_rules_text(f"{name} {desc}").lower()
             if not text:
                 continue
@@ -11037,6 +11093,17 @@ class ActionsMovementMixin:
 
         for unit_obj in members:
             for raw_name, desc in unit_obj._iter_ability_entries_for_rules():
+                raw_name_key = str(raw_name or "").strip().lower().replace("\u2019", "'").replace("\u0192?T", "'")
+                if raw_name_key == "feinting withdrawal":
+                    army = root.get_parent_army() if root is not None else None
+                    sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                    apply_fn = (
+                        getattr(sm_mgr, "stormlance_feinting_withdrawal_shoot_after_fall_back_applies", None)
+                        if sm_mgr is not None
+                        else None
+                    )
+                    if callable(apply_fn) and not bool(apply_fn(root)):
+                        continue
                 normalized = unit_obj._normalize_rules_text(desc or "")
                 if not normalized:
                     continue
@@ -11252,6 +11319,18 @@ class ActionsMovementMixin:
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("enhancement_kunnin_but_brutal_active"):
+                return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            apply_fn = (
+                getattr(mgr, "stormlance_feinting_withdrawal_shoot_after_fall_back_applies", None)
+                if mgr is not None
+                else None
+            )
+            if callable(apply_fn) and bool(apply_fn(self)):
                 return True
         except Exception:
             pass
@@ -11604,6 +11683,14 @@ class ActionsMovementMixin:
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "masters_of_manoeuvre_shoot_after_fall_back_applies", None):
                 if mgr.masters_of_manoeuvre_shoot_after_fall_back_applies(self, profile):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "stormlance_feinting_withdrawal_shoot_after_fall_back_applies", None):
+                if mgr.stormlance_feinting_withdrawal_shoot_after_fall_back_applies(self, weapon_profile=profile):
                     return True
         except Exception:
             pass

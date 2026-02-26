@@ -462,6 +462,9 @@ class Enhancement:
         is_saga_of_the_great_wolf = bool(
             sm_mgr and getattr(sm_mgr, "is_saga_of_the_great_wolf", lambda: False)()
         )
+        is_stormlance_task_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_stormlance_task_force", lambda: False)()
+        )
         is_company_of_hunters = bool(
             sm_mgr and getattr(sm_mgr, "is_company_of_hunters", lambda: False)()
         )
@@ -2369,6 +2372,94 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_skjalds_foretelling_bearer_model_id"] = bearer_id
 
+        if name == "fury of the storm" or enh_id == "000008486002":
+            if not is_stormlance_task_force:
+                return
+            unit.special_rules["enhancement_fury_of_the_storm"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            base_strength_bonus = _coerce_int(
+                params.get("base_bearer_melee_strength_bonus", 1) or 1,
+                default=1,
+            )
+            base_ap_bonus = _coerce_int(
+                params.get("base_bearer_melee_ap_bonus", 1) or 1,
+                default=1,
+            )
+            charged_strength_bonus = _coerce_int(
+                params.get("charged_bearer_melee_strength_bonus", 2) or 2,
+                default=2,
+            )
+            charged_ap_bonus = _coerce_int(
+                params.get("charged_bearer_melee_ap_bonus", 2) or 2,
+                default=2,
+            )
+            base_strength_bonus = int(max(0, base_strength_bonus))
+            base_ap_bonus = int(max(0, base_ap_bonus))
+            charged_strength_bonus = int(max(base_strength_bonus, charged_strength_bonus))
+            charged_ap_bonus = int(max(base_ap_bonus, charged_ap_bonus))
+            existing_strength = _coerce_int(unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0), default=0)
+            existing_ap = _coerce_int(unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0), default=0)
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(max(existing_strength, base_strength_bonus))
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(max(existing_ap, base_ap_bonus))
+            unit.special_rules["enhancement_fury_of_the_storm_charge_extra_strength_bonus"] = int(
+                max(0, charged_strength_bonus - base_strength_bonus)
+            )
+            unit.special_rules["enhancement_fury_of_the_storm_charge_extra_ap_bonus"] = int(
+                max(0, charged_ap_bonus - base_ap_bonus)
+            )
+            unit.special_rules["enhancement_fury_of_the_storm_source"] = "Fury of the Storm"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_fury_of_the_storm_bearer_model_id"] = bearer_id
+
+        if name == "portents of wisdom" or enh_id == "000008486003":
+            if not is_stormlance_task_force:
+                return
+            unit.special_rules["enhancement_portents_of_wisdom"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_portents_of_wisdom_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_portents_of_wisdom_source"] = "Portents of Wisdom"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_portents_of_wisdom_bearer_model_id"] = bearer_id
+
+        if name == "feinting withdrawal" or enh_id == "000008486004":
+            if not is_stormlance_task_force:
+                return
+            unit.special_rules["enhancement_feinting_withdrawal"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_feinting_withdrawal_shoot_after_fall_back"] = bool(
+                params.get("shoot_after_fall_back", True)
+            )
+            unit.special_rules["enhancement_feinting_withdrawal_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_feinting_withdrawal_source"] = "Feinting Withdrawal"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_feinting_withdrawal_bearer_model_id"] = bearer_id
+
+        if enh_id == "000008486005" or ((name in ("hunter's instincts", "hunters instincts")) and is_stormlance_task_force):
+            if not is_stormlance_task_force:
+                return
+            unit.special_rules["enhancement_stormlance_hunters_instincts"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            round_bonus = _coerce_int(
+                params.get("strategic_reserves_setup_round_bonus", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_stormlance_hunters_instincts_round_bonus"] = int(max(0, round_bonus))
+            unit.special_rules["enhancement_stormlance_hunters_instincts_source"] = "Hunter's Instincts"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_stormlance_hunters_instincts_bearer_model_id"] = bearer_id
+
         if name in ("master-crafted weapon", "master crafted weapon") or enh_id == "000008778002":
             if not is_company_of_hunters:
                 return
@@ -2596,7 +2687,7 @@ class Enhancement:
             if callable(invalidate_cache):
                 invalidate_cache()
 
-        if name in ("hunter's instincts", "hunters instincts") or enh_id == "000010466005":
+        if enh_id == "000010466005" or ((name in ("hunter's instincts", "hunters instincts")) and is_shadowmark_talon):
             if not is_shadowmark_talon:
                 return
             unit.special_rules["enhancement_hunters_instincts"] = True
