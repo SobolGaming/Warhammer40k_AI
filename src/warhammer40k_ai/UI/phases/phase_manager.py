@@ -2241,6 +2241,36 @@ class DeploymentPhaseHandler(BasePhaseHandler):
             )
         
         return False
+
+    def _request_move_unit_decision(
+        self,
+        unit: 'Unit',
+        movement_type: str,
+        callback,
+        *,
+        max_distance: float | None = None,
+        target_unit=None,
+        placement_validator=None,
+        decision_request=None,
+    ) -> None:
+        """
+        Deployment-phase proxy for shared move/placement decision orchestration.
+
+        This forwards to PhaseManager's shared helper so deployment uses the same
+        decision path as movement/fight placement interactions.
+        """
+        phase_manager = getattr(self.game_view, "phase_manager", None)
+        if phase_manager is None or not hasattr(phase_manager, "_request_move_unit_decision"):
+            raise RuntimeError("DeploymentPhaseHandler missing PhaseManager move decision helper.")
+        phase_manager._request_move_unit_decision(
+            unit,
+            movement_type,
+            callback,
+            max_distance=max_distance,
+            target_unit=target_unit,
+            placement_validator=placement_validator,
+            decision_request=decision_request,
+        )
     
     def _handle_battlefield_deployment(self, x: int, y: int) -> bool:
         """Handle unit deployment on battlefield"""
