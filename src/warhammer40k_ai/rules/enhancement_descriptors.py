@@ -1707,6 +1707,62 @@ _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_FIRESTORM_ASSAULT_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008482002": EnhancementToolDescriptor(
+        enhancement_id="000008482002",
+        name="Champion of Humanity",
+        timing="passive_while_leading",
+        target="bearer_unit_models",
+        duration="constant",
+        effect="ignore_characteristic_and_roll_modifiers_except_save_while_leading",
+        effect_params={
+            "requires_bearer_leading": True,
+            "exclude_save_modifiers": True,
+        },
+    ),
+    "000008482003": EnhancementToolDescriptor(
+        enhancement_id="000008482003",
+        name="War-tempered Artifice",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_strength_bonus",
+        effect_params={
+            "strength_bonus": 3,
+        },
+    ),
+    "000008482004": EnhancementToolDescriptor(
+        enhancement_id="000008482004",
+        name="Forged in Battle",
+        timing="passive_while_leading",
+        target="bearer_unit_models",
+        duration="constant",
+        effect="leading_unit_unmodified_six_once_per_turn",
+        effect_params={
+            "requires_bearer_leading": True,
+            "usage": "turn",
+            "allowed_roll_types": ("hit", "save"),
+        },
+    ),
+    "000008482005": EnhancementToolDescriptor(
+        enhancement_id="000008482005",
+        name="Adamantine Mantle",
+        timing="on_attack_allocated_to_bearer",
+        target="bearer",
+        duration="constant",
+        effect="bearer_allocated_damage_reduction_with_melta_torrent_set_one",
+        effect_params={
+            "damage_reduction": 1,
+            "set_damage_to": 1,
+            "if_weapon_keywords_any": ("MELTA", "TORRENT"),
+        },
+    ),
+}
+
+_SPACE_MARINES_FIRESTORM_ASSAULT_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_FIRESTORM_ASSAULT_FORCE_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008478002": EnhancementToolDescriptor(
         enhancement_id="000008478002",
@@ -3413,6 +3469,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_FIRESTORM_ASSAULT_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3540,6 +3599,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_THE_LOST_BRETHREN_BY_NAME.get(key)
         or _SPACE_MARINES_UNFORGIVEN_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME.get(key)
+        or _SPACE_MARINES_FIRESTORM_ASSAULT_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)
         or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)

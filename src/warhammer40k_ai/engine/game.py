@@ -9850,6 +9850,9 @@ class Game(
         filt = getattr(charging_unit, "_filter_diabolical_resilience_roll_modifiers", None)
         if callable(filt):
             modifiers = filt(modifiers, kind="charge")
+        filt = getattr(charging_unit, "_filter_firestorm_champion_of_humanity_roll_modifiers", None)
+        if callable(filt):
+            modifiers = filt(modifiers, kind="charge")
 
         # IMPEDING FIRE / IMPERIALIS OF THE ETERNAL CRUSADE:
         # these are not cumulative with other negative charge modifiers.

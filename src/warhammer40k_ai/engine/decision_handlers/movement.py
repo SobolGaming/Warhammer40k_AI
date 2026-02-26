@@ -197,7 +197,21 @@ def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_ty
             diabolical_resilience = bool(active_fn(kind="move"))
     except Exception:
         diabolical_resilience = False
-    if not internal_rivalries and not driven_by_rage and not bestial_aspect and not diabolical_resilience and not avatar_of_perfection:
+    champion_of_humanity = False
+    try:
+        active_fn = getattr(unit, "_firestorm_champion_of_humanity_ignore_modifiers_active", None)
+        if callable(active_fn):
+            champion_of_humanity = bool(active_fn(kind="move"))
+    except Exception:
+        champion_of_humanity = False
+    if (
+        not internal_rivalries
+        and not driven_by_rage
+        and not bestial_aspect
+        and not diabolical_resilience
+        and not champion_of_humanity
+        and not avatar_of_perfection
+    ):
         return
     if internal_rivalries:
         ability_name = INTERNAL_RIVALRIES_NAME
@@ -207,6 +221,8 @@ def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_ty
         ability_name = "Bestial Aspect"
     elif diabolical_resilience:
         ability_name = "Diabolical Resilience"
+    elif champion_of_humanity:
+        ability_name = "Champion of Humanity"
     else:
         ability_name = "Avatar of Perfection"
     try:

@@ -448,6 +448,13 @@ def handle_advance_roll(game: object, state: DiceRollState):
             diabolical_resilience = bool(active_fn(kind="advance"))
     except Exception:
         diabolical_resilience = False
+    champion_of_humanity = False
+    try:
+        active_fn = getattr(unit, "_firestorm_champion_of_humanity_ignore_modifiers_active", None)
+        if callable(active_fn):
+            champion_of_humanity = bool(active_fn(kind="advance"))
+    except Exception:
+        champion_of_humanity = False
     if internal_rivalries:
         ability_name = INTERNAL_RIVALRIES_NAME
     elif driven_by_rage:
@@ -456,12 +463,21 @@ def handle_advance_roll(game: object, state: DiceRollState):
         ability_name = "Bestial Aspect"
     elif diabolical_resilience:
         ability_name = "Diabolical Resilience"
+    elif champion_of_humanity:
+        ability_name = "Champion of Humanity"
     else:
         ability_name = "Avatar of Perfection"
 
     if (
         bool(getattr(game, "is_authoritative", True))
-        and (internal_rivalries or driven_by_rage or bestial_aspect or diabolical_resilience or avatar_of_perfection)
+        and (
+            internal_rivalries
+            or driven_by_rage
+            or bestial_aspect
+            or diabolical_resilience
+            or champion_of_humanity
+            or avatar_of_perfection
+        )
         and options_for_signed_pairs is not None
     ):
         try:
@@ -584,18 +600,27 @@ def handle_charge_roll(game: object, state: DiceRollState):
             diabolical_resilience = bool(active_fn(kind="charge"))
     except Exception:
         diabolical_resilience = False
+    champion_of_humanity = False
+    try:
+        active_fn = getattr(unit, "_firestorm_champion_of_humanity_ignore_modifiers_active", None)
+        if callable(active_fn):
+            champion_of_humanity = bool(active_fn(kind="charge"))
+    except Exception:
+        champion_of_humanity = False
     if internal_rivalries:
         ability_name = INTERNAL_RIVALRIES_NAME
     elif driven_by_rage:
         ability_name = DRIVEN_BY_ULTIMATE_RAGE_NAME
     elif diabolical_resilience:
         ability_name = "Diabolical Resilience"
+    elif champion_of_humanity:
+        ability_name = "Champion of Humanity"
     else:
         ability_name = "Avatar of Perfection"
 
     if (
         bool(getattr(game, "is_authoritative", True))
-        and (internal_rivalries or driven_by_rage or diabolical_resilience or avatar_of_perfection)
+        and (internal_rivalries or driven_by_rage or diabolical_resilience or champion_of_humanity or avatar_of_perfection)
         and options_for_signed_pairs is not None
     ):
         target_ids = list(spec.get("target_unit_ids", []) or [])

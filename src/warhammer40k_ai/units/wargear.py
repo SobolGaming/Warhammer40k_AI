@@ -6048,6 +6048,13 @@ class WargearProfile:
                         continue
             except Exception:
                 pass
+            try:
+                if spec.get("requires_bearer_leading"):
+                    check_unit = spec.get("leader")
+                    if check_unit is None or not bool(getattr(check_unit, "is_attached_leader", False)):
+                        continue
+            except Exception:
+                pass
             leader = spec.get("leader")
             ability_key = str(spec.get("ability_key", "") or "")
             if leader is None or not ability_key:
@@ -7227,6 +7234,33 @@ class WargearProfile:
         except Exception:
             return False
 
+    def _firestorm_champion_of_humanity_ignore_modifiers_active(
+        self,
+        attacker: 'Model',
+        *,
+        kind: str,
+    ) -> bool:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return False
+        active_fn = getattr(unit, "_firestorm_champion_of_humanity_ignore_modifiers_active", None)
+        if callable(active_fn):
+            try:
+                return bool(active_fn(kind=str(kind or "").strip().lower()))
+            except Exception:
+                return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        active_fn = getattr(root, "_firestorm_champion_of_humanity_ignore_modifiers_active", None)
+        if callable(active_fn):
+            try:
+                return bool(active_fn(kind=str(kind or "").strip().lower()))
+            except Exception:
+                return False
+        return False
+
     def _coterie_unshakeable_opponents_source(self, attacker: 'Model') -> str:
         unit = getattr(attacker, "parent_unit", None)
         if unit is None:
@@ -7358,6 +7392,13 @@ class WargearProfile:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
         except Exception:
             is_melee = False
+        if self._firestorm_champion_of_humanity_ignore_modifiers_active(attacker, kind="hit"):
+            return {
+                "name": "Champion of Humanity",
+                "attack_type": "any",
+                "skill_kinds": {"ballistic", "weapon"},
+                "allow_hit": True,
+            }
         if is_melee and self._tears_of_the_phoenix_ignore_modifiers_active(attacker):
             return {
                 "name": "Tears of the Phoenix",
@@ -7450,6 +7491,12 @@ class WargearProfile:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
         except Exception:
             is_melee = False
+        if self._firestorm_champion_of_humanity_ignore_modifiers_active(attacker, kind="wound"):
+            return {
+                "name": "Champion of Humanity",
+                "attack_type": "any",
+                "allow_wound": True,
+            }
         if is_melee and self._tears_of_the_phoenix_ignore_modifiers_active(attacker):
             return {
                 "name": "Tears of the Phoenix",
@@ -19156,6 +19203,72 @@ class WargearProfile:
             red = int(getattr(t_unit, "special_rules", {}).get("enhancement_reduce_damage_taken", 0) or 0)
             if red:
                 damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="enhancement:reduce_damage_taken"))
+        except Exception:
+            pass
+        # Firestorm Assault Force: Adamantine Mantle.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+            if isinstance(sr, dict) and bool(sr.get("enhancement_firestorm_adamantine_mantle")):
+                target_id = str(get_entity_id(target_model) or "")
+                bearer_id = str(
+                    sr.get("enhancement_firestorm_adamantine_mantle_bearer_model_id", "")
+                    or sr.get("enhancement_bearer_model_id", "")
+                    or ""
+                ).strip()
+                applies = bool(target_id and bearer_id and target_id == bearer_id)
+                if not applies and not bearer_id:
+                    models = list(getattr(t_unit, "models", []) or []) if t_unit is not None else []
+                    if len(models) == 1 and models[0] is target_model:
+                        applies = True
+                if applies:
+                    reduction = int(
+                        sr.get("enhancement_firestorm_adamantine_mantle_damage_reduction", 1) or 1
+                    )
+                    set_damage_to = int(
+                        sr.get("enhancement_firestorm_adamantine_mantle_set_damage_to", 1) or 1
+                    )
+                    required_keywords = {
+                        str(v or "").strip().upper()
+                        for v in list(
+                            sr.get("enhancement_firestorm_adamantine_mantle_weapon_keywords", ("MELTA", "TORRENT"))
+                            or ("MELTA", "TORRENT")
+                        )
+                        if str(v or "").strip()
+                    }
+                    if not required_keywords:
+                        required_keywords = {"MELTA", "TORRENT"}
+                    is_keyword_match = False
+                    if "MELTA" in required_keywords and bool(getattr(self, "is_melta", lambda: False)()):
+                        is_keyword_match = True
+                    if "TORRENT" in required_keywords and bool(getattr(self, "is_torrent", lambda: False)()):
+                        is_keyword_match = True
+                    source_name = str(
+                        sr.get("enhancement_firestorm_adamantine_mantle_source", "")
+                        or "Adamantine Mantle"
+                    ).strip() or "Adamantine Mantle"
+                    if is_keyword_match:
+                        damage_mods.append(
+                            Modifier(
+                                ModifierOp.SET,
+                                int(max(0, set_damage_to)),
+                                source="enhancement:firestorm_adamantine_mantle_set_damage",
+                            )
+                        )
+                        damage_result["special_effects"].append(
+                            f"{source_name}: Damage set to {int(max(0, set_damage_to))}"
+                        )
+                    elif reduction:
+                        damage_mods.append(
+                            Modifier(
+                                ModifierOp.SUB,
+                                int(max(0, reduction)),
+                                source="enhancement:firestorm_adamantine_mantle_reduce_damage",
+                            )
+                        )
+                        damage_result["special_effects"].append(
+                            f"{source_name} -{int(max(0, reduction))}D taken"
+                        )
         except Exception:
             pass
         # Mantle of Ophelia: attacks allocated to the bearer have Damage characteristic set to 1.

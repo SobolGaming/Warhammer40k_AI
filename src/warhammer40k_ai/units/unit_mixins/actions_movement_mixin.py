@@ -1829,6 +1829,82 @@ class ActionsMovementMixin:
                 }
             )
 
+        # Firestorm Assault Force enhancement: Forged in Battle.
+        # Once per turn, while the bearer is leading, after a hit/save roll for the bearer's unit,
+        # change the result to an unmodified 6.
+        holders = [root]
+        holders.extend(list(getattr(root, "attached_leaders", []) or []))
+        for holder in holders:
+            sr = getattr(holder, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_firestorm_forged_in_battle"):
+                continue
+            bearer_id = str(
+                sr.get("enhancement_firestorm_forged_in_battle_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            )
+            if not bearer_id:
+                continue
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            bearer_unit = None
+            for member in members:
+                if member is None:
+                    continue
+                for model in list(getattr(member, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    bearer_unit = member
+                    break
+                if bearer_unit is not None:
+                    break
+            if bearer_unit is None:
+                continue
+            requires_leading = bool(sr.get("enhancement_firestorm_forged_in_battle_requires_bearer_leading", True))
+            if requires_leading and not bool(getattr(bearer_unit, "is_attached_leader", False)):
+                continue
+            leader_id = str(get_entity_id(bearer_unit) or "")
+            source = str(
+                sr.get("enhancement_firestorm_forged_in_battle_source", "")
+                or "Forged in Battle"
+            ).strip() or "Forged in Battle"
+            usage = str(sr.get("enhancement_firestorm_forged_in_battle_usage", "turn") or "turn").strip().lower()
+            if usage not in {"phase", "turn"}:
+                usage = "turn"
+            allowed_roll_types = tuple(
+                sorted(
+                    {
+                        str(v or "").strip().lower()
+                        for v in list(sr.get("enhancement_firestorm_forged_in_battle_allowed_roll_types", ("hit", "save")) or ("hit", "save"))
+                        if str(v or "").strip().lower() in {"hit", "wound", "save", "damage"}
+                    }
+                )
+            )
+            if not allowed_roll_types:
+                allowed_roll_types = ("hit", "save")
+            source_key = "firestorm_forged_in_battle"
+            ability_key = f"leading_unmodified_six:{bearer_id}:{source_key}:{usage}"
+            key = (leader_id, source_key, False, usage, allowed_roll_types)
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "exclude_support_weapon": False,
+                    "leader": bearer_unit,
+                    "leader_id": leader_id,
+                    "ability_key": ability_key,
+                    "usage_limit": usage,
+                    "requires_bearer_leading": bool(requires_leading),
+                    "allowed_roll_types": allowed_roll_types,
+                }
+            )
+
         if not isinstance(cache, dict):
             cache = {}
         cache[cache_key] = list(specs)
@@ -5693,6 +5769,56 @@ class ActionsMovementMixin:
             return bool(sr.get("enhancement_diabolical_resilience_ignore_charge_modifiers", True))
         return False
 
+    def _firestorm_champion_of_humanity_ignore_modifiers_active(self, *, kind: str) -> bool:
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {"move", "advance", "charge", "hit", "wound"}:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [root]
+        members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not (isinstance(sr, dict) and bool(sr.get("enhancement_firestorm_champion_of_humanity"))):
+                continue
+            if bool(sr.get("enhancement_firestorm_champion_of_humanity_requires_bearer_leading", True)):
+                if not bool(getattr(member, "is_attached_leader", False)):
+                    continue
+            bearer_id = str(
+                sr.get("enhancement_firestorm_champion_of_humanity_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            bearer_alive = False
+            if bearer_id:
+                for model in list(getattr(member, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    alive_attr = getattr(model, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    break
+            if not bearer_alive:
+                bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is not None:
+                    if bearer_id and str(get_entity_id(bearer) or "") != bearer_id:
+                        bearer = None
+                if bearer is not None:
+                    alive_attr = getattr(bearer, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not bearer_alive:
+                continue
+            return True
+        return False
+
     def _preternatural_agility_ignore_modifiers_active(self) -> bool:
         try:
             root = self.get_attached_unit_root()
@@ -6120,6 +6246,67 @@ class ActionsMovementMixin:
                 pass
         return kept
 
+    def _filter_firestorm_champion_of_humanity_roll_modifiers(self, modifiers, *, kind: str) -> list[tuple[int, str]]:
+        if not modifiers:
+            return list(modifiers or [])
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in ("advance", "charge"):
+            return list(modifiers or [])
+        try:
+            if not self._firestorm_champion_of_humanity_ignore_modifiers_active(kind=kind_key):
+                return list(modifiers or [])
+        except Exception:
+            return list(modifiers or [])
+        from ...utility.modifier_choice import (
+            CHOICE_KEEP_ALL,
+            CHOICE_IGNORE_NEGATIVE,
+            CHOICE_IGNORE_POSITIVE,
+            CHOICE_IGNORE_ALL,
+            filter_signed_modifiers,
+        )
+        try:
+            choice = getattr(self.round_state, f"{kind_key}_modifier_choice", None)
+        except Exception:
+            choice = None
+        if not choice:
+            choice = CHOICE_KEEP_ALL
+        if choice == CHOICE_KEEP_ALL:
+            return list(modifiers or [])
+
+        kept, ignored = filter_signed_modifiers(modifiers, str(choice))
+        if ignored:
+            try:
+                sr = getattr(self, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                ignored_sources = tuple(sorted(str(s or "") for _v, s in ignored if str(s or "").strip()))
+                kept_sources = tuple(sorted(str(s or "") for _v, s in kept if str(s or "").strip()))
+                sig = (ignored_sources, kept_sources, str(choice))
+                key = f"firestorm_champion_of_humanity_{kind_key}_mod_signature"
+                if sr.get(key) != sig:
+                    sr[key] = sig
+                    self.special_rules = sr
+                    from ...utility.event_bus import append_action
+
+                    pn = self.get_parent_army().player
+                    label = "Advance roll" if kind_key == "advance" else "Charge roll"
+                    ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                    tag = (
+                        "negative"
+                        if choice == CHOICE_IGNORE_NEGATIVE
+                        else "positive"
+                        if choice == CHOICE_IGNORE_POSITIVE
+                        else "all"
+                    )
+                    append_action(pn, f"Champion of Humanity: ignored {tag} {label} modifiers ({ignored_text}).")
+                    if kept_sources:
+                        kept_text = ", ".join(s for s in kept_sources if s)
+                        if kept_text:
+                            append_action(pn, f"Champion of Humanity: applied {label} modifiers ({kept_text}).")
+            except Exception:
+                pass
+        return kept
+
     def _collect_advance_roll_modifiers(self) -> list[tuple[int, str]]:
         if bool(getattr(self, "has_siege_crawler", lambda: False)()):
             return []
@@ -6243,6 +6430,7 @@ class ActionsMovementMixin:
         mods = self._filter_preternatural_agility_roll_modifiers(mods, kind="advance")
         mods = self._filter_avatar_of_perfection_roll_modifiers(mods, kind="advance")
         mods = self._filter_diabolical_resilience_roll_modifiers(mods, kind="advance")
+        mods = self._filter_firestorm_champion_of_humanity_roll_modifiers(mods, kind="advance")
         for val, source in mods:
             if not val:
                 continue

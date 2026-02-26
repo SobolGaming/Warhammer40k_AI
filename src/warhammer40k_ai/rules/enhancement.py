@@ -432,6 +432,9 @@ class Enhancement:
         is_anvil_siege_force = bool(
             sm_mgr and getattr(sm_mgr, "is_anvil_siege_force", lambda: False)()
         )
+        is_firestorm_assault_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_firestorm_assault_force", lambda: False)()
+        )
         is_ironstorm_spearhead = bool(
             sm_mgr and getattr(sm_mgr, "is_ironstorm_spearhead", lambda: False)()
         )
@@ -1311,6 +1314,99 @@ class Enhancement:
             unit.special_rules["enhancement_architect_of_war_source"] = "Architect of War"
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if enh_id == "000008482002" or (name == "champion of humanity" and is_firestorm_assault_force):
+            if not is_firestorm_assault_force:
+                return
+            unit.special_rules["enhancement_firestorm_champion_of_humanity"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            requires_leading = bool(params.get("requires_bearer_leading", True))
+            exclude_save_modifiers = bool(params.get("exclude_save_modifiers", True))
+            unit.special_rules["enhancement_firestorm_champion_of_humanity_requires_bearer_leading"] = bool(
+                requires_leading
+            )
+            unit.special_rules["enhancement_firestorm_champion_of_humanity_exclude_save_modifiers"] = bool(
+                exclude_save_modifiers
+            )
+            unit.special_rules["enhancement_firestorm_champion_of_humanity_source"] = "Champion of Humanity"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_firestorm_champion_of_humanity_bearer_model_id"] = bearer_id
+
+        if enh_id == "000008482003" or (name == "war-tempered artifice" and is_firestorm_assault_force):
+            if not is_firestorm_assault_force:
+                return
+            unit.special_rules["enhancement_firestorm_war_tempered_artifice"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            strength_bonus = _coerce_int(params.get("strength_bonus", 3) or 3, default=3)
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0
+            ) + int(max(0, strength_bonus))
+            unit.special_rules["enhancement_firestorm_war_tempered_artifice_strength_bonus"] = int(
+                max(0, strength_bonus)
+            )
+            unit.special_rules["enhancement_firestorm_war_tempered_artifice_source"] = "War-tempered Artifice"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_firestorm_war_tempered_artifice_bearer_model_id"] = bearer_id
+
+        if enh_id == "000008482004" or (name == "forged in battle" and is_firestorm_assault_force):
+            if not is_firestorm_assault_force:
+                return
+            unit.special_rules["enhancement_firestorm_forged_in_battle"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            usage = str(params.get("usage", "turn") or "turn").strip().lower()
+            if usage not in {"phase", "turn", "battle_round", "battle"}:
+                usage = "turn"
+            raw_roll_types = list(params.get("allowed_roll_types", ("hit", "save")) or ("hit", "save"))
+            allowed_roll_types = []
+            for value in raw_roll_types:
+                key = str(value or "").strip().lower()
+                if key in {"hit", "wound", "save", "damage"}:
+                    allowed_roll_types.append(key)
+            if not allowed_roll_types:
+                allowed_roll_types = ["hit", "save"]
+            requires_leading = bool(params.get("requires_bearer_leading", True))
+            unit.special_rules["enhancement_firestorm_forged_in_battle_usage"] = usage
+            unit.special_rules["enhancement_firestorm_forged_in_battle_allowed_roll_types"] = tuple(
+                allowed_roll_types
+            )
+            unit.special_rules["enhancement_firestorm_forged_in_battle_requires_bearer_leading"] = bool(
+                requires_leading
+            )
+            unit.special_rules["enhancement_firestorm_forged_in_battle_source"] = "Forged in Battle"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_firestorm_forged_in_battle_bearer_model_id"] = bearer_id
+
+        if enh_id == "000008482005" or (name == "adamantine mantle" and is_firestorm_assault_force):
+            if not is_firestorm_assault_force:
+                return
+            unit.special_rules["enhancement_firestorm_adamantine_mantle"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            damage_reduction = _coerce_int(params.get("damage_reduction", 1) or 1, default=1)
+            set_damage_to = _coerce_int(params.get("set_damage_to", 1) or 1, default=1)
+            raw_keywords = list(params.get("if_weapon_keywords_any", ("MELTA", "TORRENT")) or ("MELTA", "TORRENT"))
+            required_keywords = tuple(
+                sorted({str(value or "").strip().upper() for value in raw_keywords if str(value or "").strip()})
+            )
+            if not required_keywords:
+                required_keywords = ("MELTA", "TORRENT")
+            unit.special_rules["enhancement_firestorm_adamantine_mantle_damage_reduction"] = int(
+                max(0, damage_reduction)
+            )
+            unit.special_rules["enhancement_firestorm_adamantine_mantle_set_damage_to"] = int(max(0, set_damage_to))
+            unit.special_rules["enhancement_firestorm_adamantine_mantle_weapon_keywords"] = tuple(
+                required_keywords
+            )
+            unit.special_rules["enhancement_firestorm_adamantine_mantle_source"] = "Adamantine Mantle"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_firestorm_adamantine_mantle_bearer_model_id"] = bearer_id
 
         if name == "target augury web" or enh_id == "000008478002":
             if not is_ironstorm_spearhead:
