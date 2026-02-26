@@ -5096,6 +5096,7 @@ def _classify_ability_base(
     closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
     monster_vehicle_reroll_support = _monster_vehicle_reroll_support(description)
     unit_contains_oc_support = _unit_contains_oc_support(description)
+    unit_contains_action_support = _unit_contains_model_action_support(description)
     aura_oc_support = _aura_objective_control_support(description)
     aura_benefit_of_cover_support = _aura_benefit_of_cover_support(description)
     enemy_aura_oc_penalty_support = _enemy_aura_objective_control_penalty_support(description)
@@ -5304,6 +5305,8 @@ def _classify_ability_base(
         return monster_vehicle_reroll_support
     if unit_contains_oc_support:
         return unit_contains_oc_support
+    if unit_contains_action_support:
+        return unit_contains_action_support
     if aura_oc_support:
         return aura_oc_support
     if aura_benefit_of_cover_support:
@@ -6559,6 +6562,46 @@ def _unit_contains_character_fnp_support(description: str) -> Optional[Tuple[str
     model = (m.group("model") or "specified model").strip()
     val = m.group("val")
     return ("Supported", f"Unit contains {model}: Character models gain Feel No Pain {val}+.")
+
+
+def _unit_contains_model_action_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.search(
+        r"while this unit contains one or more (?P<model>.+?) models?",
+        norm,
+    )
+    if not m:
+        return None
+    model = str(m.group("model") or "").strip()
+    if not model:
+        return None
+
+    allows_action_after_advance = bool(
+        re.search(
+            r"eligible to perform an action in a turn in which it advanced",
+            norm,
+        )
+    )
+    allows_shoot_after_action_start = bool(
+        re.search(
+            r"eligible to shoot in a turn in which it started an action",
+            norm,
+        )
+    )
+    if not allows_action_after_advance and not allows_shoot_after_action_start:
+        return None
+
+    notes: list[str] = []
+    if allows_action_after_advance:
+        notes.append("eligible to perform Actions after Advancing")
+    if allows_shoot_after_action_start:
+        notes.append("eligible to shoot in turns it started an Action")
+    joined_notes = " and ".join(notes)
+    return ("Supported", f"Unit contains {model}: {joined_notes}.")
 
 
 def _leading_unit_contains_invuln_support(description: str) -> Optional[Tuple[str, str]]:

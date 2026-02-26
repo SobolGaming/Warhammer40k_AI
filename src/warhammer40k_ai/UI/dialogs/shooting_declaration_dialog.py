@@ -387,16 +387,46 @@ class ShootingDeclarationDialog(BaseDialog):
     
     def _can_use_weapon(self, weapon_profile):
         """Check if a weapon can be used."""
-        # If the unit is performing an Action, it cannot shoot
+        action_lock_active = False
+        allow_shoot_while_action = False
+        # If the unit is performing an Action, it cannot shoot unless a specific rule allows it.
         try:
-            if getattr(self.unit.round_state, 'action_locked_until_turn_end', False):
-                return False
+            action_lock_active = bool(getattr(self.unit.round_state, "action_locked_until_turn_end", False))
+            if action_lock_active:
+                game = getattr(getattr(self, "game_view", None), "game", None)
+                if game is None:
+                    try:
+                        game = getattr(self.unit.get_parent_army().player, "game", None)
+                    except Exception:
+                        game = None
+                army = self.unit.get_parent_army() if hasattr(self.unit, "get_parent_army") else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                if sm_mgr is not None and getattr(sm_mgr, "seekers_companions_allow_shoot_while_action", None):
+                    allow_shoot_while_action = bool(
+                        sm_mgr.seekers_companions_allow_shoot_while_action(
+                            self.unit,
+                            game=game,
+                            weapon_profile=weapon_profile,
+                        )
+                    )
+                if not allow_shoot_while_action:
+                    allow_fn = getattr(self.unit, "allows_shoot_while_started_action_from_unit_contains_rule", None)
+                    if callable(allow_fn):
+                        allow_shoot_while_action = bool(allow_fn(game=game, weapon_profile=weapon_profile))
+                if not allow_shoot_while_action:
+                    return False
         except Exception:
             pass
         # Check if the unit has already shot
         if (not self.out_of_phase) and self.unit.round_state.shot_this_round:
-            return False
-        
+            action_shoot_exception_available = bool(
+                action_lock_active
+                and allow_shoot_while_action
+                and (not bool(getattr(self.unit.round_state, "action_permitted_shoot_used", False)))
+            )
+            if not action_shoot_exception_available:
+                return False
+
         # Check for restrictions due to Advance or Fall Back
         if self.unit.round_state.advanced_this_round and not self.unit.can_shoot_after_advance(weapon_profile):
             return False

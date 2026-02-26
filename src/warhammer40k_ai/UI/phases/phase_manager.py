@@ -2570,9 +2570,40 @@ class BattlePhaseHandler(BasePhaseHandler):
             return
         
         # Check if unit can shoot
+        action_lock_active = bool(getattr(unit.round_state, "action_locked_until_turn_end", False))
+        allow_shoot_while_action = False
+        if action_lock_active:
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None and getattr(sm_mgr, "seekers_companions_allow_shoot_while_action", None):
+                try:
+                    allow_shoot_while_action = bool(
+                        sm_mgr.seekers_companions_allow_shoot_while_action(
+                            unit,
+                            game=self.game,
+                        )
+                    )
+                except Exception:
+                    allow_shoot_while_action = False
+            if not allow_shoot_while_action:
+                try:
+                    allow_fn = getattr(unit, "allows_shoot_while_started_action_from_unit_contains_rule", None)
+                    if callable(allow_fn):
+                        allow_shoot_while_action = bool(allow_fn(game=self.game))
+                except Exception:
+                    allow_shoot_while_action = False
         if unit.round_state.shot_this_round:
-            logger.error(f"ERROR: {unit.name} has already shot this round")
-            return
+            action_shoot_exception_available = bool(
+                action_lock_active
+                and allow_shoot_while_action
+                and (not bool(getattr(unit.round_state, "action_permitted_shoot_used", False)))
+            )
+            if not action_shoot_exception_available:
+                logger.error(f"ERROR: {unit.name} has already shot this round")
+                return
 
         try:
             if hasattr(unit, "is_shooting_phase_ineligible") and unit.is_shooting_phase_ineligible(self.game):

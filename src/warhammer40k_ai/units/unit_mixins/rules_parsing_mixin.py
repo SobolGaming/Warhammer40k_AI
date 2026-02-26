@@ -2136,6 +2136,8 @@ class RulesParsingMixin:
                     "attached_character_fnp_entries",
                     "unit_contains_character_fnp_entries",
                     "same_unit_keyword_fnp_entries",
+                    "unit_contains_action_after_advance_entries",
+                    "unit_contains_shoot_after_starting_action_entries",
                     "bearer_unit_invulnerable_save",
                     "bearer_unit_leadership_bonus_controlled_objective",
                     "bearer_unit_agile_maneuver_reroll",
@@ -2187,6 +2189,8 @@ class RulesParsingMixin:
         attached_character_fnp_entries: list[dict] = []
         unit_contains_character_fnp_entries: list[dict] = []
         same_unit_keyword_fnp_entries: list[dict] = []
+        unit_contains_action_after_advance_entries: list[dict] = []
+        unit_contains_shoot_after_starting_action_entries: list[dict] = []
         invuln_entries: list[dict] = []
         sustained_hits_value = 0
         sustained_hits_value_melee = 0
@@ -2272,6 +2276,25 @@ class RulesParsingMixin:
                     continue
                 if "leading a unit" in text_lower and "bearer's unit" not in text_lower:
                     text = re.sub(r"\bthat unit\b", "the bearer's unit", text, flags=re.IGNORECASE)
+                contains_one_or_more_model_match = self._UNIT_CONTAINS_ONE_OR_MORE_MODELS_RE.search(text_lower)
+                if contains_one_or_more_model_match:
+                    required_model_name = str(contains_one_or_more_model_match.group("model") or "").strip()
+                    if required_model_name:
+                        source = str(name or "Unit contains ability").strip() or "Unit contains ability"
+                        if self._ACTION_AFTER_ADVANCE_ELIGIBILITY_RE.search(text_lower):
+                            unit_contains_action_after_advance_entries.append(
+                                {
+                                    "required_model_name": required_model_name,
+                                    "source": source,
+                                }
+                            )
+                        if self._SHOOT_AFTER_STARTING_ACTION_ELIGIBILITY_RE.search(text_lower):
+                            unit_contains_shoot_after_starting_action_entries.append(
+                                {
+                                    "required_model_name": required_model_name,
+                                    "source": source,
+                                }
+                            )
 
                 for sentence in _iter_sentences(text):
                     if not sentence:
@@ -2759,6 +2782,58 @@ class RulesParsingMixin:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["same_unit_keyword_fnp_entries"] = list(same_unit_keyword_fnp_entries)
+                u.special_rules = sr
+        if unit_contains_action_after_advance_entries:
+            deduped_entries = []
+            seen_entries: set[tuple[str, str]] = set()
+            for entry in unit_contains_action_after_advance_entries:
+                if not isinstance(entry, dict):
+                    continue
+                required_model_name = str(entry.get("required_model_name", "") or "").strip()
+                source = str(entry.get("source", "") or "").strip() or "Unit contains ability"
+                if not required_model_name:
+                    continue
+                key = (required_model_name.lower(), source.lower())
+                if key in seen_entries:
+                    continue
+                seen_entries.add(key)
+                deduped_entries.append(
+                    {
+                        "required_model_name": required_model_name,
+                        "source": source,
+                    }
+                )
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["unit_contains_action_after_advance_entries"] = list(deduped_entries)
+                u.special_rules = sr
+        if unit_contains_shoot_after_starting_action_entries:
+            deduped_entries = []
+            seen_entries: set[tuple[str, str]] = set()
+            for entry in unit_contains_shoot_after_starting_action_entries:
+                if not isinstance(entry, dict):
+                    continue
+                required_model_name = str(entry.get("required_model_name", "") or "").strip()
+                source = str(entry.get("source", "") or "").strip() or "Unit contains ability"
+                if not required_model_name:
+                    continue
+                key = (required_model_name.lower(), source.lower())
+                if key in seen_entries:
+                    continue
+                seen_entries.add(key)
+                deduped_entries.append(
+                    {
+                        "required_model_name": required_model_name,
+                        "source": source,
+                    }
+                )
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["unit_contains_shoot_after_starting_action_entries"] = list(deduped_entries)
                 u.special_rules = sr
 
         if preserved_invuln_entries:
@@ -3697,6 +3772,96 @@ class RulesParsingMixin:
 
     def _unit_contains_model_named(self, target: str) -> bool:
         return self._find_model_named(target) is not None
+
+    def _attached_unit_contains_model_named(self, target: str) -> bool:
+        required_model_name = str(target or "").strip()
+        if not required_model_name:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            contains_model_fn = getattr(member, "_unit_contains_model_named", None)
+            if callable(contains_model_fn):
+                if bool(contains_model_fn(required_model_name)):
+                    return True
+                continue
+            find_model_fn = getattr(member, "_find_model_named", None)
+            if callable(find_model_fn):
+                if find_model_fn(required_model_name) is not None:
+                    return True
+        return False
+
+    def _unit_contains_model_condition_entries_active(self, entries_key: str) -> bool:
+        sr = getattr(self, "special_rules", None)
+        entries = sr.get(entries_key) if isinstance(sr, dict) else None
+        if not isinstance(entries, list):
+            return False
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            required_model_name = str(entry.get("required_model_name", "") or "").strip()
+            if not required_model_name:
+                continue
+            if self._attached_unit_contains_model_named(required_model_name):
+                return True
+        return False
+
+    def allows_action_after_advance_from_unit_contains_rule(self) -> bool:
+        return self._unit_contains_model_condition_entries_active("unit_contains_action_after_advance_entries")
+
+    def allows_shoot_while_started_action_from_unit_contains_rule(
+        self,
+        *,
+        game=None,
+        weapon_profile=None,
+    ) -> bool:
+        round_state = getattr(self, "round_state", None)
+        if round_state is None:
+            return False
+        if not bool(getattr(round_state, "action_locked_until_turn_end", False)):
+            return False
+        if not bool(getattr(round_state, "performing_action_name", None)):
+            return False
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return False
+        if not self._unit_contains_model_condition_entries_active("unit_contains_shoot_after_starting_action_entries"):
+            return False
+
+        started_turn = getattr(round_state, "action_started_turn", None)
+        if started_turn is None:
+            return False
+        try:
+            started_turn_value = int(started_turn)
+        except Exception:
+            return False
+        if started_turn_value <= 0:
+            return False
+
+        game_obj = game
+        if game_obj is None:
+            try:
+                game_obj = getattr(self.get_parent_army().player, "game", None)
+            except Exception:
+                game_obj = None
+        if game_obj is None:
+            return True
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            return False
+        return current_turn > 0 and current_turn == started_turn_value
 
     def has_formless_horror(self) -> bool:
         """Return True if this unit has the Formless Horror ability."""

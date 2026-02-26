@@ -24,31 +24,53 @@ class ShootingMixin:
         if not weapon_declarations:
             logger.info(f"{self.name}: No shooting declarations to execute")
             return False
-            
+
         # Check if unit can shoot
         # Mission Actions: a unit performing an Action is not eligible to shoot until that Action completes or end of turn
-        if getattr(self.round_state, 'action_locked_until_turn_end', False):
-            allow_shoot_while_action = False
+        action_lock_active = bool(getattr(self.round_state, "action_locked_until_turn_end", False))
+        allow_shoot_while_action = False
+        allow_shoot_while_action_source = ""
+        if action_lock_active:
+            game = None
             try:
                 army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
                 if sm_mgr is not None and getattr(sm_mgr, "seekers_companions_allow_shoot_while_action", None):
-                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                     allow_shoot_while_action = bool(
                         sm_mgr.seekers_companions_allow_shoot_while_action(
                             self,
                             game=game,
                         )
                     )
+                    if allow_shoot_while_action:
+                        allow_shoot_while_action_source = "Seeker's Companions"
             except Exception:
                 allow_shoot_while_action = False
+                allow_shoot_while_action_source = ""
+            if not allow_shoot_while_action:
+                try:
+                    allow_fn = getattr(self, "allows_shoot_while_started_action_from_unit_contains_rule", None)
+                    if callable(allow_fn):
+                        allow_shoot_while_action = bool(allow_fn(game=game))
+                        if allow_shoot_while_action:
+                            allow_shoot_while_action_source = "unit contains model Action-shoot rule"
+                except Exception:
+                    allow_shoot_while_action = False
+                    allow_shoot_while_action_source = ""
             if not allow_shoot_while_action:
                 logger.info(f"{self.name} is performing an Action and cannot shoot this turn")
                 return False
-            logger.info(f"{self.name} is performing an Action but can shoot due to Seeker's Companions")
+            logger.info(f"{self.name} is performing an Action but can shoot due to {allow_shoot_while_action_source}")
         if (not out_of_phase) and self.round_state.shot_this_round:
-            logger.info(f"{self.name} has already shot this round")
-            return False
+            action_shoot_exception_available = bool(
+                action_lock_active
+                and allow_shoot_while_action
+                and (not bool(getattr(self.round_state, "action_permitted_shoot_used", False)))
+            )
+            if not action_shoot_exception_available:
+                logger.info(f"{self.name} has already shot this round")
+                return False
 
         # Chapter Approved exception: if this unit arrived from reserves via the "base touches edge"
         # Strategic Reserves placement, it cannot shoot this turn.
@@ -181,6 +203,8 @@ class ShootingMixin:
         if not out_of_phase:
             # Mark unit as having shot this round (regardless of success)
             self.round_state.shot_this_round = True
+            if action_lock_active and allow_shoot_while_action:
+                self.round_state.action_permitted_shoot_used = True
 
             # Firing Deck: models whose weapons are used via a transport count as having shot.
             # We mark them here (once) so even if some declarations fail validation, they still

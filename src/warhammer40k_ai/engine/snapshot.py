@@ -133,6 +133,7 @@ _UNIT_ROUND_FIELDS = [
     "action_started_turn",
     "action_completes_turn",
     "action_locked_until_turn_end",
+    "action_permitted_shoot_used",
     "fought_this_phase",
     "eligible_to_fight_this_phase",
     "engaged_enemies_at_turn_start",

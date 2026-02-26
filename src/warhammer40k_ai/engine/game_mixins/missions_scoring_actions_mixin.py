@@ -810,6 +810,9 @@ class GameMissionsScoringActionsMixin:
         if sm_mgr is not None and getattr(sm_mgr, "companions_of_vehemence_oathbound_exemplar_allow_action_after_advance", None):
             if sm_mgr.companions_of_vehemence_oathbound_exemplar_allow_action_after_advance(unit, self):
                 allow_advance_action = True
+        allow_action_after_advance_fn = getattr(unit, "allows_action_after_advance_from_unit_contains_rule", None)
+        if callable(allow_action_after_advance_fn) and allow_action_after_advance_fn():
+            allow_advance_action = True
         if unit.round_state.fell_back_this_round and not allow_fall_back_action:
             return {"valid": False, "reason": "Units that Fell Back cannot perform Actions"}
         if unit.round_state.advanced_this_round and not allow_advance_action:
@@ -1121,16 +1124,23 @@ class GameMissionsScoringActionsMixin:
             return {"valid": False, "reason": "Hazard objective marker can only be moved up to 6\""}
         return {"valid": True, "reason": "Eligible", "hazard_objective": hazard_objective, "new_x": nx, "new_y": ny}
 
+    def _mark_unit_started_action(self, unit: 'Unit', action_name: str) -> None:
+        unit.round_state.performing_action_name = str(action_name or "")
+        unit.round_state.action_locked_until_turn_end = True
+        unit.round_state.action_started_turn = int(getattr(self, "turn", 0) or 0)
+        unit.round_state.action_completes_turn = None
+        # Starting an Action normally consumes the unit's shooting selection for the turn.
+        unit.round_state.shot_this_round = True
+        # Some abilities can override this once (e.g. Network Override style effects).
+        unit.round_state.action_permitted_shoot_used = False
+
     def start_terraform_action(self, unit: 'Unit') -> Dict[str, Any]:
         check = self.can_start_terraform(unit)
         if not check["valid"]:
             return check
         objective = check.get("objective")
         # Mark unit round state and add in-progress
-        unit.round_state.performing_action_name = 'TERRAFORM'
-        unit.round_state.action_locked_until_turn_end = True
-        # Consumes the unit's shooting action for the turn
-        unit.round_state.shot_this_round = True
+        self._mark_unit_started_action(unit, "TERRAFORM")
         # Complete at end of this player's turn
         self.in_progress_actions.append({
             'player': unit.get_parent_army().player,
@@ -1146,10 +1156,7 @@ class GameMissionsScoringActionsMixin:
         check = self.can_start_sabotage(unit)
         if not check["valid"]:
             return check
-        unit.round_state.performing_action_name = 'SABOTAGE'
-        unit.round_state.action_locked_until_turn_end = True
-        # Consumes the unit's shooting action for the turn
-        unit.round_state.shot_this_round = True
+        self._mark_unit_started_action(unit, "SABOTAGE")
         # Completes at end of opponent's next turn
         opponent_index = (self.current_player_index + 1) % len(self.players)
         self.in_progress_actions.append({
@@ -1167,9 +1174,7 @@ class GameMissionsScoringActionsMixin:
         if not check["valid"]:
             return check
         objective = check.get("objective")
-        unit.round_state.performing_action_name = 'CLEANSE'
-        unit.round_state.action_locked_until_turn_end = True
-        unit.round_state.shot_this_round = True
+        self._mark_unit_started_action(unit, "CLEANSE")
         # Completes at end of this player's turn
         self.in_progress_actions.append({
             'player': unit.get_parent_army().player,
@@ -1185,9 +1190,7 @@ class GameMissionsScoringActionsMixin:
         check = self.can_start_establish_locus(unit)
         if not check["valid"]:
             return check
-        unit.round_state.performing_action_name = 'ESTABLISH_LOCUS'
-        unit.round_state.action_locked_until_turn_end = True
-        unit.round_state.shot_this_round = True
+        self._mark_unit_started_action(unit, "ESTABLISH_LOCUS")
         # Completes at end of this player's turn
         self.in_progress_actions.append({
             'player': unit.get_parent_army().player,
@@ -1203,9 +1206,7 @@ class GameMissionsScoringActionsMixin:
         check = self.can_start_the_ritual(unit, new_objective_xy=new_objective_xy)
         if not check["valid"]:
             return check
-        unit.round_state.performing_action_name = 'THE_RITUAL'
-        unit.round_state.action_locked_until_turn_end = True
-        unit.round_state.shot_this_round = True
+        self._mark_unit_started_action(unit, "THE_RITUAL")
         self.in_progress_actions.append({
             'player': unit.get_parent_army().player,
             'unit': unit,
@@ -1220,9 +1221,7 @@ class GameMissionsScoringActionsMixin:
         check = self.can_start_move_hazard(unit, hazard_objective=hazard_objective, new_xy=new_xy)
         if not check["valid"]:
             return check
-        unit.round_state.performing_action_name = 'MOVE_HAZARD'
-        unit.round_state.action_locked_until_turn_end = True
-        unit.round_state.shot_this_round = True
+        self._mark_unit_started_action(unit, "MOVE_HAZARD")
         self.in_progress_actions.append({
             'player': unit.get_parent_army().player,
             'unit': unit,
@@ -1259,10 +1258,7 @@ class GameMissionsScoringActionsMixin:
         if not check["valid"]:
             return check
         objective = check.get("objective")
-        unit.round_state.performing_action_name = 'BURN_OBJECTIVE'
-        unit.round_state.action_locked_until_turn_end = True
-        # Consumes the unit's shooting action for the turn
-        unit.round_state.shot_this_round = True
+        self._mark_unit_started_action(unit, "BURN_OBJECTIVE")
         opponent_index = (self.current_player_index + 1) % len(self.players)
         self.in_progress_actions.append({
             'player': unit.get_parent_army().player,

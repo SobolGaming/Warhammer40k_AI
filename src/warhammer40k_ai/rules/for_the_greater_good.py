@@ -297,11 +297,34 @@ class ForTheGreaterGoodManager:
                 return False
         except Exception:
             pass
+        action_lock_active = False
+        allow_shoot_while_action = False
         try:
-            if bool(getattr(getattr(unit, "round_state", None), "action_locked_until_turn_end", False)):
-                return False
+            action_lock_active = bool(getattr(getattr(unit, "round_state", None), "action_locked_until_turn_end", False))
+            if action_lock_active:
+                army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                if sm_mgr is not None and getattr(sm_mgr, "seekers_companions_allow_shoot_while_action", None):
+                    allow_shoot_while_action = bool(
+                        sm_mgr.seekers_companions_allow_shoot_while_action(
+                            unit,
+                            game=game,
+                        )
+                    )
+                if not allow_shoot_while_action:
+                    allow_fn = getattr(unit, "allows_shoot_while_started_action_from_unit_contains_rule", None)
+                    if callable(allow_fn):
+                        allow_shoot_while_action = bool(allow_fn(game=game))
+                if not allow_shoot_while_action:
+                    return False
             if bool(getattr(getattr(unit, "round_state", None), "shot_this_round", False)):
-                return False
+                action_shoot_exception_available = bool(
+                    action_lock_active
+                    and allow_shoot_while_action
+                    and (not bool(getattr(getattr(unit, "round_state", None), "action_permitted_shoot_used", False)))
+                )
+                if not action_shoot_exception_available:
+                    return False
         except Exception:
             pass
         profiles = self._iter_ranged_profiles(unit)

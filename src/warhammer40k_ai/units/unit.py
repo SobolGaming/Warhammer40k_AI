@@ -69,6 +69,8 @@ class UnitRoundState:
     action_started_turn: Optional[int] = None
     action_completes_turn: Optional[int] = None
     action_locked_until_turn_end: bool = False  # Cannot shoot or declare charge while true (except titanic character rule handled at call site)
+    # Tracks whether this unit has consumed a single "can still shoot after starting an Action" exception this turn.
+    action_permitted_shoot_used: bool = False
     fought_this_phase: bool = False  # Used by timing-sensitive rules (e.g., Total Carnage)
     eligible_to_fight_this_phase: bool = False  # True once the unit is observed as fight-eligible in the current Fight phase.
     engaged_enemies_at_turn_start: Optional[set] = None  # Track engaged enemy unit ids at start of controlling player's turn
@@ -2574,6 +2576,18 @@ class Unit(
     _UNIT_CONTAINS_OC_BONUS_RE = re.compile(
         r"while\s+this\s+unit\s+contains\s+an?\s+(?P<model>.+?),\s*add\s+(?P<amt>\d+)\s+to\s+the\s+objective\s+control\s+"
         r"characteristic\s+of\s+models\s+in\s+this\s+unit",
+        re.IGNORECASE,
+    )
+    _UNIT_CONTAINS_ONE_OR_MORE_MODELS_RE = re.compile(
+        r"while\s+this\s+unit\s+contains\s+one\s+or\s+more\s+(?P<model>[a-z0-9][a-z0-9 '\-]*)\s+models?",
+        re.IGNORECASE,
+    )
+    _ACTION_AFTER_ADVANCE_ELIGIBILITY_RE = re.compile(
+        r"eligible\s+to\s+perform\s+an?\s+action\s+in\s+a\s+turn\s+in\s+which\s+it\s+advanced",
+        re.IGNORECASE,
+    )
+    _SHOOT_AFTER_STARTING_ACTION_ELIGIBILITY_RE = re.compile(
+        r"eligible\s+to\s+shoot\s+in\s+a\s+turn\s+in\s+which\s+it\s+started\s+an?\s+action",
         re.IGNORECASE,
     )
     _BEARER_UNIT_FNP_RE = re.compile(

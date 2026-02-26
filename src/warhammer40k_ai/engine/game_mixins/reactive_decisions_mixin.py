@@ -6641,7 +6641,28 @@ class GameReactiveDecisionsMixin:
         if game_map is None:
             return False
         if bool(getattr(getattr(unit, "round_state", None), "action_locked_until_turn_end", False)):
-            return False
+            allow_shoot_while_action = False
+            try:
+                army = unit.get_parent_army()
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                if sm_mgr is not None and getattr(sm_mgr, "seekers_companions_allow_shoot_while_action", None):
+                    allow_shoot_while_action = bool(
+                        sm_mgr.seekers_companions_allow_shoot_while_action(
+                            unit,
+                            game=self,
+                        )
+                    )
+            except Exception:
+                allow_shoot_while_action = False
+            if not allow_shoot_while_action:
+                try:
+                    allow_fn = getattr(unit, "allows_shoot_while_started_action_from_unit_contains_rule", None)
+                    if callable(allow_fn):
+                        allow_shoot_while_action = bool(allow_fn(game=self))
+                except Exception:
+                    allow_shoot_while_action = False
+            if not allow_shoot_while_action:
+                return False
         if bool(getattr(unit, "_reserves_edge_touch_this_turn", False)) and bool(
             getattr(unit, "arrived_from_reserves_this_turn", False)
         ):
