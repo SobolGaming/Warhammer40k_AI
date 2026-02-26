@@ -933,6 +933,55 @@ _COHORT_CYBERNETICA_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COHORT_CYBERNETICA_DESCRIPTORS.values()
 }
 
+_DATA_PSALM_CONCLAVE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008564002": EnhancementToolDescriptor(
+        enhancement_id="000008564002",
+        name="Mechanicus Locum",
+        timing="start_of_any_phase_once_per_battle",
+        target="friendly_cult_mechanicus_battleshocked_unit_within_range",
+        duration="instant",
+        effect="clear_battleshock_for_friendly_unit_in_range",
+        range_in=12.0,
+        effect_params={
+            "range": 12.0,
+            "keyword_phrase": "CULT MECHANICUS",
+            "once_per_battle_key": "mechanicus_locum",
+        },
+    ),
+    "000008564003": EnhancementToolDescriptor(
+        enhancement_id="000008564003",
+        name="Mantle of the Gnosticarch",
+        timing="when_attack_is_allocated_to_bearer",
+        target="bearer",
+        duration="constant",
+        effect="set_allocated_damage_to_value",
+        effect_params={"set_damage_to": 1},
+    ),
+    "000008564004": EnhancementToolDescriptor(
+        enhancement_id="000008564004",
+        name="Data-blessed Autosermon",
+        timing="start_of_command_phase_once_per_battle",
+        target="bearer_unit",
+        duration="until_next_command_phase",
+        effect="activate_other_data_psalm_benediction_for_bearer_unit",
+        effect_params={
+            "once_per_battle_key": "data_blessed_autosermon",
+        },
+    ),
+    "000008564005": EnhancementToolDescriptor(
+        enhancement_id="000008564005",
+        name="Temporcopia",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_fights_first_to_bearer_unit",
+    ),
+}
+
+_DATA_PSALM_CONCLAVE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DATA_PSALM_CONCLAVE_DESCRIPTORS.values()
+}
+
 _INVASION_FLEET_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008348002": EnhancementToolDescriptor(
         enhancement_id="000008348002",
@@ -4025,6 +4074,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _COHORT_CYBERNETICA_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _DATA_PSALM_CONCLAVE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _INVASION_FLEET_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4218,6 +4270,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _MONTKA_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_BY_NAME.get(key)
         or _COHORT_CYBERNETICA_BY_NAME.get(key)
+        or _DATA_PSALM_CONCLAVE_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)

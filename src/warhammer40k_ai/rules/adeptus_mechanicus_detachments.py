@@ -36,6 +36,14 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _DATA_PSALM_SOURCE = "Benedictions Of The Omnissiah"
     _DATA_PSALM_PANEGYRIC_KEY = "PANEGYRIC_PROCESSION"
     _DATA_PSALM_CITATION_KEY = "CITATION_IN_SAVAGERY"
+    _DATA_PSALM_AUTOSERMON_ABILITY_KEY = "data_psalm_autosermon"
+    _DATA_PSALM_AUTOSERMON_SOURCE = "Data-blessed Autosermon"
+    _DATA_PSALM_AUTOSERMON_ACTIVE_KEY = "data_psalm_autosermon_active"
+    _DATA_PSALM_AUTOSERMON_CHOICE_KEY = "data_psalm_autosermon_choice_key"
+    _DATA_PSALM_AUTOSERMON_OWNER_KEY = "data_psalm_autosermon_owner_id"
+    _DATA_PSALM_AUTOSERMON_STARTED_ROUND_KEY = "data_psalm_autosermon_turn_started"
+    _DATA_PSALM_AUTOSERMON_EXPIRES_ROUND_KEY = "data_psalm_autosermon_expires_round"
+    _DATA_PSALM_AUTOSERMON_SOURCE_UNIT_ID_KEY = "data_psalm_autosermon_source_unit_id"
     _CULT_MECHANICUS_KEYWORD = "CULT MECHANICUS"
 
     _RAD_BOMBARDMENT_ABILITY_KEY = "rad_bombardment"
@@ -148,6 +156,384 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not self.active_data_psalm_benediction_key:
             return False
         return self.active_data_psalm_benediction_key == self._normalize_data_psalm_choice_key(choice_key)
+
+    @classmethod
+    def _other_data_psalm_benediction_key(cls, current_choice_key: str) -> str:
+        current = cls._normalize_data_psalm_choice_key(current_choice_key)
+        if not current:
+            return ""
+        if current == cls._DATA_PSALM_PANEGYRIC_KEY:
+            return cls._DATA_PSALM_CITATION_KEY
+        if current == cls._DATA_PSALM_CITATION_KEY:
+            return cls._DATA_PSALM_PANEGYRIC_KEY
+        return ""
+
+    def _data_psalm_autosermon_effect_active_for_unit(self, unit, choice_key: str, *, game=None) -> bool:
+        if not self.is_data_psalm_conclave():
+            return False
+        normalized_choice = self._normalize_data_psalm_choice_key(choice_key)
+        if not normalized_choice:
+            return False
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._DATA_PSALM_AUTOSERMON_ACTIVE_KEY, False)):
+            return False
+        active_choice = self._normalize_data_psalm_choice_key(str(sr.get(self._DATA_PSALM_AUTOSERMON_CHOICE_KEY, "") or ""))
+        if active_choice != normalized_choice:
+            return False
+        if game is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(owner, "game", None) if owner is not None else None
+        if game is None:
+            return True
+        try:
+            current_round = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_round = 0
+        try:
+            expires_round = int(sr.get(self._DATA_PSALM_AUTOSERMON_EXPIRES_ROUND_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            expires_round = 0
+        if expires_round <= 0:
+            return True
+        if current_round > expires_round:
+            for key in (
+                self._DATA_PSALM_AUTOSERMON_ACTIVE_KEY,
+                self._DATA_PSALM_AUTOSERMON_CHOICE_KEY,
+                self._DATA_PSALM_AUTOSERMON_OWNER_KEY,
+                self._DATA_PSALM_AUTOSERMON_STARTED_ROUND_KEY,
+                self._DATA_PSALM_AUTOSERMON_EXPIRES_ROUND_KEY,
+                self._DATA_PSALM_AUTOSERMON_SOURCE_UNIT_ID_KEY,
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+            return False
+        if current_round == expires_round:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            owner_id = str(sr.get(self._DATA_PSALM_AUTOSERMON_OWNER_KEY, "") or "")
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            if phase_name == "COMMAND_PHASE" and owner_id and current_owner_id == owner_id:
+                for key in (
+                    self._DATA_PSALM_AUTOSERMON_ACTIVE_KEY,
+                    self._DATA_PSALM_AUTOSERMON_CHOICE_KEY,
+                    self._DATA_PSALM_AUTOSERMON_OWNER_KEY,
+                    self._DATA_PSALM_AUTOSERMON_STARTED_ROUND_KEY,
+                    self._DATA_PSALM_AUTOSERMON_EXPIRES_ROUND_KEY,
+                    self._DATA_PSALM_AUTOSERMON_SOURCE_UNIT_ID_KEY,
+                ):
+                    sr.pop(key, None)
+                root.special_rules = sr
+                return False
+        return True
+
+    def _iter_data_psalm_autosermon_sources(self) -> list[tuple]:
+        if self.army is None:
+            return []
+        seen_roots: set[str] = set()
+        sources: list[tuple] = []
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root) or str(id(root))
+            if root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if not self._unit_is_on_battlefield(root):
+                continue
+            members = list(getattr(root, "get_attached_unit_members", lambda: [])() or [])
+            if not members:
+                members = [root]
+            for member in list(members or []):
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_data_blessed_autosermon", False)):
+                    continue
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+                if bearer is None or not self._is_model_alive(bearer):
+                    continue
+                sources.append((str(root_id), root, member, sr, bearer))
+        sources.sort(
+            key=lambda item: (
+                str(item[0]),
+                self._entity_id(item[2]) or str(id(item[2])),
+            )
+        )
+        return sources
+
+    def _pending_data_psalm_autosermon_request(self, game, *, source_root_id: str, battle_round: int):
+        if game is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is None:
+            return None
+        for req in list(getattr(queue, "list", lambda: [])() or []):
+            if str(getattr(req, "decision_type", "")) != "CHOOSE_QUARRY":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != self._DATA_PSALM_AUTOSERMON_ABILITY_KEY:
+                continue
+            if str(ctx.get("source_unit_id", "") or "") != str(source_root_id or ""):
+                continue
+            try:
+                req_round = int(ctx.get("battle_round", 0) or 0)
+            except (TypeError, ValueError):
+                req_round = 0
+            if req_round != int(battle_round):
+                continue
+            return req
+        return None
+
+    def _build_data_psalm_autosermon_request(self, game, *, source_root, source_member, choice_key: str, battle_round: int):
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        owner = getattr(self.army, "player", None)
+        if owner is None or source_root is None or source_member is None:
+            return None
+        normalized_choice = self._normalize_data_psalm_choice_key(choice_key)
+        if not normalized_choice:
+            return None
+        label_map = {key: label for key, label in self.data_psalm_benedictions()}
+        choice_label = str(label_map.get(normalized_choice, normalized_choice.replace("_", " ").title()))
+        source_name = str(
+            getattr(source_member, "special_rules", {}).get("enhancement_data_blessed_autosermon_source", "")
+            if isinstance(getattr(source_member, "special_rules", None), dict)
+            else ""
+        ) or self._DATA_PSALM_AUTOSERMON_SOURCE
+        source_name = source_name.strip() or self._DATA_PSALM_AUTOSERMON_SOURCE
+        once_key = str(
+            getattr(source_member, "special_rules", {}).get("enhancement_data_blessed_autosermon_once_key", "")
+            if isinstance(getattr(source_member, "special_rules", None), dict)
+            else ""
+        ).strip().lower() or "data_blessed_autosermon"
+        source_root_id = self._entity_id(source_root)
+        source_member_id = self._entity_id(source_member)
+        options = [
+            DecisionOption.create("None", payload={"action": "skip"}),
+            DecisionOption.create(
+                f"Activate ({choice_label})",
+                payload={
+                    "source_unit_id": source_root_id,
+                    "source_member_unit_id": source_member_id,
+                    "choice_key": normalized_choice,
+                },
+            ),
+        ]
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{source_name}: activate for this Command phase (or None).",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self._DATA_PSALM_AUTOSERMON_ABILITY_KEY,
+                "ability_name": source_name,
+                "ability_key": once_key,
+                "source_unit_id": source_root_id,
+                "source_member_unit_id": source_member_id,
+                "battle_round": int(battle_round),
+                "allowed_choice_keys": [normalized_choice],
+                "optional": True,
+            },
+        )
+
+    def _queue_data_psalm_autosermon_requests(self, game, *, player, battle_round: int) -> None:
+        if not self.is_data_psalm_conclave():
+            return
+        if game is None or player is None or player is not getattr(self.army, "player", None):
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        if not self.active_data_psalm_benediction_key:
+            return
+        other_choice = self._other_data_psalm_benediction_key(self.active_data_psalm_benediction_key)
+        if not other_choice:
+            return
+        for source_root_id, source_root, source_member, source_sr, _bearer in self._iter_data_psalm_autosermon_sources():
+            once_key = str(source_sr.get("enhancement_data_blessed_autosermon_once_key", "") or "data_blessed_autosermon").strip().lower()
+            if not once_key:
+                once_key = "data_blessed_autosermon"
+            has_used = getattr(source_root, "has_used_unit_once_per_battle", None)
+            if callable(has_used) and bool(has_used(once_key)):
+                continue
+            if self._pending_data_psalm_autosermon_request(
+                game,
+                source_root_id=source_root_id,
+                battle_round=int(battle_round),
+            ) is not None:
+                continue
+            request = self._build_data_psalm_autosermon_request(
+                game,
+                source_root=source_root,
+                source_member=source_member,
+                choice_key=other_choice,
+                battle_round=int(battle_round),
+            )
+            request_decision = getattr(game, "request_decision", None)
+            if callable(request_decision) and request is not None:
+                request_decision(request)
+
+    def _clear_expired_data_psalm_autosermon_state(self, *, game=None, player=None, battle_round: int = 0) -> None:
+        if game is None or player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        current_round = int(battle_round or 0)
+        seen_roots: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            source_root = self._attached_root(unit)
+            if source_root is None:
+                continue
+            root_id = self._entity_id(source_root) or str(id(source_root))
+            if root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            sr = getattr(source_root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(self._DATA_PSALM_AUTOSERMON_ACTIVE_KEY, False)):
+                continue
+            sr_owner = str(sr.get(self._DATA_PSALM_AUTOSERMON_OWNER_KEY, "") or "")
+            if sr_owner and sr_owner != owner_id:
+                continue
+            try:
+                expires_round = int(sr.get(self._DATA_PSALM_AUTOSERMON_EXPIRES_ROUND_KEY, 0) or 0)
+            except (TypeError, ValueError):
+                expires_round = 0
+            if expires_round <= 0 or current_round < expires_round:
+                continue
+            updated = dict(sr)
+            for key in (
+                self._DATA_PSALM_AUTOSERMON_ACTIVE_KEY,
+                self._DATA_PSALM_AUTOSERMON_CHOICE_KEY,
+                self._DATA_PSALM_AUTOSERMON_OWNER_KEY,
+                self._DATA_PSALM_AUTOSERMON_STARTED_ROUND_KEY,
+                self._DATA_PSALM_AUTOSERMON_EXPIRES_ROUND_KEY,
+                self._DATA_PSALM_AUTOSERMON_SOURCE_UNIT_ID_KEY,
+            ):
+                updated.pop(key, None)
+            source_root.special_rules = updated
+
+    def _resolve_data_psalm_autosermon_source(self, source_unit_id: str):
+        wanted = str(source_unit_id or "").strip()
+        if not wanted:
+            return None
+        for root_id, source_root, source_member, source_sr, bearer in self._iter_data_psalm_autosermon_sources():
+            if str(root_id or "").strip() != wanted:
+                continue
+            return source_root, source_member, source_sr, bearer
+        return None
+
+    def validate_data_psalm_autosermon_choice(
+        self,
+        source_unit_id: str,
+        choice_key: str,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+    ) -> tuple[bool, str]:
+        if not self.is_data_psalm_conclave():
+            return False, "Data-blessed Autosermon requires a Data-Psalm Conclave army."
+        if self.army is None:
+            return False, "Data-blessed Autosermon army not found."
+        owner = getattr(self.army, "player", None)
+        if player is not None and owner is not None and player is not owner:
+            return False, "Data-blessed Autosermon must be resolved by the owning player."
+        if not self.active_data_psalm_benediction_key:
+            return False, "Data-blessed Autosermon requires an active Benediction of the Omnissiah."
+        resolved = self._resolve_data_psalm_autosermon_source(source_unit_id)
+        if resolved is None:
+            return False, "Data-blessed Autosermon source unit was not found."
+        source_root, source_member, source_sr, _bearer = resolved
+        once_key = str(source_sr.get("enhancement_data_blessed_autosermon_once_key", "") or "data_blessed_autosermon").strip().lower()
+        if not once_key:
+            once_key = "data_blessed_autosermon"
+        has_used = getattr(source_root, "has_used_unit_once_per_battle", None)
+        if callable(has_used) and bool(has_used(once_key)):
+            return False, "Data-blessed Autosermon has already been used for this unit."
+        normalized = self._normalize_data_psalm_choice_key(choice_key)
+        if not normalized:
+            return False, "Data-blessed Autosermon choice is not supported."
+        expected_choice = self._other_data_psalm_benediction_key(self.active_data_psalm_benediction_key)
+        if normalized != expected_choice:
+            return False, "Data-blessed Autosermon must select the Benediction not currently active for your army."
+        expected_round = int(battle_round or 0)
+        if expected_round and game is not None:
+            try:
+                current_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = 0
+            if current_round and current_round != expected_round:
+                return False, "Data-blessed Autosermon selection is no longer in the current Command phase."
+        _ = source_member
+        return True, ""
+
+    def activate_data_psalm_autosermon(
+        self,
+        source_unit_id: str,
+        choice_key: str,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+    ):
+        valid, reason = self.validate_data_psalm_autosermon_choice(
+            source_unit_id,
+            choice_key,
+            game=game,
+            player=player,
+            battle_round=battle_round,
+        )
+        if not valid:
+            return None
+        resolved = self._resolve_data_psalm_autosermon_source(source_unit_id)
+        if resolved is None:
+            return None
+        source_root, source_member, source_sr, _bearer = resolved
+        normalized = self._normalize_data_psalm_choice_key(choice_key)
+        labels = {key: label for key, label in self.data_psalm_benedictions()}
+        owner = getattr(self.army, "player", None)
+        owner_id = str(getattr(owner, "id", "") or "")
+        if game is not None:
+            try:
+                current_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = int(battle_round or 0)
+        else:
+            current_round = int(battle_round or 0)
+        if current_round <= 0:
+            current_round = int(battle_round or 0)
+        expires_round = int(current_round + 1) if current_round > 0 else 0
+        sr_root = getattr(source_root, "special_rules", None)
+        if not isinstance(sr_root, dict):
+            sr_root = {}
+        updated = dict(sr_root)
+        source_name = str(source_sr.get("enhancement_data_blessed_autosermon_source", "") or self._DATA_PSALM_AUTOSERMON_SOURCE).strip()
+        if not source_name:
+            source_name = self._DATA_PSALM_AUTOSERMON_SOURCE
+        updated[self._DATA_PSALM_AUTOSERMON_ACTIVE_KEY] = True
+        updated[self._DATA_PSALM_AUTOSERMON_CHOICE_KEY] = normalized
+        updated[self._DATA_PSALM_AUTOSERMON_OWNER_KEY] = owner_id
+        updated[self._DATA_PSALM_AUTOSERMON_STARTED_ROUND_KEY] = int(current_round or 0)
+        updated[self._DATA_PSALM_AUTOSERMON_EXPIRES_ROUND_KEY] = int(expires_round or 0)
+        updated[self._DATA_PSALM_AUTOSERMON_SOURCE_UNIT_ID_KEY] = str(self._entity_id(source_root) or "")
+        source_root.special_rules = updated
+        once_key = str(source_sr.get("enhancement_data_blessed_autosermon_once_key", "") or "data_blessed_autosermon").strip().lower()
+        if not once_key:
+            once_key = "data_blessed_autosermon"
+        mark_used = getattr(source_root, "mark_unit_once_per_battle_used", None)
+        if callable(mark_used):
+            mark_used(once_key, ability_name=source_name)
+        return {
+            "source_unit_id": str(self._entity_id(source_root) or ""),
+            "choice_key": normalized,
+            "choice_label": str(labels.get(normalized, normalized.replace("_", " ").title())),
+            "battle_round": int(current_round or 0),
+            "source": source_name,
+        }
 
     def _pending_data_psalm_benediction_request(self, game, army_id: str):
         if game is None:
@@ -356,8 +742,6 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         weapon_profile=None,
         game=None,
     ) -> tuple[int, str]:
-        if not self._data_psalm_benediction_active(self._DATA_PSALM_PANEGYRIC_KEY):
-            return 0, ""
         if attacker_model is None or target_unit is None:
             return 0, ""
         if not self._weapon_is_attack_type(weapon_profile, "ranged"):
@@ -365,6 +749,14 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         attacker_unit = getattr(attacker_model, "parent_unit", None)
         attacker_root = self._data_psalm_cult_mechanicus_root(attacker_unit)
         if attacker_root is None:
+            return 0, ""
+        army_active = self._data_psalm_benediction_active(self._DATA_PSALM_PANEGYRIC_KEY)
+        unit_active = self._data_psalm_autosermon_effect_active_for_unit(
+            attacker_root,
+            self._DATA_PSALM_PANEGYRIC_KEY,
+            game=game,
+        )
+        if not army_active and not unit_active:
             return 0, ""
         target_root = self._attached_root(target_unit)
         if target_root is None:
@@ -397,8 +789,6 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         weapon_profile=None,
         game=None,
     ) -> tuple[int, str]:
-        if not self._data_psalm_benediction_active(self._DATA_PSALM_CITATION_KEY):
-            return 0, ""
         if attacker_model is None:
             return 0, ""
         if not self._weapon_is_attack_type(weapon_profile, "melee"):
@@ -406,6 +796,14 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         source_unit = unit if unit is not None else getattr(attacker_model, "parent_unit", None)
         source_root = self._data_psalm_cult_mechanicus_root(source_unit)
         if source_root is None:
+            return 0, ""
+        army_active = self._data_psalm_benediction_active(self._DATA_PSALM_CITATION_KEY)
+        unit_active = self._data_psalm_autosermon_effect_active_for_unit(
+            source_root,
+            self._DATA_PSALM_CITATION_KEY,
+            game=game,
+        )
+        if not army_active and not unit_active:
             return 0, ""
         if not self._unit_made_charge_move_this_turn(source_root, game=game):
             return 0, ""
@@ -1853,6 +2251,17 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             )
         if self.is_explorator_maniple():
             self._queue_acquisition_request(game, player=player, battle_round=int(battle_round))
+        if self.is_data_psalm_conclave():
+            self._clear_expired_data_psalm_autosermon_state(
+                game=game,
+                player=player,
+                battle_round=int(battle_round),
+            )
+            self._queue_data_psalm_autosermon_requests(
+                game,
+                player=player,
+                battle_round=int(battle_round),
+            )
         if not self.is_rad_zone_corps():
             return
         if battle_round < 2 or battle_round > 5:

@@ -3587,6 +3587,46 @@ class AbilitySpecsMixin:
                     }
                 )
 
+        for u in members:
+            if u is None:
+                continue
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_mechanicus_locum", False)):
+                continue
+            try:
+                range_value = int(float(sr.get("enhancement_mechanicus_locum_range", 12) or 12))
+            except (TypeError, ValueError):
+                range_value = 12
+            if range_value <= 0:
+                continue
+            keyword_raw = str(sr.get("enhancement_mechanicus_locum_keyword_phrase", "") or "CULT MECHANICUS").strip()
+            if not keyword_raw:
+                keyword_raw = "CULT MECHANICUS"
+            source = str(sr.get("enhancement_mechanicus_locum_source", "") or "Mechanicus Locum").strip() or "Mechanicus Locum"
+            ability_seed = str(sr.get("enhancement_mechanicus_locum_once_key", "") or "mechanicus_locum").strip().lower()
+            if not ability_seed:
+                ability_seed = "mechanicus_locum"
+            ability_key = f"start_any_phase_clear_battleshock:{ability_seed}"
+            model_name = ""
+            get_bearer = getattr(u, "_get_enhancement_bearer_model", None)
+            if callable(get_bearer):
+                bearer_model = get_bearer()
+                if bearer_model is not None:
+                    model_name = str(getattr(bearer_model, "name", "") or "").strip()
+            key = (source.lower(), int(range_value), keyword_raw.lower(), model_name.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "keyword": keyword_raw,
+                    "model_name": model_name,
+                    "ability_key": ability_key,
+                }
+            )
+
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = list(specs)

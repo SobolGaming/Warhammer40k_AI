@@ -19816,6 +19816,37 @@ class WargearProfile:
                     damage_result['special_effects'].append("Mantle of Ophelia: Damage set to 1")
         except Exception:
             pass
+        # Data-Psalm Conclave: Mantle of the Gnosticarch.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+            if isinstance(sr, dict) and sr.get("enhancement_mantle_of_the_gnosticarch"):
+                target_id = str(get_entity_id(target_model) or "")
+                bearer_id = str(
+                    sr.get("enhancement_mantle_of_the_gnosticarch_bearer_model_id", "")
+                    or sr.get("enhancement_bearer_model_id", "")
+                    or ""
+                ).strip()
+                applies = bool(target_id and bearer_id and target_id == bearer_id)
+                if not applies and not bearer_id:
+                    models = list(getattr(t_unit, "models", []) or []) if t_unit is not None else []
+                    if len(models) == 1 and models[0] is target_model:
+                        applies = True
+                if applies:
+                    set_damage_to = int(sr.get("enhancement_mantle_of_the_gnosticarch_set_damage_to", 1) or 1)
+                    source_name = str(sr.get("enhancement_mantle_of_the_gnosticarch_source", "") or "Mantle of the Gnosticarch").strip() or "Mantle of the Gnosticarch"
+                    damage_mods.append(
+                        Modifier(
+                            ModifierOp.SET,
+                            int(max(0, set_damage_to)),
+                            source="enhancement:mantle_of_the_gnosticarch_set_damage",
+                        )
+                    )
+                    damage_result["special_effects"].append(
+                        f"{source_name}: Damage set to {int(max(0, set_damage_to))}"
+                    )
+        except Exception:
+            pass
         # Unit/model abilities: reduce damage allocated to this model.
         try:
             t_unit = getattr(target_model, "parent_unit", None)

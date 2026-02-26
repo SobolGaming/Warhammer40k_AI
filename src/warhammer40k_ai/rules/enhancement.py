@@ -605,6 +605,9 @@ class Enhancement:
             is_cohort_cybernetica = bool(adm_mgr and adm_mgr.is_cohort_cybernetica())
         except Exception:
             is_cohort_cybernetica = False
+        is_data_psalm_conclave = bool(
+            adm_mgr and getattr(adm_mgr, "is_data_psalm_conclave", lambda: False)()
+        )
         am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
         try:
             is_grizzled_company = bool(am_mgr and am_mgr.is_grizzled_company())
@@ -966,6 +969,76 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_arch_negator_bearer_model_id"] = bearer_id
+
+        if name == "mechanicus locum" or enh_id == "000008564002":
+            if not is_data_psalm_conclave:
+                return
+            unit.special_rules["enhancement_mechanicus_locum"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                range_inches = int(float(params.get("range", 12.0) or 12.0))
+            except (TypeError, ValueError):
+                range_inches = 12
+            keyword_phrase = str(params.get("keyword_phrase", "CULT MECHANICUS") or "CULT MECHANICUS").strip()
+            once_key = str(params.get("once_per_battle_key", "mechanicus_locum") or "mechanicus_locum").strip().lower()
+            if not once_key:
+                once_key = "mechanicus_locum"
+            unit.special_rules["enhancement_mechanicus_locum_range"] = int(max(1, range_inches))
+            unit.special_rules["enhancement_mechanicus_locum_keyword_phrase"] = keyword_phrase or "CULT MECHANICUS"
+            unit.special_rules["enhancement_mechanicus_locum_once_key"] = once_key
+            unit.special_rules["enhancement_mechanicus_locum_source"] = "Mechanicus Locum"
+            unit.special_rules["enhancement_mechanicus_locum_bearer_leadership"] = 6
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_mechanicus_locum_bearer_model_id"] = bearer_id
+            get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+            bearer_model = get_bearer() if callable(get_bearer) else None
+            if bearer_model is not None:
+                bearer_model.leadership = int(unit.special_rules.get("enhancement_mechanicus_locum_bearer_leadership", 6) or 6)
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("unit_start_any_phase_clear_battleshock_specs", None)
+
+        if name == "mantle of the gnosticarch" or enh_id == "000008564003":
+            if not is_data_psalm_conclave:
+                return
+            unit.special_rules["enhancement_mantle_of_the_gnosticarch"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                set_damage_to = int(params.get("set_damage_to", 1) or 1)
+            except (TypeError, ValueError):
+                set_damage_to = 1
+            unit.special_rules["enhancement_mantle_of_the_gnosticarch_set_damage_to"] = int(max(0, set_damage_to))
+            unit.special_rules["enhancement_mantle_of_the_gnosticarch_source"] = "Mantle of the Gnosticarch"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_mantle_of_the_gnosticarch_bearer_model_id"] = bearer_id
+
+        if name == "data-blessed autosermon" or enh_id == "000008564004":
+            if not is_data_psalm_conclave:
+                return
+            unit.special_rules["enhancement_data_blessed_autosermon"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(params.get("once_per_battle_key", "data_blessed_autosermon") or "data_blessed_autosermon").strip().lower()
+            if not once_key:
+                once_key = "data_blessed_autosermon"
+            unit.special_rules["enhancement_data_blessed_autosermon_once_key"] = once_key
+            unit.special_rules["enhancement_data_blessed_autosermon_source"] = "Data-blessed Autosermon"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_data_blessed_autosermon_bearer_model_id"] = bearer_id
+
+        if name == "temporcopia" or enh_id == "000008564005":
+            if not is_data_psalm_conclave:
+                return
+            unit.special_rules["enhancement_temporcopia"] = True
+            unit.special_rules["enhancement_temporcopia_source"] = "Temporcopia"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_temporcopia_bearer_model_id"] = bearer_id
 
         if name == "decoy targets" or enh_id == "000009757002":
             if not is_veiled_blade_elimination_force:

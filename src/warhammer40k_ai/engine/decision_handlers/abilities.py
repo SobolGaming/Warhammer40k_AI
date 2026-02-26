@@ -5262,6 +5262,48 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if callable(can_select_fn) and not bool(can_select_fn(game=game, battle_round=battle_round)):
             return ("Benedictions of the Omnissiah can only be selected once at the start of battle round 1.",)
         return ()
+    if ability == "data_psalm_autosermon":
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return ("Data-blessed Autosermon army not found.",)
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_data_psalm_conclave", lambda: False)()):
+            return ("Data-blessed Autosermon requires a Data-Psalm Conclave army.",)
+        normalize_fn = getattr(mgr, "_normalize_data_psalm_choice_key", None)
+        raw_choice = str(payload.get("choice_key") or payload.get("data_psalm_autosermon_choice_key") or "").strip().upper()
+        choice = str(normalize_fn(raw_choice) if callable(normalize_fn) else raw_choice or "")
+        if not choice:
+            return ("Data-blessed Autosermon requires a valid Benediction choice.",)
+        allowed_choices = [str(v or "").strip().upper() for v in list(ctx.get("allowed_choice_keys", []) or []) if str(v or "").strip()]
+        if callable(normalize_fn):
+            allowed_choices = [str(normalize_fn(v) or "").strip().upper() for v in allowed_choices]
+        allowed_choices = [v for v in allowed_choices if v]
+        if allowed_choices and choice not in allowed_choices:
+            return ("Data-blessed Autosermon choice is not legal for this request.",)
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        if not source_unit_id:
+            return ("Data-blessed Autosermon source unit is required.",)
+        player = _resolve_player(game, request, payload)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        validate_choice = getattr(mgr, "validate_data_psalm_autosermon_choice", None)
+        if not callable(validate_choice):
+            return ("Data-blessed Autosermon manager support is unavailable.",)
+        valid, reason = validate_choice(
+            source_unit_id,
+            choice,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+        )
+        if not valid:
+            return (str(reason or "Data-blessed Autosermon selection is not legal."),)
+        return ()
     if ability == "acquisition_at_any_cost":
         if is_skip_choice(request, result):
             return ("Acquisition At Any Cost selection cannot be skipped.",)
@@ -8661,6 +8703,45 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"Benedictions of the Omnissiah: {label} selected (Battle Round {int(battle_round)}).",
             )
         return applied
+    if ability == "data_psalm_autosermon":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return None
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_data_psalm_conclave", lambda: False)()):
+            return None
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        if not source_unit_id:
+            return None
+        choice = str(payload.get("choice_key") or payload.get("data_psalm_autosermon_choice_key") or "").strip().upper()
+        player = _resolve_player(game, request, payload)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        activate_fn = getattr(mgr, "activate_data_psalm_autosermon", None)
+        if not callable(activate_fn):
+            return None
+        outcome = activate_fn(
+            source_unit_id,
+            choice,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+        )
+        if outcome is not None:
+            owner = getattr(source_army, "player", None)
+            choice_label = str((outcome or {}).get("choice_label", "") or choice.replace("_", " ").title())
+            source_name = str((outcome or {}).get("source", "") or "Data-blessed Autosermon").strip() or "Data-blessed Autosermon"
+            _log_action_for_players(
+                game,
+                owner,
+                f"{source_name}: {choice_label} is now active for the bearer's unit until your next Command phase.",
+            )
+        return outcome
     if ability == "acquisition_at_any_cost":
         if is_skip_choice(request, result):
             return None

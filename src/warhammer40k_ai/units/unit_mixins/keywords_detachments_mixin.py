@@ -240,6 +240,14 @@ class KeywordsDetachmentsMixin:
                 return True
         except Exception:
             pass
+        has_active_enhancement = getattr(self, "_attached_unit_has_active_enhancement", None)
+        if callable(has_active_enhancement):
+            if has_active_enhancement(
+                "enhancement_temporcopia",
+                enhancement_id="000008564005",
+                enhancement_name="temporcopia",
+            ):
+                return True
         # Datasheet activation: Blinding Spray (Fight phase only, selected unit gains Fights First).
         try:
             root = self.get_attached_unit_root()
