@@ -438,6 +438,9 @@ class Enhancement:
         is_godhammer_assault_force = bool(
             sm_mgr and getattr(sm_mgr, "is_godhammer_assault_force", lambda: False)()
         )
+        is_hammer_of_avernii = bool(
+            sm_mgr and getattr(sm_mgr, "is_hammer_of_avernii", lambda: False)()
+        )
         is_firestorm_assault_force = bool(
             sm_mgr and getattr(sm_mgr, "is_firestorm_assault_force", lambda: False)()
         )
@@ -2153,6 +2156,127 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_herald_of_sacred_slaughter_bearer_model_id"] = bearer_id
+
+        if name == "spiritus ferrum" or enh_id == "000010623002":
+            if not is_hammer_of_avernii:
+                return
+            unit.special_rules["enhancement_spiritus_ferrum"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            bearer_bonus = _coerce_int(params.get("bearer_melee_attacks_bonus", 1) or 1, default=1)
+            other_models_bonus = _coerce_int(
+                params.get("unit_other_models_melee_attacks_bonus", 1) or 1,
+                default=1,
+            )
+            once_key = str(
+                params.get("once_per_battle_key", "spiritus_ferrum") or "spiritus_ferrum"
+            ).strip().lower()
+            existing_bearer_bonus = _coerce_int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0,
+                default=0,
+            )
+            existing_other_bonus = _coerce_int(
+                unit.special_rules.get("enhancement_the_imperiums_sword_other_models_bonus", 0) or 0,
+                default=0,
+            )
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                max(existing_bearer_bonus, max(0, int(bearer_bonus)))
+            )
+            # Reuse existing once-per-battle start-of-phase helper for other models.
+            unit.special_rules["enhancement_the_imperiums_sword"] = True
+            unit.special_rules["enhancement_the_imperiums_sword_other_models_bonus"] = int(
+                max(existing_other_bonus, max(0, int(other_models_bonus)))
+            )
+            unit.special_rules["enhancement_the_imperiums_sword_once_key"] = (
+                once_key if once_key else "spiritus_ferrum"
+            )
+            unit.special_rules["enhancement_the_imperiums_sword_source"] = "Spiritus Ferrum"
+            unit.special_rules["enhancement_spiritus_ferrum_source"] = "Spiritus Ferrum"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_spiritus_ferrum_bearer_model_id"] = bearer_id
+
+        if (
+            name in ("medusan roar (aura)", "medusan roar aura", "medusan roar")
+            or enh_id == "000010623003"
+        ):
+            if not is_hammer_of_avernii:
+                return
+            unit.special_rules["enhancement_medusan_roar"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_raw = params.get("range", getattr(desc, "range_in", 6.0) if desc is not None else 6.0)
+            try:
+                aura_range = float(range_raw if range_raw is not None else 6.0)
+            except Exception:
+                aura_range = 6.0
+            once_key = str(params.get("once_per_battle_key", "medusan_roar") or "medusan_roar").strip().lower()
+            once_roll = (
+                str(params.get("once_per_battle_models_destroyed_roll", "D3") or "D3").strip().upper()
+                or "D3"
+            )
+            # Reuse existing battle-shock fail destroy-model machinery.
+            unit.special_rules["enhancement_fear_made_manifest"] = True
+            unit.special_rules["enhancement_fear_made_manifest_range"] = float(max(0.0, aura_range))
+            unit.special_rules["enhancement_fear_made_manifest_once_key"] = once_key if once_key else "medusan_roar"
+            unit.special_rules["enhancement_fear_made_manifest_once_roll"] = once_roll
+            unit.special_rules["enhancement_fear_made_manifest_source"] = "Medusan Roar (Aura)"
+            unit.special_rules["enhancement_medusan_roar_source"] = "Medusan Roar (Aura)"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_medusan_roar_bearer_model_id"] = bearer_id
+
+        if name == "iron laurel" or enh_id == "000010623004":
+            if not is_hammer_of_avernii:
+                return
+            unit.special_rules["enhancement_iron_laurel"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            bearer_oc_bonus = _coerce_int(params.get("bearer_objective_control_bonus", 1) or 1, default=1)
+            other_models_bonus = _coerce_int(
+                params.get("unit_other_models_objective_control_bonus", 1) or 1,
+                default=1,
+            )
+            once_key = str(params.get("once_per_battle_key", "iron_laurel") or "iron_laurel").strip().lower()
+            existing_other_bonus = _coerce_int(
+                unit.special_rules.get("enhancement_rites_of_war_other_models_bonus", 0) or 0,
+                default=0,
+            )
+            # Reuse existing start-of-phase Objective Control bonus machinery.
+            unit.special_rules["enhancement_rites_of_war"] = True
+            unit.special_rules["enhancement_rites_of_war_bearer_oc_bonus"] = int(max(0, int(bearer_oc_bonus)))
+            unit.special_rules["enhancement_rites_of_war_other_models_bonus"] = int(
+                max(existing_other_bonus, max(0, int(other_models_bonus)))
+            )
+            unit.special_rules["enhancement_rites_of_war_once_key"] = once_key if once_key else "iron_laurel"
+            unit.special_rules["enhancement_rites_of_war_source"] = "Iron Laurel"
+            unit.special_rules["enhancement_iron_laurel_source"] = "Iron Laurel"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_iron_laurel_bearer_model_id"] = bearer_id
+
+        if name == "steel font" or enh_id == "000010623005":
+            if not is_hammer_of_avernii:
+                return
+            unit.special_rules["enhancement_steel_font"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            return_amount = _coerce_int(
+                params.get("command_phase_bodyguard_return_amount", 1) or 1,
+                default=1,
+            )
+            ability_key = str(params.get("ability_key", "steel_font") or "steel_font").strip().lower()
+            unit.special_rules["enhancement_steel_font_command_phase_return_amount"] = int(
+                max(1, int(return_amount))
+            )
+            unit.special_rules["enhancement_steel_font_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_steel_font_ability_key"] = ability_key if ability_key else "steel_font"
+            unit.special_rules["enhancement_steel_font_source"] = "Steel Font"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_steel_font_bearer_model_id"] = bearer_id
 
         if name in ("wolves' wisdom", "wolves wisdom") or enh_id == "000009851002":
             if not is_champions_of_fenris:

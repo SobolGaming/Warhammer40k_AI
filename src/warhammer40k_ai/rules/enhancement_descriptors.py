@@ -1928,6 +1928,71 @@ _SPACE_MARINES_GODHAMMER_ASSAULT_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_GODHAMMER_ASSAULT_FORCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_HAMMER_OF_AVERNII_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010623002": EnhancementToolDescriptor(
+        enhancement_id="000010623002",
+        name="Spiritus Ferrum",
+        timing="passive_and_start_of_any_phase_optional",
+        target="bearer_and_bearer_unit_other_models",
+        duration="constant_and_until_end_of_phase_once_per_battle",
+        effect="bearer_melee_attacks_bonus_and_once_per_battle_unit_other_models_melee_attacks_bonus",
+        once_per_battle=True,
+        effect_params={
+            "bearer_melee_attacks_bonus": 1,
+            "unit_other_models_melee_attacks_bonus": 1,
+            "once_per_battle_key": "spiritus_ferrum",
+        },
+    ),
+    "000010623003": EnhancementToolDescriptor(
+        enhancement_id="000010623003",
+        name="Medusan Roar (Aura)",
+        timing="on_enemy_battleshock_fail_within_aura",
+        target="enemy_non_monster_non_vehicle_unit_within_range_of_bearer",
+        duration="instant_and_once_per_battle_upgrade",
+        effect="destroy_models_on_battleshock_fail_with_once_per_battle_d3_upgrade",
+        range_in=6.0,
+        once_per_battle=True,
+        effect_params={
+            "range": 6.0,
+            "exclude_keywords_any": ("MONSTER", "VEHICLE"),
+            "base_models_destroyed": 1,
+            "once_per_battle_models_destroyed_roll": "D3",
+            "once_per_battle_key": "medusan_roar",
+        },
+    ),
+    "000010623004": EnhancementToolDescriptor(
+        enhancement_id="000010623004",
+        name="Iron Laurel",
+        timing="passive_and_start_of_any_phase_optional",
+        target="bearer_and_bearer_unit_other_models",
+        duration="constant_and_until_end_of_phase_once_per_battle",
+        effect="bearer_objective_control_bonus_and_once_per_battle_unit_other_models_objective_control_bonus",
+        once_per_battle=True,
+        effect_params={
+            "bearer_objective_control_bonus": 1,
+            "unit_other_models_objective_control_bonus": 1,
+            "once_per_battle_key": "iron_laurel",
+        },
+    ),
+    "000010623005": EnhancementToolDescriptor(
+        enhancement_id="000010623005",
+        name="Steel Font",
+        timing="command_phase_while_leading",
+        target="bearer_led_unit",
+        duration="instant",
+        effect="return_one_destroyed_bodyguard_model",
+        effect_params={
+            "requires_bearer_leading": True,
+            "command_phase_bodyguard_return_amount": 1,
+            "ability_key": "steel_font",
+        },
+    ),
+}
+
+_SPACE_MARINES_HAMMER_OF_AVERNII_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_HAMMER_OF_AVERNII_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008478002": EnhancementToolDescriptor(
         enhancement_id="000008478002",
@@ -3646,6 +3711,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_GODHAMMER_ASSAULT_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_HAMMER_OF_AVERNII_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3777,6 +3845,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_FORGEFATHERS_SEEKERS_BY_NAME.get(key)
         or _SPACE_MARINES_GLADIUS_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_GODHAMMER_ASSAULT_FORCE_BY_NAME.get(key)
+        or _SPACE_MARINES_HAMMER_OF_AVERNII_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)
         or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)
