@@ -2587,9 +2587,10 @@ class Unit(
     )
     _ATTACHED_CHARACTER_FNP_RE = re.compile(
         r"(?:other\s+character\s+models\s+attached\s+to\s+(?:that\s+unit|the\s+bearer'?s\s+unit|this\s+unit)\s*,?\s+"
-        r"have\s+(?:the\s+)?feel\s+no\s+pain\s*([1-6])\+)|"
-        r"(?:while\s+a\s+character\s+model\s+is\s+leading\s+this\s+unit(?:\s*,\s*|\s+)that\s+character\s+model\s+has\s+"
-        r"(?:the\s+)?feel\s+no\s+pain\s*([1-6])\+)",
+        r"have\s+(?:the\s+)?feel\s+no\s+pain\s*(?P<other_value>[1-6])\+)|"
+        r"(?:while\s+a\s+(?P<leading_model_ref>[a-z0-9][a-z0-9 '\-]*)\s+model\s+is\s+leading\s+this\s+unit"
+        r"(?:\s*,\s*|\s+)that(?:\s+[a-z0-9][a-z0-9 '\-]*)?\s+model\s+has\s+"
+        r"(?:the\s+)?feel\s+no\s+pain\s*(?P<leading_model_value>[1-6])\+)",
         re.IGNORECASE,
     )
     _UNIT_CONTAINS_CHARACTER_FNP_RE = re.compile(

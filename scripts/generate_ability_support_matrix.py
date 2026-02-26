@@ -6520,13 +6520,26 @@ def _attached_character_fnp_support(description: str) -> Optional[Tuple[str, str
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    pattern = (
+    other_character_pattern = (
         r"while this model is leading a unit other character models attached to "
         r"(?:that unit|the bearers unit|this unit) have (?:the )?feel no pain ([1-6])(?: ability)?"
     )
-    m = re.fullmatch(pattern, norm)
+    m = re.fullmatch(other_character_pattern, norm)
     if not m:
-        return None
+        specific_model_pattern = (
+            r"while a (?P<model>.+?) model is leading this unit that(?: [a-z0-9][a-z0-9 '\-]*)? model has "
+            r"(?:the )?feel no pain (?P<val>[1-6])(?: ability)?"
+        )
+        m_specific = re.fullmatch(specific_model_pattern, norm)
+        if not m_specific:
+            return None
+        model = str(m_specific.group("model") or "").strip()
+        val = str(m_specific.group("val") or "").strip()
+        if not model or not val:
+            return None
+        if model.lower() == "character":
+            return ("Supported", f"While a CHARACTER leads the unit, that CHARACTER gains Feel No Pain {val}+.")
+        return ("Supported", f"While a {model} model leads the unit, that model gains Feel No Pain {val}+.")
     return ("Supported", f"Leading: other attached Character models gain Feel No Pain {m.group(1)}+.")
 
 

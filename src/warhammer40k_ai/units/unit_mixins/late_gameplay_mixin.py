@@ -1286,6 +1286,14 @@ class LateGameplayMixin:
                         exclude_id = entry.get("exclude_unit_id")
                         if exclude_id and str(exclude_id) == str(t_unit_id):
                             continue
+                        required_model_name = str(entry.get("required_model_name", "") or "").strip()
+                        if required_model_name:
+                            contains_named_model = False
+                            contains_named_model_fn = getattr(t_unit, "_unit_contains_model_named", None)
+                            if callable(contains_named_model_fn):
+                                contains_named_model = bool(contains_named_model_fn(required_model_name))
+                            if not contains_named_model:
+                                continue
                         try:
                             val = int(entry.get("value"))
                         except Exception:

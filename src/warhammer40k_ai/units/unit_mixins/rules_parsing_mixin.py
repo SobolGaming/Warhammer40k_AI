@@ -2401,26 +2401,32 @@ class RulesParsingMixin:
                     m = self._ATTACHED_CHARACTER_FNP_RE.search(sentence)
                     if m:
                         try:
-                            g1 = m.group(1)
+                            other_val = m.group("other_value")
                         except Exception:
-                            g1 = None
+                            other_val = None
                         try:
-                            g2 = m.group(2)
+                            leading_val = m.group("leading_model_value")
                         except Exception:
-                            g2 = None
+                            leading_val = None
                         try:
-                            val = int(g1 or g2 or 0)
+                            leading_model = m.group("leading_model_ref")
+                        except Exception:
+                            leading_model = None
+                        try:
+                            val = int(other_val or leading_val or 0)
                         except Exception:
                             val = None
                         if val:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
-                            attached_character_fnp_entries.append(
-                                {
-                                    "value": int(val),
-                                    "source": source,
-                                    "exclude_unit_id": get_entity_id(u),
-                                }
-                            )
+                            entry = {
+                                "value": int(val),
+                                "source": source,
+                                "exclude_unit_id": get_entity_id(u),
+                            }
+                            leading_model_norm = self._normalize_keyword_phrase(str(leading_model or ""))
+                            if leading_model_norm and leading_model_norm != "character":
+                                entry["required_model_name"] = str(leading_model or "").strip()
+                            attached_character_fnp_entries.append(entry)
                             attached_character_fnp_matched = True
 
                     bearer_unit_keyword_fnp_matched = False

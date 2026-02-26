@@ -428,6 +428,36 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertNotIn((4, None), unit.has_feel_no_pain(target_model=unit.models[0]))
 
+    def test_specific_leading_model_fnp_applies_only_to_named_leader(self):
+        ability = {
+            "name": "Robotic Bodyguard",
+            "description": (
+                "While a Cybernetica Datasmith model is leading this unit, that model has the Feel No Pain 4+ ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        bodyguard = _make_unit("Kastelan Robots", abilities=[ability])
+
+        datasmith = _make_unit("Cybernetica Datasmith")
+        datasmith.models[0].name = "Cybernetica Datasmith"
+        datasmith.keywords = ["CHARACTER"]
+
+        other_leader = _make_unit("Tech-priest Dominus")
+        other_leader.models[0].name = "Tech-priest Dominus"
+        other_leader.keywords = ["CHARACTER"]
+
+        bodyguard.attached_leaders = [datasmith, other_leader]
+        datasmith.attached_to = bodyguard
+        other_leader.attached_to = bodyguard
+        datasmith.can_be_attached_to = [bodyguard.name]
+        other_leader.can_be_attached_to = [bodyguard.name]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertIn((4, None), datasmith.has_feel_no_pain(target_model=datasmith.models[0]))
+        self.assertNotIn((4, None), other_leader.has_feel_no_pain(target_model=other_leader.models[0]))
+
     def test_same_unit_keyword_fnp_applies_to_officer_only(self):
         ability = {
             "name": "Ogryn Bodyguard",
