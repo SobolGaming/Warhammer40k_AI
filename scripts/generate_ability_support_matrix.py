@@ -7918,12 +7918,18 @@ def _overwatch_hit_threshold_support(description: str) -> Optional[Tuple[str, st
         return None
     m = re.fullmatch(
         r"each time you target this unit with the fire overwatch stratagem "
-        r"(?:while|when) resolving that stratagem hits are scored on unmodified hit rolls of (?P<threshold>\d)\+?",
+        r"(?:"
+        r"(?:while|when) resolving that stratagem "
+        r"hits are scored on unmodified hit rolls of (?P<threshold_pre>\d)\+?"
+        r"|"
+        r"hits are scored on unmodified hit rolls of (?P<threshold_post>\d)\+? "
+        r"(?:while|when) resolving that stratagem"
+        r")",
         norm,
     )
     if not m:
         return None
-    threshold = str(m.group("threshold") or "").strip()
+    threshold = str(m.group("threshold_pre") or m.group("threshold_post") or "").strip()
     if threshold not in {"2", "3", "4", "5", "6"}:
         return None
     return ("Supported", f"Fire Overwatch with this unit scores hits on unmodified {threshold}+ while resolving the Stratagem.")

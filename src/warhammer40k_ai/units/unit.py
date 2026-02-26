@@ -3075,8 +3075,13 @@ class Unit(
     )
     _OVERWATCH_HIT_THRESHOLD_RE = re.compile(
         r"each time you target this unit with the fire overwatch stratagem "
+        r"(?:"
         r"(?:while|when) resolving that stratagem "
-        r"hits are scored on unmodified hit rolls of (?P<threshold>\d)(?:\+)?",
+        r"hits are scored on unmodified hit rolls of (?P<threshold_pre>\d)(?:\+)?"
+        r"|"
+        r"hits are scored on unmodified hit rolls of (?P<threshold_post>\d)(?:\+)? "
+        r"(?:while|when) resolving that stratagem"
+        r")",
         re.IGNORECASE,
     )
     _FORTIFY_OVERWATCH_RE = re.compile(

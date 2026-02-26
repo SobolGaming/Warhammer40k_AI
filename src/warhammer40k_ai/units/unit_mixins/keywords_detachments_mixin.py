@@ -3649,7 +3649,11 @@ class KeywordsDetachmentsMixin:
                 if not m_simple:
                     continue
                 try:
-                    threshold = int(m_simple.group("threshold") or 0)
+                    threshold = int(
+                        m_simple.group("threshold_pre")
+                        or m_simple.group("threshold_post")
+                        or 0
+                    )
                 except Exception:
                     threshold = 0
                 if threshold <= 0:

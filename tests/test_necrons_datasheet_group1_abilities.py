@@ -288,6 +288,25 @@ class TestNecronsDatasheetGroup1Abilities(unittest.TestCase):
         enemy.deployed = True
         self.assertEqual(unit.get_destroyer_of_futures_overwatch_hit_threshold(enemy_unit=enemy, game=game), 5)
 
+    def test_sentinel_construct_overwatch_threshold_when_resolving_wording(self):
+        ability = {
+            "name": "Sentinel Construct",
+            "description": (
+                "Each time you target this unit with the Fire Overwatch Stratagem, hits are scored on unmodified Hit "
+                "rolls of 5+ when resolving that Stratagem."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, _p1, _p2 = _build_game()
+        unit = _make_unit("Canoptek Doomstalker", abilities=[ability])
+        enemy = _make_unit("Enemy")
+        army1.add_unit(unit)
+        army2.add_unit(enemy)
+        unit.deployed = True
+        enemy.deployed = True
+        self.assertEqual(unit.get_destroyer_of_futures_overwatch_hit_threshold(enemy_unit=enemy, game=game), 5)
+
 
 if __name__ == "__main__":
     unittest.main()

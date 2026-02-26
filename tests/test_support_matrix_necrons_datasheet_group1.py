@@ -35,6 +35,13 @@ import pytest
             ),
         ),
         (
+            "Sentinel Construct (wording variant)",
+            (
+                "Each time you target this unit with the Fire Overwatch Stratagem, hits are scored on unmodified Hit "
+                "rolls of 5+ when resolving that Stratagem."
+            ),
+        ),
+        (
             "Hard-wired for Destruction",
             (
                 "Each time a model in this unit makes a ranged attack that targets the closest eligible enemy unit, re-roll "
