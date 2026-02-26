@@ -2961,6 +2961,31 @@ class Game(
                 rng = int(rule.get("range", 9) or 9)
                 if not root.can_loping_speed(game=self, game_map=self.map, moving_unit=moving_root, range_override=rng):
                     continue
+                tactica_battleline_mode = False
+                tactica_battleline_distance = 0
+                tactica_battleline_range = 0
+                try:
+                    tactica_battleline_distance = int(rule.get("battleline_wholly_within_max_distance", 0) or 0)
+                except Exception:
+                    tactica_battleline_distance = 0
+                try:
+                    tactica_battleline_range = int(rule.get("battleline_wholly_within_range", 0) or 0)
+                except Exception:
+                    tactica_battleline_range = 0
+                can_tactica_mode = getattr(root, "can_tactica_obliqua_battleline_move", None)
+                if (
+                    tactica_battleline_distance > 0
+                    and tactica_battleline_range > 0
+                    and callable(can_tactica_mode)
+                ):
+                    tactica_battleline_mode = bool(
+                        can_tactica_mode(
+                            game=self,
+                            game_map=self.map,
+                            moving_unit=moving_root,
+                            range_override=rng,
+                        )
+                    )
 
                 if is_human:
                     es = getattr(self, "event_system", None)
@@ -2991,21 +3016,62 @@ class Game(
                             move_label = roll_spec.upper()
                 except Exception:
                     move_label = "D6"
-                message = (
-                    f"{getattr(moving_root, 'name', 'Enemy unit')} ended a move within {int(rng)}\" of "
-                    f"{getattr(root, 'name', 'unit')}.\n\n"
-                    f"{source}: Make a Normal move of up to {move_label}\"?"
-                )
-                request = self._queue_reactive_move_confirmation(
-                    player=p,
-                    unit=root,
-                    kind="loping_speed",
-                    movement_type="loping_speed",
-                    source=source,
-                    message=message,
-                    moving_unit=moving_root,
-                    range_value=rng,
-                )
+                if tactica_battleline_mode:
+                    reacting_unit_id = str(maybe_entity_id(root) or "")
+                    moving_unit_id = str(maybe_entity_id(moving_root) or "")
+                    if not reacting_unit_id or not moving_unit_id:
+                        continue
+                    message = (
+                        f"{getattr(moving_root, 'name', 'Enemy unit')} ended a move within {int(rng)}\" of "
+                        f"{getattr(root, 'name', 'unit')}.\n\n"
+                        f"{source}: Choose one option:\n"
+                        f"- Make a Normal move of up to {move_label}\".\n"
+                        f"- Make a Normal move of up to {int(tactica_battleline_distance)}\", provided every model in this unit "
+                        f"ends that move wholly within {int(tactica_battleline_range)}\" of one or more friendly ADEPTUS MECHANICUS BATTLELINE units."
+                    )
+                    request = DecisionRequest.create(
+                        DECISION_CONFIRM_YES_NO,
+                        source,
+                        player_id=getattr(p, "id", None),
+                        options=[
+                            DecisionOption.create("D6 Move", payload={"choice": True, "tactica_obliqua_mode": "d6"}),
+                            DecisionOption.create(
+                                f"{int(tactica_battleline_distance)}\" Battleline Move",
+                                payload={"choice": True, "tactica_obliqua_mode": "battleline_6"},
+                            ),
+                            DecisionOption.create("Skip", payload={"choice": False}),
+                        ],
+                        context={
+                            **self._reactive_move_context(
+                                kind="tactica_obliqua",
+                                unit_id=reacting_unit_id,
+                                movement_type="loping_speed",
+                                source=source,
+                                moving_unit_id=moving_unit_id,
+                                range_value=rng,
+                            ),
+                            "message": message,
+                            "tactica_obliqua_battleline_range": int(tactica_battleline_range),
+                            "tactica_obliqua_battleline_max_distance": int(tactica_battleline_distance),
+                        },
+                    )
+                    self.request_decision(request)
+                else:
+                    message = (
+                        f"{getattr(moving_root, 'name', 'Enemy unit')} ended a move within {int(rng)}\" of "
+                        f"{getattr(root, 'name', 'unit')}.\n\n"
+                        f"{source}: Make a Normal move of up to {move_label}\"?"
+                    )
+                    request = self._queue_reactive_move_confirmation(
+                        player=p,
+                        unit=root,
+                        kind="loping_speed",
+                        movement_type="loping_speed",
+                        source=source,
+                        message=message,
+                        moving_unit=moving_root,
+                        range_value=rng,
+                    )
                 if request is None:
                     continue
 

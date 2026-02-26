@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 from typing import Iterable, Sequence
 
 from ..decision_dispatcher import register_decision_handler
@@ -482,6 +483,16 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         )
         if tight_errors:
             return tuple(tight_errors)
+    tactica_mode = str(ctx.get("tactica_obliqua_mode", "") or "").strip().lower()
+    if tactica_mode == "battleline_6":
+        tactica_errors = _validate_tactica_obliqua_battleline_positions(
+            game,
+            unit,
+            model_positions,
+            ctx=ctx,
+        )
+        if tactica_errors:
+            return tactica_errors
     return ()
 
 
@@ -844,6 +855,149 @@ def _validate_advance_start_end_denial(
                     if start_dist <= range_value or end_dist <= range_value:
                         return (f"Advance move cannot start or end within {int(range_value)}\" of {source}.",)
 
+    return ()
+
+
+def _validate_tactica_obliqua_battleline_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+    *,
+    ctx: dict | None = None,
+) -> Sequence[str]:
+    if unit is None:
+        return ()
+    if not isinstance(model_positions, list) or not model_positions:
+        return ("Move unit: Tactica Obliqua requires model_positions.",)
+    game_map = getattr(game, "map", None)
+    if game_map is None:
+        return ()
+    try:
+        from ...utility.aura_utils import model_wholly_within_range_of_unit
+    except Exception:
+        return ()
+
+    context = dict(ctx or {})
+    try:
+        required_range = float(context.get("tactica_obliqua_battleline_range", 6) or 6)
+    except Exception:
+        required_range = 6.0
+    if required_range <= 0:
+        required_range = 6.0
+
+    positions_by_id: dict[str, tuple[float, float, float, float]] = {}
+    for entry in list(model_positions or []):
+        model_id = str(entry.get("model_id", "") or "")
+        if not model_id:
+            continue
+        pos = entry.get("position") or []
+        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            continue
+        try:
+            x = float(pos[0])
+            y = float(pos[1])
+            z = float(pos[2]) if len(pos) > 2 else 0.0
+        except (TypeError, ValueError):
+            continue
+        facing_raw = entry.get("facing", 0.0)
+        try:
+            facing = float(facing_raw if facing_raw is not None else 0.0)
+        except (TypeError, ValueError):
+            facing = 0.0
+        positions_by_id[model_id] = (x, y, z, facing)
+
+    get_root = getattr(unit, "get_attached_unit_root", None)
+    moving_root = get_root() if callable(get_root) else unit
+    if moving_root is None:
+        return ("Move unit: Tactica Obliqua requires a valid unit.",)
+    get_army = getattr(moving_root, "get_parent_army", None)
+    moving_army = get_army() if callable(get_army) else getattr(moving_root, "parent_army", None)
+    if moving_army is None:
+        return ("Move unit: Tactica Obliqua requires a parent army.",)
+
+    battleline_sources: list[object] = []
+    seen_roots: set[str] = set()
+    for candidate in list(getattr(game_map, "units", []) or []):
+        if candidate is None:
+            continue
+        cand_get_root = getattr(candidate, "get_attached_unit_root", None)
+        cand_root = cand_get_root() if callable(cand_get_root) else candidate
+        if cand_root is None:
+            continue
+        root_id = str(get_entity_id(cand_root) or "")
+        if root_id and root_id in seen_roots:
+            continue
+        if root_id:
+            seen_roots.add(root_id)
+        cand_get_army = getattr(cand_root, "get_parent_army", None)
+        cand_army = cand_get_army() if callable(cand_get_army) else getattr(cand_root, "parent_army", None)
+        if cand_army is not moving_army:
+            continue
+        alive_fn = getattr(cand_root, "is_alive", None)
+        if callable(alive_fn):
+            if not bool(alive_fn()):
+                continue
+        elif bool(getattr(cand_root, "is_alive", True)) is False:
+            continue
+        if not bool(getattr(cand_root, "deployed", True)):
+            continue
+        is_in_reserves = getattr(cand_root, "is_in_reserves", None)
+        if callable(is_in_reserves) and bool(is_in_reserves()):
+            continue
+        if bool(getattr(cand_root, "is_embarked", False)) or getattr(cand_root, "embarked_in", None) is not None:
+            continue
+        has_any_keyword = getattr(cand_root, "has_any_keyword", None)
+        if not callable(has_any_keyword):
+            continue
+        if not bool(has_any_keyword("ADEPTUS MECHANICUS")):
+            continue
+        if not bool(has_any_keyword("BATTLELINE")):
+            continue
+        battleline_sources.append(cand_root)
+
+    if not battleline_sources:
+        return (
+            "Move unit: Tactica Obliqua battleline move requires at least one friendly ADEPTUS MECHANICUS BATTLELINE unit.",
+        )
+
+    create_base = getattr(unit, "_create_potential_base", None)
+    for model in list(getattr(unit, "models", []) or []):
+        if model is None:
+            continue
+        alive_value = getattr(model, "is_alive", True)
+        alive = bool(alive_value() if callable(alive_value) else alive_value)
+        if not alive:
+            continue
+        model_id = str(get_entity_id(model) or "")
+        if not model_id:
+            continue
+        candidate_base = None
+        placement = positions_by_id.get(model_id)
+        if placement is not None and callable(create_base):
+            x, y, z, facing = placement
+            try:
+                candidate_base = create_base(x, y, z, facing, model=model)
+            except Exception:
+                candidate_base = None
+        if candidate_base is None:
+            candidate_base = getattr(model, "model_base", None)
+        if candidate_base is None:
+            return ("Move unit: Tactica Obliqua could not resolve a model base.",)
+        proxy_model = SimpleNamespace(model_base=candidate_base, is_alive=True)
+        within_any = False
+        for source in list(battleline_sources):
+            if model_wholly_within_range_of_unit(
+                source,
+                proxy_model,
+                float(required_range),
+                use_attached_aggregate=True,
+            ):
+                within_any = True
+                break
+        if not within_any:
+            return (
+                f"Move unit: Tactica Obliqua requires every model to end wholly within {int(required_range)}\" of one or more friendly ADEPTUS MECHANICUS BATTLELINE units.",
+            )
     return ()
 
 

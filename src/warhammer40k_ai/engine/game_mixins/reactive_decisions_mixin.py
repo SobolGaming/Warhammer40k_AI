@@ -3229,6 +3229,7 @@ class GameReactiveDecisionsMixin:
         allow_engagement_range: bool | None = None,
         allowed_model_ids: list[str] | None = None,
         allow_skip: bool | None = None,
+        extra_context: dict | None = None,
     ) -> DecisionRequest | None:
         if player is None or unit is None:
             return None
@@ -3265,6 +3266,8 @@ class GameReactiveDecisionsMixin:
             ctx["allowed_model_ids"] = list(allowed_model_ids)
         if allow_skip is not None:
             ctx["allow_skip"] = bool(allow_skip)
+        if isinstance(extra_context, dict):
+            ctx.update(dict(extra_context))
         request = DecisionRequest.create(
             DECISION_MOVE_UNIT,
             f"Move {getattr(unit, 'name', 'Unit')} ({movement_type})",
@@ -3356,6 +3359,7 @@ class GameReactiveDecisionsMixin:
             kind = str(ctx.get("reactive_move_kind", "") or "").strip()
             if kind not in (
                 "loping_speed",
+                "tactica_obliqua",
                 "blood_surge",
                 "brazen_fury",
                 "horde_move",
@@ -3382,6 +3386,81 @@ class GameReactiveDecisionsMixin:
                 return
             source = str(ctx.get("reactive_move_source", "") or "Reactive Move").strip() or "Reactive Move"
             movement_type = str(ctx.get("reactive_move_movement_type", "") or "")
+            if kind == "tactica_obliqua":
+                moving_unit_id = str(ctx.get("reactive_move_moving_unit_id") or "")
+                moving_unit = self._resolve_unit_by_id(moving_unit_id)
+                if moving_unit is None:
+                    return
+                rng = int(ctx.get("reactive_move_range") or 9)
+                if not unit.can_loping_speed(
+                    game=self,
+                    game_map=getattr(self, "map", None),
+                    moving_unit=moving_unit,
+                    range_override=rng,
+                ):
+                    return
+                selected_mode = str(payload.get("tactica_obliqua_mode", "") or "d6").strip().lower()
+                if selected_mode == "battleline_6":
+                    can_alt_mode = getattr(unit, "can_tactica_obliqua_battleline_move", None)
+                    if callable(can_alt_mode):
+                        if not bool(
+                            can_alt_mode(
+                                game=self,
+                                game_map=getattr(self, "map", None),
+                                moving_unit=moving_unit,
+                                range_override=rng,
+                            )
+                        ):
+                            return
+                    rule = unit.get_loping_speed_rule() or {}
+                    try:
+                        max_distance = int(rule.get("battleline_wholly_within_max_distance", 6) or 6)
+                    except Exception:
+                        max_distance = 6
+                    try:
+                        battleline_range = int(rule.get("battleline_wholly_within_range", 6) or 6)
+                    except Exception:
+                        battleline_range = 6
+                    if max_distance <= 0 or battleline_range <= 0:
+                        return
+                    try:
+                        from ...utility.event_bus import append_dice
+
+                        owner = getattr(unit.get_parent_army(), "player", None)
+                        if owner is not None:
+                            append_dice(owner, f"{source} fixed distance: {int(max_distance)}\" for {unit.name}")
+                    except Exception:
+                        pass
+                    self._queue_reactive_move_movement_decision(
+                        player=player,
+                        unit=unit,
+                        moving_unit=moving_unit,
+                        max_distance=max_distance,
+                        kind=kind,
+                        movement_type=movement_type or "loping_speed",
+                        source=source,
+                        range_value=rng,
+                        extra_context={
+                            "tactica_obliqua_mode": "battleline_6",
+                            "tactica_obliqua_battleline_range": int(battleline_range),
+                        },
+                    )
+                    return
+                max_distance = int(self.roll_loping_speed_distance(unit) or 0)
+                if max_distance <= 0:
+                    return
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    moving_unit=moving_unit,
+                    max_distance=max_distance,
+                    kind=kind,
+                    movement_type=movement_type or "loping_speed",
+                    source=source,
+                    range_value=rng,
+                    extra_context={"tactica_obliqua_mode": "d6"},
+                )
+                return
             if kind == "loping_speed":
                 moving_unit_id = str(ctx.get("reactive_move_moving_unit_id") or "")
                 moving_unit = self._resolve_unit_by_id(moving_unit_id)

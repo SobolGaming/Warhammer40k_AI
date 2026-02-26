@@ -3815,6 +3815,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "On unmodified saving throw 6 for allocated ranged attacks to KASTELAN ROBOT models, the attacking unit suffers mortal wounds after it finishes making its attacks.",
         ),
+        ("ADM", "Tactica Obliqua"): (
+            "Supported",
+            "Once per turn after an enemy Normal/Advance/Fall Back move ends within 9\", this unit can make a reactive Normal move: up to D6\", or up to 6\" if every model ends wholly within 6\" of friendly ADEPTUS MECHANICUS BATTLELINE units.",
+        ),
         ("ADM", "Canticles of the Omnissiah"): (
             "Supported",
             "Start of Command phase: Belisarius Cawl selects Invocation of Machine Vengeance, Mantra of Discipline, or Shroudpsalm until next Command phase.",
@@ -8666,6 +8670,22 @@ def _enemy_move_reactive_d6_support(description: str) -> Optional[Tuple[str, str
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    tactica_pattern = (
+        r"once per turn when an enemy unit ends a normal advance or fall back move within (?P<range>\d+) of this "
+        r"(?:model(?: s)? unit|unit|model)(?: if this unit is not within engagement range of (?:one or more|any) enemy units?)? "
+        r"it can do one of the following make a normal move of up to d6 make a normal move of up to (?P<move>\d+) "
+        r"provided every model in this unit ends that move wholly within (?P<wholly>\d+) of one or more friendly "
+        r"adeptus mechanicus battleline units"
+    )
+    tactica = re.fullmatch(tactica_pattern, norm)
+    if tactica:
+        rng = int(tactica.group("range") or 9)
+        move = int(tactica.group("move") or 6)
+        wholly = int(tactica.group("wholly") or 6)
+        return (
+            "Supported",
+            f"Enemy unit ends move within {rng}\": optional reactive Normal move up to D6\", or up to {move}\" if every model ends wholly within {wholly}\" of friendly ADEPTUS MECHANICUS BATTLELINE units.",
+        )
     pattern = (
         r"once per turn when an enemy unit ends a normal advance or fall back move within (?P<range>\d+) of this "
         r"(?:model(?: s)? unit|unit|model)(?: if this unit is not within engagement range of "

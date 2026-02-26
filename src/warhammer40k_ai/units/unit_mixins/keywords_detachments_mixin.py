@@ -2851,6 +2851,27 @@ class KeywordsDetachmentsMixin:
                             rule["max_distance"] = int(move_value)
                     else:
                         rule["distance_roll"] = move_token.upper()
+                low_text = str(text or "").lower()
+                if "wholly within" in low_text and "battleline" in low_text and "adeptus mechanicus" in low_text:
+                    alt_match = re.search(
+                        r"make\s+a\s+normal\s+move\s+of\s+up\s+to\s+(?P<move>\d+)\s*\"?\s*,?\s*provided\s+every\s+model\s+in\s+this\s+unit\s+ends\s+that\s+move\s+wholly\s+within\s+(?P<rng>\d+)\s*\"?\s+of\s+one\s+or\s+more\s+friendly\s+adeptus\s+mechanicus\s+battleline\s+units?",
+                        low_text,
+                    )
+                    if alt_match:
+                        try:
+                            alt_move = int(alt_match.group("move") or 0)
+                        except Exception:
+                            alt_move = 0
+                        try:
+                            alt_rng = int(alt_match.group("rng") or 0)
+                        except Exception:
+                            alt_rng = 0
+                        if alt_move > 0:
+                            rule["battleline_wholly_within_max_distance"] = int(alt_move)
+                        if alt_rng > 0:
+                            rule["battleline_wholly_within_range"] = int(alt_rng)
+                            rule["battleline_required_keyword"] = "BATTLELINE"
+                            rule["battleline_required_faction_keyword"] = "ADEPTUS MECHANICUS"
                 break
             if rule is not None:
                 break
@@ -5280,6 +5301,90 @@ class KeywordsDetachmentsMixin:
             if dist is None or dist > float(rng) + 1e-6:
                 return False
         return True
+
+    def can_tactica_obliqua_battleline_move(
+        self,
+        game=None,
+        game_map=None,
+        *,
+        moving_unit=None,
+        range_override: Optional[int] = None,
+    ) -> bool:
+        rule = self.get_loping_speed_rule() or {}
+        try:
+            alt_move = int(rule.get("battleline_wholly_within_max_distance", 0) or 0)
+        except Exception:
+            alt_move = 0
+        try:
+            alt_rng = int(rule.get("battleline_wholly_within_range", 0) or 0)
+        except Exception:
+            alt_rng = 0
+        if alt_move <= 0 or alt_rng <= 0:
+            return False
+        if not self.can_loping_speed(
+            game=game,
+            game_map=game_map,
+            moving_unit=moving_unit,
+            range_override=range_override,
+        ):
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return False
+
+        req_keyword = str(rule.get("battleline_required_keyword", "") or "BATTLELINE").strip() or "BATTLELINE"
+        req_faction_keyword = (
+            str(rule.get("battleline_required_faction_keyword", "") or "ADEPTUS MECHANICUS").strip()
+            or "ADEPTUS MECHANICUS"
+        )
+        seen: set[str] = set()
+        for candidate in list(getattr(army, "units", []) or []):
+            if candidate is None:
+                continue
+            try:
+                c_root = candidate.get_attached_unit_root()
+            except Exception:
+                c_root = candidate
+            if c_root is None:
+                continue
+            cid = str(get_entity_id(c_root) or "")
+            if cid and cid in seen:
+                continue
+            if cid:
+                seen.add(cid)
+            try:
+                if not c_root.is_alive() or not bool(getattr(c_root, "deployed", False)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if c_root.is_in_reserves():
+                    continue
+            except Exception:
+                pass
+            try:
+                if bool(getattr(c_root, "is_embarked", False)) or bool(getattr(c_root, "embarked_in", None)):
+                    continue
+            except Exception:
+                pass
+            has_any_keyword = getattr(c_root, "has_any_keyword", None)
+            if not callable(has_any_keyword):
+                continue
+            if not bool(has_any_keyword(req_faction_keyword)):
+                continue
+            if not bool(has_any_keyword(req_keyword)):
+                continue
+            return True
+        return False
 
     def has_frenzy(self) -> bool:
         """True if this unit has the Helbrute-style Frenzy ability (shoot or fight vs the triggering unit)."""
