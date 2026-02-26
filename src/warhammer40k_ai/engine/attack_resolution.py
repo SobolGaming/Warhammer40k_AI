@@ -2163,6 +2163,17 @@ class AttackResolutionManager:
                 flux_rule = mgr.build_reroll_rule(game=game, player=player, unit=attacker_unit, roll_type="hazardous")
                 if flux_rule:
                     reroll_rules.append(flux_rule)
+            attacker_army = attacker_unit.get_parent_army()
+            adm_mgr = getattr(attacker_army, "adeptus_mechanicus_detachments", None) if attacker_army is not None else None
+            sanctified_rule_fn = (
+                getattr(adm_mgr, "haloscreed_sanctified_ordnance_hazardous_reroll_rule", None)
+                if adm_mgr is not None
+                else None
+            )
+            if callable(sanctified_rule_fn):
+                sanctified_rule = sanctified_rule_fn(attacker_unit, dice_count=int(len(test_model_ids)))
+                if sanctified_rule:
+                    reroll_rules.append(sanctified_rule)
         roll_spec = {
             "dice_count": int(len(test_model_ids)),
             "faces": 6,

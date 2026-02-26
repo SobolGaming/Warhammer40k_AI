@@ -133,6 +133,30 @@ class DoctrinaImperativesManager:
         game = self._resolve_game(unit=unit, game=game)
         return self.get_active_imperative(game=game)
 
+    def _haloscreed_cognitive_reinforcement_applies(self, unit) -> bool:
+        if self.army is None or unit is None:
+            return False
+        adm_mgr = getattr(self.army, "adeptus_mechanicus_detachments", None)
+        if adm_mgr is None:
+            return False
+        checker = getattr(adm_mgr, "haloscreed_cognitive_reinforcement_applies", None)
+        if not callable(checker):
+            return False
+        return bool(checker(unit))
+
+    def get_active_imperative_keys_for_unit(self, unit, *, game=None) -> set[str]:
+        active_keys: set[str] = set()
+        if self._haloscreed_cognitive_reinforcement_applies(unit):
+            active_keys.add(PROTECTOR_IMPERATIVE.key)
+            active_keys.add(CONQUEROR_IMPERATIVE.key)
+        if not self._unit_has_doctrina(unit):
+            return active_keys
+        game = self._resolve_game(unit=unit, game=game)
+        imperative = self.get_active_imperative(game=game)
+        if imperative is not None:
+            active_keys.add(str(imperative.key))
+        return active_keys
+
     def select_imperative(self, imperative, *, battle_round: Optional[int] = None) -> bool:
         if not self._army_has_doctrina():
             return False
@@ -246,25 +270,25 @@ class DoctrinaImperativesManager:
         return False
 
     def protector_melee_hit_penalty_applies(self, target_unit, *, game=None, game_map=None) -> bool:
-        imp = self.get_active_imperative_for_unit(target_unit, game=game)
-        if imp is None or imp.key != PROTECTOR_IMPERATIVE.key:
+        active_keys = self.get_active_imperative_keys_for_unit(target_unit, game=game)
+        if PROTECTOR_IMPERATIVE.key not in active_keys:
             return False
         return self._unit_in_battleline_network(target_unit, game=game, game_map=game_map)
 
     def conqueror_ap_bonus_applies(self, attacker_unit, *, game=None, game_map=None) -> bool:
-        imp = self.get_active_imperative_for_unit(attacker_unit, game=game)
-        if imp is None or imp.key != CONQUEROR_IMPERATIVE.key:
+        active_keys = self.get_active_imperative_keys_for_unit(attacker_unit, game=game)
+        if CONQUEROR_IMPERATIVE.key not in active_keys:
             return False
         return self._unit_in_battleline_network(attacker_unit, game=game, game_map=game_map)
 
     def protector_heavy_applies(self, attacker_unit, *, game=None) -> bool:
-        imp = self.get_active_imperative_for_unit(attacker_unit, game=game)
-        if imp is None or imp.key != PROTECTOR_IMPERATIVE.key:
+        active_keys = self.get_active_imperative_keys_for_unit(attacker_unit, game=game)
+        if PROTECTOR_IMPERATIVE.key not in active_keys:
             return False
         return True
 
     def conqueror_assault_applies(self, attacker_unit, *, game=None) -> bool:
-        imp = self.get_active_imperative_for_unit(attacker_unit, game=game)
-        if imp is None or imp.key != CONQUEROR_IMPERATIVE.key:
+        active_keys = self.get_active_imperative_keys_for_unit(attacker_unit, game=game)
+        if CONQUEROR_IMPERATIVE.key not in active_keys:
             return False
         return True

@@ -1181,6 +1181,16 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            range_bonus_fn = getattr(mgr, "haloscreed_sanctified_ordnance_range_bonus", None) if mgr is not None else None
+            if callable(range_bonus_fn):
+                range_bonus, _source = range_bonus_fn(attacker, weapon_profile=self)
+                bonus += int(range_bonus or 0)
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 unit = getattr(attacker, "parent_unit", None)
                 sr = getattr(unit, "special_rules", None)
@@ -4243,6 +4253,27 @@ class WargearProfile:
                         Modifier(ModifierOp.ADD, int(bearer_bonus), source="enhancement:bearer_melee_attacks_add")
                     )
                     attack_result.attacks_special_modifiers.append(f"Enhancement bearer +{bearer_bonus}A (melee)")
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+                bonus_fn = getattr(adm_mgr, "haloscreed_inloaded_lethality_melee_bonuses", None) if adm_mgr is not None else None
+                if callable(bonus_fn):
+                    attacks_bonus, _damage_bonus, source = bonus_fn(attacker, weapon_profile=self)
+                    if int(attacks_bonus or 0):
+                        source_name = str(source or "Inloaded Lethality").strip() or "Inloaded Lethality"
+                        atk_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(attacks_bonus),
+                                source="enhancement:haloscreed_inloaded_lethality_attacks_add",
+                            )
+                        )
+                        attack_result.attacks_special_modifiers.append(
+                            f"{source_name} +{int(attacks_bonus)}A (bearer melee)"
+                        )
+            except Exception:
+                pass
             if bool(sr.get("enhancement_weapons_of_the_first_legion", False)) and self._attacker_is_enhancement_bearer(attacker, sr):
                 first_legion_extra = int(
                     sr.get("enhancement_weapons_of_the_first_legion_battle_shocked_extra_bonus", 0) or 0
@@ -7853,13 +7884,13 @@ class WargearProfile:
             mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
             if mgr is not None and unit is not None:
                 game = getattr(getattr(army, "player", None), "game", None)
-                imperative = mgr.get_active_imperative_for_unit(unit, game=game)
-                if imperative is not None:
+                imperative_keys = set(getattr(mgr, "get_active_imperative_keys_for_unit", lambda *_a, **_k: set())(unit, game=game))
+                if imperative_keys:
                     is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
                     is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
-                    if imperative.key == "PROTECTOR" and is_ranged:
+                    if "PROTECTOR" in imperative_keys and is_ranged:
                         _add_skill_mod(1, "Protector Imperative: +1 BS")
-                    elif imperative.key == "CONQUEROR" and is_melee:
+                    if "CONQUEROR" in imperative_keys and is_melee:
                         _add_skill_mod(1, "Conqueror Imperative: +1 WS")
         except Exception:
             pass
@@ -19388,6 +19419,27 @@ class WargearProfile:
                     Modifier(ModifierOp.ADD, int(bearer_d_bonus), source="enhancement:bearer_melee_damage_add")
                 )
                 damage_result['special_effects'].append(f"Enhancement bearer +{bearer_d_bonus}D (melee)")
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+                bonus_fn = getattr(adm_mgr, "haloscreed_inloaded_lethality_melee_bonuses", None) if adm_mgr is not None else None
+                if callable(bonus_fn):
+                    _attacks_bonus, damage_bonus, source = bonus_fn(attacker, weapon_profile=self)
+                    if int(damage_bonus or 0):
+                        source_name = str(source or "Inloaded Lethality").strip() or "Inloaded Lethality"
+                        damage_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(damage_bonus),
+                                source="enhancement:haloscreed_inloaded_lethality_damage_add",
+                            )
+                        )
+                        damage_result['special_effects'].append(
+                            f"{source_name} +{int(damage_bonus)}D (bearer melee)"
+                        )
+            except Exception:
+                pass
             if bool(sr.get("enhancement_weapons_of_the_first_legion", False)) and self._attacker_is_enhancement_bearer(attacker, sr):
                 first_legion_extra = int(
                     sr.get("enhancement_weapons_of_the_first_legion_battle_shocked_extra_bonus", 0) or 0

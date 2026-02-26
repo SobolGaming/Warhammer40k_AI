@@ -26,6 +26,10 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _NOOSPHERIC_UNITS_ABILITY_KEY = "noospheric_transference_units"
     _NOOSPHERIC_OVERRIDE_ABILITY_KEY = "noospheric_transference_override"
     _NOOSPHERIC_SOURCE = "Noospheric Transference"
+    _HALOSCREED_TRANSORACULAR_SOURCE = "Transoracular Dyad Wafers"
+    _HALOSCREED_COGNITIVE_SOURCE = "Cognitive Reinforcement"
+    _HALOSCREED_SANCTIFIED_SOURCE = "Sanctified Ordnance"
+    _HALOSCREED_INLOADED_SOURCE = "Inloaded Lethality"
     _NOOSPHERIC_ELECTROMOTIVE_KEY = "ELECTROMOTIVE_ENERGISATION"
     _NOOSPHERIC_MICROACTUATOR_KEY = "MICROACTUATOR_BRACING"
     _NOOSPHERIC_PREDATION_KEY = "PREDATION_PROTOCOLS"
@@ -1438,9 +1442,84 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             return False
         return str(getattr(unit, "reserve_status", "deployed") or "deployed") == "deployed"
 
+    def _unit_is_kastelan_robots(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        members = list(getattr(root, "get_attached_unit_members", lambda: [])() or [])
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            if self._unit_has_keyword(member, "KASTELAN ROBOTS"):
+                return True
+            name = str(getattr(member, "name", "") or "").strip().lower()
+            if "kastelan robots" in name:
+                return True
+        return False
+
+    def _iter_haloscreed_enhancement_sources(self, enhancement_flag_key: str) -> list[tuple]:
+        if not self.is_haloscreed_battle_clade() or self.army is None:
+            return []
+        enhancement_key = str(enhancement_flag_key or "").strip()
+        if not enhancement_key:
+            return []
+        sources: list[tuple] = []
+        seen: set[tuple[str, str]] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None or not self._unit_in_army(root):
+                continue
+            if not self._unit_is_on_battlefield_or_embarked(root):
+                continue
+            root_id = self._entity_id(root) or str(id(root))
+            members = list(getattr(root, "get_attached_unit_members", lambda: [])() or [])
+            if not members:
+                members = [root]
+            for member in members:
+                if member is None:
+                    continue
+                special_rules = getattr(member, "special_rules", None)
+                if not isinstance(special_rules, dict) or not bool(special_rules.get(enhancement_key, False)):
+                    continue
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+                if bearer is None or not self._is_model_alive(bearer):
+                    continue
+                member_id = self._entity_id(member) or str(id(member))
+                dedupe_key = (str(root_id), str(member_id))
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                sources.append((str(root_id), root, member, special_rules, bearer))
+        sources.sort(
+            key=lambda item: (
+                str(item[0] or ""),
+                self._entity_id(item[2]) or str(id(item[2])),
+            )
+        )
+        return sources
+
+    def _haloscreed_transoracular_root_ids(self) -> set[str]:
+        root_ids: set[str] = set()
+        for source_root_id, source_root, source_member, source_sr, _bearer in self._iter_haloscreed_enhancement_sources(
+            "enhancement_haloscreed_transoracular_dyad_wafers"
+        ):
+            requires_attached = bool(
+                source_sr.get("enhancement_haloscreed_transoracular_requires_bearer_attached_to_kastelan_robots", True)
+            )
+            if requires_attached and not bool(getattr(source_member, "is_attached_leader", False)):
+                continue
+            if not self._unit_is_kastelan_robots(source_root):
+                continue
+            root_ids.add(str(source_root_id))
+        return root_ids
+
     def _iter_noospheric_candidate_roots(self) -> list:
         if self.army is None:
             return []
+        excluded_root_ids = self._haloscreed_transoracular_root_ids()
         seen: set[str] = set()
         roots: list = []
         for unit in list(getattr(self.army, "units", []) or []):
@@ -1451,6 +1530,8 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             if root_id in seen:
                 continue
             seen.add(root_id)
+            if root_id in excluded_root_ids:
+                continue
             if not self._unit_has_keyword_or_faction(root, "ADEPTUS MECHANICUS", faction_id=self.faction_id):
                 continue
             if not self._unit_is_on_battlefield_or_embarked(root):
@@ -1499,21 +1580,26 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     def _apply_noospheric_flags_to_selected_units(self) -> None:
         self._clear_noospheric_flags_on_army_units()
         selected_ids = {str(uid or "").strip() for uid in list(self.active_noospheric_unit_ids or []) if str(uid or "").strip()}
-        if not selected_ids:
+        transoracular_ids = self._haloscreed_transoracular_root_ids()
+        active_halo_ids = set(selected_ids) | set(transoracular_ids)
+        if not active_halo_ids:
             return
         for unit in list(getattr(self.army, "units", []) or []):
             root = self._attached_root(unit)
             if root is None:
                 continue
             root_id = str(self._entity_id(root) or "").strip()
-            if not root_id or root_id not in selected_ids:
+            if not root_id or root_id not in active_halo_ids:
                 continue
             sr = getattr(root, "special_rules", None)
             if not isinstance(sr, dict):
                 sr = {}
             updated = dict(sr)
             updated[self._NOOSPHERIC_ACTIVE_FLAG_KEY] = True
-            updated[self._NOOSPHERIC_SOURCE_FLAG_KEY] = self._NOOSPHERIC_SOURCE
+            if root_id in transoracular_ids and root_id not in selected_ids:
+                updated[self._NOOSPHERIC_SOURCE_FLAG_KEY] = self._HALOSCREED_TRANSORACULAR_SOURCE
+            else:
+                updated[self._NOOSPHERIC_SOURCE_FLAG_KEY] = self._NOOSPHERIC_SOURCE
             if str(self.active_noospheric_override_key or "").strip():
                 updated[self._NOOSPHERIC_OVERRIDE_FLAG_KEY] = str(self.active_noospheric_override_key)
             else:
@@ -1828,17 +1914,22 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             "source": self._NOOSPHERIC_SOURCE,
         }
 
-    def _unit_selected_for_noospheric(self, unit) -> bool:
+    def _unit_has_halo_override_keyword(self, unit) -> bool:
         if not self.is_haloscreed_battle_clade():
-            return False
-        selected_ids = {str(uid or "").strip() for uid in list(self.active_noospheric_unit_ids or []) if str(uid or "").strip()}
-        if not selected_ids:
             return False
         root = self._attached_root(unit)
         if root is None or not self._unit_in_army(root):
             return False
         root_id = str(self._entity_id(root) or "").strip()
-        return bool(root_id and root_id in selected_ids)
+        if not root_id:
+            return False
+        selected_ids = {str(uid or "").strip() for uid in list(self.active_noospheric_unit_ids or []) if str(uid or "").strip()}
+        if root_id in selected_ids:
+            return True
+        return root_id in self._haloscreed_transoracular_root_ids()
+
+    def _unit_selected_for_noospheric(self, unit) -> bool:
+        return self._unit_has_halo_override_keyword(unit)
 
     def _noospheric_override_active(self, choice_key: str) -> bool:
         if not self.is_haloscreed_battle_clade():
@@ -1881,6 +1972,161 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not self._noospheric_override_active(self._NOOSPHERIC_MUTED_KEY):
             return False
         return self._unit_selected_for_noospheric(unit)
+
+    def haloscreed_transoracular_halo_override_applies(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        root_id = str(self._entity_id(root) or "").strip()
+        if not root_id:
+            return False
+        return root_id in self._haloscreed_transoracular_root_ids()
+
+    def haloscreed_cognitive_reinforcement_applies(self, unit) -> bool:
+        if not self.is_haloscreed_battle_clade():
+            return False
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        root_id = str(self._entity_id(root) or "").strip()
+        if not root_id:
+            return False
+        for source_root_id, _source_root, _source_member, _source_sr, _bearer in self._iter_haloscreed_enhancement_sources(
+            "enhancement_haloscreed_cognitive_reinforcement"
+        ):
+            if str(source_root_id or "") == root_id:
+                return True
+        return False
+
+    def haloscreed_sanctified_ordnance_range_bonus(self, attacker_model, *, weapon_profile=None) -> tuple[int, str]:
+        if not self.is_haloscreed_battle_clade():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        if weapon_profile is not None and not self._weapon_is_attack_type(weapon_profile, "ranged"):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._unit_is_on_battlefield_or_embarked(attacker_root):
+            return 0, ""
+        attacker_root_id = str(self._entity_id(attacker_root) or "").strip()
+        if not attacker_root_id:
+            return 0, ""
+        best_bonus = 0
+        best_source = ""
+        for source_root_id, _source_root, _source_member, source_sr, _bearer in self._iter_haloscreed_enhancement_sources(
+            "enhancement_haloscreed_sanctified_ordnance"
+        ):
+            if str(source_root_id or "") != attacker_root_id:
+                continue
+            try:
+                range_bonus = int(source_sr.get("enhancement_haloscreed_sanctified_ordnance_range_bonus", 6) or 6)
+            except (TypeError, ValueError):
+                range_bonus = 6
+            range_bonus = int(max(0, range_bonus))
+            if range_bonus <= 0:
+                continue
+            if range_bonus > best_bonus:
+                best_bonus = int(range_bonus)
+                best_source = str(
+                    source_sr.get("enhancement_haloscreed_sanctified_ordnance_source", "")
+                    or self._HALOSCREED_SANCTIFIED_SOURCE
+                ).strip() or self._HALOSCREED_SANCTIFIED_SOURCE
+        if best_bonus <= 0:
+            return 0, ""
+        return int(best_bonus), str(best_source or self._HALOSCREED_SANCTIFIED_SOURCE)
+
+    def haloscreed_sanctified_ordnance_hazardous_reroll_rule(
+        self,
+        unit,
+        *,
+        dice_count: int = 1,
+    ) -> dict | None:
+        if not self.is_haloscreed_battle_clade():
+            return None
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None
+        if not self._unit_is_on_battlefield_or_embarked(root):
+            return None
+        root_id = str(self._entity_id(root) or "").strip()
+        if not root_id:
+            return None
+        max_select = int(max(1, int(dice_count or 1)))
+        for source_root_id, _source_root, _source_member, source_sr, _bearer in self._iter_haloscreed_enhancement_sources(
+            "enhancement_haloscreed_sanctified_ordnance"
+        ):
+            if str(source_root_id or "") != root_id:
+                continue
+            if not bool(source_sr.get("enhancement_haloscreed_sanctified_ordnance_hazardous_reroll", True)):
+                continue
+            source_name = str(
+                source_sr.get("enhancement_haloscreed_sanctified_ordnance_source", "")
+                or self._HALOSCREED_SANCTIFIED_SOURCE
+            ).strip() or self._HALOSCREED_SANCTIFIED_SOURCE
+            return {
+                "action_id": "haloscreed_sanctified_ordnance_hazardous_reroll",
+                "label": f"{source_name} Hazardous re-roll",
+                "mode": "select",
+                "allow_success": True,
+                "max_select": int(max_select),
+                "source": source_name,
+            }
+        return None
+
+    def haloscreed_inloaded_lethality_melee_bonuses(self, attacker_model, *, weapon_profile=None) -> tuple[int, int, str]:
+        if not self.is_haloscreed_battle_clade():
+            return 0, 0, ""
+        if attacker_model is None:
+            return 0, 0, ""
+        if weapon_profile is not None and not self._weapon_is_attack_type(weapon_profile, "melee"):
+            return 0, 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return 0, 0, ""
+        if not self._unit_is_on_battlefield_or_embarked(attacker_root):
+            return 0, 0, ""
+        attacker_root_id = str(self._entity_id(attacker_root) or "").strip()
+        attacker_model_id = str(getattr(attacker_model, "id", getattr(attacker_model, "_id", "")) or "").strip()
+        if not attacker_root_id or not attacker_model_id:
+            return 0, 0, ""
+        for source_root_id, _source_root, source_member, source_sr, _bearer in self._iter_haloscreed_enhancement_sources(
+            "enhancement_haloscreed_inloaded_lethality"
+        ):
+            if str(source_root_id or "") != attacker_root_id:
+                continue
+            bearer_id = str(
+                source_sr.get("enhancement_haloscreed_inloaded_lethality_bearer_model_id", "")
+                or source_sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if not bearer_id:
+                get_bearer = getattr(source_member, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+                bearer_id = str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "").strip() if bearer is not None else ""
+            if not bearer_id or bearer_id != attacker_model_id:
+                continue
+            try:
+                attacks_bonus = int(source_sr.get("enhancement_haloscreed_inloaded_lethality_attacks_bonus", 3) or 3)
+            except (TypeError, ValueError):
+                attacks_bonus = 3
+            try:
+                damage_bonus = int(source_sr.get("enhancement_haloscreed_inloaded_lethality_damage_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                damage_bonus = 1
+            attacks_bonus = int(max(0, attacks_bonus))
+            damage_bonus = int(max(0, damage_bonus))
+            if attacks_bonus <= 0 and damage_bonus <= 0:
+                continue
+            source_name = str(
+                source_sr.get("enhancement_haloscreed_inloaded_lethality_source", "")
+                or self._HALOSCREED_INLOADED_SOURCE
+            ).strip() or self._HALOSCREED_INLOADED_SOURCE
+            return int(attacks_bonus), int(damage_bonus), source_name
+        return 0, 0, ""
 
     def _unit_is_ironstrider_ballistarii(self, unit) -> bool:
         if unit is None:

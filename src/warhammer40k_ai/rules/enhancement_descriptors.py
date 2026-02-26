@@ -1042,6 +1042,56 @@ _EXPLORATOR_MANIPLE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _EXPLORATOR_MANIPLE_DESCRIPTORS.values()
 }
 
+_HALOSCREED_BATTLE_CLADE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009745002": EnhancementToolDescriptor(
+        enhancement_id="000009745002",
+        name="Transoracular Dyad Wafers",
+        timing="passive",
+        target="bearer_attached_kastelan_robots_unit",
+        duration="constant",
+        effect="grant_halo_override_to_bearer_attached_kastelan_unit_and_exclude_from_noospheric_selection",
+        effect_params={
+            "requires_bearer_attached_to_kastelan_robots": True,
+        },
+    ),
+    "000009745003": EnhancementToolDescriptor(
+        enhancement_id="000009745003",
+        name="Cognitive Reinforcement",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="treat_conqueror_and_protector_imperatives_as_active_for_bearer_unit",
+    ),
+    "000009745004": EnhancementToolDescriptor(
+        enhancement_id="000009745004",
+        name="Sanctified Ordnance",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="add_ranged_range_and_hazardous_reroll_for_bearer_unit",
+        effect_params={
+            "range_bonus": 6,
+            "hazardous_reroll": True,
+        },
+    ),
+    "000009745005": EnhancementToolDescriptor(
+        enhancement_id="000009745005",
+        name="Inloaded Lethality",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="add_melee_attacks_and_damage_to_bearer_melee_weapons",
+        effect_params={
+            "melee_attacks_bonus": 3,
+            "melee_damage_bonus": 1,
+        },
+    ),
+}
+
+_HALOSCREED_BATTLE_CLADE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HALOSCREED_BATTLE_CLADE_DESCRIPTORS.values()
+}
+
 _INVASION_FLEET_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008348002": EnhancementToolDescriptor(
         enhancement_id="000008348002",
@@ -4140,6 +4190,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _EXPLORATOR_MANIPLE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _HALOSCREED_BATTLE_CLADE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _INVASION_FLEET_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4335,6 +4388,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _COHORT_CYBERNETICA_BY_NAME.get(key)
         or _DATA_PSALM_CONCLAVE_BY_NAME.get(key)
         or _EXPLORATOR_MANIPLE_BY_NAME.get(key)
+        or _HALOSCREED_BATTLE_CLADE_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)

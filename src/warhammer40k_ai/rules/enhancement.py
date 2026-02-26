@@ -611,6 +611,9 @@ class Enhancement:
         is_explorator_maniple = bool(
             adm_mgr and getattr(adm_mgr, "is_explorator_maniple", lambda: False)()
         )
+        is_haloscreed_battle_clade = bool(
+            adm_mgr and getattr(adm_mgr, "is_haloscreed_battle_clade", lambda: False)()
+        )
         am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
         try:
             is_grizzled_company = bool(am_mgr and am_mgr.is_grizzled_company())
@@ -1143,6 +1146,69 @@ class Enhancement:
             cache = getattr(unit, "_ability_cache", None)
             if isinstance(cache, dict):
                 cache.pop("leading_unmodified_six_specs", None)
+
+        if enh_id == "000009745002" or (name == "transoracular dyad wafers" and is_haloscreed_battle_clade):
+            if not is_haloscreed_battle_clade:
+                return
+            unit.special_rules["enhancement_haloscreed_transoracular_dyad_wafers"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_haloscreed_transoracular_requires_bearer_attached_to_kastelan_robots"] = bool(
+                params.get("requires_bearer_attached_to_kastelan_robots", True)
+            )
+            unit.special_rules["enhancement_haloscreed_transoracular_source"] = "Transoracular Dyad Wafers"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_haloscreed_transoracular_bearer_model_id"] = bearer_id
+
+        if enh_id == "000009745003" or (name == "cognitive reinforcement" and is_haloscreed_battle_clade):
+            if not is_haloscreed_battle_clade:
+                return
+            unit.special_rules["enhancement_haloscreed_cognitive_reinforcement"] = True
+            unit.special_rules["enhancement_haloscreed_cognitive_reinforcement_source"] = "Cognitive Reinforcement"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_haloscreed_cognitive_reinforcement_bearer_model_id"] = bearer_id
+
+        if enh_id == "000009745004" or (name == "sanctified ordnance" and is_haloscreed_battle_clade):
+            if not is_haloscreed_battle_clade:
+                return
+            unit.special_rules["enhancement_haloscreed_sanctified_ordnance"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                range_bonus = int(params.get("range_bonus", 6) or 6)
+            except (TypeError, ValueError):
+                range_bonus = 6
+            unit.special_rules["enhancement_haloscreed_sanctified_ordnance_range_bonus"] = int(max(0, range_bonus))
+            unit.special_rules["enhancement_haloscreed_sanctified_ordnance_hazardous_reroll"] = bool(
+                params.get("hazardous_reroll", True)
+            )
+            unit.special_rules["enhancement_haloscreed_sanctified_ordnance_source"] = "Sanctified Ordnance"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_haloscreed_sanctified_ordnance_bearer_model_id"] = bearer_id
+
+        if enh_id == "000009745005" or (name == "inloaded lethality" and is_haloscreed_battle_clade):
+            if not is_haloscreed_battle_clade:
+                return
+            unit.special_rules["enhancement_haloscreed_inloaded_lethality"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                attacks_bonus = int(params.get("melee_attacks_bonus", 3) or 3)
+            except (TypeError, ValueError):
+                attacks_bonus = 3
+            try:
+                damage_bonus = int(params.get("melee_damage_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                damage_bonus = 1
+            unit.special_rules["enhancement_haloscreed_inloaded_lethality_attacks_bonus"] = int(max(0, attacks_bonus))
+            unit.special_rules["enhancement_haloscreed_inloaded_lethality_damage_bonus"] = int(max(0, damage_bonus))
+            unit.special_rules["enhancement_haloscreed_inloaded_lethality_source"] = "Inloaded Lethality"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_haloscreed_inloaded_lethality_bearer_model_id"] = bearer_id
 
         if name == "decoy targets" or enh_id == "000009757002":
             if not is_veiled_blade_elimination_force:
