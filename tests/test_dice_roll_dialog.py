@@ -223,3 +223,45 @@ def test_confirm_reroll_does_not_hide_followup_reroll_request() -> None:
     assert handled is True
     assert dialog.visible is True
     assert dialog.decision_request is followup_req
+
+
+def test_no_reroll_does_not_hide_followup_roll_request() -> None:
+    dialog = DiceRollDialog(1200, 800)
+    first_req = DecisionRequest.create(
+        DECISION_SELECT_DICE_REROLL,
+        "Re-roll options: Hit roll (6D6)",
+        player_id="p1",
+        options=[
+            DecisionOption.create("No re-roll", payload={"action_id": "none"}),
+            DecisionOption.create("Command Re-roll", payload={"action_id": "command_reroll"}),
+        ],
+        context={"roll_id": 2},
+    )
+    followup_req = DecisionRequest.create(
+        DECISION_REQUEST_DICE_ROLL,
+        "Wound roll (5D6)",
+        player_id="p1",
+        options=[DecisionOption.create("Make Roll", payload={"action_id": "roll"})],
+        context={"roll_id": 3},
+    )
+
+    def _on_resolve(_option_id: str, _payload: dict) -> None:
+        dialog.show(
+            game=SimpleNamespace(roll_manager=None),
+            player=SimpleNamespace(id="p1"),
+            decision_request=followup_req,
+            on_resolve=lambda _oid, _pl: None,
+        )
+
+    dialog.show(
+        game=SimpleNamespace(roll_manager=None),
+        player=SimpleNamespace(id="p1"),
+        decision_request=first_req,
+        on_resolve=_on_resolve,
+    )
+
+    handled = dialog._handle_button_click("no_reroll")
+
+    assert handled is True
+    assert dialog.visible is True
+    assert dialog.decision_request is followup_req

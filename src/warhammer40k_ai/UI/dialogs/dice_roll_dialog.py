@@ -136,8 +136,11 @@ class DiceRollDialog(BaseDialog):
             # decision can be displayed in-place.
             return True
         if button_name == "no_reroll":
-            self._resolve_action("none", [])
-            self.hide()
+            before_id = str(getattr(self.decision_request, "decision_id", "") or "")
+            resolved = self._resolve_action("none", [])
+            after_id = str(getattr(self.decision_request, "decision_id", "") or "")
+            if resolved and after_id == before_id:
+                self.hide()
             return True
         if button_name == "confirm_reroll":
             if not self._active_action_id:
