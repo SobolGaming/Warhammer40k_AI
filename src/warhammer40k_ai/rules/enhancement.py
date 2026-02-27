@@ -426,6 +426,10 @@ class Enhancement:
             is_champions_of_faith = bool(as_mgr and as_mgr.is_champions_of_faith())
         except Exception:
             is_champions_of_faith = False
+        try:
+            is_penitent_host = bool(as_mgr and as_mgr.is_penitent_host())
+        except Exception:
+            is_penitent_host = False
         is_1st_company_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_1st_company_task_force", lambda: False)()
         )
@@ -1666,6 +1670,100 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_sanctified_amulet_bearer_model_id"] = bearer_id
+
+        if name == "psalm of righteous judgement" or enh_id == "000009029002":
+            if not is_penitent_host:
+                return
+            unit.special_rules["enhancement_psalm_of_righteous_judgement"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                discard_count = int(params.get("discard_miracle_dice", 1) or 1)
+            except (TypeError, ValueError):
+                discard_count = 1
+            try:
+                gained_value = int(params.get("gained_miracle_die_value", 6) or 6)
+            except (TypeError, ValueError):
+                gained_value = 6
+            unit.special_rules["enhancement_psalm_of_righteous_judgement_discard_count"] = int(max(0, discard_count))
+            unit.special_rules["enhancement_psalm_of_righteous_judgement_gained_value"] = int(max(1, min(6, gained_value)))
+            unit.special_rules["enhancement_psalm_of_righteous_judgement_source"] = "Psalm of Righteous Judgement"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_psalm_of_righteous_judgement_bearer_model_id"] = bearer_id
+
+        if name == "verse of holy piety" or enh_id == "000009029003":
+            if not is_penitent_host:
+                return
+            unit.special_rules["enhancement_verse_of_holy_piety"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            vow_keys = [
+                str(v or "").strip().lower()
+                for v in list(
+                    params.get(
+                        "vow_keys",
+                        ("path_of_the_penitent", "absolution_in_battle", "death_before_disgrace"),
+                    )
+                    or ()
+                )
+                if str(v or "").strip()
+            ]
+            if vow_keys:
+                unit.special_rules["enhancement_verse_of_holy_piety_vow_keys"] = list(vow_keys)
+            unit.special_rules["enhancement_verse_of_holy_piety_source"] = "Verse of Holy Piety"
+            unit.special_rules["enhancement_verse_of_holy_piety_once_per_battle"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_verse_of_holy_piety_bearer_model_id"] = bearer_id
+
+        if name == "refrain of enduring faith" or enh_id == "000009029004":
+            if not is_penitent_host:
+                return
+            unit.special_rules["enhancement_refrain_of_enduring_faith"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                invulnerable_save = int(params.get("invulnerable_save", 5) or 5)
+            except (TypeError, ValueError):
+                invulnerable_save = 5
+            unit.special_rules["enhancement_refrain_of_enduring_faith_invulnerable_save"] = int(
+                max(2, min(7, invulnerable_save))
+            )
+            unit.special_rules["enhancement_refrain_of_enduring_faith_source"] = "Refrain of Enduring Faith"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_refrain_of_enduring_faith_bearer_model_id"] = bearer_id
+
+        if name == "catechism of divine penitence" or enh_id == "000009029005":
+            if not is_penitent_host:
+                return
+            unit.special_rules["enhancement_catechism_of_divine_penitence"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            attach_names = [
+                str(v or "").strip()
+                for v in list(params.get("attachment_override_unit_names_any", ("Repentia Squad",)) or ())
+                if str(v or "").strip()
+            ]
+            if attach_names:
+                unit.special_rules["enhancement_catechism_of_divine_penitence_attach_unit_names"] = list(attach_names)
+            added_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("add_keywords", ("PENITENT",)) or ())
+                if str(v or "").strip()
+            ]
+            if bearer is not None and added_keywords:
+                current_keywords = [str(v or "").strip().upper() for v in list(getattr(bearer, "keywords", []) or [])]
+                for keyword in list(added_keywords):
+                    if keyword in current_keywords:
+                        continue
+                    current_keywords.append(keyword)
+                bearer.keywords = list(current_keywords)
+            unit.special_rules["enhancement_catechism_of_divine_penitence_source"] = "Catechism of Divine Penitence"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_catechism_of_divine_penitence_bearer_model_id"] = bearer_id
 
         if name == "abhuman detail" or enh_id == "000010637002":
             if not is_grizzled_company:

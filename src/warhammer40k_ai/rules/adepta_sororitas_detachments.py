@@ -27,12 +27,14 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
     )
     _RIGHTEOUS_PURPOSE_SACRESANTS_UNIT_NAMES = ("celestian sacresants",)
     _DESPERATE_FOR_REDEMPTION_ABILITY_KEY = "desperate_for_redemption"
+    _VERSE_OF_HOLY_PIETY_ABILITY_KEY = "verse_of_holy_piety_vow"
     _PATH_OF_THE_PENITENT_KEY = "path_of_the_penitent"
     _ABSOLUTION_IN_BATTLE_KEY = "absolution_in_battle"
     _DEATH_BEFORE_DISGRACE_KEY = "death_before_disgrace"
     _DIVINE_ASPECT_ABILITY_KEY = "divine_aspect_target"
     _DIVINE_ASPECT_PENDING_KEY = "enhancement_divine_aspect_pending"
     _DIVINE_ASPECT_SOURCE_NAME = "Divine Aspect"
+    _VERSE_OF_HOLY_PIETY_SOURCE_NAME = "Verse of Holy Piety"
     _DESPERATE_FOR_REDEMPTION_VOWS = (
         (_PATH_OF_THE_PENITENT_KEY, "The Path of the Penitent"),
         (_ABSOLUTION_IN_BATTLE_KEY, "Absolution in Battle"),
@@ -375,12 +377,361 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
             request_fn(request)
         return request
 
+    @staticmethod
+    def _member_sort_key(member: object) -> str:
+        entity_id = str(maybe_entity_id(member) or "").strip()
+        if entity_id:
+            return entity_id
+        return str(getattr(member, "name", "") or "").strip().lower()
+
+    def _verse_of_holy_piety_source_state(self, unit) -> tuple[bool, str]:
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False, ""
+        if not bool(sr.get("enhancement_verse_of_holy_piety", False)):
+            return False, ""
+        source_name = str(
+            sr.get("enhancement_verse_of_holy_piety_source", "") or self._VERSE_OF_HOLY_PIETY_SOURCE_NAME
+        ).strip()
+        if not source_name:
+            source_name = self._VERSE_OF_HOLY_PIETY_SOURCE_NAME
+        return True, source_name
+
+    def _verse_of_holy_piety_bearer_model(self, unit):
+        if unit is None:
+            return None
+        sr = getattr(unit, "special_rules", None)
+        bearer_id = ""
+        if isinstance(sr, dict):
+            bearer_id = str(
+                sr.get("enhancement_verse_of_holy_piety_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+        for model in list(getattr(unit, "models", []) or []):
+            if model is None:
+                continue
+            if bearer_id and str(maybe_entity_id(model) or "") != bearer_id:
+                continue
+            if self._model_is_alive(model):
+                return model
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        bearer = get_bearer() if callable(get_bearer) else None
+        if bearer is None:
+            return None
+        if bearer_id and str(maybe_entity_id(bearer) or "") != bearer_id:
+            return None
+        if not self._model_is_alive(bearer):
+            return None
+        return bearer
+
+    def _iter_verse_of_holy_piety_sources(self) -> list[dict]:
+        if not self.is_penitent_host():
+            return []
+        army = self.army
+        if army is None:
+            return []
+        out: list[dict] = []
+        seen_source_ids: set[str] = set()
+        for source_unit in list(getattr(army, "units", []) or []):
+            if source_unit is None:
+                continue
+            source_id = str(maybe_entity_id(source_unit) or "").strip()
+            if not source_id or source_id in seen_source_ids:
+                continue
+            is_source, source_name = self._verse_of_holy_piety_source_state(source_unit)
+            if not is_source:
+                continue
+            root = self._unit_root(source_unit)
+            if root is None:
+                continue
+            if not self._unit_is_alive(root):
+                continue
+            if not self._unit_is_deployed_on_battlefield(root):
+                continue
+            if bool(getattr(root, "is_embarked", False)):
+                continue
+            bearer_model = self._verse_of_holy_piety_bearer_model(source_unit)
+            if bearer_model is None:
+                continue
+            source_sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(source_sr, dict):
+                source_sr = {}
+            used = bool(source_sr.get("enhancement_verse_of_holy_piety_used", False))
+            out.append(
+                {
+                    "source_unit": source_unit,
+                    "source_root": root,
+                    "source_unit_id": source_id,
+                    "source_name": source_name,
+                    "source_used": bool(used),
+                    "bearer_model_id": str(maybe_entity_id(bearer_model) or ""),
+                }
+            )
+            seen_source_ids.add(source_id)
+        return sorted(out, key=lambda item: str(item.get("source_unit_id", "") or ""))
+
+    def _has_pending_verse_of_holy_piety_request(
+        self,
+        *,
+        game=None,
+        player_id: str = "",
+        source_unit_id: str = "",
+        battle_round: int = 0,
+    ) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for pending in list(queue.list() or []):
+            if str(getattr(pending, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            if player_id and str(getattr(pending, "player_id", "") or "") != str(player_id):
+                continue
+            ctx = dict(getattr(pending, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != self._VERSE_OF_HOLY_PIETY_ABILITY_KEY:
+                continue
+            if source_unit_id and str(ctx.get("source_unit_id", "") or "") != str(source_unit_id):
+                continue
+            if int(battle_round or 0) > 0:
+                try:
+                    pending_round = int(ctx.get("battle_round", 0) or 0)
+                except (TypeError, ValueError):
+                    pending_round = 0
+                if pending_round and pending_round != int(battle_round):
+                    continue
+            return True
+        return False
+
+    def queue_verse_of_holy_piety_selection_requests(
+        self,
+        *,
+        battle_round: int = 0,
+        game=None,
+        player=None,
+    ) -> list:
+        if not self.is_penitent_host():
+            return []
+        army = self.army
+        if army is None:
+            return []
+        army_player = getattr(army, "player", None)
+        if player is None:
+            player = army_player
+        if player is None or army_player is None or player is not army_player:
+            return []
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None or not bool(getattr(game_obj, "is_authoritative", True)):
+            return []
+        if int(battle_round or 0) <= 0:
+            battle_round = int(getattr(game_obj, "turn", 0) or 0)
+        if int(battle_round or 0) <= 0:
+            return []
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        player_id = str(getattr(player, "id", "") or "")
+        request_fn = getattr(game_obj, "request_decision", None)
+        if not callable(request_fn):
+            return []
+
+        vow_keys = [key for key, _label in self._DESPERATE_FOR_REDEMPTION_VOWS]
+        queued: list = []
+        for source in self._iter_verse_of_holy_piety_sources():
+            source_unit = source.get("source_unit")
+            source_unit_id = str(source.get("source_unit_id", "") or "")
+            if source_unit is None or not source_unit_id:
+                continue
+            if bool(source.get("source_used", False)):
+                continue
+            if self._has_pending_verse_of_holy_piety_request(
+                game=game_obj,
+                player_id=player_id,
+                source_unit_id=source_unit_id,
+                battle_round=int(battle_round or 0),
+            ):
+                continue
+
+            options = [
+                DecisionOption.create(
+                    "None",
+                    payload={
+                        "action": "skip",
+                        "choice_key": "",
+                        "choice_name": "None",
+                        "source_unit_id": source_unit_id,
+                    },
+                )
+            ]
+            for key in list(vow_keys):
+                label = self.desperate_for_redemption_vow_label(key)
+                options.append(
+                    DecisionOption.create(
+                        label,
+                        payload={
+                            "choice_key": key,
+                            "choice_name": label,
+                            "source_unit_id": source_unit_id,
+                        },
+                    )
+                )
+
+            source_name = str(source.get("source_name", "") or self._VERSE_OF_HOLY_PIETY_SOURCE_NAME).strip()
+            if not source_name:
+                source_name = self._VERSE_OF_HOLY_PIETY_SOURCE_NAME
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                (
+                    f"{source_name}: once per battle, select one Vow of Atonement to be active for "
+                    f"{getattr(source_unit, 'name', 'the bearer unit')} this battle round (or select None)."
+                ),
+                player_id=player_id,
+                options=options,
+                context={
+                    "ability": self._VERSE_OF_HOLY_PIETY_ABILITY_KEY,
+                    "ability_name": source_name,
+                    "army_id": str(maybe_entity_id(army) or ""),
+                    "source_unit_id": source_unit_id,
+                    "source_model_id": str(source.get("bearer_model_id", "") or ""),
+                    "battle_round": int(battle_round or 0),
+                    "allowed_choice_keys": list(vow_keys),
+                    "optional": True,
+                    "once_per_battle": True,
+                },
+            )
+            request_fn(request)
+            queued.append(request)
+        return queued
+
+    def select_verse_of_holy_piety_vow(
+        self,
+        source_unit,
+        choice_key: str,
+        *,
+        battle_round: int = 0,
+        player_id: str = "",
+    ) -> bool:
+        if not self.is_penitent_host():
+            return False
+        if source_unit is None:
+            return False
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        if source_army is not self.army:
+            return False
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            return False
+        if not bool(source_sr.get("enhancement_verse_of_holy_piety", False)):
+            return False
+        if bool(source_sr.get("enhancement_verse_of_holy_piety_used", False)):
+            return False
+        if self._verse_of_holy_piety_bearer_model(source_unit) is None:
+            return False
+
+        key = self._normalize_desperate_for_redemption_vow_key(choice_key)
+        if not key:
+            return True
+
+        source_sr = dict(source_sr)
+        source_sr["enhancement_verse_of_holy_piety_used"] = True
+        source_sr["enhancement_verse_of_holy_piety_active_vow"] = key
+        source_sr["enhancement_verse_of_holy_piety_active_battle_round"] = int(battle_round or 0)
+        source_sr["enhancement_verse_of_holy_piety_active_player_id"] = str(player_id or "")
+        source_unit.special_rules = source_sr
+        return True
+
+    def clear_verse_of_holy_piety_active_vows(self) -> None:
+        army = self.army
+        if army is None:
+            return
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if (
+                "enhancement_verse_of_holy_piety_active_vow" not in sr
+                and "enhancement_verse_of_holy_piety_active_battle_round" not in sr
+                and "enhancement_verse_of_holy_piety_active_player_id" not in sr
+            ):
+                continue
+            sr = dict(sr)
+            sr.pop("enhancement_verse_of_holy_piety_active_vow", None)
+            sr.pop("enhancement_verse_of_holy_piety_active_battle_round", None)
+            sr.pop("enhancement_verse_of_holy_piety_active_player_id", None)
+            unit.special_rules = sr
+
+    def verse_of_holy_piety_active_vow_key(self, unit, *, game=None, battle_round=None) -> str:
+        if not self.is_penitent_host():
+            return ""
+        root = self._unit_root(unit)
+        if root is None:
+            return ""
+        if battle_round is None:
+            game_obj = self._resolve_game_context(game=game)
+            if game_obj is not None:
+                battle_round = int(getattr(game_obj, "turn", 0) or 0)
+        try:
+            battle_round_int = int(battle_round or 0)
+        except (TypeError, ValueError):
+            battle_round_int = 0
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [root]
+        members = sorted(
+            [member for member in list(members or []) if member is not None],
+            key=self._member_sort_key,
+        )
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not (isinstance(sr, dict) and bool(sr.get("enhancement_verse_of_holy_piety", False))):
+                continue
+            key = self._normalize_desperate_for_redemption_vow_key(
+                str(sr.get("enhancement_verse_of_holy_piety_active_vow", "") or "")
+            )
+            if not key:
+                continue
+            try:
+                selected_round = int(sr.get("enhancement_verse_of_holy_piety_active_battle_round", 0) or 0)
+            except (TypeError, ValueError):
+                selected_round = 0
+            if selected_round and battle_round_int and selected_round != battle_round_int:
+                continue
+            return key
+        return ""
+
+    def _desperate_for_redemption_vow_active_for_unit(self, vow_key: str, *, unit, model=None, game=None) -> bool:
+        normalized = self._normalize_desperate_for_redemption_vow_key(vow_key)
+        if not normalized:
+            return False
+        active_army_vow = self.desperate_for_redemption_active_vow_key(game=game)
+        if active_army_vow == normalized:
+            return model is None or self.model_is_penitent(model, unit)
+        verse_vow = self.verse_of_holy_piety_active_vow_key(unit, game=game)
+        if verse_vow == normalized:
+            return True
+        return False
+
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
         if not self.is_penitent_host():
             return
         game_obj = self._resolve_game_context(game=game)
         self.clear_desperate_for_redemption_active_vow()
+        self.clear_verse_of_holy_piety_active_vows()
         self.queue_desperate_for_redemption_selection_request(
+            battle_round=int(battle_round or 0),
+            game=game_obj,
+        )
+        self.queue_verse_of_holy_piety_selection_requests(
             battle_round=int(battle_round or 0),
             game=game_obj,
         )
@@ -1074,6 +1425,32 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
         if model is not None and hasattr(model, "has_any_keyword"):
             if bool(model.has_any_keyword("PENITENT")):
                 return True
+        model_id = str(maybe_entity_id(model) or "").strip() if model is not None else ""
+        if model_id:
+            root = self._unit_root(unit)
+            if root is not None:
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = []
+                if not members:
+                    members = [root]
+                for member in list(members or []):
+                    if member is None:
+                        continue
+                    sr = getattr(member, "special_rules", None)
+                    if not (
+                        isinstance(sr, dict)
+                        and bool(sr.get("enhancement_catechism_of_divine_penitence", False))
+                    ):
+                        continue
+                    bearer_id = str(
+                        sr.get("enhancement_catechism_of_divine_penitence_bearer_model_id", "")
+                        or sr.get("enhancement_bearer_model_id", "")
+                        or ""
+                    ).strip()
+                    if bearer_id and bearer_id == model_id:
+                        return True
         return self.unit_is_penitent(unit)
 
     def _unit_made_charge_move_this_turn(self, unit, *, game=None) -> bool:
@@ -1105,8 +1482,11 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
             return 0, ""
         if model is None or unit is None:
             return 0, ""
-        active = self.desperate_for_redemption_active_vow_key()
-        if active != self._PATH_OF_THE_PENITENT_KEY:
+        if not self._desperate_for_redemption_vow_active_for_unit(
+            self._PATH_OF_THE_PENITENT_KEY,
+            unit=unit,
+            model=model,
+        ):
             return 0, ""
         if not self.model_is_penitent(model, unit):
             return 0, ""
@@ -1117,11 +1497,14 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
             return 0, ""
         if attacker_model is None:
             return 0, ""
-        active = self.desperate_for_redemption_active_vow_key()
-        if active != self._ABSOLUTION_IN_BATTLE_KEY:
-            return 0, ""
         if unit is None:
             unit = getattr(attacker_model, "parent_unit", None)
+        if not self._desperate_for_redemption_vow_active_for_unit(
+            self._ABSOLUTION_IN_BATTLE_KEY,
+            unit=unit,
+            model=attacker_model,
+        ):
+            return 0, ""
         if unit is None or not self.model_is_penitent(attacker_model, unit):
             return 0, ""
         if weapon_profile is not None:
@@ -1138,11 +1521,14 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
             return 0, ""
         if attacker_model is None:
             return 0, ""
-        active = self.desperate_for_redemption_active_vow_key()
-        if active != self._ABSOLUTION_IN_BATTLE_KEY:
-            return 0, ""
         if unit is None:
             unit = getattr(attacker_model, "parent_unit", None)
+        if not self._desperate_for_redemption_vow_active_for_unit(
+            self._ABSOLUTION_IN_BATTLE_KEY,
+            unit=unit,
+            model=attacker_model,
+        ):
+            return 0, ""
         if unit is None or not self.model_is_penitent(attacker_model, unit):
             return 0, ""
         if weapon_profile is not None:
@@ -1159,8 +1545,11 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
             return None
         if model is None or unit is None:
             return None
-        active = self.desperate_for_redemption_active_vow_key()
-        if active != self._DEATH_BEFORE_DISGRACE_KEY:
+        if not self._desperate_for_redemption_vow_active_for_unit(
+            self._DEATH_BEFORE_DISGRACE_KEY,
+            unit=unit,
+            model=model,
+        ):
             return None
         if not self.model_is_penitent(model, unit):
             return None

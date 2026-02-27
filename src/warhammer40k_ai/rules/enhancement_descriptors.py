@@ -400,6 +400,67 @@ _ADEPTA_SORORITAS_CHAMPIONS_OF_FAITH_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ADEPTA_SORORITAS_CHAMPIONS_OF_FAITH_DESCRIPTORS.values()
 }
 
+_ADEPTA_SORORITAS_PENITENT_HOST_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009029002": EnhancementToolDescriptor(
+        enhancement_id="000009029002",
+        name="Psalm of Righteous Judgement",
+        timing="on_enemy_unit_destroyed_by_friendly_penitent_unit",
+        target="miracle_dice_pool",
+        duration="instant",
+        effect="discard_miracle_die_then_gain_fixed_miracle_die_value",
+        effect_params={
+            "discard_miracle_dice": 1,
+            "gained_miracle_die_value": 6,
+            "requires_source_unit_keyword": "PENITENT",
+        },
+    ),
+    "000009029003": EnhancementToolDescriptor(
+        enhancement_id="000009029003",
+        name="Verse of Holy Piety",
+        timing="start_of_battle_round_once_per_battle",
+        target="bearer_unit",
+        duration="battle_round",
+        effect="select_additional_vow_of_atonement_for_bearer_unit",
+        once_per_battle=True,
+        effect_params={
+            "optional": True,
+            "vow_keys": (
+                "path_of_the_penitent",
+                "absolution_in_battle",
+                "death_before_disgrace",
+            ),
+        },
+    ),
+    "000009029004": EnhancementToolDescriptor(
+        enhancement_id="000009029004",
+        name="Refrain of Enduring Faith",
+        timing="passive_while_leading",
+        target="bearer_led_unit",
+        duration="constant",
+        effect="bearer_led_unit_invulnerable_save",
+        effect_params={
+            "invulnerable_save": 5,
+            "requires_bearer_leading": True,
+        },
+    ),
+    "000009029005": EnhancementToolDescriptor(
+        enhancement_id="000009029005",
+        name="Catechism of Divine Penitence",
+        timing="passive_and_declare_battle_formations_attachment_override",
+        target="bearer",
+        duration="constant",
+        effect="grant_bearer_keyword_and_attachment_override",
+        effect_params={
+            "add_keywords": ("PENITENT",),
+            "attachment_override_unit_names_any": ("Repentia Squad",),
+        },
+    ),
+}
+
+_ADEPTA_SORORITAS_PENITENT_HOST_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ADEPTA_SORORITAS_PENITENT_HOST_DESCRIPTORS.values()
+}
+
 _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009911002": EnhancementToolDescriptor(
         enhancement_id="000009911002",
@@ -4354,6 +4415,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _ADEPTA_SORORITAS_CHAMPIONS_OF_FAITH_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ADEPTA_SORORITAS_PENITENT_HOST_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4588,6 +4652,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _ADEPTA_SORORITAS_ARMY_OF_FAITH_BY_NAME.get(key)
         or _ADEPTA_SORORITAS_BRINGERS_OF_FLAME_BY_NAME.get(key)
         or _ADEPTA_SORORITAS_CHAMPIONS_OF_FAITH_BY_NAME.get(key)
+        or _ADEPTA_SORORITAS_PENITENT_HOST_BY_NAME.get(key)
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
         or _AELDARI_SEER_COUNCIL_BY_NAME.get(key)
         or _AELDARI_CORSAIR_COTERIE_BY_NAME.get(key)

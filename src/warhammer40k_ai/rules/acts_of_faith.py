@@ -520,6 +520,11 @@ class ActsOfFaithManager:
             destroyed_by_weapon_profile=destroyed_by_weapon_profile,
             game=game,
         )
+        self._maybe_trigger_psalm_of_righteous_judgement(
+            unit=unit,
+            destroyed_by_unit=destroyed_by_unit,
+            game=game,
+        )
 
     def on_model_destroyed(self, unit, model, *, game=None, game_map=None) -> None:
         if unit is None or model is None or not self._army_has_rule():
@@ -585,6 +590,18 @@ class ActsOfFaithManager:
             return False
         mgr = getattr(self.army, "adepta_sororitas_detachments", None)
         checker = getattr(mgr, "is_bringers_of_flame", None) if mgr is not None else None
+        if callable(checker):
+            try:
+                return bool(checker())
+            except Exception:
+                return False
+        return False
+
+    def _is_penitent_host(self) -> bool:
+        if self.army is None:
+            return False
+        mgr = getattr(self.army, "adepta_sororitas_detachments", None)
+        checker = getattr(mgr, "is_penitent_host", None) if mgr is not None else None
         if callable(checker):
             try:
                 return bool(checker())
@@ -709,6 +726,109 @@ class ActsOfFaithManager:
         sr = dict(sr)
         sr["enhancement_blade_of_saint_ellynor_active_fight"] = updated
         attacker_root.special_rules = sr
+
+    def _maybe_trigger_psalm_of_righteous_judgement(
+        self,
+        *,
+        unit,
+        destroyed_by_unit,
+        game=None,
+    ) -> None:
+        if not self._is_penitent_host():
+            return
+        if unit is None or destroyed_by_unit is None:
+            return
+        if not self.miracle_dice:
+            return
+
+        target_root = self._unit_root(unit)
+        attacker_root = self._unit_root(destroyed_by_unit)
+        if target_root is None or attacker_root is None:
+            return
+        if self._unit_in_army(target_root):
+            return
+        if not self._unit_in_army(attacker_root):
+            return
+
+        as_mgr = getattr(self.army, "adepta_sororitas_detachments", None) if self.army is not None else None
+        is_penitent_fn = getattr(as_mgr, "unit_is_penitent", None) if as_mgr is not None else None
+        if not callable(is_penitent_fn) or not bool(is_penitent_fn(attacker_root)):
+            return
+
+        sources = []
+        seen_ids: set[str] = set()
+        for source_unit in list(getattr(self.army, "units", []) or []):
+            if source_unit is None:
+                continue
+            source_id = str(getattr(source_unit, "id", getattr(source_unit, "_id", "")) or "")
+            if source_id and source_id in seen_ids:
+                continue
+            sr = self._unit_special_rules(source_unit)
+            if not bool(sr.get("enhancement_psalm_of_righteous_judgement", False)):
+                continue
+            if not self._unit_on_battlefield(self._unit_root(source_unit)):
+                continue
+            bearer = self._get_enhancement_bearer_model(source_unit)
+            if bearer is None:
+                continue
+            if source_id:
+                seen_ids.add(source_id)
+            sources.append(source_unit)
+        if not sources:
+            return
+        sources = sorted(
+            list(sources),
+            key=lambda source_unit: str(getattr(source_unit, "id", getattr(source_unit, "_id", "")) or ""),
+        )
+
+        for source_unit in sources:
+            if not self.miracle_dice:
+                break
+            source_sr = self._unit_special_rules(source_unit)
+            try:
+                discard_count = int(source_sr.get("enhancement_psalm_of_righteous_judgement_discard_count", 1) or 1)
+            except (TypeError, ValueError):
+                discard_count = 1
+            if discard_count <= 0:
+                continue
+            max_select = min(int(discard_count), len(self.miracle_dice))
+            if max_select <= 0:
+                continue
+            bearer_model = self._get_enhancement_bearer_model(source_unit)
+            if bearer_model is None:
+                continue
+            chosen_indices = self._choose_miracle_pool_indices(
+                unit=source_unit,
+                bearer_model=bearer_model,
+                game=game,
+                pool=list(self.miracle_dice),
+                max_select=int(max_select),
+                reason="Psalm of Righteous Judgement",
+                skip_sixes=True,
+            )
+            if not chosen_indices:
+                continue
+            discarded = self._discard_miracle_dice_by_indices(
+                self.miracle_dice,
+                chosen_indices[: int(discard_count)],
+            )
+            if not discarded:
+                continue
+            try:
+                gained_value = int(source_sr.get("enhancement_psalm_of_righteous_judgement_gained_value", 6) or 6)
+            except (TypeError, ValueError):
+                gained_value = 6
+            gained_value = int(max(1, min(6, gained_value)))
+            self.miracle_dice.append(int(gained_value))
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            if player is not None:
+                append_dice(
+                    player,
+                    (
+                        "Psalm of Righteous Judgement: discarded Miracle dice "
+                        f"{discarded} to gain Miracle die {int(gained_value)}."
+                    ),
+                )
 
     @staticmethod
     def _model_is_alive(model) -> bool:

@@ -467,6 +467,32 @@ class PositioningMixin:
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
 
+    def has_catechism_of_divine_penitence(self) -> bool:
+        """True if this unit has the Catechism of Divine Penitence enhancement."""
+        cache_key = "catechism_of_divine_penitence"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache[cache_key])
+        found = False
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_catechism_of_divine_penitence"):
+                found = True
+        except Exception:
+            found = False
+        if not found:
+            try:
+                enh = getattr(self, "enhancement", None)
+                name = str(getattr(enh, "name", "") or "").strip().lower()
+                enh_id = str(getattr(enh, "id", "") or "").strip()
+                if name == "catechism of divine penitence" or enh_id == "000009029005":
+                    found = True
+            except Exception:
+                found = False
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
     def _attached_unit_has_enhancement_flag(
         self,
         flag_key: str,
@@ -1183,6 +1209,77 @@ class PositioningMixin:
         if not self._grimnars_mark_is_bearer():
             return False
         return self._grimnars_mark_bodyguard_allowed(bodyguard)
+
+    def _catechism_of_divine_penitence_bodyguard_allowed(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        configured_names: list[str] = []
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict):
+                configured_names = [
+                    self._normalize_attached_unit_name(v)
+                    for v in list(sr.get("enhancement_catechism_of_divine_penitence_attach_unit_names", ()) or ())
+                    if str(v or "").strip()
+                ]
+        except Exception:
+            configured_names = []
+        try:
+            name = self._normalize_attached_unit_name(getattr(bodyguard, "name", ""))
+        except Exception:
+            name = ""
+        if name in set(configured_names):
+            return True
+        if "repentia squad" in name:
+            return True
+        try:
+            if bool(bodyguard.has_any_keyword("REPENTIA")):
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _catechism_of_divine_penitence_is_bearer(self) -> bool:
+        if not self.has_catechism_of_divine_penitence():
+            return False
+        if not bool(getattr(self, "is_leader", False)):
+            return False
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+        if as_mgr is None:
+            return False
+        try:
+            if not as_mgr.is_penitent_host():
+                return False
+        except Exception:
+            return False
+
+        allowed_keywords = ("CANONESS", "PALATINE", "MINISTORUM PRIEST")
+        for keyword in allowed_keywords:
+            try:
+                if bool(self.has_any_keyword(keyword)):
+                    return True
+            except Exception:
+                continue
+        try:
+            name = self._normalize_attached_unit_name(getattr(self, "name", ""))
+        except Exception:
+            name = ""
+        return bool(
+            "canoness" in name
+            or "palatine" in name
+            or "ministorum priest" in name
+        )
+
+    def _catechism_of_divine_penitence_can_attach_to(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        if not self._catechism_of_divine_penitence_is_bearer():
+            return False
+        return self._catechism_of_divine_penitence_bodyguard_allowed(bodyguard)
 
     def _disciple_of_khorne_active_leaders(self) -> list["Unit"]:
         try:

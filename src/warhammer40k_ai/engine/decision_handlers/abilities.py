@@ -4819,6 +4819,62 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if callable(can_select) and not bool(can_select(choice_key)):
             return ("Desperate for Redemption selected vow has already been selected this battle.",)
         return ()
+    if ability == "verse_of_holy_piety_vow":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Verse of Holy Piety army was not found.",)
+        mgr = getattr(army, "adepta_sororitas_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_penitent_host", lambda: False)()):
+            return ("Verse of Holy Piety requires Penitent Host detachment.",)
+
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Verse of Holy Piety source unit was not found.",)
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        if source_army is not army:
+            return ("Verse of Holy Piety source unit is not in the selected army.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not (
+            isinstance(source_sr, dict)
+            and bool(source_sr.get("enhancement_verse_of_holy_piety", False))
+        ):
+            return ("Verse of Holy Piety source unit does not have the enhancement.",)
+        if bool(source_sr.get("enhancement_verse_of_holy_piety_used", False)):
+            return ("Verse of Holy Piety has already been used this battle.",)
+
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            required_round = int(ctx.get("battle_round", 0) or 0)
+        except (TypeError, ValueError):
+            required_round = 0
+        if required_round > 0 and battle_round != required_round:
+            return ("Verse of Holy Piety selection is no longer valid for this battle round.",)
+
+        if is_skip_choice(request, result):
+            return ()
+
+        choice_key = str(payload.get("choice_key", "") or payload.get("vow_key", "") or "").strip()
+        if not choice_key:
+            return ("Verse of Holy Piety requires selecting one Vow of Atonement or None.",)
+        normalize_key = getattr(mgr, "_normalize_desperate_for_redemption_vow_key", None)
+        if callable(normalize_key):
+            choice_key = str(normalize_key(choice_key) or "")
+        else:
+            choice_key = str(choice_key).strip().lower()
+        if not choice_key:
+            return ("Verse of Holy Piety selected vow is not supported.",)
+
+        normalize_allowed = normalize_key if callable(normalize_key) else (lambda v: str(v or "").strip().lower())
+        allowed_keys = {
+            str(normalize_allowed(val) or "").strip()
+            for val in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(val or "").strip()
+        }
+        allowed_keys = {v for v in allowed_keys if v}
+        if allowed_keys and choice_key not in allowed_keys:
+            return ("Verse of Holy Piety selected vow is not an eligible choice.",)
+        return ()
     if ability == "divine_aspect_target":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -10166,6 +10222,102 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"{ability_name}: no Vow of Atonement selected for battle round {int(start_round or 0)}.",
             )
         return {
+            "choice_key": str(choice_key),
+            "choice_name": str(choice_name),
+            "battle_round": int(start_round or 0),
+        }
+    if ability == "verse_of_holy_piety_vow":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "adepta_sororitas_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_penitent_host", lambda: False)()):
+            return None
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_name = str(getattr(source_unit, "name", "Unit") or "Unit")
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not (
+            isinstance(source_sr, dict)
+            and bool(source_sr.get("enhancement_verse_of_holy_piety", False))
+            and not bool(source_sr.get("enhancement_verse_of_holy_piety_used", False))
+        ):
+            return None
+
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            start_round = int(ctx.get("battle_round", 0) or battle_round)
+        except (TypeError, ValueError):
+            start_round = int(battle_round)
+        if start_round > 0 and battle_round != start_round:
+            return None
+
+        choice_key = ""
+        if not is_skip_choice(request, result):
+            choice_key = str(payload.get("choice_key", "") or payload.get("vow_key", "") or "").strip()
+            normalize_key = getattr(mgr, "_normalize_desperate_for_redemption_vow_key", None)
+            if callable(normalize_key):
+                choice_key = str(normalize_key(choice_key) or "")
+            else:
+                choice_key = str(choice_key or "").strip().lower()
+            if not choice_key:
+                return None
+            normalize_allowed = normalize_key if callable(normalize_key) else (lambda v: str(v or "").strip().lower())
+            allowed_keys = {
+                str(normalize_allowed(val) or "").strip()
+                for val in list(ctx.get("allowed_choice_keys", []) or [])
+                if str(val or "").strip()
+            }
+            allowed_keys = {v for v in allowed_keys if v}
+            if allowed_keys and choice_key not in allowed_keys:
+                return None
+
+        player = _resolve_player(game, request, payload)
+        player_id = str(ctx.get("player_id", "") or "")
+        if not player_id and player is not None:
+            player_id = str(getattr(player, "id", "") or "")
+        if not player_id:
+            player_id = str(getattr(getattr(army, "player", None), "id", "") or "")
+
+        select_vow = getattr(mgr, "select_verse_of_holy_piety_vow", None)
+        if not callable(select_vow) or not bool(
+            select_vow(
+                source_unit,
+                choice_key,
+                battle_round=int(start_round or 0),
+                player_id=player_id,
+            )
+        ):
+            return None
+
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Verse of Holy Piety").strip() or "Verse of Holy Piety"
+        label_fn = getattr(mgr, "desperate_for_redemption_vow_label", None)
+        if choice_key:
+            if callable(label_fn):
+                choice_name = str(label_fn(choice_key) or choice_key)
+            else:
+                choice_name = str(choice_key or "")
+            _log_action_for_players(
+                game,
+                player,
+                (
+                    f"{ability_name}: {source_name} selected {choice_name}; "
+                    f"that Vow is also active for this unit in battle round {int(start_round or 0)}."
+                ),
+            )
+        else:
+            choice_name = "None"
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {source_name} selected none for battle round {int(start_round or 0)}.",
+            )
+        return {
+            "source_unit_id": str(get_entity_id(source_unit) or ""),
             "choice_key": str(choice_key),
             "choice_name": str(choice_name),
             "battle_round": int(start_round or 0),

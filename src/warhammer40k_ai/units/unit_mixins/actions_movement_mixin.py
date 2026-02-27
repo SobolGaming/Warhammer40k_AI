@@ -1051,6 +1051,22 @@ class ActionsMovementMixin:
         army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
         tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
         game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        refrain_dynamic = False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            leaders_for_dynamic = (
+                list(getattr(root, "attached_leaders", []) or []) if root is not None else []
+            )
+        except Exception:
+            leaders_for_dynamic = []
+        for leader in leaders_for_dynamic:
+            leader_sr = getattr(leader, "special_rules", None)
+            if isinstance(leader_sr, dict) and bool(leader_sr.get("enhancement_refrain_of_enduring_faith", False)):
+                refrain_dynamic = True
+                break
         synaptic_dynamic = False
         active_synaptic_fn = getattr(tyr_mgr, "get_active_synaptic_imperative", None) if tyr_mgr is not None else None
         if callable(active_synaptic_fn):
@@ -1065,7 +1081,13 @@ class ActionsMovementMixin:
         except Exception:
             pass
         cache_key = f"model_invulnerable_save:{get_entity_id(model)}"
-        if not aegis_active and not archons_dynamic and not synaptic_dynamic and cache_key in getattr(self, "_ability_cache", {}):
+        if (
+            not aegis_active
+            and not archons_dynamic
+            and not synaptic_dynamic
+            and not refrain_dynamic
+            and cache_key in getattr(self, "_ability_cache", {})
+        ):
             return self._ability_cache[cache_key]
 
         best_value: Optional[int] = None
@@ -1197,6 +1219,57 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # Penitent Host: Refrain of Enduring Faith (while bearer is leading, bearer's unit has a 5+ invulnerable save).
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        leaders = list(getattr(root, "attached_leaders", []) or []) if root is not None else []
+        for leader in leaders:
+            if leader is None:
+                continue
+            leader_sr = getattr(leader, "special_rules", None)
+            if not (
+                isinstance(leader_sr, dict)
+                and bool(leader_sr.get("enhancement_refrain_of_enduring_faith", False))
+            ):
+                continue
+            try:
+                inv_value = int(leader_sr.get("enhancement_refrain_of_enduring_faith_invulnerable_save", 5) or 5)
+            except (TypeError, ValueError):
+                inv_value = 5
+            inv_value = int(max(2, min(7, inv_value)))
+            bearer_id = str(
+                leader_sr.get("enhancement_refrain_of_enduring_faith_bearer_model_id", "")
+                or leader_sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            bearer_alive = False
+            if bearer_id:
+                for bearer_model in list(getattr(leader, "models", []) or []):
+                    if str(get_entity_id(bearer_model) or "") != bearer_id:
+                        continue
+                    alive_attr = getattr(bearer_model, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    break
+            if not bearer_alive:
+                get_bearer = getattr(leader, "_get_enhancement_bearer_model", None)
+                bearer_model = get_bearer() if callable(get_bearer) else None
+                if bearer_model is not None:
+                    if bearer_id and str(get_entity_id(bearer_model) or "") != bearer_id:
+                        bearer_model = None
+                if bearer_model is not None:
+                    alive_attr = getattr(bearer_model, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not bearer_alive:
+                continue
+            if best_value is None or inv_value < best_value:
+                best_value = int(inv_value)
+                best_source = str(
+                    leader_sr.get("enhancement_refrain_of_enduring_faith_source", "")
+                    or "Refrain of Enduring Faith"
+                ).strip() or "Refrain of Enduring Faith"
+
         # Archon's Will: active only while this unit is in range of the selected objective and not Battle-shocked.
         if archons_active and (best_value is None or 5 < best_value):
             best_value = 5
@@ -1246,7 +1319,7 @@ class ActionsMovementMixin:
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
-        if not aegis_active and not archons_dynamic and not synaptic_dynamic:
+        if not aegis_active and not archons_dynamic and not synaptic_dynamic and not refrain_dynamic:
             self._ability_cache[cache_key] = (best_value, best_source)
         return best_value, best_source
 

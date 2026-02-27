@@ -3347,6 +3347,12 @@ class StateAttachmentMixin:
                 return True
         except Exception:
             pass
+        # Catechism of Divine Penitence (Penitent Host): bearer can attach to Repentia Squad.
+        try:
+            if self._catechism_of_divine_penitence_can_attach_to(bodyguard):
+                return True
+        except Exception:
+            pass
         # Bodyguard datasheet id must be in leader's allowed attached_to list (IDs)
         allowed = getattr(self, "can_be_attached_to", []) or []
         try:
