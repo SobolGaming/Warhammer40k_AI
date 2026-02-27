@@ -1534,6 +1534,61 @@ class PositioningMixin:
                                 "amount": int(max(1, amount)),
                                 "allow_skip": True,
                             }
+                    if not ability and isinstance(sr, dict) and bool(sr.get("enhancement_amulet_of_tainted_vigour", False)):
+                        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+                        bearer_alive = False
+                        if bearer_id:
+                            for model in list(getattr(self, "models", []) or []):
+                                model_entity_id = str(get_entity_id(model) or "").strip()
+                                model_local_id = str(
+                                    getattr(model, "id", getattr(model, "_id", "")) or ""
+                                ).strip()
+                                if bearer_id != model_entity_id and bearer_id != model_local_id:
+                                    continue
+                                alive_attr = getattr(model, "is_alive", True)
+                                bearer_alive = bool(
+                                    alive_attr() if callable(alive_attr) else alive_attr
+                                )
+                                break
+                        else:
+                            get_bearer = getattr(self, "_get_enhancement_bearer_model", None)
+                            bearer = get_bearer() if callable(get_bearer) else None
+                            if bearer is not None:
+                                alive_attr = getattr(bearer, "is_alive", True)
+                                bearer_alive = bool(
+                                    alive_attr() if callable(alive_attr) else alive_attr
+                                )
+                        if bearer_alive:
+                            ability_key = str(
+                                sr.get("enhancement_amulet_of_tainted_vigour_ability_key", "amulet_of_tainted_vigour")
+                                or "amulet_of_tainted_vigour"
+                            ).strip().lower()
+                            amount_roll = str(
+                                sr.get("enhancement_amulet_of_tainted_vigour_return_roll", "D3")
+                                or "D3"
+                            ).strip().upper()
+                            required_keyword = str(
+                                sr.get("enhancement_amulet_of_tainted_vigour_required_model_keyword", "DAMNED")
+                                or "DAMNED"
+                            ).strip().upper()
+                            ability = {
+                                "name": str(
+                                    sr.get("enhancement_amulet_of_tainted_vigour_source", "Amulet of Tainted Vigour")
+                                    or "Amulet of Tainted Vigour"
+                                ).strip()
+                                or "Amulet of Tainted Vigour",
+                                "description": "",
+                                "ability_key": ability_key if ability_key else "amulet_of_tainted_vigour",
+                                "amount": 3,
+                                "amount_roll": amount_roll if amount_roll else "D3",
+                                "exclude_character": bool(
+                                    sr.get("enhancement_amulet_of_tainted_vigour_exclude_character", True)
+                                ),
+                                "required_keyword": required_keyword if required_keyword else "DAMNED",
+                                "allow_skip": bool(
+                                    sr.get("enhancement_amulet_of_tainted_vigour_allow_skip", True)
+                                ),
+                            }
         except Exception:
             ability = None
 
@@ -7818,6 +7873,10 @@ class PositioningMixin:
             val = 0.0
             try:
                 val = max(val, float(sr.get("enhancement_scout_distance", 0) or 0))
+            except Exception:
+                pass
+            try:
+                val = max(val, float(sr.get("enhancement_warped_foresight_scout_distance", 0) or 0))
             except Exception:
                 pass
             try:

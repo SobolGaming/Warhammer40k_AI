@@ -1714,6 +1714,70 @@ _CABAL_OF_CHAOS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CABAL_OF_CHAOS_DESCRIPTORS.values()
 }
 
+_CHAOS_CULT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008981002": EnhancementToolDescriptor(
+        enhancement_id="000008981002",
+        name="Amulet of Tainted Vigour",
+        timing="command_phase_start",
+        target="bearer_led_unit",
+        duration="instant_optional",
+        effect="return_destroyed_damned_models_to_bearer_unit",
+        effect_params={
+            "requires_bearer_leading": True,
+            "return_roll": "D3",
+            "required_model_keyword": "DAMNED",
+            "exclude_character": True,
+            "optional": True,
+        },
+    ),
+    "000008981003": EnhancementToolDescriptor(
+        enhancement_id="000008981003",
+        name="Cultist's Brand",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_conditional",
+        effect="reroll_advance_and_charge_rolls_for_bearer_unit",
+        effect_params={
+            "reroll_advance": True,
+            "reroll_charge": True,
+            "requires_all_other_models_keyword": "DAMNED",
+            "exclude_model_names": ("Dark Disciple", "Dark Disciples"),
+        },
+    ),
+    "000008981004": EnhancementToolDescriptor(
+        enhancement_id="000008981004",
+        name="Incendiary Goad",
+        timing="passive",
+        target="damned_models_in_bearer_unit_melee_weapons",
+        duration="constant_conditional",
+        effect="conditional_melee_strength_and_attacks_bonus_for_damned_models_in_bearer_unit",
+        effect_params={
+            "required_model_keyword": "DAMNED",
+            "requires_unit_below_starting_strength": True,
+            "melee_strength_bonus": 1,
+            "requires_unit_below_half_strength_for_attacks_bonus": True,
+            "melee_attacks_bonus": 1,
+        },
+    ),
+    "000008981005": EnhancementToolDescriptor(
+        enhancement_id="000008981005",
+        name="Warped Foresight",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_conditional",
+        effect="grant_scouts_while_bearer_leads_scouts_unit",
+        effect_params={
+            "requires_bearer_leading": True,
+            "required_led_unit_scouts_distance": 6,
+            "scouts_distance": 6,
+        },
+    ),
+}
+
+_CHAOS_CULT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CHAOS_CULT_DESCRIPTORS.values()
+}
+
 _SPECTACLE_OF_SPITE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010580002": EnhancementToolDescriptor(
         enhancement_id="000010580002",
@@ -4769,6 +4833,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _CABAL_OF_CHAOS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _CHAOS_CULT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPECTACLE_OF_SPITE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4971,6 +5038,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _HALOSCREED_BATTLE_CLADE_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
+        or _CHAOS_CULT_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_BY_NAME.get(key)

@@ -576,6 +576,7 @@ class Enhancement:
             is_cabal_of_chaos = bool(csm_mgr and csm_mgr.is_cabal_of_chaos())
         except Exception:
             is_cabal_of_chaos = False
+        is_chaos_cult = bool(csm_mgr and csm_mgr.is_chaos_cult())
         try:
             is_hearthband = bool(lov_mgr and lov_mgr.is_hearthband())
         except Exception:
@@ -5104,6 +5105,99 @@ class Enhancement:
             ) + 1
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "amulet of tainted vigour" or enh_id == "000008981002":
+            if not is_chaos_cult:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Amulet of Tainted Vigour").strip() or "Amulet of Tainted Vigour"
+            unit.special_rules["enhancement_amulet_of_tainted_vigour"] = True
+            unit.special_rules["enhancement_amulet_of_tainted_vigour_source"] = source
+            unit.special_rules["enhancement_amulet_of_tainted_vigour_ability_key"] = "amulet_of_tainted_vigour"
+            unit.special_rules["enhancement_amulet_of_tainted_vigour_return_roll"] = str(
+                params.get("return_roll", "D3") or "D3"
+            ).strip().upper()
+            unit.special_rules["enhancement_amulet_of_tainted_vigour_required_model_keyword"] = str(
+                params.get("required_model_keyword", "DAMNED") or "DAMNED"
+            ).strip().upper()
+            unit.special_rules["enhancement_amulet_of_tainted_vigour_exclude_character"] = bool(
+                params.get("exclude_character", True)
+            )
+            unit.special_rules["enhancement_amulet_of_tainted_vigour_allow_skip"] = bool(
+                params.get("optional", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name in {"cultist's brand", "cultist’s brand"} or enh_id == "000008981003":
+            if not is_chaos_cult:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Cultist's Brand").strip() or "Cultist's Brand"
+            required_keyword = str(params.get("requires_all_other_models_keyword", "DAMNED") or "DAMNED").strip().upper()
+            excluded_names = list(params.get("exclude_model_names", ("Dark Disciple", "Dark Disciples")) or ())
+            excluded_names = [str(v or "").strip() for v in excluded_names if str(v or "").strip()]
+            unit.special_rules["enhancement_cultists_brand"] = True
+            unit.special_rules["enhancement_cultists_brand_source"] = source
+            unit.special_rules["enhancement_cultists_brand_required_keyword"] = required_keyword
+            unit.special_rules["enhancement_cultists_brand_excluded_model_names"] = tuple(excluded_names)
+            unit.special_rules["enhancement_cultists_brand_reroll_advance"] = bool(params.get("reroll_advance", True))
+            unit.special_rules["enhancement_cultists_brand_reroll_charge"] = bool(params.get("reroll_charge", True))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "incendiary goad" or enh_id == "000008981004":
+            if not is_chaos_cult:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Incendiary Goad").strip() or "Incendiary Goad"
+            unit.special_rules["enhancement_incendiary_goad"] = True
+            unit.special_rules["enhancement_incendiary_goad_source"] = source
+            unit.special_rules["enhancement_incendiary_goad_required_model_keyword"] = str(
+                params.get("required_model_keyword", "DAMNED") or "DAMNED"
+            ).strip().upper()
+            unit.special_rules["enhancement_incendiary_goad_requires_below_starting_strength"] = bool(
+                params.get("requires_unit_below_starting_strength", True)
+            )
+            unit.special_rules["enhancement_incendiary_goad_requires_below_half_strength_for_attacks"] = bool(
+                params.get("requires_unit_below_half_strength_for_attacks_bonus", True)
+            )
+            unit.special_rules["enhancement_incendiary_goad_melee_strength_bonus"] = int(
+                max(0, _coerce_int(params.get("melee_strength_bonus", 1), default=1))
+            )
+            unit.special_rules["enhancement_incendiary_goad_melee_attacks_bonus"] = int(
+                max(0, _coerce_int(params.get("melee_attacks_bonus", 1), default=1))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "warped foresight" or enh_id == "000008981005":
+            if not is_chaos_cult:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Warped Foresight").strip() or "Warped Foresight"
+            unit.special_rules["enhancement_warped_foresight"] = True
+            unit.special_rules["enhancement_warped_foresight_source"] = source
+            unit.special_rules["enhancement_warped_foresight_required_scout_distance"] = int(
+                max(1, _coerce_int(params.get("required_led_unit_scouts_distance", 6), default=6))
+            )
+            unit.special_rules["enhancement_warped_foresight_scout_distance"] = 0
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+            if bool(getattr(unit, "is_leader", False)) and getattr(unit, "attached_to", None) is not None:
+                apply_attached_scouts = getattr(unit, "_apply_attached_unit_bodyguard_leader_scouts", None)
+                if callable(apply_attached_scouts):
+                    apply_attached_scouts(unit.attached_to)
+                invalidate = getattr(unit, "_invalidate_ability_cache", None)
+                if callable(invalidate):
+                    invalidate()
+                invalidate_root = getattr(unit.attached_to, "_invalidate_ability_cache", None)
+                if callable(invalidate_root):
+                    invalidate_root()
 
         if name == "blood-forged armour" or enh_id == "000010078003":
             if not is_khorne_daemonkin:

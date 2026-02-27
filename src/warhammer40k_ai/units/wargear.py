@@ -5001,6 +5001,26 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(
                         f"Experimental Augmentations: {source_name} +{int(bonus)}A (melee)"
                     )
+            incendiary_bonus_fn = (
+                getattr(mgr, "chaos_cult_incendiary_goad_melee_attacks_bonus", None)
+                if mgr is not None
+                else None
+            )
+            if callable(incendiary_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = incendiary_bonus_fn(attacker, weapon_profile=self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Incendiary Goad").strip() or "Incendiary Goad"
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(bonus),
+                            source="enhancement:incendiary_goad_attacks",
+                        )
+                    )
+                    attack_result.attacks_special_modifiers.append(
+                        f"{source_name} +{int(bonus)}A (melee)"
+                    )
             soulforged_bonus_fn = getattr(
                 mgr,
                 "soulforged_warpack_contract_melee_attacks_bonus",
@@ -13897,6 +13917,20 @@ class WargearProfile:
                     source_name = str(source or "Macrotensile Sinews").strip() or "Macrotensile Sinews"
                     wound_result.setdefault("modifiers", []).append(
                         f"Experimental Augmentations: {source_name} +{int(s_bonus)}S (melee)"
+                    )
+            incendiary_bonus_fn = (
+                getattr(csm_mgr, "chaos_cult_incendiary_goad_melee_strength_bonus", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(incendiary_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                s_bonus, source = incendiary_bonus_fn(attacker, weapon_profile=self, game=game)
+                if int(s_bonus or 0):
+                    strength = strength + int(s_bonus)
+                    source_name = str(source or "Incendiary Goad").strip() or "Incendiary Goad"
+                    wound_result.setdefault("modifiers", []).append(
+                        f"{source_name} +{int(s_bonus)}S (melee)"
                     )
         # Emperor's Children: Sensational Performance (+1 Strength to melee weapons this phase).
         try:

@@ -1554,6 +1554,46 @@ class GamePhaseHandlersMixin:
         if army is None:
             raise RuntimeError(f"Optional abilities require an army for {player.name}.")
 
+        def _bodyguard_return_model_has_keyword(model, keyword: str) -> bool:
+            check_any = getattr(model, "has_any_keyword", None)
+            if callable(check_any) and bool(check_any(keyword)):
+                return True
+            check = getattr(model, "has_keyword", None)
+            if callable(check) and bool(check(keyword)):
+                return True
+            kw = str(keyword or "").strip().lower()
+            if not kw:
+                return False
+            keywords = list(getattr(model, "keywords", []) or [])
+            faction_keywords = list(getattr(model, "faction_keywords", []) or [])
+            for value in list(keywords) + list(faction_keywords):
+                if str(value or "").strip().lower() == kw:
+                    return True
+            return False
+
+        def _filtered_bodyguard_return_model_ids(bodyguard_unit, ability_spec: dict) -> list[str] | None:
+            if bodyguard_unit is None:
+                return None
+            if not isinstance(ability_spec, dict):
+                return None
+            exclude_character = bool(ability_spec.get("exclude_character", False))
+            required_keyword = str(ability_spec.get("required_keyword", "") or "").strip().upper()
+            if not exclude_character and not required_keyword:
+                return None
+            allowed_ids: list[str] = []
+            for model in list(getattr(bodyguard_unit, "models_lost", []) or []):
+                if model is None:
+                    continue
+                if exclude_character and bool(getattr(model, "is_character", False)):
+                    continue
+                if required_keyword and not _bodyguard_return_model_has_keyword(model, required_keyword):
+                    continue
+                model_id = str(get_entity_id(model) or "")
+                if model_id:
+                    allowed_ids.append(model_id)
+            allowed_ids.sort()
+            return allowed_ids
+
         for unit in list(army.units):
             if not unit.is_alive():
                 continue
@@ -1612,12 +1652,16 @@ class GamePhaseHandlersMixin:
                     continue
                 if not list(bodyguard.models_lost or []):
                     continue
+                allowed_ids = _filtered_bodyguard_return_model_ids(bodyguard, ability)
+                if allowed_ids is not None and not allowed_ids:
+                    continue
                 self._queue_bodyguard_return_decision(
                     player=player,
                     leader_unit=unit,
                     bodyguard_unit=bodyguard,
                     ability=ability,
                     remaining=amount,
+                    allowed_model_ids=list(allowed_ids) if allowed_ids is not None else None,
                     allow_skip=bool(ability.get("allow_skip", True)),
                 )
                 continue
@@ -1639,12 +1683,16 @@ class GamePhaseHandlersMixin:
                 ability["rolled_amount"] = int(rolled)
             if amount <= 0:
                 continue
+            allowed_ids = _filtered_bodyguard_return_model_ids(bodyguard, ability)
+            if allowed_ids is not None and not allowed_ids:
+                continue
             self._queue_bodyguard_return_decision(
                 player=player,
                 leader_unit=unit,
                 bodyguard_unit=bodyguard,
                 ability=ability,
                 remaining=amount,
+                allowed_model_ids=list(allowed_ids) if allowed_ids is not None else None,
             )
 
         seen_roots: set[str] = set()

@@ -789,8 +789,111 @@ class ActionsMovementMixin:
         if "attached_unit_bodyguard_leader_scout_distance" in sr:
             del sr["attached_unit_bodyguard_leader_scout_distance"]
             removed = True
+        if "enhancement_warped_foresight_active" in sr:
+            del sr["enhancement_warped_foresight_active"]
+            removed = True
+        if "enhancement_warped_foresight_scout_distance" in sr:
+            del sr["enhancement_warped_foresight_scout_distance"]
+            removed = True
         if removed:
             self.special_rules = sr
+
+    @staticmethod
+    def _get_local_scout_distance_for_unit(unit: 'Unit') -> float:
+        if unit is None:
+            return 0.0
+        max_dist = 0.0
+        find_patterns = getattr(unit, "_find_ability_with_patterns", None)
+        has_self_source = getattr(unit, "_has_self_scout_source", None)
+        if callable(find_patterns):
+            try:
+                found, dist_text = find_patterns(["scout"], extract_value=True, value_pattern=r"(\d+)")
+            except ValueError:
+                found, dist_text = False, None
+            if found and callable(has_self_source) and not bool(has_self_source()):
+                found = False
+            if found:
+                try:
+                    max_dist = max(max_dist, float(dist_text or 0.0))
+                except (TypeError, ValueError):
+                    pass
+
+        if max_dist <= 0.0:
+            iter_texts = getattr(unit, "_iter_active_ability_texts", None)
+            is_non_self_clause = getattr(unit, "_is_non_self_scout_clause", None)
+            if callable(iter_texts):
+                for text in list(iter_texts() or []):
+                    low = str(text or "").lower()
+                    if "scout" not in low:
+                        continue
+                    if callable(is_non_self_clause) and bool(is_non_self_clause(low)):
+                        continue
+                    match = re.search(r"scouts?\s*(\d+)", low)
+                    if not match:
+                        continue
+                    try:
+                        max_dist = max(max_dist, float(match.group(1)))
+                    except (TypeError, ValueError):
+                        continue
+
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict):
+            for key in (
+                "enhancement_scout_distance",
+                "iconoclast_pave_the_way_scout_distance",
+            ):
+                try:
+                    max_dist = max(max_dist, float(sr.get(key, 0) or 0))
+                except (TypeError, ValueError):
+                    continue
+        return float(max_dist)
+
+    def _refresh_warped_foresight_attached_scouts(self, bodyguard: 'Unit') -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        if not bool(sr.get("enhancement_warped_foresight", False)):
+            return
+
+        sr.pop("enhancement_warped_foresight_active", None)
+        sr.pop("enhancement_warped_foresight_scout_distance", None)
+
+        if bodyguard is None or not bool(getattr(self, "is_attached_leader", False)):
+            self.special_rules = sr
+            return
+
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        bearer_alive = False
+        if bearer_id:
+            for model in list(getattr(self, "models", []) or []):
+                model_id = str(get_entity_id(model) or "").strip()
+                local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                if bearer_id != model_id and bearer_id != local_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                break
+        else:
+            get_bearer = getattr(self, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is not None:
+                alive_attr = getattr(bearer, "is_alive", True)
+                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+        if not bearer_alive:
+            self.special_rules = sr
+            return
+
+        try:
+            required_distance = int(sr.get("enhancement_warped_foresight_required_scout_distance", 6) or 6)
+        except (TypeError, ValueError):
+            required_distance = 6
+        required_distance = max(1, required_distance)
+
+        scout_distance = self._get_local_scout_distance_for_unit(bodyguard)
+        if float(scout_distance) >= float(required_distance):
+            sr["enhancement_warped_foresight_active"] = True
+            sr["enhancement_warped_foresight_scout_distance"] = int(required_distance)
+        self.special_rules = sr
 
     def _apply_attached_unit_bodyguard_leader_scouts(self, bodyguard: 'Unit') -> None:
         """Apply ATTACHED UNIT clauses that grant Scouts to the attached Leader model."""
@@ -809,14 +912,14 @@ class ActionsMovementMixin:
                 max_distance = max(max_distance, int(rule.get("scout_distance", 0) or 0))
             except Exception:
                 continue
-        if max_distance <= 0:
-            return
-        sr = getattr(self, "special_rules", None)
-        if not isinstance(sr, dict):
-            sr = {}
-        sr["attached_unit_bodyguard_leader_scouts"] = True
-        sr["attached_unit_bodyguard_leader_scout_distance"] = int(max_distance)
-        self.special_rules = sr
+        if max_distance > 0:
+            sr = getattr(self, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["attached_unit_bodyguard_leader_scouts"] = True
+            sr["attached_unit_bodyguard_leader_scout_distance"] = int(max_distance)
+            self.special_rules = sr
+        self._refresh_warped_foresight_attached_scouts(bodyguard)
 
     def _get_aspect_shrine_root(self) -> 'Unit':
         try:
@@ -6131,6 +6234,16 @@ class ActionsMovementMixin:
         if callable(xenocreed_reroll_advance):
             if bool(xenocreed_reroll_advance(self)):
                 return True
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        cultist_brand_advance = (
+            getattr(csm_mgr, "chaos_cult_cultists_brand_reroll_advance_applies", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(cultist_brand_advance):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if bool(cultist_brand_advance(self, game=game)):
+                return True
         try:
             active_fn = getattr(self, "_avatar_of_perfection_phase_active", None)
             if callable(active_fn) and bool(active_fn()):
@@ -7755,6 +7868,15 @@ class ActionsMovementMixin:
         )
         if callable(xenocreed_reroll_charge):
             if bool(xenocreed_reroll_charge(self)):
+                return True
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        cultist_brand_charge = (
+            getattr(csm_mgr, "chaos_cult_cultists_brand_reroll_charge_applies", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(cultist_brand_charge):
+            if bool(cultist_brand_charge(self, game=game)):
                 return True
         try:
             if self._spearhead_striker_charge_reroll_active(game=game):

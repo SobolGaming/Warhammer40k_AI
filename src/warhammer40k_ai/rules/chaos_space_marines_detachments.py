@@ -2162,6 +2162,235 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         return int(bonus), source
 
     @staticmethod
+    def _model_alive(model) -> bool:
+        if model is None:
+            return False
+        alive_attr = getattr(model, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    @staticmethod
+    def _model_name(model) -> str:
+        return str(getattr(model, "name", "") or "").strip()
+
+    @classmethod
+    def _is_dark_disciple_model(cls, model) -> bool:
+        return cls._normalize_name(cls._model_name(model)) in {"dark disciple", "dark disciples"}
+
+    @staticmethod
+    def _model_has_keyword(model, keyword: str) -> bool:
+        if model is None:
+            return False
+        target_kw = str(keyword or "").strip().lower()
+        if not target_kw:
+            return False
+        check_any = getattr(model, "has_any_keyword", None)
+        if callable(check_any) and bool(check_any(keyword)):
+            return True
+        check = getattr(model, "has_keyword", None)
+        if callable(check) and bool(check(keyword)):
+            return True
+        keywords = list(getattr(model, "keywords", []) or [])
+        faction_keywords = list(getattr(model, "faction_keywords", []) or [])
+        for value in list(keywords) + list(faction_keywords):
+            if str(value or "").strip().lower() == target_kw:
+                return True
+        return False
+
+    def _find_enhancement_bearer_on_member(self, member, sr: dict):
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(member, "models", []) or []):
+                model_entity_id = str(get_entity_id(model) or "").strip()
+                model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                if bearer_id == model_entity_id or bearer_id == model_local_id:
+                    return model
+        get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            return get_bearer()
+        return None
+
+    def _chaos_cult_enhancement_source_member(self, unit, *, flag_key: str):
+        if not self.is_chaos_cult():
+            return None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+                continue
+            bearer = self._find_enhancement_bearer_on_member(member, sr)
+            if not self._model_alive(bearer):
+                continue
+            return member, sr, bearer
+        return None, None, None
+
+    def _chaos_cult_cultists_brand_condition_met(
+        self,
+        root,
+        *,
+        bearer,
+        required_keyword: str,
+        excluded_model_names: tuple[str, ...],
+    ) -> bool:
+        if root is None or bearer is None:
+            return False
+        bearer_id = str(get_entity_id(bearer) or "")
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        excluded = {self._normalize_name(name) for name in list(excluded_model_names or ()) if str(name or "").strip()}
+        for model in list(models or []):
+            if model is None or not self._model_alive(model):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if bearer_id and model_id == bearer_id:
+                continue
+            if self._normalize_name(self._model_name(model)) in excluded or self._is_dark_disciple_model(model):
+                continue
+            if not self._model_has_keyword(model, required_keyword):
+                return False
+        return True
+
+    def _chaos_cult_cultists_brand_reroll_applies(self, unit, *, reroll_key: str) -> bool:
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        source_member, source_sr, bearer = self._chaos_cult_enhancement_source_member(
+            root,
+            flag_key="enhancement_cultists_brand",
+        )
+        if source_member is None or source_sr is None or bearer is None:
+            return False
+        if not bool(source_sr.get(reroll_key, True)):
+            return False
+        required_keyword = str(
+            source_sr.get("enhancement_cultists_brand_required_keyword", "DAMNED") or "DAMNED"
+        ).strip().upper()
+        if not required_keyword:
+            required_keyword = "DAMNED"
+        excluded_model_names = tuple(
+            str(name or "").strip()
+            for name in list(
+                source_sr.get(
+                    "enhancement_cultists_brand_excluded_model_names",
+                    ("Dark Disciple", "Dark Disciples"),
+                )
+                or ()
+            )
+            if str(name or "").strip()
+        )
+        return bool(
+            self._chaos_cult_cultists_brand_condition_met(
+                root,
+                bearer=bearer,
+                required_keyword=required_keyword,
+                excluded_model_names=excluded_model_names,
+            )
+        )
+
+    def chaos_cult_cultists_brand_reroll_advance_applies(self, unit, *, game=None) -> bool:
+        _ = game
+        return bool(
+            self._chaos_cult_cultists_brand_reroll_applies(
+                unit,
+                reroll_key="enhancement_cultists_brand_reroll_advance",
+            )
+        )
+
+    def chaos_cult_cultists_brand_reroll_charge_applies(self, unit, *, game=None) -> bool:
+        _ = game
+        return bool(
+            self._chaos_cult_cultists_brand_reroll_applies(
+                unit,
+                reroll_key="enhancement_cultists_brand_reroll_charge",
+            )
+        )
+
+    def _chaos_cult_incendiary_goad_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        for_attacks: bool,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_melee = getattr(parent, "is_melee", None) if parent is not None else None
+            if not callable(is_melee) or not bool(is_melee()):
+                return 0, ""
+        root = self._unit_root(getattr(attacker_model, "parent_unit", None))
+        if root is None or not self._unit_in_army(root):
+            return 0, ""
+        _source_member, source_sr, _bearer = self._chaos_cult_enhancement_source_member(
+            root,
+            flag_key="enhancement_incendiary_goad",
+        )
+        if source_sr is None:
+            return 0, ""
+        required_keyword = str(
+            source_sr.get("enhancement_incendiary_goad_required_model_keyword", "DAMNED") or "DAMNED"
+        ).strip().upper()
+        if required_keyword and not self._model_has_keyword(attacker_model, required_keyword):
+            return 0, ""
+        if bool(source_sr.get("enhancement_incendiary_goad_requires_below_starting_strength", True)):
+            below_starting_fn = getattr(root, "is_below_starting_strength", None)
+            if not callable(below_starting_fn) or not bool(below_starting_fn()):
+                return 0, ""
+        if for_attacks and bool(
+            source_sr.get("enhancement_incendiary_goad_requires_below_half_strength_for_attacks", True)
+        ):
+            below_half_fn = getattr(root, "is_below_half_strength", None)
+            if not callable(below_half_fn) or not bool(below_half_fn()):
+                return 0, ""
+        bonus_key = (
+            "enhancement_incendiary_goad_melee_attacks_bonus"
+            if for_attacks
+            else "enhancement_incendiary_goad_melee_strength_bonus"
+        )
+        try:
+            bonus = int(source_sr.get(bonus_key, 0) or 0)
+        except (TypeError, ValueError):
+            bonus = 0
+        if bonus <= 0:
+            return 0, ""
+        source = str(source_sr.get("enhancement_incendiary_goad_source", "") or "Incendiary Goad").strip()
+        return int(bonus), (source or "Incendiary Goad")
+
+    def chaos_cult_incendiary_goad_melee_strength_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = game
+        return self._chaos_cult_incendiary_goad_bonus(
+            attacker_model,
+            weapon_profile=weapon_profile,
+            for_attacks=False,
+        )
+
+    def chaos_cult_incendiary_goad_melee_attacks_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = game
+        return self._chaos_cult_incendiary_goad_bonus(
+            attacker_model,
+            weapon_profile=weapon_profile,
+            for_attacks=True,
+        )
+
+    @staticmethod
     def _is_traitor_guardsmen_squad(unit) -> bool:
         name = str(getattr(unit, "name", "") or "").strip().lower()
         return name == "traitor guardsmen squad"
