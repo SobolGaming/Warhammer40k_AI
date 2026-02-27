@@ -155,7 +155,8 @@ class Map:
         test_shape = model.model_base.get_base_shape()
         if destination:
             test_shape = translate(test_shape, destination[0] - model.model_base.x, destination[1] - model.model_base.y)
-        return self.boundary.contains(test_shape)
+        min_x, min_y, max_x, max_y = test_shape.bounds
+        return bool(min_x >= 0.0 and min_y >= 0.0 and max_x <= float(self.width) and max_y <= float(self.height))
 
     def is_within_engagement_range(self, source_unit: Unit, target_unit: Unit) -> bool:
         """

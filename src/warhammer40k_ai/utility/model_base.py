@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 # Constants
 DEGREES_IN_CIRCLE = 360
 RADIANS_IN_CIRCLE = 2 * math.pi
+_ELLIPSE_UNIT_TEMPLATE = Point(0.0, 0.0).buffer(1, quad_segs=64)
 
 # Create a shapely ellipse
 def create_ellipse(center: typing.Tuple[float, float], lengths: typing.Tuple[float, float], bearing: float = 0) -> Poly:
@@ -23,9 +24,14 @@ def create_ellipse(center: typing.Tuple[float, float], lengths: typing.Tuple[flo
     :param bearing: The rotation of the ellipse in radians
     :return: A shapely Polygon representing the ellipse
     """
-    circ = Point(center).buffer(1, quad_segs=64)
-    ell = affinity.scale(circ, lengths[0], lengths[1])
-    return affinity.rotate(ell, math.degrees(bearing))
+    ell = affinity.scale(_ELLIPSE_UNIT_TEMPLATE, lengths[0], lengths[1], origin=(0.0, 0.0))
+    if abs(bearing) > 1e-12:
+        ell = affinity.rotate(ell, math.degrees(bearing), origin=(0.0, 0.0))
+    cx = float(center[0])
+    cy = float(center[1])
+    if abs(cx) > 1e-12 or abs(cy) > 1e-12:
+        ell = affinity.translate(ell, xoff=cx, yoff=cy)
+    return ell
 
 # Create a shapely rectangle
 def create_rectangle(center: typing.Tuple[float, float], lengths: typing.Tuple[float, float], bearing: float = 0) -> Poly:
@@ -70,6 +76,7 @@ class Base:
         self.set_model_height()
         self.z_offset: float = 0.0
         self._compound_parts: typing.Tuple[dict, ...] = tuple()
+        self._shape_template_cache: dict[typing.Tuple[str, float], Poly] = {}
 
     def _normalize_radius(self, radius: typing.Union[float, typing.Tuple[float, float]]) -> typing.Tuple[float, float]:
         if isinstance(radius, (float, int)):
@@ -114,9 +121,11 @@ class Base:
             }
             normalized.append(part)
         self._compound_parts = tuple(normalized)
+        self._shape_template_cache.clear()
 
     def clear_compound_parts(self) -> None:
         self._compound_parts = tuple()
+        self._shape_template_cache.clear()
 
     def has_compound_parts(self) -> bool:
         return bool(self._compound_parts)
@@ -214,24 +223,37 @@ class Base:
 
     # Get the geometric shape of the base
     def get_base_shape(self) -> Poly:
-        if self._compound_parts:
-            return self._compound_shape_at(self.x, self.y, self.facing)
+        return self.get_base_shape_at(self.x, self.y, self.facing)
+
+    def _template_cache_key(self, facing: float) -> typing.Tuple[str, float]:
+        if self.base_type == BaseType.CIRCULAR:
+            # Circular bases are invariant to facing.
+            return ("circular", 0.0)
+        return (self.base_type.name, round(float(facing), 6))
+
+    def _base_shape_template(self, facing: float) -> Poly:
+        key = self._template_cache_key(facing)
+        cached = self._shape_template_cache.get(key)
+        if cached is not None:
+            return cached
         if self.base_type in [BaseType.CIRCULAR, BaseType.ELLIPTICAL]:
-            return create_ellipse((self.x, self.y), self.radius, self.facing)
+            template = create_ellipse((0.0, 0.0), self.radius, facing)
         elif self.base_type == BaseType.HULL:
-            return create_rectangle((self.x, self.y), self.radius, self.facing)
+            template = create_rectangle((0.0, 0.0), self.radius, facing)
         else:
             raise ValueError(f"Unknown BaseType geometry: {self.base_type}")
+        self._shape_template_cache[key] = template
+        return template
 
     def get_base_shape_at(self, x: float, y: float, facing: float) -> Poly:
         if self._compound_parts:
             return self._compound_shape_at(x, y, facing)
-        if self.base_type in [BaseType.CIRCULAR, BaseType.ELLIPTICAL]:
-            return create_ellipse((x, y), self.radius, facing)
-        elif self.base_type == BaseType.HULL:
-            return create_rectangle((x, y), self.radius, facing)
-        else:
-            raise ValueError(f"Unknown BaseType geometry: {self.base_type}")
+        template = self._base_shape_template(facing)
+        tx = float(x)
+        ty = float(y)
+        if abs(tx) <= 1e-12 and abs(ty) <= 1e-12:
+            return template
+        return affinity.translate(template, xoff=tx, yoff=ty)
 
     def _compound_part_shape_at(self, part: dict, x: float, y: float, facing: float):
         local_x, local_y = part["offset"]

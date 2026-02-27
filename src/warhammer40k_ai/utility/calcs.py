@@ -9,7 +9,7 @@ from ..utility.constants import (
     RUINS_FLOOR_HEIGHT,
     RUINS_FLOOR_THICKNESS,
 )
-from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry import LineString, Point, Polygon, box
 from shapely.affinity import translate, rotate
 from shapely.ops import unary_union
 from shapely import STRtree
@@ -1703,9 +1703,12 @@ def _segment_crosses_blocking_terrain(
     if cached is not None:
         return bool(cached)
 
-    segment = LineString([(sx, sy), (ex, ey)])
     search_radius = max(0.01, float(base.get_longest_radius()))
-    query_shape = segment.buffer(search_radius, quad_segs=4)
+    min_x = min(sx, ex) - search_radius
+    max_x = max(sx, ex) + search_radius
+    min_y = min(sy, ey) - search_radius
+    max_y = max(sy, ey) + search_radius
+    query_shape = box(min_x, min_y, max_x, max_y)
     potential_hits = query_spatial_index(terrain_tree, query_shape)
     if not potential_hits:
         cache[key] = False
@@ -1746,6 +1749,9 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
     unit = model.parent_unit
     start = (model.model_base.x, model.model_base.y, model.model_base.z)
     goal = (float(target[0]), float(target[1]), float(target[2]))
+    base_facing = float(getattr(model.model_base, "facing", 0.0) or 0.0)
+    moving_shape_template = model.model_base.get_base_shape_at(0.0, 0.0, base_facing)
+    position_shape_cache: dict[Tuple[float, float], Polygon] = {}
     allow_through_terrain = bool(validation_rules.get('can_move_through_terrain', False))
     segment_terrain_cache: dict[Tuple[float, float, float, float, float], bool] = {}
 
@@ -1949,7 +1955,16 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
         if straight_line_distance == 0.0:
             # For zero-distance moves, we need to check if the current position is valid
             # This handles the case where another model has moved to this position
-            validity_result = is_position_valid_unified_detailed(goal, model, collision_trees, validation_rules, game_map, is_final_position=True)
+            validity_result = is_position_valid_unified_detailed(
+                goal,
+                model,
+                collision_trees,
+                validation_rules,
+                game_map,
+                is_final_position=True,
+                position_shape_template=moving_shape_template,
+                position_shape_cache=position_shape_cache,
+            )
             if not validity_result['valid']:
                 return {
                     'valid': False,
@@ -1979,7 +1994,16 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
                 start[1] + t * (goal[1] - start[1]),
                 start[2] + t * (goal[2] - start[2])
             )
-            validity_result = is_position_valid_unified_detailed(check_pos, model, collision_trees, validation_rules, game_map, is_final_position=False)
+            validity_result = is_position_valid_unified_detailed(
+                check_pos,
+                model,
+                collision_trees,
+                validation_rules,
+                game_map,
+                is_final_position=False,
+                position_shape_template=moving_shape_template,
+                position_shape_cache=position_shape_cache,
+            )
             if not validity_result['valid']:
                 straight_line_clear = False
                 collision_reasons.add(validity_result['reason'])
@@ -2001,7 +2025,16 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
 
         if straight_line_clear:
             # Validate final position for straight line path using unified validation system
-            validation_result = is_position_valid_unified_detailed(goal, model, collision_trees, validation_rules, game_map, is_final_position=True)
+            validation_result = is_position_valid_unified_detailed(
+                goal,
+                model,
+                collision_trees,
+                validation_rules,
+                game_map,
+                is_final_position=True,
+                position_shape_template=moving_shape_template,
+                position_shape_cache=position_shape_cache,
+            )
             if not validation_result['valid']:
                 # Continue with A* pathfinding instead
                 pass
@@ -2093,7 +2126,16 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
 
             # Validate final position according to movement rules
             # Use the unified validation system that includes collision trees and engagement_buffer
-            validation_result = is_position_valid_unified_detailed(goal, model, collision_trees, validation_rules, game_map, is_final_position=True)
+            validation_result = is_position_valid_unified_detailed(
+                goal,
+                model,
+                collision_trees,
+                validation_rules,
+                game_map,
+                is_final_position=True,
+                position_shape_template=moving_shape_template,
+                position_shape_cache=position_shape_cache,
+            )
             if not validation_result['valid']:
                 return {
                     'valid': False,
@@ -2172,7 +2214,16 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
             if neighbor in closed_set:
                 continue
 
-            validity_result = is_position_valid_unified_detailed(neighbor, model, collision_trees, validation_rules, game_map, is_final_position=False)
+            validity_result = is_position_valid_unified_detailed(
+                neighbor,
+                model,
+                collision_trees,
+                validation_rules,
+                game_map,
+                is_final_position=False,
+                position_shape_template=moving_shape_template,
+                position_shape_cache=position_shape_cache,
+            )
             if not validity_result['valid']:
                 collision_reasons.add(validity_result['reason'])
                 continue
@@ -2223,7 +2274,9 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
 
 def is_position_valid_unified_detailed(position: Tuple[float, float, float], model: 'Model',
                                       collision_trees: dict, validation_rules: dict, game_map: 'Map' = None, 
-                                      is_final_position: bool = True) -> dict:
+                                      is_final_position: bool = True,
+                                      position_shape_template: Polygon | None = None,
+                                      position_shape_cache: Optional[dict[Tuple[float, float], Polygon]] = None) -> dict:
     """
     Check if a position is valid using STRTrees and validation rules, returning detailed reason.
 
@@ -2238,19 +2291,37 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
     Returns:
         Dict with 'valid' (bool) and 'reason' (str) keys
     """
-    # Create the moving model's base shape at the test position
-    current_pos = model.get_location()
-    dx = position[0] - current_pos[0]
-    dy = position[1] - current_pos[1]
+    px = float(position[0])
+    py = float(position[1])
+    shape_cache_key = (round(px, 4), round(py, 4))
+    test_shape = None
+    if position_shape_cache is not None:
+        test_shape = position_shape_cache.get(shape_cache_key)
 
-    # Get the model's base shape and translate it to the test position
-    moving_model_shape = model.model_base.get_base_shape()
-    test_shape = translate(moving_model_shape, dx, dy)
+    if test_shape is None:
+        if position_shape_template is not None:
+            test_shape = translate(position_shape_template, px, py)
+        else:
+            facing = float(getattr(model.model_base, "facing", 0.0) or 0.0)
+            test_shape = model.model_base.get_base_shape_at(px, py, facing)
+        if position_shape_cache is not None:
+            position_shape_cache[shape_cache_key] = test_shape
 
     # Check if the entire model base fits within battlefield boundaries
     if game_map:
-        if not game_map.is_within_boundary(model, (position[0], position[1])):
-            return {'valid': False, 'reason': 'Position outside battlefield boundaries'}
+        bounds = test_shape.bounds
+        width = getattr(game_map, "width", None)
+        height = getattr(game_map, "height", None)
+        if width is not None and height is not None:
+            if bounds[0] < 0.0 or bounds[1] < 0.0 or bounds[2] > float(width) or bounds[3] > float(height):
+                return {'valid': False, 'reason': 'Position outside battlefield boundaries'}
+        else:
+            boundary = getattr(game_map, "boundary", None)
+            if boundary is not None:
+                if not boundary.contains(test_shape):
+                    return {'valid': False, 'reason': 'Position outside battlefield boundaries'}
+            elif not game_map.is_within_boundary(model, (px, py)):
+                return {'valid': False, 'reason': 'Position outside battlefield boundaries'}
     else:
         # Fallback basic boundary check if no game_map provided
         bounds = test_shape.bounds  # (minx, miny, maxx, maxy)
@@ -2504,13 +2575,6 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
     if validation_rules.get('cannot_move_within_engagement_range', False):
         # Use the pre-built engagement_buffer STRtree for O(log n) performance instead of O(n)
         if collision_trees and 'engagement_buffer' in collision_trees and collision_trees['engagement_buffer']:
-            # Build the moving model's base shape at the test position
-            current_pos = model.get_location()
-            dx = position[0] - current_pos[0]
-            dy = position[1] - current_pos[1]
-            moving_model_shape = model.model_base.get_base_shape()
-            test_shape = translate(moving_model_shape, dx, dy)
-
             # Query the engagement buffer tree with the shape and confirm real intersections
             potential_hits = query_spatial_index(collision_trees['engagement_buffer'], test_shape)
             for hit in potential_hits:
