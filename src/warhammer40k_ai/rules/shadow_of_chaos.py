@@ -15,6 +15,8 @@ class ShadowBattleShockContext:
     modifier: int = 0
     manifestation_active: bool = False
     terror_active: bool = False
+    enemy_shadow_active: bool = False
+    greater_daemon_terror_active: bool = False
 
 
 class ShadowOfChaosManager:
@@ -620,8 +622,15 @@ class ShadowOfChaosManager:
 
     @classmethod
     def enemy_unit_in_shadow_or_terror(cls, unit, *, game=None) -> bool:
+        enemy_shadow_active, greater_daemon_terror_active = cls.enemy_shadow_or_terror_details(unit, game=game)
+        return bool(enemy_shadow_active or greater_daemon_terror_active)
+
+    @classmethod
+    def enemy_shadow_or_terror_details(cls, unit, *, game=None) -> tuple[bool, bool]:
+        enemy_shadow_active = False
+        greater_daemon_terror_active = False
         if unit is None:
-            return False
+            return enemy_shadow_active, greater_daemon_terror_active
         try:
             unit_army = unit.get_parent_army()
         except Exception:
@@ -633,7 +642,7 @@ class ShadowOfChaosManager:
             except Exception:
                 game = None
         if game is None:
-            return False
+            return enemy_shadow_active, greater_daemon_terror_active
 
         for player in list(getattr(game, "players", []) or []):
             army = getattr(player, "army", None)
@@ -643,16 +652,20 @@ class ShadowOfChaosManager:
             if mgr is None or not mgr._army_has_shadow():
                 continue
             if mgr._unit_within_shadow_for_player(unit, game=game, player=player):
-                return True
+                enemy_shadow_active = True
             if cls.unit_within_greater_daemon_terror_range(unit, army, game=game):
-                return True
-        return False
+                greater_daemon_terror_active = True
+            if enemy_shadow_active and greater_daemon_terror_active:
+                break
+        return enemy_shadow_active, greater_daemon_terror_active
 
     @classmethod
     def battle_shock_context(cls, unit, *, game=None) -> ShadowBattleShockContext:
         modifier = 0
         manifestation = False
         terror = False
+        enemy_shadow_active = False
+        greater_daemon_terror_active = False
         if unit is None:
             return ShadowBattleShockContext()
         try:
@@ -663,10 +676,17 @@ class ShadowOfChaosManager:
         if mgr is not None and mgr.is_daemonic_manifestation_active(unit, game=game):
             modifier += 1
             manifestation = True
-        if cls.enemy_unit_in_shadow_or_terror(unit, game=game):
+        enemy_shadow_active, greater_daemon_terror_active = cls.enemy_shadow_or_terror_details(unit, game=game)
+        if enemy_shadow_active or greater_daemon_terror_active:
             modifier -= 1
             terror = True
-        return ShadowBattleShockContext(modifier=modifier, manifestation_active=manifestation, terror_active=terror)
+        return ShadowBattleShockContext(
+            modifier=modifier,
+            manifestation_active=manifestation,
+            terror_active=terror,
+            enemy_shadow_active=enemy_shadow_active,
+            greater_daemon_terror_active=greater_daemon_terror_active,
+        )
 
     @classmethod
     def apply_battle_shock_outcome(cls, unit, *, passed: bool, context: ShadowBattleShockContext, game=None) -> None:

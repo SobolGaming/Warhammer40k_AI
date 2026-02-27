@@ -223,6 +223,87 @@ class DiceRollDialog(BaseDialog):
             pygame.draw.line(screen, color, (x, y), (x + 12, y + 12), 3)
             pygame.draw.line(screen, color, (x + 12, y), (x, y + 12), 3)
 
+    @staticmethod
+    def _comparison_text(op: str, target: int) -> str:
+        normalized = str(op or "gte").strip().lower()
+        if normalized == "gte":
+            return f">= {int(target)}"
+        if normalized == "gt":
+            return f"> {int(target)}"
+        if normalized == "lte":
+            return f"<= {int(target)}"
+        if normalized == "lt":
+            return f"< {int(target)}"
+        if normalized == "ne":
+            return f"!= {int(target)}"
+        return f"= {int(target)}"
+
+    @staticmethod
+    def _flatten_text_list(value) -> List[str]:
+        out: List[str] = []
+        for item in list(value or []):
+            text = str(item or "").strip()
+            if text:
+                out.append(text)
+        return out
+
+    @classmethod
+    def _format_condition_text(cls, spec: Dict) -> str:
+        sum_target = spec.get("sum_target", None)
+        if sum_target is not None:
+            try:
+                cmp = cls._comparison_text(str(spec.get("sum_op", "gte") or "gte"), int(sum_target))
+            except Exception:
+                return ""
+            return f"Pass condition: modified sum {cmp}"
+
+        target = spec.get("target", None)
+        if target is None:
+            return ""
+        try:
+            cmp = cls._comparison_text(str(spec.get("target_op", "gte") or "gte"), int(target))
+        except Exception:
+            return ""
+        context = str(spec.get("target_context", "") or "").strip()
+        if context:
+            return f"Success condition: each die {cmp} ({context})"
+        return f"Success condition: each die {cmp}"
+
+    @classmethod
+    def _format_modifier_text(cls, spec: Dict, state) -> str:
+        sum_target = spec.get("sum_target", None)
+        if sum_target is not None:
+            try:
+                mod = int(spec.get("sum_modifier", 0) or 0)
+            except Exception:
+                mod = 0
+            reasons = cls._flatten_text_list(spec.get("sum_modifier_reasons", []))
+            if mod == 0 and not reasons:
+                return "Modifiers: none"
+            raw_total = int(getattr(state, "total", 0) or 0)
+            final_total = raw_total + mod
+            detail = f"Modifiers: {mod:+d} (raw {raw_total} -> {final_total})"
+            if reasons:
+                detail = f"{detail}; {'; '.join(reasons)}"
+            return detail
+
+        reasons = cls._flatten_text_list(spec.get("target_modifier_reasons", []))
+        target = spec.get("target", None)
+        base_target = spec.get("target_base", None)
+        parts: List[str] = []
+        try:
+            if target is not None and base_target is not None:
+                target_val = int(target)
+                base_val = int(base_target)
+                if target_val != base_val:
+                    parts.append(f"base {base_val}+ -> {target_val}+ ({target_val - base_val:+d})")
+        except Exception:
+            pass
+        parts.extend(reasons)
+        if not parts:
+            return "Modifiers: none"
+        return f"Modifiers: {'; '.join(parts)}"
+
     def draw(self, screen: pygame.Surface):
         if not self.visible:
             return
@@ -368,6 +449,8 @@ class DiceRollDialog(BaseDialog):
             if display_kind == "d33":
                 sum_label = "D33"
             sum_text = f"{sum_label} {total_display}"
+            if mod:
+                sum_text = f"{sum_text} (raw {total} {mod:+d})"
             if target_text:
                 sum_text = f"{sum_text} vs {target_text}"
             sum_surface = self.font_medium.render(sum_text, True, TEXT_PRIMARY)
@@ -393,6 +476,29 @@ class DiceRollDialog(BaseDialog):
                 tag = self.font_small.render(f"Combined: {label}", True, TEXT_SECONDARY)
                 screen.blit(tag, (self.x + 20, y))
                 y += 18
+
+        condition_text = self._format_condition_text(spec)
+        if condition_text:
+            y = self.draw_text_wrapped(
+                screen,
+                condition_text,
+                self.x + 20,
+                y + 2,
+                self.width - 40,
+                self.font_small,
+                TEXT_SECONDARY,
+            )
+        modifier_text = self._format_modifier_text(spec, state)
+        if modifier_text:
+            y = self.draw_text_wrapped(
+                screen,
+                modifier_text,
+                self.x + 20,
+                y + 2,
+                self.width - 40,
+                self.font_small,
+                TEXT_SECONDARY,
+            )
 
         # Legend for derived/crit
         legend_x = self.x + 20

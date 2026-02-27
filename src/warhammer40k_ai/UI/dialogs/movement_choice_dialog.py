@@ -63,7 +63,11 @@ class MovementChoiceDialog(BaseDialog):
         if self.unit is None:
             return False
         round_state = getattr(self.unit, "round_state", None)
-        return bool(getattr(round_state, "moved_this_round", False))
+        return bool(
+            getattr(round_state, "moved_this_round", False)
+            or getattr(round_state, "advanced_this_round", False)
+            or getattr(round_state, "fell_back_this_round", False)
+        )
 
     def _movement_status_text(self) -> str:
         if self._unit_already_moved_this_phase():

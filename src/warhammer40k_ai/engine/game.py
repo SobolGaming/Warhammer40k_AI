@@ -9647,21 +9647,6 @@ class Game(
             # Do battle shock tests and other command phase actions without resetting round state
             if not unit.is_alive():
                 continue
-            # If forced to test for being Below Starting Strength, do not also test for being Below Half-strength
-            # unless explicitly stated.
-            is_below_starting = False
-            fn = getattr(unit, "is_below_starting_strength", None)
-            if callable(fn):
-                try:
-                    is_below_starting = bool(fn())
-                except Exception:
-                    is_below_starting = False
-            if is_below_starting:
-                logger.warning(f"WARN: {unit.name} is below starting strength - taking Battle-Shock test")
-                unit.take_battle_shock_test(self.turn)
-                uid = get_entity_id(unit)
-                tested_ids.add(uid)
-                continue
             is_below_half = False
             fn = getattr(unit, "is_below_half_strength", None)
             if callable(fn):

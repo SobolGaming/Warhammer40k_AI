@@ -945,6 +945,7 @@ class AttackResolutionManager:
             return
         # Group attacks by hit context (final needed + crit threshold + reroll signatures)
         groups: dict[tuple, list[int]] = {}
+        group_meta: dict[tuple, dict] = {}
         for idx, attack_instance in enumerate(seq.attack_instances):
             attacker = self._resolve_model(game, attack_instance.get("attacker_model_id"))
             target = self._resolve_unit(game, seq.target_unit_id)
@@ -965,21 +966,37 @@ class AttackResolutionManager:
                 tuple(sorted(hit_result.get("reroll_values", []) or [])),
                 tuple(hit_result.get("reroll_full_reasons", []) or []),
             )
+            modifiers = [str(reason).strip() for reason in list(hit_result.get("modifiers", []) or []) if str(reason).strip()]
             attack_instance["_hit_context"] = {
                 "final_needed": int(hit_result.get("final_needed") or 0),
+                "base_needed": int(hit_result.get("needed") or 0),
                 "crit_threshold": int(hit_result.get("crit_threshold") or 6),
                 "reroll_values": list(hit_result.get("reroll_values", []) or []),
                 "reroll_full_reasons": list(hit_result.get("reroll_full_reasons", []) or []),
+                "modifier_reasons": list(modifiers),
             }
             groups.setdefault(key, []).append(idx)
+            meta = group_meta.setdefault(
+                key,
+                {
+                    "base_needed": int(hit_result.get("needed") or 0),
+                    "modifier_reasons": [],
+                },
+            )
+            for reason in modifiers:
+                if reason not in meta["modifier_reasons"]:
+                    meta["modifier_reasons"].append(reason)
         seq.hit_groups = []
         for key, indices in groups.items():
+            meta = group_meta.get(key, {})
             seq.hit_groups.append(
                 {
                     "final_needed": int(key[0] or 0),
+                    "base_needed": int(meta.get("base_needed") or 0),
                     "crit_threshold": int(key[1] or 6),
                     "reroll_values": list(key[2] or []),
                     "reroll_full_reasons": list(key[3] or []),
+                    "modifier_reasons": list(meta.get("modifier_reasons") or []),
                     "attack_indices": list(indices),
                 }
             )
@@ -1159,7 +1176,9 @@ class AttackResolutionManager:
             "reason": f"Hit roll ({count}D6)",
             "roll_type": "hit",
             "target": int(group.get("final_needed") or 0),
+            "target_base": int(group.get("base_needed") or 0),
             "target_op": "gte",
+            "target_modifier_reasons": list(group.get("modifier_reasons", []) or []),
             "crit_threshold": int(group.get("crit_threshold") or 6),
             "handler_key": "attack_hits",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
@@ -1256,6 +1275,7 @@ class AttackResolutionManager:
                 pending.append(hit_instance)
         # Group remaining by wound context.
         groups: dict[tuple, list[int]] = {}
+        group_meta: dict[tuple, dict] = {}
         for idx, hit_instance in enumerate(pending):
             attacker = self._resolve_model(game, hit_instance.get("attacker_model_id"))
             target = self._resolve_unit(game, seq.target_unit_id)
@@ -1276,21 +1296,43 @@ class AttackResolutionManager:
                 tuple(sorted(wound_result.get("reroll_values", []) or [])),
                 tuple(wound_result.get("reroll_full_reasons", []) or []),
             )
+            modifiers = [str(reason).strip() for reason in list(wound_result.get("modifiers", []) or []) if str(reason).strip()]
+            strength_comparison = str(wound_result.get("strength_comparison", "") or "").strip()
             hit_instance["_wound_context"] = {
                 "final_needed": int(wound_result.get("final_needed") or 0),
+                "base_needed": int(wound_result.get("needed") or 0),
                 "crit_threshold": int(wound_result.get("crit_threshold") or 6),
                 "reroll_values": list(wound_result.get("reroll_values", []) or []),
                 "reroll_full_reasons": list(wound_result.get("reroll_full_reasons", []) or []),
+                "modifier_reasons": list(modifiers),
+                "strength_comparison": strength_comparison,
             }
             groups.setdefault(key, []).append(idx)
+            meta = group_meta.setdefault(
+                key,
+                {
+                    "base_needed": int(wound_result.get("needed") or 0),
+                    "modifier_reasons": [],
+                    "strength_comparison": strength_comparison,
+                },
+            )
+            for reason in modifiers:
+                if reason not in meta["modifier_reasons"]:
+                    meta["modifier_reasons"].append(reason)
+            if strength_comparison and not meta.get("strength_comparison"):
+                meta["strength_comparison"] = strength_comparison
         seq.wound_groups = []
         for key, indices in groups.items():
+            meta = group_meta.get(key, {})
             seq.wound_groups.append(
                 {
                     "final_needed": int(key[0] or 0),
+                    "base_needed": int(meta.get("base_needed") or 0),
                     "crit_threshold": int(key[1] or 6),
                     "reroll_values": list(key[2] or []),
                     "reroll_full_reasons": list(key[3] or []),
+                    "modifier_reasons": list(meta.get("modifier_reasons") or []),
+                    "strength_comparison": str(meta.get("strength_comparison", "") or ""),
                     "attack_indices": list(indices),
                     "pending": True,
                 }
@@ -1375,7 +1417,10 @@ class AttackResolutionManager:
             "reason": f"Wound roll ({count}D6)",
             "roll_type": "wound",
             "target": int(group.get("final_needed") or 0),
+            "target_base": int(group.get("base_needed") or 0),
             "target_op": "gte",
+            "target_modifier_reasons": list(group.get("modifier_reasons", []) or []),
+            "target_context": str(group.get("strength_comparison", "") or ""),
             "crit_threshold": int(group.get("crit_threshold") or 6),
             "handler_key": "attack_wounds",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
@@ -1742,7 +1787,14 @@ class AttackResolutionManager:
             "reason": "Save roll",
             "roll_type": "save",
             "target": needed,
+            "target_base": int(save_result.get("base_save", 0) or 0),
             "target_op": "gte",
+            "target_modifier_reasons": [
+                str(effect).strip()
+                for effect in list(save_result.get("special_effects", []) or [])
+                if str(effect).strip()
+            ],
+            "target_context": str(save_result.get("save_type", "") or ""),
             "handler_key": "attack_saves",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
             "reroll_rules": reroll_rules,

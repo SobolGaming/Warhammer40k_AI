@@ -23,9 +23,19 @@ def pygame_setup_teardown():
 
 
 class _UnitStub:
-    def __init__(self, *, moved_this_round: bool) -> None:
+    def __init__(
+        self,
+        *,
+        moved_this_round: bool = False,
+        advanced_this_round: bool = False,
+        fell_back_this_round: bool = False,
+    ) -> None:
         self.name = "Unit Alpha"
-        self.round_state = SimpleNamespace(moved_this_round=bool(moved_this_round))
+        self.round_state = SimpleNamespace(
+            moved_this_round=bool(moved_this_round),
+            advanced_this_round=bool(advanced_this_round),
+            fell_back_this_round=bool(fell_back_this_round),
+        )
         self.models = [SimpleNamespace(movement=6)]
         self.movement = 6
         self.is_transport = False
@@ -83,6 +93,45 @@ def test_battle_phase_handler_does_not_publish_movement_choice_decision_for_move
     game_view = _GameViewStub(game)
     handler = BattlePhaseHandler(game_view)
     unit = _UnitStub(moved_this_round=True)
+
+    handler._handle_movement_phase_selection(unit)
+
+    assert game.requested == []
+    assert len(game_view.movement_choice_dialog.calls) == 1
+    _, kwargs = game_view.movement_choice_dialog.calls[0]
+    assert kwargs.get("decision_request") is None
+
+
+@pytest.mark.parametrize(
+    "round_state_flags",
+    [
+        {"advanced_this_round": True},
+        {"fell_back_this_round": True},
+    ],
+)
+def test_movement_choice_dialog_disables_actions_after_advance_or_fall_back(round_state_flags) -> None:
+    dialog = MovementChoiceDialog(1600, 900)
+    unit = _UnitStub(**round_state_flags)
+    dialog.show(unit, callback=lambda _choice: None, game_map=None, decision_request=None)
+
+    assert dialog._movement_status_text() == "Already Moved this Phase"
+    for action in ("move", "advance", "fall_back", "stationary"):
+        assert dialog.is_action_available(action) is False
+        assert dialog.button_states[action]["enabled"] is False
+
+
+@pytest.mark.parametrize(
+    "round_state_flags",
+    [
+        {"advanced_this_round": True},
+        {"fell_back_this_round": True},
+    ],
+)
+def test_battle_phase_handler_does_not_publish_movement_choice_decision_after_advance_or_fall_back(round_state_flags) -> None:
+    game = _GameStub()
+    game_view = _GameViewStub(game)
+    handler = BattlePhaseHandler(game_view)
+    unit = _UnitStub(**round_state_flags)
 
     handler._handle_movement_phase_selection(unit)
 

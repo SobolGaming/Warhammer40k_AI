@@ -103,6 +103,69 @@ class TestBelowStartingStrength(unittest.TestCase):
         g.start_command_phase()
         self.assertEqual(calls["n"], 1)
 
+    def test_command_phase_does_not_test_below_starting_only(self):
+        from warhammer40k_ai.engine.game import Game
+
+        unit = self._mk_unit(starting_models=5, current_models=4, starting_wounds=0, current_wounds=0)
+        self.assertTrue(unit.is_below_starting_strength())
+        self.assertFalse(unit.is_below_half_strength())
+
+        calls = {"n": 0}
+        unit.take_battle_shock_test = lambda *_args, **_kwargs: calls.__setitem__("n", calls["n"] + 1)
+
+        class _Army:
+            def __init__(self, units):
+                self.units = list(units)
+
+        class _Player:
+            def __init__(self, army):
+                self._army = army
+                self.id = "P1"
+                self.active_secondaries = []
+                self.primary_mission = None
+                self.command_points = 0
+
+            def get_army(self):
+                return self._army
+
+            def draw_secondary_until_two(self, _game):
+                return None
+
+            def can_draw_secondary(self):
+                return False
+
+            def gain_normal_command_phase_cp(self):
+                return None
+
+            def get_command_phase_bonus_cp_gain(self):
+                return 0
+
+            def gain_command_points(self, amount, **_kwargs):
+                self.command_points += int(amount or 0)
+                return int(amount or 0)
+
+        g = Game.__new__(Game)
+        p = _Player(_Army([unit]))
+        from warhammer40k_ai.engine.mission_cards import PrimaryMissionCard
+        p.primary_mission = PrimaryMissionCard(name="Test Primary")
+        g.players = [p]
+        g.current_player_index = 0
+        g.turn = 1
+        g.phase = SimpleNamespace(name="COMMAND_PHASE")
+        g.map = SimpleNamespace(objectives=[])
+
+        class _ES:
+            def __init__(self):
+                self.subscribers = {}
+
+            def publish(self, *_args, **_kwargs):
+                return None
+
+        g.event_system = _ES()
+
+        g.start_command_phase()
+        self.assertEqual(calls["n"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

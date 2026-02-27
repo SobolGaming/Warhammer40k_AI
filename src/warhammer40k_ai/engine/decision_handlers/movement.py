@@ -299,6 +299,13 @@ def _validate_select_movement_action(game: object, request: DecisionRequest, res
     unit = get_unit(game, unit_id)
     if unit is None:
         return ("Movement action unit not found.",)
+    round_state = getattr(unit, "round_state", None)
+    if bool(getattr(round_state, "moved_this_round", False)):
+        return ("Movement action unavailable: unit already moved this phase.",)
+    if bool(getattr(round_state, "advanced_this_round", False)):
+        return ("Movement action unavailable: unit already advanced this phase.",)
+    if bool(getattr(round_state, "fell_back_this_round", False)):
+        return ("Movement action unavailable: unit already fell back this phase.",)
     return ()
 
 
@@ -1441,8 +1448,12 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
     for member in members:
         if movement_type == "advance":
             member.round_state.advanced_this_round = True
+            member.round_state.moved_this_round = True
+            member.round_state.remained_stationary_this_round = False
         elif movement_type == "fall_back":
             member.round_state.fell_back_this_round = True
+            member.round_state.moved_this_round = True
+            member.round_state.remained_stationary_this_round = False
         elif movement_type in ("move", "pile_in", "consolidate", "charge"):
             member.round_state.moved_this_round = True
             member.round_state.remained_stationary_this_round = False

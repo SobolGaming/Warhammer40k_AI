@@ -124,10 +124,19 @@ Setup phase uses this modal adapter in `SetupPhaseHandler._show_mission_selectio
 
 ### Movement Choice behavior
 
-- `MovementChoiceDialog` disables movement action buttons when the selected unit has already moved this phase.
+- `MovementChoiceDialog` disables movement action buttons when the selected unit has already resolved movement
+  (moved, advanced, or fell back) this phase.
   In that state, the dialog shows `Already Moved this Phase`, and no `SELECT_MOVEMENT_ACTION` request is created.
 
 ### Dice roll behavior
 
 - Command Re-roll is only shown in reroll options when stratagem availability checks pass for the current player/phase.
   This prevents stale follow-up reroll prompts from offering unavailable Command Re-roll actions.
+- Dice roll dialogs now show explicit success/pass conditions for every roll type (`>=`, `<=`, etc.).
+- Battle-shock sum rolls now show raw sum and modifier math (`raw N -> modified M`) plus modifier reasons when provided.
+- Hit/Wound/Save rolls now show the final needed value and modifier context (base-to-final shift and rule reasons when available).
+
+### Battle-shock command step
+
+- In the core Command phase Battle-shock step, automatic tests are requested for units that are Below Half-strength.
+- Below Starting Strength command-phase tests are applied by explicit rule hooks (auras/abilities that force those tests), not by the core baseline step.

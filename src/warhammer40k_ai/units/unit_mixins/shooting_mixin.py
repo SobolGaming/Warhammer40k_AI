@@ -1838,28 +1838,42 @@ class ShootingMixin:
         except Exception:
             synapse_3d6 = False
         extra_mod = 0
+        extra_mod_reasons: list[str] = []
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and "battle_shock_test_modifier" in sr:
                 extra_mod = int(sr.get("battle_shock_test_modifier", 0) or 0)
+                raw_reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+                extra_mod_reasons = [str(reason).strip() for reason in raw_reasons if str(reason).strip()]
                 sr.pop("battle_shock_test_modifier", None)
                 sr.pop("battle_shock_test_modifier_reasons", None)
                 self.special_rules = sr
         except Exception:
             extra_mod = 0
+            extra_mod_reasons = []
         post_shoot_mod = 0
+        post_shoot_mod_source = ""
         try:
             post_shoot_mod = int(self._post_shoot_leadership_debuff_modifier(game))
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict):
+                post_shoot_mod_source = str(sr.get("post_shoot_leadership_debuff_source", "") or "").strip()
         except Exception:
             post_shoot_mod = 0
+            post_shoot_mod_source = ""
         aura_mod = 0
+        aura_mod_reasons: list[str] = []
         try:
             from ...utility.aura_effects import get_aura_battleshock_test_modifiers
             aura_mods = get_aura_battleshock_test_modifiers(self, game_map=getattr(game, "map", None))
-            for val, _src in list(aura_mods or []):
-                aura_mod += int(val)
+            for val, src in list(aura_mods or []):
+                parsed = int(val)
+                aura_mod += parsed
+                src_name = str(src or "Aura modifier").strip() or "Aura modifier"
+                aura_mod_reasons.append(f"{src_name} ({parsed:+d})")
         except Exception:
             aura_mod = 0
+            aura_mod_reasons = []
         # Core Stratagem: INSANE BRAVERY can make this unit automatically pass this test.
         # It is consumed on use (one-shot for the next Battle-shock test).
         auto_passed = False
@@ -1954,6 +1968,74 @@ class ShootingMixin:
 
         if not auto_passed:
             total_mod = int(shadow_mod) + int(extra_mod) + int(post_shoot_mod) + int(aura_mod)
+            sum_modifier_breakdown: list[dict] = []
+            sum_modifier_reasons: list[str] = []
+            shadow_reason = ""
+            if shadow_mod:
+                manifestation_active = bool(getattr(shadow_ctx, "manifestation_active", False)) if shadow_ctx is not None else False
+                enemy_shadow_active = bool(getattr(shadow_ctx, "enemy_shadow_active", False)) if shadow_ctx is not None else False
+                greater_daemon_terror_active = bool(
+                    getattr(shadow_ctx, "greater_daemon_terror_active", False)
+                ) if shadow_ctx is not None else False
+                terror_active = bool(getattr(shadow_ctx, "terror_active", False)) if shadow_ctx is not None else False
+                if manifestation_active and shadow_mod > 0:
+                    shadow_reason = f"Daemonic Manifestation ({int(shadow_mod):+d})"
+                elif shadow_mod < 0:
+                    if enemy_shadow_active and greater_daemon_terror_active:
+                        shadow_reason = "Enemy in Shadow of Chaos / Greater Daemon terror range (-1)"
+                    elif enemy_shadow_active:
+                        shadow_reason = "Enemy in Shadow of Chaos (-1)"
+                    elif greater_daemon_terror_active:
+                        shadow_reason = "Enemy within Greater Daemon terror range (-1)"
+                    elif terror_active:
+                        shadow_reason = "Enemy in Shadow of Chaos or terror range (-1)"
+                if not shadow_reason:
+                    shadow_reason = f"Shadow of Chaos ({int(shadow_mod):+d})"
+                sum_modifier_breakdown.append(
+                    {
+                        "source": "Shadow of Chaos",
+                        "value": int(shadow_mod),
+                        "reason": shadow_reason,
+                    }
+                )
+                sum_modifier_reasons.append(shadow_reason)
+            if extra_mod:
+                if extra_mod_reasons:
+                    sum_modifier_reasons.extend(list(extra_mod_reasons))
+                else:
+                    sum_modifier_reasons.append(f"Rule modifier ({int(extra_mod):+d})")
+                sum_modifier_breakdown.append(
+                    {
+                        "source": "Rule modifier",
+                        "value": int(extra_mod),
+                        "reason": "; ".join(extra_mod_reasons) if extra_mod_reasons else f"{int(extra_mod):+d}",
+                    }
+                )
+            if post_shoot_mod:
+                if post_shoot_mod_source:
+                    post_reason = f"{post_shoot_mod_source} ({int(post_shoot_mod):+d})"
+                else:
+                    post_reason = f"Post-shoot Leadership debuff ({int(post_shoot_mod):+d})"
+                sum_modifier_reasons.append(post_reason)
+                sum_modifier_breakdown.append(
+                    {
+                        "source": "Post-shoot debuff",
+                        "value": int(post_shoot_mod),
+                        "reason": post_reason,
+                    }
+                )
+            if aura_mod:
+                if aura_mod_reasons:
+                    sum_modifier_reasons.extend(list(aura_mod_reasons))
+                else:
+                    sum_modifier_reasons.append(f"Aura modifier ({int(aura_mod):+d})")
+                sum_modifier_breakdown.append(
+                    {
+                        "source": "Aura modifiers",
+                        "value": int(aura_mod),
+                        "reason": "; ".join(aura_mod_reasons) if aura_mod_reasons else f"{int(aura_mod):+d}",
+                    }
+                )
             dice_count = 3 if synapse_3d6 else 2
             dice_expr = "3D6" if synapse_3d6 else "2D6"
             leadership_value = None
@@ -2035,6 +2117,12 @@ class ShootingMixin:
                         "shadow_modifier": int(shadow_mod),
                         "shadow_manifestation_active": bool(getattr(shadow_ctx, "manifestation_active", False)) if shadow_ctx is not None else False,
                         "shadow_terror_active": bool(getattr(shadow_ctx, "terror_active", False)) if shadow_ctx is not None else False,
+                        "shadow_enemy_in_shadow": bool(getattr(shadow_ctx, "enemy_shadow_active", False)) if shadow_ctx is not None else False,
+                        "shadow_greater_daemon_terror_active": bool(
+                            getattr(shadow_ctx, "greater_daemon_terror_active", False)
+                        ) if shadow_ctx is not None else False,
+                        "sum_modifier_reasons": list(sum_modifier_reasons),
+                        "sum_modifier_breakdown": list(sum_modifier_breakdown),
                         "leadership": int(leadership_value),
                         "handler_key": "battle_shock",
                         "reroll_rules": reroll_rules,

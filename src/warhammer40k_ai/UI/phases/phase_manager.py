@@ -2548,7 +2548,13 @@ class BattlePhaseHandler(BasePhaseHandler):
         from ...utility.movement_utils import compute_embark_candidates
         from ...utility.entity_ids import get_entity_id
 
-        if bool(getattr(getattr(unit, "round_state", None), "moved_this_round", False)):
+        round_state = getattr(unit, "round_state", None)
+        already_resolved_movement = bool(
+            getattr(round_state, "moved_this_round", False)
+            or getattr(round_state, "advanced_this_round", False)
+            or getattr(round_state, "fell_back_this_round", False)
+        )
+        if already_resolved_movement:
             logger.info("INFO: %s already moved this phase; movement actions disabled", getattr(unit, "name", "Unit"))
 
             def _already_moved_choice(_choice):

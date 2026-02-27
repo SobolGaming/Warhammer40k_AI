@@ -265,3 +265,43 @@ def test_no_reroll_does_not_hide_followup_roll_request() -> None:
     assert handled is True
     assert dialog.visible is True
     assert dialog.decision_request is followup_req
+
+
+def test_battle_shock_condition_and_modifier_text_includes_raw_sum_and_reasons() -> None:
+    spec = {
+        "roll_type": "battle_shock",
+        "sum_target": 6,
+        "sum_op": "lte",
+        "sum_modifier": -2,
+        "sum_modifier_reasons": [
+            "Enemy in Shadow of Chaos (-1)",
+            "Aura: Tocsin of Misery (-1)",
+        ],
+    }
+    state = SimpleNamespace(total=11)
+
+    condition = DiceRollDialog._format_condition_text(spec)
+    modifier = DiceRollDialog._format_modifier_text(spec, state)
+
+    assert condition == "Pass condition: modified sum <= 6"
+    assert "raw 11 -> 9" in modifier
+    assert "Enemy in Shadow of Chaos (-1)" in modifier
+    assert "Aura: Tocsin of Misery (-1)" in modifier
+
+
+def test_target_roll_condition_and_modifier_text_show_needed_value_and_delta() -> None:
+    spec = {
+        "roll_type": "wound",
+        "target": 3,
+        "target_base": 4,
+        "target_op": "gte",
+        "target_modifier_reasons": ["S8 > T4 (+1 to wound)"],
+    }
+    state = SimpleNamespace(total=0)
+
+    condition = DiceRollDialog._format_condition_text(spec)
+    modifier = DiceRollDialog._format_modifier_text(spec, state)
+
+    assert condition == "Success condition: each die >= 3"
+    assert "base 4+ -> 3+ (-1)" in modifier
+    assert "S8 > T4 (+1 to wound)" in modifier

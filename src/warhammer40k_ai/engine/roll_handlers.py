@@ -726,6 +726,8 @@ def handle_battle_shock_roll(game: object, state: DiceRollState):
             modifier=int(spec.get("shadow_modifier", 0) or 0),
             manifestation_active=bool(spec.get("shadow_manifestation_active", False)),
             terror_active=bool(spec.get("shadow_terror_active", False)),
+            enemy_shadow_active=bool(spec.get("shadow_enemy_in_shadow", False)),
+            greater_daemon_terror_active=bool(spec.get("shadow_greater_daemon_terror_active", False)),
         )
     except Exception:
         shadow_ctx = None
