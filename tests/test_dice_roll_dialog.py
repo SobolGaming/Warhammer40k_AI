@@ -90,3 +90,67 @@ def test_make_roll_keeps_follow_up_reroll_dialog_visible() -> None:
     assert handled is True
     assert dialog.visible is True
     assert dialog.decision_request is reroll_req
+
+
+def test_reroll_buttons_align_with_keep_button() -> None:
+    class _RollManagerStub:
+        def __init__(self, state):
+            self._state = state
+
+        def get_roll(self, _roll_id: int):
+            return self._state
+
+    dialog = DiceRollDialog(1200, 800)
+    req = DecisionRequest.create(
+        DECISION_SELECT_DICE_REROLL,
+        "Re-roll options: Advance roll for Shalaxi Helbane",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Keep", payload={"action_id": "none"}),
+            DecisionOption.create("Re-roll Advance", payload={"action_id": "reroll_advance"}),
+            DecisionOption.create("Command Re-roll", payload={"action_id": "command_reroll"}),
+        ],
+        context={"roll_id": 2},
+    )
+    roll_state = SimpleNamespace(
+        status="rolled",
+        spec={"reason": "Advance roll for Shalaxi Helbane", "roll_type": "advance"},
+        dice=[{"die_id": "d0", "value": 3, "faces": 6, "is_derived": False}],
+        sorted_ids=["d0"],
+        per_die_success={"d0": None},
+        total=3,
+        sum_success=None,
+        reroll_options=[
+            {
+                "action_id": "reroll_advance",
+                "label": "Re-roll Advance",
+                "mode": "all",
+                "eligible_die_ids": ["d0"],
+                "auto_select_all": True,
+            },
+            {
+                "action_id": "command_reroll",
+                "label": "Command Re-roll",
+                "mode": "whole",
+                "eligible_die_ids": ["d0"],
+                "auto_select_all": True,
+            },
+        ],
+    )
+
+    dialog.show(
+        game=SimpleNamespace(roll_manager=_RollManagerStub(roll_state)),
+        player=SimpleNamespace(id="p1"),
+        decision_request=req,
+        on_resolve=lambda _option_id, _payload: None,
+    )
+
+    surface = pygame.Surface((1200, 800))
+    dialog.draw(surface)
+
+    keep_rect = dialog.buttons["no_reroll"]
+    ability_rect = dialog.buttons["action:reroll_advance"]
+    command_rect = dialog.buttons["command_reroll"]
+
+    assert keep_rect.y == ability_rect.y
+    assert keep_rect.y == command_rect.y

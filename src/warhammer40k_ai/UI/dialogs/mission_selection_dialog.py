@@ -42,6 +42,9 @@ class MissionSelectionDialog(BaseDialog):
         self.font_header = get_ui_font(22, bold=True)
         self.font_normal = get_ui_font(18, bold=False)
         self.font_small = get_ui_font(16, bold=False)
+        # Row/status text is intentionally smaller so long Chapter Approved names
+        # fit within the fixed table columns.
+        self.font_row = get_ui_font(14, bold=False)
         
         # Colors
         self.color_bg = (30, 30, 40)
@@ -301,15 +304,15 @@ class MissionSelectionDialog(BaseDialog):
                            (0, y + self.row_height), (surface.get_width(), y + self.row_height))
             
             # Mission ID
-            id_surface = self.font_normal.render(combo["id"], True, self.color_text)
+            id_surface = self.font_row.render(combo["id"], True, self.color_text)
             surface.blit(id_surface, (25, y + 8))
             
             # Primary Mission
-            primary_surface = self.font_normal.render(combo["primary"], True, self.color_text)
+            primary_surface = self.font_row.render(combo["primary"], True, self.color_text)
             surface.blit(primary_surface, (55, y + 8))
             
             # Deployment
-            deployment_surface = self.font_normal.render(combo["deployment"], True, self.color_text)
+            deployment_surface = self.font_row.render(combo["deployment"], True, self.color_text)
             surface.blit(deployment_surface, (275, y + 8))
             
             # Terrain Layout buttons
@@ -398,7 +401,7 @@ class MissionSelectionDialog(BaseDialog):
             else:
                 status_text += " (Choose terrain layout)"
                 
-            status_surface = self.font_small.render(status_text, True, self.color_text_secondary)
+            status_surface = self.font_row.render(status_text, True, self.color_text_secondary)
             status_x = dialog_x + 20
             status_y = button_y - 25
             screen.blit(status_surface, (status_x, status_y))

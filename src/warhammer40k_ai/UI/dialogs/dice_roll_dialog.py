@@ -428,34 +428,43 @@ class DiceRollDialog(BaseDialog):
                 TEXT_SECONDARY,
             )
             y += 18
-            bx = self.x + 20
+
+        bottom_row_y = self.height - 55
+        keep_button_x = 20
+        keep_button_w = 120
+        right_button_w = 170
+        right_button_x = self.width - right_button_w - 20
+
+        # Ability/rule re-roll actions align on the same bottom row as Keep.
+        if actions and self._interactive:
+            bx = keep_button_x + keep_button_w + 8
+            right_limit = right_button_x - 8
             for action in actions:
                 label = str(action.get("label", "") or "Re-roll")
                 action_id = str(action.get("action_id", "") or "")
                 bw = max(110, min(180, 12 + self.font_small.size(label)[0]))
-                self.add_button(f"action:{action_id}", bx, y, bw, 28, enabled=True)
+                if bx + bw > right_limit:
+                    break
+                self.add_button(f"action:{action_id}", bx, bottom_row_y, bw, 35, enabled=True)
                 self.draw_button(screen, f"action:{action_id}", label, text_color=TEXT_PRIMARY)
                 bx += bw + 8
-            y += 34
-
-        # Command Re-roll button (upper right)
-        cmd_action = self._action_map.get("command_reroll") if self._interactive else None
-        cmd_enabled = cmd_action is not None
-        cmd_color = TEXT_PRIMARY if cmd_enabled else TEXT_DISABLED
-        cmd_x = self.width - 200
-        cmd_y = 70
-        self.add_button("command_reroll", cmd_x, cmd_y, 170, 28, enabled=bool(cmd_enabled))
-        self.draw_button(screen, "command_reroll", "Command Re-roll", text_color=cmd_color)
 
         # Reroll selection confirm
         if self._active_action_id and self._interactive:
-            self.add_button("confirm_reroll", self.width - 200, self.height - 55, 170, 35, enabled=bool(self._selected_die_ids))
+            self.add_button("confirm_reroll", right_button_x, bottom_row_y, right_button_w, 35, enabled=bool(self._selected_die_ids))
             self.draw_button(screen, "confirm_reroll", "Re-roll selected", text_color=TEXT_PRIMARY)
+        else:
+            # Command Re-roll button (aligned with bottom action row).
+            cmd_action = self._action_map.get("command_reroll") if self._interactive else None
+            cmd_enabled = cmd_action is not None
+            cmd_color = TEXT_PRIMARY if cmd_enabled else TEXT_DISABLED
+            self.add_button("command_reroll", right_button_x, bottom_row_y, right_button_w, 35, enabled=bool(cmd_enabled))
+            self.draw_button(screen, "command_reroll", "Command Re-roll", text_color=cmd_color)
 
         # No re-roll / Close
         if self._interactive:
-            self.add_button("no_reroll", 20, self.height - 55, 120, 35, enabled=True)
-            self.draw_button(screen, "no_reroll", "No re-roll", text_color=TEXT_PRIMARY)
+            self.add_button("no_reroll", keep_button_x, bottom_row_y, keep_button_w, 35, enabled=True)
+            self.draw_button(screen, "no_reroll", "Keep", text_color=TEXT_PRIMARY)
         else:
             self.add_button("close", 20, self.height - 55, 90, 35, enabled=True)
             self.draw_button(screen, "close", "Close", text_color=TEXT_PRIMARY)
