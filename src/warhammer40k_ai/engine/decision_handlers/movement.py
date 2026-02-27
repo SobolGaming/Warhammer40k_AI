@@ -19,6 +19,7 @@ from ..decisions import DecisionRequest, DecisionResult
 from ..path_witness import (
     current_model_positions,
     detect_normal_move_engagement_crossing,
+    detect_terrain_sweep_collisions,
     detect_tight_clearance_orientation_violations,
     validate_witness_contiguity,
 )
@@ -483,6 +484,22 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         )
         if tight_errors:
             return tuple(tight_errors)
+        blocking_terrain_polygons = []
+        terrain_features = list(getattr(game_map, "terrain_features", []) or [])
+        if terrain_features:
+            from ...utility.calcs import MovementType, get_terrain_blocking_polygons
+
+            for terrain_feature in terrain_features:
+                blocking_terrain_polygons.extend(
+                    get_terrain_blocking_polygons(unit, terrain_feature, movement_type=MovementType.MOVE)
+                )
+        terrain_errors = detect_terrain_sweep_collisions(
+            start_positions=start_positions,
+            end_positions=end_positions,
+            blocking_terrain_polygons=blocking_terrain_polygons,
+        )
+        if terrain_errors:
+            return tuple(terrain_errors)
     tactica_mode = str(ctx.get("tactica_obliqua_mode", "") or "").strip().lower()
     if tactica_mode == "battleline_6":
         tactica_errors = _validate_tactica_obliqua_battleline_positions(

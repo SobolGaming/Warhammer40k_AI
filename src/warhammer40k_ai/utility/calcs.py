@@ -1660,6 +1660,68 @@ def get_validation_rules(
 
     return base_rules
 
+
+def _segment_terrain_cache_key(
+    start: Tuple[float, float, float],
+    end: Tuple[float, float, float],
+    *,
+    facing: float,
+) -> Tuple[float, float, float, float, float]:
+    sx = round(float(start[0]), 4)
+    sy = round(float(start[1]), 4)
+    ex = round(float(end[0]), 4)
+    ey = round(float(end[1]), 4)
+    if (sx, sy) <= (ex, ey):
+        ax, ay, bx, by = sx, sy, ex, ey
+    else:
+        ax, ay, bx, by = ex, ey, sx, sy
+    return (ax, ay, bx, by, round(float(facing), 4))
+
+
+def _segment_crosses_blocking_terrain(
+    *,
+    start: Tuple[float, float, float],
+    end: Tuple[float, float, float],
+    model: 'Model',
+    terrain_tree,
+    cache: dict[Tuple[float, float, float, float, float], bool],
+) -> bool:
+    if terrain_tree is None:
+        return False
+
+    sx = float(start[0])
+    sy = float(start[1])
+    ex = float(end[0])
+    ey = float(end[1])
+    if abs(sx - ex) <= 1e-9 and abs(sy - ey) <= 1e-9:
+        return False
+
+    base = model.model_base
+    facing = float(getattr(base, "facing", 0.0) or 0.0)
+    key = _segment_terrain_cache_key(start, end, facing=facing)
+    cached = cache.get(key)
+    if cached is not None:
+        return bool(cached)
+
+    segment = LineString([(sx, sy), (ex, ey)])
+    search_radius = max(0.01, float(base.get_longest_radius()))
+    query_shape = segment.buffer(search_radius, quad_segs=4)
+    potential_hits = query_spatial_index(terrain_tree, query_shape)
+    if not potential_hits:
+        cache[key] = False
+        return False
+
+    start_shape = base.get_base_shape_at(sx, sy, facing)
+    end_shape = base.get_base_shape_at(ex, ey, facing)
+    swept_shape = start_shape.union(end_shape).convex_hull
+    for hit_shape in potential_hits:
+        if swept_shape.intersects(hit_shape):
+            cache[key] = True
+            return True
+
+    cache[key] = False
+    return False
+
 def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_distance: float,
                   collision_trees: dict, validation_rules: dict, game_map: 'Map',
                   movement_type: MovementType) -> dict:
@@ -1684,6 +1746,8 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
     unit = model.parent_unit
     start = (model.model_base.x, model.model_base.y, model.model_base.z)
     goal = (float(target[0]), float(target[1]), float(target[2]))
+    allow_through_terrain = bool(validation_rules.get('can_move_through_terrain', False))
+    segment_terrain_cache: dict[Tuple[float, float, float, float, float], bool] = {}
 
     # PERFORMANCE OPTIMIZATION: Adaptive step size and iteration limits based on distance
     straight_line_distance_2d = heuristic_2d((start[0], start[1]), (goal[0], goal[1]))
@@ -1921,6 +1985,20 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
                 collision_reasons.add(validity_result['reason'])
                 break
 
+        if (
+            straight_line_clear
+            and not allow_through_terrain
+            and _segment_crosses_blocking_terrain(
+                start=start,
+                end=goal,
+                model=model,
+                terrain_tree=collision_trees.get('terrain'),
+                cache=segment_terrain_cache,
+            )
+        ):
+            straight_line_clear = False
+            collision_reasons.add('Path crosses terrain between waypoints')
+
         if straight_line_clear:
             # Validate final position for straight line path using unified validation system
             validation_result = is_position_valid_unified_detailed(goal, model, collision_trees, validation_rules, game_map, is_final_position=True)
@@ -1952,6 +2030,20 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
         # PERFORMANCE OPTIMIZATION: Early termination when close to goal
         distance_to_goal = heuristic(current, goal)
         if distance_to_goal < step_size:
+            if (
+                not allow_through_terrain
+                and _segment_crosses_blocking_terrain(
+                    start=current,
+                    end=goal,
+                    model=model,
+                    terrain_tree=collision_trees.get('terrain'),
+                    cache=segment_terrain_cache,
+                )
+            ):
+                collision_reasons.add('Path crosses terrain between waypoints')
+                iterations += 1
+                continue
+
             # Reconstruct path
             path = []
             path_node = current
@@ -2083,6 +2175,19 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
             validity_result = is_position_valid_unified_detailed(neighbor, model, collision_trees, validation_rules, game_map, is_final_position=False)
             if not validity_result['valid']:
                 collision_reasons.add(validity_result['reason'])
+                continue
+
+            if (
+                not allow_through_terrain
+                and _segment_crosses_blocking_terrain(
+                    start=current,
+                    end=neighbor,
+                    model=model,
+                    terrain_tree=collision_trees.get('terrain'),
+                    cache=segment_terrain_cache,
+                )
+            ):
+                collision_reasons.add('Path crosses terrain between waypoints')
                 continue
 
             tentative_g_score = g_score[current] + movement_segment_cost(current, neighbor, unit, movement_type)

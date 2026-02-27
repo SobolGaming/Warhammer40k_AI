@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 import hashlib
 import json
 from typing import Any
+
+from shapely import STRtree
+from shapely.affinity import rotate as sh_rotate
+from shapely.affinity import scale as sh_scale
+from shapely.affinity import translate as sh_translate
+from shapely.geometry import Point, Polygon
 
 from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 from ..utility.entity_ids import get_entity_id
@@ -356,6 +363,91 @@ def detect_tight_clearance_orientation_violations(
             "yaw_band_deg": float(yaw_band_deg),
         }
     return errors, profiles
+
+
+def _query_tree_geometries(tree: STRtree, query_geom) -> list:
+    indices = tree.query(query_geom)
+    if indices is None:
+        return []
+    try:
+        if len(indices) == 0:
+            return []
+    except TypeError:
+        return [tree.geometries[int(indices)]]
+    return [tree.geometries[int(i)] for i in indices]
+
+
+def _normalize_facing_radians(value: object) -> float:
+    facing = _safe_float(value, 0.0)
+    if abs(facing) > (2.0 * math.pi + 1e-6):
+        return math.radians(facing)
+    return facing
+
+
+def _entry_radius_pair(entry: dict[str, Any]) -> tuple[float, float]:
+    radius = list(dict(entry or {}).get("radius", []) or [])
+    if len(radius) < 2:
+        r = abs(_safe_float(dict(entry or {}).get("radius", 0.0), 0.0))
+        return (r, r)
+    return (abs(_safe_float(radius[0], 0.0)), abs(_safe_float(radius[1], 0.0)))
+
+
+def _entry_base_shape_at(entry: dict[str, Any], *, x: float, y: float, facing_radians: float) -> Polygon:
+    rx, ry = _entry_radius_pair(entry)
+    base_type = str(dict(entry or {}).get("base_type", "CIRCULAR") or "CIRCULAR").upper()
+    if base_type == "HULL":
+        shape = Polygon(
+            [
+                (rx, ry),
+                (rx, -ry),
+                (-rx, -ry),
+                (-rx, ry),
+            ]
+        )
+    else:
+        shape = Point(0.0, 0.0).buffer(1.0, quad_segs=32)
+        shape = sh_scale(shape, xfact=rx, yfact=ry, origin=(0.0, 0.0))
+    if abs(facing_radians) > 1e-9:
+        shape = sh_rotate(shape, math.degrees(facing_radians), origin=(0.0, 0.0), use_radians=False)
+    return sh_translate(shape, xoff=float(x), yoff=float(y))
+
+
+def detect_terrain_sweep_collisions(
+    *,
+    start_positions: list[dict[str, Any]],
+    end_positions: list[dict[str, Any]],
+    blocking_terrain_polygons: list,
+) -> list[str]:
+    errors: list[str] = []
+    terrain = [poly for poly in list(blocking_terrain_polygons or []) if poly is not None]
+    if not terrain:
+        return errors
+    tree = STRtree(terrain)
+
+    starts = {str(entry.get("model_id", "") or ""): entry for entry in list(start_positions or []) if entry is not None}
+    ends = {str(entry.get("model_id", "") or ""): entry for entry in list(end_positions or []) if entry is not None}
+    for model_id, end_entry in sorted(ends.items()):
+        start_entry = starts.get(model_id)
+        if start_entry is None:
+            continue
+        sx, sy, _sz, sf = _extract_pose(start_entry)
+        ex, ey, _ez, _ef = _extract_pose(end_entry)
+        if abs(ex - sx) <= 1e-9 and abs(ey - sy) <= 1e-9:
+            continue
+        facing = _normalize_facing_radians(sf)
+        base_entry = dict(start_entry or {})
+        if "radius" not in base_entry:
+            base_entry["radius"] = dict(end_entry or {}).get("radius")
+        if "base_type" not in base_entry:
+            base_entry["base_type"] = dict(end_entry or {}).get("base_type")
+        start_shape = _entry_base_shape_at(base_entry, x=sx, y=sy, facing_radians=facing)
+        end_shape = _entry_base_shape_at(base_entry, x=ex, y=ey, facing_radians=facing)
+        swept = start_shape.union(end_shape).convex_hull
+        for terrain_shape in _query_tree_geometries(tree, swept):
+            if swept.intersects(terrain_shape):
+                errors.append(f"Move path crosses blocking terrain for model_id={model_id}.")
+                break
+    return errors
 
 
 @dataclass

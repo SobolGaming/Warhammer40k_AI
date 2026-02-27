@@ -50,6 +50,8 @@ Pathfinding is A*-based and terrain-aware. Important building blocks:
 - `movement_segment_cost()` and `measure_path_distance()` for rules-aware distance.
 - `measure_direct_distance()` for straight-line checks prior to pathfinding.
 - `get_terrain_blocking_polygons()` and `is_terrain_impassable()` for collision gating.
+- Segment legality uses a swept-base check between waypoints so thin walls cannot be
+  tunneled through by center-point interpolation artifacts.
 
 Movement allowance interacts with pathing in two steps:
 1. A direct-distance check ensures the destination is in range.
