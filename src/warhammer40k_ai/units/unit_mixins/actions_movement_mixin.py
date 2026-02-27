@@ -1263,6 +1263,7 @@ class ActionsMovementMixin:
                 bool(special_rules.get("enhancement_armour_of_antoninus", False))
                 or bool(special_rules.get("enhancement_artisan_of_war", False))
                 or bool(special_rules.get("enhancement_putrid_carapace", False))
+                or bool(special_rules.get("enhancement_iron_surplice_of_saint_istalela", False))
             )
         )
         cache_key = f"model_save_characteristic:{get_entity_id(model)}"
@@ -1294,6 +1295,35 @@ class ActionsMovementMixin:
                             best_source = (
                                 str(special_rules.get("enhancement_putrid_carapace_source", "") or "Putrid Carapace").strip()
                                 or "Putrid Carapace"
+                            )
+        except Exception:
+            pass
+
+        # Adepta Sororitas (Bringers of Flame): Iron Surplice of Saint Istalela.
+        try:
+            if isinstance(special_rules, dict) and bool(special_rules.get("enhancement_iron_surplice_of_saint_istalela", False)):
+                bearer_id = str(
+                    special_rules.get("enhancement_iron_surplice_bearer_model_id", "")
+                    or special_rules.get("enhancement_bearer_model_id", "")
+                    or ""
+                ).strip()
+                model_id = str(get_entity_id(model) or "")
+                if (not bearer_id) or (model_id and model_id == bearer_id):
+                    alive_attr = getattr(model, "is_alive", True)
+                    model_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    if model_alive:
+                        try:
+                            save_value = int(special_rules.get("enhancement_iron_surplice_save_characteristic", 2) or 2)
+                        except Exception:
+                            save_value = 2
+                        if save_value > 0 and (best_value is None or save_value < best_value):
+                            best_value = int(save_value)
+                            best_source = (
+                                str(
+                                    special_rules.get("enhancement_iron_surplice_source", "")
+                                    or "Iron Surplice of Saint Istalela"
+                                ).strip()
+                                or "Iron Surplice of Saint Istalela"
                             )
         except Exception:
             pass

@@ -2251,6 +2251,7 @@ class RulesParsingMixin:
                     "bearer_unit_sustained_hits_value",
                     "bearer_unit_sustained_hits_value_melee",
                     "bearer_unit_sustained_hits_value_ranged",
+                    "bearer_unit_sustained_hits_value_ranged_non_torrent",
                     "bearer_unit_ignores_cover",
                     "bearer_unit_benefit_of_cover",
                     "bearer_unit_target_hit_penalties",
@@ -2304,6 +2305,7 @@ class RulesParsingMixin:
         sustained_hits_value = 0
         sustained_hits_value_melee = 0
         sustained_hits_value_ranged = 0
+        sustained_hits_value_ranged_non_torrent = 0
         ignores_cover_sources: set[str] = set()
         benefit_of_cover_entries: list[dict] = []
         benefit_of_cover_seen: set[tuple[str, str]] = set()
@@ -2729,12 +2731,19 @@ class RulesParsingMixin:
                             val = None
                         if val:
                             scope = sentence.lower()
+                            non_torrent_clause = "all other ranged weapons" in scope
                             has_melee = "melee" in scope
                             has_ranged = "ranged" in scope
                             if has_melee and not has_ranged:
                                 sustained_hits_value_melee = max(int(sustained_hits_value_melee), int(val))
                             elif has_ranged and not has_melee:
-                                sustained_hits_value_ranged = max(int(sustained_hits_value_ranged), int(val))
+                                if non_torrent_clause:
+                                    sustained_hits_value_ranged_non_torrent = max(
+                                        int(sustained_hits_value_ranged_non_torrent),
+                                        int(val),
+                                    )
+                                else:
+                                    sustained_hits_value_ranged = max(int(sustained_hits_value_ranged), int(val))
                             elif has_melee and has_ranged:
                                 sustained_hits_value_melee = max(int(sustained_hits_value_melee), int(val))
                                 sustained_hits_value_ranged = max(int(sustained_hits_value_ranged), int(val))
@@ -3057,6 +3066,15 @@ class RulesParsingMixin:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_sustained_hits_value_ranged"] = int(sustained_hits_value_ranged)
+                u.special_rules = sr
+        if sustained_hits_value_ranged_non_torrent:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_sustained_hits_value_ranged_non_torrent"] = int(
+                    sustained_hits_value_ranged_non_torrent
+                )
                 u.special_rules = sr
 
         if ignores_cover_sources:

@@ -391,6 +391,44 @@ class WargearProfile:
         attacker_id = str(getattr(attacker, "id", getattr(attacker, "_id", "")) or "")
         return attacker_id == str(bearer_id)
 
+    def _enhancement_bonus_window_active(
+        self,
+        attacker: 'Model',
+        sr: dict,
+        *,
+        expires_phase_key: str,
+        turn_key: str = "",
+        owner_key: str = "",
+    ) -> bool:
+        exp = str(sr.get(str(expires_phase_key or ""), "") or "").strip().upper() if expires_phase_key else ""
+        if exp:
+            pname = self._current_phase_name(attacker)
+            if pname and pname != exp:
+                return False
+        unit = getattr(attacker, "parent_unit", None)
+        army = unit.get_parent_army() if unit is not None else None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        if turn_key:
+            try:
+                effect_turn = int(sr.get(str(turn_key), 0) or 0)
+            except Exception:
+                effect_turn = 0
+            if effect_turn:
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                except Exception:
+                    current_turn = 0
+                if current_turn and current_turn != effect_turn:
+                    return False
+        if owner_key:
+            effect_owner = str(sr.get(str(owner_key), "") or "")
+            if effect_owner:
+                attacker_owner = str(get_entity_id(player) or getattr(player, "id", "")) if player is not None else ""
+                if attacker_owner and attacker_owner != effect_owner:
+                    return False
+        return True
+
     def _attacker_is_battleline_model(self, attacker: 'Model') -> bool:
         has_any = getattr(attacker, "has_any_keyword", None)
         if callable(has_any) and bool(has_any("BATTLELINE")):
@@ -4246,13 +4284,39 @@ class WargearProfile:
             sr = self._unit_special_rules(attacker)
             bearer_bonus = int(sr.get("enhancement_bearer_melee_attacks_bonus", 0) or 0)
             if bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
-                exp = str(sr.get("enhancement_bearer_melee_attacks_bonus_expires_phase", "") or "").strip().upper()
-                pname = self._current_phase_name(attacker)
-                if not exp or (pname and pname == exp):
+                if self._enhancement_bonus_window_active(
+                    attacker,
+                    sr,
+                    expires_phase_key="enhancement_bearer_melee_attacks_bonus_expires_phase",
+                    turn_key="enhancement_bearer_melee_attacks_bonus_turn",
+                    owner_key="enhancement_bearer_melee_attacks_bonus_owner",
+                ):
                     atk_mods.append(
                         Modifier(ModifierOp.ADD, int(bearer_bonus), source="enhancement:bearer_melee_attacks_add")
                     )
                     attack_result.attacks_special_modifiers.append(f"Enhancement bearer +{bearer_bonus}A (melee)")
+            righteous_rage_bonus = int(sr.get("enhancement_righteous_rage_bonus", 0) or 0)
+            if righteous_rage_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                if self._enhancement_bonus_window_active(
+                    attacker,
+                    sr,
+                    expires_phase_key="enhancement_righteous_rage_expires_phase",
+                    turn_key="enhancement_righteous_rage_turn",
+                    owner_key="enhancement_righteous_rage_owner",
+                ):
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(righteous_rage_bonus),
+                            source="enhancement:righteous_rage_attacks_add",
+                        )
+                    )
+                    source_name = str(sr.get("enhancement_righteous_rage_source", "") or "Righteous Rage").strip()
+                    if not source_name:
+                        source_name = "Righteous Rage"
+                    attack_result.attacks_special_modifiers.append(
+                        f"{source_name} +{int(righteous_rage_bonus)}A (bearer melee)"
+                    )
             try:
                 unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None
@@ -4446,43 +4510,78 @@ class WargearProfile:
                         members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
                         immolator_bonus = 0
                         immolator_source = "Immolator"
+                        fire_and_fury_bonus = 0
+                        fire_and_fury_source = "Fire and Fury"
                         for member in members:
                             if member is None:
                                 continue
                             sr = getattr(member, "special_rules", None)
-                            if not (isinstance(sr, dict) and bool(sr.get("enhancement_forgefathers_immolator"))):
+                            if not isinstance(sr, dict):
                                 continue
-                            bearer_alive = False
-                            bearer_id = str(
-                                sr.get("enhancement_forgefathers_immolator_bearer_model_id", "")
-                                or sr.get("enhancement_bearer_model_id", "")
-                                or ""
-                            ).strip()
-                            if bearer_id:
-                                for model in list(getattr(member, "models", []) or []):
-                                    if str(get_entity_id(model) or "") != bearer_id:
-                                        continue
-                                    alive_attr = getattr(model, "is_alive", True)
-                                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
-                                    break
-                            if not bearer_alive:
-                                bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
-                                if bearer is not None:
-                                    alive_attr = getattr(bearer, "is_alive", True)
-                                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
-                            if bool(sr.get("enhancement_forgefathers_immolator_requires_bearer_alive", True)) and not bearer_alive:
-                                continue
-                            try:
-                                bonus = int(sr.get("enhancement_forgefathers_immolator_torrent_attacks_bonus", 1) or 1)
-                            except Exception:
-                                bonus = 1
-                            bonus = int(max(0, bonus))
-                            if bonus <= immolator_bonus:
-                                continue
-                            immolator_bonus = bonus
-                            immolator_source = str(
-                                sr.get("enhancement_forgefathers_immolator_source", "") or "Immolator"
-                            ).strip() or "Immolator"
+                            if bool(sr.get("enhancement_forgefathers_immolator")):
+                                bearer_alive = False
+                                bearer_id = str(
+                                    sr.get("enhancement_forgefathers_immolator_bearer_model_id", "")
+                                    or sr.get("enhancement_bearer_model_id", "")
+                                    or ""
+                                ).strip()
+                                if bearer_id:
+                                    for model in list(getattr(member, "models", []) or []):
+                                        if str(get_entity_id(model) or "") != bearer_id:
+                                            continue
+                                        alive_attr = getattr(model, "is_alive", True)
+                                        bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                                        break
+                                if not bearer_alive:
+                                    bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                                    if bearer is not None:
+                                        alive_attr = getattr(bearer, "is_alive", True)
+                                        bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                                if bool(sr.get("enhancement_forgefathers_immolator_requires_bearer_alive", True)) and not bearer_alive:
+                                    continue
+                                try:
+                                    bonus = int(sr.get("enhancement_forgefathers_immolator_torrent_attacks_bonus", 1) or 1)
+                                except Exception:
+                                    bonus = 1
+                                bonus = int(max(0, bonus))
+                                if bonus > immolator_bonus:
+                                    immolator_bonus = bonus
+                                    immolator_source = str(
+                                        sr.get("enhancement_forgefathers_immolator_source", "") or "Immolator"
+                                    ).strip() or "Immolator"
+                            if bool(sr.get("enhancement_fire_and_fury", False)):
+                                if not bool(getattr(member, "is_attached_leader", False)):
+                                    continue
+                                bearer_alive = False
+                                bearer_id = str(
+                                    sr.get("enhancement_fire_and_fury_bearer_model_id", "")
+                                    or sr.get("enhancement_bearer_model_id", "")
+                                    or ""
+                                ).strip()
+                                if bearer_id:
+                                    for model in list(getattr(member, "models", []) or []):
+                                        if str(get_entity_id(model) or "") != bearer_id:
+                                            continue
+                                        alive_attr = getattr(model, "is_alive", True)
+                                        bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                                        break
+                                if not bearer_alive:
+                                    bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                                    if bearer is not None:
+                                        alive_attr = getattr(bearer, "is_alive", True)
+                                        bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                                if not bearer_alive:
+                                    continue
+                                try:
+                                    bonus = int(sr.get("enhancement_fire_and_fury_torrent_attacks_bonus", 1) or 1)
+                                except Exception:
+                                    bonus = 1
+                                bonus = int(max(0, bonus))
+                                if bonus > fire_and_fury_bonus:
+                                    fire_and_fury_bonus = bonus
+                                    fire_and_fury_source = str(
+                                        sr.get("enhancement_fire_and_fury_source", "") or "Fire and Fury"
+                                    ).strip() or "Fire and Fury"
                         if immolator_bonus:
                             atk_mods.append(
                                 Modifier(
@@ -4493,6 +4592,17 @@ class WargearProfile:
                             )
                             attack_result.attacks_special_modifiers.append(
                                 f"{immolator_source} +{int(immolator_bonus)}A (Torrent)"
+                            )
+                        if fire_and_fury_bonus:
+                            atk_mods.append(
+                                Modifier(
+                                    ModifierOp.ADD,
+                                    int(fire_and_fury_bonus),
+                                    source="enhancement:fire_and_fury_torrent_attacks_add",
+                                )
+                            )
+                            attack_result.attacks_special_modifiers.append(
+                                f"{fire_and_fury_source} +{int(fire_and_fury_bonus)}A (Torrent)"
                             )
         except Exception:
             pass
@@ -12421,8 +12531,69 @@ class WargearProfile:
                         bearer_unit_sustained_value,
                         int(sr.get("bearer_unit_sustained_hits_value_ranged", 0) or 0),
                     )
+                    if not self.is_torrent():
+                        bearer_unit_sustained_value = max(
+                            bearer_unit_sustained_value,
+                            int(sr.get("bearer_unit_sustained_hits_value_ranged_non_torrent", 0) or 0),
+                        )
         except Exception:
             bearer_unit_sustained_value = 0
+        try:
+            if is_ranged and not self.is_torrent():
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None:
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    try:
+                        members = list(root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = []
+                    if not members:
+                        members = [root]
+                    members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+                    fire_and_fury_bonus = 0
+                    for member in members:
+                        if member is None:
+                            continue
+                        sr = getattr(member, "special_rules", None)
+                        if not isinstance(sr, dict) or not bool(sr.get("enhancement_fire_and_fury", False)):
+                            continue
+                        if not bool(getattr(member, "is_attached_leader", False)):
+                            continue
+                        bearer_alive = False
+                        bearer_id = str(
+                            sr.get("enhancement_fire_and_fury_bearer_model_id", "")
+                            or sr.get("enhancement_bearer_model_id", "")
+                            or ""
+                        ).strip()
+                        if bearer_id:
+                            for model in list(getattr(member, "models", []) or []):
+                                if str(get_entity_id(model) or "") != bearer_id:
+                                    continue
+                                alive_attr = getattr(model, "is_alive", True)
+                                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                                break
+                        if not bearer_alive:
+                            bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                            if bearer is not None:
+                                alive_attr = getattr(bearer, "is_alive", True)
+                                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                        if not bearer_alive:
+                            continue
+                        try:
+                            bonus = int(sr.get("enhancement_fire_and_fury_other_ranged_sustained_hits", 1) or 1)
+                        except Exception:
+                            bonus = 1
+                        fire_and_fury_bonus = max(int(fire_and_fury_bonus), int(max(0, bonus)))
+                    if fire_and_fury_bonus:
+                        bearer_unit_sustained_value = max(
+                            int(bearer_unit_sustained_value),
+                            int(fire_and_fury_bonus),
+                        )
+        except Exception:
+            pass
         bearer_unit_sustained = bool(bearer_unit_sustained_value)
 
         war_horde_sustained_value = 0
@@ -13262,10 +13433,33 @@ class WargearProfile:
             sr = self._unit_special_rules(attacker)
             bearer_s_bonus = int(sr.get("enhancement_bearer_melee_strength_bonus", 0) or 0)
             if bearer_s_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
-                strength = strength + bearer_s_bonus
-                wound_result.setdefault("modifiers", []).append(
-                    f"+{bearer_s_bonus}S from Enhancement bearer (melee)"
-                )
+                if self._enhancement_bonus_window_active(
+                    attacker,
+                    sr,
+                    expires_phase_key="enhancement_bearer_melee_strength_bonus_expires_phase",
+                    turn_key="enhancement_bearer_melee_strength_bonus_turn",
+                    owner_key="enhancement_bearer_melee_strength_bonus_owner",
+                ):
+                    strength = strength + bearer_s_bonus
+                    wound_result.setdefault("modifiers", []).append(
+                        f"+{bearer_s_bonus}S from Enhancement bearer (melee)"
+                    )
+            righteous_rage_bonus = int(sr.get("enhancement_righteous_rage_bonus", 0) or 0)
+            if righteous_rage_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                if self._enhancement_bonus_window_active(
+                    attacker,
+                    sr,
+                    expires_phase_key="enhancement_righteous_rage_expires_phase",
+                    turn_key="enhancement_righteous_rage_turn",
+                    owner_key="enhancement_righteous_rage_owner",
+                ):
+                    strength = strength + int(righteous_rage_bonus)
+                    source_name = str(sr.get("enhancement_righteous_rage_source", "") or "Righteous Rage").strip()
+                    if not source_name:
+                        source_name = "Righteous Rage"
+                    wound_result.setdefault("modifiers", []).append(
+                        f"+{int(righteous_rage_bonus)}S from {source_name}"
+                    )
             if bool(sr.get("enhancement_weapons_of_the_first_legion", False)) and self._attacker_is_enhancement_bearer(attacker, sr):
                 first_legion_extra = int(
                     sr.get("enhancement_weapons_of_the_first_legion_battle_shocked_extra_bonus", 0) or 0

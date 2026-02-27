@@ -299,6 +299,49 @@ _ADEPTA_SORORITAS_ARMY_OF_FAITH_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ADEPTA_SORORITAS_ARMY_OF_FAITH_DESCRIPTORS.values()
 }
 
+_ADEPTA_SORORITAS_BRINGERS_OF_FLAME_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009033002": EnhancementToolDescriptor(
+        enhancement_id="000009033002",
+        name="Righteous Rage",
+        timing="on_bearer_selected_to_fight",
+        target="bearer",
+        duration="until_end_of_phase",
+        effect="discard_miracle_dice_for_bearer_melee_attacks_strength_bonus",
+        effect_params={"max_discard_miracle_dice": 3, "melee_attacks_strength_bonus_per_discard": 1},
+    ),
+    "000009033003": EnhancementToolDescriptor(
+        enhancement_id="000009033003",
+        name="Manual of Saint Griselda",
+        timing="start_of_command_phase",
+        target="miracle_dice_pool",
+        duration="instant",
+        effect="discard_up_to_two_miracle_dice_add_sum_capped_die",
+        effect_params={"max_discard_miracle_dice": 2, "result_value_max": 6},
+    ),
+    "000009033004": EnhancementToolDescriptor(
+        enhancement_id="000009033004",
+        name="Fire and Fury",
+        timing="passive_while_leading",
+        target="bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="torrent_attacks_bonus_and_other_ranged_sustained_hits",
+        effect_params={"requires_bearer_leading": True, "torrent_attacks_bonus": 1, "other_ranged_sustained_hits": 1},
+    ),
+    "000009033005": EnhancementToolDescriptor(
+        enhancement_id="000009033005",
+        name="Iron Surplice of Saint Istalela",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_save_set_and_fnp",
+        effect_params={"save_characteristic": 2, "feel_no_pain": 5},
+    ),
+}
+
+_ADEPTA_SORORITAS_BRINGERS_OF_FLAME_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ADEPTA_SORORITAS_BRINGERS_OF_FLAME_DESCRIPTORS.values()
+}
+
 _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009911002": EnhancementToolDescriptor(
         enhancement_id="000009911002",
@@ -4247,6 +4290,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _ADEPTA_SORORITAS_ARMY_OF_FAITH_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ADEPTA_SORORITAS_BRINGERS_OF_FLAME_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4479,6 +4525,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _ADEPTA_SORORITAS_ARMY_OF_FAITH_BY_NAME.get(key)
+        or _ADEPTA_SORORITAS_BRINGERS_OF_FLAME_BY_NAME.get(key)
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
         or _AELDARI_SEER_COUNCIL_BY_NAME.get(key)
         or _AELDARI_CORSAIR_COTERIE_BY_NAME.get(key)

@@ -418,6 +418,10 @@ class Enhancement:
             is_army_of_faith = bool(as_mgr and as_mgr.is_army_of_faith())
         except Exception:
             is_army_of_faith = False
+        try:
+            is_bringers_of_flame = bool(as_mgr and as_mgr.is_bringers_of_flame())
+        except Exception:
+            is_bringers_of_flame = False
         is_1st_company_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_1st_company_task_force", lambda: False)()
         )
@@ -1467,6 +1471,117 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_triptych_of_macharian_crusade_bearer_model_id"] = bearer_id
+
+        if name == "righteous rage" or enh_id == "000009033002":
+            if not is_bringers_of_flame:
+                return
+            unit.special_rules["enhancement_righteous_rage"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                max_discard = int(params.get("max_discard_miracle_dice", 3) or 3)
+            except (TypeError, ValueError):
+                max_discard = 3
+            try:
+                bonus_per_discard = int(params.get("melee_attacks_strength_bonus_per_discard", 1) or 1)
+            except (TypeError, ValueError):
+                bonus_per_discard = 1
+            unit.special_rules["enhancement_righteous_rage_max_discard"] = int(max(0, max_discard))
+            unit.special_rules["enhancement_righteous_rage_bonus_per_discard"] = int(max(1, bonus_per_discard))
+            unit.special_rules["enhancement_righteous_rage_source"] = "Righteous Rage"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_righteous_rage_bearer_model_id"] = bearer_id
+
+        if name == "manual of saint griselda" or enh_id == "000009033003":
+            if not is_bringers_of_flame:
+                return
+            unit.special_rules["enhancement_manual_of_saint_griselda"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                max_discard = int(params.get("max_discard_miracle_dice", 2) or 2)
+            except (TypeError, ValueError):
+                max_discard = 2
+            try:
+                result_max = int(params.get("result_value_max", 6) or 6)
+            except (TypeError, ValueError):
+                result_max = 6
+            unit.special_rules["enhancement_manual_of_saint_griselda_max_discard"] = int(max(0, max_discard))
+            unit.special_rules["enhancement_manual_of_saint_griselda_result_value_max"] = int(max(1, result_max))
+            unit.special_rules["enhancement_manual_of_saint_griselda_source"] = "Manual of Saint Griselda"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_manual_of_saint_griselda_bearer_model_id"] = bearer_id
+
+        if name == "fire and fury" or enh_id == "000009033004":
+            if not is_bringers_of_flame:
+                return
+            unit.special_rules["enhancement_fire_and_fury"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                torrent_bonus = int(params.get("torrent_attacks_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                torrent_bonus = 1
+            try:
+                sustained_hits = int(params.get("other_ranged_sustained_hits", 1) or 1)
+            except (TypeError, ValueError):
+                sustained_hits = 1
+            unit.special_rules["enhancement_fire_and_fury_torrent_attacks_bonus"] = int(max(0, torrent_bonus))
+            unit.special_rules["enhancement_fire_and_fury_other_ranged_sustained_hits"] = int(max(0, sustained_hits))
+            unit.special_rules["enhancement_fire_and_fury_source"] = "Fire and Fury"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_fire_and_fury_bearer_model_id"] = bearer_id
+
+        if name == "iron surplice of saint istalela" or enh_id == "000009033005":
+            if not is_bringers_of_flame:
+                return
+            unit.special_rules["enhancement_iron_surplice_of_saint_istalela"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                save_characteristic = int(params.get("save_characteristic", 2) or 2)
+            except (TypeError, ValueError):
+                save_characteristic = 2
+            try:
+                feel_no_pain = int(params.get("feel_no_pain", 5) or 5)
+            except (TypeError, ValueError):
+                feel_no_pain = 5
+            unit.special_rules["enhancement_iron_surplice_save_characteristic"] = int(max(2, min(6, save_characteristic)))
+            unit.special_rules["enhancement_iron_surplice_feel_no_pain"] = int(max(2, min(6, feel_no_pain)))
+            unit.special_rules["enhancement_iron_surplice_source"] = "Iron Surplice of Saint Istalela"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_iron_surplice_bearer_model_id"] = bearer_id
+            tag = f"enhancement_fnp_{enh_id or name}"
+            _ensure_enhancement_fnp_entry(
+                unit,
+                int(max(2, min(6, feel_no_pain))),
+                source="Iron Surplice of Saint Istalela",
+                tag=tag,
+                source_model_id=str(bearer_id) if bearer_id else None,
+            )
+            if bearer_id:
+                tag = f"enhancement_fnp_{enh_id or name}"
+                entries = list(unit.special_rules.get("enhancement_bearer_fnp_entries", []) or [])
+                changed = False
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    if str(entry.get("tag", "") or "") != tag:
+                        continue
+                    entry["source_model_id"] = str(bearer_id)
+                    changed = True
+                if changed:
+                    unit.special_rules["enhancement_bearer_fnp_entries"] = entries
+            try:
+                remove_mods = getattr(unit, "remove_characteristic_modifiers_by_source", None)
+                if callable(remove_mods):
+                    remove_mods("enhancement:save_set")
+            except Exception:
+                pass
 
         if name == "abhuman detail" or enh_id == "000010637002":
             if not is_grizzled_company:

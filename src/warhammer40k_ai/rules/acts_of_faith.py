@@ -580,6 +580,18 @@ class ActsOfFaithManager:
                 return False
         return False
 
+    def _is_bringers_of_flame(self) -> bool:
+        if self.army is None:
+            return False
+        mgr = getattr(self.army, "adepta_sororitas_detachments", None)
+        checker = getattr(mgr, "is_bringers_of_flame", None) if mgr is not None else None
+        if callable(checker):
+            try:
+                return bool(checker())
+            except Exception:
+                return False
+        return False
+
     @staticmethod
     def _unit_special_rules(unit) -> dict:
         sr = getattr(unit, "special_rules", None)
@@ -625,10 +637,14 @@ class ActsOfFaithManager:
         return f"blade_of_saint_ellynor:{self._phase_key(game)}"
 
     def on_fight_unit_selected(self, unit, *, game=None, selecting_player=None) -> None:
-        if not self._army_has_rule() or not self._is_army_of_faith() or unit is None:
+        if not self._army_has_rule() or unit is None:
             return
         root = self._unit_root(unit)
         if root is None or not self._unit_in_army(root):
+            return
+        if self._is_bringers_of_flame():
+            self._maybe_apply_righteous_rage(root, game=game, selecting_player=selecting_player)
+        if not self._is_army_of_faith():
             return
         if not self._unit_has_special_rule(root, "enhancement_blade_of_saint_ellynor"):
             return
@@ -796,8 +812,18 @@ class ActsOfFaithManager:
         selected.sort()
         return selected
 
-    def _choose_chaplet_reroll_indices(self, *, unit, bearer_model, game, pool: list[int], max_rerolls: int) -> list[int]:
-        if max_rerolls <= 0 or not pool:
+    def _choose_miracle_pool_indices(
+        self,
+        *,
+        unit,
+        bearer_model,
+        game,
+        pool: list[int],
+        max_select: int,
+        reason: str,
+        skip_sixes: bool = True,
+    ) -> list[int]:
+        if max_select <= 0 or not pool:
             return []
         player = getattr(self.army, "player", None) if self.army is not None else None
         provider = getattr(getattr(game, "map", None), "miracle_dice_pool_reroll_provider", None) if game is not None else None
@@ -808,24 +834,204 @@ class ActsOfFaithManager:
                     unit=unit,
                     model=bearer_model,
                     pool=list(pool),
-                    max_rerolls=int(max_rerolls),
-                    reason="Chaplet of Sacrifice",
+                    max_rerolls=int(max_select),
+                    reason=str(reason or ""),
                 )
             except Exception:
                 selection = None
             if selection is None:
                 return []
-            return self._normalize_chaplet_reroll_indices(selection, pool=list(pool), max_rerolls=int(max_rerolls))
+            return self._normalize_chaplet_reroll_indices(selection, pool=list(pool), max_rerolls=int(max_select))
 
-        # Deterministic fallback: re-roll the lowest dice values (up to max), skip 6s.
-        candidates = [idx for idx, die in enumerate(list(pool or [])) if int(die) < 6]
+        # Deterministic fallback: select the lowest dice values up to limit.
+        candidates = []
+        for idx, die in enumerate(list(pool or [])):
+            try:
+                val = int(die)
+            except Exception:
+                continue
+            if skip_sixes and val >= 6:
+                continue
+            candidates.append(idx)
         candidates.sort(key=lambda idx: (int(pool[idx]), int(idx)))
-        return list(candidates[: int(max_rerolls)])
+        return list(candidates[: int(max_select)])
+
+    @staticmethod
+    def _discard_miracle_dice_by_indices(pool: list[int], indices: list[int]) -> list[int]:
+        discarded: list[int] = []
+        for idx in sorted(list(indices or []), reverse=True):
+            if idx < 0 or idx >= len(pool):
+                continue
+            try:
+                val = int(pool[idx] or 0)
+            except Exception:
+                val = 0
+            discarded.append(val)
+            del pool[idx]
+        discarded.reverse()
+        return discarded
+
+    def _choose_chaplet_reroll_indices(self, *, unit, bearer_model, game, pool: list[int], max_rerolls: int) -> list[int]:
+        return self._choose_miracle_pool_indices(
+            unit=unit,
+            bearer_model=bearer_model,
+            game=game,
+            pool=list(pool or []),
+            max_select=int(max_rerolls or 0),
+            reason="Chaplet of Sacrifice",
+            skip_sixes=True,
+        )
+
+    def _maybe_apply_righteous_rage(self, unit, *, game=None, selecting_player=None) -> None:
+        if unit is None or not self._unit_has_special_rule(unit, "enhancement_righteous_rage"):
+            return
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if selecting_player is not None and owner is not None and selecting_player is not owner:
+            return
+        bearer = self._get_enhancement_bearer_model(unit)
+        if bearer is None:
+            return
+        if not self.miracle_dice:
+            return
+        sr = self._unit_special_rules(unit)
+        try:
+            max_discard = int(sr.get("enhancement_righteous_rage_max_discard", 3) or 3)
+        except Exception:
+            max_discard = 3
+        max_discard = max(0, min(int(max_discard), len(self.miracle_dice)))
+        if max_discard <= 0:
+            return
+        chosen_indices = self._choose_miracle_pool_indices(
+            unit=unit,
+            bearer_model=bearer,
+            game=game,
+            pool=list(self.miracle_dice),
+            max_select=int(max_discard),
+            reason="Righteous Rage",
+            skip_sixes=True,
+        )
+        if not chosen_indices:
+            return
+        discarded = self._discard_miracle_dice_by_indices(self.miracle_dice, chosen_indices)
+        discard_count = len(discarded)
+        if discard_count <= 0:
+            return
+        try:
+            bonus_per_die = int(sr.get("enhancement_righteous_rage_bonus_per_discard", 1) or 1)
+        except Exception:
+            bonus_per_die = 1
+        bonus_per_die = max(1, int(bonus_per_die))
+        bonus_to_add = int(discard_count) * int(bonus_per_die)
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        except Exception:
+            current_turn = 0
+        try:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        except Exception:
+            phase_name = ""
+        if not phase_name:
+            phase_name = "FIGHT_PHASE"
+        owner_id = str(get_entity_id(owner) or getattr(owner, "id", "")) if owner is not None else ""
+        try:
+            existing_bonus = int(sr.get("enhancement_righteous_rage_bonus", 0) or 0)
+        except Exception:
+            existing_bonus = 0
+        try:
+            existing_turn = int(sr.get("enhancement_righteous_rage_turn", 0) or 0)
+        except Exception:
+            existing_turn = 0
+        existing_phase = str(sr.get("enhancement_righteous_rage_expires_phase", "") or "").strip().upper()
+        existing_owner = str(sr.get("enhancement_righteous_rage_owner", "") or "")
+        if (
+            existing_turn
+            and current_turn
+            and existing_turn != current_turn
+        ) or (existing_phase and phase_name and existing_phase != phase_name) or (
+            existing_owner and owner_id and existing_owner != owner_id
+        ):
+            existing_bonus = 0
+        sr = dict(sr)
+        sr["enhancement_righteous_rage_bonus"] = int(max(0, int(existing_bonus) + int(bonus_to_add)))
+        sr["enhancement_righteous_rage_turn"] = int(current_turn)
+        sr["enhancement_righteous_rage_owner"] = str(owner_id)
+        sr["enhancement_righteous_rage_expires_phase"] = str(phase_name)
+        unit.special_rules = sr
+        try:
+            if owner is not None:
+                append_dice(
+                    owner,
+                    (
+                        "Righteous Rage: discarded Miracle dice "
+                        f"{discarded} for +{int(bonus_to_add)} Attacks/Strength this phase"
+                    ),
+                )
+        except Exception:
+            pass
+
+    def _maybe_apply_manual_of_saint_griselda(self, unit, *, game=None) -> None:
+        if unit is None or not self._unit_has_special_rule(unit, "enhancement_manual_of_saint_griselda"):
+            return
+        bearer = self._get_enhancement_bearer_model(unit)
+        if bearer is None:
+            return
+        if not self.miracle_dice:
+            return
+        sr = self._unit_special_rules(unit)
+        try:
+            max_discard = int(sr.get("enhancement_manual_of_saint_griselda_max_discard", 2) or 2)
+        except Exception:
+            max_discard = 2
+        try:
+            result_cap = int(sr.get("enhancement_manual_of_saint_griselda_result_value_max", 6) or 6)
+        except Exception:
+            result_cap = 6
+        max_discard = max(0, min(int(max_discard), len(self.miracle_dice)))
+        if max_discard <= 0:
+            return
+        chosen_indices = self._choose_miracle_pool_indices(
+            unit=unit,
+            bearer_model=bearer,
+            game=game,
+            pool=list(self.miracle_dice),
+            max_select=int(max_discard),
+            reason="Manual of Saint Griselda",
+            skip_sixes=True,
+        )
+        if not chosen_indices:
+            return
+        discarded = self._discard_miracle_dice_by_indices(self.miracle_dice, chosen_indices)
+        if not discarded:
+            return
+        total = 0
+        for value in list(discarded or []):
+            try:
+                total += int(value or 0)
+            except Exception:
+                continue
+        if total <= 0:
+            return
+        new_value = int(min(int(max(1, result_cap)), int(total)))
+        self.miracle_dice.append(int(new_value))
+        try:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            if owner is not None:
+                append_dice(
+                    owner,
+                    (
+                        "Manual of Saint Griselda: discarded Miracle dice "
+                        f"{discarded} to add Miracle die {int(new_value)}"
+                    ),
+                )
+        except Exception:
+            pass
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:
         if not self._army_has_rule():
             return
-        if not self._is_army_of_faith():
+        is_army_of_faith = self._is_army_of_faith()
+        is_bringers_of_flame = self._is_bringers_of_flame()
+        if not is_army_of_faith and not is_bringers_of_flame:
             return
         if self.army is None:
             return
@@ -861,20 +1067,19 @@ class ActsOfFaithManager:
                 continue
             if not self._unit_on_battlefield(unit):
                 continue
-            if not self._unit_has_special_rule(unit, "enhancement_litanies_of_faith"):
-                continue
-            bearer = self._get_enhancement_bearer_model(unit)
-            if bearer is None:
-                continue
-            pass_test_fn = getattr(unit, "pass_leadership_check_for_model", None)
-            if not callable(pass_test_fn):
-                continue
-            try:
-                passed = bool(pass_test_fn(bearer))
-            except Exception:
-                passed = False
-            if passed:
-                self.gain_miracle_die(game=game, allow_reroll=False, reason="Litanies of Faith")
+            if is_army_of_faith and self._unit_has_special_rule(unit, "enhancement_litanies_of_faith"):
+                bearer = self._get_enhancement_bearer_model(unit)
+                if bearer is not None:
+                    pass_test_fn = getattr(unit, "pass_leadership_check_for_model", None)
+                    if callable(pass_test_fn):
+                        try:
+                            passed = bool(pass_test_fn(bearer))
+                        except Exception:
+                            passed = False
+                        if passed:
+                            self.gain_miracle_die(game=game, allow_reroll=False, reason="Litanies of Faith")
+            if is_bringers_of_flame and self._unit_has_special_rule(unit, "enhancement_manual_of_saint_griselda"):
+                self._maybe_apply_manual_of_saint_griselda(unit, game=game)
 
     def on_command_phase_end(self, *, game=None, player=None) -> None:
         if not self._army_has_rule():
