@@ -58,3 +58,21 @@ def test_mission_selection_dialog_reuses_cached_content_surface() -> None:
     dialog.selected_layout = 2
     dialog.draw(canvas)
     assert len(calls) == 2
+
+
+def test_mission_selection_dialog_random_button_click_uses_wider_hitbox() -> None:
+    dialog = MissionSelectionDialog(1600, 900, combinations=_make_combinations(5))
+    dialog.show()
+
+    dialog_x = (dialog.screen_width - dialog.dialog_width) // 2
+    dialog_y = (dialog.screen_height - dialog.dialog_height) // 2
+    button_y = dialog_y + dialog.dialog_height - 60
+    random_x = dialog_x + 120
+    click_pos = (random_x + 130, button_y + dialog.footer_button_height // 2)
+
+    assert dialog.selected_combination is None
+    result = dialog._handle_click(click_pos)
+
+    assert result is None
+    assert dialog.selected_combination is not None
+    assert dialog.selected_layout is not None

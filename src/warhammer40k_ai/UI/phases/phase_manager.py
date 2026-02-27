@@ -606,6 +606,14 @@ class SetupPhaseHandler(BasePhaseHandler):
 
         player_name = str(getattr(player, "name", "Player") or "Player")
         initial_hue = getattr(player, "ui_color_hue_degrees", None)
+        initial_rgb = None
+        get_rgb = getattr(player, "get_ui_color_rgb", None)
+        if callable(get_rgb):
+            initial_rgb = get_rgb()
+        else:
+            raw_rgb = getattr(player, "ui_color_rgb", None)
+            if isinstance(raw_rgb, (list, tuple)) and len(raw_rgb) == 3:
+                initial_rgb = (int(raw_rgb[0]), int(raw_rgb[1]), int(raw_rgb[2]))
 
         def _on_confirm(option_id: str) -> None:
             resolve_decision_command(
@@ -633,6 +641,7 @@ class SetupPhaseHandler(BasePhaseHandler):
             on_cancel=_on_cancel,
             decision_request=request,
             initial_hue_degrees=initial_hue,
+            initial_rgb=initial_rgb,
         )
         self.game_view.dialog_manager.open(dialog, modal=True)
 
@@ -1711,6 +1720,14 @@ class SetupPhaseHandler(BasePhaseHandler):
 
             player_name = str(getattr(player, "name", "Player") or "Player")
             initial_hue = getattr(player, "ui_color_hue_degrees", None)
+            initial_rgb = None
+            get_rgb = getattr(player, "get_ui_color_rgb", None)
+            if callable(get_rgb):
+                initial_rgb = get_rgb()
+            else:
+                raw_rgb = getattr(player, "ui_color_rgb", None)
+                if isinstance(raw_rgb, (list, tuple)) and len(raw_rgb) == 3:
+                    initial_rgb = (int(raw_rgb[0]), int(raw_rgb[1]), int(raw_rgb[2]))
 
             def _done(option_id: str) -> None:
                 resolve_decision_command(
@@ -1738,6 +1755,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                 on_cancel=_cancel,
                 decision_request=req,
                 initial_hue_degrees=initial_hue,
+                initial_rgb=initial_rgb,
             )
             self.game_view.dialog_manager.open(dialog, modal=True)
 
@@ -2529,6 +2547,20 @@ class BattlePhaseHandler(BasePhaseHandler):
         from ...engine.decisions import DecisionOption, DecisionRequest
         from ...utility.movement_utils import compute_embark_candidates
         from ...utility.entity_ids import get_entity_id
+
+        if bool(getattr(getattr(unit, "round_state", None), "moved_this_round", False)):
+            logger.info("INFO: %s already moved this phase; movement actions disabled", getattr(unit, "name", "Unit"))
+
+            def _already_moved_choice(_choice):
+                return
+
+            self.game_view.movement_choice_dialog.show(
+                unit,
+                _already_moved_choice,
+                self.game.map,
+                decision_request=None,
+            )
+            return
 
         def _pending_request():
             for req in list(self.game.decision_queue.list() or []):

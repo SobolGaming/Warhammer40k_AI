@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import colorsys
 import math
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 import pygame
 
@@ -45,6 +45,7 @@ class PlayerColorPickerDialog(BaseDialog):
         on_cancel: Optional[Callable[[], None]] = None,
         decision_request=None,
         initial_hue_degrees: int | None = None,
+        initial_rgb: Tuple[int, int, int] | None = None,
     ) -> None:
         super().show()
         self.player_name = str(player_name or "Player")
@@ -67,6 +68,8 @@ class PlayerColorPickerDialog(BaseDialog):
         if self._hue_options:
             if initial_hue_degrees is not None:
                 self._selected_hue = self._nearest_hue(float(initial_hue_degrees))
+            elif initial_rgb is not None:
+                self._selected_hue = self._nearest_hue_for_rgb(initial_rgb)
             if self._selected_hue is None:
                 self._selected_hue = self._hue_options[0]
 
@@ -135,6 +138,29 @@ class PlayerColorPickerDialog(BaseDialog):
         if not self._hue_options:
             return None
         return min(self._hue_options, key=lambda value: self._hue_distance(hue_degrees, value))
+
+    def _nearest_hue_for_rgb(self, rgb: Tuple[int, int, int]) -> Optional[int]:
+        if not self._hue_options:
+            return None
+        target = (int(rgb[0]), int(rgb[1]), int(rgb[2]))
+        best_hue: Optional[int] = None
+        best_dist: Optional[int] = None
+        for hue in self._hue_options:
+            entry = self._entries_by_hue.get(int(hue) % 360)
+            if entry is None:
+                continue
+            payload = dict(entry.get("payload", {}) or {})
+            option_rgb = list(payload.get("rgb", []) or [])
+            if len(option_rgb) != 3:
+                continue
+            dr = int(option_rgb[0]) - target[0]
+            dg = int(option_rgb[1]) - target[1]
+            db = int(option_rgb[2]) - target[2]
+            dist = dr * dr + dg * dg + db * db
+            if best_dist is None or dist < best_dist:
+                best_dist = dist
+                best_hue = int(hue) % 360
+        return best_hue
 
     def _step_selection(self, offset: int) -> None:
         if not self._hue_options:

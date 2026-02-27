@@ -59,9 +59,24 @@ class MovementChoiceDialog(BaseDialog):
         self._embark_candidates = []
         self.decision_request = None
 
+    def _unit_already_moved_this_phase(self) -> bool:
+        if self.unit is None:
+            return False
+        round_state = getattr(self.unit, "round_state", None)
+        return bool(getattr(round_state, "moved_this_round", False))
+
+    def _movement_status_text(self) -> str:
+        if self._unit_already_moved_this_phase():
+            return "Already Moved this Phase"
+        movement_val = getattr(self.unit.models[0], "movement", getattr(self.unit, "movement", 0))
+        return f"Movement: {movement_val}\""
+
     def is_action_available(self, action_name: str) -> bool:
         """Check if a movement action is available for the current unit"""
         from warhammer40k_ai.units.unit import MovementAction
+
+        if self._unit_already_moved_this_phase():
+            return False
 
         if self.decision_request is not None:
             return action_name in self.available_actions
@@ -175,9 +190,9 @@ class MovementChoiceDialog(BaseDialog):
         content_x = self.x + 20
         cur_y = self.y + self.title_bar_height + 12
 
-        movement_val = getattr(self.unit.models[0], 'movement', getattr(self.unit, 'movement', 0))
-        info_text = f"Movement: {movement_val}\""
-        info_surface = self.font_small.render(info_text, True, TEXT_SECONDARY)
+        info_text = self._movement_status_text()
+        info_color = TEXT_DISABLED if self._unit_already_moved_this_phase() else TEXT_SECONDARY
+        info_surface = self.font_small.render(info_text, True, info_color)
         screen.blit(info_surface, (content_x, cur_y))
         cur_y += self.font_small.get_linesize() + 6
 
@@ -213,7 +228,10 @@ class MovementChoiceDialog(BaseDialog):
         if self.is_action_available('disembark'):
             help_parts.append("Disembark: select passenger(s)")
         if not help_parts:
-            help_parts.append("Only Stationary available")
+            if self._unit_already_moved_this_phase():
+                help_parts.append("Already Moved this Phase")
+            else:
+                help_parts.append("Only Stationary available")
         help_text = " | ".join(help_parts)
         help_surface = self.font_small.render(help_text, True, TEXT_SECONDARY)
         screen.blit(help_surface, (self.x + 20, self.y + self.height - 30))

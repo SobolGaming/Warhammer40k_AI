@@ -63,6 +63,8 @@ Players now have deterministic UI color state used by both local and remote flow
 
 At setup, the engine emits `CHOOSE_PLAYER_COLOR` decisions before deployment interactions.
 The color picker uses quantized hue options (15-degree steps) so candidate/action IDs remain deterministic.
+When no explicit hue metadata is present yet, the picker seeds the default selection from the player's current
+roster swatch color (nearest available quantized hue), so Player 1 opens on the same green family shown in the roster header.
 
 ## Controller Hooks (Non-Local)
 

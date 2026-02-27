@@ -119,3 +119,8 @@ Setup phase uses this modal adapter in `SetupPhaseHandler._show_mission_selectio
 - `RuleDetailPanel` now uses the same pre-rendered content-surface approach; wheel scrolling is viewport-only.
 - `MissionSelectionDialog` caches its full mission table surface and only rebuilds when combinations or selection state change.
 - `ShootingDeclarationDialog` caches hot-path text rasterization for repeated weapon/declaration rows.
+
+### Movement Choice behavior
+
+- `MovementChoiceDialog` disables movement action buttons when the selected unit has already moved this phase.
+  In that state, the dialog shows `Already Moved this Phase`, and no `SELECT_MOVEMENT_ACTION` request is created.

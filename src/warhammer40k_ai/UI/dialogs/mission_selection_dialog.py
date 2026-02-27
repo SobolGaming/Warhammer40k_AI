@@ -59,6 +59,10 @@ class MissionSelectionDialog(BaseDialog):
         self.row_height = 35
         self.header_height = 40
         self.layout_button_size = 30
+        self.cancel_button_width = 80
+        self.random_button_width = 140
+        self.confirm_button_width = 100
+        self.footer_button_height = 40
         
         # Calculate scrollable area
         self.content_height = len(self.combinations) * self.row_height + self.header_height
@@ -203,17 +207,17 @@ class MissionSelectionDialog(BaseDialog):
         
         # Check Cancel/Pick Random/Confirm buttons
         button_y = dialog_y + self.dialog_height - 60
-        if button_y <= y <= button_y + 40:
+        if button_y <= y <= button_y + self.footer_button_height:
             cancel_x = dialog_x + 20
             random_x = dialog_x + 120  # Position between Cancel and Confirm
-            confirm_x = dialog_x + self.dialog_width - 120
+            confirm_x = dialog_x + self.dialog_width - self.confirm_button_width - 20
             
-            if cancel_x <= x <= cancel_x + 80:
+            if cancel_x <= x <= cancel_x + self.cancel_button_width:
                 return {"action": "cancel"}
-            elif random_x <= x <= random_x + 100:
+            elif random_x <= x <= random_x + self.random_button_width:
                 self.pick_random_mission()
                 return None  # Don't close dialog, just update selection
-            elif confirm_x <= x <= confirm_x + 100:
+            elif confirm_x <= x <= confirm_x + self.confirm_button_width:
                 if self.selected_combination is not None and self.selected_layout is not None:
                     option_id = ""
                     if 0 <= self.selected_combination < len(self._option_entries):
@@ -347,7 +351,10 @@ class MissionSelectionDialog(BaseDialog):
         
         for text, x, width in headers:
             header_surface = self.font_header.render(text, True, self.color_text)
-            surface.blit(header_surface, (x, y + 10))
+            header_text_rect = header_surface.get_rect()
+            header_text_rect.x = x
+            header_text_rect.centery = header_rect.centery
+            surface.blit(header_surface, header_text_rect)
     
     def _draw_combinations(self, surface: pygame.Surface):
         """Draw the mission combination rows."""
@@ -398,9 +405,8 @@ class MissionSelectionDialog(BaseDialog):
                 
                 # Layout number
                 layout_surface = self.font_small.render(str(layout), True, text_color)
-                text_x = button_x + (self.layout_button_size - layout_surface.get_width()) // 2
-                text_y = y + 5
-                surface.blit(layout_surface, (text_x, text_y))
+                layout_text_rect = layout_surface.get_rect(center=button_rect.center)
+                surface.blit(layout_surface, layout_text_rect)
             
             y += self.row_height
     
@@ -425,7 +431,7 @@ class MissionSelectionDialog(BaseDialog):
         button_y = dialog_y + self.dialog_height - 60
         
         # Cancel button
-        cancel_rect = pygame.Rect(dialog_x + 20, button_y, 80, 40)
+        cancel_rect = pygame.Rect(dialog_x + 20, button_y, self.cancel_button_width, self.footer_button_height)
         pygame.draw.rect(screen, (120, 60, 60), cancel_rect)
         pygame.draw.rect(screen, self.color_border, cancel_rect, 2)
         cancel_text = self.font_normal.render("Cancel", True, self.color_text)
@@ -434,7 +440,7 @@ class MissionSelectionDialog(BaseDialog):
         screen.blit(cancel_text, (cancel_text_x, cancel_text_y))
         
         # Pick Random button
-        random_rect = pygame.Rect(dialog_x + 120, button_y, 100, 40)
+        random_rect = pygame.Rect(dialog_x + 120, button_y, self.random_button_width, self.footer_button_height)
         pygame.draw.rect(screen, (80, 80, 120), random_rect)  # Purple color for random
         pygame.draw.rect(screen, self.color_border, random_rect, 2)
         random_text = self.font_normal.render("Pick Random", True, self.color_text)
@@ -447,7 +453,12 @@ class MissionSelectionDialog(BaseDialog):
                          self.selected_layout is not None)
         confirm_color = (60, 120, 60) if confirm_enabled else (60, 60, 60)
         
-        confirm_rect = pygame.Rect(dialog_x + self.dialog_width - 120, button_y, 100, 40)
+        confirm_rect = pygame.Rect(
+            dialog_x + self.dialog_width - self.confirm_button_width - 20,
+            button_y,
+            self.confirm_button_width,
+            self.footer_button_height,
+        )
         pygame.draw.rect(screen, confirm_color, confirm_rect)
         pygame.draw.rect(screen, self.color_border, confirm_rect, 2)
         confirm_text = self.font_normal.render("Confirm", True, self.color_text)
