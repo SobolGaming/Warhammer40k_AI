@@ -729,7 +729,6 @@ class ShootingDeclarationDialog(BaseDialog):
         if hasattr(weapon_profile, 'range') and hasattr(weapon_profile.range, 'max'):
             weapon_range_max = weapon_profile.range.max or 0
         max_weapon_range_seen = float(weapon_range_max or 0)
-        max_weapon_range_seen = float(weapon_range_max or 0)
 
         # Only consider models that actually have this weapon
         shooter_models = self._get_models_with_weapon(weapon_profile)
@@ -805,6 +804,7 @@ class ShootingDeclarationDialog(BaseDialog):
         weapon_range_max = 0
         if hasattr(weapon_profile, 'range') and hasattr(weapon_profile.range, 'max'):
             weapon_range_max = weapon_profile.range.max or 0
+        max_weapon_range_seen = float(weapon_range_max or 0)
 
         in_range_any = False
         closest_edge = float('inf')

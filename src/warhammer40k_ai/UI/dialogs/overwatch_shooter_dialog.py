@@ -75,8 +75,12 @@ class OverwatchShooterDialog(BaseDialog):
         if button_name == 'select':
             if self.selected_index is not None and 0 <= self.selected_index < len(self.candidates):
                 opt = self._option_entries[self.selected_index] if self.selected_index < len(self._option_entries) else None
-                if callable(self.on_confirm) and opt is not None:
-                    self.on_confirm(opt.option_id)
+                if opt is not None:
+                    try:
+                        if callable(self.on_confirm):
+                            self.on_confirm(opt.option_id)
+                    finally:
+                        self.hide()
             return True
         if button_name in ('cancel', 'close'):
             if callable(self.on_cancel):
@@ -195,7 +199,11 @@ class OverwatchShooterDialog(BaseDialog):
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 if self.selected_index is not None and self.candidates:
                     opt = self._option_entries[self.selected_index] if self.selected_index < len(self._option_entries) else None
-                    if callable(self.on_confirm) and opt is not None:
-                        self.on_confirm(opt.option_id)
+                    if opt is not None:
+                        try:
+                            if callable(self.on_confirm):
+                                self.on_confirm(opt.option_id)
+                        finally:
+                            self.hide()
                     return True
         return False

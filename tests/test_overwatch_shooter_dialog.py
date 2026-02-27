@@ -94,3 +94,63 @@ def test_show_handles_non_entity_candidates_with_decision_request() -> None:
     assert len(dialog.candidates) == 2
     assert len(dialog._option_entries) == 2
     dialog.hide()
+
+
+def test_select_button_hides_dialog_after_confirm() -> None:
+    dialog = OverwatchShooterDialog(1200, 800)
+    req = DecisionRequest.create(
+        "CHOOSE_ASPECT",
+        "Choose an option",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Skip", payload={"action": "skip"}),
+            DecisionOption.create("Swift as the Wind", payload={"choice": "SWIFT_AS_THE_WIND"}),
+        ],
+    )
+    selected: list[str] = []
+
+    shown = dialog.show(
+        ["Skip", "Swift"],
+        None,
+        lambda option_id: selected.append(option_id),
+        title="Battle Focus",
+        decision_request=req,
+    )
+
+    assert shown is True
+    assert dialog.visible is True
+    handled = dialog._handle_button_click("select")
+    assert handled is True
+    assert selected == [req.options[0].option_id]
+    assert dialog.visible is False
+    assert dialog.decision_request is None
+
+
+def test_enter_key_hides_dialog_after_confirm() -> None:
+    dialog = OverwatchShooterDialog(1200, 800)
+    req = DecisionRequest.create(
+        "CHOOSE_ASPECT",
+        "Choose an option",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Skip", payload={"action": "skip"}),
+            DecisionOption.create("Swift as the Wind", payload={"choice": "SWIFT_AS_THE_WIND"}),
+        ],
+    )
+    selected: list[str] = []
+
+    shown = dialog.show(
+        ["Skip", "Swift"],
+        None,
+        lambda option_id: selected.append(option_id),
+        title="Battle Focus",
+        decision_request=req,
+    )
+
+    assert shown is True
+    assert dialog.visible is True
+    handled = dialog._handle_other_events(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_RETURN}))
+    assert handled is True
+    assert selected == [req.options[0].option_id]
+    assert dialog.visible is False
+    assert dialog.decision_request is None
