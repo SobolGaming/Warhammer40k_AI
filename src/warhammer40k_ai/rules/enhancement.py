@@ -540,6 +540,7 @@ class Enhancement:
         )
         is_lions = bool(ac_mgr and ac_mgr.is_lions_of_the_emperor())
         is_auric_champions = bool(ac_mgr and ac_mgr.is_auric_champions())
+        is_null_maiden_vigil = bool(ac_mgr and ac_mgr.is_null_maiden_vigil())
         try:
             is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
         except Exception:
@@ -6571,6 +6572,133 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_veiled_blade_bearer_model_id"] = bearer_id
+
+        if name == "enhanced voidsheen cloak" or enh_id == "000008926002":
+            if not is_null_maiden_vigil:
+                return
+            unit.special_rules["enhancement_enhanced_voidsheen_cloak"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            damage_reduction = _coerce_int(params.get("damage_reduction", 1) or 1, default=1)
+            set_damage_to = _coerce_int(params.get("set_damage_to", 1) or 1, default=1)
+            attacker_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("conditional_attacker_keywords_any", ("PSYKER",)) or ("PSYKER",))
+                if str(v or "").strip()
+            ]
+            if not attacker_keywords:
+                attacker_keywords = ["PSYKER"]
+            unit.special_rules["enhancement_enhanced_voidsheen_cloak_damage_reduction"] = int(
+                max(0, damage_reduction)
+            )
+            unit.special_rules["enhancement_enhanced_voidsheen_cloak_set_damage_to"] = int(max(0, set_damage_to))
+            unit.special_rules["enhancement_enhanced_voidsheen_cloak_attacker_keywords_any"] = list(
+                dict.fromkeys(attacker_keywords)
+            )
+            unit.special_rules["enhancement_enhanced_voidsheen_cloak_attacker_battle_shocked"] = bool(
+                params.get("conditional_attacker_battle_shocked", True)
+            )
+            unit.special_rules["enhancement_enhanced_voidsheen_cloak_source"] = "Enhanced Voidsheen Cloak"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_enhanced_voidsheen_cloak_bearer_model_id"] = bearer_id
+
+        if name == "huntress' eye" or enh_id == "000008926003":
+            if not is_null_maiden_vigil:
+                return
+            unit.special_rules["enhancement_huntress_eye"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                range_in = float(params.get("range", getattr(desc, "range_in", 12.0) or 12.0) or 12.0)
+            except (TypeError, ValueError):
+                range_in = 12.0
+            unit.special_rules["enhancement_huntress_eye_range"] = float(max(0.0, range_in))
+            unit.special_rules["enhancement_huntress_eye_source"] = "Huntress' Eye"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_huntress_eye_bearer_model_id"] = bearer_id
+
+        if name == "oblivion knight" or enh_id == "000008926004":
+            if not is_null_maiden_vigil:
+                return
+            unit.special_rules["enhancement_oblivion_knight"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            hit_bonus = _coerce_int(params.get("hit_roll_bonus", 1) or 1, default=1)
+            wound_bonus = _coerce_int(params.get("wound_roll_bonus_vs_psyker", 1) or 1, default=1)
+            unit.special_rules["enhancement_oblivion_knight_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_oblivion_knight_hit_roll_bonus"] = int(max(0, hit_bonus))
+            unit.special_rules["enhancement_oblivion_knight_wound_roll_bonus_vs_psyker"] = int(
+                max(0, wound_bonus)
+            )
+            unit.special_rules["enhancement_oblivion_knight_target_keywords_any"] = ["PSYKER"]
+            unit.special_rules["enhancement_oblivion_knight_source"] = "Oblivion Knight"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_oblivion_knight_bearer_model_id"] = bearer_id
+
+        if name == "raptor blade" or enh_id == "000008926005":
+            if not is_null_maiden_vigil:
+                return
+            unit.special_rules["enhancement_raptor_blade"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            base_bonus = _coerce_int(params.get("base_melee_attacks_bonus", 1) or 1, default=1)
+            strength_base_bonus = _coerce_int(params.get("base_melee_strength_bonus", base_bonus) or base_bonus, default=base_bonus)
+            damage_base_bonus = _coerce_int(params.get("base_melee_damage_bonus", base_bonus) or base_bonus, default=base_bonus)
+            conditional_extra = _coerce_int(params.get("conditional_extra_bonus", 1) or 1, default=1)
+            conditional_enemy_keyword = str(
+                params.get("conditional_enemy_keyword", "PSYKER") or "PSYKER"
+            ).strip().upper()
+            if not conditional_enemy_keyword:
+                conditional_enemy_keyword = "PSYKER"
+
+            # Neutralize generic parsed unit-wide melee bonuses; Raptor Blade is bearer-only.
+            unit.special_rules["enhancement_melee_attacks_bonus"] = int(
+                max(
+                    0,
+                    _coerce_int(unit.special_rules.get("enhancement_melee_attacks_bonus", 0) or 0, default=0)
+                    - max(0, base_bonus),
+                )
+            )
+            unit.special_rules["enhancement_melee_strength_bonus"] = int(
+                max(
+                    0,
+                    _coerce_int(unit.special_rules.get("enhancement_melee_strength_bonus", 0) or 0, default=0)
+                    - max(0, strength_base_bonus),
+                )
+            )
+            unit.special_rules["enhancement_melee_damage_bonus"] = int(
+                max(
+                    0,
+                    _coerce_int(unit.special_rules.get("enhancement_melee_damage_bonus", 0) or 0, default=0)
+                    - max(0, damage_base_bonus),
+                )
+            )
+
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+            ) + int(max(0, base_bonus))
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0
+            ) + int(max(0, strength_base_bonus))
+            unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0
+            ) + int(max(0, damage_base_bonus))
+            unit.special_rules["enhancement_raptor_blade_conditional_extra_bonus"] = int(
+                max(0, conditional_extra)
+            )
+            unit.special_rules["enhancement_raptor_blade_conditional_enemy_keyword"] = conditional_enemy_keyword
+            unit.special_rules["enhancement_raptor_blade_conditional_enemy_battle_shocked"] = bool(
+                params.get("conditional_enemy_battle_shocked", True)
+            )
+            unit.special_rules["enhancement_raptor_blade_source"] = "Raptor Blade"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_raptor_blade_bearer_model_id"] = bearer_id
 
         if name == "superior creation" or enh_id == "000009987002":
             if not is_lions:

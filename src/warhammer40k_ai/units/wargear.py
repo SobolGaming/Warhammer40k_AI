@@ -4508,6 +4508,26 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(
                         f"Enhancement bearer +{shadow_extra}A (Shadow of Chaos)"
                     )
+            unit = getattr(attacker, "parent_unit", None)
+            get_parent_army = getattr(unit, "get_parent_army", None)
+            army = get_parent_army() if callable(get_parent_army) else None
+            ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            bonus_fn = getattr(ac_mgr, "raptor_blade_conditional_melee_bonus", None) if ac_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(attacker, game=game, weapon_profile=self)
+                if int(bonus or 0):
+                    source_name = str(source or "Raptor Blade").strip() or "Raptor Blade"
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(bonus),
+                            source="enhancement:raptor_blade_conditional_attacks_add",
+                        )
+                    )
+                    attack_result.attacks_special_modifiers.append(
+                        f"{source_name} +{int(bonus)}A (vs Battle-shocked PSYKER in Engagement Range)"
+                    )
             possessed_blade = self._get_possessed_blade_state(attacker)
             if possessed_blade and possessed_blade.get("weapon_matches", False):
                 pb_bonus = int(possessed_blade.get("attacks_bonus", 0) or 0)
@@ -13599,6 +13619,20 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(
                         f"+{shadow_extra}S from Enhancement bearer (Shadow of Chaos)"
                     )
+            unit = getattr(attacker, "parent_unit", None)
+            get_parent_army = getattr(unit, "get_parent_army", None)
+            army = get_parent_army() if callable(get_parent_army) else None
+            ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            bonus_fn = getattr(ac_mgr, "raptor_blade_conditional_melee_bonus", None) if ac_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(attacker, game=game, weapon_profile=self)
+                if int(bonus or 0):
+                    strength = strength + int(bonus)
+                    source_name = str(source or "Raptor Blade").strip() or "Raptor Blade"
+                    wound_result.setdefault("modifiers", []).append(
+                        f"+{int(bonus)}S from {source_name} (vs Battle-shocked PSYKER in Engagement Range)"
+                    )
             if (
                 isinstance(sr, dict)
                 and sr.get("enhancement_slayer_of_champions")
@@ -19782,6 +19816,26 @@ class WargearProfile:
                         damage_result['special_effects'].append(
                             f"{source_name} +{int(first_legion_extra)}D (Battle-shocked)"
                         )
+            unit = getattr(attacker, "parent_unit", None)
+            get_parent_army = getattr(unit, "get_parent_army", None)
+            army = get_parent_army() if callable(get_parent_army) else None
+            ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            bonus_fn = getattr(ac_mgr, "raptor_blade_conditional_melee_bonus", None) if ac_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(attacker, game=game, weapon_profile=self)
+                if int(bonus or 0):
+                    source_name = str(source or "Raptor Blade").strip() or "Raptor Blade"
+                    damage_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(bonus),
+                            source="enhancement:raptor_blade_conditional_damage_add",
+                        )
+                    )
+                    damage_result['special_effects'].append(
+                        f"{source_name} +{int(bonus)}D (vs Battle-shocked PSYKER in Engagement Range)"
+                    )
             through_suffering_bonus = self._through_suffering_bonus(attacker, sr)
             if through_suffering_bonus:
                 damage_mods.append(
@@ -20225,6 +20279,84 @@ class WargearProfile:
                         )
         except Exception:
             pass
+        # Null Maiden Vigil: Enhanced Voidsheen Cloak.
+        t_unit = getattr(target_model, "parent_unit", None)
+        sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+        if isinstance(sr, dict) and bool(sr.get("enhancement_enhanced_voidsheen_cloak")):
+            target_id = str(get_entity_id(target_model) or "")
+            bearer_id = str(
+                sr.get("enhancement_enhanced_voidsheen_cloak_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            applies = bool(target_id and bearer_id and target_id == bearer_id)
+            if not applies and not bearer_id:
+                models = list(getattr(t_unit, "models", []) or []) if t_unit is not None else []
+                if len(models) == 1 and models[0] is target_model:
+                    applies = True
+            if applies:
+                reduction = int(
+                    sr.get("enhancement_enhanced_voidsheen_cloak_damage_reduction", 1) or 1
+                )
+                set_damage_to = int(
+                    sr.get("enhancement_enhanced_voidsheen_cloak_set_damage_to", 1) or 1
+                )
+                required_keywords = {
+                    str(v or "").strip().upper()
+                    for v in list(
+                        sr.get("enhancement_enhanced_voidsheen_cloak_attacker_keywords_any", ("PSYKER",))
+                        or ("PSYKER",)
+                    )
+                    if str(v or "").strip()
+                }
+                if not required_keywords:
+                    required_keywords = {"PSYKER"}
+                requires_battle_shocked = bool(
+                    sr.get("enhancement_enhanced_voidsheen_cloak_attacker_battle_shocked", True)
+                )
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                attacker_is_psyker = False
+                for keyword in sorted(required_keywords):
+                    if not keyword:
+                        continue
+                    model_has_any = getattr(attacker, "has_any_keyword", None)
+                    if callable(model_has_any) and bool(model_has_any(keyword)):
+                        attacker_is_psyker = True
+                        break
+                    unit_has_any = getattr(attacker_unit, "has_any_keyword", None)
+                    if callable(unit_has_any) and bool(unit_has_any(keyword)):
+                        attacker_is_psyker = True
+                        break
+                attacker_is_battle_shocked = False
+                is_battle_shocked = getattr(attacker_unit, "is_battle_shocked", None)
+                if callable(is_battle_shocked):
+                    attacker_is_battle_shocked = bool(is_battle_shocked())
+                source_name = str(
+                    sr.get("enhancement_enhanced_voidsheen_cloak_source", "")
+                    or "Enhanced Voidsheen Cloak"
+                ).strip() or "Enhanced Voidsheen Cloak"
+                if attacker_is_psyker or (requires_battle_shocked and attacker_is_battle_shocked):
+                    damage_mods.append(
+                        Modifier(
+                            ModifierOp.SET,
+                            int(max(0, set_damage_to)),
+                            source="enhancement:enhanced_voidsheen_cloak_set_damage",
+                        )
+                    )
+                    damage_result["special_effects"].append(
+                        f"{source_name}: Damage set to {int(max(0, set_damage_to))}"
+                    )
+                elif reduction:
+                    damage_mods.append(
+                        Modifier(
+                            ModifierOp.SUB,
+                            int(max(0, reduction)),
+                            source="enhancement:enhanced_voidsheen_cloak_reduce_damage",
+                        )
+                    )
+                    damage_result["special_effects"].append(
+                        f"{source_name} -{int(max(0, reduction))}D taken"
+                    )
         # Mantle of Ophelia: attacks allocated to the bearer have Damage characteristic set to 1.
         try:
             t_unit = getattr(target_model, "parent_unit", None)

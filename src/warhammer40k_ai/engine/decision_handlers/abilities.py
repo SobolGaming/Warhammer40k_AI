@@ -3183,6 +3183,57 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if target_id not in candidate_ids:
             return ("Assemblage of Might selection contains an ineligible target.",)
         return ()
+    if ability == "huntress_eye":
+        if is_skip_choice(request, result):
+            return ("Huntress' Eye target selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Huntress' Eye army not found.",)
+        mgr = getattr(army, "adeptus_custodes_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_null_maiden_vigil", lambda: False)()):
+            return ("Huntress' Eye requires Null Maiden Vigil.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Huntress' Eye target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Huntress' Eye target unit was not found.",)
+        source_model_id = (
+            payload.get("source_model_id")
+            or ctx.get("source_model_id")
+            or ""
+        )
+        candidates_fn = getattr(mgr, "_huntress_eye_eligible_enemy_units_for_source", None)
+        if not callable(candidates_fn):
+            return ("Huntress' Eye target validation is unavailable.",)
+        candidates = list(
+            candidates_fn(
+                source_model_id=str(source_model_id or ""),
+                game=game,
+                player=player,
+            )
+            or []
+        )
+        candidate_ids = {
+            str(get_entity_id(unit) or "")
+            for unit in candidates
+            if unit is not None
+        }
+        target_id = str(get_entity_id(target_root) or "")
+        if target_id not in candidate_ids:
+            return ("Huntress' Eye selection contains an ineligible target.",)
+        return ()
     if ability == "martial_mastery":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -6996,6 +7047,54 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "target_unit_id": str(get_entity_id(target_root) or ""),
             "source": ability_name,
         }
+    if ability == "huntress_eye":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "adeptus_custodes_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+        source_model_id = str(
+            payload.get("source_model_id")
+            or ctx.get("source_model_id")
+            or ""
+        ).strip()
+        apply_fn = getattr(mgr, "apply_huntress_eye_target", None)
+        if not callable(apply_fn):
+            return None
+        outcome = apply_fn(
+            target_root,
+            source_model_id=source_model_id,
+            game=game,
+            player=player,
+        )
+        if not isinstance(outcome, dict):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Huntress' Eye").strip() or "Huntress' Eye"
+        target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: selected {target_name}; target must take a Battle-shock test.",
+        )
+        return outcome
     if ability == "persecution_prospect_guerrilla_adepts":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

@@ -1313,6 +1313,68 @@ _ADEPTUS_CUSTODES_AURIC_CHAMPIONS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ADEPTUS_CUSTODES_AURIC_CHAMPIONS_DESCRIPTORS.values()
 }
 
+_ADEPTUS_CUSTODES_NULL_MAIDEN_VIGIL_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008926002": EnhancementToolDescriptor(
+        enhancement_id="000008926002",
+        name="Enhanced Voidsheen Cloak",
+        timing="when_attack_is_allocated_to_bearer",
+        target="bearer",
+        duration="constant",
+        effect="reduce_allocated_damage_or_set_to_one_vs_psyker_or_battleshocked_attacker",
+        effect_params={
+            "damage_reduction": 1,
+            "set_damage_to": 1,
+            "conditional_attacker_keywords_any": ("PSYKER",),
+            "conditional_attacker_battle_shocked": True,
+        },
+    ),
+    "000008926003": EnhancementToolDescriptor(
+        enhancement_id="000008926003",
+        name="Huntress' Eye",
+        timing="start_of_command_phase",
+        target="enemy_unit_within_range_of_bearer",
+        duration="instant",
+        effect="select_enemy_unit_within_range_to_take_battleshock_test",
+        range_in=12.0,
+        effect_params={
+            "range": 12.0,
+        },
+    ),
+    "000008926004": EnhancementToolDescriptor(
+        enhancement_id="000008926004",
+        name="Oblivion Knight",
+        timing="passive_while_bearer_is_leading",
+        target="bearer_led_unit_attacks",
+        duration="constant_while_bearer_is_leading",
+        effect="add_hit_bonus_for_bearer_led_unit_and_wound_bonus_vs_psyker",
+        effect_params={
+            "requires_bearer_leading": True,
+            "hit_roll_bonus": 1,
+            "wound_roll_bonus_vs_psyker": 1,
+        },
+    ),
+    "000008926005": EnhancementToolDescriptor(
+        enhancement_id="000008926005",
+        name="Raptor Blade",
+        timing="passive_with_conditional_scaling",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_asd_bonus_with_conditional_extra_vs_battleshocked_psyker_in_engagement",
+        effect_params={
+            "base_melee_attacks_bonus": 1,
+            "base_melee_strength_bonus": 1,
+            "base_melee_damage_bonus": 1,
+            "conditional_extra_bonus": 1,
+            "conditional_enemy_keyword": "PSYKER",
+            "conditional_enemy_battle_shocked": True,
+        },
+    ),
+}
+
+_ADEPTUS_CUSTODES_NULL_MAIDEN_VIGIL_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ADEPTUS_CUSTODES_NULL_MAIDEN_VIGIL_DESCRIPTORS.values()
+}
+
 _EXPLORATOR_MANIPLE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008568002": EnhancementToolDescriptor(
         enhancement_id="000008568002",
@@ -4536,6 +4598,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _ADEPTUS_CUSTODES_AURIC_CHAMPIONS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ADEPTUS_CUSTODES_NULL_MAIDEN_VIGIL_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _EXPLORATOR_MANIPLE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4742,6 +4807,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _COHORT_CYBERNETICA_BY_NAME.get(key)
         or _DATA_PSALM_CONCLAVE_BY_NAME.get(key)
         or _ADEPTUS_CUSTODES_AURIC_CHAMPIONS_BY_NAME.get(key)
+        or _ADEPTUS_CUSTODES_NULL_MAIDEN_VIGIL_BY_NAME.get(key)
         or _EXPLORATOR_MANIPLE_BY_NAME.get(key)
         or _HALOSCREED_BATTLE_CLADE_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)

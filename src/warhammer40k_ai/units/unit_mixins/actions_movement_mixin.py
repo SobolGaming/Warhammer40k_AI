@@ -4445,6 +4445,19 @@ class ActionsMovementMixin:
                     )
         except Exception:
             pass
+        if attacker_model is not None:
+            get_parent_army = getattr(root, "get_parent_army", None)
+            army = get_parent_army() if callable(get_parent_army) else None
+            ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            bonus_fn = getattr(ac_mgr, "oblivion_knight_hit_bonus", None) if ac_mgr is not None else None
+            if callable(bonus_fn):
+                player = getattr(army, "player", None) if army is not None else None
+                game_now = getattr(player, "game", None) if player is not None else None
+                bonus, source = bonus_fn(attacker_model, target_unit=target, game=game_now)
+                if int(bonus or 0):
+                    source_name = str(source or "Oblivion Knight").strip() or "Oblivion Knight"
+                    mods["hit"] += int(bonus)
+                    hit_reasons.append(f"+{int(bonus)} to hit from {source_name}")
 
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
@@ -5495,6 +5508,27 @@ class ActionsMovementMixin:
                             wound_reasons.append(f"{int(bonus):+d} to wound from {source}")
         except Exception:
             pass
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+        bonus_fn = getattr(ac_mgr, "oblivion_knight_wound_bonus", None) if ac_mgr is not None else None
+        if callable(bonus_fn):
+            get_models = getattr(root, "get_attached_unit_models", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+            attacker_model = None
+            for model in models:
+                is_alive_attr = getattr(model, "is_alive", None)
+                is_alive = bool(is_alive_attr()) if callable(is_alive_attr) else bool(is_alive_attr)
+                if is_alive:
+                    attacker_model = model
+                    break
+            player = getattr(army, "player", None) if army is not None else None
+            game_now = getattr(player, "game", None) if player is not None else None
+            bonus, source = bonus_fn(attacker_model=attacker_model, target_unit=target, game=game_now)
+            if int(bonus or 0):
+                source_name = str(source or "Oblivion Knight").strip() or "Oblivion Knight"
+                mods["wound"] += int(bonus)
+                wound_reasons.append(f"{int(bonus):+d} to wound from {source_name}")
 
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
         mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)

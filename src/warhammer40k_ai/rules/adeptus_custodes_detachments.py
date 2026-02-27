@@ -16,8 +16,11 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
     _AURIC_ARMOUR_WALKER_SELECTION_ABILITY = "solar_spearhead_walker_character_selection"
     _CREEPING_DREAD_RANGE = 12.0
     _CREEPING_DREAD_SOURCE = "Creeping Dread"
+    _HUNTRESS_EYE_SOURCE = "Huntress' Eye"
     _MARTIAL_PHILOSOPHER_SOURCE = "Martial Philosopher"
     _MARTIAL_MASTERY_SOURCE = "Martial Mastery"
+    _OBLIVION_KNIGHT_SOURCE = "Oblivion Knight"
+    _RAPTOR_BLADE_SOURCE = "Raptor Blade"
     _REVERED_COMPANIONS_SOURCE = "Revered Companions"
     _REVERED_COMPANIONS_RANGE = 6.0
     _REVERED_COMPANIONS_FNP_CONDITION = "against psychic attacks and mortal wounds"
@@ -184,6 +187,54 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if not callable(checker):
             return False
         return bool(checker())
+
+    @staticmethod
+    def _member_is_attached_leader(root, member) -> bool:
+        if root is None or member is None:
+            return False
+        if bool(getattr(member, "is_attached_leader", False)):
+            return True
+        attached_leaders = list(getattr(root, "attached_leaders", []) or [])
+        attached_ids = {
+            str(maybe_entity_id(leader) or "")
+            for leader in attached_leaders
+            if leader is not None
+        }
+        member_id = str(maybe_entity_id(member) or "")
+        return bool(member_id) and member_id in attached_ids
+
+    def _member_live_bearer_model(
+        self,
+        member,
+        sr: dict,
+        *,
+        specific_key: str = "",
+    ):
+        if member is None or not isinstance(sr, dict):
+            return None
+        bearer_id = str(
+            sr.get(str(specific_key or ""), "")
+            or sr.get("enhancement_bearer_model_id", "")
+            or ""
+        ).strip()
+        models = list(getattr(member, "models", []) or [])
+        models.sort(key=lambda model: str(maybe_entity_id(model) or id(model)))
+        if bearer_id:
+            for model in models:
+                if str(maybe_entity_id(model) or "") != bearer_id:
+                    continue
+                if self._model_is_alive(model):
+                    return model
+            return None
+        get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if self._model_is_alive(bearer):
+                return bearer
+        for model in models:
+            if self._model_is_alive(model):
+                return model
+        return None
 
     def _unit_key(self, unit) -> Optional[str]:
         if unit is None:
@@ -1035,6 +1086,486 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
             )
         return results
 
+    def _null_maiden_huntress_sources(self) -> list[dict]:
+        if not self.is_null_maiden_vigil():
+            return []
+        if self.army is None:
+            return []
+        out: list[dict] = []
+        seen_model_ids: set[str] = set()
+        for root in self._iter_army_roots(self.army):
+            if root is None or not self._unit_is_active(root):
+                continue
+            get_members = getattr(root, "get_attached_unit_members", None)
+            members = list(get_members() or []) if callable(get_members) else [root]
+            if not members:
+                members = [root]
+            members.sort(key=lambda unit: str(maybe_entity_id(unit) or id(unit)))
+            for member in members:
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_huntress_eye")):
+                    continue
+                bearer = self._member_live_bearer_model(
+                    member,
+                    sr,
+                    specific_key="enhancement_huntress_eye_bearer_model_id",
+                )
+                if bearer is None:
+                    continue
+                source_model_id = str(maybe_entity_id(bearer) or "").strip()
+                if not source_model_id or source_model_id in seen_model_ids:
+                    continue
+                seen_model_ids.add(source_model_id)
+                try:
+                    range_in = float(sr.get("enhancement_huntress_eye_range", 12.0) or 12.0)
+                except (TypeError, ValueError):
+                    range_in = 12.0
+                source_name = str(
+                    sr.get("enhancement_huntress_eye_source", "")
+                    or self._HUNTRESS_EYE_SOURCE
+                ).strip()
+                if not source_name:
+                    source_name = self._HUNTRESS_EYE_SOURCE
+                out.append(
+                    {
+                        "source_unit": root,
+                        "source_member": member,
+                        "source_model": bearer,
+                        "source_model_id": source_model_id,
+                        "source_unit_id": str(maybe_entity_id(root) or ""),
+                        "source_member_unit_id": str(maybe_entity_id(member) or ""),
+                        "range": float(max(0.0, range_in)),
+                        "source": source_name,
+                    }
+                )
+        out.sort(key=lambda item: str(item.get("source_model_id", "") or ""))
+        return out
+
+    def _huntress_eye_source(self, *, source_model_id: str = "") -> Optional[dict]:
+        sources = self._null_maiden_huntress_sources()
+        if not sources:
+            return None
+        source_key = str(source_model_id or "").strip()
+        if not source_key:
+            return sources[0] if len(sources) == 1 else None
+        for source in sources:
+            if str(source.get("source_model_id", "") or "") == source_key:
+                return source
+        return None
+
+    def _huntress_eye_eligible_enemy_units_for_source(
+        self,
+        *,
+        source_model_id: str = "",
+        game=None,
+        player=None,
+    ) -> list:
+        if not self.is_null_maiden_vigil():
+            return []
+        if game is None or player is None:
+            return []
+        source = self._huntress_eye_source(source_model_id=source_model_id)
+        if not isinstance(source, dict):
+            return []
+        source_model = source.get("source_model")
+        if source_model is None or not self._model_is_alive(source_model):
+            return []
+        try:
+            range_in = float(source.get("range", 12.0) or 12.0)
+        except (TypeError, ValueError):
+            range_in = 12.0
+        get_enemy_units = getattr(game, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+        enemies = list(get_enemy_units(player) or [])
+        if not enemies:
+            return []
+        out: list = []
+        seen: set[str] = set()
+        for enemy in enemies:
+            target_root = self._root_unit(enemy)
+            if target_root is None:
+                continue
+            target_id = str(maybe_entity_id(target_root) or "").strip()
+            if not target_id or target_id in seen:
+                continue
+            seen.add(target_id)
+            if not self._unit_is_active(target_root):
+                continue
+            if not aura_utils.model_within_range_of_unit(
+                source_model,
+                target_root,
+                range_in,
+                use_attached_aggregate=True,
+            ):
+                continue
+            out.append(target_root)
+        out.sort(key=lambda unit: str(maybe_entity_id(unit) or id(unit)))
+        return out
+
+    def _pending_huntress_eye_request(
+        self,
+        *,
+        game=None,
+        army_id: str = "",
+        command_phase_owner_id: str = "",
+        source_model_id: str = "",
+    ) -> bool:
+        queue = getattr(game, "decision_queue", None) if game is not None else None
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != "CHOOSE_QUARRY":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "huntress_eye":
+                continue
+            if army_id and str(ctx.get("army_id", "") or "") != str(army_id):
+                continue
+            if command_phase_owner_id and str(ctx.get("command_phase_owner_id", "") or "") != str(command_phase_owner_id):
+                continue
+            if source_model_id and str(ctx.get("source_model_id", "") or "") != str(source_model_id):
+                continue
+            return True
+        return False
+
+    def build_huntress_eye_request(self, *, game=None, player=None, source_model_id: str = ""):
+        if not self.is_null_maiden_vigil():
+            return None
+        if game is None or player is None:
+            return None
+        if not bool(getattr(game, "is_authoritative", True)):
+            return None
+        source = self._huntress_eye_source(source_model_id=source_model_id)
+        if not isinstance(source, dict):
+            return None
+        source_model_id = str(source.get("source_model_id", "") or "").strip()
+        if not source_model_id:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        targets = self._huntress_eye_eligible_enemy_units_for_source(
+            source_model_id=source_model_id,
+            game=game,
+            player=player,
+        )
+        if not targets:
+            return None
+
+        army_id = str(maybe_entity_id(self.army) or "") if self.army is not None else ""
+        player_id = str(getattr(player, "id", "") or "")
+        if self._pending_huntress_eye_request(
+            game=game,
+            army_id=army_id,
+            command_phase_owner_id=player_id,
+            source_model_id=source_model_id,
+        ):
+            return None
+
+        options = []
+        for target in targets:
+            target_id = str(maybe_entity_id(target) or "").strip()
+            if not target_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(target, "name", "Unit") or "Unit"),
+                    payload={
+                        "target_unit_id": target_id,
+                        "source_model_id": source_model_id,
+                    },
+                )
+            )
+        if not options:
+            return None
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Huntress' Eye: select one enemy unit within range of the bearer.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "huntress_eye",
+                "ability_name": str(source.get("source", "") or self._HUNTRESS_EYE_SOURCE),
+                "army_id": army_id,
+                "command_phase_owner_id": player_id,
+                "source_unit_id": str(source.get("source_unit_id", "") or ""),
+                "source_member_unit_id": str(source.get("source_member_unit_id", "") or ""),
+                "source_model_id": source_model_id,
+                "range": float(source.get("range", 12.0) or 12.0),
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+        return request
+
+    def build_huntress_eye_requests(self, *, game=None, player=None) -> list:
+        if not self.is_null_maiden_vigil():
+            return []
+        if game is None or player is None:
+            return []
+        requests = []
+        for source in self._null_maiden_huntress_sources():
+            source_model_id = str(source.get("source_model_id", "") or "").strip()
+            if not source_model_id:
+                continue
+            request = self.build_huntress_eye_request(
+                game=game,
+                player=player,
+                source_model_id=source_model_id,
+            )
+            if request is not None:
+                requests.append(request)
+        return requests
+
+    def apply_huntress_eye_target(
+        self,
+        target_unit,
+        *,
+        source_model_id: str = "",
+        game=None,
+        player=None,
+    ) -> Optional[dict]:
+        if not self.is_null_maiden_vigil():
+            return None
+        if target_unit is None:
+            return None
+        target_root = self._root_unit(target_unit)
+        if target_root is None:
+            return None
+        source = self._huntress_eye_source(source_model_id=source_model_id)
+        if not isinstance(source, dict):
+            return None
+        if game is None or player is None:
+            return None
+        candidates = self._huntress_eye_eligible_enemy_units_for_source(
+            source_model_id=str(source.get("source_model_id", "") or ""),
+            game=game,
+            player=player,
+        )
+        candidate_ids = {str(maybe_entity_id(unit) or "") for unit in candidates if unit is not None}
+        target_id = str(maybe_entity_id(target_root) or "")
+        if target_id not in candidate_ids:
+            return None
+        try:
+            turn = int(getattr(game, "turn", 0) or 1)
+        except (TypeError, ValueError):
+            turn = 1
+        take_test = getattr(target_root, "take_battle_shock_test", None)
+        if callable(take_test):
+            take_test(int(turn))
+        return {
+            "target_unit_id": str(maybe_entity_id(target_root) or ""),
+            "target_name": str(getattr(target_root, "name", "") or "Unit"),
+            "source": str(source.get("source", "") or self._HUNTRESS_EYE_SOURCE),
+            "source_model_id": str(source.get("source_model_id", "") or ""),
+            "source_unit_id": str(source.get("source_unit_id", "") or ""),
+        }
+
+    def _null_maiden_oblivion_knight_source_member(self, unit):
+        if not self.is_null_maiden_vigil():
+            return None, None, None
+        root = self._root_unit(unit)
+        if root is None:
+            return None, None, None
+        if not self._unit_in_army(root):
+            return None, None, None
+        if not self._unit_is_active(root):
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(maybe_entity_id(member) or id(member)))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_oblivion_knight")):
+                continue
+            if bool(sr.get("enhancement_oblivion_knight_requires_bearer_leading", True)):
+                if not self._member_is_attached_leader(root, member):
+                    continue
+            bearer = self._member_live_bearer_model(
+                member,
+                sr,
+                specific_key="enhancement_oblivion_knight_bearer_model_id",
+            )
+            if bearer is None:
+                continue
+            return root, member, sr
+        return None, None, None
+
+    def oblivion_knight_hit_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        del target_unit
+        del game
+        del weapon_profile
+        del attack_instance
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        root, _member, sr = self._null_maiden_oblivion_knight_source_member(attacker_unit)
+        if root is None or not isinstance(sr, dict):
+            return 0, ""
+        attacker_root = self._root_unit(attacker_unit)
+        if attacker_root is None or attacker_root is not root:
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_oblivion_knight_hit_roll_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(
+            sr.get("enhancement_oblivion_knight_source", "")
+            or self._OBLIVION_KNIGHT_SOURCE
+        ).strip()
+        if not source:
+            source = self._OBLIVION_KNIGHT_SOURCE
+        return int(bonus), source
+
+    def oblivion_knight_wound_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        del game
+        del weapon_profile
+        del attack_instance
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        root, _member, sr = self._null_maiden_oblivion_knight_source_member(attacker_unit)
+        if root is None or not isinstance(sr, dict):
+            return 0, ""
+        attacker_root = self._root_unit(attacker_unit)
+        if attacker_root is None or attacker_root is not root:
+            return 0, ""
+        target_root = self._root_unit(target_unit)
+        if target_root is None or not self._unit_has_keyword(target_root, "PSYKER"):
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_oblivion_knight_wound_roll_bonus_vs_psyker", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(
+            sr.get("enhancement_oblivion_knight_source", "")
+            or self._OBLIVION_KNIGHT_SOURCE
+        ).strip()
+        if not source:
+            source = self._OBLIVION_KNIGHT_SOURCE
+        return int(bonus), source
+
+    def _null_maiden_raptor_blade_source_for_attacker(self, attacker_model):
+        if not self.is_null_maiden_vigil():
+            return None, None, None, None
+        if attacker_model is None:
+            return None, None, None, None
+        if not self._model_in_army(attacker_model):
+            return None, None, None, None
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._root_unit(attacker_unit)
+        if attacker_root is None or not self._unit_is_active(attacker_root):
+            return None, None, None, None
+        get_members = getattr(attacker_root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [attacker_root]
+        if not members:
+            members = [attacker_root]
+        members.sort(key=lambda member: str(maybe_entity_id(member) or id(member)))
+        attacker_model_id = str(maybe_entity_id(attacker_model) or "")
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_raptor_blade")):
+                continue
+            bearer = self._member_live_bearer_model(
+                member,
+                sr,
+                specific_key="enhancement_raptor_blade_bearer_model_id",
+            )
+            if bearer is None:
+                continue
+            if str(maybe_entity_id(bearer) or "") != attacker_model_id:
+                continue
+            return attacker_root, member, sr, bearer
+        return None, None, None, None
+
+    def raptor_blade_conditional_melee_bonus(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        del target_unit
+        del weapon_profile
+        del attack_instance
+        root, _member, sr, bearer = self._null_maiden_raptor_blade_source_for_attacker(attacker_model)
+        if root is None or not isinstance(sr, dict) or bearer is None:
+            return 0, ""
+        game_map = self._resolve_game_map(game=game)
+        if game_map is None:
+            return 0, ""
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return 0, ""
+        keyword = str(
+            sr.get("enhancement_raptor_blade_conditional_enemy_keyword", "PSYKER")
+            or "PSYKER"
+        ).strip().upper()
+        if not keyword:
+            keyword = "PSYKER"
+        requires_battle_shocked = bool(sr.get("enhancement_raptor_blade_conditional_enemy_battle_shocked", True))
+        applies = False
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._root_unit(enemy)
+            if enemy_root is None or not self._unit_is_active(enemy_root):
+                continue
+            if not aura_utils.model_within_engagement_range_of_unit(bearer, enemy_root):
+                continue
+            if keyword and not self._unit_has_keyword(enemy_root, keyword):
+                continue
+            if requires_battle_shocked and not self._unit_is_battle_shocked(enemy_root):
+                continue
+            applies = True
+            break
+        if not applies:
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_raptor_blade_conditional_extra_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_raptor_blade_source", "") or self._RAPTOR_BLADE_SOURCE).strip()
+        if not source:
+            source = self._RAPTOR_BLADE_SOURCE
+        return int(bonus), source
+
     def _assemblage_of_might_eligible_enemy_units(self, *, game=None, player=None) -> list:
         if not self.is_auric_champions():
             return []
@@ -1359,3 +1890,4 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if player is not getattr(self.army, "player", None):
             return
         self.build_assemblage_of_might_request(game=game, player=player)
+        self.build_huntress_eye_requests(game=game, player=player)
