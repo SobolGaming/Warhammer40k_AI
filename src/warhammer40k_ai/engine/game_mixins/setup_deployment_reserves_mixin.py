@@ -747,27 +747,112 @@ class GameSetupDeploymentReservesMixin:
 
     def _reserves_denial_ranges_for_unit(self, unit) -> list[dict]:
         ranges: list[dict] = []
-        for ab in list(getattr(unit, "possible_abilities", []) or []):
-            name = str(getattr(ab, "name", "") or "")
-            desc = str(getattr(ab, "description", "") or "")
-            text = self._normalize_ability_text(f"{name} {desc}")
-            if not text:
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [root]
+        resolved_members = [member for member in list(members or []) if member is not None]
+
+        def _member_sort_key(member: object) -> str:
+            member_id = getattr(member, "id", None)
+            if member_id:
+                return str(member_id)
+            member_id = getattr(member, "_id", None)
+            if member_id:
+                return str(member_id)
+            for model in list(getattr(member, "models", []) or []):
+                model_id = getattr(model, "id", None)
+                if model_id:
+                    return f"model:{model_id}"
+                model_id = getattr(model, "_id", None)
+                if model_id:
+                    return f"model:{model_id}"
+            member_name = str(getattr(member, "name", "") or "")
+            member_type = type(member).__name__
+            return f"{member_type}:{member_name}"
+
+        members = sorted(resolved_members, key=_member_sort_key)
+
+        for member in members:
+            for ab in list(getattr(member, "possible_abilities", []) or []):
+                name = str(getattr(ab, "name", "") or "")
+                desc = str(getattr(ab, "description", "") or "")
+                text = self._normalize_ability_text(f"{name} {desc}")
+                if not text:
+                    continue
+                flat = re.sub(r"[^a-z0-9.]+", " ", text).strip()
+                if "enemy" not in flat:
+                    continue
+                if ("cannot be set up" not in flat) and ("cannot set up" not in flat):
+                    continue
+                horizontal_only = ("horizontally" in flat) or ("horizontal" in flat)
+                distances = []
+                for match in re.finditer(r"within\s+(\d+(?:\.\d+)?)\b", flat):
+                    distances.append(float(match.group(1)))
+                if not distances:
+                    continue
+                ranges.append(
+                    {
+                        "range": max(distances),
+                        "horizontal_only": horizontal_only,
+                    }
+                )
+
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not (isinstance(sr, dict) and bool(sr.get("enhancement_sanctified_amulet", False))):
                 continue
-            flat = re.sub(r"[^a-z0-9.]+", " ", text).strip()
-            if "enemy" not in flat:
+            try:
+                min_enemy_distance = float(sr.get("enhancement_sanctified_amulet_min_enemy_distance", 12.0) or 12.0)
+            except (TypeError, ValueError):
+                min_enemy_distance = 12.0
+            if min_enemy_distance <= 0.0:
                 continue
-            if ("cannot be set up" not in flat) and ("cannot set up" not in flat):
+            horizontal_only = bool(sr.get("enhancement_sanctified_amulet_horizontal_only", False))
+            source_name = str(sr.get("enhancement_sanctified_amulet_source", "") or "Sanctified Amulet").strip()
+            if not source_name:
+                source_name = "Sanctified Amulet"
+
+            bearer_id = str(
+                sr.get("enhancement_sanctified_amulet_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            bearer_model = None
+            for model in list(getattr(member, "models", []) or []):
+                if bearer_id and str(get_entity_id(model) or "") != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not is_alive:
+                    continue
+                bearer_model = model
+                break
+            if bearer_model is None:
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                candidate = get_bearer() if callable(get_bearer) else None
+                if candidate is not None and bearer_id and str(get_entity_id(candidate) or "") != bearer_id:
+                    candidate = None
+                if candidate is not None:
+                    alive_attr = getattr(candidate, "is_alive", True)
+                    is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    if is_alive:
+                        bearer_model = candidate
+            if bearer_model is None:
                 continue
-            horizontal_only = ("horizontally" in flat) or ("horizontal" in flat)
-            distances = []
-            for match in re.finditer(r"within\s+(\d+(?:\.\d+)?)\b", flat):
-                distances.append(float(match.group(1)))
-            if not distances:
-                continue
+            resolved_bearer_id = str(get_entity_id(bearer_model) or "").strip()
             ranges.append(
                 {
-                    "range": max(distances),
-                    "horizontal_only": horizontal_only,
+                    "range": float(min_enemy_distance),
+                    "horizontal_only": bool(horizontal_only),
+                    "source": source_name,
+                    "source_model_id": resolved_bearer_id,
                 }
             )
         return ranges
@@ -806,7 +891,20 @@ class GameSetupDeploymentReservesMixin:
             ranges = self._reserves_denial_ranges_for_unit(enemy)
             if not ranges:
                 continue
-            enemy_models = [m for m in list(getattr(enemy, "models", []) or []) if getattr(m, "is_alive", True)]
+            get_attached_models = getattr(enemy, "get_attached_unit_models", None)
+            if callable(get_attached_models):
+                enemy_models_raw = list(get_attached_models() or [])
+            else:
+                enemy_models_raw = list(getattr(enemy, "models", []) or [])
+            enemy_models = []
+            for model in list(enemy_models_raw or []):
+                if model is None:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not is_alive:
+                    continue
+                enemy_models.append(model)
             if not enemy_models:
                 continue
             for idx, (x, y, z, facing) in enumerate(prospective):
@@ -815,10 +913,12 @@ class GameSetupDeploymentReservesMixin:
                 base = unit._create_potential_base(x, y, z, facing, model=unit.models[idx])
                 for em in enemy_models:
                     for rinfo in ranges:
+                        source_model_id = ""
                         horizontal_only = False
                         if isinstance(rinfo, dict):
                             r = float(rinfo.get("range", 0) or 0)
                             horizontal_only = bool(rinfo.get("horizontal_only", False))
+                            source_model_id = str(rinfo.get("source_model_id", "") or "").strip()
                         elif isinstance(rinfo, (list, tuple)) and rinfo:
                             r = float(rinfo[0])
                             if len(rinfo) > 1:
@@ -826,6 +926,8 @@ class GameSetupDeploymentReservesMixin:
                         else:
                             r = float(rinfo)
                         if r <= 0:
+                            continue
+                        if source_model_id and str(get_entity_id(em) or "") != source_model_id:
                             continue
                         if horizontal_only:
                             dist = float(horizontal_distance_between_bases_2d(base, em.model_base))

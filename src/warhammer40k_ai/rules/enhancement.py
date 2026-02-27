@@ -422,6 +422,10 @@ class Enhancement:
             is_bringers_of_flame = bool(as_mgr and as_mgr.is_bringers_of_flame())
         except Exception:
             is_bringers_of_flame = False
+        try:
+            is_champions_of_faith = bool(as_mgr and as_mgr.is_champions_of_faith())
+        except Exception:
+            is_champions_of_faith = False
         is_1st_company_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_1st_company_task_force", lambda: False)()
         )
@@ -1582,6 +1586,86 @@ class Enhancement:
                     remove_mods("enhancement:save_set")
             except Exception:
                 pass
+
+        if name == "triptych of judgement" or enh_id == "000009831002":
+            if not is_champions_of_faith:
+                return
+            unit.special_rules["enhancement_triptych_of_judgement"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_triptych_of_judgement_ignore_hit_roll_modifiers"] = bool(
+                params.get("ignore_hit_roll_modifiers", True)
+            )
+            unit.special_rules["enhancement_triptych_of_judgement_ignore_ballistic_skill_modifiers"] = bool(
+                params.get("ignore_ballistic_skill_modifiers", True)
+            )
+            unit.special_rules["enhancement_triptych_of_judgement_ignore_weapon_skill_modifiers"] = bool(
+                params.get("ignore_weapon_skill_modifiers", True)
+            )
+            unit.special_rules["enhancement_triptych_of_judgement_source"] = "Triptych of Judgement"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_triptych_of_judgement_bearer_model_id"] = bearer_id
+
+        if name == "mark of devotion" or enh_id == "000009831003":
+            if not is_champions_of_faith:
+                return
+            unit.special_rules["enhancement_mark_of_devotion"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                attacks_bonus = int(params.get("melee_attacks_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                attacks_bonus = 1
+            try:
+                righteous_attacks_bonus = int(params.get("melee_attacks_bonus_if_righteous", 2) or 2)
+            except (TypeError, ValueError):
+                righteous_attacks_bonus = 2
+            try:
+                righteous_damage_bonus = int(params.get("melee_damage_bonus_if_righteous", 1) or 1)
+            except (TypeError, ValueError):
+                righteous_damage_bonus = 1
+            unit.special_rules["enhancement_mark_of_devotion_attacks_bonus"] = int(max(0, attacks_bonus))
+            unit.special_rules["enhancement_mark_of_devotion_attacks_bonus_if_righteous"] = int(max(0, righteous_attacks_bonus))
+            unit.special_rules["enhancement_mark_of_devotion_damage_bonus_if_righteous"] = int(max(0, righteous_damage_bonus))
+            unit.special_rules["enhancement_mark_of_devotion_source"] = "Mark of Devotion"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_mark_of_devotion_bearer_model_id"] = bearer_id
+
+        if name == "eyes of the oracle" or enh_id == "000009831004":
+            if not is_champions_of_faith:
+                return
+            unit.special_rules["enhancement_eyes_of_the_oracle"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                cp_gain = int(params.get("cp_gain", 1) or 1)
+            except (TypeError, ValueError):
+                cp_gain = 1
+            unit.special_rules["enhancement_eyes_of_the_oracle_precision"] = True
+            unit.special_rules["enhancement_eyes_of_the_oracle_cp_gain"] = int(max(0, cp_gain))
+            unit.special_rules["enhancement_eyes_of_the_oracle_source"] = "Eyes of the Oracle"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eyes_of_the_oracle_bearer_model_id"] = bearer_id
+
+        if name == "sanctified amulet" or enh_id == "000009831005":
+            if not is_champions_of_faith:
+                return
+            unit.special_rules["enhancement_sanctified_amulet"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                min_enemy_distance = float(params.get("min_enemy_distance", 12.0) or 12.0)
+            except (TypeError, ValueError):
+                min_enemy_distance = 12.0
+            unit.special_rules["enhancement_sanctified_amulet_min_enemy_distance"] = float(max(0.0, min_enemy_distance))
+            unit.special_rules["enhancement_sanctified_amulet_horizontal_only"] = bool(params.get("horizontal_only", False))
+            unit.special_rules["enhancement_sanctified_amulet_source"] = "Sanctified Amulet"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_sanctified_amulet_bearer_model_id"] = bearer_id
 
         if name == "abhuman detail" or enh_id == "000010637002":
             if not is_grizzled_company:

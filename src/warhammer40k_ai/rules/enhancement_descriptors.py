@@ -342,6 +342,64 @@ _ADEPTA_SORORITAS_BRINGERS_OF_FLAME_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ADEPTA_SORORITAS_BRINGERS_OF_FLAME_DESCRIPTORS.values()
 }
 
+_ADEPTA_SORORITAS_CHAMPIONS_OF_FAITH_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009831002": EnhancementToolDescriptor(
+        enhancement_id="000009831002",
+        name="Triptych of Judgement",
+        timing="passive",
+        target="bearer_unit_attacks",
+        duration="constant",
+        effect="bearer_unit_ignore_hit_and_skill_modifiers",
+        effect_params={
+            "ignore_hit_roll_modifiers": True,
+            "ignore_ballistic_skill_modifiers": True,
+            "ignore_weapon_skill_modifiers": True,
+        },
+    ),
+    "000009831003": EnhancementToolDescriptor(
+        enhancement_id="000009831003",
+        name="Mark of Devotion",
+        timing="passive_and_conditional_while_unit_righteous",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_attacks_bonus_with_righteous_upgrade",
+        effect_params={
+            "melee_attacks_bonus": 1,
+            "melee_attacks_bonus_if_righteous": 2,
+            "melee_damage_bonus_if_righteous": 1,
+        },
+    ),
+    "000009831004": EnhancementToolDescriptor(
+        enhancement_id="000009831004",
+        name="Eyes of the Oracle",
+        timing="passive_and_on_enemy_character_model_destroyed_by_bearer_unit",
+        target="bearer_weapons_and_command_points",
+        duration="constant",
+        effect="bearer_weapons_precision_and_gain_cp_on_character_model_destroyed_by_bearer_unit",
+        effect_params={
+            "keywords": ("PRECISION",),
+            "cp_gain": 1,
+            "target_keywords_any": ("CHARACTER",),
+        },
+    ),
+    "000009831005": EnhancementToolDescriptor(
+        enhancement_id="000009831005",
+        name="Sanctified Amulet",
+        timing="passive_aura",
+        target="enemy_reserves_arrival",
+        duration="constant",
+        effect="enemy_reserves_arrival_min_distance_from_bearer",
+        effect_params={
+            "min_enemy_distance": 12,
+            "horizontal_only": False,
+        },
+    ),
+}
+
+_ADEPTA_SORORITAS_CHAMPIONS_OF_FAITH_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ADEPTA_SORORITAS_CHAMPIONS_OF_FAITH_DESCRIPTORS.values()
+}
+
 _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009911002": EnhancementToolDescriptor(
         enhancement_id="000009911002",
@@ -4293,6 +4351,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _ADEPTA_SORORITAS_BRINGERS_OF_FLAME_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ADEPTA_SORORITAS_CHAMPIONS_OF_FAITH_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4526,6 +4587,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _ADEPTA_SORORITAS_ARMY_OF_FAITH_BY_NAME.get(key)
         or _ADEPTA_SORORITAS_BRINGERS_OF_FLAME_BY_NAME.get(key)
+        or _ADEPTA_SORORITAS_CHAMPIONS_OF_FAITH_BY_NAME.get(key)
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
         or _AELDARI_SEER_COUNCIL_BY_NAME.get(key)
         or _AELDARI_CORSAIR_COTERIE_BY_NAME.get(key)

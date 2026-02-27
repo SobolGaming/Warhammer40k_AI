@@ -526,6 +526,40 @@ class WargearProfile:
             return int(wounded_bonus)
         return int(base_bonus)
 
+    def _mark_of_devotion_bonuses(self, attacker: 'Model', sr: dict) -> tuple[int, int, str]:
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_mark_of_devotion", False)):
+            return 0, 0, ""
+        if not self._attacker_is_enhancement_bearer(attacker, sr):
+            return 0, 0, ""
+        try:
+            base_attacks = int(sr.get("enhancement_mark_of_devotion_attacks_bonus", 1) or 1)
+        except Exception:
+            base_attacks = 1
+        try:
+            righteous_attacks = int(sr.get("enhancement_mark_of_devotion_attacks_bonus_if_righteous", 2) or 2)
+        except Exception:
+            righteous_attacks = 2
+        try:
+            righteous_damage = int(sr.get("enhancement_mark_of_devotion_damage_bonus_if_righteous", 1) or 1)
+        except Exception:
+            righteous_damage = 1
+        source_name = str(sr.get("enhancement_mark_of_devotion_source", "") or "Mark of Devotion").strip()
+        if not source_name:
+            source_name = "Mark of Devotion"
+        is_righteous = False
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+            checker = getattr(mgr, "righteous_purpose_is_righteous", None) if mgr is not None else None
+            if callable(checker):
+                is_righteous = bool(checker(unit))
+        except Exception:
+            is_righteous = False
+        if is_righteous:
+            return int(max(0, righteous_attacks)), int(max(0, righteous_damage)), source_name
+        return int(max(0, base_attacks)), 0, source_name
+
     def _imperiums_sword_other_models_bonus(self, attacker: 'Model') -> int:
         unit = getattr(attacker, "parent_unit", None)
         if unit is None:
@@ -4317,6 +4351,19 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(
                         f"{source_name} +{int(righteous_rage_bonus)}A (bearer melee)"
                     )
+            mark_attacks_bonus, mark_damage_bonus, mark_source = self._mark_of_devotion_bonuses(attacker, sr)
+            if mark_attacks_bonus:
+                atk_mods.append(
+                    Modifier(
+                        ModifierOp.ADD,
+                        int(mark_attacks_bonus),
+                        source="enhancement:mark_of_devotion_attacks_add",
+                    )
+                )
+                suffix = " (Righteous)" if int(mark_damage_bonus or 0) > 0 else ""
+                attack_result.attacks_special_modifiers.append(
+                    f"{mark_source} +{int(mark_attacks_bonus)}A (bearer melee){suffix}"
+                )
             try:
                 unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None
@@ -7641,6 +7688,33 @@ class WargearProfile:
                 return False
         return False
 
+    def _champions_triptych_of_judgement_ignore_modifiers_active(
+        self,
+        attacker: 'Model',
+        *,
+        kind: str,
+    ) -> bool:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return False
+        active_fn = getattr(unit, "_champions_triptych_of_judgement_ignore_modifiers_active", None)
+        if callable(active_fn):
+            try:
+                return bool(active_fn(kind=str(kind or "").strip().lower()))
+            except Exception:
+                return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        active_fn = getattr(root, "_champions_triptych_of_judgement_ignore_modifiers_active", None)
+        if callable(active_fn):
+            try:
+                return bool(active_fn(kind=str(kind or "").strip().lower()))
+            except Exception:
+                return False
+        return False
+
     def _coterie_unshakeable_opponents_source(self, attacker: 'Model') -> str:
         unit = getattr(attacker, "parent_unit", None)
         if unit is None:
@@ -7779,6 +7853,13 @@ class WargearProfile:
                 "skill_kinds": {"ballistic", "weapon"},
                 "allow_hit": True,
             }
+        if self._champions_triptych_of_judgement_ignore_modifiers_active(attacker, kind="hit"):
+            return {
+                "name": "Triptych of Judgement",
+                "attack_type": "any",
+                "skill_kinds": {"ballistic", "weapon"},
+                "allow_hit": True,
+            }
         if is_melee and self._tears_of_the_phoenix_ignore_modifiers_active(attacker):
             return {
                 "name": "Tears of the Phoenix",
@@ -7806,6 +7887,10 @@ class WargearProfile:
             pass
 
         for name, desc in entries:
+            name_norm = str(name or "").strip().lower()
+            if name_norm == "triptych of judgement":
+                if not self._champions_triptych_of_judgement_ignore_modifiers_active(attacker, kind="hit"):
+                    continue
             text_src = desc or name or ""
             try:
                 text = root._normalize_rules_text(text_src)
@@ -8587,6 +8672,15 @@ class WargearProfile:
                 if isinstance(sr, dict) and sr.get("enhancement_bearer_melee_precision"):
                     if self._attacker_is_enhancement_bearer(attacker, sr):
                         attack_instance["bonus_precision"] = True
+        except Exception:
+            pass
+
+        # Adepta Sororitas: Eyes of the Oracle grants Precision to the bearer's weapons.
+        try:
+            sr = self._unit_special_rules(attacker)
+            if isinstance(sr, dict) and bool(sr.get("enhancement_eyes_of_the_oracle_precision", False)):
+                if self._attacker_is_enhancement_bearer(attacker, sr):
+                    attack_instance["bonus_precision"] = True
         except Exception:
             pass
 
@@ -19633,6 +19727,18 @@ class WargearProfile:
                     Modifier(ModifierOp.ADD, int(bearer_d_bonus), source="enhancement:bearer_melee_damage_add")
                 )
                 damage_result['special_effects'].append(f"Enhancement bearer +{bearer_d_bonus}D (melee)")
+            _mark_attacks_bonus, mark_damage_bonus, mark_source = self._mark_of_devotion_bonuses(attacker, sr)
+            if mark_damage_bonus:
+                damage_mods.append(
+                    Modifier(
+                        ModifierOp.ADD,
+                        int(mark_damage_bonus),
+                        source="enhancement:mark_of_devotion_damage_add",
+                    )
+                )
+                damage_result['special_effects'].append(
+                    f"{mark_source} +{int(mark_damage_bonus)}D (bearer melee, Righteous)"
+                )
             try:
                 unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None

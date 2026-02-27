@@ -6084,6 +6084,11 @@ class Game(
         if attacker_unit.get_parent_army() == target_unit.get_parent_army():
             return
 
+        def _norm_ability_name(value: str) -> str:
+            text = str(value or "").replace("\u2019", "'").replace("\u2018", "'").lower()
+            text = re.sub(r"[^a-z0-9]+", " ", text)
+            return re.sub(r"\s+", " ", text).strip()
+
         specs = attacker_unit.get_kill_reward_specs(model=attacker_model) or []
 
         if specs:
@@ -6116,6 +6121,73 @@ class Game(
 
                 if spec.get("type") == "gain_cp_on_destroy":
                     cp = int(spec.get("cp", 1) or 1)
+                    source_norm = _norm_ability_name(spec.get("source_ability", ""))
+                    if source_norm == "eyes of the oracle":
+                        is_character_model = bool(getattr(target_model, "is_character", False))
+                        if not is_character_model and target_model is not None:
+                            has_any = getattr(target_model, "has_any_keyword", None)
+                            if callable(has_any):
+                                is_character_model = bool(has_any("CHARACTER"))
+                        if not is_character_model:
+                            continue
+
+                        try:
+                            attacker_root = attacker_unit.get_attached_unit_root()
+                        except Exception:
+                            attacker_root = attacker_unit
+                        try:
+                            source_members = list(attacker_root.get_attached_unit_members() or [])
+                        except Exception:
+                            source_members = []
+                        if not source_members:
+                            source_members = [attacker_root]
+                        source_members = sorted(
+                            [member for member in list(source_members or []) if member is not None],
+                            key=lambda member: str(get_entity_id(member) or ""),
+                        )
+
+                        active_source_sr = None
+                        for source_member in source_members:
+                            source_sr = getattr(source_member, "special_rules", None)
+                            if not (
+                                isinstance(source_sr, dict)
+                                and bool(source_sr.get("enhancement_eyes_of_the_oracle", False))
+                            ):
+                                continue
+
+                            bearer_id = str(
+                                source_sr.get("enhancement_eyes_of_the_oracle_bearer_model_id", "")
+                                or source_sr.get("enhancement_bearer_model_id", "")
+                                or ""
+                            ).strip()
+                            bearer_alive = False
+                            for model in list(getattr(source_member, "models", []) or []):
+                                if bearer_id and str(get_entity_id(model) or "") != bearer_id:
+                                    continue
+                                alive_attr = getattr(model, "is_alive", True)
+                                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                                if bearer_alive:
+                                    break
+                            if not bearer_alive:
+                                get_bearer = getattr(source_member, "_get_enhancement_bearer_model", None)
+                                bearer_model = get_bearer() if callable(get_bearer) else None
+                                if bearer_model is not None and bearer_id and str(get_entity_id(bearer_model) or "") != bearer_id:
+                                    bearer_model = None
+                                if bearer_model is not None:
+                                    alive_attr = getattr(bearer_model, "is_alive", True)
+                                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                            if not bearer_alive:
+                                continue
+                            active_source_sr = source_sr
+                            break
+
+                        if active_source_sr is None:
+                            continue
+                        try:
+                            cp = int(active_source_sr.get("enhancement_eyes_of_the_oracle_cp_gain", cp) or cp)
+                        except (TypeError, ValueError):
+                            cp = int(spec.get("cp", 1) or 1)
+
                     player = attacker_unit.get_parent_army().player
                     if player is None:
                         continue

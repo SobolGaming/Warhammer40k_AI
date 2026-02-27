@@ -6240,6 +6240,54 @@ class ActionsMovementMixin:
             return True
         return False
 
+    def _champions_triptych_of_judgement_ignore_modifiers_active(self, *, kind: str) -> bool:
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {"hit"}:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [root]
+        members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not (isinstance(sr, dict) and bool(sr.get("enhancement_triptych_of_judgement", False))):
+                continue
+            if not bool(sr.get("enhancement_triptych_of_judgement_ignore_hit_roll_modifiers", True)):
+                continue
+            bearer_id = str(
+                sr.get("enhancement_triptych_of_judgement_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            bearer_alive = False
+            if bearer_id:
+                for model in list(getattr(member, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    alive_attr = getattr(model, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    break
+            if not bearer_alive:
+                bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is not None and bearer_id and str(get_entity_id(bearer) or "") != bearer_id:
+                    bearer = None
+                if bearer is not None:
+                    alive_attr = getattr(bearer, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not bearer_alive:
+                continue
+            return True
+        return False
+
     def _preternatural_agility_ignore_modifiers_active(self) -> bool:
         try:
             root = self.get_attached_unit_root()
