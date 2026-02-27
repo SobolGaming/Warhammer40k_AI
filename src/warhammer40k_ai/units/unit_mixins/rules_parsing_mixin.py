@@ -2073,6 +2073,47 @@ class RulesParsingMixin:
                 spec["bearer_model_id"] = bearer_id
             specs.append(spec)
 
+        # Auric Champions enhancement: Blade Imperator
+        for u in members:
+            if u is None:
+                continue
+            sr_u = getattr(u, "special_rules", None)
+            if not isinstance(sr_u, dict):
+                continue
+            if not bool(sr_u.get("enhancement_blade_imperator")):
+                continue
+            source = str(sr_u.get("enhancement_blade_imperator_source", "") or "Blade Imperator").strip() or "Blade Imperator"
+            try:
+                threshold = int(sr_u.get("enhancement_blade_imperator_roll_threshold", 4) or 4)
+            except Exception:
+                threshold = 4
+            mortal_wounds_die = str(sr_u.get("enhancement_blade_imperator_mortal_wounds_die", "") or "D3").strip().upper() or "D3"
+            bearer_id = str(
+                sr_u.get("enhancement_blade_imperator_bearer_model_id", "")
+                or sr_u.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            key = (
+                "single_4plus_die",
+                source.lower(),
+                int(max(2, min(6, threshold))),
+                mortal_wounds_die,
+                bearer_id,
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            spec = {
+                "kind": "single_4plus_die",
+                "name": source,
+                "threshold": int(max(2, min(6, threshold))),
+                "success_die": mortal_wounds_die,
+                "target_must_be_engaged_with_bearer": True,
+            }
+            if bearer_id:
+                spec["bearer_model_id"] = bearer_id
+            specs.append(spec)
+
         for u in members:
             if u is None:
                 continue

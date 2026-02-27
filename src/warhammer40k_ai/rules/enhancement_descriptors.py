@@ -1243,6 +1243,76 @@ _DATA_PSALM_CONCLAVE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DATA_PSALM_CONCLAVE_DESCRIPTORS.values()
 }
 
+_ADEPTUS_CUSTODES_AURIC_CHAMPIONS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008930002": EnhancementToolDescriptor(
+        enhancement_id="000008930002",
+        name="Blade Imperator",
+        timing="on_charge_end_and_once_per_battle_on_charge_end",
+        target="enemy_unit_in_engagement_range_of_bearer_and_enemy_units_within_range_of_bearer",
+        duration="instant",
+        effect="charge_end_single_roll_mortal_wounds_plus_once_per_battle_battleshock_aura",
+        effect_params={
+            "roll_threshold": 4,
+            "mortal_wounds_die": "D3",
+            "charge_target_requires_engagement_with_bearer": True,
+            "battleshock_range": 6,
+            "charge_mortal_once_per_battle_key": "blade_imperator_charge_mortal",
+            "battleshock_once_per_battle_key": "blade_imperator_battleshock",
+        },
+    ),
+    "000008930003": EnhancementToolDescriptor(
+        enhancement_id="000008930003",
+        name="Inspirational Exemplar",
+        timing="passive_and_start_of_any_phase_once_per_battle",
+        target="bearer_and_friendly_adeptus_custodes_battleshocked_unit_within_range",
+        duration="constant_and_instant",
+        effect="set_bearer_leadership_and_clear_battleshock_for_friendly_unit_in_range",
+        range_in=12.0,
+        effect_params={
+            "bearer_leadership": 5,
+            "range": 12.0,
+            "keyword_phrase": "ADEPTUS CUSTODES",
+            "once_per_battle_key": "inspirational_exemplar",
+        },
+    ),
+    "000008930004": EnhancementToolDescriptor(
+        enhancement_id="000008930004",
+        name="Martial Philosopher",
+        timing="passive_and_on_enemy_move_ended_within_range_once_per_battle",
+        target="bearer_unit",
+        duration="constant_and_instant",
+        effect="shoot_and_charge_after_fall_back_plus_once_per_battle_reactive_move",
+        range_in=9.0,
+        effect_params={
+            "shoot_after_fall_back": True,
+            "charge_after_fall_back": True,
+            "trigger_range": 9,
+            "max_distance": 6,
+            "trigger_actions": ("move", "advance", "fall_back"),
+            "requires_not_engaged": True,
+            "once_per_battle": True,
+            "once_per_battle_key": "martial_philosopher",
+        },
+    ),
+    "000008930005": EnhancementToolDescriptor(
+        enhancement_id="000008930005",
+        name="Veiled Blade",
+        timing="passive_and_start_of_any_command_phase_once_per_battle",
+        target="bearer",
+        duration="constant_and_until_end_of_turn",
+        effect="bearer_melee_attacks_bonus_and_once_per_battle_objective_control_multiplier",
+        effect_params={
+            "melee_attacks_bonus": 2,
+            "objective_control_multiplier": 3,
+            "once_per_battle_key": "veiled_blade",
+        },
+    ),
+}
+
+_ADEPTUS_CUSTODES_AURIC_CHAMPIONS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ADEPTUS_CUSTODES_AURIC_CHAMPIONS_DESCRIPTORS.values()
+}
+
 _EXPLORATOR_MANIPLE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008568002": EnhancementToolDescriptor(
         enhancement_id="000008568002",
@@ -4463,6 +4533,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DATA_PSALM_CONCLAVE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ADEPTUS_CUSTODES_AURIC_CHAMPIONS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _EXPLORATOR_MANIPLE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4668,6 +4741,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SKITARII_HUNTER_COHORT_BY_NAME.get(key)
         or _COHORT_CYBERNETICA_BY_NAME.get(key)
         or _DATA_PSALM_CONCLAVE_BY_NAME.get(key)
+        or _ADEPTUS_CUSTODES_AURIC_CHAMPIONS_BY_NAME.get(key)
         or _EXPLORATOR_MANIPLE_BY_NAME.get(key)
         or _HALOSCREED_BATTLE_CLADE_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)

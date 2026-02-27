@@ -16,6 +16,7 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
     _AURIC_ARMOUR_WALKER_SELECTION_ABILITY = "solar_spearhead_walker_character_selection"
     _CREEPING_DREAD_RANGE = 12.0
     _CREEPING_DREAD_SOURCE = "Creeping Dread"
+    _MARTIAL_PHILOSOPHER_SOURCE = "Martial Philosopher"
     _MARTIAL_MASTERY_SOURCE = "Martial Mastery"
     _REVERED_COMPANIONS_SOURCE = "Revered Companions"
     _REVERED_COMPANIONS_RANGE = 6.0
@@ -764,6 +765,205 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if self._auric_armour_walker_unit(unit) is None:
             return 0, ""
         return 1, self._AURIC_ARMOUR_SOURCE
+
+    @staticmethod
+    def _model_is_alive(model) -> bool:
+        if model is None:
+            return False
+        alive_attr = getattr(model, "is_alive", True)
+        if callable(alive_attr):
+            return bool(alive_attr())
+        return bool(alive_attr)
+
+    def _auric_champions_martial_philosopher_source_member(self, unit):
+        if not self.is_auric_champions():
+            return None, None, None
+        root = self._root_unit(unit)
+        if root is None:
+            return None, None, None
+        if not self._unit_in_army(root):
+            return None, None, None
+        if not self._unit_is_custodes(root):
+            return None, None, None
+        if not self._unit_is_active(root):
+            return None, None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in list(members):
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_martial_philosopher")):
+                continue
+            bearer_id = str(
+                sr.get("enhancement_martial_philosopher_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+            ).strip()
+            if bearer_id:
+                bearer_alive = False
+                for model in list(getattr(member, "models", []) or []):
+                    if str(maybe_entity_id(model) or "") != bearer_id:
+                        continue
+                    bearer_alive = self._model_is_alive(model)
+                    break
+                if not bearer_alive:
+                    continue
+            else:
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+                if bearer is None or not self._model_is_alive(bearer):
+                    continue
+            return root, member, sr
+        return None, None, None
+
+    @staticmethod
+    def _unit_is_engaged_with_enemy(unit, *, game_map=None) -> bool:
+        if unit is None or game_map is None:
+            return False
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return False
+        for enemy in list(get_enemy_units(unit) or []):
+            if enemy is None:
+                continue
+            if not bool(getattr(enemy, "deployed", True)):
+                continue
+            is_alive = getattr(enemy, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            within_engagement = getattr(game_map, "is_within_engagement_range", None)
+            if not callable(within_engagement):
+                continue
+            if bool(within_engagement(unit, enemy)):
+                return True
+        return False
+
+    def martial_philosopher_reactive_rule(self, unit, *, game=None) -> dict | None:
+        root, _member, sr = self._auric_champions_martial_philosopher_source_member(unit)
+        if root is None or not isinstance(sr, dict):
+            return None
+        once_key = str(sr.get("enhancement_martial_philosopher_once_key", "martial_philosopher") or "martial_philosopher").strip().lower()
+        if not once_key:
+            once_key = "martial_philosopher"
+        has_used = getattr(root, "has_used_unit_once_per_battle", None)
+        if callable(has_used) and bool(has_used(once_key)):
+            return None
+        try:
+            trigger_range = int(sr.get("enhancement_martial_philosopher_trigger_range", 9) or 9)
+        except (TypeError, ValueError):
+            trigger_range = 9
+        try:
+            max_distance = int(sr.get("enhancement_martial_philosopher_max_reactive_move_distance", 6) or 6)
+        except (TypeError, ValueError):
+            max_distance = 6
+        trigger_actions = [
+            str(v or "").strip().lower()
+            for v in list(sr.get("enhancement_martial_philosopher_trigger_actions", []) or [])
+            if str(v or "").strip()
+        ]
+        if not trigger_actions:
+            trigger_actions = ["move", "advance", "fall_back"]
+        source = str(sr.get("enhancement_martial_philosopher_source", "") or self._MARTIAL_PHILOSOPHER_SOURCE).strip()
+        if not source:
+            source = self._MARTIAL_PHILOSOPHER_SOURCE
+        return {
+            "source": source,
+            "range": int(max(1, trigger_range)),
+            "max_distance": int(max(1, max_distance)),
+            "trigger_actions": tuple(dict.fromkeys(trigger_actions)),
+            "requires_not_engaged": bool(sr.get("enhancement_martial_philosopher_requires_not_engaged", True)),
+            "once_key": once_key,
+        }
+
+    def martial_philosopher_can_trigger(
+        self,
+        unit,
+        *,
+        game=None,
+        game_map=None,
+        moving_unit=None,
+        action: str | None = None,
+        range_override: int | None = None,
+    ) -> bool:
+        rule = self.martial_philosopher_reactive_rule(unit, game=game)
+        if not isinstance(rule, dict):
+            return False
+        root = self._root_unit(unit)
+        if root is None or not self._unit_is_active(root):
+            return False
+        if moving_unit is None:
+            return True
+        moving_root = self._root_unit(moving_unit)
+        if moving_root is None or not self._unit_is_active(moving_root):
+            return False
+        try:
+            if moving_root.get_parent_army() is self.army:
+                return False
+        except Exception:
+            return False
+        action_key = str(action or "").strip().lower()
+        trigger_actions = {str(v or "").strip().lower() for v in list(rule.get("trigger_actions", ()) or ())}
+        if trigger_actions and action_key and action_key not in trigger_actions:
+            return False
+        gm = game_map
+        if gm is None:
+            game_obj = game
+            if game_obj is None and self.army is not None:
+                game_obj = getattr(getattr(self.army, "player", None), "game", None)
+            gm = getattr(game_obj, "map", None) if game_obj is not None else None
+        if gm is None:
+            return False
+        if bool(rule.get("requires_not_engaged", True)) and self._unit_is_engaged_with_enemy(root, game_map=gm):
+            return False
+        try:
+            trigger_range = int(range_override or rule.get("range", 9) or 9)
+        except (TypeError, ValueError):
+            trigger_range = 9
+        get_distance = getattr(gm, "get_distance_between_units", None)
+        if not callable(get_distance):
+            return False
+        try:
+            distance = float(get_distance(root, moving_root))
+        except Exception:
+            return False
+        return bool(distance <= float(trigger_range) + 1e-6)
+
+    def mark_martial_philosopher_used(self, unit, *, game=None) -> None:
+        del game
+        root, _member, sr = self._auric_champions_martial_philosopher_source_member(unit)
+        if root is None or not isinstance(sr, dict):
+            return
+        once_key = str(sr.get("enhancement_martial_philosopher_once_key", "martial_philosopher") or "martial_philosopher").strip().lower()
+        if not once_key:
+            once_key = "martial_philosopher"
+        mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
+        if callable(mark_used):
+            source = str(sr.get("enhancement_martial_philosopher_source", "") or self._MARTIAL_PHILOSOPHER_SOURCE).strip()
+            if not source:
+                source = self._MARTIAL_PHILOSOPHER_SOURCE
+            mark_used(once_key, ability_name=source)
+
+    def martial_philosopher_can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
+        _ = game
+        root, _member, _sr = self._auric_champions_martial_philosopher_source_member(unit)
+        if root is None:
+            return False
+        parent = getattr(profile, "parent_wargear", None) if profile is not None else None
+        is_ranged = getattr(parent, "is_ranged", None) if parent is not None else None
+        if callable(is_ranged):
+            return bool(is_ranged())
+        return True
+
+    def martial_philosopher_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        _ = game
+        root, _member, _sr = self._auric_champions_martial_philosopher_source_member(unit)
+        return root is not None
 
     def apply_creeping_dread_opponent_command_phase(self, *, game=None, current_player=None) -> list:
         if not self.is_null_maiden_vigil():

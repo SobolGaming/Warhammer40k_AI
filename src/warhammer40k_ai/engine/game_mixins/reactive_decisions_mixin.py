@@ -3367,6 +3367,7 @@ class GameReactiveDecisionsMixin:
                 "unhinged_vengeance",
                 "librarius_prescience",
                 "gleaming_pinions",
+                "martial_philosopher",
             ):
                 return
             opt = None
@@ -3713,6 +3714,49 @@ class GameReactiveDecisionsMixin:
                     max_distance=max_distance,
                     kind=kind,
                     movement_type=movement_type or "gleaming_pinions",
+                    source=source_name,
+                    range_value=rng,
+                )
+                return
+            if kind == "martial_philosopher":
+                army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+                ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+                rule_fn = getattr(ac_mgr, "martial_philosopher_reactive_rule", None) if ac_mgr is not None else None
+                can_trigger_fn = getattr(ac_mgr, "martial_philosopher_can_trigger", None) if ac_mgr is not None else None
+                mark_used_fn = getattr(ac_mgr, "mark_martial_philosopher_used", None) if ac_mgr is not None else None
+                if not callable(rule_fn) or not callable(can_trigger_fn):
+                    return
+                moving_unit_id = str(ctx.get("reactive_move_moving_unit_id") or "")
+                moving_unit = self._resolve_unit_by_id(moving_unit_id)
+                try:
+                    rng = int(ctx.get("reactive_move_range") or 9)
+                except Exception:
+                    rng = 9
+                if not can_trigger_fn(
+                    unit,
+                    game=self,
+                    game_map=getattr(self, "map", None),
+                    moving_unit=moving_unit,
+                    range_override=rng,
+                ):
+                    return
+                rule = rule_fn(unit, game=self) or {}
+                source_name = str(rule.get("source", "") or source or "Martial Philosopher").strip() or "Martial Philosopher"
+                try:
+                    max_distance = int(rule.get("max_distance", 6) or 6)
+                except Exception:
+                    max_distance = 6
+                if max_distance <= 0:
+                    return
+                if callable(mark_used_fn):
+                    mark_used_fn(unit, game=self)
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    moving_unit=moving_unit,
+                    max_distance=max_distance,
+                    kind=kind,
+                    movement_type=movement_type or "martial_philosopher",
                     source=source_name,
                     range_value=rng,
                 )

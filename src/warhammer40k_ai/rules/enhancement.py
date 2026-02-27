@@ -539,6 +539,7 @@ class Enhancement:
             sm_mgr and getattr(sm_mgr, "is_black_spear_task_force", lambda: False)()
         )
         is_lions = bool(ac_mgr and ac_mgr.is_lions_of_the_emperor())
+        is_auric_champions = bool(ac_mgr and ac_mgr.is_auric_champions())
         try:
             is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
         except Exception:
@@ -6444,6 +6445,132 @@ class Enhancement:
                 source="Revolting Regeneration",
                 tag="revolting_regeneration",
             )
+
+        if name == "blade imperator" or enh_id == "000008930002":
+            if not is_auric_champions:
+                return
+            unit.special_rules["enhancement_blade_imperator"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            threshold = _coerce_int(params.get("roll_threshold", 4) or 4, default=4)
+            mw_die = str(params.get("mortal_wounds_die", "D3") or "D3").strip().upper() or "D3"
+            trigger_range = _coerce_int(params.get("battleshock_range", 6) or 6, default=6)
+            charge_once_key = str(
+                params.get("charge_mortal_once_per_battle_key", "blade_imperator_charge_mortal")
+                or "blade_imperator_charge_mortal"
+            ).strip().lower()
+            if not charge_once_key:
+                charge_once_key = "blade_imperator_charge_mortal"
+            battleshock_once_key = str(
+                params.get("battleshock_once_per_battle_key", "blade_imperator_battleshock")
+                or "blade_imperator_battleshock"
+            ).strip().lower()
+            if not battleshock_once_key:
+                battleshock_once_key = "blade_imperator_battleshock"
+            unit.special_rules["enhancement_blade_imperator_roll_threshold"] = int(max(2, min(6, threshold)))
+            unit.special_rules["enhancement_blade_imperator_mortal_wounds_die"] = mw_die
+            unit.special_rules["enhancement_blade_imperator_battleshock_range"] = int(max(1, trigger_range))
+            unit.special_rules["enhancement_blade_imperator_charge_mortal_once_key"] = charge_once_key
+            unit.special_rules["enhancement_blade_imperator_battleshock_once_key"] = battleshock_once_key
+            unit.special_rules["enhancement_blade_imperator_source"] = "Blade Imperator"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_blade_imperator_bearer_model_id"] = bearer_id
+            refresh_charge_end = getattr(unit, "_refresh_charge_end_mortal_wounds_flags", None)
+            if callable(refresh_charge_end):
+                refresh_charge_end()
+
+        if name == "inspirational exemplar" or enh_id == "000008930003":
+            if not is_auric_champions:
+                return
+            unit.special_rules["enhancement_inspirational_exemplar"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_inches = _coerce_int(params.get("range", 12) or 12, default=12)
+            once_key = str(
+                params.get("once_per_battle_key", "inspirational_exemplar")
+                or "inspirational_exemplar"
+            ).strip().lower()
+            if not once_key:
+                once_key = "inspirational_exemplar"
+            keyword_phrase = str(params.get("keyword_phrase", "ADEPTUS CUSTODES") or "ADEPTUS CUSTODES").strip()
+            if not keyword_phrase:
+                keyword_phrase = "ADEPTUS CUSTODES"
+            unit.special_rules["enhancement_inspirational_exemplar_range"] = int(max(1, range_inches))
+            unit.special_rules["enhancement_inspirational_exemplar_keyword_phrase"] = keyword_phrase
+            unit.special_rules["enhancement_inspirational_exemplar_once_key"] = once_key
+            unit.special_rules["enhancement_inspirational_exemplar_source"] = "Inspirational Exemplar"
+            unit.special_rules["enhancement_inspirational_exemplar_bearer_leadership"] = 5
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_inspirational_exemplar_bearer_model_id"] = bearer_id
+            if bearer is not None:
+                bearer.leadership = int(
+                    unit.special_rules.get("enhancement_inspirational_exemplar_bearer_leadership", 5) or 5
+                )
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("unit_start_any_phase_clear_battleshock_specs", None)
+
+        if name == "martial philosopher" or enh_id == "000008930004":
+            if not is_auric_champions:
+                return
+            unit.special_rules["enhancement_martial_philosopher"] = True
+            unit.special_rules["enhancement_martial_philosopher_shoot_after_fall_back"] = True
+            unit.special_rules["enhancement_martial_philosopher_charge_after_fall_back"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            trigger_range = _coerce_int(params.get("trigger_range", 9) or 9, default=9)
+            max_distance = _coerce_int(params.get("max_distance", 6) or 6, default=6)
+            once_key = str(
+                params.get("once_per_battle_key", "martial_philosopher")
+                or "martial_philosopher"
+            ).strip().lower()
+            if not once_key:
+                once_key = "martial_philosopher"
+            trigger_actions = [
+                str(v or "").strip().lower()
+                for v in list(params.get("trigger_actions", ("move", "advance", "fall_back")) or ())
+                if str(v or "").strip()
+            ]
+            if not trigger_actions:
+                trigger_actions = ["move", "advance", "fall_back"]
+            unit.special_rules["enhancement_martial_philosopher_trigger_range"] = int(max(1, trigger_range))
+            unit.special_rules["enhancement_martial_philosopher_max_reactive_move_distance"] = int(max(1, max_distance))
+            unit.special_rules["enhancement_martial_philosopher_trigger_actions"] = list(dict.fromkeys(trigger_actions))
+            unit.special_rules["enhancement_martial_philosopher_requires_not_engaged"] = bool(
+                params.get("requires_not_engaged", True)
+            )
+            unit.special_rules["enhancement_martial_philosopher_once_per_battle"] = bool(
+                params.get("once_per_battle", True)
+            )
+            unit.special_rules["enhancement_martial_philosopher_once_key"] = once_key
+            unit.special_rules["enhancement_martial_philosopher_source"] = "Martial Philosopher"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_martial_philosopher_bearer_model_id"] = bearer_id
+
+        if name == "veiled blade" or enh_id == "000008930005":
+            if not is_auric_champions:
+                return
+            unit.special_rules["enhancement_veiled_blade"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            attacks_bonus = _coerce_int(params.get("melee_attacks_bonus", 2) or 2, default=2)
+            oc_multiplier = _coerce_int(params.get("objective_control_multiplier", 3) or 3, default=3)
+            once_key = str(params.get("once_per_battle_key", "veiled_blade") or "veiled_blade").strip().lower()
+            if not once_key:
+                once_key = "veiled_blade"
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+            ) + int(max(0, attacks_bonus))
+            unit.special_rules["enhancement_veiled_blade_melee_attacks_bonus"] = int(max(0, attacks_bonus))
+            unit.special_rules["enhancement_veiled_blade_objective_control_multiplier"] = int(max(2, oc_multiplier))
+            unit.special_rules["enhancement_veiled_blade_once_key"] = once_key
+            unit.special_rules["enhancement_veiled_blade_source"] = "Veiled Blade"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_veiled_blade_bearer_model_id"] = bearer_id
 
         if name == "superior creation" or enh_id == "000009987002":
             if not is_lions:

@@ -12573,6 +12573,16 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            apply_fn = getattr(mgr, "martial_philosopher_can_shoot_after_fall_back", None) if mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, profile=profile, game=game)):
+                    return True
+        except Exception:
+            pass
         army = self.get_parent_army()
         mgr = getattr(army, "orks_detachments", None) if army is not None else None
         more_dakka_fn = getattr(mgr, "more_dakka_assault_applies", None) if mgr is not None else None
@@ -13187,6 +13197,16 @@ class ActionsMovementMixin:
             if mgr is not None and getattr(mgr, "can_charge_after_fall_back", None):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if mgr.can_charge_after_fall_back(self, game=game):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            apply_fn = getattr(mgr, "martial_philosopher_can_charge_after_fall_back", None) if mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, game=game)):
                     return True
         except Exception:
             pass

@@ -502,6 +502,51 @@ class GamePhaseHandlersMixin:
                     except Exception:
                         pass
 
+                    # Auric Champions: Veiled Blade (once per battle, start of any Command phase).
+                    try:
+                        if pname == "COMMAND_PHASE":
+                            find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
+                            if callable(find_source):
+                                _source_root, source_member, source_sr = find_source(root, "enhancement_veiled_blade")
+                            else:
+                                source_member = root
+                                source_sr = getattr(root, "special_rules", None)
+                            if source_member is not None and isinstance(source_sr, dict):
+                                bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+                                if bearer is not None and bool(getattr(bearer, "is_alive", True)):
+                                    once_key = str(
+                                        source_sr.get("enhancement_veiled_blade_once_key", "veiled_blade")
+                                        or "veiled_blade"
+                                    ).strip().lower()
+                                    if once_key and not root.has_used_unit_once_per_battle(once_key):
+                                        try:
+                                            multiplier = int(
+                                                source_sr.get("enhancement_veiled_blade_objective_control_multiplier", 3)
+                                                or 3
+                                            )
+                                        except Exception:
+                                            multiplier = 3
+                                        if multiplier > 1:
+                                            phase_owner_id = str(getattr(player, "id", "") or "")
+                                            if not phase_owner_id:
+                                                current_player = self.get_current_player()
+                                                phase_owner_id = str(getattr(current_player, "id", "") or "")
+                                            try:
+                                                turn = int(getattr(self, "turn", 0) or 0)
+                                            except Exception:
+                                                turn = 0
+                                            source_sr["enhancement_veiled_blade_oc_multiplier_active"] = True
+                                            source_sr["enhancement_veiled_blade_oc_multiplier_turn"] = int(turn or 0)
+                                            source_sr["enhancement_veiled_blade_oc_multiplier_turn_owner"] = phase_owner_id
+                                            source_member.special_rules = source_sr
+                                            ability_name = (
+                                                str(source_sr.get("enhancement_veiled_blade_source", "Veiled Blade") or "Veiled Blade").strip()
+                                                or "Veiled Blade"
+                                            )
+                                            root.mark_unit_once_per_battle_used(once_key, ability_name=ability_name)
+                    except Exception:
+                        pass
+
                     # Saga of the Beastslayer: Elder's Guidance (once per battle, start of Fight phase).
                     try:
                         if pname == "FIGHT_PHASE":

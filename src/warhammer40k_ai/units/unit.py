@@ -893,6 +893,79 @@ class Unit(
             except Exception:
                 pass
             try:
+                root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+            except Exception:
+                root = self
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            try:
+                model_id = str(maybe_entity_id(model) or "")
+            except Exception:
+                model_id = ""
+            try:
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            except Exception:
+                game = None
+            current_turn = 0
+            current_owner_id = ""
+            if game is not None:
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                try:
+                    current_owner = game.get_current_player()
+                except Exception:
+                    current_owner = None
+                current_owner_id = str(getattr(current_owner, "id", "") or "")
+            veiled_blade_multiplier = 1
+            for member in members:
+                sr_member = getattr(member, "special_rules", None)
+                if not isinstance(sr_member, dict):
+                    continue
+                if not bool(sr_member.get("enhancement_veiled_blade", False)):
+                    continue
+                bearer_id = str(
+                    sr_member.get("enhancement_veiled_blade_bearer_model_id", "")
+                    or sr_member.get("enhancement_bearer_model_id", "")
+                ).strip()
+                if bearer_id:
+                    if not model_id or bearer_id != model_id:
+                        continue
+                else:
+                    get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                    bearer = get_bearer() if callable(get_bearer) else None
+                    if str(maybe_entity_id(bearer) or "") != model_id:
+                        continue
+                if not bool(sr_member.get("enhancement_veiled_blade_oc_multiplier_active", False)):
+                    continue
+                try:
+                    active_turn = int(sr_member.get("enhancement_veiled_blade_oc_multiplier_turn", 0) or 0)
+                except Exception:
+                    active_turn = 0
+                active_owner = str(sr_member.get("enhancement_veiled_blade_oc_multiplier_turn_owner", "") or "").strip()
+                if active_turn and current_turn and active_turn != current_turn:
+                    continue
+                if active_owner and current_owner_id and active_owner != current_owner_id:
+                    continue
+                try:
+                    multiplier = int(sr_member.get("enhancement_veiled_blade_objective_control_multiplier", 3) or 3)
+                except Exception:
+                    multiplier = 3
+                veiled_blade_multiplier = max(int(veiled_blade_multiplier), int(max(2, multiplier)))
+            if veiled_blade_multiplier > 1:
+                mods.append(
+                    Modifier(
+                        ModifierOp.MUL,
+                        int(veiled_blade_multiplier),
+                        source="enhancement:veiled_blade",
+                    )
+                )
+            try:
                 ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
                 bonus_fn = getattr(ck_mgr, "tyrannical_court_objective_control_bonus", None) if ck_mgr is not None else None
                 if callable(bonus_fn):

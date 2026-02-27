@@ -3889,6 +3889,70 @@ class Game(
                             range_value=int(trigger_range),
                         )
 
+            ac_mgr = getattr(reacting_army, "adeptus_custodes_detachments", None)
+            if ac_mgr is not None and action_key in ("move", "advance", "fall_back"):
+                rule_fn = getattr(ac_mgr, "martial_philosopher_reactive_rule", None)
+                can_trigger_fn = getattr(ac_mgr, "martial_philosopher_can_trigger", None)
+                queue_confirmation = getattr(self, "_queue_reactive_move_confirmation", None)
+                if callable(rule_fn) and callable(can_trigger_fn) and callable(queue_confirmation):
+                    seen_reactors: set[str] = set()
+                    for candidate in list(getattr(reacting_army, "units", []) or []):
+                        if candidate is None:
+                            continue
+                        try:
+                            reacting_root = candidate.get_attached_unit_root()
+                        except Exception:
+                            reacting_root = candidate
+                        if reacting_root is None:
+                            continue
+                        reacting_id = str(get_entity_id(reacting_root) or "")
+                        if not reacting_id or reacting_id in seen_reactors:
+                            continue
+                        seen_reactors.add(reacting_id)
+                        rule = rule_fn(reacting_root, game=self)
+                        if not isinstance(rule, dict):
+                            continue
+                        trigger_actions = {
+                            str(v or "").strip().lower()
+                            for v in list(rule.get("trigger_actions", ()) or ())
+                            if str(v or "").strip()
+                        }
+                        if trigger_actions and action_key not in trigger_actions:
+                            continue
+                        try:
+                            trigger_range = int(rule.get("range", 9) or 9)
+                        except Exception:
+                            trigger_range = 9
+                        if not can_trigger_fn(
+                            reacting_root,
+                            game=self,
+                            game_map=game_map,
+                            moving_unit=moving_root,
+                            action=action_key,
+                            range_override=trigger_range,
+                        ):
+                            continue
+                        source = str(rule.get("source", "") or "Martial Philosopher").strip() or "Martial Philosopher"
+                        try:
+                            max_distance = int(rule.get("max_distance", 6) or 6)
+                        except Exception:
+                            max_distance = 6
+                        message = (
+                            f"{getattr(moving_root, 'name', 'Enemy unit')} ended a {action_key.replace('_', ' ')} move within "
+                            f"{int(trigger_range)}\" of {getattr(reacting_root, 'name', 'unit')}.\n\n"
+                            f"{source}: Make a Normal move of up to {int(max(1, max_distance))}\"?"
+                        )
+                        queue_confirmation(
+                            player=reacting_player,
+                            unit=reacting_root,
+                            kind="martial_philosopher",
+                            movement_type="martial_philosopher",
+                            source=source,
+                            message=message,
+                            moving_unit=moving_root,
+                            range_value=int(trigger_range),
+                        )
+
             ae_mgr = getattr(reacting_army, "aeldari_detachments", None)
             if ae_mgr is None:
                 continue
@@ -4237,6 +4301,23 @@ class Game(
             elif roll >= 6:
                 total_mw = int(get_roll("D3") or 0) + 3
             roll_summary = f"roll={roll}"
+        elif kind == "single_4plus_die":
+            try:
+                threshold = int(spec.get("threshold", 4) or 4)
+            except Exception:
+                threshold = 4
+            threshold = max(2, min(6, threshold))
+            success_die = str(spec.get("success_die", "") or "D3").strip().upper() or "D3"
+            roll = int(get_roll("D6") or 0)
+            modified_roll = int(roll)
+            if started_within_required and start_charge_bonus:
+                modified_roll = int(modified_roll + int(start_charge_bonus))
+            if modified_roll >= threshold:
+                total_mw = int(get_roll(success_die) or 0)
+            if started_within_required and start_charge_bonus:
+                roll_summary = f"roll={roll} (+{int(start_charge_bonus)} -> {int(modified_roll)})"
+            else:
+                roll_summary = f"roll={roll}"
         else:
             return
 
@@ -4337,24 +4418,82 @@ class Game(
                 continue
             if not enemy.is_alive():
                 continue
+            if enemy.is_in_reserves() or enemy.is_embarked:
+                continue
             if not game_map.is_within_engagement_range(root, enemy):
                 continue
-            engaged.append(enemy)
+            try:
+                enemy_root = enemy.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy
+            if enemy_root is None or not enemy_root.is_alive():
+                continue
+            engaged.append(enemy_root)
 
         if not engaged:
+            return
+        unique_engaged = []
+        seen_engaged: set[str] = set()
+        for enemy_root in list(engaged):
+            rid = str(get_entity_id(enemy_root) or "")
+            if not rid or rid in seen_engaged:
+                continue
+            seen_engaged.add(rid)
+            unique_engaged.append(enemy_root)
+        if not unique_engaged:
             return
 
         player = root.get_parent_army().player
         if player is None:
             return
         for spec in specs:
-            if len(engaged) == 1:
-                self.resolve_charge_end_mortal_wounds(root, engaged[0], spec)
+            candidates = list(unique_engaged)
+            if bool(spec.get("target_must_be_engaged_with_bearer", False)):
+                from ..utility.aura_utils import model_within_engagement_range_of_unit
+
+                bearer_id = str(spec.get("bearer_model_id", "") or "").strip()
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                bearer_model = None
+                if bearer_id:
+                    for model in models:
+                        if str(get_entity_id(model) or "") != bearer_id:
+                            continue
+                        alive_attr = getattr(model, "is_alive", True)
+                        if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                            bearer_model = model
+                            break
+                if bearer_model is None:
+                    get_bearer = getattr(root, "_get_enhancement_bearer_model", None)
+                    candidate = get_bearer() if callable(get_bearer) else None
+                    if candidate is not None:
+                        alive_attr = getattr(candidate, "is_alive", True)
+                        if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                            bearer_model = candidate
+                if bearer_model is None:
+                    continue
+                filtered = []
+                for enemy in list(candidates):
+                    if enemy is None:
+                        continue
+                    try:
+                        in_engagement = bool(model_within_engagement_range_of_unit(bearer_model, enemy))
+                    except Exception:
+                        in_engagement = False
+                    if in_engagement:
+                        filtered.append(enemy)
+                candidates = filtered
+            if not candidates:
+                continue
+            if len(candidates) == 1:
+                self.resolve_charge_end_mortal_wounds(root, candidates[0], spec)
                 continue
             self._queue_mortal_wounds_target_decision(
                 player=player,
                 unit=root,
-                candidates=list(engaged),
+                candidates=list(candidates),
                 spec=spec,
                 kind="charge_end",
                 allow_skip=False,
@@ -4375,6 +4514,92 @@ class Game(
             root = unit
         if root is None or not root.is_alive():
             return
+
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("enhancement_blade_imperator")):
+            once_key = str(sr.get("enhancement_blade_imperator_battleshock_once_key", "blade_imperator_battleshock") or "blade_imperator_battleshock").strip().lower()
+            if not once_key:
+                once_key = "blade_imperator_battleshock"
+            has_used = getattr(root, "has_used_unit_once_per_battle", None)
+            if not callable(has_used) or not bool(has_used(once_key)):
+                try:
+                    aura_range = int(sr.get("enhancement_blade_imperator_battleshock_range", 6) or 6)
+                except Exception:
+                    aura_range = 6
+                aura_range = max(1, int(aura_range))
+                bearer_id = str(
+                    sr.get("enhancement_blade_imperator_bearer_model_id", "")
+                    or sr.get("enhancement_bearer_model_id", "")
+                    or ""
+                ).strip()
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                bearer_model = None
+                if bearer_id:
+                    for model in models:
+                        if str(get_entity_id(model) or "") != bearer_id:
+                            continue
+                        alive_attr = getattr(model, "is_alive", True)
+                        if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                            bearer_model = model
+                            break
+                if bearer_model is None:
+                    get_bearer = getattr(root, "_get_enhancement_bearer_model", None)
+                    candidate = get_bearer() if callable(get_bearer) else None
+                    if candidate is not None:
+                        alive_attr = getattr(candidate, "is_alive", True)
+                        if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                            bearer_model = candidate
+                if bearer_model is not None:
+                    from ..utility.aura_utils import model_within_range_of_unit
+
+                    enemies = list(game_map.get_enemy_units(root) or [])
+                    aura_targets = []
+                    seen: set[str] = set()
+                    for enemy in enemies:
+                        if enemy is None:
+                            continue
+                        try:
+                            enemy_root = enemy.get_attached_unit_root()
+                        except Exception:
+                            enemy_root = enemy
+                        if enemy_root is None:
+                            continue
+                        enemy_id = str(get_entity_id(enemy_root) or "")
+                        if not enemy_id or enemy_id in seen:
+                            continue
+                        seen.add(enemy_id)
+                        if not enemy_root.is_alive():
+                            continue
+                        if not bool(getattr(enemy_root, "deployed", True)):
+                            continue
+                        if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                            continue
+                        if not bool(
+                            model_within_range_of_unit(
+                                bearer_model,
+                                enemy_root,
+                                float(aura_range),
+                                use_attached_aggregate=True,
+                            )
+                        ):
+                            continue
+                        aura_targets.append(enemy_root)
+                    if aura_targets:
+                        try:
+                            turn = int(getattr(self, "turn", 0) or 1)
+                        except Exception:
+                            turn = 1
+                        for enemy_root in aura_targets:
+                            take_test = getattr(enemy_root, "take_battle_shock_test", None)
+                            if callable(take_test):
+                                take_test(turn)
+                        mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
+                        if callable(mark_used):
+                            ability_name = str(sr.get("enhancement_blade_imperator_source", "") or "Blade Imperator").strip() or "Blade Imperator"
+                            mark_used(once_key, ability_name=ability_name)
 
         specs = []
         try:
