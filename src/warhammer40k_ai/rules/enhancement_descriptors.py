@@ -1375,6 +1375,60 @@ _ADEPTUS_CUSTODES_NULL_MAIDEN_VIGIL_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ADEPTUS_CUSTODES_NULL_MAIDEN_VIGIL_DESCRIPTORS.values()
 }
 
+_ADEPTUS_CUSTODES_SHIELD_HOST_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008395002": EnhancementToolDescriptor(
+        enhancement_id="000008395002",
+        name="Auric Mantle",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="add_wounds_to_bearer",
+        effect_params={"wounds_bonus": 2},
+    ),
+    "000008395003": EnhancementToolDescriptor(
+        enhancement_id="000008395003",
+        name="Castellan's Mark",
+        timing="after_deployment_before_first_turn",
+        target="up_to_two_friendly_adeptus_custodes_units_excluding_anathema_psykana",
+        duration="instant",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 2,
+            "can_place_in_reserves": True,
+            "redeploy_filters": ("ADEPTUS CUSTODES",),
+            "redeploy_excluded_keywords": ("ANATHEMA PSYKANA",),
+        },
+    ),
+    "000008395004": EnhancementToolDescriptor(
+        enhancement_id="000008395004",
+        name="From the Hall of Armouries",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="add_strength_and_damage_to_bearer_melee_weapons",
+        effect_params={
+            "melee_strength_bonus": 1,
+            "melee_damage_bonus": 1,
+        },
+    ),
+    "000008395005": EnhancementToolDescriptor(
+        enhancement_id="000008395005",
+        name="Panoptispex",
+        timing="while_bearer_is_leading",
+        target="bearer_led_unit_ranged_weapons",
+        duration="constant_while_bearer_is_leading",
+        effect="grant_ignores_cover_to_bearer_led_unit_ranged_weapons",
+        effect_params={
+            "requires_bearer_leading": True,
+            "keywords": ("IGNORES COVER",),
+        },
+    ),
+}
+
+_ADEPTUS_CUSTODES_SHIELD_HOST_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ADEPTUS_CUSTODES_SHIELD_HOST_DESCRIPTORS.values()
+}
+
 _EXPLORATOR_MANIPLE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008568002": EnhancementToolDescriptor(
         enhancement_id="000008568002",
@@ -4601,6 +4655,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _ADEPTUS_CUSTODES_NULL_MAIDEN_VIGIL_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ADEPTUS_CUSTODES_SHIELD_HOST_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _EXPLORATOR_MANIPLE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4808,6 +4865,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _DATA_PSALM_CONCLAVE_BY_NAME.get(key)
         or _ADEPTUS_CUSTODES_AURIC_CHAMPIONS_BY_NAME.get(key)
         or _ADEPTUS_CUSTODES_NULL_MAIDEN_VIGIL_BY_NAME.get(key)
+        or _ADEPTUS_CUSTODES_SHIELD_HOST_BY_NAME.get(key)
         or _EXPLORATOR_MANIPLE_BY_NAME.get(key)
         or _HALOSCREED_BATTLE_CLADE_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)

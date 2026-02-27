@@ -541,6 +541,7 @@ class Enhancement:
         is_lions = bool(ac_mgr and ac_mgr.is_lions_of_the_emperor())
         is_auric_champions = bool(ac_mgr and ac_mgr.is_auric_champions())
         is_null_maiden_vigil = bool(ac_mgr and ac_mgr.is_null_maiden_vigil())
+        is_shield_host = bool(ac_mgr and ac_mgr.is_shield_host())
         try:
             is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
         except Exception:
@@ -6572,6 +6573,80 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_veiled_blade_bearer_model_id"] = bearer_id
+
+        if name == "castellan's mark" or enh_id == "000008395003":
+            if not is_shield_host:
+                return
+            unit.special_rules["enhancement_castellans_mark"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            max_units = _coerce_int(params.get("max_units", 2) or 2, default=2)
+            can_place_in_reserves = bool(params.get("can_place_in_reserves", True))
+            filters = [
+                str(v or "").strip().upper()
+                for v in list(params.get("redeploy_filters", ("ADEPTUS CUSTODES",)) or ())
+                if str(v or "").strip()
+            ]
+            if not filters:
+                filters = ["ADEPTUS CUSTODES"]
+            excluded_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("redeploy_excluded_keywords", ("ANATHEMA PSYKANA",)) or ())
+                if str(v or "").strip()
+            ]
+            unit.special_rules["enhancement_castellans_mark_max_units"] = int(max(1, max_units))
+            unit.special_rules["enhancement_castellans_mark_can_place_in_reserves"] = bool(
+                can_place_in_reserves
+            )
+            unit.special_rules["enhancement_castellans_mark_filters"] = list(dict.fromkeys(filters))
+            unit.special_rules["enhancement_castellans_mark_excluded_keywords"] = list(
+                dict.fromkeys(excluded_keywords)
+            )
+            unit.special_rules["enhancement_castellans_mark_source"] = "Castellan's Mark"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_castellans_mark_bearer_model_id"] = bearer_id
+
+        if name == "from the hall of armouries" or enh_id == "000008395004":
+            if not is_shield_host:
+                return
+            unit.special_rules["enhancement_from_the_hall_of_armouries"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            strength_bonus = _coerce_int(params.get("melee_strength_bonus", 1) or 1, default=1)
+            damage_bonus = _coerce_int(params.get("melee_damage_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0
+            ) + int(max(0, strength_bonus))
+            unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0
+            ) + int(max(0, damage_bonus))
+            unit.special_rules["enhancement_from_the_hall_of_armouries_source"] = "From the Hall of Armouries"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_from_the_hall_of_armouries_bearer_model_id"] = bearer_id
+
+        if name == "panoptispex" or enh_id == "000008395005":
+            if not is_shield_host:
+                return
+            unit.special_rules["enhancement_panoptispex"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_panoptispex_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("keywords", ("IGNORES COVER",)) or ())
+                if str(v or "").strip()
+            ]
+            if not keywords:
+                keywords = ["IGNORES COVER"]
+            unit.special_rules["enhancement_panoptispex_keywords"] = list(dict.fromkeys(keywords))
+            unit.special_rules["enhancement_panoptispex_source"] = "Panoptispex"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_panoptispex_bearer_model_id"] = bearer_id
 
         if name == "enhanced voidsheen cloak" or enh_id == "000008926002":
             if not is_null_maiden_vigil:

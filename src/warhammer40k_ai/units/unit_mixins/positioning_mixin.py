@@ -4312,6 +4312,45 @@ class PositioningMixin:
                     rules = list(rules or []) + [
                         {"attack_type": "ranged", "keyword": key, "source": source}
                     ]
+        if is_ranged_attack and self._attached_unit_has_active_leading_enhancement(
+            "enhancement_panoptispex",
+            enhancement_id="000008395005",
+            enhancement_name="panoptispex",
+        ):
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            source = "Panoptispex"
+            keywords = ["IGNORES COVER"]
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in members:
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_panoptispex", False)):
+                    continue
+                if bool(sr.get("enhancement_panoptispex_requires_bearer_leading", True)):
+                    if not bool(getattr(member, "is_attached_leader", False)):
+                        continue
+                source = str(sr.get("enhancement_panoptispex_source", "") or "").strip() or "Panoptispex"
+                configured = [
+                    str(v or "").strip().upper()
+                    for v in list(sr.get("enhancement_panoptispex_keywords", []) or [])
+                    if str(v or "").strip()
+                ]
+                if configured:
+                    keywords = configured
+                break
+            for keyword in keywords:
+                key = str(keyword or "").strip().upper()
+                if key == "IGNORES COVER":
+                    rules = list(rules or []) + [
+                        {"attack_type": "ranged", "keyword": "IGNORES COVER", "source": source}
+                    ]
         if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(
             model,
             flag_key="enhancement_autoclavic_denunciation",
@@ -8046,6 +8085,42 @@ class PositioningMixin:
             self._ability_cache["redeploy"] = result
             if filters:
                 self._ability_cache["redeploy_filters"] = list(filters)
+            self._ability_cache["redeploy_ability_name"] = ability_name
+            self._ability_cache["redeploy_requires_source_on_battlefield"] = False
+            self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = False
+            return result
+
+        if isinstance(sr, dict) and bool(sr.get("enhancement_castellans_mark", False)):
+            try:
+                count = int(sr.get("enhancement_castellans_mark_max_units", 2) or 2)
+            except (TypeError, ValueError):
+                count = 2
+            if count <= 0:
+                count = 1
+            can_place_in_reserves = bool(sr.get("enhancement_castellans_mark_can_place_in_reserves", True))
+            filters = [
+                str(v or "").strip().upper()
+                for v in list(sr.get("enhancement_castellans_mark_filters", []) or [])
+                if str(v or "").strip()
+            ]
+            excluded_keywords = [
+                str(v or "").strip().upper()
+                for v in list(sr.get("enhancement_castellans_mark_excluded_keywords", []) or [])
+                if str(v or "").strip()
+            ]
+            ability_name = (
+                str(sr.get("enhancement_castellans_mark_source", "") or "Castellan's Mark")
+                .strip()
+                or "Castellan's Mark"
+            )
+            result = (True, int(count), bool(can_place_in_reserves))
+            if not hasattr(self, "_ability_cache"):
+                self._ability_cache = {}
+            self._ability_cache["redeploy"] = result
+            if filters:
+                self._ability_cache["redeploy_filters"] = list(filters)
+            if excluded_keywords:
+                self._ability_cache["redeploy_excluded_keywords"] = list(excluded_keywords)
             self._ability_cache["redeploy_ability_name"] = ability_name
             self._ability_cache["redeploy_requires_source_on_battlefield"] = False
             self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = False
