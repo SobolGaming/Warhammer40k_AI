@@ -10443,6 +10443,7 @@ class WargearProfile:
         get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
         attacker_army = get_parent_army() if callable(get_parent_army) else None
         csm_mgr = getattr(attacker_army, "chaos_space_marines_detachments", None) if attacker_army is not None else None
+        csm_game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
         reroll_fn = getattr(csm_mgr, "pactbound_zealots_reroll_hit_ones", None) if csm_mgr is not None else None
         if callable(reroll_fn):
             reroll_ones, source = reroll_fn(attacker, weapon_profile=self)
@@ -10463,6 +10464,20 @@ class WargearProfile:
             reroll_full, source = focus_reroll_fn(attacker, target)
             if bool(reroll_full):
                 source_name = str(source or "Focus of Hatred").strip() or "Focus of Hatred"
+                reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        prime_test_subject_fn = (
+            getattr(csm_mgr, "creations_of_bile_prime_test_subject_melee_reroll_hit_applies", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(prime_test_subject_fn):
+            reroll_full, source = prime_test_subject_fn(
+                attacker,
+                weapon_profile=self,
+                game=csm_game,
+            )
+            if bool(reroll_full):
+                source_name = str(source or "Prime Test Subject").strip() or "Prime Test Subject"
                 reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         # Contextual reroll sources carried on the attack instance (best-effort).
         try:

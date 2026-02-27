@@ -1778,6 +1778,58 @@ _CHAOS_CULT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CHAOS_CULT_DESCRIPTORS.values()
 }
 
+_CREATIONS_OF_BILE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009773002": EnhancementToolDescriptor(
+        enhancement_id="000009773002",
+        name="Surgical Precision",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_weapons_gain_precision",
+        effect_params={"keywords": ("PRECISION",)},
+    ),
+    "000009773003": EnhancementToolDescriptor(
+        enhancement_id="000009773003",
+        name="Living Carapace",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_wounds_and_fnp_bonus",
+        effect_params={
+            "bearer_wounds_bonus": 1,
+            "fnp": 5,
+        },
+    ),
+    "000009773004": EnhancementToolDescriptor(
+        enhancement_id="000009773004",
+        name="Helm of All-seeing",
+        timing="passive_aura",
+        target="enemy_reserves_arrival",
+        duration="constant",
+        effect="enemy_reserves_arrival_min_distance_from_bearer",
+        effect_params={
+            "min_enemy_distance": 12,
+            "horizontal_only": False,
+        },
+    ),
+    "000009773005": EnhancementToolDescriptor(
+        enhancement_id="000009773005",
+        name="Prime Test Subject",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_damage_bonus_and_reroll_hits",
+        effect_params={
+            "bearer_melee_damage_bonus": 1,
+            "reroll_hit": True,
+        },
+    ),
+}
+
+_CREATIONS_OF_BILE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CREATIONS_OF_BILE_DESCRIPTORS.values()
+}
+
 _SPECTACLE_OF_SPITE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010580002": EnhancementToolDescriptor(
         enhancement_id="000010580002",
@@ -4836,6 +4888,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _CHAOS_CULT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _CREATIONS_OF_BILE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPECTACLE_OF_SPITE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5039,6 +5094,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _INVASION_FLEET_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _CHAOS_CULT_BY_NAME.get(key)
+        or _CREATIONS_OF_BILE_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_BY_NAME.get(key)

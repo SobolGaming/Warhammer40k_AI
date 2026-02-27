@@ -855,6 +855,57 @@ class GameSetupDeploymentReservesMixin:
                     "source_model_id": resolved_bearer_id,
                 }
             )
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not (isinstance(sr, dict) and bool(sr.get("enhancement_helm_of_all_seeing", False))):
+                continue
+            try:
+                min_enemy_distance = float(sr.get("enhancement_helm_of_all_seeing_min_enemy_distance", 12.0) or 12.0)
+            except (TypeError, ValueError):
+                min_enemy_distance = 12.0
+            if min_enemy_distance <= 0.0:
+                continue
+            horizontal_only = bool(sr.get("enhancement_helm_of_all_seeing_horizontal_only", False))
+            source_name = str(sr.get("enhancement_helm_of_all_seeing_source", "") or "Helm of All-seeing").strip()
+            if not source_name:
+                source_name = "Helm of All-seeing"
+
+            bearer_id = str(
+                sr.get("enhancement_helm_of_all_seeing_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            bearer_model = None
+            for model in list(getattr(member, "models", []) or []):
+                if bearer_id and str(get_entity_id(model) or "") != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not is_alive:
+                    continue
+                bearer_model = model
+                break
+            if bearer_model is None:
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                candidate = get_bearer() if callable(get_bearer) else None
+                if candidate is not None and bearer_id and str(get_entity_id(candidate) or "") != bearer_id:
+                    candidate = None
+                if candidate is not None:
+                    alive_attr = getattr(candidate, "is_alive", True)
+                    is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    if is_alive:
+                        bearer_model = candidate
+            if bearer_model is None:
+                continue
+            resolved_bearer_id = str(get_entity_id(bearer_model) or "").strip()
+            ranges.append(
+                {
+                    "range": float(min_enemy_distance),
+                    "horizontal_only": bool(horizontal_only),
+                    "source": source_name,
+                    "source_model_id": resolved_bearer_id,
+                }
+            )
         return ranges
 
     def _reserves_denial_violated(self, unit, prospective: list[Tuple[float, float, float, float]]) -> bool:

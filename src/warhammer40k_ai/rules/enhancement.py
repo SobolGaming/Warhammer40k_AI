@@ -206,6 +206,7 @@ from .enhancement_effects import (
     parse_enhancement_effects,
 )
 from .enhancement_descriptors import get_enhancement_tool_descriptor
+from ..utility.entity_ids import get_entity_id
 
 
 @dataclass(slots=True)
@@ -577,6 +578,7 @@ class Enhancement:
         except Exception:
             is_cabal_of_chaos = False
         is_chaos_cult = bool(csm_mgr and csm_mgr.is_chaos_cult())
+        is_creations_of_bile = bool(csm_mgr and csm_mgr.is_creations_of_bile())
         try:
             is_hearthband = bool(lov_mgr and lov_mgr.is_hearthband())
         except Exception:
@@ -5198,6 +5200,116 @@ class Enhancement:
                 invalidate_root = getattr(unit.attached_to, "_invalidate_ability_cache", None)
                 if callable(invalidate_root):
                     invalidate_root()
+
+        if name == "surgical precision" or enh_id == "000009773002":
+            if not is_creations_of_bile:
+                return
+            unit.special_rules["enhancement_surgical_precision"] = True
+            unit.special_rules["enhancement_bearer_melee_precision"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_surgical_precision_bearer_model_id"] = bearer_id
+
+        if name == "living carapace" or enh_id == "000009773003":
+            if not is_creations_of_bile:
+                return
+            unit.special_rules["enhancement_living_carapace"] = True
+            unit.special_rules["enhancement_living_carapace_source"] = "Living Carapace"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_living_carapace_bearer_model_id"] = bearer_id
+            if bearer is not None and not bool(unit.special_rules.get("enhancement_living_carapace_bearer_wounds_applied", False)):
+                try:
+                    bearer._base_wounds = int(getattr(bearer, "_base_wounds", 0) or 0) + 1
+                    bearer._wounds = int(getattr(bearer, "_wounds", 0) or 0) + 1
+                    base_unmod = getattr(bearer, "_base_wounds_unmodified", None)
+                    if base_unmod is not None:
+                        bearer._base_wounds_unmodified = int(base_unmod or 0) + 1
+                    unit.special_rules["enhancement_living_carapace_bearer_wounds_applied"] = True
+                except (TypeError, ValueError):
+                    pass
+            if not bool(unit.special_rules.get("enhancement_living_carapace_wounds_corrected", False)):
+                applied_kinds = getattr(unit, "_enhancement_effect_kinds_applied", set())
+                wounds_add_applied = bool(isinstance(applied_kinds, set) and "wounds_add" in applied_kinds)
+                bearer_entity_id = str(get_entity_id(bearer) or "") if bearer is not None else ""
+                for model in list(getattr(unit, "models", []) or []):
+                    if model is None:
+                        continue
+                    model_id = str(get_entity_id(model) or "")
+                    is_bearer_model = bool(bearer_entity_id and model_id == bearer_entity_id)
+                    if not is_bearer_model and bearer_id:
+                        local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                        is_bearer_model = local_id == str(bearer_id)
+                    if is_bearer_model:
+                        continue
+                    if not wounds_add_applied:
+                        continue
+                    try:
+                        model._base_wounds = max(1, int(getattr(model, "_base_wounds", 1) or 1) - 1)
+                        model._wounds = max(1, int(getattr(model, "_wounds", 1) or 1) - 1)
+                        base_unmod = getattr(model, "_base_wounds_unmodified", None)
+                        if base_unmod is not None:
+                            model._base_wounds_unmodified = max(1, int(base_unmod or 1) - 1)
+                    except (TypeError, ValueError):
+                        continue
+                unit.special_rules["enhancement_living_carapace_wounds_corrected"] = True
+                try:
+                    unit.starting_total_wounds = sum(
+                        int(getattr(model, "_base_wounds", 0) or 0)
+                        for model in list(getattr(unit, "models", []) or [])
+                    )
+                except (TypeError, ValueError):
+                    pass
+            tag = f"enhancement_fnp_{enh_id or name}"
+            _ensure_enhancement_fnp_entry(
+                unit,
+                5,
+                source="Living Carapace",
+                tag=tag,
+                source_model_id=str(bearer_id) if bearer_id else None,
+            )
+            if bearer_id:
+                entries = list(unit.special_rules.get("enhancement_bearer_fnp_entries", []) or [])
+                changed = False
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    if str(entry.get("tag", "") or "") != tag:
+                        continue
+                    entry["source_model_id"] = str(bearer_id)
+                    changed = True
+                if changed:
+                    unit.special_rules["enhancement_bearer_fnp_entries"] = entries
+
+        if name in ("helm of all-seeing", "helm of all seeing") or enh_id == "000009773004":
+            if not is_creations_of_bile:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                min_enemy_distance = float(params.get("min_enemy_distance", 12.0) or 12.0)
+            except (TypeError, ValueError):
+                min_enemy_distance = 12.0
+            unit.special_rules["enhancement_helm_of_all_seeing"] = True
+            unit.special_rules["enhancement_helm_of_all_seeing_source"] = "Helm of All-seeing"
+            unit.special_rules["enhancement_helm_of_all_seeing_min_enemy_distance"] = float(max(0.0, min_enemy_distance))
+            unit.special_rules["enhancement_helm_of_all_seeing_horizontal_only"] = bool(params.get("horizontal_only", False))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_helm_of_all_seeing_bearer_model_id"] = bearer_id
+
+        if name == "prime test subject" or enh_id == "000009773005":
+            if not is_creations_of_bile:
+                return
+            unit.special_rules["enhancement_prime_test_subject"] = True
+            unit.special_rules["enhancement_prime_test_subject_source"] = "Prime Test Subject"
+            unit.special_rules["enhancement_prime_test_subject_melee_reroll_hit"] = True
+            unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0
+            ) + 1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_prime_test_subject_bearer_model_id"] = bearer_id
 
         if name == "blood-forged armour" or enh_id == "000010078003":
             if not is_khorne_daemonkin:

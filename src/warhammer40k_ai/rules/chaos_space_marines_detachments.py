@@ -1790,6 +1790,52 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             return 0, ""
         return 1, MACROTENSILE_SINEWS.name
 
+    def creations_of_bile_prime_test_subject_melee_reroll_hit_applies(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        _ = game
+        if not self.is_creations_of_bile():
+            return False, ""
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_melee = getattr(parent, "is_melee", None) if parent is not None else None
+            if not callable(is_melee) or not bool(is_melee()):
+                return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(attacker_unit)
+        if root is None or not self._unit_in_army(root):
+            return False, ""
+
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+
+        attacker_entity_id = str(get_entity_id(attacker_model) or "")
+        attacker_local_id = str(getattr(attacker_model, "id", getattr(attacker_model, "_id", "")) or "")
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_prime_test_subject", False)):
+                continue
+            bearer = self._find_enhancement_bearer_on_member(member, sr)
+            if not self._model_alive(bearer):
+                continue
+            bearer_entity_id = str(get_entity_id(bearer) or "")
+            bearer_local_id = str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
+            if attacker_entity_id and bearer_entity_id and attacker_entity_id == bearer_entity_id:
+                source = str(sr.get("enhancement_prime_test_subject_source", "") or "Prime Test Subject").strip()
+                return True, (source or "Prime Test Subject")
+            if attacker_local_id and bearer_local_id and attacker_local_id == bearer_local_id:
+                source = str(sr.get("enhancement_prime_test_subject_source", "") or "Prime Test Subject").strip()
+                return True, (source or "Prime Test Subject")
+        return False, ""
+
     def _resolve_game(self, *, game=None):
         if game is not None:
             return game
