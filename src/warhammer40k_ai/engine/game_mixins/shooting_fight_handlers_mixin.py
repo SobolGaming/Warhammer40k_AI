@@ -478,6 +478,32 @@ class GameShootingFightHandlersMixin:
                 )
                 return
 
+        adm_mgr = getattr(attacker_army, "adeptus_mechanicus_detachments", None) if attacker_army is not None else None
+        battle_sphere_fn = (
+            getattr(adm_mgr, "skitarii_battle_sphere_uplink_reactive_move", None)
+            if adm_mgr is not None
+            else None
+        )
+        if callable(battle_sphere_fn):
+            try:
+                battle_sphere_distance, battle_sphere_source = battle_sphere_fn(
+                    attacker_unit,
+                    game=self,
+                    is_engaged=engaged,
+                )
+            except (TypeError, ValueError):
+                battle_sphere_distance, battle_sphere_source = 0, ""
+            if int(battle_sphere_distance or 0) > 0:
+                self._queue_reactive_move_movement_decision(
+                    player=attacker_player,
+                    unit=attacker_unit,
+                    max_distance=int(battle_sphere_distance),
+                    kind="post_shoot_no_charge",
+                    movement_type="reactive",
+                    source=battle_sphere_source or "Battle-sphere Uplink",
+                )
+                return
+
         if not unit_specs:
             return
 

@@ -871,6 +871,64 @@ _RAD_ZONE_CORPS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _RAD_ZONE_CORPS_DESCRIPTORS.values()
 }
 
+_SKITARII_HUNTER_COHORT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008560002": EnhancementToolDescriptor(
+        enhancement_id="000008560002",
+        name="Cantic Thrallnet",
+        timing="start_of_battle_round_optional",
+        target="one_friendly_skitarii_unit_within_range_of_bearer",
+        duration="until_start_of_next_battle_round",
+        effect="select_friendly_skitarii_unit_within_range_of_bearer_and_treat_both_doctrina_imperatives_as_active",
+        range_in=12.0,
+        effect_params={
+            "range": 12.0,
+            "required_target_keywords": ("SKITARII",),
+            "optional": True,
+        },
+    ),
+    "000008560003": EnhancementToolDescriptor(
+        enhancement_id="000008560003",
+        name="Clandestine Infiltrator",
+        timing="passive",
+        target="bearer_and_bearer_led_unit",
+        duration="constant",
+        effect="grant_infiltrators_and_scouts_to_bearer_and_bearer_led_unit",
+        effect_params={
+            "scouts_distance": 6,
+        },
+    ),
+    "000008560004": EnhancementToolDescriptor(
+        enhancement_id="000008560004",
+        name="Veiled Hunter",
+        timing="post_deployment",
+        target="friendly_skitarii_infantry_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "can_place_in_reserves": True,
+            "redeploy_filters": ("SKITARII", "INFANTRY"),
+        },
+    ),
+    "000008560005": EnhancementToolDescriptor(
+        enhancement_id="000008560005",
+        name="Battle-sphere Uplink",
+        timing="your_shooting_phase_after_bearer_unit_shoots",
+        target="bearer_unit",
+        duration="instant_optional_with_no_charge_until_end_of_turn",
+        effect="post_shoot_reactive_normal_move_no_charge",
+        effect_params={
+            "move_range": 6,
+            "requires_not_engagement_range": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_SKITARII_HUNTER_COHORT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SKITARII_HUNTER_COHORT_DESCRIPTORS.values()
+}
+
 _COHORT_CYBERNETICA_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008572002": EnhancementToolDescriptor(
         enhancement_id="000008572002",
@@ -4181,6 +4239,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _RAD_ZONE_CORPS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SKITARII_HUNTER_COHORT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _COHORT_CYBERNETICA_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4385,6 +4446,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_BY_NAME.get(key)
+        or _SKITARII_HUNTER_COHORT_BY_NAME.get(key)
         or _COHORT_CYBERNETICA_BY_NAME.get(key)
         or _DATA_PSALM_CONCLAVE_BY_NAME.get(key)
         or _EXPLORATOR_MANIPLE_BY_NAME.get(key)

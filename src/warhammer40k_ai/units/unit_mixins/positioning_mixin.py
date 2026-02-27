@@ -7469,6 +7469,16 @@ class PositioningMixin:
             except Exception:
                 pass
         if not found:
+            try:
+                if self._attached_unit_has_active_enhancement(
+                    "enhancement_skitarii_clandestine_infiltrator",
+                    enhancement_id="000008560003",
+                    enhancement_name="clandestine infiltrator",
+                ):
+                    found = True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        if not found:
             found, _ = self._find_ability_with_patterns(["infiltrators", "infiltrate"])
         
         # Cache the result
@@ -7903,6 +7913,35 @@ class PositioningMixin:
                 str(sr.get("enhancement_chariots_of_the_storm_source", "") or "Chariots of the Storm")
                 .strip()
                 or "Chariots of the Storm"
+            )
+            result = (True, int(count), bool(can_place_in_reserves))
+            if not hasattr(self, "_ability_cache"):
+                self._ability_cache = {}
+            self._ability_cache["redeploy"] = result
+            if filters:
+                self._ability_cache["redeploy_filters"] = list(filters)
+            self._ability_cache["redeploy_ability_name"] = ability_name
+            self._ability_cache["redeploy_requires_source_on_battlefield"] = False
+            self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = False
+            return result
+
+        if isinstance(sr, dict) and bool(sr.get("enhancement_skitarii_veiled_hunter", False)):
+            try:
+                count = int(sr.get("enhancement_skitarii_veiled_hunter_max_units", 3) or 3)
+            except (TypeError, ValueError):
+                count = 3
+            if count <= 0:
+                count = 1
+            can_place_in_reserves = bool(sr.get("enhancement_skitarii_veiled_hunter_can_place_in_reserves", True))
+            filters = [
+                str(v or "").strip().upper()
+                for v in list(sr.get("enhancement_skitarii_veiled_hunter_filters", []) or [])
+                if str(v or "").strip()
+            ]
+            ability_name = (
+                str(sr.get("enhancement_skitarii_veiled_hunter_source", "") or "Veiled Hunter")
+                .strip()
+                or "Veiled Hunter"
             )
             result = (True, int(count), bool(can_place_in_reserves))
             if not hasattr(self, "_ability_cache"):

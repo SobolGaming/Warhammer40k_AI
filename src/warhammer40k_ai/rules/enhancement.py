@@ -614,6 +614,9 @@ class Enhancement:
         is_haloscreed_battle_clade = bool(
             adm_mgr and getattr(adm_mgr, "is_haloscreed_battle_clade", lambda: False)()
         )
+        is_skitarii_hunter_cohort = bool(
+            adm_mgr and getattr(adm_mgr, "is_skitarii_hunter_cohort", lambda: False)()
+        )
         am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
         try:
             is_grizzled_company = bool(am_mgr and am_mgr.is_grizzled_company())
@@ -881,6 +884,96 @@ class Enhancement:
             unit.special_rules["enhancement_autoclavic_denunciation"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if enh_id == "000008560002" or (name == "cantic thrallnet" and is_skitarii_hunter_cohort):
+            if not is_skitarii_hunter_cohort:
+                return
+            unit.special_rules["enhancement_skitarii_cantic_thrallnet"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                range_inches = float(params.get("range", 12.0) or 12.0)
+            except (TypeError, ValueError):
+                range_inches = 12.0
+            required_target_keywords = [
+                str(kw or "").strip().upper()
+                for kw in list(params.get("required_target_keywords", ("SKITARII",)) or ("SKITARII",))
+                if str(kw or "").strip()
+            ]
+            if not required_target_keywords:
+                required_target_keywords = ["SKITARII"]
+            unit.special_rules["enhancement_skitarii_cantic_thrallnet_range"] = float(max(0.0, range_inches))
+            unit.special_rules["enhancement_skitarii_cantic_thrallnet_required_target_keywords"] = list(required_target_keywords)
+            unit.special_rules["enhancement_skitarii_cantic_thrallnet_optional"] = bool(params.get("optional", True))
+            unit.special_rules["enhancement_skitarii_cantic_thrallnet_source"] = "Cantic Thrallnet"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_skitarii_cantic_thrallnet_bearer_model_id"] = bearer_id
+
+        if enh_id == "000008560003" or (name == "clandestine infiltrator" and is_skitarii_hunter_cohort):
+            if not is_skitarii_hunter_cohort:
+                return
+            unit.special_rules["enhancement_skitarii_clandestine_infiltrator"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scout_distance = _coerce_int(params.get("scouts_distance", 6) or 6, default=6)
+            scout_distance = int(max(0, scout_distance))
+            unit.special_rules["enhancement_scout_distance"] = max(
+                int(unit.special_rules.get("enhancement_scout_distance", 0) or 0),
+                int(scout_distance),
+            )
+            unit.special_rules["enhancement_skitarii_clandestine_infiltrator_scout_distance"] = int(scout_distance)
+            unit.special_rules["enhancement_skitarii_clandestine_infiltrator_source"] = "Clandestine Infiltrator"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_skitarii_clandestine_infiltrator_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if enh_id == "000008560004" or (name == "veiled hunter" and is_skitarii_hunter_cohort):
+            if not is_skitarii_hunter_cohort:
+                return
+            unit.special_rules["enhancement_skitarii_veiled_hunter"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            max_units = _coerce_int(params.get("max_units", 3) or 3, default=3)
+            can_place_in_reserves = bool(params.get("can_place_in_reserves", True))
+            raw_filters = list(params.get("redeploy_filters", ("SKITARII", "INFANTRY")) or ())
+            redeploy_filters: list[str] = []
+            for keyword in raw_filters:
+                norm_keyword = str(keyword or "").strip().upper()
+                if not norm_keyword or norm_keyword in redeploy_filters:
+                    continue
+                redeploy_filters.append(norm_keyword)
+            if not redeploy_filters:
+                redeploy_filters = ["SKITARII", "INFANTRY"]
+            unit.special_rules["enhancement_skitarii_veiled_hunter_max_units"] = int(max(1, max_units))
+            unit.special_rules["enhancement_skitarii_veiled_hunter_can_place_in_reserves"] = bool(can_place_in_reserves)
+            unit.special_rules["enhancement_skitarii_veiled_hunter_filters"] = list(redeploy_filters)
+            unit.special_rules["enhancement_skitarii_veiled_hunter_source"] = "Veiled Hunter"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_skitarii_veiled_hunter_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if enh_id == "000008560005" or (name == "battle-sphere uplink" and is_skitarii_hunter_cohort):
+            if not is_skitarii_hunter_cohort:
+                return
+            unit.special_rules["enhancement_skitarii_battle_sphere_uplink"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            move_range = _coerce_int(params.get("move_range", 6) or 6, default=6)
+            unit.special_rules["enhancement_skitarii_battle_sphere_uplink_move_range"] = int(max(1, move_range))
+            unit.special_rules["enhancement_skitarii_battle_sphere_uplink_requires_not_engagement_range"] = bool(
+                params.get("requires_not_engagement_range", True)
+            )
+            unit.special_rules["enhancement_skitarii_battle_sphere_uplink_source"] = "Battle-sphere Uplink"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_skitarii_battle_sphere_uplink_bearer_model_id"] = bearer_id
 
         if name == "necromechanic" or enh_id == "000008572002":
             if not is_cohort_cybernetica:

@@ -5289,7 +5289,7 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         player = _resolve_player(game, request, payload)
         try:
             battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
-        except Exception:
+        except (TypeError, ValueError):
             battle_round = int(getattr(game, "turn", 0) or 0)
         validate_choice = getattr(mgr, "validate_data_psalm_autosermon_choice", None)
         if not callable(validate_choice):
@@ -5303,6 +5303,46 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         )
         if not valid:
             return (str(reason or "Data-blessed Autosermon selection is not legal."),)
+        return ()
+    if ability == "skitarii_cantic_thrallnet":
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return ("Cantic Thrallnet army not found.",)
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_skitarii_hunter_cohort", lambda: False)()):
+            return ("Cantic Thrallnet requires a Skitarii Hunter Cohort army.",)
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        if not source_unit_id:
+            return ("Cantic Thrallnet source unit is required.",)
+        target_unit_id = str(payload.get("target_unit_id") or payload.get("unit_id") or "").strip()
+        if not target_unit_id:
+            return ("Cantic Thrallnet target unit is required.",)
+        candidate_ids = [
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        ]
+        player = _resolve_player(game, request, payload)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        validate_choice = getattr(mgr, "validate_skitarii_cantic_thrallnet_choice", None)
+        if not callable(validate_choice):
+            return ("Cantic Thrallnet manager support is unavailable.",)
+        valid, reason = validate_choice(
+            source_unit_id,
+            target_unit_id,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+            candidate_ids=list(candidate_ids),
+        )
+        if not valid:
+            return (str(reason or "Cantic Thrallnet selection is not legal."),)
         return ()
     if ability == "acquisition_at_any_cost":
         if is_skip_choice(request, result):
@@ -8741,6 +8781,59 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 owner,
                 f"{source_name}: {choice_label} is now active for the bearer's unit until your next Command phase.",
             )
+        return outcome
+    if ability == "skitarii_cantic_thrallnet":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return None
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_skitarii_hunter_cohort", lambda: False)()):
+            return None
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        target_unit_id = str(payload.get("target_unit_id") or payload.get("unit_id") or "").strip()
+        if not source_unit_id or not target_unit_id:
+            return None
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        player = _resolve_player(game, request, payload)
+        candidate_ids = [
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        ]
+        select_fn = getattr(mgr, "select_skitarii_cantic_thrallnet_choice", None)
+        if not callable(select_fn):
+            return None
+        outcome = select_fn(
+            source_unit_id,
+            target_unit_id,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+            candidate_ids=list(candidate_ids),
+        )
+        if outcome is not None:
+            owner = getattr(source_army, "player", None)
+            source_name = str((outcome or {}).get("source", "") or "Cantic Thrallnet").strip() or "Cantic Thrallnet"
+            target_name = str((outcome or {}).get("target_unit_name", "") or "Unit")
+            expires_round = int((outcome or {}).get("expires_round", 0) or 0)
+            if expires_round > 0:
+                _log_action_for_players(
+                    game,
+                    owner,
+                    f"{source_name}: {target_name} treats Protector and Conqueror Imperatives as active until the start of battle round {int(expires_round)}.",
+                )
+            else:
+                _log_action_for_players(
+                    game,
+                    owner,
+                    f"{source_name}: {target_name} treats Protector and Conqueror Imperatives as active until your next battle round.",
+                )
         return outcome
     if ability == "acquisition_at_any_cost":
         if is_skip_choice(request, result):

@@ -144,14 +144,25 @@ class DoctrinaImperativesManager:
             return False
         return bool(checker(unit))
 
+    def _skitarii_cantic_thrallnet_applies(self, unit, *, game=None) -> bool:
+        if self.army is None or unit is None:
+            return False
+        adm_mgr = getattr(self.army, "adeptus_mechanicus_detachments", None)
+        if adm_mgr is None:
+            return False
+        checker = getattr(adm_mgr, "skitarii_cantic_thrallnet_applies", None)
+        if not callable(checker):
+            return False
+        return bool(checker(unit, game=game))
+
     def get_active_imperative_keys_for_unit(self, unit, *, game=None) -> set[str]:
         active_keys: set[str] = set()
-        if self._haloscreed_cognitive_reinforcement_applies(unit):
+        game = self._resolve_game(unit=unit, game=game)
+        if self._haloscreed_cognitive_reinforcement_applies(unit) or self._skitarii_cantic_thrallnet_applies(unit, game=game):
             active_keys.add(PROTECTOR_IMPERATIVE.key)
             active_keys.add(CONQUEROR_IMPERATIVE.key)
         if not self._unit_has_doctrina(unit):
             return active_keys
-        game = self._resolve_game(unit=unit, game=game)
         imperative = self.get_active_imperative(game=game)
         if imperative is not None:
             active_keys.add(str(imperative.key))

@@ -39,6 +39,14 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _NOOSPHERIC_OVERRIDE_FLAG_KEY = "noospheric_transference_override_key"
     _SKITARII_HUNTER_COHORT_NAME = "Skitarii Hunter Cohort"
     _STEALTH_OPTIMISATION_SOURCE = "Stealth Optimisation"
+    _SKITARII_CANTIC_THRALLNET_ABILITY_KEY = "skitarii_cantic_thrallnet"
+    _SKITARII_CANTIC_THRALLNET_SOURCE = "Cantic Thrallnet"
+    _SKITARII_BATTLE_SPHERE_UPLINK_SOURCE = "Battle-sphere Uplink"
+    _SKITARII_CANTIC_THRALLNET_ACTIVE_KEY = "skitarii_cantic_thrallnet_active"
+    _SKITARII_CANTIC_THRALLNET_SOURCE_UNIT_ID_KEY = "skitarii_cantic_thrallnet_source_unit_id"
+    _SKITARII_CANTIC_THRALLNET_SOURCE_NAME_KEY = "skitarii_cantic_thrallnet_source_name"
+    _SKITARII_CANTIC_THRALLNET_STARTED_ROUND_KEY = "skitarii_cantic_thrallnet_started_round"
+    _SKITARII_CANTIC_THRALLNET_EXPIRES_ROUND_KEY = "skitarii_cantic_thrallnet_expires_round"
     _DATA_PSALM_CONCLAVE_NAME = "Data-Psalm Conclave"
     _DATA_PSALM_ABILITY_KEY = "data_psalm_benediction"
     _DATA_PSALM_SOURCE = "Benedictions Of The Omnissiah"
@@ -2128,6 +2136,506 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             return int(attacks_bonus), int(damage_bonus), source_name
         return 0, 0, ""
 
+    def _iter_skitarii_enhancement_sources(self, enhancement_flag_key: str) -> list[tuple]:
+        if not self.is_skitarii_hunter_cohort() or self.army is None:
+            return []
+        enhancement_key = str(enhancement_flag_key or "").strip()
+        if not enhancement_key:
+            return []
+        sources: list[tuple] = []
+        seen: set[tuple[str, str]] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None or not self._unit_in_army(root):
+                continue
+            if not self._unit_is_on_battlefield_or_embarked(root):
+                continue
+            root_id = self._entity_id(root) or str(id(root))
+            members = list(getattr(root, "get_attached_unit_members", lambda: [])() or [])
+            if not members:
+                members = [root]
+            for member in members:
+                if member is None:
+                    continue
+                special_rules = getattr(member, "special_rules", None)
+                if not isinstance(special_rules, dict) or not bool(special_rules.get(enhancement_key, False)):
+                    continue
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+                if bearer is None or not self._is_model_alive(bearer):
+                    continue
+                member_id = self._entity_id(member) or str(id(member))
+                dedupe_key = (str(root_id), str(member_id))
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                sources.append((str(root_id), root, member, special_rules, bearer))
+        sources.sort(
+            key=lambda item: (
+                str(item[0] or ""),
+                self._entity_id(item[2]) or str(id(item[2])),
+            )
+        )
+        return sources
+
+    def _clear_skitarii_cantic_thrallnet_source_assignment(self, source_root_id: str) -> None:
+        source_id = str(source_root_id or "").strip()
+        if not source_id or self.army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root) or str(id(root))
+            if root_id in seen:
+                continue
+            seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if str(sr.get(self._SKITARII_CANTIC_THRALLNET_SOURCE_UNIT_ID_KEY, "") or "").strip() != source_id:
+                continue
+            updated = dict(sr)
+            for key in (
+                self._SKITARII_CANTIC_THRALLNET_ACTIVE_KEY,
+                self._SKITARII_CANTIC_THRALLNET_SOURCE_UNIT_ID_KEY,
+                self._SKITARII_CANTIC_THRALLNET_SOURCE_NAME_KEY,
+                self._SKITARII_CANTIC_THRALLNET_STARTED_ROUND_KEY,
+                self._SKITARII_CANTIC_THRALLNET_EXPIRES_ROUND_KEY,
+            ):
+                updated.pop(key, None)
+            root.special_rules = updated
+
+    def _clear_expired_skitarii_cantic_thrallnet_state(self, *, game=None, battle_round: int = 0) -> None:
+        if self.army is None:
+            return
+        current_round = int(battle_round or 0)
+        if current_round <= 0 and game is not None:
+            try:
+                current_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = 0
+        if current_round <= 0:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root) or str(id(root))
+            if root_id in seen:
+                continue
+            seen.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(self._SKITARII_CANTIC_THRALLNET_ACTIVE_KEY, False)):
+                continue
+            try:
+                expires_round = int(sr.get(self._SKITARII_CANTIC_THRALLNET_EXPIRES_ROUND_KEY, 0) or 0)
+            except (TypeError, ValueError):
+                expires_round = 0
+            if expires_round > int(current_round):
+                continue
+            updated = dict(sr)
+            for key in (
+                self._SKITARII_CANTIC_THRALLNET_ACTIVE_KEY,
+                self._SKITARII_CANTIC_THRALLNET_SOURCE_UNIT_ID_KEY,
+                self._SKITARII_CANTIC_THRALLNET_SOURCE_NAME_KEY,
+                self._SKITARII_CANTIC_THRALLNET_STARTED_ROUND_KEY,
+                self._SKITARII_CANTIC_THRALLNET_EXPIRES_ROUND_KEY,
+            ):
+                updated.pop(key, None)
+            root.special_rules = updated
+
+    def _pending_skitarii_cantic_thrallnet_request(self, game, *, source_root_id: str, battle_round: int):
+        if game is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is None:
+            return None
+        for req in list(getattr(queue, "list", lambda: [])() or []):
+            if str(getattr(req, "decision_type", "")) != "CHOOSE_QUARRY":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != self._SKITARII_CANTIC_THRALLNET_ABILITY_KEY:
+                continue
+            if str(ctx.get("source_unit_id", "") or "") != str(source_root_id or ""):
+                continue
+            try:
+                req_round = int(ctx.get("battle_round", 0) or 0)
+            except (TypeError, ValueError):
+                req_round = 0
+            if req_round != int(battle_round):
+                continue
+            return req
+        return None
+
+    def _skitarii_cantic_thrallnet_candidate_roots(self, *, source_bearer, source_sr, game=None) -> list:
+        del game
+        if source_bearer is None:
+            return []
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return []
+        try:
+            range_inches = float(source_sr.get("enhancement_skitarii_cantic_thrallnet_range", 12.0) or 12.0)
+        except (TypeError, ValueError):
+            range_inches = 12.0
+        range_inches = float(max(0.0, range_inches))
+        required_keywords = [
+            str(kw or "").strip().upper()
+            for kw in list(source_sr.get("enhancement_skitarii_cantic_thrallnet_required_target_keywords", ["SKITARII"]) or ["SKITARII"])
+            if str(kw or "").strip()
+        ]
+        if not required_keywords:
+            required_keywords = ["SKITARII"]
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        candidates: list = []
+        for root in self._iter_player_unit_roots(owner):
+            if root is None or not self._unit_in_army(root):
+                continue
+            if not self._unit_is_on_battlefield(root):
+                continue
+            if not all(self._unit_has_keyword(root, keyword) for keyword in required_keywords):
+                continue
+            if not model_within_range_of_unit(source_bearer, root, range_inches, use_attached_aggregate=True):
+                continue
+            candidates.append(root)
+        candidates.sort(key=lambda item: self._entity_id(item) or str(getattr(item, "name", "") or ""))
+        return candidates
+
+    def _build_skitarii_cantic_thrallnet_request(self, game, *, source_root, source_member, source_sr, bearer, battle_round: int):
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        if game is None or source_root is None or source_member is None or bearer is None:
+            return None
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return None
+        source_root_id = self._entity_id(source_root)
+        source_member_id = self._entity_id(source_member)
+        if not source_root_id:
+            return None
+        candidates = self._skitarii_cantic_thrallnet_candidate_roots(
+            source_bearer=bearer,
+            source_sr=source_sr,
+            game=game,
+        )
+        if not candidates:
+            return None
+        source_name = str(
+            source_sr.get("enhancement_skitarii_cantic_thrallnet_source", "")
+            or self._SKITARII_CANTIC_THRALLNET_SOURCE
+        ).strip() or self._SKITARII_CANTIC_THRALLNET_SOURCE
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        for target in candidates:
+            target_id = self._entity_id(target)
+            if not target_id:
+                continue
+            target_name = str(getattr(target, "name", "Unit") or "Unit")
+            options.append(
+                DecisionOption.create(
+                    target_name,
+                    payload={
+                        "source_unit_id": source_root_id,
+                        "source_member_unit_id": source_member_id,
+                        "target_unit_id": target_id,
+                    },
+                )
+            )
+        if len(options) <= 1:
+            return None
+        try:
+            range_inches = int(float(source_sr.get("enhancement_skitarii_cantic_thrallnet_range", 12.0) or 12.0))
+        except (TypeError, ValueError):
+            range_inches = 12
+        prompt = (
+            f"{source_name}: select one friendly SKITARII unit within {int(max(0, range_inches))}\" of the bearer "
+            "to treat Protector and Conqueror Imperatives as active until the start of your next battle round (or None)."
+        )
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            prompt,
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self._SKITARII_CANTIC_THRALLNET_ABILITY_KEY,
+                "ability_name": source_name,
+                "army_id": self._entity_id(self.army),
+                "source_unit_id": source_root_id,
+                "source_member_unit_id": source_member_id,
+                "battle_round": int(battle_round),
+                "candidate_unit_ids": [self._entity_id(target) for target in candidates if self._entity_id(target)],
+                "optional": True,
+            },
+        )
+
+    def _queue_skitarii_cantic_thrallnet_requests(self, game, *, player, battle_round: int) -> None:
+        if not self.is_skitarii_hunter_cohort() or self.army is None:
+            return
+        if game is None or player is None:
+            return
+        owner = getattr(self.army, "player", None)
+        if owner is None or player is not owner:
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        request_decision = getattr(game, "request_decision", None)
+        if not callable(request_decision):
+            return
+        for source_root_id, source_root, source_member, source_sr, bearer in self._iter_skitarii_enhancement_sources(
+            "enhancement_skitarii_cantic_thrallnet"
+        ):
+            if not self._unit_is_on_battlefield(source_root):
+                continue
+            if self._pending_skitarii_cantic_thrallnet_request(
+                game,
+                source_root_id=source_root_id,
+                battle_round=int(battle_round),
+            ) is not None:
+                continue
+            request = self._build_skitarii_cantic_thrallnet_request(
+                game,
+                source_root=source_root,
+                source_member=source_member,
+                source_sr=source_sr,
+                bearer=bearer,
+                battle_round=int(battle_round),
+            )
+            if request is not None:
+                request_decision(request)
+
+    def _resolve_skitarii_cantic_thrallnet_source(self, source_unit_id: str):
+        wanted_id = str(source_unit_id or "").strip()
+        if not wanted_id:
+            return None
+        for root_id, source_root, source_member, source_sr, bearer in self._iter_skitarii_enhancement_sources(
+            "enhancement_skitarii_cantic_thrallnet"
+        ):
+            if str(root_id or "").strip() == wanted_id:
+                return source_root, source_member, source_sr, bearer
+        return None
+
+    def validate_skitarii_cantic_thrallnet_choice(
+        self,
+        source_unit_id: str,
+        target_unit_id: str,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+        candidate_ids: list[str] | tuple[str, ...] | None = None,
+    ) -> tuple[bool, str]:
+        if not self.is_skitarii_hunter_cohort():
+            return False, "Cantic Thrallnet requires Skitarii Hunter Cohort detachment."
+        if self.army is None:
+            return False, "Cantic Thrallnet army not found."
+        owner = getattr(self.army, "player", None)
+        if player is not None and owner is not None and player is not owner:
+            return False, "Cantic Thrallnet must be resolved by the owning player."
+        source_id = str(source_unit_id or "").strip()
+        target_id = str(target_unit_id or "").strip()
+        if not source_id or not target_id:
+            return False, "Cantic Thrallnet requires both source and target unit ids."
+        resolved_source = self._resolve_skitarii_cantic_thrallnet_source(source_id)
+        if resolved_source is None:
+            return False, "Cantic Thrallnet source unit is not available."
+        source_root, _source_member, source_sr, bearer = resolved_source
+        if source_root is None or bearer is None:
+            return False, "Cantic Thrallnet source bearer is not available."
+        if not self._unit_is_on_battlefield(source_root):
+            return False, "Cantic Thrallnet source unit must be on the battlefield."
+        allowed_ids = {
+            str(unit_id or "").strip()
+            for unit_id in list(candidate_ids or [])
+            if str(unit_id or "").strip()
+        }
+        if allowed_ids and target_id not in allowed_ids:
+            return False, "Cantic Thrallnet target is not an eligible candidate for this request."
+        candidates = self._skitarii_cantic_thrallnet_candidate_roots(
+            source_bearer=bearer,
+            source_sr=source_sr,
+            game=game,
+        )
+        valid_ids = {self._entity_id(unit) for unit in candidates if self._entity_id(unit)}
+        if target_id not in valid_ids:
+            return False, "Cantic Thrallnet target must be a friendly SKITARII unit within range of the bearer."
+        expected_round = int(battle_round or 0)
+        if expected_round > 0 and game is not None:
+            try:
+                current_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = 0
+            if current_round > 0 and current_round != expected_round:
+                return False, "Cantic Thrallnet selection is no longer in the current battle round."
+        return True, ""
+
+    def select_skitarii_cantic_thrallnet_choice(
+        self,
+        source_unit_id: str,
+        target_unit_id: str,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+        candidate_ids: list[str] | tuple[str, ...] | None = None,
+    ):
+        valid, _reason = self.validate_skitarii_cantic_thrallnet_choice(
+            source_unit_id,
+            target_unit_id,
+            game=game,
+            player=player,
+            battle_round=battle_round,
+            candidate_ids=candidate_ids,
+        )
+        if not valid:
+            return None
+        resolved_source = self._resolve_skitarii_cantic_thrallnet_source(source_unit_id)
+        if resolved_source is None:
+            return None
+        source_root, _source_member, source_sr, _bearer = resolved_source
+        candidates = self._skitarii_cantic_thrallnet_candidate_roots(
+            source_bearer=resolved_source[3],
+            source_sr=source_sr,
+            game=game,
+        )
+        candidates_by_id = {self._entity_id(unit): unit for unit in candidates if self._entity_id(unit)}
+        target_id = str(target_unit_id or "").strip()
+        target_root = candidates_by_id.get(target_id)
+        if target_root is None:
+            return None
+        source_root_id = self._entity_id(source_root)
+        if not source_root_id:
+            return None
+        self._clear_skitarii_cantic_thrallnet_source_assignment(source_root_id)
+        current_round = int(battle_round or 0)
+        if game is not None:
+            try:
+                current_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = int(battle_round or 0)
+        if current_round <= 0:
+            current_round = int(battle_round or 1)
+        source_name = str(
+            source_sr.get("enhancement_skitarii_cantic_thrallnet_source", "")
+            or self._SKITARII_CANTIC_THRALLNET_SOURCE
+        ).strip() or self._SKITARII_CANTIC_THRALLNET_SOURCE
+        target_sr = getattr(target_root, "special_rules", None)
+        if not isinstance(target_sr, dict):
+            target_sr = {}
+        target_sr = dict(target_sr)
+        target_sr[self._SKITARII_CANTIC_THRALLNET_ACTIVE_KEY] = True
+        target_sr[self._SKITARII_CANTIC_THRALLNET_SOURCE_UNIT_ID_KEY] = str(source_root_id)
+        target_sr[self._SKITARII_CANTIC_THRALLNET_SOURCE_NAME_KEY] = source_name
+        target_sr[self._SKITARII_CANTIC_THRALLNET_STARTED_ROUND_KEY] = int(current_round)
+        target_sr[self._SKITARII_CANTIC_THRALLNET_EXPIRES_ROUND_KEY] = int(current_round + 1)
+        target_root.special_rules = target_sr
+        return {
+            "source_unit_id": str(source_root_id),
+            "source_unit_name": str(getattr(source_root, "name", "Unit") or "Unit"),
+            "target_unit_id": str(target_id),
+            "target_unit_name": str(getattr(target_root, "name", "Unit") or "Unit"),
+            "source": source_name,
+            "battle_round": int(current_round),
+            "expires_round": int(current_round + 1),
+        }
+
+    def skitarii_cantic_thrallnet_applies(self, unit, *, game=None) -> bool:
+        if not self.is_skitarii_hunter_cohort():
+            return False
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._SKITARII_CANTIC_THRALLNET_ACTIVE_KEY, False)):
+            return False
+        try:
+            expires_round = int(sr.get(self._SKITARII_CANTIC_THRALLNET_EXPIRES_ROUND_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            expires_round = 0
+        if expires_round <= 0:
+            return False
+        if game is None:
+            owner = getattr(self.army, "player", None)
+            game = getattr(owner, "game", None) if owner is not None else None
+        if game is None:
+            return True
+        try:
+            current_round = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_round = 0
+        if current_round > 0 and current_round >= expires_round:
+            updated = dict(sr)
+            for key in (
+                self._SKITARII_CANTIC_THRALLNET_ACTIVE_KEY,
+                self._SKITARII_CANTIC_THRALLNET_SOURCE_UNIT_ID_KEY,
+                self._SKITARII_CANTIC_THRALLNET_SOURCE_NAME_KEY,
+                self._SKITARII_CANTIC_THRALLNET_STARTED_ROUND_KEY,
+                self._SKITARII_CANTIC_THRALLNET_EXPIRES_ROUND_KEY,
+            ):
+                updated.pop(key, None)
+            root.special_rules = updated
+            return False
+        return True
+
+    def skitarii_battle_sphere_uplink_reactive_move(
+        self,
+        unit,
+        *,
+        game=None,
+        is_engaged: Optional[bool] = None,
+    ) -> tuple[int, str]:
+        if not self.is_skitarii_hunter_cohort():
+            return 0, ""
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return 0, ""
+        if not self._unit_is_on_battlefield(root):
+            return 0, ""
+        root_id = str(self._entity_id(root) or "").strip()
+        if not root_id:
+            return 0, ""
+        engaged = bool(is_engaged) if is_engaged is not None else False
+        if is_engaged is None and game is not None:
+            game_map = getattr(game, "map", None)
+            if game_map is not None:
+                for enemy in list(getattr(game_map, "get_enemy_units", lambda *_a, **_k: [])(root) or []):
+                    if enemy is None:
+                        continue
+                    if hasattr(enemy, "is_alive") and callable(enemy.is_alive) and not enemy.is_alive():
+                        continue
+                    if bool(getattr(enemy, "is_embarked", False)) or getattr(enemy, "embarked_in", None) is not None:
+                        continue
+                    if bool(getattr(enemy, "deployed", False)) is False:
+                        continue
+                    try:
+                        if game_map.is_within_engagement_range(root, enemy):
+                            engaged = True
+                            break
+                    except (AttributeError, TypeError, ValueError):
+                        continue
+        for source_root_id, _source_root, _source_member, source_sr, _bearer in self._iter_skitarii_enhancement_sources(
+            "enhancement_skitarii_battle_sphere_uplink"
+        ):
+            if str(source_root_id or "").strip() != root_id:
+                continue
+            if bool(source_sr.get("enhancement_skitarii_battle_sphere_uplink_requires_not_engagement_range", True)) and engaged:
+                return 0, ""
+            try:
+                move_range = int(source_sr.get("enhancement_skitarii_battle_sphere_uplink_move_range", 6) or 6)
+            except (TypeError, ValueError):
+                move_range = 6
+            if move_range <= 0:
+                continue
+            source_name = str(
+                source_sr.get("enhancement_skitarii_battle_sphere_uplink_source", "")
+                or self._SKITARII_BATTLE_SPHERE_UPLINK_SOURCE
+            ).strip() or self._SKITARII_BATTLE_SPHERE_UPLINK_SOURCE
+            return int(move_range), source_name
+        return 0, ""
+
     def _unit_is_ironstrider_ballistarii(self, unit) -> bool:
         if unit is None:
             return False
@@ -2742,6 +3250,13 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             self._clear_expired_taking_cover_state(game, battle_round=br)
             if br == 1:
                 self._queue_rad_bombardment_requests(game, battle_round=br)
+        if self.is_skitarii_hunter_cohort():
+            self._clear_expired_skitarii_cantic_thrallnet_state(game=game, battle_round=br)
+            self._queue_skitarii_cantic_thrallnet_requests(
+                game,
+                player=getattr(self.army, "player", None),
+                battle_round=br,
+            )
         if self.is_data_psalm_conclave():
             self._queue_data_psalm_benediction_request(game, battle_round=br)
 
