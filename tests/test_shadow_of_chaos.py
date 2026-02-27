@@ -2,6 +2,29 @@ import unittest
 from unittest.mock import patch
 
 
+class _RandomStub:
+    def randint(self, _min_val: int, _max_val: int) -> int:
+        return 2
+
+
+class _EventSystemStub:
+    def __init__(self):
+        self.events = []
+
+    def publish(self, event_name: str, **kwargs):
+        self.events.append((str(event_name), dict(kwargs or {})))
+
+
+class _EntityRegistryStub:
+    def __init__(self, unit):
+        self._unit = unit
+
+    def get(self, entity_id: str, *, kind: str | None = None):
+        if kind == "unit" and str(entity_id) == str(getattr(self._unit, "id", "")):
+            return self._unit
+        return None
+
+
 class _ModelStub:
     def __init__(self, *, wounds: int, base_wounds: int, name: str = "Model"):
         self.name = name
@@ -48,7 +71,9 @@ class _UnitStub:
         name="Test Unit",
         keywords=None,
         faction_keywords=None,
+        unit_id="unit-shadow-of-chaos",
     ):
+        self.id = str(unit_id)
         self.models = list(models or [])
         self.models_lost = list(lost or [])
         self._battleline = bool(battleline)
@@ -126,6 +151,26 @@ class _GameStub:
         return False
 
 
+class _DiceGameStub(_GameStub):
+    def __init__(self, players, unit):
+        super().__init__(players)
+        from warhammer40k_ai.engine.decisions import DecisionQueue
+        from warhammer40k_ai.engine.dice_rolls import DiceRollManager
+
+        self.is_authoritative = True
+        self.decision_queue = DecisionQueue()
+        self.roll_manager = DiceRollManager()
+        self.entity_registry = _EntityRegistryStub(unit)
+        self.event_system = _EventSystemStub()
+        self.random_source = _RandomStub()
+
+    def request_decision(self, request):
+        self.decision_queue.add(request)
+
+    def request_dice_roll(self, *, player_id, spec, prompt=None):
+        return self.roll_manager.request_roll(self, player_id=player_id, spec=spec, prompt=prompt)
+
+
 class TestShadowOfChaos(unittest.TestCase):
     def test_battleline_returns_destroyed_models(self):
         from warhammer40k_ai.rules.shadow_of_chaos import ShadowBattleShockContext, ShadowOfChaosManager
@@ -165,6 +210,50 @@ class TestShadowOfChaos(unittest.TestCase):
             ShadowOfChaosManager.apply_battle_shock_outcome(unit, passed=False, context=ctx, game=None)
 
         self.assertEqual(unit.mortal_applied, 2)
+
+    def test_daemonic_terror_requests_dice_roll_and_applies_mortals(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_REQUEST_DICE_ROLL
+        from warhammer40k_ai.rules.shadow_of_chaos import ShadowBattleShockContext, ShadowOfChaosManager
+
+        unit = _UnitStub(
+            models=[_ModelStub(wounds=3, base_wounds=3)],
+            lost=[],
+            battleline=False,
+            unit_id="unit-daemonic-terror",
+        )
+        army = _ArmyStub(units=[unit], faction_id="CD")
+        unit._army = army
+        player = _PlayerStub("Daemons", army)
+        army.player = player
+        game = _DiceGameStub([player], unit=unit)
+        player.game = game
+        ctx = ShadowBattleShockContext(terror_active=True)
+
+        ShadowOfChaosManager.apply_battle_shock_outcome(unit, passed=False, context=ctx, game=game)
+
+        requests = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_REQUEST_DICE_ROLL
+        ]
+        self.assertEqual(len(requests), 1)
+        request = requests[0]
+        self.assertIn("Daemonic Terror mortal wounds", str(getattr(request, "prompt", "") or ""))
+
+        roll_id = int((getattr(request, "context", {}) or {}).get("roll_id", 0) or 0)
+        self.assertGreater(roll_id, 0)
+        state = game.roll_manager.resolve_roll(game, roll_id)
+        self.assertIsNotNone(state)
+        self.assertEqual(int(unit.mortal_applied or 0), 2)
+
+        roll_events = [
+            payload
+            for event_name, payload in list(game.event_system.events or [])
+            if str(event_name) == "roll_made"
+            and str(payload.get("roll_type", "") or "") == "daemonic_terror_mortals"
+        ]
+        self.assertTrue(roll_events)
+        self.assertEqual(int(roll_events[-1].get("value", 0) or 0), 2)
 
     def test_manifestation_return_respects_starting_strength_cap(self):
         from warhammer40k_ai.rules.shadow_of_chaos import ShadowBattleShockContext, ShadowOfChaosManager

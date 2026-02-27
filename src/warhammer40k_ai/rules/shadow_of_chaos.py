@@ -854,27 +854,79 @@ class ShadowOfChaosManager:
     def _apply_daemonic_terror(cls, unit, *, game=None) -> None:
         if unit is None:
             return
+        is_authoritative = bool(getattr(game, "is_authoritative", True)) if game is not None else True
+        request_roll = getattr(game, "request_dice_roll", None) if game is not None else None
+        if is_authoritative and callable(request_roll):
+            try:
+                from ..utility.entity_ids import get_entity_id
+            except Exception:
+                get_entity_id = None
+            unit_id = None
+            if callable(get_entity_id):
+                try:
+                    unit_id = get_entity_id(unit)
+                except Exception:
+                    unit_id = None
+            player = None
+            try:
+                player = unit.get_parent_army().player
+            except Exception:
+                player = None
+            roll_spec = {
+                "dice_count": 1,
+                "faces": 3,
+                "reason": f"Daemonic Terror mortal wounds for {getattr(unit, 'name', 'unit')}",
+                "roll_type": "daemonic_terror_mortals",
+                "unit_id": unit_id,
+                "handler_key": "shadow_daemonic_terror_mortals",
+                "show_sum": True,
+            }
+            try:
+                request_roll(
+                    player_id=getattr(player, "id", None),
+                    spec=roll_spec,
+                    prompt=roll_spec["reason"],
+                )
+                return
+            except Exception:
+                pass
         amount = int(get_roll("D3") or 0)
         if amount <= 0:
             return
+        cls.apply_daemonic_terror_mortal_wounds(unit, amount=amount, game=game)
+
+    @classmethod
+    def apply_daemonic_terror_mortal_wounds(cls, unit, *, amount: int, game=None) -> int:
+        if unit is None:
+            return 0
+        try:
+            pending = int(amount or 0)
+        except Exception:
+            pending = 0
+        if pending <= 0:
+            return 0
         try:
             game_map = getattr(game, "map", None) if game is not None else None
         except Exception:
             game_map = None
+        applied = 0
         try:
             if hasattr(unit, "_apply_mortal_wounds_to_unit"):
-                unit._apply_mortal_wounds_to_unit(unit, amount, game_map=game_map)
+                unit._apply_mortal_wounds_to_unit(unit, pending, game_map=game_map)
+                applied = int(pending)
             else:
                 for model in list(getattr(unit, "models", []) or []):
-                    if amount <= 0:
+                    if pending <= 0:
                         break
                     if not getattr(model, "is_alive", True):
                         continue
                     try:
                         model.take_damage(1, is_mortal=True, weapon_profile=None, game_map=game_map)
-                        amount -= 1
+                        pending -= 1
+                        applied += 1
                     except Exception:
                         break
         except Exception:
-            return
+            return 0
         logger.error(f"Shadow of Chaos: {getattr(unit, 'name', 'unit')} suffers mortal wounds from Daemonic Terror.")
+        return int(applied)

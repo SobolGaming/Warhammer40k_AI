@@ -139,6 +139,8 @@ Setup phase uses this modal adapter in `SetupPhaseHandler._show_mission_selectio
   It standardizes pass/success condition data and modifier contributors for both sum-based and target-based rolls.
 - Contributor entries include typed sources (`detachment_ability`, `faction_rule`, `unit_ability`, `enhancement`,
   `stratagem`, `aura`, `core_rule`, `rule`) and optional aura range/distance fields when available.
+- Shadow of Chaos Daemonic Terror (`D3` mortal wounds on failed Battle-shock) now resolves through `REQUEST_DICE_ROLL`
+  so the player sees an explicit `Make Roll` decision and resulting roll telemetry/events.
 
 ### Battle-shock command step
 

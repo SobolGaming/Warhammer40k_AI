@@ -831,6 +831,26 @@ def handle_battle_focus_reactive_move(game: object, state: DiceRollState):
     return max_dist
 
 
+def handle_shadow_daemonic_terror_mortals(game: object, state: DiceRollState):
+    spec = dict(getattr(state, "spec", {}) or {})
+    unit_id = spec.get("unit_id")
+    unit = _get_unit(game, unit_id)
+    if unit is None:
+        return None
+    try:
+        amount = int(state.total or 0)
+    except Exception:
+        amount = 0
+    if amount <= 0:
+        return 0
+    try:
+        from ..rules.shadow_of_chaos import ShadowOfChaosManager
+
+        return int(ShadowOfChaosManager.apply_daemonic_terror_mortal_wounds(unit, amount=amount, game=game) or 0)
+    except Exception:
+        return 0
+
+
 register_roll_handler("advance_roll", handle_advance_roll)
 register_roll_handler("charge_roll", handle_charge_roll)
 register_roll_handler("battle_shock", handle_battle_shock_roll)
@@ -846,3 +866,4 @@ register_roll_handler("move_over_mortal_wounds", handle_move_over_mortal_wounds)
 register_roll_handler("grenade_pack_flyover", handle_grenade_pack_flyover)
 register_roll_handler("malign_sacrifice", handle_malign_sacrifice_roll)
 register_roll_handler("battle_focus_reactive_move", handle_battle_focus_reactive_move)
+register_roll_handler("shadow_daemonic_terror_mortals", handle_shadow_daemonic_terror_mortals)
