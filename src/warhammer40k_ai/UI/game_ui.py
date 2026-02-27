@@ -7122,6 +7122,8 @@ class GameView:
         self.dragging_unit = None
         self.dragging = False
         self.detailed_unit = None
+        if hasattr(self.unit_detail_panel, "invalidate_cache"):
+            self.unit_detail_panel.invalidate_cache()
         self._rule_support_cache = {}
 
         if self.ui_interface:
@@ -21068,6 +21070,8 @@ class GameView:
         self.detailed_unit = None
         # Reset scroll position when closing
         self.unit_detail_panel.scroll_offset = 0
+        if hasattr(self.unit_detail_panel, "invalidate_cache"):
+            self.unit_detail_panel.invalidate_cache()
 
     def _apply_pan_limits(self, offset_x: int, offset_y: int) -> Tuple[int, int]:
         """Apply panning limits to prevent moving outside the battlefield"""

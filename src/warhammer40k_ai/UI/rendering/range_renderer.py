@@ -1,8 +1,92 @@
 import pygame
+from collections import OrderedDict
+from typing import Optional
 
 from ..ui_constants import TILE_SIZE
 import logging
 logger = logging.getLogger(__name__)
+
+
+# Cache translucent circle textures used by movement/weapon range overlays.
+# Reusing these avoids expensive per-model/per-frame surface creation.
+_RANGE_CIRCLE_SURFACE_CACHE: OrderedDict[
+    tuple[int, tuple[int, int, int, int], tuple[int, int, int], int],
+    pygame.Surface,
+] = OrderedDict()
+_RANGE_CIRCLE_CACHE_LIMIT = 24
+
+# Cache weapon-range label fonts by computed size.
+_WEAPON_RANGE_FONT_CACHE: dict[int, pygame.font.Font] = {}
+
+
+def _get_cached_circle_surface(
+    *,
+    radius: int,
+    fill_color: tuple[int, int, int, int],
+    border_color: tuple[int, int, int],
+    border_width: int,
+) -> Optional[pygame.Surface]:
+    if radius <= 0:
+        return None
+
+    key = (int(radius), tuple(fill_color), tuple(border_color), int(border_width))
+    cached = _RANGE_CIRCLE_SURFACE_CACHE.get(key)
+    if cached is not None:
+        _RANGE_CIRCLE_SURFACE_CACHE.move_to_end(key)
+        return cached
+
+    size = int(radius) * 2
+    circle_surface = pygame.Surface((size, size), pygame.SRCALPHA)
+    pygame.draw.circle(circle_surface, fill_color, (radius, radius), radius)
+    if border_width > 0:
+        pygame.draw.circle(circle_surface, border_color, (radius, radius), radius, int(border_width))
+
+    _RANGE_CIRCLE_SURFACE_CACHE[key] = circle_surface
+    _RANGE_CIRCLE_SURFACE_CACHE.move_to_end(key)
+    while len(_RANGE_CIRCLE_SURFACE_CACHE) > _RANGE_CIRCLE_CACHE_LIMIT:
+        _RANGE_CIRCLE_SURFACE_CACHE.popitem(last=False)
+    return circle_surface
+
+
+def _get_weapon_range_font(size: int) -> pygame.font.Font:
+    font_size = max(8, int(size))
+    cached = _WEAPON_RANGE_FONT_CACHE.get(font_size)
+    if cached is not None:
+        return cached
+    font = pygame.font.SysFont("Arial", font_size, bold=True)
+    _WEAPON_RANGE_FONT_CACHE[font_size] = font
+    return font
+
+
+def _clear_range_render_caches() -> None:
+    """Test/debug helper to clear all range-rendering caches."""
+    _RANGE_CIRCLE_SURFACE_CACHE.clear()
+    _WEAPON_RANGE_FONT_CACHE.clear()
+
+
+def _blit_surface_clipped(
+    screen: pygame.Surface,
+    source_surface: pygame.Surface,
+    dest_x: int,
+    dest_y: int,
+    screen_rect: Optional[pygame.Rect] = None,
+) -> None:
+    """Blit only the visible portion of `source_surface` onto `screen`."""
+    if screen_rect is None:
+        screen_rect = screen.get_rect()
+
+    dest_rect = source_surface.get_rect(topleft=(int(dest_x), int(dest_y)))
+    visible_rect = dest_rect.clip(screen_rect)
+    if visible_rect.width <= 0 or visible_rect.height <= 0:
+        return
+
+    source_rect = pygame.Rect(
+        int(visible_rect.left - dest_rect.left),
+        int(visible_rect.top - dest_rect.top),
+        int(visible_rect.width),
+        int(visible_rect.height),
+    )
+    screen.blit(source_surface, visible_rect.topleft, source_rect)
 
 
 def draw_individual_model_movement_range(screen: pygame.Surface, model, movement_type: str, max_distance: float, zoom_level: float, offset_x: int, offset_y: int, game_map=None) -> None:
@@ -53,15 +137,14 @@ def draw_individual_model_movement_range(screen: pygame.Surface, model, movement
     else:
         # Standard circular range for other movement types
         if radius > 0:
-            # Create a surface with per-pixel alpha for the range circle
-            range_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
-            pygame.draw.circle(range_surface, color, (radius, radius), radius)
-
-            # Blit the transparent range circle onto the battlefield
-            screen.blit(range_surface, (center_x - radius, center_y - radius))
-
-            # Draw the border circle
-            pygame.draw.circle(screen, border_color, (center_x, center_y), radius, 2)
+            circle_surface = _get_cached_circle_surface(
+                radius=radius,
+                fill_color=color,
+                border_color=border_color,
+                border_width=2,
+            )
+            if circle_surface is not None:
+                _blit_surface_clipped(screen, circle_surface, center_x - radius, center_y - radius)
 
 
 def draw_pile_in_range(screen: pygame.Surface, model, current_position: tuple, max_distance: float, 
@@ -95,10 +178,14 @@ def draw_pile_in_range(screen: pygame.Surface, model, current_position: tuple, m
         center_y = int(current_position[1] * TILE_SIZE * zoom_level + offset_y)
         
         if radius > 0:
-            range_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
-            pygame.draw.circle(range_surface, (255, 0, 255, 64), (radius, radius), radius)
-            screen.blit(range_surface, (center_x - radius, center_y - radius))
-            pygame.draw.circle(screen, (200, 0, 200), (center_x, center_y), radius, 2)
+            circle_surface = _get_cached_circle_surface(
+                radius=radius,
+                fill_color=(255, 0, 255, 64),
+                border_color=(200, 0, 200),
+                border_width=2,
+            )
+            if circle_surface is not None:
+                _blit_surface_clipped(screen, circle_surface, center_x - radius, center_y - radius)
         return
     
     # Get enemy position
@@ -229,12 +316,15 @@ def draw_weapon_ranges(screen: pygame.Surface, unit, selected_weapon_profile, zo
     """Draw visual indicators showing the weapon range for each model that has the selected weapon"""
     if not selected_weapon_profile or not unit or not unit.models:
         return
-    
-    # TILE_SIZE is defined at the top of this file
+
+    parent_wargear = getattr(selected_weapon_profile, "parent_wargear", None)
+    if parent_wargear is None:
+        return
+
     weapon_range = selected_weapon_profile.range.max
     if weapon_range <= 0:
         return  # Skip melee weapons
-    
+
     # Choose color based on weapon type and special rules
     if selected_weapon_profile.is_pistol():
         range_color = (255, 100, 255, 64)  # Magenta for pistols
@@ -251,65 +341,66 @@ def draw_weapon_ranges(screen: pygame.Surface, unit, selected_weapon_profile, zo
     else:
         range_color = (0, 255, 0, 64)  # Green for other ranged weapons
         border_color = (0, 200, 0)
-    
-    # Draw range circle for each model that has this weapon
+
+    radius = int(weapon_range * TILE_SIZE * zoom_level)
+    if radius <= 0:
+        return
+
+    circle_surface = _get_cached_circle_surface(
+        radius=radius,
+        fill_color=range_color,
+        border_color=border_color,
+        border_width=1,
+    )
+    if circle_surface is None:
+        return
+
+    screen_rect = screen.get_rect()
+    screen_w = int(screen_rect.width)
+    screen_h = int(screen_rect.height)
+
+    # Draw range circle for each model that has this weapon.
     models_with_weapon = []
     for model in unit.models:
         if not model.is_alive:
             continue
-        
-        # Check if this model has the selected weapon
-        has_weapon = False
-        for wargear in model.wargear:
-            if wargear == selected_weapon_profile.parent_wargear:
-                has_weapon = True
-                break
-        
-        if has_weapon:
-            models_with_weapon.append(model)
-            
-            # Get model position
-            model_pos = model.get_location()
-            
-            # Convert model position to screen coordinates
-            center_x = int(model_pos[0] * TILE_SIZE * zoom_level + offset_x)
-            center_y = int(model_pos[1] * TILE_SIZE * zoom_level + offset_y)
-            
-            # Calculate radius in screen pixels
-            radius = int(weapon_range * TILE_SIZE * zoom_level)
-            
-            if radius > 0:
-                # Create a surface with per-pixel alpha for the range circle
-                range_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
-                pygame.draw.circle(range_surface, range_color, (radius, radius), radius)
-                
-                # Blit the transparent range circle onto the battlefield
-                screen.blit(range_surface, (center_x - radius, center_y - radius))
-                
-                # Draw the border circle with thinner line for individual models
-                pygame.draw.circle(screen, border_color, (center_x, center_y), radius, 1)
-    
+
+        model_wargear = getattr(model, "wargear", ()) or ()
+        if parent_wargear not in model_wargear:
+            continue
+
+        models_with_weapon.append(model)
+
+        model_pos = model.get_location()
+        center_x = int(model_pos[0] * TILE_SIZE * zoom_level + offset_x)
+        center_y = int(model_pos[1] * TILE_SIZE * zoom_level + offset_y)
+
+        # Cull circles fully outside the current surface.
+        if center_x + radius < 0 or center_x - radius > screen_w:
+            continue
+        if center_y + radius < 0 or center_y - radius > screen_h:
+            continue
+
+        _blit_surface_clipped(screen, circle_surface, center_x - radius, center_y - radius, screen_rect)
+
     # Draw weapon information text
     if models_with_weapon:
-        try:
-            font = pygame.font.SysFont('Arial', max(14, int(16 * zoom_level)), bold=True)
-            weapon_name = selected_weapon_profile.parent_wargear.name
-            if len(selected_weapon_profile.parent_wargear.profiles) > 1:
-                weapon_name += f"({selected_weapon_profile.name})"
-            
-            info_text = f"{weapon_name} - Range {weapon_range}\" ({len(models_with_weapon)} models)"
-            text_surface = font.render(info_text, True, border_color)
-            
-            # Position text at top of screen
-            text_rect = text_surface.get_rect()
-            text_rect.center = (screen.get_width() // 2, 30)
-            
-            # Draw background for text
-            bg_rect = text_rect.inflate(20, 10)
-            pygame.draw.rect(screen, (0, 0, 0, 128), bg_rect)
-            pygame.draw.rect(screen, border_color, bg_rect, 2)
-            
-            screen.blit(text_surface, text_rect)
-        except:
-            # Fallback if font creation fails
-            pass
+        font = _get_weapon_range_font(max(14, int(16 * zoom_level)))
+        weapon_name = str(getattr(parent_wargear, "name", "") or "Weapon")
+        profiles = getattr(parent_wargear, "profiles", None) or {}
+        if len(profiles) > 1:
+            weapon_name += f"({selected_weapon_profile.name})"
+
+        info_text = f"{weapon_name} - Range {weapon_range}\" ({len(models_with_weapon)} models)"
+        text_surface = font.render(info_text, True, border_color)
+
+        # Position text at top of screen
+        text_rect = text_surface.get_rect()
+        text_rect.center = (screen_w // 2, 30)
+
+        # Draw background for text
+        bg_rect = text_rect.inflate(20, 10)
+        pygame.draw.rect(screen, (0, 0, 0, 128), bg_rect)
+        pygame.draw.rect(screen, border_color, bg_rect, 2)
+
+        screen.blit(text_surface, text_rect)

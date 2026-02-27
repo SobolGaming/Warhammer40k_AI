@@ -110,3 +110,9 @@ Setup phase uses this modal adapter in `SetupPhaseHandler._show_mission_selectio
   but you must manually call `dialog_manager.open()` to put it on the stack.
 - Some "nested" dialogs (e.g. floor selection within individual model movement) are managed internally
   by their parent dialog and do not need to be registered with `DialogManager`.
+
+### Performance note
+
+- `UnitDetailPanel` (the right-click detailed unit info pane) now caches a pre-rendered content surface.
+  Scrolling only updates viewport offset instead of re-wrapping/re-rendering every line each frame.
+  Cache invalidation occurs when the focused unit changes, panel width changes, or the periodic refresh window expires.
