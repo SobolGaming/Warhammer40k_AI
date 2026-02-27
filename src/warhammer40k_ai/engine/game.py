@@ -973,6 +973,23 @@ class Game(
                     f"{ability_name}: {getattr(unit, 'name', 'Unit')} suffers no mortal wounds.",
                 )
 
+    def _on_battle_shock_test_resolved_acts_of_faith(self, unit=None, passed: bool = False, **_kwargs) -> None:
+        if unit is None:
+            return
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            army = self._get_player_army(player)
+            if army is None:
+                continue
+            mgr = getattr(army, "adepta_sororitas_detachments", None)
+            if mgr is None:
+                continue
+            on_resolved = getattr(mgr, "on_divine_aspect_battle_shock_resolved", None)
+            if not callable(on_resolved):
+                continue
+            on_resolved(unit, passed=bool(passed), game=self)
+
     def _apply_reanimation_protocols_end_command_phase(self, current_player) -> None:
         if current_player is None:
             raise RuntimeError("Reanimation protocols require a current player.")
@@ -8051,11 +8068,42 @@ class Game(
     def _on_unit_destroyed_acts_of_faith(self, unit=None, last_model=None, **_kwargs) -> None:
         if unit is None:
             return
+        seen_armies: set[str] = set()
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            army = self._get_player_army(player)
+            if army is None:
+                continue
+            army_id = str(get_entity_id(army) or "")
+            if army_id and army_id in seen_armies:
+                continue
+            if army_id:
+                seen_armies.add(army_id)
+            mgr = getattr(army, "acts_of_faith", None)
+            if mgr is None:
+                continue
+            mgr.on_unit_destroyed(
+                unit,
+                game=self,
+                game_map=self.map,
+                last_model=last_model,
+                destroyed_by_unit=_kwargs.get("destroyed_by_unit"),
+                destroyed_by_model=_kwargs.get("destroyed_by_model"),
+                destroyed_by_weapon_profile=_kwargs.get("destroyed_by_weapon_profile"),
+            )
+
+    def _on_fight_unit_selected_acts_of_faith(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
         army = unit.get_parent_army()
         mgr = getattr(army, "acts_of_faith", None) if army is not None else None
         if mgr is None:
             return
-        mgr.on_unit_destroyed(unit, game=self, game_map=self.map, last_model=last_model)
+        on_select = getattr(mgr, "on_fight_unit_selected", None)
+        if not callable(on_select):
+            return
+        on_select(unit, game=self, selecting_player=selecting_player)
 
     def _on_model_destroyed_acts_of_faith(self, unit=None, model=None, **_kwargs) -> None:
         if unit is None or model is None:
@@ -9232,6 +9280,9 @@ class Game(
 
         # Adepta Sororitas: Champions of Faith (Righteous Purpose) command-phase selection.
         mgr = getattr(army, "adepta_sororitas_detachments", None)
+        if mgr is not None and hasattr(mgr, "on_command_phase_start"):
+            mgr.on_command_phase_start(game=self, player=current_player)
+        mgr = getattr(army, "acts_of_faith", None)
         if mgr is not None and hasattr(mgr, "on_command_phase_start"):
             mgr.on_command_phase_start(game=self, player=current_player)
 

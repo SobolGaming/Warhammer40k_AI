@@ -3,6 +3,7 @@ from __future__ import annotations
 from itertools import combinations
 
 from ..utility.entity_ids import maybe_entity_id
+from ..utility.aura_utils import distance_between_models_bases_3d
 from .detachment_manager import DetachmentManagerBase
 
 
@@ -29,6 +30,9 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
     _PATH_OF_THE_PENITENT_KEY = "path_of_the_penitent"
     _ABSOLUTION_IN_BATTLE_KEY = "absolution_in_battle"
     _DEATH_BEFORE_DISGRACE_KEY = "death_before_disgrace"
+    _DIVINE_ASPECT_ABILITY_KEY = "divine_aspect_target"
+    _DIVINE_ASPECT_PENDING_KEY = "enhancement_divine_aspect_pending"
+    _DIVINE_ASPECT_SOURCE_NAME = "Divine Aspect"
     _DESPERATE_FOR_REDEMPTION_VOWS = (
         (_PATH_OF_THE_PENITENT_KEY, "The Path of the Penitent"),
         (_ABSOLUTION_IN_BATTLE_KEY, "Absolution in Battle"),
@@ -622,6 +626,443 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
         if not self._unit_name_matches_any(model_unit, self._RIGHTEOUS_PURPOSE_SACRESANTS_UNIT_NAMES):
             return 0, ""
         return 1, self.RIGHTEOUS_PURPOSE_NAME
+
+    @staticmethod
+    def _model_is_alive(model) -> bool:
+        if model is None:
+            return False
+        alive_val = getattr(model, "is_alive", None)
+        if callable(alive_val):
+            return bool(alive_val())
+        return bool(alive_val)
+
+    def _divine_aspect_source_state(self, unit) -> tuple[bool, float, str]:
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False, 0.0, ""
+        if not bool(sr.get("enhancement_divine_aspect", False)):
+            return False, 0.0, ""
+        try:
+            range_inches = float(sr.get("enhancement_divine_aspect_range", 12.0) or 12.0)
+        except Exception:
+            range_inches = 12.0
+        source_name = str(sr.get("enhancement_divine_aspect_source", "") or self._DIVINE_ASPECT_SOURCE_NAME).strip()
+        if not source_name:
+            source_name = self._DIVINE_ASPECT_SOURCE_NAME
+        return True, float(max(0.0, range_inches)), source_name
+
+    def _divine_aspect_bearer_model(self, unit):
+        if unit is None:
+            return None
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        bearer = get_bearer() if callable(get_bearer) else None
+        if bearer is None:
+            try:
+                models = list(unit.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(unit, "models", []) or [])
+            for model in models:
+                if self._model_is_alive(model):
+                    bearer = model
+                    break
+        if bearer is None or not self._model_is_alive(bearer):
+            return None
+        return bearer
+
+    def _iter_divine_aspect_sources(self) -> list[dict]:
+        if not self.is_army_of_faith():
+            return []
+        army = self.army
+        if army is None:
+            return []
+        out: list[dict] = []
+        seen_ids: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            unit_id = str(maybe_entity_id(unit) or "")
+            if not unit_id or unit_id in seen_ids:
+                continue
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            if not self._unit_is_alive(root):
+                continue
+            if not self._unit_is_deployed_on_battlefield(root):
+                continue
+            if bool(getattr(root, "is_embarked", False)):
+                continue
+            if not self.unit_is_adepta_sororitas(root):
+                continue
+            is_source, range_inches, source_name = self._divine_aspect_source_state(unit)
+            if not is_source:
+                continue
+            bearer_model = self._divine_aspect_bearer_model(unit)
+            if bearer_model is None:
+                continue
+            seen_ids.add(unit_id)
+            out.append(
+                {
+                    "source_unit": unit,
+                    "source_root": root,
+                    "source_unit_id": unit_id,
+                    "source_name": source_name,
+                    "range_inches": float(max(0.0, range_inches)),
+                    "bearer_model": bearer_model,
+                    "bearer_model_id": str(maybe_entity_id(bearer_model) or ""),
+                }
+            )
+        return sorted(
+            out,
+            key=lambda item: (
+                str(item.get("source_unit_id", "") or ""),
+                str(item.get("bearer_model_id", "") or ""),
+            ),
+        )
+
+    def _divine_aspect_enemy_candidates(self, *, game=None, player=None, bearer_model=None, range_inches: float = 12.0) -> list:
+        if game is None or player is None or bearer_model is None:
+            return []
+        try:
+            max_range = float(range_inches)
+        except Exception:
+            max_range = 0.0
+        if max_range <= 0.0:
+            return []
+        out: dict[str, object] = {}
+        for enemy_player in list(getattr(game, "players", []) or []):
+            if enemy_player is None or enemy_player is player:
+                continue
+            enemy_army = getattr(enemy_player, "army", None)
+            if enemy_army is None:
+                getter = getattr(enemy_player, "get_army", None)
+                if callable(getter):
+                    enemy_army = getter()
+            if enemy_army is None:
+                continue
+            for enemy_unit in list(getattr(enemy_army, "units", []) or []):
+                enemy_root = self._unit_root(enemy_unit)
+                enemy_id = self._unit_id(enemy_root)
+                if enemy_root is None or not enemy_id or enemy_id in out:
+                    continue
+                if not self._unit_is_alive(enemy_root):
+                    continue
+                if not self._unit_is_deployed_on_battlefield(enemy_root):
+                    continue
+                if bool(getattr(enemy_root, "is_embarked", False)):
+                    continue
+                try:
+                    enemy_models = list(enemy_root.get_attached_unit_models() or [])
+                except Exception:
+                    enemy_models = list(getattr(enemy_root, "models", []) or [])
+                in_range = False
+                for enemy_model in enemy_models:
+                    if not self._model_is_alive(enemy_model):
+                        continue
+                    try:
+                        distance = float(distance_between_models_bases_3d(bearer_model, enemy_model))
+                    except Exception:
+                        continue
+                    if distance <= max_range + 1e-6:
+                        in_range = True
+                        break
+                if in_range:
+                    out[enemy_id] = enemy_root
+        return [out[uid] for uid in sorted(out.keys())]
+
+    def _has_pending_divine_aspect_request(self, *, game=None, player_id: str = "", source_unit_id: str = "", turn: int = 0) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for pending in list(queue.list() or []):
+            if str(getattr(pending, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            if player_id and str(getattr(pending, "player_id", "") or "") != str(player_id):
+                continue
+            pending_ctx = dict(getattr(pending, "context", {}) or {})
+            if str(pending_ctx.get("ability", "") or "") != self._DIVINE_ASPECT_ABILITY_KEY:
+                continue
+            if source_unit_id and str(pending_ctx.get("source_unit_id", "") or "") != str(source_unit_id):
+                continue
+            if int(turn or 0) > 0:
+                try:
+                    pending_turn = int(pending_ctx.get("turn", 0) or 0)
+                except (TypeError, ValueError):
+                    pending_turn = 0
+                if pending_turn and pending_turn != int(turn):
+                    continue
+            return True
+        return False
+
+    def queue_divine_aspect_selection_requests(self, *, game=None, player=None) -> list:
+        if not self.is_army_of_faith():
+            return []
+        army = self.army
+        if army is None:
+            return []
+        owner = getattr(army, "player", None)
+        if player is None:
+            player = owner
+        if player is None or owner is None or player is not owner:
+            return []
+        if game is None:
+            game = getattr(player, "game", None)
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return []
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return []
+        if player is not getattr(game, "get_current_player", lambda: None)():
+            return []
+        request_fn = getattr(game, "request_decision", None)
+        if not callable(request_fn):
+            return []
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        turn = int(getattr(game, "turn", 0) or 0)
+        player_id = str(getattr(player, "id", "") or "")
+        army_id = str(maybe_entity_id(army) or "")
+        queued: list = []
+        for source in self._iter_divine_aspect_sources():
+            source_unit = source.get("source_unit")
+            source_unit_id = str(source.get("source_unit_id", "") or "")
+            bearer_model = source.get("bearer_model")
+            if source_unit is None or not source_unit_id or bearer_model is None:
+                continue
+            if self._has_pending_divine_aspect_request(
+                game=game,
+                player_id=player_id,
+                source_unit_id=source_unit_id,
+                turn=turn,
+            ):
+                continue
+            candidates = self._divine_aspect_enemy_candidates(
+                game=game,
+                player=player,
+                bearer_model=bearer_model,
+                range_inches=float(source.get("range_inches", 12.0) or 12.0),
+            )
+            if not candidates:
+                continue
+            options = [
+                DecisionOption.create(
+                    "None",
+                    payload={
+                        "action": "skip",
+                        "target_unit_id": "",
+                        "source_unit_id": source_unit_id,
+                    },
+                )
+            ]
+            candidate_ids: list[str] = []
+            for target in candidates:
+                target_id = self._unit_id(target)
+                if not target_id:
+                    continue
+                candidate_ids.append(target_id)
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(target, "name", "Enemy Unit") or "Enemy Unit"),
+                        payload={
+                            "target_unit_id": target_id,
+                            "source_unit_id": source_unit_id,
+                        },
+                    )
+                )
+            if not candidate_ids:
+                continue
+            ability_name = str(source.get("source_name", "") or self._DIVINE_ASPECT_SOURCE_NAME).strip()
+            if not ability_name:
+                ability_name = self._DIVINE_ASPECT_SOURCE_NAME
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                (
+                    f"{ability_name}: select one enemy unit within "
+                    f"{int(float(source.get('range_inches', 12.0) or 12.0))}\" of the bearer to take a Battle-shock test."
+                ),
+                player_id=player_id,
+                options=options,
+                context={
+                    "ability": self._DIVINE_ASPECT_ABILITY_KEY,
+                    "ability_name": ability_name,
+                    "army_id": army_id,
+                    "phase": "Movement phase",
+                    "turn": int(turn),
+                    "optional": True,
+                    "source_unit_id": source_unit_id,
+                    "source_model_id": str(source.get("bearer_model_id", "") or ""),
+                    "range_inches": float(source.get("range_inches", 12.0) or 12.0),
+                    "candidate_unit_ids": list(candidate_ids),
+                },
+            )
+            request_fn(request)
+            queued.append(request)
+        return queued
+
+    def apply_divine_aspect_target_selection(
+        self,
+        source_unit,
+        target_unit,
+        *,
+        game=None,
+        player=None,
+        ability_name: str = "",
+    ) -> dict:
+        if not self.is_army_of_faith():
+            return {"ok": False}
+        if source_unit is None:
+            return {"ok": False}
+        army = self.army
+        if army is None:
+            return {"ok": False}
+        owner = getattr(army, "player", None)
+        if player is None:
+            player = owner
+        if player is None or owner is None or player is not owner:
+            return {"ok": False}
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        if source_army is not army:
+            return {"ok": False}
+        is_source, range_inches, resolved_name = self._divine_aspect_source_state(source_unit)
+        if not is_source:
+            return {"ok": False}
+        bearer_model = self._divine_aspect_bearer_model(source_unit)
+        if bearer_model is None:
+            return {"ok": False}
+
+        source_root = self._unit_root(source_unit)
+        source_unit_id = str(maybe_entity_id(source_unit) or "")
+        if not source_unit_id and source_root is not None:
+            source_unit_id = str(maybe_entity_id(source_root) or "")
+
+        if target_unit is None:
+            return {
+                "ok": True,
+                "source_unit_id": source_unit_id,
+                "target_unit_id": "",
+                "triggered": False,
+            }
+
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return {"ok": False}
+        target_unit_id = self._unit_id(target_root)
+        if not target_unit_id:
+            return {"ok": False}
+        if source_root is not None and target_root.get_parent_army() is source_root.get_parent_army():
+            return {"ok": False}
+        try:
+            target_models = list(target_root.get_attached_unit_models() or [])
+        except Exception:
+            target_models = list(getattr(target_root, "models", []) or [])
+        in_range = False
+        for target_model in target_models:
+            if not self._model_is_alive(target_model):
+                continue
+            try:
+                distance = float(distance_between_models_bases_3d(bearer_model, target_model))
+            except Exception:
+                continue
+            if distance <= float(range_inches) + 1e-6:
+                in_range = True
+                break
+        if not in_range:
+            return {"ok": False}
+
+        if not ability_name:
+            ability_name = str(resolved_name or self._DIVINE_ASPECT_SOURCE_NAME)
+        owner_player_id = str(getattr(owner, "id", "") or "")
+        source_army_id = str(maybe_entity_id(army) or "")
+        pending_entry = {
+            "owner_player_id": owner_player_id,
+            "source_army_id": source_army_id,
+            "source_unit_id": source_unit_id,
+            "target_unit_id": target_unit_id,
+            "ability_name": str(ability_name or self._DIVINE_ASPECT_SOURCE_NAME),
+            "turn": int(getattr(game, "turn", 0) or 0) if game is not None else 0,
+        }
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        pending_list = list(sr.get(self._DIVINE_ASPECT_PENDING_KEY, []) or [])
+        pending_list.append(pending_entry)
+        sr[self._DIVINE_ASPECT_PENDING_KEY] = pending_list
+        target_root.special_rules = sr
+
+        take_test = getattr(target_root, "take_battle_shock_test", None)
+        if callable(take_test):
+            take_test(int(getattr(game, "turn", 0) or 0) if game is not None else 0)
+
+        return {
+            "ok": True,
+            "source_unit_id": source_unit_id,
+            "target_unit_id": target_unit_id,
+            "triggered": True,
+            "ability_name": str(ability_name),
+        }
+
+    def on_divine_aspect_battle_shock_resolved(self, target_unit, *, passed: bool, game=None) -> dict | None:
+        if not self.is_army_of_faith() or target_unit is None:
+            return None
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return None
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        pending_list = list(sr.get(self._DIVINE_ASPECT_PENDING_KEY, []) or [])
+        if not pending_list:
+            return None
+
+        owner = getattr(getattr(self.army, "player", None), "id", None)
+        owner_id = str(owner or "")
+        source_army_id = str(maybe_entity_id(self.army) or "")
+        consumed = None
+        remaining: list[dict] = []
+        for pending in pending_list:
+            if not isinstance(pending, dict):
+                continue
+            if consumed is not None:
+                remaining.append(pending)
+                continue
+            pending_owner = str(pending.get("owner_player_id", "") or "")
+            pending_army = str(pending.get("source_army_id", "") or "")
+            if owner_id and pending_owner and pending_owner != owner_id:
+                remaining.append(pending)
+                continue
+            if source_army_id and pending_army and pending_army != source_army_id:
+                remaining.append(pending)
+                continue
+            consumed = pending
+        if consumed is None:
+            return None
+        if remaining:
+            sr[self._DIVINE_ASPECT_PENDING_KEY] = remaining
+        else:
+            sr.pop(self._DIVINE_ASPECT_PENDING_KEY, None)
+        target_root.special_rules = sr
+
+        gained = False
+        if not bool(passed):
+            aof_mgr = getattr(self.army, "acts_of_faith", None)
+            gain_fn = getattr(aof_mgr, "gain_miracle_die", None) if aof_mgr is not None else None
+            if callable(gain_fn):
+                gain_fn(game=game, allow_reroll=False, reason=str(consumed.get("ability_name", "") or self._DIVINE_ASPECT_SOURCE_NAME))
+                gained = True
+        return {
+            "target_unit_id": str(consumed.get("target_unit_id", "") or ""),
+            "source_unit_id": str(consumed.get("source_unit_id", "") or ""),
+            "ability_name": str(consumed.get("ability_name", "") or self._DIVINE_ASPECT_SOURCE_NAME),
+            "gained_miracle_die": bool(gained),
+            "passed": bool(passed),
+        }
 
     def unit_is_penitent(self, unit) -> bool:
         root = self._unit_root(unit)

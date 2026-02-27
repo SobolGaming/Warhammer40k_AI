@@ -258,6 +258,47 @@ _VESSELS_OF_WRATH_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VESSELS_OF_WRATH_DESCRIPTORS.values()
 }
 
+_ADEPTA_SORORITAS_ARMY_OF_FAITH_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009037002": EnhancementToolDescriptor(
+        enhancement_id="000009037002",
+        name="Litanies of Faith",
+        timing="start_of_command_phase",
+        target="bearer",
+        duration="instant",
+        effect="leadership_test_gain_miracle_die",
+    ),
+    "000009037003": EnhancementToolDescriptor(
+        enhancement_id="000009037003",
+        name="Blade of Saint Ellynor",
+        timing="passive_and_on_enemy_model_destroyed",
+        target="bearer_melee_weapons",
+        duration="constant_and_per_fight_activation",
+        effect="bearer_melee_stats_precision_and_miracle_die_on_melee_kill",
+        effect_params={"strength_bonus": 1, "ap_bonus": 1, "precision": True},
+    ),
+    "000009037004": EnhancementToolDescriptor(
+        enhancement_id="000009037004",
+        name="Divine Aspect",
+        timing="start_of_movement_phase",
+        target="enemy_unit_within_range_of_bearer",
+        duration="instant",
+        effect="force_battle_shock_and_gain_miracle_die_on_failure",
+        range_in=12.0,
+    ),
+    "000009037005": EnhancementToolDescriptor(
+        enhancement_id="000009037005",
+        name="Triptych of the Macharian Crusade",
+        timing="on_bearer_save_act_of_faith",
+        target="bearer",
+        duration="instant",
+        effect="auto_pass_bearer_save_when_miracle_die_substituted",
+    ),
+}
+
+_ADEPTA_SORORITAS_ARMY_OF_FAITH_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ADEPTA_SORORITAS_ARMY_OF_FAITH_DESCRIPTORS.values()
+}
+
 _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009911002": EnhancementToolDescriptor(
         enhancement_id="000009911002",
@@ -4203,6 +4244,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _VESSELS_OF_WRATH_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ADEPTA_SORORITAS_ARMY_OF_FAITH_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4434,6 +4478,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _GRIZZLED_COMPANY_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
+        or _ADEPTA_SORORITAS_ARMY_OF_FAITH_BY_NAME.get(key)
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
         or _AELDARI_SEER_COUNCIL_BY_NAME.get(key)
         or _AELDARI_CORSAIR_COTERIE_BY_NAME.get(key)

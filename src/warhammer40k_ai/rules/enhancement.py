@@ -414,6 +414,10 @@ class Enhancement:
             is_hallowed_martyrs = bool(as_mgr and as_mgr.is_hallowed_martyrs())
         except Exception:
             is_hallowed_martyrs = False
+        try:
+            is_army_of_faith = bool(as_mgr and as_mgr.is_army_of_faith())
+        except Exception:
+            is_army_of_faith = False
         is_1st_company_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_1st_company_task_force", lambda: False)()
         )
@@ -1419,6 +1423,50 @@ class Enhancement:
             unit.special_rules["enhancement_mantle_of_ophelia"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "litanies of faith" or enh_id == "000009037002":
+            if not is_army_of_faith:
+                return
+            unit.special_rules["enhancement_litanies_of_faith"] = True
+            unit.special_rules["enhancement_litanies_of_faith_source"] = "Litanies of Faith"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_litanies_of_faith_bearer_model_id"] = bearer_id
+
+        if name == "blade of saint ellynor" or enh_id == "000009037003":
+            if not is_army_of_faith:
+                return
+            unit.special_rules["enhancement_blade_of_saint_ellynor"] = True
+            unit.special_rules["enhancement_blade_of_saint_ellynor_source"] = "Blade of Saint Ellynor"
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_bearer_melee_precision"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_blade_of_saint_ellynor_bearer_model_id"] = bearer_id
+
+        if name == "divine aspect" or enh_id == "000009037004":
+            if not is_army_of_faith:
+                return
+            unit.special_rules["enhancement_divine_aspect"] = True
+            unit.special_rules["enhancement_divine_aspect_range"] = 12.0
+            unit.special_rules["enhancement_divine_aspect_source"] = "Divine Aspect"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_divine_aspect_bearer_model_id"] = bearer_id
+
+        if name == "triptych of the macharian crusade" or enh_id == "000009037005":
+            if not is_army_of_faith:
+                return
+            unit.special_rules["enhancement_triptych_of_macharian_crusade"] = True
+            unit.special_rules["enhancement_triptych_of_macharian_crusade_source"] = "Triptych of the Macharian Crusade"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_triptych_of_macharian_crusade_bearer_model_id"] = bearer_id
 
         if name == "abhuman detail" or enh_id == "000010637002":
             if not is_grizzled_company:

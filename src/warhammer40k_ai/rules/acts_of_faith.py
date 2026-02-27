@@ -494,15 +494,32 @@ class ActsOfFaithManager:
             return
         self.gain_miracle_die(game=game, allow_reroll=False, reason="Battle round start")
 
-    def on_unit_destroyed(self, unit, *, game=None, game_map=None, last_model=None) -> None:
+    def on_unit_destroyed(
+        self,
+        unit,
+        *,
+        game=None,
+        game_map=None,
+        last_model=None,
+        destroyed_by_unit=None,
+        destroyed_by_model=None,
+        destroyed_by_weapon_profile=None,
+    ) -> None:
         if unit is None or not self._army_has_rule():
             return
-        if not self._unit_in_army(unit):
+        if self._unit_in_army(unit):
+            if not self._unit_has_rule(unit):
+                return
+            allow_reroll = self._litany_allows_reroll(destroyed_unit=unit, destroyed_model=last_model)
+            self.gain_miracle_die(game=game, allow_reroll=allow_reroll, reason="Unit destroyed")
             return
-        if not self._unit_has_rule(unit):
-            return
-        allow_reroll = self._litany_allows_reroll(destroyed_unit=unit, destroyed_model=last_model)
-        self.gain_miracle_die(game=game, allow_reroll=allow_reroll, reason="Unit destroyed")
+        self._maybe_trigger_blade_of_saint_ellynor(
+            unit=unit,
+            destroyed_by_unit=destroyed_by_unit,
+            destroyed_by_model=destroyed_by_model,
+            destroyed_by_weapon_profile=destroyed_by_weapon_profile,
+            game=game,
+        )
 
     def on_model_destroyed(self, unit, model, *, game=None, game_map=None) -> None:
         if unit is None or model is None or not self._army_has_rule():
@@ -550,6 +567,132 @@ class ActsOfFaithManager:
             except Exception:
                 return False
         return False
+
+    def _is_army_of_faith(self) -> bool:
+        if self.army is None:
+            return False
+        mgr = getattr(self.army, "adepta_sororitas_detachments", None)
+        checker = getattr(mgr, "is_army_of_faith", None) if mgr is not None else None
+        if callable(checker):
+            try:
+                return bool(checker())
+            except Exception:
+                return False
+        return False
+
+    @staticmethod
+    def _unit_special_rules(unit) -> dict:
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        return sr
+
+    def _unit_has_special_rule(self, unit, key: str) -> bool:
+        if unit is None or not key:
+            return False
+        sr = self._unit_special_rules(unit)
+        return bool(sr.get(key, False))
+
+    def _get_enhancement_bearer_model(self, unit):
+        if unit is None:
+            return None
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        bearer = get_bearer() if callable(get_bearer) else None
+        if bearer is None:
+            models = list(getattr(unit, "models", []) or [])
+            for model in models:
+                if self._model_is_alive(model):
+                    bearer = model
+                    break
+        if bearer is None or not self._model_is_alive(bearer):
+            return None
+        return bearer
+
+    @staticmethod
+    def _is_melee_weapon_profile(weapon_profile) -> bool:
+        if weapon_profile is None:
+            return False
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        is_melee = getattr(parent, "is_melee", None) if parent is not None else None
+        if not callable(is_melee):
+            return False
+        try:
+            return bool(is_melee())
+        except Exception:
+            return False
+
+    def _blade_state_key(self, game=None) -> str:
+        return f"blade_of_saint_ellynor:{self._phase_key(game)}"
+
+    def on_fight_unit_selected(self, unit, *, game=None, selecting_player=None) -> None:
+        if not self._army_has_rule() or not self._is_army_of_faith() or unit is None:
+            return
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return
+        if not self._unit_has_special_rule(root, "enhancement_blade_of_saint_ellynor"):
+            return
+        bearer = self._get_enhancement_bearer_model(root)
+        if bearer is None:
+            return
+        state = {
+            "phase_key": self._phase_key(game),
+            "bearer_model_id": str(get_entity_id(bearer) or ""),
+            "awarded": False,
+        }
+        sr = self._unit_special_rules(root)
+        sr = dict(sr)
+        sr["enhancement_blade_of_saint_ellynor_active_fight"] = state
+        root.special_rules = sr
+
+    def _maybe_trigger_blade_of_saint_ellynor(
+        self,
+        *,
+        unit,
+        destroyed_by_unit,
+        destroyed_by_model,
+        destroyed_by_weapon_profile,
+        game=None,
+    ) -> None:
+        if not self._is_army_of_faith():
+            return
+        if unit is None or destroyed_by_unit is None or destroyed_by_model is None:
+            return
+        if not self._is_melee_weapon_profile(destroyed_by_weapon_profile):
+            return
+        attacker_root = self._unit_root(destroyed_by_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return
+        target_root = self._unit_root(unit)
+        if target_root is None:
+            return
+        if self._unit_in_army(target_root):
+            return
+        sr = self._unit_special_rules(attacker_root)
+        if not bool(sr.get("enhancement_blade_of_saint_ellynor", False)):
+            return
+        active = sr.get("enhancement_blade_of_saint_ellynor_active_fight")
+        if not isinstance(active, dict):
+            return
+        phase_key = str(active.get("phase_key", "") or "")
+        if phase_key != self._phase_key(game):
+            return
+        if bool(active.get("awarded", False)):
+            return
+
+        expected_bearer_id = str(active.get("bearer_model_id", "") or "")
+        if not expected_bearer_id:
+            expected_bearer_id = str(sr.get("enhancement_blade_of_saint_ellynor_bearer_model_id", "") or "")
+        actual_bearer_id = str(get_entity_id(destroyed_by_model) or "")
+        if expected_bearer_id and actual_bearer_id and expected_bearer_id != actual_bearer_id:
+            return
+
+        self.gain_miracle_die(game=game, allow_reroll=False, reason="Blade of Saint Ellynor")
+        updated = dict(active)
+        updated["awarded"] = True
+        sr = dict(sr)
+        sr["enhancement_blade_of_saint_ellynor_active_fight"] = updated
+        attacker_root.special_rules = sr
 
     @staticmethod
     def _model_is_alive(model) -> bool:
@@ -678,6 +821,60 @@ class ActsOfFaithManager:
         candidates = [idx for idx, die in enumerate(list(pool or [])) if int(die) < 6]
         candidates.sort(key=lambda idx: (int(pool[idx]), int(idx)))
         return list(candidates[: int(max_rerolls)])
+
+    def on_command_phase_start(self, *, game=None, player=None) -> None:
+        if not self._army_has_rule():
+            return
+        if not self._is_army_of_faith():
+            return
+        if self.army is None:
+            return
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return
+        if player is not None and player is not owner:
+            return
+        if game is not None:
+            try:
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            except Exception:
+                phase_name = ""
+            if phase_name and phase_name != "COMMAND_PHASE":
+                return
+            try:
+                current = getattr(game, "get_current_player", lambda: None)()
+            except Exception:
+                current = None
+            if current is not None and current is not owner:
+                return
+
+        units = list(getattr(self.army, "units", []) or [])
+        try:
+            units = sorted(units, key=lambda unit: str(get_entity_id(unit) or ""))
+        except Exception:
+            units = list(units)
+
+        for unit in units:
+            if unit is None:
+                continue
+            if not self._unit_in_army(unit):
+                continue
+            if not self._unit_on_battlefield(unit):
+                continue
+            if not self._unit_has_special_rule(unit, "enhancement_litanies_of_faith"):
+                continue
+            bearer = self._get_enhancement_bearer_model(unit)
+            if bearer is None:
+                continue
+            pass_test_fn = getattr(unit, "pass_leadership_check_for_model", None)
+            if not callable(pass_test_fn):
+                continue
+            try:
+                passed = bool(pass_test_fn(bearer))
+            except Exception:
+                passed = False
+            if passed:
+                self.gain_miracle_die(game=game, allow_reroll=False, reason="Litanies of Faith")
 
     def on_command_phase_end(self, *, game=None, player=None) -> None:
         if not self._army_has_rule():

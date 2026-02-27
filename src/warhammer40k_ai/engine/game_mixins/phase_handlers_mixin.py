@@ -226,6 +226,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_ironstorm_spearhead_enhancements(player=player, phase=phase)
         self._on_phase_start_godhammer_assault_force_enhancements(player=player, phase=phase)
         self._on_phase_start_lords_of_dread_enhancements(player=player, phase=phase)
+        self._on_phase_start_adepta_sororitas_enhancements(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
                 if p is None:
@@ -14942,6 +14943,21 @@ class GamePhaseHandlersMixin:
                         },
                         instance_key=f"{model_id}:{ability_key}",
                     )
+
+    def _on_phase_start_adepta_sororitas_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase start: Army of Faith Divine Aspect target selection."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        mgr = getattr(army, "adepta_sororitas_detachments", None)
+        queue_fn = getattr(mgr, "queue_divine_aspect_selection_requests", None) if mgr is not None else None
+        if callable(queue_fn):
+            queue_fn(game=self, player=player)
 
     def _on_phase_end_acts_of_faith_enhancements(self, player=None, phase=None, **_kwargs) -> None:
         """End of Command phase: resolve Acts of Faith enhancement effects (e.g. Chaplet of Sacrifice)."""

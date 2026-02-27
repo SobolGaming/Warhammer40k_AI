@@ -18332,6 +18332,24 @@ class WargearProfile:
             save_result['roll'] = dice_roll
             save_result['special_effects'].append("Ability: set roll to 6")
 
+        triptych_auto_success = False
+        if miracle_used:
+            try:
+                t_unit = getattr(target_model, "parent_unit", None)
+                sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+                if isinstance(sr, dict) and sr.get("enhancement_triptych_of_macharian_crusade"):
+                    bearer_id = str(
+                        sr.get("enhancement_triptych_of_macharian_crusade_bearer_model_id", "")
+                        or sr.get("enhancement_bearer_model_id", "")
+                        or ""
+                    )
+                    model_id = str(getattr(target_model, "id", getattr(target_model, "_id", "")) or "")
+                    if not bearer_id or (model_id and model_id == bearer_id):
+                        triptych_auto_success = True
+                        save_result['special_effects'].append("Triptych of the Macharian Crusade: auto-success")
+            except Exception:
+                triptych_auto_success = False
+
         # Daemonic Invulnerability: re-roll invulnerable save rolls of 1.
         try:
             if (
@@ -18367,7 +18385,9 @@ class WargearProfile:
         except Exception:
             pass
         
-        if dice_roll == 1:  # unmodified dice roll of 1 is always a fail
+        if triptych_auto_success:
+            save_result['saved'] = True
+        elif dice_roll == 1:  # unmodified dice roll of 1 is always a fail
             save_result['saved'] = False
             save_result['special_effects'].append("Natural 1 (auto-fail)")
         else:

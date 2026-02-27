@@ -4819,6 +4819,76 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if callable(can_select) and not bool(can_select(choice_key)):
             return ("Desperate for Redemption selected vow has already been selected this battle.",)
         return ()
+    if ability == "divine_aspect_target":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Divine Aspect army not found.",)
+        mgr = getattr(army, "adepta_sororitas_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_army_of_faith", lambda: False)()):
+            return ("Divine Aspect requires Army of Faith detachment.",)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Divine Aspect source unit was not found.",)
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        if source_army is not army:
+            return ("Divine Aspect source unit is not in the selected army.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Divine Aspect target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Divine Aspect target unit was not found.",)
+        target_id = str(get_entity_id(target_root) or "")
+        if not target_id:
+            return ("Divine Aspect target unit was not found.",)
+        if target_root.get_parent_army() is army:
+            return ("Divine Aspect must target an enemy unit.",)
+
+        allowed_ids = {str(v or "").strip() for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v or "").strip()}
+        if allowed_ids and target_id not in allowed_ids:
+            return ("Divine Aspect selection includes an ineligible target.",)
+
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        try:
+            range_inches = float(ctx.get("range_inches", 12.0) or 12.0)
+        except Exception:
+            range_inches = 12.0
+        source_model = resolve_model(game, ctx.get("source_model_id"))
+        if source_model is None:
+            get_bearer = getattr(mgr, "_divine_aspect_bearer_model", None)
+            if callable(get_bearer):
+                source_model = get_bearer(source_unit)
+        candidates_fn = getattr(mgr, "_divine_aspect_enemy_candidates", None)
+        if callable(candidates_fn) and source_model is not None:
+            candidates = list(
+                candidates_fn(
+                    game=game,
+                    player=player,
+                    bearer_model=source_model,
+                    range_inches=float(range_inches),
+                )
+                or []
+            )
+            candidate_ids = {
+                str(get_entity_id(candidate.get_attached_unit_root() if hasattr(candidate, "get_attached_unit_root") else candidate) or "")
+                for candidate in candidates
+                if candidate is not None
+            }
+            if candidate_ids and target_id not in candidate_ids:
+                return ("Divine Aspect target is no longer within range of the bearer.",)
+        return ()
     if ability == "righteous_purpose":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -10099,6 +10169,63 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "choice_key": str(choice_key),
             "choice_name": str(choice_name),
             "battle_round": int(start_round or 0),
+        }
+    if ability == "divine_aspect_target":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "adepta_sororitas_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_army_of_faith", lambda: False)()):
+            return None
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        target_unit = None
+        if not is_skip_choice(request, result):
+            target_unit = resolve_unit(
+                game,
+                payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+            )
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Divine Aspect").strip() or "Divine Aspect"
+
+        apply_fn = getattr(mgr, "apply_divine_aspect_target_selection", None)
+        if not callable(apply_fn):
+            return None
+        outcome = apply_fn(
+            source_unit,
+            target_unit,
+            game=game,
+            player=player,
+            ability_name=ability_name,
+        )
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+
+        source_name = str(getattr(source_unit, "name", "Unit") or "Unit")
+        if target_unit is None or not bool(outcome.get("triggered", False)):
+            _log_action_for_players(game, player, f"{ability_name}: {source_name} selected no target.")
+            return {
+                "source_unit_id": str(outcome.get("source_unit_id", "") or ""),
+                "target_unit_id": "",
+                "triggered": False,
+            }
+
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        target_name = str(getattr(target_root, "name", "Enemy Unit") or "Enemy Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {source_name} selected {target_name}; that unit must take a Battle-shock test.",
+        )
+        return {
+            "source_unit_id": str(outcome.get("source_unit_id", "") or ""),
+            "target_unit_id": str(outcome.get("target_unit_id", "") or ""),
+            "triggered": bool(outcome.get("triggered", False)),
+            "ability_name": ability_name,
         }
     if ability in (
         "aeldari_light_of_clarity_target",
