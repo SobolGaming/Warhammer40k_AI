@@ -10679,6 +10679,26 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         except Exception:
             pass
+        # Adeptus Custodes (Solar Spearhead): Honoured Fallen (Aura).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            reroll_fn = getattr(ac_mgr, "honoured_fallen_hit_reroll_ones", None) if ac_mgr is not None else None
+            if callable(reroll_fn):
+                reroll_hit_ones, source = reroll_fn(
+                    attacker,
+                    target,
+                    game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if bool(reroll_hit_ones):
+                    reroll_hit_values.add(1)
+                    source_name = str(source or "Honoured Fallen (Aura)").strip() or "Honoured Fallen (Aura)"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        except Exception:
+            pass
         # Imperial Agents: Ordo Malleus Daemon Hunters (Destroy the Daemonic).
         try:
             unit = getattr(attacker, "parent_unit", None)

@@ -1429,6 +1429,44 @@ _ADEPTUS_CUSTODES_SHIELD_HOST_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ADEPTUS_CUSTODES_SHIELD_HOST_DESCRIPTORS.values()
 }
 
+_ADEPTUS_CUSTODES_SOLAR_SPEARHEAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009753004": EnhancementToolDescriptor(
+        enhancement_id="000009753004",
+        name="Honoured Fallen (Aura)",
+        timing="passive_aura",
+        target="friendly_adeptus_custodes_infantry_or_mounted_units_within_range_of_bearer",
+        duration="constant",
+        effect="reroll_hit_rolls_of_one_for_friendly_units_in_aura",
+        range_in=6.0,
+        effect_params={
+            "range": 6.0,
+            "reroll_values": (1,),
+            "required_target_faction_keyword": "ADEPTUS CUSTODES",
+            "required_target_keywords_any": ("INFANTRY", "MOUNTED"),
+        },
+    ),
+    "000009753005": EnhancementToolDescriptor(
+        enhancement_id="000009753005",
+        name="Veteran of the Kataphraktoi",
+        timing="start_of_command_phase",
+        target="friendly_adeptus_custodes_vehicle_or_mounted_unit_within_range_of_bearer",
+        duration="until_next_command_phase",
+        effect="select_friendly_unit_to_shoot_after_fall_back",
+        range_in=6.0,
+        effect_params={
+            "range": 6.0,
+            "optional": True,
+            "required_target_faction_keyword": "ADEPTUS CUSTODES",
+            "required_target_keywords_any": ("VEHICLE", "MOUNTED"),
+            "shoot_after_fall_back": True,
+        },
+    ),
+}
+
+_ADEPTUS_CUSTODES_SOLAR_SPEARHEAD_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ADEPTUS_CUSTODES_SOLAR_SPEARHEAD_DESCRIPTORS.values()
+}
+
 _EXPLORATOR_MANIPLE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008568002": EnhancementToolDescriptor(
         enhancement_id="000008568002",
@@ -4658,6 +4696,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _ADEPTUS_CUSTODES_SHIELD_HOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ADEPTUS_CUSTODES_SOLAR_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _EXPLORATOR_MANIPLE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4866,6 +4907,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _ADEPTUS_CUSTODES_AURIC_CHAMPIONS_BY_NAME.get(key)
         or _ADEPTUS_CUSTODES_NULL_MAIDEN_VIGIL_BY_NAME.get(key)
         or _ADEPTUS_CUSTODES_SHIELD_HOST_BY_NAME.get(key)
+        or _ADEPTUS_CUSTODES_SOLAR_SPEARHEAD_BY_NAME.get(key)
         or _EXPLORATOR_MANIPLE_BY_NAME.get(key)
         or _HALOSCREED_BATTLE_CLADE_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)

@@ -12615,6 +12615,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(apply_fn(self, profile=profile, game=game)):
                     return True
+            veteran_apply_fn = getattr(
+                mgr,
+                "veteran_of_the_kataphraktoi_can_shoot_after_fall_back",
+                None,
+            ) if mgr is not None else None
+            if callable(veteran_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(veteran_apply_fn(self, profile=profile, game=game)):
+                    return True
         except Exception:
             pass
         army = self.get_parent_army()

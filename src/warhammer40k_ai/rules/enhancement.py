@@ -542,6 +542,7 @@ class Enhancement:
         is_auric_champions = bool(ac_mgr and ac_mgr.is_auric_champions())
         is_null_maiden_vigil = bool(ac_mgr and ac_mgr.is_null_maiden_vigil())
         is_shield_host = bool(ac_mgr and ac_mgr.is_shield_host())
+        is_solar_spearhead = bool(ac_mgr and ac_mgr.is_solar_spearhead())
         try:
             is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
         except Exception:
@@ -6647,6 +6648,70 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_panoptispex_bearer_model_id"] = bearer_id
+
+        if name == "honoured fallen (aura)" or enh_id == "000009753004":
+            if not is_solar_spearhead:
+                return
+            unit.special_rules["enhancement_honoured_fallen_aura"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                range_in = float(params.get("range", getattr(desc, "range_in", 6.0) or 6.0) or 6.0)
+            except (TypeError, ValueError):
+                range_in = 6.0
+            target_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("required_target_keywords_any", ("INFANTRY", "MOUNTED")) or ())
+                if str(v or "").strip()
+            ]
+            if not target_keywords:
+                target_keywords = ["INFANTRY", "MOUNTED"]
+            unit.special_rules["enhancement_honoured_fallen_aura_range"] = float(max(0.0, range_in))
+            unit.special_rules["enhancement_honoured_fallen_required_target_keywords_any"] = list(
+                dict.fromkeys(target_keywords)
+            )
+            unit.special_rules["enhancement_honoured_fallen_required_target_faction_keyword"] = str(
+                params.get("required_target_faction_keyword", "ADEPTUS CUSTODES") or "ADEPTUS CUSTODES"
+            ).strip().upper() or "ADEPTUS CUSTODES"
+            unit.special_rules["enhancement_honoured_fallen_source"] = "Honoured Fallen (Aura)"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_honoured_fallen_bearer_model_id"] = bearer_id
+
+        if name == "veteran of the kataphraktoi" or enh_id == "000009753005":
+            if not is_solar_spearhead:
+                return
+            unit.special_rules["enhancement_veteran_of_the_kataphraktoi"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                range_in = float(params.get("range", getattr(desc, "range_in", 6.0) or 6.0) or 6.0)
+            except (TypeError, ValueError):
+                range_in = 6.0
+            target_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("required_target_keywords_any", ("VEHICLE", "MOUNTED")) or ())
+                if str(v or "").strip()
+            ]
+            if not target_keywords:
+                target_keywords = ["VEHICLE", "MOUNTED"]
+            unit.special_rules["enhancement_veteran_of_the_kataphraktoi_range"] = float(max(0.0, range_in))
+            unit.special_rules["enhancement_veteran_of_the_kataphraktoi_required_target_keywords_any"] = list(
+                dict.fromkeys(target_keywords)
+            )
+            unit.special_rules["enhancement_veteran_of_the_kataphraktoi_required_target_faction_keyword"] = str(
+                params.get("required_target_faction_keyword", "ADEPTUS CUSTODES") or "ADEPTUS CUSTODES"
+            ).strip().upper() or "ADEPTUS CUSTODES"
+            unit.special_rules["enhancement_veteran_of_the_kataphraktoi_shoot_after_fall_back"] = bool(
+                params.get("shoot_after_fall_back", True)
+            )
+            unit.special_rules["enhancement_veteran_of_the_kataphraktoi_optional"] = bool(
+                params.get("optional", True)
+            )
+            unit.special_rules["enhancement_veteran_of_the_kataphraktoi_source"] = "Veteran of the Kataphraktoi"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_veteran_of_the_kataphraktoi_bearer_model_id"] = bearer_id
 
         if name == "enhanced voidsheen cloak" or enh_id == "000008926002":
             if not is_null_maiden_vigil:

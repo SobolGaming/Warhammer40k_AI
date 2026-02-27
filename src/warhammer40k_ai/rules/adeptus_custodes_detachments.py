@@ -20,10 +20,13 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
     _MARTIAL_PHILOSOPHER_SOURCE = "Martial Philosopher"
     _MARTIAL_MASTERY_SOURCE = "Martial Mastery"
     _OBLIVION_KNIGHT_SOURCE = "Oblivion Knight"
+    _HONOURED_FALLEN_SOURCE = "Honoured Fallen (Aura)"
     _RAPTOR_BLADE_SOURCE = "Raptor Blade"
     _REVERED_COMPANIONS_SOURCE = "Revered Companions"
     _REVERED_COMPANIONS_RANGE = 6.0
     _REVERED_COMPANIONS_FNP_CONDITION = "against psychic attacks and mortal wounds"
+    _VETERAN_OF_THE_KATAPHRAKTOI_SOURCE = "Veteran of the Kataphraktoi"
+    _VETERAN_OF_THE_KATAPHRAKTOI_RANGE = 6.0
 
     def __init__(self, army=None):
         super().__init__(army=army)
@@ -34,6 +37,7 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         self.martial_mastery_resolved_round: Optional[int] = None
         self.solar_spearhead_character_walker_unit_ids: tuple[str, ...] = tuple()
         self._solar_spearhead_walker_selection_resolved: bool = False
+        self.veteran_of_the_kataphraktoi_target_unit_ids_by_source_model_id: dict[str, str] = {}
 
     def is_lions_of_the_emperor(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -98,6 +102,20 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if bool(getattr(unit, "is_vehicle", False)):
             return True
         return self._unit_has_keyword(unit, "VEHICLE")
+
+    def _unit_is_infantry(self, unit) -> bool:
+        if unit is None:
+            return False
+        if bool(getattr(unit, "is_infantry", False)):
+            return True
+        return self._unit_has_keyword(unit, "INFANTRY")
+
+    def _unit_is_mounted(self, unit) -> bool:
+        if unit is None:
+            return False
+        if bool(getattr(unit, "is_mounted", False)):
+            return True
+        return self._unit_has_keyword(unit, "MOUNTED")
 
     def _unit_is_aircraft(self, unit) -> bool:
         if unit is None:
@@ -796,6 +814,456 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if not self._unit_is_below_half_strength(root):
             return False, ""
         return True, self._AURIC_ARMOUR_SOURCE
+
+    def _solar_spearhead_honoured_fallen_sources(self) -> list[dict]:
+        if not self.is_solar_spearhead():
+            return []
+        if self.army is None:
+            return []
+        out: list[dict] = []
+        seen_model_ids: set[str] = set()
+        for root in self._iter_army_roots(self.army):
+            if root is None or not self._unit_is_active(root):
+                continue
+            if not self._unit_is_custodes_vehicle(root):
+                continue
+            get_members = getattr(root, "get_attached_unit_members", None)
+            members = list(get_members() or []) if callable(get_members) else [root]
+            if not members:
+                members = [root]
+            members.sort(key=lambda member: str(maybe_entity_id(member) or id(member)))
+            for member in members:
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_honoured_fallen_aura")):
+                    continue
+                bearer = self._member_live_bearer_model(
+                    member,
+                    sr,
+                    specific_key="enhancement_honoured_fallen_bearer_model_id",
+                )
+                if bearer is None:
+                    continue
+                source_model_id = str(maybe_entity_id(bearer) or "").strip()
+                if not source_model_id or source_model_id in seen_model_ids:
+                    continue
+                seen_model_ids.add(source_model_id)
+                try:
+                    range_in = float(
+                        sr.get("enhancement_honoured_fallen_aura_range", self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE)
+                        or self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE
+                    )
+                except (TypeError, ValueError):
+                    range_in = self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE
+                source_name = str(
+                    sr.get("enhancement_honoured_fallen_source", "")
+                    or self._HONOURED_FALLEN_SOURCE
+                ).strip()
+                if not source_name:
+                    source_name = self._HONOURED_FALLEN_SOURCE
+                out.append(
+                    {
+                        "source_unit": root,
+                        "source_model": bearer,
+                        "source_model_id": source_model_id,
+                        "range": float(max(0.0, range_in)),
+                        "source": source_name,
+                    }
+                )
+        out.sort(key=lambda item: str(item.get("source_model_id", "") or ""))
+        return out
+
+    def honoured_fallen_hit_reroll_ones(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[bool, str]:
+        del target_unit
+        del game
+        del weapon_profile
+        del attack_instance
+        if not self.is_solar_spearhead():
+            return False, ""
+        if attacker_model is None:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._root_unit(attacker_unit)
+        if attacker_root is None:
+            return False, ""
+        if not self._unit_in_army(attacker_root):
+            return False, ""
+        if not self._unit_is_active(attacker_root):
+            return False, ""
+        if not self._unit_is_custodes(attacker_root):
+            return False, ""
+        if not (self._unit_is_infantry(attacker_root) or self._unit_is_mounted(attacker_root)):
+            return False, ""
+        for source in self._solar_spearhead_honoured_fallen_sources():
+            source_model = source.get("source_model")
+            source_root = source.get("source_unit")
+            if source_model is None or source_root is None:
+                continue
+            if source_root is attacker_root:
+                continue
+            try:
+                range_in = float(source.get("range", self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE) or self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE)
+            except (TypeError, ValueError):
+                range_in = self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE
+            if not aura_utils.model_within_range_of_unit(
+                source_model,
+                attacker_root,
+                range_in,
+                use_attached_aggregate=True,
+            ):
+                continue
+            source_name = str(source.get("source", "") or self._HONOURED_FALLEN_SOURCE).strip()
+            if not source_name:
+                source_name = self._HONOURED_FALLEN_SOURCE
+            return True, source_name
+        return False, ""
+
+    def clear_veteran_of_the_kataphraktoi_targets(self) -> None:
+        self.veteran_of_the_kataphraktoi_target_unit_ids_by_source_model_id = {}
+        if self.army is not None:
+            setattr(self.army, "veteran_of_the_kataphraktoi_target_unit_ids_by_source_model_id", {})
+
+    def _solar_spearhead_veteran_of_the_kataphraktoi_sources(self) -> list[dict]:
+        if not self.is_solar_spearhead():
+            return []
+        if self.army is None:
+            return []
+        out: list[dict] = []
+        seen_model_ids: set[str] = set()
+        for root in self._iter_army_roots(self.army):
+            if root is None or not self._unit_is_active(root):
+                continue
+            if not self._unit_is_custodes(root):
+                continue
+            get_members = getattr(root, "get_attached_unit_members", None)
+            members = list(get_members() or []) if callable(get_members) else [root]
+            if not members:
+                members = [root]
+            members.sort(key=lambda member: str(maybe_entity_id(member) or id(member)))
+            for member in members:
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_veteran_of_the_kataphraktoi")):
+                    continue
+                bearer = self._member_live_bearer_model(
+                    member,
+                    sr,
+                    specific_key="enhancement_veteran_of_the_kataphraktoi_bearer_model_id",
+                )
+                if bearer is None:
+                    continue
+                source_model_id = str(maybe_entity_id(bearer) or "").strip()
+                if not source_model_id or source_model_id in seen_model_ids:
+                    continue
+                seen_model_ids.add(source_model_id)
+                try:
+                    range_in = float(
+                        sr.get("enhancement_veteran_of_the_kataphraktoi_range", self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE)
+                        or self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE
+                    )
+                except (TypeError, ValueError):
+                    range_in = self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE
+                source_name = str(
+                    sr.get("enhancement_veteran_of_the_kataphraktoi_source", "")
+                    or self._VETERAN_OF_THE_KATAPHRAKTOI_SOURCE
+                ).strip()
+                if not source_name:
+                    source_name = self._VETERAN_OF_THE_KATAPHRAKTOI_SOURCE
+                out.append(
+                    {
+                        "source_unit": root,
+                        "source_member": member,
+                        "source_model": bearer,
+                        "source_model_id": source_model_id,
+                        "source_unit_id": str(maybe_entity_id(root) or ""),
+                        "source_member_unit_id": str(maybe_entity_id(member) or ""),
+                        "range": float(max(0.0, range_in)),
+                        "source": source_name,
+                    }
+                )
+        out.sort(key=lambda item: str(item.get("source_model_id", "") or ""))
+        return out
+
+    def _veteran_of_the_kataphraktoi_source(self, *, source_model_id: str = "") -> Optional[dict]:
+        sources = self._solar_spearhead_veteran_of_the_kataphraktoi_sources()
+        if not sources:
+            return None
+        source_key = str(source_model_id or "").strip()
+        if not source_key:
+            return sources[0] if len(sources) == 1 else None
+        for source in sources:
+            if str(source.get("source_model_id", "") or "") == source_key:
+                return source
+        return None
+
+    def _veteran_of_the_kataphraktoi_eligible_friendly_units_for_source(
+        self,
+        *,
+        source_model_id: str = "",
+        game=None,
+        player=None,
+    ) -> list:
+        del game
+        del player
+        if not self.is_solar_spearhead():
+            return []
+        source = self._veteran_of_the_kataphraktoi_source(source_model_id=source_model_id)
+        if not isinstance(source, dict):
+            return []
+        source_model = source.get("source_model")
+        if source_model is None or not self._model_is_alive(source_model):
+            return []
+        try:
+            range_in = float(source.get("range", self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE) or self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE)
+        except (TypeError, ValueError):
+            range_in = self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE
+        out: list = []
+        seen: set[str] = set()
+        for target_root in self._active_friendly_roots():
+            if target_root is None:
+                continue
+            target_id = str(maybe_entity_id(target_root) or "").strip()
+            if not target_id or target_id in seen:
+                continue
+            seen.add(target_id)
+            if not self._unit_is_custodes(target_root):
+                continue
+            if not (self._unit_is_vehicle(target_root) or self._unit_is_mounted(target_root)):
+                continue
+            if not aura_utils.model_within_range_of_unit(
+                source_model,
+                target_root,
+                range_in,
+                use_attached_aggregate=True,
+            ):
+                continue
+            out.append(target_root)
+        out.sort(key=lambda unit: str(maybe_entity_id(unit) or id(unit)))
+        return out
+
+    def _pending_veteran_of_the_kataphraktoi_request(
+        self,
+        *,
+        game=None,
+        army_id: str = "",
+        command_phase_owner_id: str = "",
+        source_model_id: str = "",
+    ) -> bool:
+        queue = getattr(game, "decision_queue", None) if game is not None else None
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != "CHOOSE_QUARRY":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "veteran_of_the_kataphraktoi":
+                continue
+            if army_id and str(ctx.get("army_id", "") or "") != str(army_id):
+                continue
+            if command_phase_owner_id and str(ctx.get("command_phase_owner_id", "") or "") != str(command_phase_owner_id):
+                continue
+            if source_model_id and str(ctx.get("source_model_id", "") or "") != str(source_model_id):
+                continue
+            return True
+        return False
+
+    def build_veteran_of_the_kataphraktoi_request(self, *, game=None, player=None, source_model_id: str = ""):
+        if not self.is_solar_spearhead():
+            return None
+        if game is None or player is None:
+            return None
+        if not bool(getattr(game, "is_authoritative", True)):
+            return None
+        source = self._veteran_of_the_kataphraktoi_source(source_model_id=source_model_id)
+        if not isinstance(source, dict):
+            return None
+        source_model_id = str(source.get("source_model_id", "") or "").strip()
+        if not source_model_id:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        targets = self._veteran_of_the_kataphraktoi_eligible_friendly_units_for_source(
+            source_model_id=source_model_id,
+            game=game,
+            player=player,
+        )
+        if not targets:
+            return None
+
+        army_id = str(maybe_entity_id(self.army) or "") if self.army is not None else ""
+        player_id = str(getattr(player, "id", "") or "")
+        if self._pending_veteran_of_the_kataphraktoi_request(
+            game=game,
+            army_id=army_id,
+            command_phase_owner_id=player_id,
+            source_model_id=source_model_id,
+        ):
+            return None
+
+        options = [
+            DecisionOption.create(
+                "None",
+                payload={
+                    "action": "skip",
+                    "source_model_id": source_model_id,
+                },
+            )
+        ]
+        for target in targets:
+            target_id = str(maybe_entity_id(target) or "").strip()
+            if not target_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(target, "name", "Unit") or "Unit"),
+                    payload={
+                        "target_unit_id": target_id,
+                        "source_model_id": source_model_id,
+                    },
+                )
+            )
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Veteran of the Kataphraktoi: select one friendly Vehicle or Mounted unit within range (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "veteran_of_the_kataphraktoi",
+                "ability_name": str(source.get("source", "") or self._VETERAN_OF_THE_KATAPHRAKTOI_SOURCE),
+                "army_id": army_id,
+                "command_phase_owner_id": player_id,
+                "source_unit_id": str(source.get("source_unit_id", "") or ""),
+                "source_member_unit_id": str(source.get("source_member_unit_id", "") or ""),
+                "source_model_id": source_model_id,
+                "range": float(source.get("range", self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE) or self._VETERAN_OF_THE_KATAPHRAKTOI_RANGE),
+                "optional": True,
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+        return request
+
+    def build_veteran_of_the_kataphraktoi_requests(self, *, game=None, player=None) -> list:
+        if not self.is_solar_spearhead():
+            return []
+        if game is None or player is None:
+            return []
+        requests = []
+        for source in self._solar_spearhead_veteran_of_the_kataphraktoi_sources():
+            source_model_id = str(source.get("source_model_id", "") or "").strip()
+            if not source_model_id:
+                continue
+            request = self.build_veteran_of_the_kataphraktoi_request(
+                game=game,
+                player=player,
+                source_model_id=source_model_id,
+            )
+            if request is not None:
+                requests.append(request)
+        return requests
+
+    def apply_veteran_of_the_kataphraktoi_target(
+        self,
+        target_unit,
+        *,
+        source_model_id: str = "",
+        skip: bool = False,
+        game=None,
+        player=None,
+    ) -> Optional[dict]:
+        if not self.is_solar_spearhead():
+            return None
+        if game is None or player is None:
+            return None
+        source = self._veteran_of_the_kataphraktoi_source(source_model_id=source_model_id)
+        if not isinstance(source, dict):
+            return None
+        source_model_id = str(source.get("source_model_id", "") or "").strip()
+        if not source_model_id:
+            return None
+        if bool(skip):
+            mapping = dict(self.veteran_of_the_kataphraktoi_target_unit_ids_by_source_model_id or {})
+            mapping.pop(source_model_id, None)
+            self.veteran_of_the_kataphraktoi_target_unit_ids_by_source_model_id = mapping
+            if self.army is not None:
+                setattr(
+                    self.army,
+                    "veteran_of_the_kataphraktoi_target_unit_ids_by_source_model_id",
+                    dict(mapping),
+                )
+            return {
+                "action": "skip",
+                "source": str(source.get("source", "") or self._VETERAN_OF_THE_KATAPHRAKTOI_SOURCE),
+                "source_model_id": source_model_id,
+                "source_unit_id": str(source.get("source_unit_id", "") or ""),
+            }
+        if target_unit is None:
+            return None
+        target_root = self._root_unit(target_unit)
+        if target_root is None:
+            return None
+        candidates = self._veteran_of_the_kataphraktoi_eligible_friendly_units_for_source(
+            source_model_id=source_model_id,
+            game=game,
+            player=player,
+        )
+        candidate_ids = {str(maybe_entity_id(unit) or "") for unit in candidates if unit is not None}
+        target_id = str(maybe_entity_id(target_root) or "")
+        if target_id not in candidate_ids:
+            return None
+        mapping = dict(self.veteran_of_the_kataphraktoi_target_unit_ids_by_source_model_id or {})
+        mapping[source_model_id] = target_id
+        self.veteran_of_the_kataphraktoi_target_unit_ids_by_source_model_id = mapping
+        if self.army is not None:
+            setattr(
+                self.army,
+                "veteran_of_the_kataphraktoi_target_unit_ids_by_source_model_id",
+                dict(mapping),
+            )
+        return {
+            "target_unit_id": target_id,
+            "target_name": str(getattr(target_root, "name", "") or "Unit"),
+            "source": str(source.get("source", "") or self._VETERAN_OF_THE_KATAPHRAKTOI_SOURCE),
+            "source_model_id": source_model_id,
+            "source_unit_id": str(source.get("source_unit_id", "") or ""),
+        }
+
+    def veteran_of_the_kataphraktoi_can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
+        del game
+        if not self.is_solar_spearhead():
+            return False
+        root = self._root_unit(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_custodes(root):
+            return False
+        if not (self._unit_is_vehicle(root) or self._unit_is_mounted(root)):
+            return False
+        target_id = str(maybe_entity_id(root) or "").strip()
+        if not target_id:
+            return False
+        mapping = dict(self.veteran_of_the_kataphraktoi_target_unit_ids_by_source_model_id or {})
+        if target_id not in set(mapping.values()):
+            return False
+        parent = getattr(profile, "parent_wargear", None) if profile is not None else None
+        is_ranged = getattr(parent, "is_ranged", None) if parent is not None else None
+        if callable(is_ranged):
+            return bool(is_ranged())
+        return True
 
     def auric_armour_move_bonus(self, model, *, unit=None) -> tuple[int, str]:
         if unit is None:
@@ -1889,5 +2357,7 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
             return
         if player is not getattr(self.army, "player", None):
             return
+        self.clear_veteran_of_the_kataphraktoi_targets()
         self.build_assemblage_of_might_request(game=game, player=player)
         self.build_huntress_eye_requests(game=game, player=player)
+        self.build_veteran_of_the_kataphraktoi_requests(game=game, player=player)

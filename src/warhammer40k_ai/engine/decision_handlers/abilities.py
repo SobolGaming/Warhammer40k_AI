@@ -3234,6 +3234,55 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if target_id not in candidate_ids:
             return ("Huntress' Eye selection contains an ineligible target.",)
         return ()
+    if ability == "veteran_of_the_kataphraktoi":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Veteran of the Kataphraktoi army not found.",)
+        mgr = getattr(army, "adeptus_custodes_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_solar_spearhead", lambda: False)()):
+            return ("Veteran of the Kataphraktoi requires Solar Spearhead.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        source_model_id = str(payload.get("source_model_id") or ctx.get("source_model_id") or "").strip()
+        if not source_model_id:
+            return ("Veteran of the Kataphraktoi requires source_model_id.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Veteran of the Kataphraktoi target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Veteran of the Kataphraktoi target unit was not found.",)
+        candidates_fn = getattr(mgr, "_veteran_of_the_kataphraktoi_eligible_friendly_units_for_source", None)
+        if not callable(candidates_fn):
+            return ("Veteran of the Kataphraktoi target validation is unavailable.",)
+        candidates = list(
+            candidates_fn(
+                source_model_id=source_model_id,
+                game=game,
+                player=player,
+            )
+            or []
+        )
+        candidate_ids = {
+            str(get_entity_id(unit) or "")
+            for unit in candidates
+            if unit is not None
+        }
+        target_id = str(get_entity_id(target_root) or "")
+        if target_id not in candidate_ids:
+            return ("Veteran of the Kataphraktoi selection contains an ineligible target.",)
+        return ()
     if ability == "martial_mastery":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -7093,6 +7142,72 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             game,
             player,
             f"{ability_name}: selected {target_name}; target must take a Battle-shock test.",
+        )
+        return outcome
+    if ability == "veteran_of_the_kataphraktoi":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "adeptus_custodes_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        source_model_id = str(
+            payload.get("source_model_id")
+            or ctx.get("source_model_id")
+            or ""
+        ).strip()
+        apply_fn = getattr(mgr, "apply_veteran_of_the_kataphraktoi_target", None)
+        if not callable(apply_fn):
+            return None
+        if is_skip_choice(request, result):
+            outcome = apply_fn(
+                None,
+                source_model_id=source_model_id,
+                skip=True,
+                game=game,
+                player=player,
+            )
+            if not isinstance(outcome, dict):
+                return None
+            ability_name = str(ctx.get("ability_name", "") or "Veteran of the Kataphraktoi").strip() or "Veteran of the Kataphraktoi"
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: no target selected.",
+            )
+            return outcome
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+        outcome = apply_fn(
+            target_root,
+            source_model_id=source_model_id,
+            skip=False,
+            game=game,
+            player=player,
+        )
+        if not isinstance(outcome, dict):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Veteran of the Kataphraktoi").strip() or "Veteran of the Kataphraktoi"
+        target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: selected {target_name}; unit can shoot after Falling Back until your next Command phase.",
         )
         return outcome
     if ability == "persecution_prospect_guerrilla_adepts":
