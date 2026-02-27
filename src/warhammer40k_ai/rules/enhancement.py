@@ -543,6 +543,7 @@ class Enhancement:
         is_null_maiden_vigil = bool(ac_mgr and ac_mgr.is_null_maiden_vigil())
         is_shield_host = bool(ac_mgr and ac_mgr.is_shield_host())
         is_solar_spearhead = bool(ac_mgr and ac_mgr.is_solar_spearhead())
+        is_talons_of_the_emperor = bool(ac_mgr and ac_mgr.is_talons_of_the_emperor())
         try:
             is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
         except Exception:
@@ -6712,6 +6713,71 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_veteran_of_the_kataphraktoi_bearer_model_id"] = bearer_id
+
+        if name == "aegis projector" or enh_id == "000008921002":
+            if not is_talons_of_the_emperor:
+                return
+            unit.special_rules["enhancement_aegis_projector"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            usage_scope = str(params.get("usage_scope", "turn") or "turn").strip().lower()
+            if usage_scope not in {"turn", "battle_round", "battle"}:
+                usage_scope = "turn"
+            unit.special_rules["enhancement_aegis_projector_usage_scope"] = usage_scope
+            unit.special_rules["enhancement_aegis_projector_source"] = "Aegis Projector"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_aegis_projector_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("first_failed_save_damage_zero_sources", None)
+
+        if name == "champion of the imperium" or enh_id == "000008921003":
+            if not is_talons_of_the_emperor:
+                return
+            unit.special_rules["enhancement_champion_of_the_imperium"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                aura_range = float(params.get("aura_range", getattr(desc, "range_in", 9.0) or 9.0) or 9.0)
+            except (TypeError, ValueError):
+                aura_range = 9.0
+            unit.special_rules["enhancement_champion_of_the_imperium_aura_range"] = float(max(0.0, aura_range))
+            unit.special_rules["enhancement_champion_of_the_imperium_source"] = "Champion of the Imperium"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_champion_of_the_imperium_bearer_model_id"] = bearer_id
+
+        if name == "gift of terran artifice" or enh_id == "000008921004":
+            if not is_talons_of_the_emperor:
+                return
+            unit.special_rules["enhancement_gift_of_terran_artifice"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            wound_bonus = _coerce_int(params.get("melee_wound_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_gift_of_terran_artifice_melee_wound_bonus"] = int(max(0, wound_bonus))
+            unit.special_rules["enhancement_gift_of_terran_artifice_source"] = "Gift of Terran Artifice"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_gift_of_terran_artifice_bearer_model_id"] = bearer_id
+
+        if name == "radiant mantle" or enh_id == "000008921005":
+            if not is_talons_of_the_emperor:
+                return
+            unit.special_rules["enhancement_radiant_mantle"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                range_in = float(params.get("range", getattr(desc, "range_in", 12.0) or 12.0) or 12.0)
+            except (TypeError, ValueError):
+                range_in = 12.0
+            hit_penalty = _coerce_int(params.get("target_hit_roll_penalty", 1) or 1, default=1)
+            unit.special_rules["enhancement_radiant_mantle_range"] = float(max(0.0, range_in))
+            unit.special_rules["enhancement_radiant_mantle_target_hit_roll_penalty"] = int(max(0, hit_penalty))
+            unit.special_rules["enhancement_radiant_mantle_source"] = "Radiant Mantle"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_radiant_mantle_bearer_model_id"] = bearer_id
 
         if name == "enhanced voidsheen cloak" or enh_id == "000008926002":
             if not is_null_maiden_vigil:

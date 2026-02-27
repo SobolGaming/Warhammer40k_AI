@@ -9318,6 +9318,28 @@ class WargearProfile:
                         _add_hit_mod(-int(penalty), f"-{int(penalty)} from {source_name}")
         except Exception:
             pass
+        try:
+            target_army = None
+            try:
+                get_parent_army = getattr(target, "get_parent_army", None)
+                if callable(get_parent_army):
+                    target_army = get_parent_army()
+            except Exception:
+                target_army = None
+            ac_mgr = getattr(target_army, "adeptus_custodes_detachments", None) if target_army is not None else None
+            penalty_fn = getattr(ac_mgr, "radiant_mantle_target_hit_penalty", None) if ac_mgr is not None else None
+            if callable(penalty_fn):
+                penalty, source = penalty_fn(
+                    target,
+                    attacker_model=attacker,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if penalty:
+                    source_name = str(source or "Radiant Mantle").strip() or "Radiant Mantle"
+                    _add_hit_mod(-int(penalty), f"-{int(penalty)} from {source_name}")
+        except Exception:
+            pass
         # Warhost: Lightning-Fast Reactions (-1 to hit while active).
         try:
             try:
@@ -14510,6 +14532,19 @@ class WargearProfile:
             if bonus:
                 dice_modifier += bonus
                 wound_result["modifiers"].append(f"+{bonus} to wound from Assemblage of Might")
+        if mgr is not None and callable(getattr(mgr, "gift_of_terran_artifice_melee_wound_bonus", None)):
+            game = getattr(getattr(army, "player", None), "game", None)
+            bonus, source = mgr.gift_of_terran_artifice_melee_wound_bonus(
+                attacker,
+                target,
+                game=game,
+                weapon_profile=self,
+                attack_instance=attack_instance,
+            )
+            if int(bonus or 0):
+                source_name = str(source or "Gift of Terran Artifice").strip() or "Gift of Terran Artifice"
+                dice_modifier += int(bonus)
+                wound_result["modifiers"].append(f"+{int(bonus)} to wound from {source_name}")
         # Imperial Agents: ENSNARING TRAP (Callidus Assassin) melee wound bonus.
         is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
         if is_melee:

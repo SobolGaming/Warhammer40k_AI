@@ -7432,6 +7432,39 @@ class AbilitySpecsMixin:
                         }
                     )
 
+        # Adeptus Custodes (Talons Of The Emperor): Aegis Projector.
+        for member in members:
+            if member is None:
+                continue
+            source_sr = getattr(member, "special_rules", None)
+            if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_aegis_projector")):
+                continue
+            get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+            source_bearer = get_bearer() if callable(get_bearer) else None
+            if source_bearer is None or not bool(getattr(source_bearer, "is_alive", True)):
+                continue
+            source_name = str(source_sr.get("enhancement_aegis_projector_source", "") or "Aegis Projector").strip()
+            if not source_name:
+                source_name = "Aegis Projector"
+            source_unit_id = str(get_entity_id(member) or "")
+            if not source_unit_id:
+                continue
+            usage_scope = str(source_sr.get("enhancement_aegis_projector_usage_scope", "") or "turn").strip().lower()
+            if usage_scope not in {"turn", "battle_round", "battle"}:
+                usage_scope = "turn"
+            key = f"{source_name.lower()}:{source_unit_id}"
+            if key in seen_local:
+                continue
+            seen_local.add(key)
+            sources.append(
+                {
+                    "source": source_name,
+                    "usage_scope": usage_scope,
+                    "usage_key": f"aegis_projector:{source_unit_id}",
+                    "source_unit_id": source_unit_id,
+                }
+            )
+
         try:
             army = root.get_parent_army()
         except Exception:

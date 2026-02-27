@@ -1467,6 +1467,61 @@ _ADEPTUS_CUSTODES_SOLAR_SPEARHEAD_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ADEPTUS_CUSTODES_SOLAR_SPEARHEAD_DESCRIPTORS.values()
 }
 
+_ADEPTUS_CUSTODES_TALONS_OF_THE_EMPEROR_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008921002": EnhancementToolDescriptor(
+        enhancement_id="000008921002",
+        name="Aegis Projector",
+        timing="on_first_failed_save_each_turn",
+        target="bearer_unit",
+        duration="once_per_turn",
+        effect="set_failed_save_damage_to_zero",
+        effect_params={
+            "usage_scope": "turn",
+            "first_failed_save_only": True,
+            "set_damage_to": 0,
+        },
+    ),
+    "000008921003": EnhancementToolDescriptor(
+        enhancement_id="000008921003",
+        name="Champion of the Imperium",
+        timing="passive",
+        target="bearer_null_aegis_or_deadly_unity_ability",
+        duration="constant",
+        effect="increase_bearer_talons_aura_range",
+        range_in=9.0,
+        effect_params={
+            "aura_range": 9.0,
+            "applies_to_abilities": ("Null Aegis", "Deadly Unity"),
+        },
+    ),
+    "000008921004": EnhancementToolDescriptor(
+        enhancement_id="000008921004",
+        name="Gift of Terran Artifice",
+        timing="passive",
+        target="bearer_melee_attacks",
+        duration="constant",
+        effect="add_wound_roll_bonus_to_bearer_melee_attacks",
+        effect_params={"melee_wound_bonus": 1},
+    ),
+    "000008921005": EnhancementToolDescriptor(
+        enhancement_id="000008921005",
+        name="Radiant Mantle",
+        timing="when_bearer_unit_is_targeted_by_attack",
+        target="attacks_targeting_bearer_unit_within_range",
+        duration="constant",
+        effect="subtract_hit_roll_when_attacker_within_range",
+        range_in=12.0,
+        effect_params={
+            "range": 12.0,
+            "target_hit_roll_penalty": 1,
+        },
+    ),
+}
+
+_ADEPTUS_CUSTODES_TALONS_OF_THE_EMPEROR_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ADEPTUS_CUSTODES_TALONS_OF_THE_EMPEROR_DESCRIPTORS.values()
+}
+
 _EXPLORATOR_MANIPLE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008568002": EnhancementToolDescriptor(
         enhancement_id="000008568002",
@@ -4699,6 +4754,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _ADEPTUS_CUSTODES_SOLAR_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ADEPTUS_CUSTODES_TALONS_OF_THE_EMPEROR_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _EXPLORATOR_MANIPLE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4908,6 +4966,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _ADEPTUS_CUSTODES_NULL_MAIDEN_VIGIL_BY_NAME.get(key)
         or _ADEPTUS_CUSTODES_SHIELD_HOST_BY_NAME.get(key)
         or _ADEPTUS_CUSTODES_SOLAR_SPEARHEAD_BY_NAME.get(key)
+        or _ADEPTUS_CUSTODES_TALONS_OF_THE_EMPEROR_BY_NAME.get(key)
         or _EXPLORATOR_MANIPLE_BY_NAME.get(key)
         or _HALOSCREED_BATTLE_CLADE_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)

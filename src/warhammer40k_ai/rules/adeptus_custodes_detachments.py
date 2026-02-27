@@ -523,6 +523,35 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
             return None
         return root
 
+    def _talons_champion_aura_range_for_source(self, source_root) -> float:
+        if source_root is None:
+            return float(self._REVERED_COMPANIONS_RANGE)
+        base_range = float(self._REVERED_COMPANIONS_RANGE)
+        get_members = getattr(source_root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [source_root]
+        if not members:
+            members = [source_root]
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_champion_of_the_imperium")):
+                continue
+            bearer = self._member_live_bearer_model(
+                member,
+                sr,
+                specific_key="enhancement_champion_of_the_imperium_bearer_model_id",
+            )
+            if bearer is None:
+                continue
+            try:
+                aura_range = float(sr.get("enhancement_champion_of_the_imperium_aura_range", 9.0) or 9.0)
+            except (TypeError, ValueError):
+                aura_range = 9.0
+            if aura_range > base_range:
+                base_range = float(aura_range)
+        return float(base_range)
+
     def revered_companions_null_aegis_fnp(
         self,
         unit,
@@ -542,10 +571,11 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
                 continue
             if not self._unit_is_anathema_psykana(source_root):
                 continue
+            source_range = self._talons_champion_aura_range_for_source(source_root)
             if not aura_utils.unit_within_range_of_unit(
                 source_root,
                 target_root,
-                self._REVERED_COMPANIONS_RANGE,
+                source_range,
                 use_attached_aggregate=True,
             ):
                 continue
@@ -586,14 +616,158 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
                 continue
             if self._unit_is_anathema_psykana(source_root):
                 continue
+            source_range = self._talons_champion_aura_range_for_source(source_root)
             if not aura_utils.unit_within_range_of_unit(
                 source_root,
                 attacker_root,
-                self._REVERED_COMPANIONS_RANGE,
+                source_range,
                 use_attached_aggregate=True,
             ):
                 continue
             return 1, self._REVERED_COMPANIONS_SOURCE
+        return 0, ""
+
+    def _talons_gift_of_terran_artifice_source_for_attacker(self, attacker_model):
+        if not self.is_talons_of_the_emperor():
+            return None, None, None
+        if attacker_model is None:
+            return None, None, None
+        if not self._model_in_army(attacker_model):
+            return None, None, None
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._root_unit(attacker_unit)
+        if attacker_root is None:
+            return None, None, None
+        if not self._unit_in_army(attacker_root):
+            return None, None, None
+        if not self._unit_is_active(attacker_root):
+            return None, None, None
+        get_members = getattr(attacker_root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [attacker_root]
+        if not members:
+            members = [attacker_root]
+        members.sort(key=lambda member: str(maybe_entity_id(member) or id(member)))
+        attacker_model_id = str(maybe_entity_id(attacker_model) or "")
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_gift_of_terran_artifice")):
+                continue
+            bearer = self._member_live_bearer_model(
+                member,
+                sr,
+                specific_key="enhancement_gift_of_terran_artifice_bearer_model_id",
+            )
+            if bearer is None:
+                continue
+            if str(maybe_entity_id(bearer) or "") != attacker_model_id:
+                continue
+            return attacker_root, member, sr
+        return None, None, None
+
+    def gift_of_terran_artifice_melee_wound_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        del target_unit
+        del game
+        del attack_instance
+        root, _member, sr = self._talons_gift_of_terran_artifice_source_for_attacker(attacker_model)
+        if root is None or not isinstance(sr, dict):
+            return 0, ""
+        is_melee = None
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_melee_fn = getattr(parent, "is_melee", None) if parent is not None else None
+            if callable(is_melee_fn):
+                is_melee = bool(is_melee_fn())
+        if is_melee is False:
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_gift_of_terran_artifice_melee_wound_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(
+            sr.get("enhancement_gift_of_terran_artifice_source", "")
+            or "Gift of Terran Artifice"
+        ).strip() or "Gift of Terran Artifice"
+        return int(bonus), source
+
+    def radiant_mantle_target_hit_penalty(
+        self,
+        target_unit,
+        *,
+        attacker_model=None,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        del game
+        del weapon_profile
+        del attack_instance
+        if not self.is_talons_of_the_emperor():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        target_root = self._root_unit(target_unit)
+        if target_root is None:
+            return 0, ""
+        if not self._unit_in_army(target_root):
+            return 0, ""
+        if not self._unit_is_active(target_root):
+            return 0, ""
+        if not self._unit_is_custodes(target_root):
+            return 0, ""
+        get_members = getattr(target_root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [target_root]
+        if not members:
+            members = [target_root]
+        members.sort(key=lambda member: str(maybe_entity_id(member) or id(member)))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_radiant_mantle")):
+                continue
+            bearer = self._member_live_bearer_model(
+                member,
+                sr,
+                specific_key="enhancement_radiant_mantle_bearer_model_id",
+            )
+            if bearer is None:
+                continue
+            try:
+                range_in = float(sr.get("enhancement_radiant_mantle_range", 12.0) or 12.0)
+            except (TypeError, ValueError):
+                range_in = 12.0
+            if range_in <= 0:
+                continue
+            if not aura_utils.model_within_range_of_unit(
+                attacker_model,
+                target_root,
+                range_in,
+                use_attached_aggregate=True,
+            ):
+                continue
+            try:
+                penalty = int(sr.get("enhancement_radiant_mantle_target_hit_roll_penalty", 1) or 1)
+            except (TypeError, ValueError):
+                penalty = 1
+            if penalty <= 0:
+                continue
+            source = str(
+                sr.get("enhancement_radiant_mantle_source", "")
+                or "Radiant Mantle"
+            ).strip() or "Radiant Mantle"
+            return int(penalty), source
         return 0, ""
 
     def _solar_spearhead_walker_candidates(self) -> list:
