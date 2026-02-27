@@ -31,6 +31,16 @@ class DiceRollDialog(BaseDialog):
         self._option_map: Dict[str, str] = {}
         self._action_map: Dict[str, dict] = {}
 
+    def _sync_option_map_from_request(self) -> None:
+        if self.decision_request is None:
+            return
+        for opt in list(getattr(self.decision_request, "options", []) or []):
+            payload = dict(getattr(opt, "payload", {}) or {})
+            action_id = str(payload.get("action_id", "") or "")
+            if not action_id:
+                continue
+            self._option_map[action_id] = opt.option_id
+
     def _load_die_image(self, value: int, size: int) -> Optional[pygame.Surface]:
         if value in self._dice_images:
             return self._dice_images[value]
@@ -64,6 +74,7 @@ class DiceRollDialog(BaseDialog):
                     self.roll_id = int(ctx.get("roll_id"))
                 except Exception:
                     self.roll_id = None
+        self._sync_option_map_from_request()
         super().show(callback=None)
 
     def hide(self):
@@ -91,30 +102,27 @@ class DiceRollDialog(BaseDialog):
     def _build_action_maps(self, state):
         self._option_map = {}
         self._action_map = {}
-        for opt in list(getattr(self.decision_request, "options", []) or []):
-            payload = dict(getattr(opt, "payload", {}) or {})
-            action_id = str(payload.get("action_id", "") or "")
-            if not action_id:
-                continue
-            self._option_map[action_id] = opt.option_id
+        self._sync_option_map_from_request()
         for action in list(getattr(state, "reroll_options", []) or []):
             action_id = str(action.get("action_id", "") or "")
             if not action_id:
                 continue
             self._action_map[action_id] = dict(action)
 
-    def _resolve_action(self, action_id: str, selected: Optional[List[str]] = None):
+    def _resolve_action(self, action_id: str, selected: Optional[List[str]] = None) -> bool:
         if not self.decision_request or not self.on_resolve or not self._interactive:
-            return
+            return False
+        self._sync_option_map_from_request()
         option_id = self._option_map.get(action_id)
         if not option_id:
-            return
+            return False
         payload = {}
         if selected is not None:
             payload["selected_die_ids"] = list(selected)
         self.on_resolve(option_id, payload)
         self._selected_die_ids = []
         self._active_action_id = None
+        return True
 
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name in ("close", "cancel"):
@@ -124,7 +132,8 @@ class DiceRollDialog(BaseDialog):
             return False
         if button_name == "make_roll":
             self._resolve_action("roll", [])
-            self.hide()
+            # Keep dialog visible so the roll result and any follow-up reroll
+            # decision can be displayed in-place.
             return True
         if button_name == "no_reroll":
             self._resolve_action("none", [])

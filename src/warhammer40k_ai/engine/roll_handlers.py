@@ -527,6 +527,14 @@ def handle_advance_roll(game: object, state: DiceRollState):
         unit.round_state.advance_roll = roll_val
     except Exception:
         pass
+    try:
+        from ..utility.event_bus import append_dice
+
+        player = unit.get_parent_army().player if hasattr(unit, "get_parent_army") else None
+        if player is not None:
+            append_dice(player, f"Advance roll: {int(roll_val)} for {getattr(unit, 'name', 'Unit')}")
+    except Exception:
+        pass
     return roll_val
 
 

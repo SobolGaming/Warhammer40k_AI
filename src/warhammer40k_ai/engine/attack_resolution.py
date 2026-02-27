@@ -35,6 +35,7 @@ class AttackSequence:
     attack_context: Dict[str, Any] = field(default_factory=dict)
     context: Dict[str, Any] = field(default_factory=dict)
     current_roll_id: Optional[int] = None
+    started: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -58,6 +59,7 @@ class AttackSequence:
             "attack_context": dict(self.attack_context or {}),
             "context": dict(self.context or {}),
             "current_roll_id": self.current_roll_id,
+            "started": bool(self.started),
         }
 
     @classmethod
@@ -83,6 +85,7 @@ class AttackSequence:
             attack_context=dict(data.get("attack_context", {}) or {}),
             context=dict(data.get("context", {}) or {}),
             current_roll_id=data.get("current_roll_id", None),
+            started=bool(data.get("started", str(data.get("step", "done") or "done") != "done")),
         )
 
 
@@ -171,7 +174,27 @@ class AttackResolutionManager:
 
     def _mark_sequence_done(self, game: object, seq: AttackSequence) -> None:
         seq.step = "done"
+        seq.current_roll_id = None
         self._maybe_clear_selected_to_shoot_rerolls(game, seq.attacker_unit_id)
+        self._start_pending_sequence(game)
+
+    def _start_pending_sequence(self, game: object) -> None:
+        # Keep attack resolution deterministic and serial: at most one active sequence.
+        ordered = sorted(self.sequences.values(), key=lambda s: int(getattr(s, "sequence_id", 0) or 0))
+        for seq in ordered:
+            if str(getattr(seq, "step", "") or "") != "done" and bool(getattr(seq, "started", False)):
+                return
+        for seq in ordered:
+            if str(getattr(seq, "step", "") or "") == "done":
+                continue
+            if bool(getattr(seq, "started", False)):
+                continue
+            seq.started = True
+            if seq.step == "attack_count":
+                self._request_attack_count_roll(game, seq)
+            else:
+                self._begin_hits(game, seq)
+            return
 
     def queue_attack_declarations(self, game: object, declarations: list[dict], *, out_of_phase: bool = False) -> bool:
         if not declarations:
@@ -183,10 +206,8 @@ class AttackResolutionManager:
                 continue
             self.sequences[seq.sequence_id] = seq
             queued = True
-            if seq.step == "attack_count":
-                self._request_attack_count_roll(game, seq)
-            else:
-                self._begin_hits(game, seq)
+        if queued:
+            self._start_pending_sequence(game)
         return queued
 
     def _build_sequence(self, game: object, decl: dict, *, out_of_phase: bool) -> Optional[AttackSequence]:
