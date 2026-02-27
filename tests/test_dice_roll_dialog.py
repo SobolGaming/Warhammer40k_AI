@@ -154,3 +154,72 @@ def test_reroll_buttons_align_with_keep_button() -> None:
 
     assert keep_rect.y == ability_rect.y
     assert keep_rect.y == command_rect.y
+
+
+def test_confirm_reroll_does_not_hide_followup_reroll_request() -> None:
+    dialog = DiceRollDialog(1200, 800)
+    first_req = DecisionRequest.create(
+        DECISION_SELECT_DICE_REROLL,
+        "Re-roll options: Hit roll (6D6)",
+        player_id="p1",
+        options=[
+            DecisionOption.create("No re-roll", payload={"action_id": "none"}),
+            DecisionOption.create("Command Re-roll", payload={"action_id": "command_reroll"}),
+        ],
+        context={"roll_id": 2},
+    )
+    followup_req = DecisionRequest.create(
+        DECISION_SELECT_DICE_REROLL,
+        "Re-roll options: Hit roll (6D6)",
+        player_id="p1",
+        options=[
+            DecisionOption.create("No re-roll", payload={"action_id": "none"}),
+        ],
+        context={"roll_id": 2},
+    )
+
+    state = SimpleNamespace(
+        status="rolled",
+        spec={"reason": "Hit roll (6D6)", "roll_type": "hit"},
+        dice=[{"die_id": "d0", "value": 2, "faces": 6, "is_derived": False}],
+        sorted_ids=["d0"],
+        per_die_success={"d0": False},
+        total=2,
+        sum_success=None,
+        reroll_options=[
+            {
+                "action_id": "command_reroll",
+                "label": "Command Re-roll",
+                "mode": "one",
+                "eligible_die_ids": ["d0"],
+                "max_select": 1,
+            }
+        ],
+    )
+
+    class _RollManagerStub:
+        def get_roll(self, _roll_id: int):
+            return state
+
+    def _on_resolve(_option_id: str, _payload: dict) -> None:
+        dialog.show(
+            game=SimpleNamespace(roll_manager=_RollManagerStub()),
+            player=SimpleNamespace(id="p1"),
+            decision_request=followup_req,
+            on_resolve=lambda _oid, _pl: None,
+        )
+
+    dialog.show(
+        game=SimpleNamespace(roll_manager=_RollManagerStub()),
+        player=SimpleNamespace(id="p1"),
+        decision_request=first_req,
+        on_resolve=_on_resolve,
+    )
+    dialog._active_action_id = "command_reroll"
+    dialog._selected_die_ids = ["d0"]
+
+    handled = dialog._handle_button_click("confirm_reroll")
+
+    assert handled is True
+    assert dialog.visible is True
+    assert dialog.decision_request is followup_req

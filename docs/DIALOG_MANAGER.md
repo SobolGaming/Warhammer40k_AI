@@ -116,11 +116,18 @@ Setup phase uses this modal adapter in `SetupPhaseHandler._show_mission_selectio
 - `UnitDetailPanel` (the right-click detailed unit info pane) now caches a pre-rendered content surface.
   Scrolling only updates viewport offset instead of re-wrapping/re-rendering every line each frame.
   Cache invalidation occurs when the focused unit changes, panel width changes, or the periodic refresh window expires.
+  Default panel typography was also increased by +2pt across large/medium/small/tiny fonts for readability.
 - `RuleDetailPanel` now uses the same pre-rendered content-surface approach; wheel scrolling is viewport-only.
 - `MissionSelectionDialog` caches its full mission table surface and only rebuilds when combinations or selection state change.
 - `ShootingDeclarationDialog` caches hot-path text rasterization for repeated weapon/declaration rows.
+- `RosterPane` composition text is now ellipsized to available width and reserves right-side space for Aspect Shrine token icons to prevent overflow/overlap.
 
 ### Movement Choice behavior
 
 - `MovementChoiceDialog` disables movement action buttons when the selected unit has already moved this phase.
   In that state, the dialog shows `Already Moved this Phase`, and no `SELECT_MOVEMENT_ACTION` request is created.
+
+### Dice roll behavior
+
+- Command Re-roll is only shown in reroll options when stratagem availability checks pass for the current player/phase.
+  This prevents stale follow-up reroll prompts from offering unavailable Command Re-roll actions.

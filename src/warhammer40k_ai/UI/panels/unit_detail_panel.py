@@ -5,10 +5,10 @@ from warhammer40k_ai.utility.entity_ids import get_entity_id
 from ..ui_utils import draw_aspect_shrine_token_icon
 
 # Font sizes
-FONT_LARGE = 20
-FONT_MEDIUM = 16
-FONT_SMALL = 14
-FONT_TINY = 12
+FONT_LARGE = 22
+FONT_MEDIUM = 18
+FONT_SMALL = 16
+FONT_TINY = 14
 
 # Enhanced Colors
 PANEL_BG = (45, 45, 48)  # Dark background

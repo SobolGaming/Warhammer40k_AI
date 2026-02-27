@@ -142,8 +142,13 @@ class DiceRollDialog(BaseDialog):
         if button_name == "confirm_reroll":
             if not self._active_action_id:
                 return True
-            self._resolve_action(self._active_action_id, list(self._selected_die_ids))
-            self.hide()
+            before_id = str(getattr(self.decision_request, "decision_id", "") or "")
+            resolved = self._resolve_action(self._active_action_id, list(self._selected_die_ids))
+            after_id = str(getattr(self.decision_request, "decision_id", "") or "")
+            # If resolve triggers a follow-up reroll request synchronously, show() replaces
+            # decision_request. Do not hide in that case.
+            if resolved and after_id == before_id:
+                self.hide()
             return True
         # Action buttons map directly to reroll actions
         if button_name.startswith("action:"):
@@ -155,8 +160,11 @@ class DiceRollDialog(BaseDialog):
             eligible = list(action.get("eligible_die_ids", []) or [])
             auto_all = bool(action.get("auto_select_all", False))
             if mode in ("all", "whole") or (mode in ("values", "ones", "any") and auto_all):
-                self._resolve_action(action_id, eligible)
-                self.hide()
+                before_id = str(getattr(self.decision_request, "decision_id", "") or "")
+                resolved = self._resolve_action(action_id, eligible)
+                after_id = str(getattr(self.decision_request, "decision_id", "") or "")
+                if resolved and after_id == before_id:
+                    self.hide()
                 return True
             # Selection-based
             self._active_action_id = action_id
@@ -169,8 +177,11 @@ class DiceRollDialog(BaseDialog):
             mode = str(action.get("mode", "") or "")
             eligible = list(action.get("eligible_die_ids", []) or [])
             if mode in ("all", "whole"):
-                self._resolve_action("command_reroll", eligible)
-                self.hide()
+                before_id = str(getattr(self.decision_request, "decision_id", "") or "")
+                resolved = self._resolve_action("command_reroll", eligible)
+                after_id = str(getattr(self.decision_request, "decision_id", "") or "")
+                if resolved and after_id == before_id:
+                    self.hide()
                 return True
             self._active_action_id = "command_reroll"
             self._selected_die_ids = []

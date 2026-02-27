@@ -1148,7 +1148,7 @@ class ShootingDeclarationDialog(BaseDialog):
         success, apply_result = self._resolve_decision(option_id, payload)
         self.last_execution_success = bool(success)
         if success:
-            logger.info(f"INFO: {self.unit.name} completed shooting phase")
+            logger.info(f"INFO: {self.unit.name} submitted shooting declarations")
         else:
             errors = list(getattr(apply_result, "errors", ()) or [])
             if any("Formless Horror" in str(err or "") for err in errors):
@@ -1635,7 +1635,7 @@ class ShootingDeclarationDialog(BaseDialog):
             except Exception:
                 pass
             self.weapon_declarations.append(decl)
-            logger.error(f"ERROR: {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} #{weapon_instance} (assigned to {assigned_model[0].name if assigned_model else 'no model'})")
+            logger.info(f"INFO: {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} #{weapon_instance} (assigned to {assigned_model[0].name if assigned_model else 'no model'})")
             try:
                 from ...utility.event_bus import append_action
                 player = self.unit.get_parent_army().player

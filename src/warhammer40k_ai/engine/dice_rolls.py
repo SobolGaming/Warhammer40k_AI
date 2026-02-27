@@ -137,6 +137,50 @@ def _resolve_unit(game: object, unit_id: Optional[str]):
         return None
 
 
+def _command_reroll_is_available(game: object, state: "DiceRollState") -> bool:
+    player = _resolve_player(game, getattr(state, "player_id", None))
+    if player is None:
+        return False
+    mgr_strat = getattr(player, "stratagems", None)
+    if mgr_strat is None:
+        return False
+    get_by_name = getattr(mgr_strat, "get_by_name", None)
+    evaluate_availability = getattr(mgr_strat, "_evaluate_availability", None)
+    if not callable(get_by_name) or not callable(evaluate_availability):
+        return False
+
+    strat = get_by_name("COMMAND RE-ROLL")
+    if strat is None:
+        return False
+
+    phase_name = ""
+    get_phase_label = getattr(game, "_current_phase_label", None)
+    if callable(get_phase_label):
+        try:
+            phase_name = str(get_phase_label() or "")
+        except Exception:
+            phase_name = ""
+
+    ctx: dict[str, object] = {"phase_name": phase_name}
+    unit = _resolve_unit(game, getattr(state, "spec", {}).get("unit_id"))
+    if unit is not None:
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
+
+    is_active_turn = False
+    get_current_player = getattr(game, "get_current_player", None)
+    if callable(get_current_player):
+        try:
+            is_active_turn = bool(get_current_player() is player)
+        except Exception:
+            is_active_turn = False
+    try:
+        availability = evaluate_availability(strat, ctx, is_active_turn=is_active_turn)
+    except Exception:
+        return False
+    return bool((availability or {}).get("available", False))
+
+
 @dataclass
 class DiceRollState:
     roll_id: int
@@ -446,7 +490,7 @@ class DiceRollManager:
             )
         # Command re-roll
         try:
-            if bool(state.spec.get("command_reroll_allowed", False)):
+            if bool(state.spec.get("command_reroll_allowed", False)) and _command_reroll_is_available(game, state):
                 cmd_mode = str(state.spec.get("command_reroll_mode", "one") or "one").strip().lower()
                 eligible_cmd = [
                     str(d.get("die_id", ""))

@@ -145,6 +145,29 @@ class RosterPane(pygame.sprite.Sprite):
         except Exception:
             return getattr(unit, 'name', 'Unit')
 
+    @staticmethod
+    def _ellipsize_to_width(font: pygame.font.Font, text: str, max_width: int) -> str:
+        """Trim text with ellipsis so its rendered width never exceeds max_width."""
+        if max_width <= 0:
+            return ""
+        if font.size(text)[0] <= max_width:
+            return text
+        ellipsis = "..."
+        ellipsis_w = font.size(ellipsis)[0]
+        if ellipsis_w > max_width:
+            return ""
+
+        lo = 0
+        hi = len(text)
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            candidate = text[:mid] + ellipsis
+            if font.size(candidate)[0] <= max_width:
+                lo = mid
+            else:
+                hi = mid - 1
+        return text[:lo] + ellipsis
+
     def scroll(self, delta):
         """Handle scrolling in the roster pane"""
         self.scroll_offset = max(0, min(self.max_scroll, self.scroll_offset + delta))
@@ -473,6 +496,9 @@ class RosterPane(pygame.sprite.Sprite):
             token_total = int(root.get_aspect_shrine_token_total() or 0)
         except Exception:
             token_total = 0
+        token_size = 0
+        gap = 0
+        start_x = x_right
         if token_total > 0:
             try:
                 token_remaining = int(root.get_aspect_shrine_token_remaining() or 0)
@@ -480,19 +506,8 @@ class RosterPane(pygame.sprite.Sprite):
                 token_remaining = 0
             token_size = 8
             gap = 3
-            tokens_y = y_offset + 20
             total_w = token_total * token_size + max(0, token_total - 1) * gap
             start_x = x_right - total_w
-            for i in range(token_total):
-                cx = start_x + i * (token_size + gap) + token_size // 2
-                cy = tokens_y + token_size // 2
-                draw_aspect_shrine_token_icon(
-                    surface,
-                    cx,
-                    cy,
-                    token_size,
-                    filled=(i < token_remaining),
-                )
 
         # Extra roster details (composition + status).
         def _composition_text(u: Unit) -> str:
@@ -581,8 +596,24 @@ class RosterPane(pygame.sprite.Sprite):
 
         # Composition (models + type)
         comp = _composition_text(unit)
+        comp_right_limit = x_right if token_total <= 0 else (start_x - 6)
+        comp_max_width = max(0, comp_right_limit - details_x)
+        comp = self._ellipsize_to_width(self.font_small, comp, comp_max_width)
         comp_surf = self.font_small.render(comp, True, TEXT_SECONDARY)
         surface.blit(comp_surf, (details_x, line1_y))
+
+        # Draw token icons on top and to the right of the composition line.
+        if token_total > 0:
+            for i in range(token_total):
+                cx = start_x + i * (token_size + gap) + token_size // 2
+                cy = (y_offset + 20) + token_size // 2
+                draw_aspect_shrine_token_icon(
+                    surface,
+                    cx,
+                    cy,
+                    token_size,
+                    filled=(i < token_remaining),
+                )
 
         # Optional enhancement line (blue) shown above "Not Deployed"
         status_y = line2_y
