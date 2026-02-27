@@ -2589,7 +2589,21 @@ class BattlePhaseHandler(BasePhaseHandler):
                     "result_payload": {},
                 }
                 cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
-                self.game.apply_command(cmd)
+                cmd_result = self.game.apply_command(cmd)
+                if cmd_result is None or not bool(getattr(cmd_result, "ok", False)):
+                    logger.error(
+                        "ERROR: Movement action decision rejected for %s (%s)",
+                        getattr(unit, "name", "Unit"),
+                        str(choice or ""),
+                    )
+                    return
+            else:
+                logger.error(
+                    "ERROR: No matching movement option for %s (%s)",
+                    getattr(unit, "name", "Unit"),
+                    str(choice or ""),
+                )
+                return
             self._handle_movement_choice(unit, choice)
 
         self.game_view.movement_choice_dialog.show(unit, on_movement_choice, self.game.map, decision_request=req)
@@ -4622,31 +4636,15 @@ class BattlePhaseHandler(BasePhaseHandler):
                 self.game_view.selected_model_for_movement = None
                 return
             if choice == 'advance':
-                # Request advance roll via server decision; movement opens after roll resolves.
+                # Advance roll is requested by the SELECT_MOVEMENT_ACTION decision that was
+                # already resolved in _handle_movement_phase_selection. Do not re-request it.
                 try:
-                    from ...engine.decision_kinds import DECISION_SELECT_MOVEMENT_ACTION
-                    from ...engine.decisions import DecisionOption, DecisionRequest
-                    from ...utility.decision_utils import resolve_decision_command
                     from ...utility.entity_ids import get_entity_id
 
                     unit_id = get_entity_id(unit)
                     self._pending_advance_units.add(unit_id)
-                    req = DecisionRequest.create(
-                        DECISION_SELECT_MOVEMENT_ACTION,
-                        f"Advance with {getattr(unit, 'name', 'Unit')}",
-                        player_id=getattr(self.game.get_current_player(), "id", None),
-                        options=[DecisionOption.create("Confirm", payload={"unit_id": unit_id, "action_type": "advance"})],
-                        context={"unit_id": unit_id},
-                    )
-                    self.game.request_decision(req)
-                    if req.options:
-                        cmd_result = resolve_decision_command(self.game, req, req.options[0].option_id, result_payload={})
-                        if cmd_result is None or not getattr(cmd_result, "ok", False):
-                            self._pending_advance_units.discard(unit_id)
-                            logger.error(f"ERROR: Advance decision rejected for {unit.name}")
-                            return
                 except Exception:
-                    logger.exception(f"ERROR: Failed to request advance roll for {unit.name}")
+                    logger.exception(f"ERROR: Failed to stage advance flow for {unit.name}")
                     try:
                         self._pending_advance_units.discard(get_entity_id(unit))
                     except Exception:
