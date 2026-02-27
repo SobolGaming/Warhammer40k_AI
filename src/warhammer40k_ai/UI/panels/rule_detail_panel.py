@@ -1,5 +1,5 @@
 import pygame
-from typing import List, Optional
+from typing import List, Optional, Tuple, Dict, Any
 
 # Font sizes
 FONT_TITLE = 22
@@ -42,6 +42,15 @@ class RuleDetailPanel(pygame.sprite.Sprite):
         self._hud_button_rect: Optional[pygame.Rect] = None
         self._hud_on_use = None
         self._hud_enabled = False
+
+        # Cached content surface for responsive scrolling.
+        self._cached_content_surface: Optional[pygame.Surface] = None
+        self._cached_content_width: int = 0
+        self._cached_content_height: int = 0
+        self._cached_signature: Optional[Tuple[Any, ...]] = None
+        self._cache_built_ms: int = -1
+        self._cache_refresh_ms: int = 350
+        self._hud_button_rect_content: Optional[pygame.Rect] = None
         self._init_fonts()
 
     def _init_fonts(self) -> None:
@@ -102,6 +111,8 @@ class RuleDetailPanel(pygame.sprite.Sprite):
         self._hud_button_rect = None
         self._hud_on_use = None
         self._hud_enabled = False
+        self._hud_button_rect_content = None
+        self._invalidate_cache()
 
     def hide(self) -> None:
         self.visible = False
@@ -112,107 +123,95 @@ class RuleDetailPanel(pygame.sprite.Sprite):
         self._hud_button_rect = None
         self._hud_on_use = None
         self._hud_enabled = False
+        self._hud_button_rect_content = None
+        self._invalidate_cache()
 
     def scroll(self, delta: int) -> None:
         self.scroll_offset = max(0, min(self.max_scroll, self.scroll_offset + int(delta)))
 
-    def handle_event(self, event: pygame.event.Event) -> bool:
-        if not self.visible:
-            return False
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self._hud_button_rect and self._hud_button_rect.collidepoint(event.pos):
-                if self._hud_enabled and callable(self._hud_on_use):
-                    self._hud_on_use()
+    def _invalidate_cache(self) -> None:
+        self._cached_content_surface = None
+        self._cached_content_width = 0
+        self._cached_content_height = 0
+        self._cached_signature = None
+        self._cache_built_ms = -1
+        self._hud_button_rect_content = None
+
+    def _content_signature(self) -> Tuple[Any, ...]:
+        hud = self.hud or {}
+        hint_val = hud.get("hint", "")
+        if callable(hud.get("get_hint")):
+            hint_val = "<dynamic>"
+        tokens_val = hud.get("tokens", None)
+        if callable(hud.get("get_tokens")):
+            tokens_val = "<dynamic>"
+        enabled_val = hud.get("enabled", None)
+        if callable(hud.get("get_enabled")):
+            enabled_val = "<dynamic>"
+        return (
+            self.title,
+            self.rule_name,
+            self.legend,
+            self.description,
+            bool(self.supported),
+            tuple(self.highlight_words or []),
+            bool(self.hud),
+            str(hud.get("label", "Tokens")),
+            str(hud.get("use_label", "Use Token")),
+            bool(hud.get("show_button", True)),
+            tuple(hud.get("highlight_words") or []),
+            str(hint_val),
+            tokens_val,
+            enabled_val,
+        )
+
+    def _should_rebuild_cache(self, content_width: int) -> bool:
+        if self._cached_content_surface is None:
+            return True
+        if self._cached_content_width != int(content_width):
+            return True
+        signature = self._content_signature()
+        if self._cached_signature != signature:
+            return True
+        if self.hud:
+            now_ms = pygame.time.get_ticks()
+            if self._cache_built_ms < 0:
                 return True
+            return int(now_ms - self._cache_built_ms) >= int(self._cache_refresh_ms)
         return False
 
-    def draw(self, surface: pygame.Surface, x: int, y: int) -> None:
-        if not self.visible:
+    def _ensure_content_cache(self, content_width: int) -> None:
+        if not self._should_rebuild_cache(content_width):
             return
+        surface, content_height = self._build_content_surface(int(content_width))
+        self._cached_content_surface = surface
+        self._cached_content_width = int(content_width)
+        self._cached_content_height = int(content_height)
+        self._cached_signature = self._content_signature()
+        self._cache_built_ms = pygame.time.get_ticks()
 
-        screen_width, screen_height = surface.get_size()
-        if x + self.width > screen_width:
-            x = max(10, screen_width - self.width - 10)
-        if y + self.height > screen_height:
-            y = max(10, screen_height - self.height - 10)
+    def _measure_wrapped_text_height(
+        self,
+        text: str,
+        font: pygame.font.Font,
+        max_width: int,
+        *,
+        paragraph_gap: int = 8,
+    ) -> int:
+        if not text:
+            return 0
+        line_height = font.get_linesize() + 2
+        total = 0
+        for para in str(text).split("\n"):
+            if not para.strip():
+                total += line_height // 2
+                continue
+            lines = self.wrap_text(para, font, max_width)
+            total += len(lines) * line_height
+            total += paragraph_gap
+        return total
 
-        self.rect = pygame.Rect(x, y, self.width, self.height)
-        shadow_rect = pygame.Rect(x + 3, y + 3, self.width, self.height)
-        pygame.draw.rect(surface, (0, 0, 0), shadow_rect, border_radius=8)
-        pygame.draw.rect(surface, PANEL_BG, self.rect, border_radius=8)
-        pygame.draw.rect(surface, PANEL_BORDER, self.rect, 2, border_radius=8)
-
-        content_rect = pygame.Rect(x + 10, y + 10, self.width - 20, self.height - 20)
-        surface.set_clip(content_rect)
-
-        y_pos = y + 15 - self.scroll_offset
-        x_left = x + 15
-
-        if self.title:
-            title_surf = self.font_title.render(self.title, True, TEXT_PRIMARY)
-            surface.blit(title_surf, (x_left, y_pos))
-            y_pos += self.font_title.get_linesize() + 6
-
-        if self.rule_name:
-            name_surf = self.font_heading.render(self.rule_name, True, TEXT_ACCENT)
-            surface.blit(name_surf, (x_left, y_pos))
-            y_pos += self.font_heading.get_linesize() + 4
-
-        if self.supported:
-            status_surf = self.font_small.render("Status: Supported", True, TEXT_ACCENT)
-            surface.blit(status_surf, (x_left, y_pos))
-            y_pos += self.font_small.get_linesize() + 6
-
-        if self.hud:
-            y_pos = self._draw_hud(surface, x_left, y_pos, self.width - 40)
-
-        if self.legend:
-            y_pos = self._draw_wrapped_text(
-                surface,
-                self.legend,
-                self.font_body,
-                TEXT_SECONDARY,
-                x_left,
-                y_pos,
-                self.width - 40,
-                paragraph_gap=10,
-            )
-
-        if self.description:
-            y_pos = self._draw_wrapped_text(
-                surface,
-                self.description,
-                self.font_body,
-                TEXT_SECONDARY,
-                x_left,
-                y_pos,
-                self.width - 40,
-                paragraph_gap=10,
-                highlight_words=self.highlight_words,
-            )
-
-        total_content_height = y_pos - (y + 15) + self.scroll_offset
-        self.max_scroll = max(0, total_content_height - (self.height - 30))
-
-        surface.set_clip(None)
-        if self.max_scroll > 0:
-            self.draw_scroll_indicator(surface, x, y)
-
-    def draw_scroll_indicator(self, surface: pygame.Surface, x: int, y: int) -> None:
-        if self.max_scroll <= 0:
-            return
-        scrollbar_x = x + self.width - 15
-        scrollbar_y = y + 10
-        scrollbar_height = self.height - 20
-        scrollbar_rect = pygame.Rect(scrollbar_x, scrollbar_y, 10, scrollbar_height)
-        pygame.draw.rect(surface, DARK_GREY, scrollbar_rect, border_radius=5)
-
-        thumb_height = max(20, int(scrollbar_height * (self.height - 30) / (self.max_scroll + self.height - 30)))
-        thumb_y = scrollbar_y + int((scrollbar_height - thumb_height) * (self.scroll_offset / self.max_scroll))
-        thumb_rect = pygame.Rect(scrollbar_x + 1, thumb_y, 8, thumb_height)
-        pygame.draw.rect(surface, TEXT_SECONDARY, thumb_rect, border_radius=4)
-
-    def _draw_hud(self, surface: pygame.Surface, x: int, y: int, width: int) -> int:
+    def _resolve_hud_values(self, width: int) -> Dict[str, Any]:
         hud = self.hud or {}
         get_tokens = hud.get("get_tokens")
         tokens = None
@@ -244,13 +243,208 @@ class RuleDetailPanel(pygame.sprite.Sprite):
         else:
             hint = str(hud.get("hint", "") or "")
 
+        text_max_width = max(10, width - 140 if show_button else width - 20)
+        on_use = hud.get("on_use") if callable(hud.get("on_use")) else None
+        return {
+            "tokens": tokens,
+            "label": label,
+            "use_label": use_label,
+            "show_button": show_button,
+            "highlight_words": highlight_words,
+            "enabled": bool(enabled),
+            "hint": hint,
+            "text_max_width": text_max_width,
+            "on_use": on_use,
+        }
+
+    def _measure_hud_height(self, width: int, hud_values: Dict[str, Any]) -> int:
+        total = 44 + 6
+        hint = str(hud_values.get("hint", "") or "")
+        if hint:
+            total += self._measure_wrapped_text_height(
+                hint,
+                self.font_small,
+                width,
+                paragraph_gap=6,
+            )
+        return total
+
+    def _build_content_surface(self, content_width: int) -> Tuple[pygame.Surface, int]:
+        x_left = 5
+        draw_width = max(10, int(content_width) - 10)
+        y_pos = 5
+
+        if self.title:
+            y_pos += self.font_title.get_linesize() + 6
+        if self.rule_name:
+            y_pos += self.font_heading.get_linesize() + 4
+        if self.supported:
+            y_pos += self.font_small.get_linesize() + 6
+
+        hud_values: Optional[Dict[str, Any]] = None
+        if self.hud:
+            hud_values = self._resolve_hud_values(draw_width)
+            y_pos += self._measure_hud_height(draw_width, hud_values)
+
+        if self.legend:
+            y_pos += self._measure_wrapped_text_height(
+                self.legend,
+                self.font_body,
+                draw_width,
+                paragraph_gap=10,
+            )
+
+        if self.description:
+            y_pos += self._measure_wrapped_text_height(
+                self.description,
+                self.font_body,
+                draw_width,
+                paragraph_gap=10,
+            )
+
+        content_height = max(1, int(y_pos + 5))
+        content_surface = pygame.Surface((int(content_width), content_height), pygame.SRCALPHA)
+
+        y_draw = 5
+        self._hud_button_rect_content = None
+        if self.title:
+            title_surf = self.font_title.render(self.title, True, TEXT_PRIMARY)
+            content_surface.blit(title_surf, (x_left, y_draw))
+            y_draw += self.font_title.get_linesize() + 6
+
+        if self.rule_name:
+            name_surf = self.font_heading.render(self.rule_name, True, TEXT_ACCENT)
+            content_surface.blit(name_surf, (x_left, y_draw))
+            y_draw += self.font_heading.get_linesize() + 4
+
+        if self.supported:
+            status_surf = self.font_small.render("Status: Supported", True, TEXT_ACCENT)
+            content_surface.blit(status_surf, (x_left, y_draw))
+            y_draw += self.font_small.get_linesize() + 6
+
+        if self.hud and hud_values is not None:
+            y_draw = self._draw_hud(
+                content_surface,
+                x_left,
+                y_draw,
+                draw_width,
+                hud_values=hud_values,
+            )
+
+        if self.legend:
+            y_draw = self._draw_wrapped_text(
+                content_surface,
+                self.legend,
+                self.font_body,
+                TEXT_SECONDARY,
+                x_left,
+                y_draw,
+                draw_width,
+                paragraph_gap=10,
+            )
+
+        if self.description:
+            y_draw = self._draw_wrapped_text(
+                content_surface,
+                self.description,
+                self.font_body,
+                TEXT_SECONDARY,
+                x_left,
+                y_draw,
+                draw_width,
+                paragraph_gap=10,
+                highlight_words=self.highlight_words,
+            )
+
+        return content_surface, content_height
+
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        if not self.visible:
+            return False
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self._hud_button_rect and self._hud_button_rect.collidepoint(event.pos):
+                if self._hud_enabled and callable(self._hud_on_use):
+                    self._hud_on_use()
+                return True
+        return False
+
+    def draw(self, surface: pygame.Surface, x: int, y: int) -> None:
+        if not self.visible:
+            return
+
+        screen_width, screen_height = surface.get_size()
+        if x + self.width > screen_width:
+            x = max(10, screen_width - self.width - 10)
+        if y + self.height > screen_height:
+            y = max(10, screen_height - self.height - 10)
+
+        self.rect = pygame.Rect(x, y, self.width, self.height)
+        shadow_rect = pygame.Rect(x + 3, y + 3, self.width, self.height)
+        pygame.draw.rect(surface, (0, 0, 0), shadow_rect, border_radius=8)
+        pygame.draw.rect(surface, PANEL_BG, self.rect, border_radius=8)
+        pygame.draw.rect(surface, PANEL_BORDER, self.rect, 2, border_radius=8)
+
+        content_rect = pygame.Rect(x + 10, y + 10, self.width - 20, self.height - 20)
+        self._ensure_content_cache(content_rect.width)
+        self.max_scroll = max(0, int(self._cached_content_height) - content_rect.height)
+        self.scroll_offset = max(0, min(self.max_scroll, int(self.scroll_offset)))
+
+        if self._cached_content_surface is not None:
+            available = int(self._cached_content_height) - int(self.scroll_offset)
+            blit_h = max(0, min(content_rect.height, available))
+            if blit_h > 0:
+                source_rect = pygame.Rect(0, int(self.scroll_offset), content_rect.width, blit_h)
+                surface.blit(self._cached_content_surface, content_rect.topleft, source_rect)
+
+        self._hud_button_rect = None
+        if self._hud_button_rect_content is not None:
+            mapped = self._hud_button_rect_content.move(content_rect.x, content_rect.y - int(self.scroll_offset))
+            if mapped.bottom > content_rect.top and mapped.top < content_rect.bottom:
+                self._hud_button_rect = mapped
+
+        if self.max_scroll > 0:
+            self.draw_scroll_indicator(surface, x, y)
+
+    def draw_scroll_indicator(self, surface: pygame.Surface, x: int, y: int) -> None:
+        if self.max_scroll <= 0:
+            return
+        scrollbar_x = x + self.width - 15
+        scrollbar_y = y + 10
+        scrollbar_height = self.height - 20
+        scrollbar_rect = pygame.Rect(scrollbar_x, scrollbar_y, 10, scrollbar_height)
+        pygame.draw.rect(surface, DARK_GREY, scrollbar_rect, border_radius=5)
+
+        thumb_height = max(20, int(scrollbar_height * (self.height - 30) / (self.max_scroll + self.height - 30)))
+        thumb_y = scrollbar_y + int((scrollbar_height - thumb_height) * (self.scroll_offset / self.max_scroll))
+        thumb_rect = pygame.Rect(scrollbar_x + 1, thumb_y, 8, thumb_height)
+        pygame.draw.rect(surface, TEXT_SECONDARY, thumb_rect, border_radius=4)
+
+    def _draw_hud(
+        self,
+        surface: pygame.Surface,
+        x: int,
+        y: int,
+        width: int,
+        *,
+        hud_values: Optional[Dict[str, Any]] = None,
+    ) -> int:
+        values = hud_values or self._resolve_hud_values(width)
+        tokens = values.get("tokens")
+        label = str(values.get("label", "Tokens"))
+        use_label = str(values.get("use_label", "Use Token"))
+        show_button = bool(values.get("show_button", True))
+        highlight_words = list(values.get("highlight_words") or [])
+        enabled = bool(values.get("enabled", False))
+        hint = str(values.get("hint", "") or "")
+        text_max_width = int(values.get("text_max_width", max(10, width - 20)))
+        on_use = values.get("on_use")
+
         hud_rect = pygame.Rect(x, y, width, 44)
         pygame.draw.rect(surface, HUD_BG, hud_rect, border_radius=6)
         pygame.draw.rect(surface, HUD_BORDER, hud_rect, 1, border_radius=6)
 
         token_text = f"{label}: {tokens}" if tokens is not None else label
         token_color = TEXT_ACCENT if tokens and tokens > 0 else TEXT_SECONDARY
-        text_max_width = max(10, width - 140 if show_button else width - 20)
         token_lines = self.wrap_text(token_text, self.font_body, text_max_width)
         token_line = token_lines[0] if token_lines else token_text
         token_surf = self.font_body.render(token_line, True, token_color)
@@ -262,8 +456,8 @@ class RuleDetailPanel(pygame.sprite.Sprite):
         if show_button:
             btn_w = max(90, min(140, width // 3))
             btn_rect = pygame.Rect(hud_rect.right - btn_w - 10, hud_rect.y + 6, btn_w, hud_rect.height - 12)
-            self._hud_button_rect = btn_rect
-            self._hud_on_use = hud.get("on_use") if callable(hud.get("on_use")) else None
+            self._hud_button_rect_content = pygame.Rect(btn_rect)
+            self._hud_on_use = on_use if callable(on_use) else None
             self._hud_enabled = bool(enabled)
             btn_bg = HUD_BUTTON_BG if enabled else HUD_BUTTON_BG_DISABLED
             pygame.draw.rect(surface, btn_bg, btn_rect, border_radius=5)
@@ -275,7 +469,7 @@ class RuleDetailPanel(pygame.sprite.Sprite):
                 (btn_rect.centerx - btn_surf.get_width() // 2, btn_rect.centery - btn_surf.get_height() // 2),
             )
         else:
-            self._hud_button_rect = None
+            self._hud_button_rect_content = None
             self._hud_on_use = None
             self._hud_enabled = False
 

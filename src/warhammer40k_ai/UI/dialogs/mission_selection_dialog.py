@@ -65,6 +65,14 @@ class MissionSelectionDialog(BaseDialog):
         self.visible_height = self.dialog_height - 200  # Leave space for title and buttons
         self.max_scroll = max(0, self.content_height - self.visible_height)
 
+        # Cached render surfaces for responsive scrolling.
+        self._overlay_surface: Optional[pygame.Surface] = None
+        self._overlay_size: Tuple[int, int] = (0, 0)
+        self._cached_content_surface: Optional[pygame.Surface] = None
+        self._cached_content_width: int = 0
+        self._cached_content_height: int = 0
+        self._cached_content_signature: Optional[Tuple] = None
+
     def show(self, *, decision_request=None) -> None:
         self.decision_request = decision_request
         self._option_entries = []
@@ -82,6 +90,7 @@ class MissionSelectionDialog(BaseDialog):
         self.scroll_offset = 0
         self.content_height = len(self.combinations) * self.row_height + self.header_height
         self.max_scroll = max(0, self.content_height - self.visible_height)
+        self._invalidate_content_cache()
         super().show()
         
     def handle_event(self, event) -> Optional[Dict]:
@@ -123,6 +132,63 @@ class MissionSelectionDialog(BaseDialog):
     def _scroll(self, delta: int):
         """Scroll the mission list."""
         self.scroll_offset = max(0, min(self.max_scroll, self.scroll_offset + delta * 20))
+
+    def _invalidate_content_cache(self) -> None:
+        self._cached_content_surface = None
+        self._cached_content_width = 0
+        self._cached_content_height = 0
+        self._cached_content_signature = None
+
+    def _content_signature(self) -> Tuple:
+        combo_sig = []
+        for combo in self.combinations:
+            combo_sig.append(
+                (
+                    str(combo.get("id", "")),
+                    str(combo.get("primary", "")),
+                    str(combo.get("deployment", "")),
+                    tuple(str(layout) for layout in (combo.get("layouts", []) or [])),
+                )
+            )
+        return (
+            tuple(combo_sig),
+            self.selected_combination,
+            self.selected_layout,
+            int(self.header_height),
+            int(self.row_height),
+            int(self.layout_button_size),
+            int(self.content_height),
+        )
+
+    def _build_content_surface(self, content_width: int, content_height: int) -> pygame.Surface:
+        built = pygame.Surface((int(content_width), max(1, int(content_height))))
+        built.fill((20, 20, 30))
+        self._draw_header(built)
+        self._draw_combinations(built)
+        return built
+
+    def _ensure_content_cache(self, content_width: int) -> None:
+        signature = self._content_signature()
+        if (
+            self._cached_content_surface is not None
+            and self._cached_content_width == int(content_width)
+            and self._cached_content_signature == signature
+        ):
+            return
+        self._cached_content_surface = self._build_content_surface(content_width, self.content_height)
+        self._cached_content_width = int(content_width)
+        self._cached_content_height = max(1, int(self.content_height))
+        self._cached_content_signature = signature
+
+    def _get_overlay_surface(self) -> pygame.Surface:
+        size = (int(self.screen_width), int(self.screen_height))
+        if self._overlay_surface is None or self._overlay_size != size:
+            overlay = pygame.Surface(size)
+            overlay.set_alpha(128)
+            overlay.fill((0, 0, 0))
+            self._overlay_surface = overlay
+            self._overlay_size = size
+        return self._overlay_surface
     
     def _handle_click(self, pos: Tuple[int, int]) -> Optional[Dict]:
         """Handle mouse clicks."""
@@ -176,10 +242,12 @@ class MissionSelectionDialog(BaseDialog):
                     if 0 <= layout_index < len(combination["layouts"]):
                         self.selected_combination = row_index
                         self.selected_layout = combination["layouts"][layout_index]
+                        self._invalidate_content_cache()
                 else:
                     # Clicking on the combination itself
                     self.selected_combination = row_index
                     self.selected_layout = None
+                    self._invalidate_content_cache()
         
         return None
     
@@ -197,6 +265,7 @@ class MissionSelectionDialog(BaseDialog):
         # Pick a random terrain layout from the available options
         combination = self.combinations[self.selected_combination]
         self.selected_layout = rng.choice(combination["layouts"])
+        self._invalidate_content_cache()
         
         logger.info(f"Randomly selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {self.selected_layout}")
     
@@ -215,9 +284,7 @@ class MissionSelectionDialog(BaseDialog):
     def draw(self, screen: pygame.Surface):
         """Draw the mission selection dialog."""
         # Semi-transparent overlay
-        overlay = pygame.Surface((self.screen_width, self.screen_height))
-        overlay.set_alpha(128)
-        overlay.fill((0, 0, 0))
+        overlay = self._get_overlay_surface()
         screen.blit(overlay, (0, 0))
         
         # Dialog background
@@ -245,20 +312,16 @@ class MissionSelectionDialog(BaseDialog):
         pygame.draw.rect(screen, (20, 20, 30), content_rect)
         pygame.draw.rect(screen, self.color_border, content_rect, 1)
         
-        # Create clipping surface for scrollable content
-        content_surface = pygame.Surface((content_rect.width, self.content_height))
-        content_surface.fill((20, 20, 30))
-        
-        # Draw table header
-        self._draw_header(content_surface)
-        
-        # Draw mission combinations
-        self._draw_combinations(content_surface)
-        
+        # Use cached scrollable content surface.
+        self._ensure_content_cache(content_rect.width)
+
         # Blit scrolled content
-        source_rect = pygame.Rect(0, self.scroll_offset, content_rect.width, 
-                                min(self.visible_height, self.content_height - self.scroll_offset))
-        screen.blit(content_surface, content_rect.topleft, source_rect)
+        if self._cached_content_surface is not None:
+            source_h = min(self.visible_height, self._cached_content_height - self.scroll_offset)
+            source_h = max(0, int(source_h))
+            if source_h > 0:
+                source_rect = pygame.Rect(0, int(self.scroll_offset), content_rect.width, source_h)
+                screen.blit(self._cached_content_surface, content_rect.topleft, source_rect)
         
         # Draw scrollbar if needed
         if self.max_scroll > 0:

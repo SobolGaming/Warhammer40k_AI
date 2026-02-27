@@ -116,3 +116,6 @@ Setup phase uses this modal adapter in `SetupPhaseHandler._show_mission_selectio
 - `UnitDetailPanel` (the right-click detailed unit info pane) now caches a pre-rendered content surface.
   Scrolling only updates viewport offset instead of re-wrapping/re-rendering every line each frame.
   Cache invalidation occurs when the focused unit changes, panel width changes, or the periodic refresh window expires.
+- `RuleDetailPanel` now uses the same pre-rendered content-surface approach; wheel scrolling is viewport-only.
+- `MissionSelectionDialog` caches its full mission table surface and only rebuilds when combinations or selection state change.
+- `ShootingDeclarationDialog` caches hot-path text rasterization for repeated weapon/declaration rows.

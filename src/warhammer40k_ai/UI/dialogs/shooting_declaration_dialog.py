@@ -1,5 +1,6 @@
 import pygame
 import math
+from collections import OrderedDict
 from typing import List
 import types
 from .base_dialog import BaseDialog
@@ -70,6 +71,10 @@ class ShootingDeclarationDialog(BaseDialog):
         self.allow_actions = True
         self.last_execution_success = None
         self.decision_request = None
+
+        # Cache rasterized text used in hot draw loops.
+        self._text_surface_cache: OrderedDict[tuple[int, str, tuple[int, int, int]], pygame.Surface] = OrderedDict()
+        self._text_surface_cache_limit = 1024
     
     def show(self, unit, callback, game_map=None, game_view=None, *, out_of_phase: bool = False, allow_actions: bool | None = None, decision_request=None):
         """Show the shooting declaration dialog."""
@@ -158,6 +163,19 @@ class ShootingDeclarationDialog(BaseDialog):
             self.add_button('start_terraform', 10, self.height - 95, 200, 35)
             self.add_button('start_sabotage', 220, self.height - 95, 200, 35)
             self.add_button('start_burn_objective', 430, self.height - 95, 185, 35)
+
+    def _render_text_cached(self, font: pygame.font.Font, text: str, color: tuple[int, int, int]) -> pygame.Surface:
+        key = (id(font), str(text), (int(color[0]), int(color[1]), int(color[2])))
+        cached = self._text_surface_cache.get(key)
+        if cached is not None:
+            self._text_surface_cache.move_to_end(key)
+            return cached
+        surface = font.render(str(text), True, color)
+        self._text_surface_cache[key] = surface
+        self._text_surface_cache.move_to_end(key)
+        while len(self._text_surface_cache) > self._text_surface_cache_limit:
+            self._text_surface_cache.popitem(last=False)
+        return surface
 
     def _handle_button_click(self, button_name: str) -> bool:
         """Handle button click events from BaseDialog"""
@@ -1282,7 +1300,7 @@ class ShootingDeclarationDialog(BaseDialog):
         
         # Draw section title
         title = "Available Weapons"
-        title_surface = font_large.render(title, True, self.text_color)
+        title_surface = self._render_text_cached(font_large, title, self.text_color)
         screen.blit(title_surface, (x, y - 20))
         
         # Get available weapons
@@ -1338,14 +1356,14 @@ class ShootingDeclarationDialog(BaseDialog):
                 weapon_name += f" #{weapon_instance}"  # Show instance number for individuals
             
             # Render weapon name first
-            weapon_surface = font_small.render(weapon_name, True, self.text_color)
+            weapon_surface = self._render_text_cached(font_small, weapon_name, self.text_color)
             screen.blit(weapon_surface, (x + 5, weapon_y + 5))
             
             # Add keywords in blue color if they exist
             keywords = weapon_profile.get_keywords()
             if keywords:
                 keywords_text = f" | {', '.join(keywords)}"
-                keywords_surface = font_small.render(keywords_text, True, (100, 149, 237))  # Blue accent color
+                keywords_surface = self._render_text_cached(font_small, keywords_text, (100, 149, 237))  # Blue accent color
                 # Position keywords after the weapon name
                 keywords_x = x + 5 + weapon_surface.get_width()
                 screen.blit(keywords_surface, (keywords_x, weapon_y + 5))
@@ -1362,7 +1380,7 @@ class ShootingDeclarationDialog(BaseDialog):
                 
                 # Draw + or - symbol
                 symbol = "-" if self._is_weapon_group_expanded(weapon_info['group_id']) else "+"
-                symbol_surface = font_small.render(symbol, True, self.text_color)
+                symbol_surface = self._render_text_cached(font_small, symbol, self.text_color)
                 symbol_rect = symbol_surface.get_rect(center=(button_x + button_size//2, button_y + button_size//2))
                 screen.blit(symbol_surface, symbol_rect)
             
@@ -1418,7 +1436,7 @@ class ShootingDeclarationDialog(BaseDialog):
                 stats_parts.append("Click to target all")
             
             stats = " | ".join(stats_parts)
-            stats_surface = font_small.render(stats, True, self.text_color)
+            stats_surface = self._render_text_cached(font_small, stats, self.text_color)
             screen.blit(stats_surface, (x + 5, weapon_y + 20))
     
     def _draw_declarations_list(self, screen, font_large, font_small):
@@ -1428,7 +1446,7 @@ class ShootingDeclarationDialog(BaseDialog):
         
         # Draw section title
         title = "Declarations Made"
-        title_surface = font_large.render(title, True, self.text_color)
+        title_surface = self._render_text_cached(font_large, title, self.text_color)
         screen.blit(title_surface, (x, y - 20))
         
         # Draw declarations
@@ -1451,7 +1469,7 @@ class ShootingDeclarationDialog(BaseDialog):
             else:
                 target_name = target_unit.name[:15] + "..." if len(target_unit.name) > 15 else target_unit.name
             declaration_text = f"{weapon_name} -> {target_name}"
-            text_surface = font_small.render(declaration_text, True, self.text_color)
+            text_surface = self._render_text_cached(font_small, declaration_text, self.text_color)
             screen.blit(text_surface, (x + 5, declaration_y + 5))
     
 
