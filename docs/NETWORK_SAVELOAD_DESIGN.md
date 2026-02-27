@@ -450,6 +450,8 @@ Optional ability confirmations (yes/no):
 
 Dice Rolls:
 - dice_roll_dialog: REQUEST_DICE_ROLL {roll_id, action_id="roll"}
+- REQUEST_DICE_ROLL context includes `roll_spec.roll_explanation` (schema_version=1) with:
+  `condition` (kind/op/target/applies_to) and typed modifier contributors for `sum_modifier` and `target_modifier`.
 - dice_roll_dialog (reroll): SELECT_DICE_REROLL {roll_id, action_id, selected_die_ids[]}
 - damage_allocation_dialog: ALLOCATE_DAMAGE {unit_id, model_id} (context `selection_kind`, `allowed_model_ids`, `remaining_wounds`, `sequence_id`/`save_index` when tied to attack resolution)
   Selection kinds in use: `wound_allocation`, `hazardous`, `mortal_wound` (attack sequence), `unit_mortal_wound` (non-attack), `reverberating_summons_return`, `bodyguard_return`, `bodyguard_loss`, `daemonic_patrons_loss`, `choice_samples`.

@@ -4847,8 +4847,19 @@ class Game(
             "fly_bonus": int(fly_bonus or 0),
             "apply_fly_bonus": int(apply_fly_bonus),
             "target": int(effective_threshold),
+            "target_base": int(threshold),
             "target_op": "gte",
         }
+        if int(apply_fly_bonus or 0):
+            roll_spec["target_modifier_reasons"] = [f"Target has FLY ({-int(apply_fly_bonus):+d} threshold)"]
+            roll_spec["target_modifier_breakdown"] = [
+                {
+                    "source": "Target has FLY",
+                    "value": -int(apply_fly_bonus),
+                    "reason": f"Target has FLY ({-int(apply_fly_bonus):+d} threshold)",
+                    "contributor_type": "core_rule",
+                }
+            ]
         if reroll_rules:
             roll_spec["reroll_rules"] = list(reroll_rules)
         if bool(getattr(self, "auto_resolve_dice_rolls", False)):
@@ -9992,7 +10003,29 @@ class Game(
             reroll_rules.append(pa_rule)
 
         from ..engine.roll_utils import command_reroll_available
+        from ..engine.roll_explanation import infer_modifier_contributor_type
         command_reroll_ok = command_reroll_available(self, player, roll_type="charge", unit=charging_unit)
+        charge_modifiers = list(self._collect_charge_modifiers(charging_unit, target_unit=targets[0]) or [])
+        charge_sum_modifier = 0
+        charge_modifier_breakdown: list[dict] = []
+        for raw_val, raw_source in list(charge_modifiers or []):
+            try:
+                val = int(raw_val or 0)
+            except (TypeError, ValueError):
+                continue
+            if not val:
+                continue
+            source = str(raw_source or "Charge roll modifier").strip() or "Charge roll modifier"
+            reason = f"{source} ({val:+d})"
+            charge_sum_modifier += int(val)
+            charge_modifier_breakdown.append(
+                {
+                    "source": source,
+                    "value": int(val),
+                    "reason": reason,
+                    "contributor_type": infer_modifier_contributor_type(reason=reason, source=source),
+                }
+            )
         roll_spec = {
             "dice_count": dice_count,
             "faces": 6,
@@ -10002,6 +10035,10 @@ class Game(
             "target_unit_ids": [get_entity_id(t) for t in targets],
             "handler_key": "charge_roll",
             "charge_spec": {"dice_count": dice_count, "keep_highest": keep_highest},
+            "show_sum": True,
+            "sum_modifier": int(charge_sum_modifier),
+            "sum_modifier_reasons": [str(item.get("reason", "") or "") for item in list(charge_modifier_breakdown)],
+            "sum_modifier_breakdown": list(charge_modifier_breakdown),
             "reroll_rules": reroll_rules,
             "command_reroll_allowed": command_reroll_ok,
             "command_reroll_mode": "whole",

@@ -247,8 +247,93 @@ class DiceRollDialog(BaseDialog):
                 out.append(text)
         return out
 
+    @staticmethod
+    def _get_roll_explanation(spec: Dict) -> Dict:
+        value = spec.get("roll_explanation", None)
+        if isinstance(value, dict):
+            return dict(value)
+        return {}
+
+    @staticmethod
+    def _contributor_type_label(value: str) -> str:
+        key = str(value or "").strip().lower()
+        labels = {
+            "detachment_ability": "Detachment ability",
+            "faction_rule": "Faction rule",
+            "unit_ability": "Unit ability",
+            "enhancement": "Enhancement",
+            "stratagem": "Stratagem",
+            "aura": "Aura",
+            "core_rule": "Core rule",
+            "rule": "Rule",
+        }
+        return labels.get(key, "Rule")
+
+    @classmethod
+    def _format_contributor_text(cls, contributor: Dict) -> str:
+        source = str(contributor.get("source", "") or "").strip()
+        reason = str(contributor.get("reason", "") or "").strip()
+        value = contributor.get("value", None)
+        ctype = cls._contributor_type_label(str(contributor.get("contributor_type", "") or "rule"))
+
+        body = reason or source
+        if source and reason and source.lower() not in reason.lower():
+            body = f"{source}: {reason}"
+        if not body:
+            body = source or "modifier"
+
+        has_value = False
+        if value is not None:
+            try:
+                value_int = int(value)
+                has_value = True
+            except Exception:
+                has_value = False
+                value_int = 0
+            if has_value and f"{value_int:+d}" not in body:
+                body = f"{body} ({value_int:+d})"
+
+        range_in = contributor.get("aura_range_inches", None)
+        distance_in = contributor.get("aura_distance_inches", None)
+        details = []
+        if range_in is not None:
+            try:
+                details.append(f"range {float(range_in):.1f}\"")
+            except Exception:
+                details.append(f"range {range_in}\"")
+        if distance_in is not None:
+            try:
+                details.append(f"distance {float(distance_in):.1f}\"")
+            except Exception:
+                details.append(f"distance {distance_in}\"")
+        if details:
+            body = f"{body} ({', '.join(details)})"
+        return f"{ctype}: {body}"
+
     @classmethod
     def _format_condition_text(cls, spec: Dict) -> str:
+        explanation = cls._get_roll_explanation(spec)
+        condition = explanation.get("condition", {}) if isinstance(explanation, dict) and explanation.get("schema_version") == 1 else {}
+        if isinstance(condition, dict):
+            target = condition.get("target", None)
+            op = str(condition.get("op", "") or "").strip().lower()
+            applies_to = str(condition.get("applies_to", "") or "").strip().lower()
+            if target is not None and op:
+                try:
+                    cmp = cls._comparison_text(op, int(target))
+                except Exception:
+                    cmp = ""
+                if cmp:
+                    label = str(condition.get("label", "") or "").strip()
+                    if not label:
+                        label = "Pass condition" if applies_to == "modified_sum" else "Success condition"
+                    if applies_to == "modified_sum":
+                        return f"{label}: modified sum {cmp}"
+                    context = str(condition.get("context", "") or "").strip()
+                    if context:
+                        return f"{label}: each die {cmp} ({context})"
+                    return f"{label}: each die {cmp}"
+
         sum_target = spec.get("sum_target", None)
         if sum_target is not None:
             try:
@@ -271,6 +356,60 @@ class DiceRollDialog(BaseDialog):
 
     @classmethod
     def _format_modifier_text(cls, spec: Dict, state) -> str:
+        explanation = cls._get_roll_explanation(spec)
+        if isinstance(explanation, dict) and explanation.get("schema_version") == 1:
+            sum_mod = explanation.get("sum_modifier", {})
+            if isinstance(sum_mod, dict):
+                contributors = [dict(c) for c in list(sum_mod.get("contributors", []) or []) if isinstance(c, dict)]
+                total = 0
+                has_total = False
+                try:
+                    total = int(sum_mod.get("total", 0) or 0)
+                    has_total = True
+                except Exception:
+                    total = 0
+                    has_total = False
+                if contributors or has_total or spec.get("sum_target", None) is not None or bool(spec.get("show_sum", False)):
+                    if has_total:
+                        raw_total = int(getattr(state, "total", 0) or 0)
+                        final_total = raw_total + total
+                        detail = f"Modifiers: {total:+d} (raw {raw_total} -> {final_total})"
+                    else:
+                        detail = "Modifiers: unspecified"
+                    formatted: List[str] = []
+                    for item in contributors:
+                        text = cls._format_contributor_text(item)
+                        if text:
+                            formatted.append(text)
+                    if formatted:
+                        detail = f"{detail}; {'; '.join(formatted)}"
+                    if has_total and total == 0 and not formatted:
+                        return "Modifiers: none"
+                    return detail
+
+            target_mod = explanation.get("target_modifier", {})
+            if isinstance(target_mod, dict):
+                contributors = [dict(c) for c in list(target_mod.get("contributors", []) or []) if isinstance(c, dict)]
+                target = target_mod.get("final_target", spec.get("target", None))
+                base_target = target_mod.get("base_target", spec.get("target_base", None))
+                parts: List[str] = []
+                try:
+                    if target is not None and base_target is not None:
+                        target_val = int(target)
+                        base_val = int(base_target)
+                        if target_val != base_val:
+                            parts.append(f"base {base_val}+ -> {target_val}+ ({target_val - base_val:+d})")
+                except Exception:
+                    pass
+                for item in contributors:
+                    text = cls._format_contributor_text(item)
+                    if text:
+                        parts.append(text)
+                if parts:
+                    return f"Modifiers: {'; '.join(parts)}"
+                if target is not None:
+                    return "Modifiers: none"
+
         sum_target = spec.get("sum_target", None)
         if sum_target is not None:
             try:

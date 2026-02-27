@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
+from .roll_explanation import apply_roll_explanation
+
 
 RollHandler = Callable[[object, "DiceRollState"], Any]
 
@@ -329,6 +331,7 @@ class DiceRollManager:
         roll_spec.setdefault("faces", 6)
         roll_spec.setdefault("reason", prompt or roll_spec.get("reason") or "Roll dice")
         roll_spec.setdefault("roll_type", roll_spec.get("roll_type") or "generic")
+        roll_spec = apply_roll_explanation(roll_spec)
         state = DiceRollState(
             roll_id=rid,
             player_id=player_id,

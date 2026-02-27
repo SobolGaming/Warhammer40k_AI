@@ -920,6 +920,21 @@ class BattleFocusManager:
                 "roll_type": "battle_focus_maneuver",
                 "unit_id": unit_id,
                 "handler_key": "battle_focus_reactive_move",
+                "show_sum": True,
+                "sum_modifier": 1 if bool(warhost_bonus) else 0,
+                "sum_modifier_reasons": ["Warhost detachment (+1)"] if bool(warhost_bonus) else [],
+                "sum_modifier_breakdown": (
+                    [
+                        {
+                            "source": "Warhost detachment",
+                            "value": 1,
+                            "reason": "Warhost detachment (+1)",
+                            "contributor_type": "detachment_ability",
+                        }
+                    ]
+                    if bool(warhost_bonus)
+                    else []
+                ),
                 "handler_payload": {
                     "maneuver": str(maneuver),
                     "phase_name": phase_name,

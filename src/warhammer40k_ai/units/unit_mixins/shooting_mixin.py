@@ -1996,21 +1996,32 @@ class ShootingMixin:
                         "source": "Shadow of Chaos",
                         "value": int(shadow_mod),
                         "reason": shadow_reason,
+                        "contributor_type": "faction_rule",
                     }
                 )
                 sum_modifier_reasons.append(shadow_reason)
             if extra_mod:
                 if extra_mod_reasons:
                     sum_modifier_reasons.extend(list(extra_mod_reasons))
+                    for extra_reason in list(extra_mod_reasons):
+                        sum_modifier_breakdown.append(
+                            {
+                                "source": "Rule modifier",
+                                "value": None,
+                                "reason": str(extra_reason or ""),
+                                "contributor_type": "rule",
+                            }
+                        )
                 else:
                     sum_modifier_reasons.append(f"Rule modifier ({int(extra_mod):+d})")
-                sum_modifier_breakdown.append(
-                    {
-                        "source": "Rule modifier",
-                        "value": int(extra_mod),
-                        "reason": "; ".join(extra_mod_reasons) if extra_mod_reasons else f"{int(extra_mod):+d}",
-                    }
-                )
+                    sum_modifier_breakdown.append(
+                        {
+                            "source": "Rule modifier",
+                            "value": int(extra_mod),
+                            "reason": f"{int(extra_mod):+d}",
+                            "contributor_type": "rule",
+                        }
+                    )
             if post_shoot_mod:
                 if post_shoot_mod_source:
                     post_reason = f"{post_shoot_mod_source} ({int(post_shoot_mod):+d})"
@@ -2022,20 +2033,31 @@ class ShootingMixin:
                         "source": "Post-shoot debuff",
                         "value": int(post_shoot_mod),
                         "reason": post_reason,
+                        "contributor_type": "unit_ability",
                     }
                 )
             if aura_mod:
                 if aura_mod_reasons:
                     sum_modifier_reasons.extend(list(aura_mod_reasons))
+                    for aura_reason in list(aura_mod_reasons):
+                        sum_modifier_breakdown.append(
+                            {
+                                "source": "Aura modifiers",
+                                "value": None,
+                                "reason": str(aura_reason or ""),
+                                "contributor_type": "aura",
+                            }
+                        )
                 else:
                     sum_modifier_reasons.append(f"Aura modifier ({int(aura_mod):+d})")
-                sum_modifier_breakdown.append(
-                    {
-                        "source": "Aura modifiers",
-                        "value": int(aura_mod),
-                        "reason": "; ".join(aura_mod_reasons) if aura_mod_reasons else f"{int(aura_mod):+d}",
-                    }
-                )
+                    sum_modifier_breakdown.append(
+                        {
+                            "source": "Aura modifiers",
+                            "value": int(aura_mod),
+                            "reason": f"{int(aura_mod):+d}",
+                            "contributor_type": "aura",
+                        }
+                    )
             dice_count = 3 if synapse_3d6 else 2
             dice_expr = "3D6" if synapse_3d6 else "2D6"
             leadership_value = None

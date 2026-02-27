@@ -9826,6 +9826,35 @@ class ActionsMovementMixin:
 
             from ...utility.entity_ids import get_entity_id
             from ...engine.roll_utils import command_reroll_available
+            from ...engine.roll_explanation import infer_modifier_contributor_type
+            advance_modifiers = list(self._collect_advance_roll_modifiers() or [])
+            advance_modifiers = self._filter_internal_rivalries_roll_modifiers(advance_modifiers, kind="advance")
+            advance_modifiers = self._filter_driven_by_ultimate_rage_roll_modifiers(advance_modifiers, kind="advance")
+            advance_modifiers = self._filter_bestial_aspect_roll_modifiers(advance_modifiers, kind="advance")
+            advance_modifiers = self._filter_preternatural_agility_roll_modifiers(advance_modifiers, kind="advance")
+            advance_modifiers = self._filter_avatar_of_perfection_roll_modifiers(advance_modifiers, kind="advance")
+            advance_modifiers = self._filter_diabolical_resilience_roll_modifiers(advance_modifiers, kind="advance")
+            advance_modifiers = self._filter_firestorm_champion_of_humanity_roll_modifiers(advance_modifiers, kind="advance")
+            advance_sum_modifier = 0
+            advance_modifier_breakdown: list[dict] = []
+            for raw_val, raw_source in list(advance_modifiers or []):
+                try:
+                    val = int(raw_val or 0)
+                except (TypeError, ValueError):
+                    continue
+                if not val:
+                    continue
+                source = str(raw_source or "Advance roll modifier").strip() or "Advance roll modifier"
+                reason = f"{source} ({val:+d})"
+                advance_sum_modifier += int(val)
+                advance_modifier_breakdown.append(
+                    {
+                        "source": source,
+                        "value": int(val),
+                        "reason": reason,
+                        "contributor_type": infer_modifier_contributor_type(reason=reason, source=source),
+                    }
+                )
             reroll_rules = []
             try:
                 if fixed_source is None and self.can_reroll_advance_roll():
@@ -9864,6 +9893,10 @@ class ActionsMovementMixin:
                 "roll_type": "advance",
                 "unit_id": get_entity_id(self),
                 "handler_key": "advance_roll",
+                "show_sum": True,
+                "sum_modifier": int(advance_sum_modifier),
+                "sum_modifier_reasons": [str(item.get("reason", "") or "") for item in list(advance_modifier_breakdown)],
+                "sum_modifier_breakdown": list(advance_modifier_breakdown),
                 "reroll_rules": reroll_rules,
                 "command_reroll_allowed": command_reroll_ok,
                 "command_reroll_mode": "one",
