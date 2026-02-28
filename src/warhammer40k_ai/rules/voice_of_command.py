@@ -473,6 +473,88 @@ class VoiceOfCommandManager:
     def _target_matches_calm_under_fire_keyword(self, officer_unit, target_unit) -> bool:
         return self._target_has_keyword(target_unit, self._calm_under_fire_order_target_keyword(officer_unit))
 
+    @staticmethod
+    def _normalise_order_key_list(values) -> list[str]:
+        keys: list[str] = []
+        for raw in list(values or []):
+            key = str(raw or "").strip().upper()
+            if not key or key not in ORDER_BY_KEY or key in keys:
+                continue
+            keys.append(key)
+        return keys
+
+    @staticmethod
+    def _attached_unit_root(unit):
+        if unit is None:
+            return None
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            root = get_root()
+            if root is not None:
+                return root
+        return unit
+
+    @staticmethod
+    def _attached_unit_members(root) -> list:
+        if root is None:
+            return []
+        members = []
+        get_members = getattr(root, "get_attached_unit_members", None)
+        if callable(get_members):
+            members = list(get_members() or [])
+        if not members:
+            members = [root]
+        return members
+
+    @staticmethod
+    def _enhancement_bearer_alive(unit, sr, *, bearer_key: str = "") -> bool:
+        if unit is None or not isinstance(sr, dict):
+            return False
+        key_name = str(bearer_key or "").strip()
+        bearer_id = ""
+        if key_name:
+            bearer_id = str(sr.get(key_name, "") or "").strip()
+        if not bearer_id:
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if not bearer_id:
+            return True
+        for model in list(getattr(unit, "models", []) or []):
+            if str(get_entity_id(model) or "").strip() != bearer_id:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            return bool(alive_attr() if callable(alive_attr) else alive_attr)
+        return False
+
+    def _stalwarts_honours_additional_order_key(self, target_unit) -> str:
+        root = self._attached_unit_root(target_unit)
+        if root is None:
+            return ""
+        members = self._attached_unit_members(root)
+        for leader in list(getattr(root, "attached_leaders", []) or []):
+            if leader is None or leader in members:
+                continue
+            members.append(leader)
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_stalwarts_honours", False)):
+                continue
+            if not self._enhancement_bearer_alive(
+                member,
+                sr,
+                bearer_key="enhancement_stalwarts_honours_bearer_model_id",
+            ):
+                continue
+            if bool(sr.get("enhancement_stalwarts_honours_requires_leading", True)):
+                attached_root = self._attached_unit_root(getattr(member, "attached_to", None))
+                if attached_root is None or attached_root is not root:
+                    continue
+            key = str(sr.get("enhancement_stalwarts_honours_additional_order_key", "TAKE_COVER") or "TAKE_COVER").strip().upper()
+            if key in ORDER_BY_KEY:
+                return key
+        return ""
+
     def _clear_bombast_pending(self, officer_unit) -> None:
         sr = getattr(officer_unit, "special_rules", None)
         if not isinstance(sr, dict):
@@ -1084,6 +1166,7 @@ class VoiceOfCommandManager:
                 "voice_of_command_order_key",
                 "voice_of_command_order_owner",
                 "voice_of_command_order_source",
+                "voice_of_command_additional_order_keys",
                 "voice_of_command_take_cover_cap",
             ):
                 sr.pop(k, None)
@@ -1196,6 +1279,32 @@ class VoiceOfCommandManager:
             sr["voice_of_command_order_source"] = source_id
             u.special_rules = sr
             self._apply_order_modifiers(u, order_key)
+
+    def _apply_additional_order_to_unit_and_attached(self, unit, order_key: str) -> None:
+        if unit is None:
+            return
+        key = str(order_key or "").strip().upper()
+        if key not in ORDER_BY_KEY:
+            return
+        units = [unit]
+        units.extend(list(getattr(unit, "attached_leaders", []) or []))
+        for member in units:
+            if member is None:
+                continue
+            if not self._unit_is_astra_militarum(member):
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            extra_keys = self._normalise_order_key_list(sr.get("voice_of_command_additional_order_keys", []))
+            if key in extra_keys:
+                sr["voice_of_command_additional_order_keys"] = list(extra_keys)
+                member.special_rules = sr
+                continue
+            extra_keys.append(key)
+            sr["voice_of_command_additional_order_keys"] = list(extra_keys)
+            member.special_rules = sr
+            self._apply_order_modifiers(member, key)
 
     def issue_order(self, game, officer_unit, target_unit, order_key: str, *, phase_name: str = "", trigger: str = "") -> bool:
         if officer_unit is None or target_unit is None:
@@ -1319,6 +1428,9 @@ class VoiceOfCommandManager:
             source_id = ""
 
         self._apply_order_to_unit_and_attached(target_unit, order_key, owner_id, source_id)
+        additional_order_key = self._stalwarts_honours_additional_order_key(target_unit)
+        if additional_order_key and additional_order_key != order_key:
+            self._apply_additional_order_to_unit_and_attached(target_unit, additional_order_key)
         if continuation_kind == "bombast":
             self._consume_bombast_pending_target(officer_unit, battle_round, target_unit_id)
         elif continuation_kind == "calm_under_fire":
@@ -1367,6 +1479,9 @@ class VoiceOfCommandManager:
                 continue
             active_key = str(sr.get("voice_of_command_order_key", "") or "").strip().upper()
             if active_key == order_key:
+                return True
+            additional_keys = self._normalise_order_key_list(sr.get("voice_of_command_additional_order_keys", []))
+            if order_key in additional_keys:
                 return True
         return False
 
