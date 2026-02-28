@@ -1182,6 +1182,95 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return False
         return self._unit_is_squadron_unit(root)
 
+    def hammer_of_the_emperor_regimental_banner_objective_control_bonus(
+        self,
+        model,
+        *,
+        unit=None,
+    ) -> tuple[int, str]:
+        if not self.is_hammer_of_the_emperor():
+            return 0, ""
+        if model is None:
+            return 0, ""
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        root = self._unit_root(source_unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_in_army(root):
+            return 0, ""
+        owner_unit, sr = self._attached_unit_enhancement_source(root, "enhancement_regimental_banner")
+        if owner_unit is None or not isinstance(sr, dict):
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_regimental_banner_objective_control_bonus", 3) or 3)
+        except (TypeError, ValueError):
+            bonus = 3
+        if bonus <= 0:
+            return 0, ""
+        bearer_id = str(
+            sr.get("enhancement_regimental_banner_bearer_model_id", "")
+            or sr.get("enhancement_bearer_model_id", "")
+            or ""
+        ).strip()
+        if not bearer_id:
+            get_bearer = getattr(owner_unit, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            bearer_id = str(get_entity_id(bearer) or "").strip()
+        model_id = str(get_entity_id(model) or "").strip()
+        if bearer_id and model_id and bearer_id != model_id:
+            return 0, ""
+        source = str(sr.get("enhancement_regimental_banner_source", "") or "Regimental Banner").strip() or "Regimental Banner"
+        return int(bonus), source
+
+    def hammer_of_the_emperor_veteran_crew_hit_reroll_mods(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        attack_type: str = "any",
+        game=None,
+        game_map=None,
+        target_visible=None,
+    ) -> dict:
+        _ = target_unit
+        _ = game
+        _ = game_map
+        _ = target_visible
+        if not self.is_hammer_of_the_emperor():
+            return {}
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return {}
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None:
+            return {}
+        if not self._unit_in_army(root):
+            return {}
+        source_unit, sr = self._attached_unit_enhancement_source(root, "enhancement_veteran_crew")
+        if source_unit is None or not isinstance(sr, dict):
+            return {}
+        attack_kind = str(sr.get("enhancement_veteran_crew_attack_type", "ranged") or "ranged").strip().lower()
+        if attack_kind and attack_kind not in {"any", "ranged"}:
+            return {}
+        reroll_values: list[int] = []
+        for raw in list(sr.get("enhancement_veteran_crew_reroll_hit_values", (1,)) or (1,)):
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if value < 1 or value > 6:
+                continue
+            reroll_values.append(value)
+        if not reroll_values:
+            reroll_values = [1]
+        deduped_values = tuple(sorted(set(reroll_values)))
+        source = str(sr.get("enhancement_veteran_crew_source", "") or "Veteran Crew").strip() or "Veteran Crew"
+        reasons = tuple(f"{source}: re-roll Hit roll of {value}" for value in deduped_values)
+        return {
+            "reroll_values": deduped_values,
+            "reroll_reasons": reasons,
+        }
+
     def armoured_fist_wound_bonus(
         self,
         attacker_model,

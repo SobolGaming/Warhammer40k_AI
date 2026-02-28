@@ -274,6 +274,53 @@ _COMBINED_ARMS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COMBINED_ARMS_DESCRIPTORS.values()
 }
 
+_HAMMER_OF_THE_EMPEROR_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009865002": EnhancementToolDescriptor(
+        enhancement_id="000009865002",
+        name="Calm Under Fire",
+        timing="after_issuing_order",
+        target="bearer",
+        duration="once_per_turn",
+        effect="issue_same_order_once_per_turn_to_additional_squadron_unit",
+        effect_params={
+            "additional_targets": 1,
+            "order_target_keyword": "SQUADRON",
+            "once_per_turn": True,
+        },
+    ),
+    "000009865003": EnhancementToolDescriptor(
+        enhancement_id="000009865003",
+        name="Indomitable Steed",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_feel_no_pain",
+        effect_params={"feel_no_pain": 6},
+    ),
+    "000009865004": EnhancementToolDescriptor(
+        enhancement_id="000009865004",
+        name="Regimental Banner",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_objective_control_bonus",
+        effect_params={"objective_control_bonus": 3},
+    ),
+    "000009865005": EnhancementToolDescriptor(
+        enhancement_id="000009865005",
+        name="Veteran Crew",
+        timing="on_attack_roll",
+        target="bearer_unit_ranged_attacks",
+        duration="constant",
+        effect="ranged_reroll_hit_ones",
+        effect_params={"reroll_hit_values": (1,), "attack_type": "ranged"},
+    ),
+}
+
+_HAMMER_OF_THE_EMPEROR_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HAMMER_OF_THE_EMPEROR_DESCRIPTORS.values()
+}
+
 _POSSESSED_SLAUGHTERBAND_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010082002": EnhancementToolDescriptor(
         enhancement_id="000010082002",
@@ -4907,6 +4954,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _COMBINED_ARMS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _HAMMER_OF_THE_EMPEROR_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _POSSESSED_SLAUGHTERBAND_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5177,6 +5227,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _GRIZZLED_COMPANY_BY_NAME.get(key)
         or _BRIDGEHEAD_STRIKE_BY_NAME.get(key)
         or _COMBINED_ARMS_BY_NAME.get(key)
+        or _HAMMER_OF_THE_EMPEROR_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _ADEPTA_SORORITAS_ARMY_OF_FAITH_BY_NAME.get(key)

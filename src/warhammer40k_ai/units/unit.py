@@ -836,6 +836,20 @@ class Unit(
             except Exception:
                 pass
             try:
+                am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+                bonus_fn = (
+                    getattr(am_mgr, "hammer_of_the_emperor_regimental_banner_objective_control_bonus", None)
+                    if am_mgr is not None
+                    else None
+                )
+                if callable(bonus_fn):
+                    bonus, source = bonus_fn(model, unit=self)
+                    if int(bonus or 0):
+                        source_name = str(source or "Regimental Banner").strip() or "Regimental Banner"
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"enhancement:{source_name}"))
+            except Exception:
+                pass
+            try:
                 adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
                 bonus_fn = (
                     getattr(adm_mgr, "cyber_psalm_programming_objective_control_bonus", None)

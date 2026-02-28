@@ -654,6 +654,10 @@ class Enhancement:
             is_grizzled_company = bool(am_mgr and am_mgr.is_grizzled_company())
         except Exception:
             is_grizzled_company = False
+        try:
+            is_hammer_of_the_emperor = bool(am_mgr and am_mgr.is_hammer_of_the_emperor())
+        except Exception:
+            is_hammer_of_the_emperor = False
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
             is_houndpack_lance = bool(ck_mgr and ck_mgr.is_houndpack_lance())
@@ -1943,6 +1947,68 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_advance_augury_bearer_model_id"] = bearer_id
+
+        if name == "calm under fire" or enh_id == "000009865002":
+            if not is_hammer_of_the_emperor:
+                return
+            unit.special_rules["enhancement_calm_under_fire"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            additional_targets = _coerce_int(params.get("additional_targets", 1) or 1, default=1)
+            order_target_keyword = str(params.get("order_target_keyword", "SQUADRON") or "SQUADRON").strip().upper()
+            if not order_target_keyword:
+                order_target_keyword = "SQUADRON"
+            unit.special_rules["enhancement_calm_under_fire_additional_targets"] = int(max(0, int(additional_targets)))
+            unit.special_rules["enhancement_calm_under_fire_order_target_keyword"] = order_target_keyword
+            unit.special_rules["enhancement_calm_under_fire_once_per_turn"] = bool(params.get("once_per_turn", True))
+            unit.special_rules["enhancement_calm_under_fire_source"] = "Calm Under Fire"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_calm_under_fire_bearer_model_id"] = bearer_id
+
+        if name == "regimental banner" or enh_id == "000009865004":
+            if not is_hammer_of_the_emperor:
+                return
+            unit.special_rules["enhancement_regimental_banner"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            objective_control_bonus = _coerce_int(params.get("objective_control_bonus", 3) or 3, default=3)
+            unit.special_rules["enhancement_regimental_banner_objective_control_bonus"] = int(
+                max(0, int(objective_control_bonus))
+            )
+            unit.special_rules["enhancement_regimental_banner_source"] = "Regimental Banner"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_regimental_banner_bearer_model_id"] = bearer_id
+
+        if name == "veteran crew" or enh_id == "000009865005":
+            if not is_hammer_of_the_emperor:
+                return
+            unit.special_rules["enhancement_veteran_crew"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            reroll_vals = []
+            for raw in list(params.get("reroll_hit_values", (1,)) or (1,)):
+                try:
+                    reroll_vals.append(int(raw))
+                except (TypeError, ValueError):
+                    continue
+            if not reroll_vals:
+                reroll_vals = [1]
+            deduped_vals = []
+            for value in sorted(set(reroll_vals)):
+                if value < 1 or value > 6:
+                    continue
+                deduped_vals.append(int(value))
+            if not deduped_vals:
+                deduped_vals = [1]
+            attack_type = str(params.get("attack_type", "ranged") or "ranged").strip().lower()
+            unit.special_rules["enhancement_veteran_crew_reroll_hit_values"] = list(deduped_vals)
+            unit.special_rules["enhancement_veteran_crew_attack_type"] = attack_type if attack_type else "ranged"
+            unit.special_rules["enhancement_veteran_crew_source"] = "Veteran Crew"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_veteran_crew_bearer_model_id"] = bearer_id
 
         if name == "death mask of ollanius" or enh_id == "000008380002":
             if not is_combined_arms:

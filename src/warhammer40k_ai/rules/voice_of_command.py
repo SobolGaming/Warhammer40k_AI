@@ -322,6 +322,47 @@ class VoiceOfCommandManager:
     def _officer_has_bombast_class_vox_array(self, officer_unit) -> bool:
         return self._unit_has_enhancement_flag(officer_unit, "enhancement_bombast_class_vox_array")
 
+    def _officer_has_calm_under_fire(self, officer_unit) -> bool:
+        return self._unit_has_enhancement_flag(officer_unit, "enhancement_calm_under_fire")
+
+    def _calm_under_fire_order_target_keyword(self, officer_unit) -> str:
+        sr = getattr(officer_unit, "special_rules", None)
+        if isinstance(sr, dict):
+            keyword = str(
+                sr.get("enhancement_calm_under_fire_order_target_keyword", "SQUADRON") or "SQUADRON"
+            ).strip().upper()
+            if keyword:
+                return keyword
+        return "SQUADRON"
+
+    def _calm_under_fire_additional_targets(self, officer_unit) -> int:
+        sr = getattr(officer_unit, "special_rules", None)
+        if isinstance(sr, dict):
+            try:
+                value = int(sr.get("enhancement_calm_under_fire_additional_targets", 1) or 1)
+            except Exception:
+                value = 1
+            return max(0, int(value))
+        return 1
+
+    def _calm_under_fire_once_per_turn(self, officer_unit) -> bool:
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return True
+        return bool(sr.get("enhancement_calm_under_fire_once_per_turn", True))
+
+    def _officer_calm_under_fire_used_this_round(self, officer_unit, battle_round: int) -> bool:
+        if not self._calm_under_fire_once_per_turn(officer_unit):
+            return False
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        try:
+            used_round = int(sr.get("enhancement_calm_under_fire_used_round", -1) or -1)
+        except Exception:
+            used_round = -1
+        return used_round == int(battle_round)
+
     def _bombast_order_target_keyword(self, officer_unit) -> str:
         sr = getattr(officer_unit, "special_rules", None)
         if isinstance(sr, dict):
@@ -408,14 +449,29 @@ class VoiceOfCommandManager:
             return False
         return True
 
-    def _target_matches_bombast_keyword(self, officer_unit, target_unit) -> bool:
-        keyword = self._bombast_order_target_keyword(officer_unit)
-        if not keyword:
+    def _officer_calm_under_fire_multi_target_available(self, officer_unit, battle_round: int) -> bool:
+        if not self._officer_has_calm_under_fire(officer_unit):
+            return False
+        if self._calm_under_fire_additional_targets(officer_unit) <= 0:
+            return False
+        if self._officer_calm_under_fire_used_this_round(officer_unit, battle_round):
+            return False
+        return True
+
+    def _target_has_keyword(self, target_unit, keyword: str) -> bool:
+        key = str(keyword or "").strip().upper()
+        if not key:
             return True
         try:
-            return bool(target_unit.has_any_keyword(keyword))
+            return bool(target_unit.has_any_keyword(key))
         except Exception:
             return False
+
+    def _target_matches_bombast_keyword(self, officer_unit, target_unit) -> bool:
+        return self._target_has_keyword(target_unit, self._bombast_order_target_keyword(officer_unit))
+
+    def _target_matches_calm_under_fire_keyword(self, officer_unit, target_unit) -> bool:
+        return self._target_has_keyword(target_unit, self._calm_under_fire_order_target_keyword(officer_unit))
 
     def _clear_bombast_pending(self, officer_unit) -> None:
         sr = getattr(officer_unit, "special_rules", None)
@@ -504,6 +560,101 @@ class VoiceOfCommandManager:
 
     def _officer_has_bombast_pending_targets(self, officer_unit, battle_round: int) -> bool:
         return bool(self._bombast_pending_state(officer_unit, battle_round))
+
+    def _clear_calm_under_fire_pending(self, officer_unit) -> None:
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "enhancement_calm_under_fire_pending_round",
+            "enhancement_calm_under_fire_pending_order_key",
+            "enhancement_calm_under_fire_pending_remaining_targets",
+            "enhancement_calm_under_fire_pending_target_ids",
+        ):
+            sr.pop(key, None)
+        officer_unit.special_rules = sr
+
+    def _calm_under_fire_pending_state(self, officer_unit, battle_round: int) -> dict:
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return {}
+        try:
+            pending_round = int(sr.get("enhancement_calm_under_fire_pending_round", -1) or -1)
+        except Exception:
+            pending_round = -1
+        if pending_round != int(battle_round):
+            self._clear_calm_under_fire_pending(officer_unit)
+            return {}
+        order_key = str(sr.get("enhancement_calm_under_fire_pending_order_key", "") or "").strip().upper()
+        try:
+            remaining = int(sr.get("enhancement_calm_under_fire_pending_remaining_targets", 0) or 0)
+        except Exception:
+            remaining = 0
+        if not order_key or remaining <= 0:
+            self._clear_calm_under_fire_pending(officer_unit)
+            return {}
+        selected_ids: set[str] = set()
+        for raw in list(sr.get("enhancement_calm_under_fire_pending_target_ids", []) or []):
+            text = str(raw or "").strip()
+            if text:
+                selected_ids.add(text)
+        return {
+            "order_key": order_key,
+            "remaining_targets": int(remaining),
+            "selected_target_ids": selected_ids,
+        }
+
+    def _start_calm_under_fire_pending(self, officer_unit, battle_round: int, order_key: str, target_unit_id: str) -> None:
+        remaining = self._calm_under_fire_additional_targets(officer_unit)
+        if remaining <= 0:
+            self._clear_calm_under_fire_pending(officer_unit)
+            return
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["enhancement_calm_under_fire_pending_round"] = int(battle_round)
+        sr["enhancement_calm_under_fire_pending_order_key"] = str(order_key or "").strip().upper()
+        sr["enhancement_calm_under_fire_pending_remaining_targets"] = int(remaining)
+        target_ids = []
+        text = str(target_unit_id or "").strip()
+        if text:
+            target_ids.append(text)
+        sr["enhancement_calm_under_fire_pending_target_ids"] = target_ids
+        officer_unit.special_rules = sr
+
+    def _consume_calm_under_fire_pending_target(self, officer_unit, battle_round: int, target_unit_id: str) -> None:
+        pending = self._calm_under_fire_pending_state(officer_unit, battle_round)
+        if not pending:
+            return
+        order_key = str(pending.get("order_key", "") or "").strip().upper()
+        selected = {str(v or "").strip() for v in list(pending.get("selected_target_ids", set()) or set()) if str(v or "").strip()}
+        text = str(target_unit_id or "").strip()
+        if text:
+            selected.add(text)
+        remaining = int(pending.get("remaining_targets", 0) or 0) - 1
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if self._calm_under_fire_once_per_turn(officer_unit):
+            sr["enhancement_calm_under_fire_used_round"] = int(battle_round)
+        if remaining <= 0:
+            for key in (
+                "enhancement_calm_under_fire_pending_round",
+                "enhancement_calm_under_fire_pending_order_key",
+                "enhancement_calm_under_fire_pending_remaining_targets",
+                "enhancement_calm_under_fire_pending_target_ids",
+            ):
+                sr.pop(key, None)
+            officer_unit.special_rules = sr
+            return
+        sr["enhancement_calm_under_fire_pending_round"] = int(battle_round)
+        sr["enhancement_calm_under_fire_pending_order_key"] = order_key
+        sr["enhancement_calm_under_fire_pending_remaining_targets"] = int(remaining)
+        sr["enhancement_calm_under_fire_pending_target_ids"] = sorted(selected)
+        officer_unit.special_rules = sr
+
+    def _officer_has_calm_under_fire_pending_targets(self, officer_unit, battle_round: int) -> bool:
+        return bool(self._calm_under_fire_pending_state(officer_unit, battle_round))
 
     def _officer_reactive_command_spec(self, officer_unit) -> dict:
         if officer_unit is None:
@@ -746,7 +897,9 @@ class VoiceOfCommandManager:
         remaining = self.orders_remaining_for_trigger(unit, battle_round, trigger=trigger)
         if remaining > 0:
             return True
-        return self._officer_has_bombast_pending_targets(unit, battle_round)
+        if self._officer_has_bombast_pending_targets(unit, battle_round):
+            return True
+        return self._officer_has_calm_under_fire_pending_targets(unit, battle_round)
 
     def _unit_ready_for_end_phase(self, unit, phase_name: str, battle_round: Optional[int] = None) -> bool:
         if unit is None:
@@ -881,19 +1034,39 @@ class VoiceOfCommandManager:
             out.append(root)
 
         battle_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
-        pending = self._bombast_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
-        if pending:
-            pending_order = str(pending.get("order_key", "") or "").strip().upper()
+        pending_bombast = self._bombast_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
+        if pending_bombast:
+            pending_order = str(pending_bombast.get("order_key", "") or "").strip().upper()
             if order_key and pending_order and order_key != pending_order:
                 return []
             selected_target_ids = {
                 str(v or "").strip()
-                for v in list(pending.get("selected_target_ids", set()) or set())
+                for v in list(pending_bombast.get("selected_target_ids", set()) or set())
                 if str(v or "").strip()
             }
             filtered = []
             for target in out:
                 if not self._target_matches_bombast_keyword(officer_unit, target):
+                    continue
+                target_id = str(get_entity_id(target) or "").strip()
+                if target_id and target_id in selected_target_ids:
+                    continue
+                filtered.append(target)
+            out = filtered
+
+        pending_calm = self._calm_under_fire_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
+        if pending_calm:
+            pending_order = str(pending_calm.get("order_key", "") or "").strip().upper()
+            if order_key and pending_order and order_key != pending_order:
+                return []
+            selected_target_ids = {
+                str(v or "").strip()
+                for v in list(pending_calm.get("selected_target_ids", set()) or set())
+                if str(v or "").strip()
+            }
+            filtered = []
+            for target in out:
+                if not self._target_matches_calm_under_fire_keyword(officer_unit, target):
                     continue
                 target_id = str(get_entity_id(target) or "").strip()
                 if target_id and target_id in selected_target_ids:
@@ -951,11 +1124,17 @@ class VoiceOfCommandManager:
             seen.add(order.key)
             out.append(order)
         if battle_round > 0:
-            pending = self._bombast_pending_state(officer_unit, battle_round)
-            if pending and self.orders_remaining(officer_unit, battle_round) <= 0:
-                pending_order = ORDER_BY_KEY.get(str(pending.get("order_key", "") or "").strip().upper())
-                if pending_order is not None:
-                    return [pending_order]
+            if self.orders_remaining(officer_unit, battle_round) <= 0:
+                pending = self._bombast_pending_state(officer_unit, battle_round)
+                if pending:
+                    pending_order = ORDER_BY_KEY.get(str(pending.get("order_key", "") or "").strip().upper())
+                    if pending_order is not None:
+                        return [pending_order]
+                pending = self._calm_under_fire_pending_state(officer_unit, battle_round)
+                if pending:
+                    pending_order = ORDER_BY_KEY.get(str(pending.get("order_key", "") or "").strip().upper())
+                    if pending_order is not None:
+                        return [pending_order]
         return out
 
     def clear_orders_for_player(self, player) -> None:
@@ -1047,15 +1226,34 @@ class VoiceOfCommandManager:
             battle_round = 0
         trigger_key = str(trigger or "").strip().lower()
         reactive_trigger = trigger_key == "reactive_command_setup"
-        pending = self._bombast_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
-        continuation_issue = False
-        if pending:
-            pending_order_key = str(pending.get("order_key", "") or "").strip().upper()
-            if pending_order_key == order_key and int(pending.get("remaining_targets", 0) or 0) > 0:
-                continuation_issue = True
+        pending_bombast = self._bombast_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
+        pending_calm = self._calm_under_fire_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
+        continuation_kind = ""
+        continuation_pending = {}
+
+        if pending_bombast:
+            pending_order_key = str(pending_bombast.get("order_key", "") or "").strip().upper()
+            if pending_order_key == order_key and int(pending_bombast.get("remaining_targets", 0) or 0) > 0:
+                continuation_kind = "bombast"
+                continuation_pending = pending_bombast
             else:
                 self._clear_bombast_pending(officer_unit)
-                pending = {}
+                pending_bombast = {}
+
+        if pending_calm:
+            pending_order_key = str(pending_calm.get("order_key", "") or "").strip().upper()
+            if continuation_kind:
+                if pending_order_key != order_key:
+                    self._clear_calm_under_fire_pending(officer_unit)
+                    pending_calm = {}
+            elif pending_order_key == order_key and int(pending_calm.get("remaining_targets", 0) or 0) > 0:
+                continuation_kind = "calm_under_fire"
+                continuation_pending = pending_calm
+            else:
+                self._clear_calm_under_fire_pending(officer_unit)
+                pending_calm = {}
+
+        continuation_issue = bool(continuation_kind)
         reactive_pending_available = (
             self._reactive_command_pending_state(officer_unit, battle_round) if reactive_trigger and battle_round > 0 else 0
         )
@@ -1074,12 +1272,22 @@ class VoiceOfCommandManager:
         if target_unit not in eligible_targets:
             return False
         target_unit_id = str(get_entity_id(target_unit) or "").strip()
-        if continuation_issue:
+        if continuation_kind == "bombast":
             if not self._target_matches_bombast_keyword(officer_unit, target_unit):
                 return False
             selected_target_ids = {
                 str(v or "").strip()
-                for v in list(pending.get("selected_target_ids", set()) or set())
+                for v in list(continuation_pending.get("selected_target_ids", set()) or set())
+                if str(v or "").strip()
+            }
+            if target_unit_id and target_unit_id in selected_target_ids:
+                return False
+        elif continuation_kind == "calm_under_fire":
+            if not self._target_matches_calm_under_fire_keyword(officer_unit, target_unit):
+                return False
+            selected_target_ids = {
+                str(v or "").strip()
+                for v in list(continuation_pending.get("selected_target_ids", set()) or set())
                 if str(v or "").strip()
             }
             if target_unit_id and target_unit_id in selected_target_ids:
@@ -1111,8 +1319,10 @@ class VoiceOfCommandManager:
             source_id = ""
 
         self._apply_order_to_unit_and_attached(target_unit, order_key, owner_id, source_id)
-        if continuation_issue:
+        if continuation_kind == "bombast":
             self._consume_bombast_pending_target(officer_unit, battle_round, target_unit_id)
+        elif continuation_kind == "calm_under_fire":
+            self._consume_calm_under_fire_pending_target(officer_unit, battle_round, target_unit_id)
         else:
             if self._officer_bombast_multi_target_available(officer_unit) and self._target_matches_bombast_keyword(
                 officer_unit, target_unit
@@ -1120,6 +1330,13 @@ class VoiceOfCommandManager:
                 self._start_bombast_pending(officer_unit, battle_round, order_key, target_unit_id)
             else:
                 self._clear_bombast_pending(officer_unit)
+            if self._officer_calm_under_fire_multi_target_available(
+                officer_unit,
+                battle_round,
+            ) and self._target_matches_calm_under_fire_keyword(officer_unit, target_unit):
+                self._start_calm_under_fire_pending(officer_unit, battle_round, order_key, target_unit_id)
+            else:
+                self._clear_calm_under_fire_pending(officer_unit)
         return True
 
     def _attached_unit_has_order_key(self, unit, order_key: str) -> bool:

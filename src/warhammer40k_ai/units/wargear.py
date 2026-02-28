@@ -10716,6 +10716,41 @@ class WargearProfile:
                         reroll_full_reasons.extend(list(mods.get("reroll_full_reasons", ()) or ()))
         except Exception:
             pass
+        # Astra Militarum: Hammer of the Emperor (Veteran Crew) re-roll Hit roll of 1
+        # for ranged attacks by models in the bearer's unit.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+            reroll_fn = getattr(am_mgr, "hammer_of_the_emperor_veteran_crew_hit_reroll_mods", None) if am_mgr is not None else None
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                game_map = getattr(game, "map", None) if game is not None else None
+                target_visible = None
+                if attack_type == "ranged":
+                    if game_map is not None and hasattr(unit, "_has_line_of_sight_to_target") and target is not None:
+                        target_visible = bool(unit._has_line_of_sight_to_target(attacker, target, game_map))
+                    else:
+                        target_visible = not bool(attack_instance.get("indirect_fire_no_visible", False))
+                mods = reroll_fn(
+                    attacker,
+                    target,
+                    attack_type=attack_type,
+                    game=game,
+                    game_map=game_map,
+                    target_visible=target_visible,
+                )
+                if isinstance(mods, dict):
+                    for v in list(mods.get("reroll_values", ()) or ()):
+                        try:
+                            reroll_hit_values.add(int(v))
+                        except Exception:
+                            continue
+                    reroll_value_reasons.extend(list(mods.get("reroll_reasons", ()) or ()))
+                    if bool(mods.get("reroll_full")):
+                        reroll_full_reasons.extend(list(mods.get("reroll_full_reasons", ()) or ()))
+        except Exception:
+            pass
         # Adeptus Custodes (Solar Spearhead): Auric Armour.
         try:
             unit = getattr(attacker, "parent_unit", None)
