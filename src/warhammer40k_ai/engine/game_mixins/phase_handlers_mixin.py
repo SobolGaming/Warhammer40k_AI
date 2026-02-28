@@ -9934,6 +9934,52 @@ class GamePhaseHandlersMixin:
                 return
         return
 
+    def _on_unit_set_up_voice_of_command_reactive_command(self, unit=None, **_kwargs) -> None:
+        """Astra Militarum Combined Arms: Reactive Command trigger on enemy setup within 9\"."""
+        if unit is None:
+            return
+        try:
+            enemy_army = unit.get_parent_army()
+        except Exception:
+            enemy_army = None
+        enemy_player = getattr(enemy_army, "player", None) if enemy_army is not None else None
+        if enemy_player is None:
+            return
+
+        phase_obj = getattr(self, "phase", None)
+        phase_name = str(getattr(phase_obj, "name", "") or "").strip().upper()
+
+        for player in list(getattr(self, "players", []) or []):
+            if player is None or player is enemy_player:
+                continue
+            army = player.get_army()
+            if army is None:
+                continue
+            mgr = getattr(army, "voice_of_command", None)
+            if mgr is None or not getattr(mgr, "_army_has_voice", lambda: False)():
+                continue
+            register_fn = getattr(mgr, "register_reactive_command_enemy_set_up", None)
+            if not callable(register_fn):
+                continue
+            officers = list(register_fn(unit, game=self) or [])
+            if not officers:
+                continue
+            if player.has_control():
+                es = getattr(self, "event_system", None)
+                if es is None or not hasattr(es, "subscribers"):
+                    raise RuntimeError("Event system missing for Voice of Command reactive prompt.")
+                subs = getattr(es, "subscribers", None)
+                if not isinstance(subs, dict):
+                    raise RuntimeError("Event system subscribers not configured.")
+                if subs.get("voice_of_command_prompt"):
+                    es.publish(
+                        "voice_of_command_prompt",
+                        player=player,
+                        game=self,
+                        phase_name=phase_name,
+                        trigger="reactive_command_setup",
+                    )
+
     def _on_phase_start_custodes_enhancements(self, player=None, phase=None, **_kwargs) -> None:
         """Lions of the Emperor enhancements that trigger at the start of the Fight phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

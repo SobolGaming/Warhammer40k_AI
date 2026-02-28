@@ -222,6 +222,58 @@ _BRIDGEHEAD_STRIKE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BRIDGEHEAD_STRIKE_DESCRIPTORS.values()
 }
 
+_COMBINED_ARMS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008380002": EnhancementToolDescriptor(
+        enhancement_id="000008380002",
+        name="Death Mask of Ollanius",
+        timing="passive_while_battle_shocked",
+        target="bearer_unit",
+        duration="while_bearer_alive_and_unit_battle_shocked",
+        effect="battleshock_objective_control_subtract_instead_of_zero",
+        effect_params={"objective_control_penalty": 1},
+    ),
+    "000008380003": EnhancementToolDescriptor(
+        enhancement_id="000008380003",
+        name="Drill Commander",
+        timing="passive_while_leading",
+        target="bearer_led_unit",
+        duration="while_bearer_alive_and_unit_remained_stationary_this_turn",
+        effect="ranged_critical_hits_on_5plus",
+        effect_params={
+            "attack_type": "ranged",
+            "critical_hit_threshold": 5,
+            "requires_remained_stationary": True,
+        },
+    ),
+    "000008380004": EnhancementToolDescriptor(
+        enhancement_id="000008380004",
+        name="Grand Strategist",
+        timing="command_phase",
+        target="bearer",
+        duration="constant",
+        effect="additional_orders",
+        effect_params={"additional_orders": 1},
+    ),
+    "000008380005": EnhancementToolDescriptor(
+        enhancement_id="000008380005",
+        name="Reactive Command",
+        timing="on_enemy_unit_set_up_within_range",
+        target="bearer",
+        duration="triggered",
+        effect="issue_order_without_consuming_order_count",
+        range_in=9.0,
+        effect_params={
+            "trigger_range": 9.0,
+            "additional_orders_per_trigger": 1,
+            "does_not_count_towards_order_limit": True,
+        },
+    ),
+}
+
+_COMBINED_ARMS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _COMBINED_ARMS_DESCRIPTORS.values()
+}
+
 _POSSESSED_SLAUGHTERBAND_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010082002": EnhancementToolDescriptor(
         enhancement_id="000010082002",
@@ -4852,6 +4904,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _BRIDGEHEAD_STRIKE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _COMBINED_ARMS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _POSSESSED_SLAUGHTERBAND_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5121,6 +5176,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CULT_OF_BLOOD_BY_NAME.get(key)
         or _GRIZZLED_COMPANY_BY_NAME.get(key)
         or _BRIDGEHEAD_STRIKE_BY_NAME.get(key)
+        or _COMBINED_ARMS_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _ADEPTA_SORORITAS_ARMY_OF_FAITH_BY_NAME.get(key)

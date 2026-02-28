@@ -16955,6 +16955,17 @@ def _validate_issue_order(game: object, request: DecisionRequest, result: Decisi
 def _apply_issue_order(game: object, request: DecisionRequest, result: DecisionResult):
     payload = _option_payload(request, result)
     if is_skip_choice(request, result):
+        trigger = str(payload.get("trigger", "") or request.context.get("trigger", "") or "").strip().lower()
+        if trigger == "reactive_command_setup":
+            army = _resolve_army(game, request, payload)
+            mgr = getattr(army, "voice_of_command", None) if army is not None else None
+            consume_fn = getattr(mgr, "consume_reactive_command_skip", None) if mgr is not None else None
+            officer = resolve_unit(
+                game,
+                payload.get("officer_unit_id") or payload.get("officer_unit") or request.context.get("officer_unit_id"),
+            )
+            if callable(consume_fn):
+                consume_fn(officer, game=game)
         return None
     army = _resolve_army(game, request, payload)
     if army is None:
@@ -16966,7 +16977,8 @@ def _apply_issue_order(game: object, request: DecisionRequest, result: DecisionR
     target = resolve_unit(game, result.payload.get("target_unit_id") or payload.get("target_unit_id") or payload.get("target_unit"))
     order_key = payload.get("order_key") or payload.get("key") or result.payload.get("order_key")
     phase_name = str(payload.get("phase_name", "") or request.context.get("phase_name", "") or "")
-    return bool(mgr.issue_order(game, officer, target, str(order_key), phase_name=phase_name))
+    trigger = str(payload.get("trigger", "") or request.context.get("trigger", "") or "")
+    return bool(mgr.issue_order(game, officer, target, str(order_key), phase_name=phase_name, trigger=trigger))
 
 
 def _validate_choose_wrathful(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

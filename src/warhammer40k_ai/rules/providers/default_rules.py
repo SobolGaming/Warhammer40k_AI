@@ -574,6 +574,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             subscriptions=[
                 ("phase_start", "_on_phase_start_voice_of_command"),
                 ("phase_end", "_on_phase_end_voice_of_command"),
+                ("unit_set_up", "_on_unit_set_up_voice_of_command_reactive_command"),
                 ("battle_shock_test_resolved", "_on_battle_shock_test_resolved_voice_of_command"),
             ],
         )

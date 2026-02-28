@@ -505,6 +505,181 @@ class VoiceOfCommandManager:
     def _officer_has_bombast_pending_targets(self, officer_unit, battle_round: int) -> bool:
         return bool(self._bombast_pending_state(officer_unit, battle_round))
 
+    def _officer_reactive_command_spec(self, officer_unit) -> dict:
+        if officer_unit is None:
+            return {}
+        army = self.army
+        if army is None:
+            get_parent_army = getattr(officer_unit, "get_parent_army", None)
+            if callable(get_parent_army):
+                army = get_parent_army()
+        mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        spec_fn = getattr(mgr, "combined_arms_reactive_command_trigger_spec", None) if mgr is not None else None
+        if callable(spec_fn):
+            spec = spec_fn(officer_unit)
+            if isinstance(spec, dict):
+                return spec
+        return {}
+
+    def _reactive_command_pending_state(self, officer_unit, battle_round: int) -> int:
+        if officer_unit is None:
+            return 0
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0
+        try:
+            pending_round = int(sr.get("enhancement_reactive_command_pending_round", -1) or -1)
+        except Exception:
+            pending_round = -1
+        if pending_round != int(battle_round):
+            sr.pop("enhancement_reactive_command_pending_round", None)
+            sr.pop("enhancement_reactive_command_pending_orders", None)
+            officer_unit.special_rules = sr
+            return 0
+        try:
+            pending = int(sr.get("enhancement_reactive_command_pending_orders", 0) or 0)
+        except Exception:
+            pending = 0
+        return max(0, int(pending))
+
+    def _set_reactive_command_pending_state(self, officer_unit, battle_round: int, pending_orders: int) -> None:
+        if officer_unit is None:
+            return
+        sr = getattr(officer_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        count = max(0, int(pending_orders or 0))
+        if count <= 0:
+            sr.pop("enhancement_reactive_command_pending_round", None)
+            sr.pop("enhancement_reactive_command_pending_orders", None)
+        else:
+            sr["enhancement_reactive_command_pending_round"] = int(battle_round)
+            sr["enhancement_reactive_command_pending_orders"] = int(count)
+        officer_unit.special_rules = sr
+
+    def _consume_reactive_command_pending_order(self, officer_unit, battle_round: int) -> bool:
+        current = self._reactive_command_pending_state(officer_unit, battle_round)
+        if current <= 0:
+            return False
+        self._set_reactive_command_pending_state(officer_unit, battle_round, current - 1)
+        return True
+
+    def register_reactive_command_enemy_set_up(self, enemy_unit, *, game=None) -> list:
+        if enemy_unit is None:
+            return []
+        if not self._army_has_voice():
+            return []
+        if self.army is None:
+            return []
+        try:
+            enemy_army = enemy_unit.get_parent_army()
+        except Exception:
+            enemy_army = None
+        if enemy_army is self.army:
+            return []
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return []
+        game_obj = game if game is not None else getattr(player, "game", None)
+        if game_obj is None:
+            return []
+        game_map = getattr(game_obj, "map", None)
+        if game_map is None:
+            return []
+        try:
+            battle_round = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        if battle_round <= 0:
+            battle_round = 1
+
+        try:
+            enemy_root = enemy_unit.get_attached_unit_root()
+        except Exception:
+            enemy_root = enemy_unit
+        if enemy_root is None:
+            return []
+        try:
+            if not self._unit_is_available(enemy_root):
+                return []
+        except Exception:
+            return []
+
+        candidates = []
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            if not self._unit_has_voice(unit):
+                continue
+            if not self._unit_is_officer(unit):
+                continue
+            if not self._unit_is_available(unit):
+                continue
+            if self._unit_is_battleshocked(unit):
+                continue
+            spec = self._officer_reactive_command_spec(unit)
+            if not spec:
+                continue
+            try:
+                trigger_range = float(spec.get("range", 9.0) or 9.0)
+            except Exception:
+                trigger_range = 9.0
+            if trigger_range <= 0:
+                continue
+            try:
+                additional_orders = int(spec.get("orders", 1) or 1)
+            except Exception:
+                additional_orders = 1
+            additional_orders = max(1, int(additional_orders))
+            try:
+                officer_root = unit.get_attached_unit_root()
+            except Exception:
+                officer_root = unit
+            if officer_root is None:
+                continue
+            try:
+                dist = float(game_map.get_distance_between_units(officer_root, enemy_root))
+            except Exception:
+                continue
+            if dist > trigger_range:
+                continue
+            pending = self._reactive_command_pending_state(unit, battle_round)
+            self._set_reactive_command_pending_state(unit, battle_round, pending + additional_orders)
+            unit_id = str(get_entity_id(unit) or "").strip()
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            candidates.append(unit)
+        candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return candidates
+
+    def consume_reactive_command_skip(self, officer_unit, *, game=None, battle_round: int | None = None) -> bool:
+        if officer_unit is None:
+            return False
+        round_now = 0
+        if battle_round is not None:
+            try:
+                round_now = int(battle_round or 0)
+            except Exception:
+                round_now = 0
+        if round_now <= 0:
+            game_obj = game
+            if game_obj is None:
+                try:
+                    army = officer_unit.get_parent_army()
+                    game_obj = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                except Exception:
+                    game_obj = None
+            try:
+                round_now = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+            except Exception:
+                round_now = 0
+        if round_now <= 0:
+            round_now = 1
+        return self._consume_reactive_command_pending_order(officer_unit, round_now)
+
     def _get_officer_enhancement_orders(self, officer_unit) -> list[Order]:
         extra: list[Order] = []
         if self._officer_has_aquilan_eye(officer_unit):
@@ -553,8 +728,25 @@ class VoiceOfCommandManager:
         bonus_fn = getattr(mgr, "ruthless_discipline_orders_bonus", None) if mgr is not None else None
         if callable(bonus_fn):
             bonus = int(bonus_fn(unit) or 0)
+        grand_bonus_fn = getattr(mgr, "combined_arms_grand_strategist_orders_bonus", None) if mgr is not None else None
+        if callable(grand_bonus_fn):
+            bonus += int(grand_bonus_fn(unit) or 0)
         issued = self._order_issued_state(unit, battle_round)
         return max(0, int(count) + int(bonus) - int(issued))
+
+    def orders_remaining_for_trigger(self, unit, battle_round: int, *, trigger: str = "") -> int:
+        trigger_key = str(trigger or "").strip().lower()
+        if trigger_key == "reactive_command_setup":
+            return self._reactive_command_pending_state(unit, battle_round)
+        return self.orders_remaining(unit, battle_round)
+
+    def officer_has_order_capacity(self, unit, battle_round: int, *, trigger: str = "") -> bool:
+        if unit is None:
+            return False
+        remaining = self.orders_remaining_for_trigger(unit, battle_round, trigger=trigger)
+        if remaining > 0:
+            return True
+        return self._officer_has_bombast_pending_targets(unit, battle_round)
 
     def _unit_ready_for_end_phase(self, unit, phase_name: str, battle_round: Optional[int] = None) -> bool:
         if unit is None:
@@ -607,7 +799,7 @@ class VoiceOfCommandManager:
                 continue
             if self._unit_is_battleshocked(unit):
                 continue
-            if self.orders_remaining(unit, battle_round) <= 0 and not self._officer_has_bombast_pending_targets(unit, battle_round):
+            if not self.officer_has_order_capacity(unit, battle_round, trigger=trigger):
                 continue
             if trigger == "phase_end" and not self._unit_ready_for_end_phase(unit, phase_name, battle_round):
                 continue
@@ -826,7 +1018,7 @@ class VoiceOfCommandManager:
             u.special_rules = sr
             self._apply_order_modifiers(u, order_key)
 
-    def issue_order(self, game, officer_unit, target_unit, order_key: str, *, phase_name: str = "") -> bool:
+    def issue_order(self, game, officer_unit, target_unit, order_key: str, *, phase_name: str = "", trigger: str = "") -> bool:
         if officer_unit is None or target_unit is None:
             return False
         if not self._army_has_voice():
@@ -853,6 +1045,8 @@ class VoiceOfCommandManager:
             battle_round = int(getattr(game, "turn", 0) or 0)
         except Exception:
             battle_round = 0
+        trigger_key = str(trigger or "").strip().lower()
+        reactive_trigger = trigger_key == "reactive_command_setup"
         pending = self._bombast_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
         continuation_issue = False
         if pending:
@@ -862,7 +1056,13 @@ class VoiceOfCommandManager:
             else:
                 self._clear_bombast_pending(officer_unit)
                 pending = {}
-        if not continuation_issue and self.orders_remaining(officer_unit, battle_round) <= 0:
+        reactive_pending_available = (
+            self._reactive_command_pending_state(officer_unit, battle_round) if reactive_trigger and battle_round > 0 else 0
+        )
+        if not continuation_issue and reactive_trigger:
+            if reactive_pending_available <= 0:
+                return False
+        elif not continuation_issue and self.orders_remaining(officer_unit, battle_round) <= 0:
             return False
 
         # Validate target eligibility
@@ -887,8 +1087,11 @@ class VoiceOfCommandManager:
 
         if not continuation_issue:
             # Consume an order.
-            issued = self._order_issued_state(officer_unit, battle_round)
-            self._set_orders_issued(officer_unit, battle_round, issued + 1)
+            if reactive_trigger and reactive_pending_available > 0:
+                self._consume_reactive_command_pending_order(officer_unit, battle_round)
+            else:
+                issued = self._order_issued_state(officer_unit, battle_round)
+                self._set_orders_issued(officer_unit, battle_round, issued + 1)
 
         # Replace any existing orders
         self.clear_order(target_unit)

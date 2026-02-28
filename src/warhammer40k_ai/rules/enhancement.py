@@ -647,6 +647,10 @@ class Enhancement:
         except Exception:
             is_bridgehead_strike = False
         try:
+            is_combined_arms = bool(am_mgr and am_mgr.is_combined_arms())
+        except Exception:
+            is_combined_arms = False
+        try:
             is_grizzled_company = bool(am_mgr and am_mgr.is_grizzled_company())
         except Exception:
             is_grizzled_company = False
@@ -1939,6 +1943,87 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_advance_augury_bearer_model_id"] = bearer_id
+
+        if name == "death mask of ollanius" or enh_id == "000008380002":
+            if not is_combined_arms:
+                return
+            unit.special_rules["enhancement_death_mask_of_ollanius"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            oc_penalty = _coerce_int(
+                params.get("objective_control_penalty", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_death_mask_of_ollanius_oc_penalty"] = int(max(0, int(oc_penalty)))
+            unit.special_rules["enhancement_death_mask_of_ollanius_source"] = "Death Mask of Ollanius"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_death_mask_of_ollanius_bearer_model_id"] = bearer_id
+
+        if name == "drill commander" or enh_id == "000008380003":
+            if not is_combined_arms:
+                return
+            unit.special_rules["enhancement_drill_commander"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            threshold = _coerce_int(
+                params.get("critical_hit_threshold", 5) or 5,
+                default=5,
+            )
+            unit.special_rules["enhancement_drill_commander_crit_hit_threshold"] = int(max(2, min(6, int(threshold))))
+            unit.special_rules["enhancement_drill_commander_attack_type"] = str(
+                params.get("attack_type", "ranged") or "ranged"
+            ).strip().lower()
+            unit.special_rules["enhancement_drill_commander_requires_remained_stationary"] = bool(
+                params.get("requires_remained_stationary", True)
+            )
+            unit.special_rules["enhancement_drill_commander_source"] = "Drill Commander"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_drill_commander_bearer_model_id"] = bearer_id
+
+        if name == "grand strategist" or enh_id == "000008380004":
+            if not is_combined_arms:
+                return
+            unit.special_rules["enhancement_grand_strategist"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            additional_orders = _coerce_int(
+                params.get("additional_orders", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_grand_strategist_additional_orders"] = int(max(0, int(additional_orders)))
+            unit.special_rules["enhancement_grand_strategist_source"] = "Grand Strategist"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_grand_strategist_bearer_model_id"] = bearer_id
+
+        if name == "reactive command" or enh_id == "000008380005":
+            if not is_combined_arms:
+                return
+            unit.special_rules["enhancement_reactive_command"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            trigger_range = params.get("trigger_range", getattr(desc, "range_in", 9.0) if desc is not None else 9.0)
+            try:
+                trigger_range_val = float(trigger_range or 9.0)
+            except (TypeError, ValueError):
+                trigger_range_val = 9.0
+            additional_orders = _coerce_int(
+                params.get("additional_orders_per_trigger", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_reactive_command_trigger_range"] = float(max(0.0, trigger_range_val))
+            unit.special_rules["enhancement_reactive_command_additional_orders_per_trigger"] = int(
+                max(1, int(additional_orders))
+            )
+            unit.special_rules["enhancement_reactive_command_does_not_count_towards_order_limit"] = bool(
+                params.get("does_not_count_towards_order_limit", True)
+            )
+            unit.special_rules["enhancement_reactive_command_source"] = "Reactive Command"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_reactive_command_bearer_model_id"] = bearer_id
 
         if name == "berzerker glaive" or enh_id == "000008432002":
             if not is_berzerker_warband:

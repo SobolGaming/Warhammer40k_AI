@@ -7928,7 +7928,13 @@ class GameView:
         used = set()
         for officer in officers:
             try:
-                remaining = int(mgr.orders_remaining(officer, battle_round))
+                remaining = int(
+                    getattr(mgr, "orders_remaining_for_trigger", lambda *_a, **_k: 0)(
+                        officer,
+                        battle_round,
+                        trigger=trigger or "",
+                    )
+                )
             except Exception:
                 remaining = 0
             label = f"{getattr(officer, 'name', 'Officer')} ({remaining} order{'s' if remaining != 1 else ''} remaining)"
@@ -8035,10 +8041,16 @@ class GameView:
 
         battle_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
         try:
-            remaining = int(mgr.orders_remaining(officer, battle_round))
+            has_capacity = bool(
+                getattr(mgr, "officer_has_order_capacity", lambda *_a, **_k: False)(
+                    officer,
+                    battle_round,
+                    trigger=trigger or "",
+                )
+            )
         except Exception:
-            remaining = 0
-        if remaining <= 0:
+            has_capacity = False
+        if not has_capacity:
             self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
             return
 
@@ -8244,10 +8256,16 @@ class GameView:
                     pass
             battle_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
             try:
-                remaining = int(mgr.orders_remaining(officer, battle_round))
+                has_capacity = bool(
+                    getattr(mgr, "officer_has_order_capacity", lambda *_a, **_k: False)(
+                        officer,
+                        battle_round,
+                        trigger=trigger or "",
+                    )
+                )
             except Exception:
-                remaining = 0
-            if remaining > 0:
+                has_capacity = False
+            if has_capacity:
                 self._open_voice_of_command_order_dialog(player, game, phase_name, trigger, officer)
             else:
                 self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)

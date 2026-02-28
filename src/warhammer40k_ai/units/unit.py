@@ -584,6 +584,13 @@ class Unit(
                 ]
                 mods.append(Modifier(ModifierOp.DIV, int(oc_divisor), source="enhancement:stoic_defender_battleshock"))
 
+            death_mask_override = getattr(self, "apply_death_mask_of_ollanius_battleshock_oc_override", None)
+            if callable(death_mask_override):
+                try:
+                    mods, _applied = death_mask_override(mods)
+                except Exception:
+                    pass
+
             # Inspiring Commander: while included in your army, named units gain
             # a fixed Objective Control value for non-CHARACTER models while not Battle-shocked.
             try:

@@ -997,6 +997,145 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
                 return True
         return False
 
+    def _enhancement_bearer_alive(self, unit, sr, *, bearer_key: str = "") -> bool:
+        if unit is None or not isinstance(sr, dict):
+            return False
+        key_name = str(bearer_key or "").strip()
+        bearer_id = ""
+        if key_name:
+            bearer_id = str(sr.get(key_name, "") or "").strip()
+        if not bearer_id:
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if not bearer_id:
+            return True
+        for model in list(getattr(unit, "models", []) or []):
+            if str(get_entity_id(model) or "").strip() != bearer_id:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            return bool(alive_attr() if callable(alive_attr) else alive_attr)
+        return False
+
+    def _attached_unit_enhancement_source(self, unit, enhancement_flag: str) -> tuple[object | None, dict | None]:
+        root = self._unit_root(unit)
+        if root is None:
+            return None, None
+        members = []
+        get_members = getattr(root, "get_attached_unit_members", None)
+        if callable(get_members):
+            members = list(get_members() or [])
+        if not members:
+            members = [root]
+        attached_leaders = list(getattr(root, "attached_leaders", []) or [])
+        for leader in attached_leaders:
+            if leader is None or leader in members:
+                continue
+            members.append(leader)
+        for member in list(members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get(str(enhancement_flag or "").strip(), False)):
+                continue
+            if not self._enhancement_bearer_alive(member, sr):
+                continue
+            return member, sr
+        return None, None
+
+    def combined_arms_grand_strategist_orders_bonus(self, unit) -> int:
+        if not self.is_combined_arms():
+            return 0
+        root = self._unit_root(unit)
+        if root is None:
+            return 0
+        if not self._unit_in_army(root):
+            return 0
+        if not self.unit_is_officer(root):
+            return 0
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_grand_strategist", False)):
+            return 0
+        if not self._enhancement_bearer_alive(root, sr, bearer_key="enhancement_grand_strategist_bearer_model_id"):
+            return 0
+        try:
+            bonus = int(sr.get("enhancement_grand_strategist_additional_orders", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        return max(0, int(bonus))
+
+    def combined_arms_reactive_command_trigger_spec(self, unit) -> dict | None:
+        if not self.is_combined_arms():
+            return None
+        root = self._unit_root(unit)
+        if root is None:
+            return None
+        if not self._unit_in_army(root):
+            return None
+        if not self.unit_is_officer(root):
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_reactive_command", False)):
+            return None
+        if not self._enhancement_bearer_alive(root, sr, bearer_key="enhancement_reactive_command_bearer_model_id"):
+            return None
+        try:
+            trigger_range = float(sr.get("enhancement_reactive_command_trigger_range", 9.0) or 9.0)
+        except (TypeError, ValueError):
+            trigger_range = 9.0
+        try:
+            orders = int(sr.get("enhancement_reactive_command_additional_orders_per_trigger", 1) or 1)
+        except (TypeError, ValueError):
+            orders = 1
+        source = str(sr.get("enhancement_reactive_command_source", "") or "Reactive Command").strip() or "Reactive Command"
+        return {
+            "range": max(0.0, float(trigger_range)),
+            "orders": max(1, int(orders)),
+            "source": source,
+            "does_not_count_towards_order_limit": bool(
+                sr.get("enhancement_reactive_command_does_not_count_towards_order_limit", True)
+            ),
+        }
+
+    def combined_arms_drill_commander_crit_hit_threshold(
+        self,
+        attacker_model,
+        *,
+        attack_type: str = "any",
+        weapon_profile=None,
+    ) -> tuple[int, str]:
+        if not self.is_combined_arms():
+            return 0, ""
+        atype = str(attack_type or "any").strip().lower()
+        if atype not in {"any", "ranged"}:
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_ranged = bool(getattr(parent, "is_ranged", lambda: False)()) if parent is not None else False
+            if not is_ranged:
+                return 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_in_army(root):
+            return 0, ""
+        source_unit, sr = self._attached_unit_enhancement_source(root, "enhancement_drill_commander")
+        if source_unit is None or not isinstance(sr, dict):
+            return 0, ""
+        attack_kind = str(sr.get("enhancement_drill_commander_attack_type", "ranged") or "ranged").strip().lower()
+        if attack_kind and attack_kind not in {"any", atype}:
+            return 0, ""
+        requires_stationary = bool(sr.get("enhancement_drill_commander_requires_remained_stationary", True))
+        remained_stationary = bool(getattr(getattr(root, "round_state", None), "remained_stationary_this_round", False))
+        if requires_stationary and not remained_stationary:
+            return 0, ""
+        try:
+            threshold = int(sr.get("enhancement_drill_commander_crit_hit_threshold", 5) or 5)
+        except (TypeError, ValueError):
+            threshold = 5
+        threshold = int(max(2, min(6, threshold)))
+        source = str(sr.get("enhancement_drill_commander_source", "") or "Drill Commander").strip() or "Drill Commander"
+        return threshold, source
+
     def ruthless_discipline_orders_bonus(self, unit) -> int:
         if not self.is_grizzled_company():
             return 0

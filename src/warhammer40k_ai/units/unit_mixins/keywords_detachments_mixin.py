@@ -4,6 +4,74 @@ from ._common import *
 
 
 class KeywordsDetachmentsMixin:
+    def apply_death_mask_of_ollanius_battleshock_oc_override(self, mods: List) -> tuple[List, bool]:
+        """Combined Arms: while battle-shocked, bearer unit is -1 OC instead of set to 0."""
+        is_battle_shocked = False
+        check_battle_shock = getattr(self, "is_battle_shocked", None)
+        if callable(check_battle_shock):
+            try:
+                is_battle_shocked = bool(check_battle_shock())
+            except Exception:
+                is_battle_shocked = False
+        if not is_battle_shocked:
+            return list(mods or []), False
+
+        try:
+            root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        except Exception:
+            root = self
+        try:
+            leaders = list(getattr(root, "attached_leaders", []) or [])
+        except Exception:
+            leaders = []
+
+        penalty = 0
+        for leader in list(leaders or []):
+            sr_leader = getattr(leader, "special_rules", None)
+            if not isinstance(sr_leader, dict) or not bool(sr_leader.get("enhancement_death_mask_of_ollanius", False)):
+                continue
+            bearer_id = str(
+                sr_leader.get("enhancement_death_mask_of_ollanius_bearer_model_id", "")
+                or sr_leader.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            bearer_alive = True
+            if bearer_id:
+                bearer_alive = False
+                for model in list(getattr(leader, "models", []) or []):
+                    if str(get_entity_id(model) or "").strip() != bearer_id:
+                        continue
+                    alive_attr = getattr(model, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    break
+            if not bearer_alive:
+                continue
+            try:
+                penalty = int(sr_leader.get("enhancement_death_mask_of_ollanius_oc_penalty", 1) or 1)
+            except (TypeError, ValueError):
+                penalty = 1
+            break
+
+        if penalty <= 0:
+            return list(mods or []), False
+
+        from ...utility.modifiers import Modifier, ModifierOp
+
+        filtered = []
+        for mod in list(mods or []):
+            source = str(getattr(mod, "source", "") or "").strip().lower()
+            if source == "status:battle-shock":
+                continue
+            filtered.append(mod)
+        filtered.append(
+            Modifier(
+                ModifierOp.ADD,
+                -int(penalty),
+                source="enhancement:death_mask_of_ollanius_battleshock",
+            )
+        )
+        return filtered, True
+
     def has_firing_deck(self) -> Tuple[bool, int]:
         """Check if the unit has Firing Deck ability and return the number of weapons.
         

@@ -12428,6 +12428,28 @@ class WargearProfile:
                 crit_threshold = min(int(crit_threshold), int(threshold))
                 source_name = str(source or "Marks of Chaos").strip() or "Marks of Chaos"
                 crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
+        try:
+            if is_ranged:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+                threshold_fn = (
+                    getattr(am_mgr, "combined_arms_drill_commander_crit_hit_threshold", None)
+                    if am_mgr is not None
+                    else None
+                )
+                if callable(threshold_fn):
+                    threshold, source = threshold_fn(
+                        attacker,
+                        attack_type=attack_type,
+                        weapon_profile=self,
+                    )
+                    if int(threshold or 0):
+                        crit_threshold = min(int(crit_threshold), int(threshold))
+                        source_name = str(source or "Drill Commander").strip() or "Drill Commander"
+                        crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
 
         hit_result["crit_threshold"] = int(crit_threshold)
 
