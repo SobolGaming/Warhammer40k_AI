@@ -8202,7 +8202,7 @@ class PositioningMixin:
             if filters:
                 self._ability_cache["redeploy_filters"] = list(filters)
             self._ability_cache["redeploy_ability_name"] = ability_name
-            self._ability_cache["redeploy_requires_source_on_battlefield"] = False
+            self._ability_cache["redeploy_requires_source_on_battlefield"] = True
             self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = False
             self._ability_cache["redeploy_exclude_source_unit"] = bool(exclude_source_unit)
             return result
