@@ -98,6 +98,58 @@ class GamePhaseHandlersMixin:
                     f"{source}: gained {int(gained)}CP.",
                 )
 
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None)
+        eater_fn = getattr(csm_mgr, "dread_talons_eater_of_dread_on_command_phase_start", None) if csm_mgr is not None else None
+        if callable(eater_fn):
+            for result in list(eater_fn(game=self) or []):
+                if not isinstance(result, dict) or not bool(result.get("triggered", False)):
+                    continue
+                source = str(result.get("source", "") or "Eater of Dread").strip() or "Eater of Dread"
+                try:
+                    rolled = int(result.get("roll", 0) or 0)
+                except (TypeError, ValueError):
+                    rolled = 0
+                try:
+                    modifier = int(result.get("roll_modifier", 0) or 0)
+                except (TypeError, ValueError):
+                    modifier = 0
+                try:
+                    total = int(result.get("total", rolled + modifier) or (rolled + modifier))
+                except (TypeError, ValueError):
+                    total = int(rolled + modifier)
+                try:
+                    success_on = int(result.get("success_on", 5) or 5)
+                except (TypeError, ValueError):
+                    success_on = 5
+                try:
+                    gained = int(result.get("gained", 0) or 0)
+                except (TypeError, ValueError):
+                    gained = 0
+                try:
+                    enemy_count = int(result.get("battle_shocked_enemy_count", 0) or 0)
+                except (TypeError, ValueError):
+                    enemy_count = 0
+
+                bonus_txt = ""
+                if modifier:
+                    bonus_txt = (
+                        f" + {int(modifier)} (Battle-shocked enemy units on battlefield: {int(enemy_count)})"
+                    )
+                append_dice(
+                    player,
+                    f"{source}: rolled D6={int(rolled)}{bonus_txt} -> {int(total)} (need {int(success_on)}+).",
+                )
+                if total < success_on:
+                    append_action(
+                        player,
+                        f"{source}: failed to gain CP ({int(total)} < {int(success_on)}).",
+                    )
+                else:
+                    append_action(
+                        player,
+                        f"{source}: gained {int(gained)}CP.",
+                    )
+
     def _on_phase_start_death_guard_detachments(self, player=None, phase=None, **_kwargs) -> None:
         """Command phase start: resolve Death Guard detachment start-of-opponent-command effects."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

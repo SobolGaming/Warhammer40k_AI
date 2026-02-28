@@ -2265,6 +2265,63 @@ _RENEGADE_WARBAND_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _RENEGADE_WARBAND_DESCRIPTORS.values()
 }
 
+_DREAD_TALONS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008972002": EnhancementToolDescriptor(
+        enhancement_id="000008972002",
+        name="Eater of Dread",
+        timing="start_of_command_phase",
+        target="army",
+        duration="instant",
+        effect="command_phase_cp_roll_per_battle_shocked_enemy_unit",
+        effect_params={
+            "roll": "D6",
+            "success_on": 5,
+            "cp_gain": 1,
+            "enemy_battleshocked_roll_bonus": 1,
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+    "000008972003": EnhancementToolDescriptor(
+        enhancement_id="000008972003",
+        name="Night's Shroud",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_gains_stealth",
+        effect_params={"requires_bearer_alive": True},
+    ),
+    "000008972004": EnhancementToolDescriptor(
+        enhancement_id="000008972004",
+        name="Warp-fuelled Thrusters",
+        timing="end_of_opponent_turn",
+        target="bearer_unit",
+        duration="instant",
+        effect="end_of_opponent_turn_enter_strategic_reserves_if_not_engaged",
+        effect_params={
+            "requires_not_engagement_range": True,
+            "requires_bearer_alive": True,
+            "once_per_battle": False,
+            "ability_key": "warp_fuelled_thrusters",
+        },
+    ),
+    "000008972005": EnhancementToolDescriptor(
+        enhancement_id="000008972005",
+        name="Willbreaker",
+        timing="post_fight_after_bearer_attacks",
+        target="hit_enemy_unit",
+        duration="instant",
+        effect="post_fight_bearer_select_hit_enemy_battleshock_test",
+        effect_params={
+            "applies_after_fight": True,
+            "requires_bearer_hit_target": True,
+        },
+    ),
+}
+
+_DREAD_TALONS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DREAD_TALONS_DESCRIPTORS.values()
+}
+
 _SOULFORGED_WARPACK_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008985002": EnhancementToolDescriptor(
         enhancement_id="000008985002",
@@ -5467,6 +5524,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DECEPTORS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _DREAD_TALONS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _RENEGADE_WARBAND_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5687,6 +5747,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CHAOS_CULT_BY_NAME.get(key)
         or _CREATIONS_OF_BILE_BY_NAME.get(key)
         or _DECEPTORS_BY_NAME.get(key)
+        or _DREAD_TALONS_BY_NAME.get(key)
         or _RENEGADE_WARBAND_BY_NAME.get(key)
         or _SOULFORGED_WARPACK_BY_NAME.get(key)
         or _VETERANS_OF_THE_LONG_WAR_BY_NAME.get(key)

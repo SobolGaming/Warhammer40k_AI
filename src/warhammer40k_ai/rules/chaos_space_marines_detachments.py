@@ -1580,6 +1580,37 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             return member, sr, bearer
         return None, None, None
 
+    def _dread_talons_enhancement_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_on_battlefield: bool = False,
+    ):
+        if not self.is_dread_talons():
+            return None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+                continue
+            bearer = self._find_enhancement_bearer_on_member(member, sr)
+            if require_bearer_alive and not self._model_alive(bearer):
+                continue
+            if require_bearer_on_battlefield:
+                bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None)) if bearer is not None else root
+                if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                    continue
+            return member, sr, bearer
+        return None, None, None
+
     @staticmethod
     def _model_matches_bearer(model, bearer) -> bool:
         if model is None or bearer is None:
@@ -1866,6 +1897,83 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                 "source_model_id": str(get_entity_id(bearer) or "") if bearer is not None else "",
             }
         return {}
+
+    def dread_talons_eater_of_dread_on_command_phase_start(self, *, game=None) -> list[dict]:
+        if not self.is_dread_talons() or self.army is None:
+            return []
+        owner = getattr(self.army, "player", None)
+        gain_cp = getattr(owner, "gain_command_points", None) if owner is not None else None
+        if not callable(gain_cp):
+            return []
+
+        enemy_units = [
+            unit
+            for unit in list(self._iter_enemy_units_for_player(game=game, player=owner) or [])
+            if self._unit_on_battlefield(unit)
+        ]
+        battle_shocked_enemy_count = int(sum(1 for unit in enemy_units if self._unit_is_battle_shocked(unit)))
+
+        roots = list(self._iter_unique_roots(getattr(self.army, "units", []) or []))
+        roots.sort(key=lambda unit: str(get_entity_id(unit) or self._unit_root_key(unit)))
+
+        out: list[dict] = []
+        for root in roots:
+            _source_member, source_sr, bearer = self._dread_talons_enhancement_source_member(
+                root,
+                flag_key="enhancement_eater_of_dread",
+                require_bearer_alive=True,
+                require_bearer_on_battlefield=False,
+            )
+            if source_sr is None:
+                continue
+            if bool(source_sr.get("enhancement_eater_of_dread_requires_bearer_on_battlefield", True)):
+                bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None)) if bearer is not None else None
+                if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                    continue
+
+            source = (
+                str(source_sr.get("enhancement_eater_of_dread_source", "") or "Eater of Dread").strip()
+                or "Eater of Dread"
+            )
+            try:
+                success_on = int(source_sr.get("enhancement_eater_of_dread_success_on", 5) or 5)
+            except (TypeError, ValueError):
+                success_on = 5
+            success_on = int(min(6, max(2, success_on)))
+            try:
+                cp_gain = int(source_sr.get("enhancement_eater_of_dread_cp_gain", 1) or 1)
+            except (TypeError, ValueError):
+                cp_gain = 1
+            cp_gain = int(max(1, cp_gain))
+            try:
+                bonus_per_enemy = int(source_sr.get("enhancement_eater_of_dread_enemy_battleshocked_roll_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                bonus_per_enemy = 1
+            bonus_per_enemy = int(max(0, bonus_per_enemy))
+
+            roll = int(get_roll("D6"))
+            modifier = int(bonus_per_enemy * battle_shocked_enemy_count)
+            total = int(roll + modifier)
+            gained = 0
+            if total >= success_on:
+                gained = int(gain_cp(cp_gain, reason=source) or 0)
+
+            out.append(
+                {
+                    "triggered": True,
+                    "source": source,
+                    "roll": int(roll),
+                    "roll_modifier": int(modifier),
+                    "battle_shocked_enemy_count": int(battle_shocked_enemy_count),
+                    "total": int(total),
+                    "success_on": int(success_on),
+                    "cp_gain": int(cp_gain),
+                    "gained": int(gained),
+                    "source_unit_id": str(get_entity_id(root) or ""),
+                    "source_model_id": str(get_entity_id(bearer) or "") if bearer is not None else "",
+                }
+            )
+        return out
 
     def _soulforged_sources_by_flag(
         self,

@@ -1651,17 +1651,60 @@ class PositioningMixin:
             return root._ability_cache[cache_key]
 
         ability = None
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("enhancement_warp_fuelled_thrusters")):
+            bearer_alive = False
+            bearer_id = str(
+                sr.get("enhancement_warp_fuelled_thrusters_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if bearer_id:
+                for model in list(getattr(root, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    alive_attr = getattr(model, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    break
+            else:
+                get_bearer = getattr(root, "_get_enhancement_bearer_model", None)
+                bearer_model = get_bearer() if callable(get_bearer) else None
+                if bearer_model is not None:
+                    alive_attr = getattr(bearer_model, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if bearer_alive or not bool(sr.get("enhancement_warp_fuelled_thrusters_requires_bearer_alive", True)):
+                ability_name = (
+                    str(sr.get("enhancement_warp_fuelled_thrusters_source", "") or "Warp-fuelled Thrusters").strip()
+                    or "Warp-fuelled Thrusters"
+                )
+                ability_key = (
+                    str(sr.get("enhancement_warp_fuelled_thrusters_ability_key", "") or "warp_fuelled_thrusters")
+                    .strip()
+                    .lower()
+                )
+                if not ability_key:
+                    ability_key = "warp_fuelled_thrusters"
+                ability = {
+                    "name": ability_name,
+                    "description": "",
+                    "once_per_battle": bool(sr.get("enhancement_warp_fuelled_thrusters_once_per_battle", False)),
+                    "ability_key": ability_key,
+                    "min_enemy_distance_horiz": 0,
+                    "min_battlefield_edge_distance_horiz": 0,
+                }
+
         try:
             members = list(root.get_attached_unit_members() or [])
         except Exception:
             members = [root]
-        for member in members:
-            try:
-                ability = member._scan_end_of_opponent_turn_strategic_reserves_ability()
-            except Exception:
-                ability = None
-            if ability:
-                break
+        if not ability:
+            for member in members:
+                try:
+                    ability = member._scan_end_of_opponent_turn_strategic_reserves_ability()
+                except Exception:
+                    ability = None
+                if ability:
+                    break
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
@@ -7700,6 +7743,9 @@ class PositioningMixin:
             return True
         # Chaos Knights (Lords of Dread): Blessing of the Dark Master grants Stealth to the bearer model.
         if isinstance(sr, dict) and sr.get("enhancement_blessing_of_the_dark_master_stealth"):
+            return True
+        # Dread Talons: Night's Shroud grants Stealth to models in the bearer's unit.
+        if isinstance(sr, dict) and sr.get("enhancement_nights_shroud_stealth"):
             return True
         # Enhancement: Phial of the Abyss grants Stealth to models in the bearer's unit.
         if isinstance(sr, dict) and sr.get("enhancement_phial_of_the_abyss"):

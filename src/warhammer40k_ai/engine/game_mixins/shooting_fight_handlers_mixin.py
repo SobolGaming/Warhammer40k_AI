@@ -938,6 +938,41 @@ class GameShootingFightHandlersMixin:
                 return False
             return model in hit_models
 
+        def _willbreaker_applies_for_model(model) -> tuple[bool, str]:
+            sr = getattr(attacker_unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                return False, ""
+            if not bool(sr.get("enhancement_willbreaker", False)):
+                return False, ""
+            if not bool(sr.get("enhancement_willbreaker_applies_after_fight", True)):
+                return False, ""
+            bearer_id = str(
+                sr.get("enhancement_willbreaker_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            model_matches_bearer = False
+            model_entity_id = str(get_entity_id(model) or "").strip()
+            model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+            if bearer_id:
+                model_matches_bearer = bool(model_entity_id == bearer_id or (model_local_id and model_local_id == bearer_id))
+            else:
+                get_bearer = getattr(attacker_unit, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+                if bearer is not None:
+                    model_matches_bearer = bool(
+                        model is bearer
+                        or str(get_entity_id(bearer) or "").strip() == model_entity_id
+                        or (
+                            model_local_id
+                            and model_local_id == str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "").strip()
+                        )
+                    )
+            if not model_matches_bearer:
+                return False, ""
+            source = str(sr.get("enhancement_willbreaker_source", "") or "Willbreaker").strip() or "Willbreaker"
+            return True, source
+
         def _target_within_friendly_keyword_phrase_range(candidate, *, phrase: str, range_value: float) -> bool:
             if candidate is None or range_value <= 0:
                 return False
@@ -980,6 +1015,28 @@ class GameShootingFightHandlersMixin:
             if not getattr(model, "is_alive", False):
                 continue
             specs = attacker_unit.model_post_fight_battleshock_specs(model) or []
+            willbreaker_applies, willbreaker_source = _willbreaker_applies_for_model(model)
+            if willbreaker_applies:
+                if not any(
+                    str(spec.get("source", "") or "").strip().lower() == str(willbreaker_source).strip().lower()
+                    for spec in list(specs or [])
+                    if isinstance(spec, dict)
+                ):
+                    specs = list(specs)
+                    specs.append(
+                        {
+                            "infantry_only": False,
+                            "exclude_monster_vehicle": False,
+                            "exclude_vehicle_only": False,
+                            "test_modifier": 0,
+                            "test_modifier_on_kill": 0,
+                            "test_modifier_if_target_within_range": 0,
+                            "test_modifier_range": 0,
+                            "test_modifier_friendly_keyword_phrase": "",
+                            "applies_after_fight": True,
+                            "source": str(willbreaker_source),
+                        }
+                    )
             if not specs:
                 continue
             for spec in specs:

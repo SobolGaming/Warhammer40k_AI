@@ -590,6 +590,9 @@ class Enhancement:
             is_deceptors = bool(csm_mgr and csm_mgr.is_deceptors())
         except Exception:
             is_deceptors = False
+        is_dread_talons = bool(
+            csm_mgr and callable(getattr(csm_mgr, "is_dread_talons", None)) and csm_mgr.is_dread_talons()
+        )
         try:
             is_renegade_warband = bool(csm_mgr and csm_mgr.is_renegade_warband())
         except Exception:
@@ -5953,6 +5956,84 @@ class Enhancement:
             )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "eater of dread" or enh_id == "000008972002":
+            if not is_dread_talons:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Eater of Dread").strip() or "Eater of Dread"
+            unit.special_rules["enhancement_eater_of_dread"] = True
+            unit.special_rules["enhancement_eater_of_dread_source"] = source
+            unit.special_rules["enhancement_eater_of_dread_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
+            unit.special_rules["enhancement_eater_of_dread_success_on"] = int(
+                min(6, max(2, _coerce_int(params.get("success_on", 5), default=5)))
+            )
+            unit.special_rules["enhancement_eater_of_dread_cp_gain"] = int(
+                max(1, _coerce_int(params.get("cp_gain", 1), default=1))
+            )
+            unit.special_rules["enhancement_eater_of_dread_enemy_battleshocked_roll_bonus"] = int(
+                max(0, _coerce_int(params.get("enemy_battleshocked_roll_bonus", 1), default=1))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eater_of_dread_bearer_model_id"] = bearer_id
+
+        if name in {"night's shroud", "nights shroud", "night’s shroud"} or enh_id == "000008972003":
+            if not is_dread_talons:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source = str(getattr(desc, "name", "") or "Night's Shroud").strip() or "Night's Shroud"
+            unit.special_rules["enhancement_nights_shroud"] = True
+            unit.special_rules["enhancement_nights_shroud_source"] = source
+            unit.special_rules["enhancement_nights_shroud_stealth"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_nights_shroud_bearer_model_id"] = bearer_id
+
+        if name == "warp-fuelled thrusters" or enh_id == "000008972004":
+            if not is_dread_talons:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Warp-fuelled Thrusters").strip() or "Warp-fuelled Thrusters"
+            unit.special_rules["enhancement_warp_fuelled_thrusters"] = True
+            unit.special_rules["enhancement_warp_fuelled_thrusters_source"] = source
+            unit.special_rules["enhancement_warp_fuelled_thrusters_requires_not_engagement_range"] = bool(
+                params.get("requires_not_engagement_range", True)
+            )
+            unit.special_rules["enhancement_warp_fuelled_thrusters_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_warp_fuelled_thrusters_once_per_battle"] = bool(
+                params.get("once_per_battle", False)
+            )
+            unit.special_rules["enhancement_warp_fuelled_thrusters_ability_key"] = (
+                str(params.get("ability_key", "warp_fuelled_thrusters") or "warp_fuelled_thrusters").strip().lower()
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_warp_fuelled_thrusters_bearer_model_id"] = bearer_id
+
+        if name == "willbreaker" or enh_id == "000008972005":
+            if not is_dread_talons:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Willbreaker").strip() or "Willbreaker"
+            unit.special_rules["enhancement_willbreaker"] = True
+            unit.special_rules["enhancement_willbreaker_source"] = source
+            unit.special_rules["enhancement_willbreaker_applies_after_fight"] = bool(
+                params.get("applies_after_fight", True)
+            )
+            unit.special_rules["enhancement_willbreaker_requires_bearer_hit_target"] = bool(
+                params.get("requires_bearer_hit_target", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_willbreaker_bearer_model_id"] = bearer_id
 
         if name == "eager for vengeance" or enh_id == "000008960002":
             if not is_veterans_of_the_long_war:
