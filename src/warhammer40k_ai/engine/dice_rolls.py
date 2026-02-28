@@ -102,6 +102,36 @@ def _sum_base_dice(dice: Iterable[dict]) -> int:
     return int(total)
 
 
+def _coerce_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _clamp_die(value: int, faces: int) -> int:
+    low = 1
+    high = max(1, int(faces or 1))
+    return max(low, min(high, int(value or 0)))
+
+
+def _map_raw_d6_to_d3(raw_value: int) -> int:
+    raw = _clamp_die(raw_value, 6)
+    return int((raw + 1) // 2)
+
+
+def _uses_d3_from_d6(spec: dict) -> bool:
+    if not isinstance(spec, dict):
+        return False
+    mode = str(spec.get("value_mapping", "") or "").strip().lower()
+    if mode in ("none", "direct_faces3"):
+        return False
+    if mode == "d3_from_d6":
+        return True
+    faces = _coerce_int(spec.get("faces", 6), default=6)
+    return int(faces) == 3
+
+
 def _resolve_player(game: object, player_id: Optional[str]):
     if player_id is None:
         return None
@@ -270,7 +300,9 @@ class DiceRollManager:
         self.next_roll_id += 1
         return rid
 
-    def _next_roll_value(self, state: DiceRollState, faces: int, game: object) -> Optional[int]:
+    def _next_roll_outcome(self, state: DiceRollState, faces: int, game: object) -> dict:
+        uses_d3_mapping = _uses_d3_from_d6(dict(getattr(state, "spec", {}) or {}))
+        raw_faces = 6 if uses_d3_mapping else int(max(1, int(faces or 1)))
         seq = state.spec.get("roll_sequence", None) if isinstance(state.spec, dict) else None
         if isinstance(seq, list) and seq:
             try:
@@ -279,25 +311,56 @@ class DiceRollManager:
                 idx = 0
             if idx < len(seq):
                 try:
-                    raw_val = int(seq[idx] or 0)
+                    seq_val = int(seq[idx] or 0)
                 except Exception:
-                    raw_val = 0
+                    seq_val = 0
                 try:
                     state.spec["roll_sequence_index"] = idx + 1
                 except Exception:
                     pass
-                if raw_val < 1:
-                    raw_val = 1
-                if raw_val > faces:
-                    raw_val = faces
-                return int(raw_val)
+                if uses_d3_mapping:
+                    # Preserve legacy deterministic fixtures that still provide mapped D3 values.
+                    if 1 <= int(seq_val) <= 3:
+                        mapped_val = _clamp_die(int(seq_val), 3)
+                        raw_val = _clamp_die(int(mapped_val * 2 - 1), 6)
+                    else:
+                        raw_val = _clamp_die(int(seq_val), 6)
+                        mapped_val = _map_raw_d6_to_d3(raw_val)
+                    return {
+                        "value": int(mapped_val),
+                        "faces": 3,
+                        "raw_value": int(raw_val),
+                        "raw_faces": int(raw_faces),
+                    }
+                resolved = _clamp_die(int(seq_val), int(faces))
+                return {
+                    "value": int(resolved),
+                    "faces": int(faces),
+                    "raw_value": int(resolved),
+                    "raw_faces": int(faces),
+                }
         try:
             rng = getattr(game, "random_source", None)
             if rng is None:
                 raise RuntimeError("Random source missing.")
-            return int(rng.randint(1, faces))
+            raw_val = int(rng.randint(1, int(raw_faces)))
         except Exception:
-            return 1
+            raw_val = 1
+        if uses_d3_mapping:
+            mapped_val = _map_raw_d6_to_d3(raw_val)
+            return {
+                "value": int(mapped_val),
+                "faces": 3,
+                "raw_value": int(_clamp_die(raw_val, int(raw_faces))),
+                "raw_faces": int(raw_faces),
+            }
+        resolved = _clamp_die(raw_val, int(faces))
+        return {
+            "value": int(resolved),
+            "faces": int(faces),
+            "raw_value": int(resolved),
+            "raw_faces": int(faces),
+        }
 
     def get_roll(self, roll_id: int) -> Optional[DiceRollState]:
         return self.rolls.get(int(roll_id))
@@ -331,6 +394,9 @@ class DiceRollManager:
         roll_spec.setdefault("faces", 6)
         roll_spec.setdefault("reason", prompt or roll_spec.get("reason") or "Roll dice")
         roll_spec.setdefault("roll_type", roll_spec.get("roll_type") or "generic")
+        if _uses_d3_from_d6(roll_spec):
+            roll_spec.setdefault("value_mapping", "d3_from_d6")
+            roll_spec.setdefault("raw_die_faces", 6)
         roll_spec = apply_roll_explanation(roll_spec)
         state = DiceRollState(
             roll_id=rid,
@@ -356,13 +422,25 @@ class DiceRollManager:
             game.request_decision(req)
         return req
 
-    def _build_dice(self, roll_id: int, values: List[int], faces: int, *, derived: Optional[List[dict]] = None) -> List[dict]:
+    def _build_dice(self, roll_id: int, values: List[Any], faces: int, *, derived: Optional[List[dict]] = None) -> List[dict]:
         dice = []
         for idx, val in enumerate(list(values or [])):
+            if isinstance(val, dict):
+                die_faces = _coerce_int(val.get("faces", faces), default=faces)
+                raw_faces = _coerce_int(val.get("raw_faces", die_faces), default=die_faces)
+                die_value = _clamp_die(_coerce_int(val.get("value", 1), default=1), die_faces)
+                raw_value = _clamp_die(_coerce_int(val.get("raw_value", die_value), default=die_value), raw_faces)
+            else:
+                die_faces = int(faces)
+                raw_faces = int(faces)
+                die_value = _clamp_die(_coerce_int(val, default=1), die_faces)
+                raw_value = int(die_value)
             die = {
                 "die_id": _die_id(roll_id, idx),
-                "value": int(val),
-                "faces": int(faces),
+                "value": int(die_value),
+                "faces": int(die_faces),
+                "raw_value": int(raw_value),
+                "raw_faces": int(raw_faces),
                 "is_derived": False,
                 "derived_kind": None,
                 "reroll_count": 0,
@@ -380,6 +458,8 @@ class DiceRollManager:
                 "die_id": str(entry.get("die_id") or _die_id(roll_id, len(dice))),
                 "value": int(dval),
                 "faces": int(entry.get("faces", faces) or faces),
+                "raw_value": int(entry.get("raw_value", dval) or dval),
+                "raw_faces": int(entry.get("raw_faces", entry.get("faces", faces) or faces) or (entry.get("faces", faces) or faces)),
                 "is_derived": True,
                 "derived_kind": dkind,
                 "reroll_count": 0,
@@ -544,12 +624,37 @@ class DiceRollManager:
         dice_count = int(spec.get("dice_count", 1) or 1)
         faces = int(spec.get("faces", 6) or 6)
         fixed = list(spec.get("fixed_dice", []) or [])
-        values: List[int] = []
+        fixed_raw = list(spec.get("fixed_raw_dice", []) or [])
+        uses_d3_mapping = _uses_d3_from_d6(spec)
+        values: List[Any] = []
         for i in range(dice_count):
             if i < len(fixed) and fixed[i] is not None:
-                values.append(int(fixed[i]))
+                if uses_d3_mapping:
+                    mapped = _clamp_die(_coerce_int(fixed[i], default=1), 3)
+                    if i < len(fixed_raw) and fixed_raw[i] is not None:
+                        raw_val = _clamp_die(_coerce_int(fixed_raw[i], default=1), 6)
+                    else:
+                        raw_val = _clamp_die(int(mapped * 2 - 1), 6)
+                    values.append(
+                        {
+                            "value": int(mapped),
+                            "faces": 3,
+                            "raw_value": int(raw_val),
+                            "raw_faces": 6,
+                        }
+                    )
+                else:
+                    resolved = _clamp_die(_coerce_int(fixed[i], default=1), int(faces))
+                    values.append(
+                        {
+                            "value": int(resolved),
+                            "faces": int(faces),
+                            "raw_value": int(resolved),
+                            "raw_faces": int(faces),
+                        }
+                    )
                 continue
-            values.append(int(self._next_roll_value(state, faces, game)))
+            values.append(self._next_roll_outcome(state, faces, game))
 
         state.dice = self._build_dice(state.roll_id, values, faces, derived=list(spec.get("derived_dice", []) or []))
         state.total = int(_sum_base_dice(state.dice))
@@ -584,10 +689,46 @@ class DiceRollManager:
         dice_payload = roll_results.get("dice", None)
         if isinstance(dice_payload, list) and dice_payload:
             state.dice = [dict(d) for d in list(dice_payload or [])]
+            for die in list(state.dice or []):
+                if "raw_value" not in die:
+                    die["raw_value"] = _coerce_int(die.get("value", 1), default=1)
+                if "raw_faces" not in die:
+                    die["raw_faces"] = _coerce_int(die.get("faces", 6), default=6)
         else:
             dice_values = list(roll_results.get("values", []) or [])
             faces = int(roll_results.get("faces", state.spec.get("faces", 6) or 6))
-            state.dice = self._build_dice(state.roll_id, dice_values, faces, derived=list(roll_results.get("derived_dice", []) or []))
+            uses_d3_mapping = _uses_d3_from_d6(dict(getattr(state, "spec", {}) or {}))
+            normalized_values: List[Any] = []
+            for value in list(dice_values or []):
+                if isinstance(value, dict):
+                    normalized_values.append(dict(value))
+                    continue
+                if uses_d3_mapping:
+                    mapped = _clamp_die(_coerce_int(value, default=1), 3)
+                    normalized_values.append(
+                        {
+                            "value": int(mapped),
+                            "faces": 3,
+                            "raw_value": int(_clamp_die(int(mapped * 2 - 1), 6)),
+                            "raw_faces": 6,
+                        }
+                    )
+                    continue
+                resolved = _clamp_die(_coerce_int(value, default=1), int(faces))
+                normalized_values.append(
+                    {
+                        "value": int(resolved),
+                        "faces": int(faces),
+                        "raw_value": int(resolved),
+                        "raw_faces": int(faces),
+                    }
+                )
+            state.dice = self._build_dice(
+                state.roll_id,
+                normalized_values,
+                faces,
+                derived=list(roll_results.get("derived_dice", []) or []),
+            )
         state.total = int(roll_results.get("total", _sum_base_dice(state.dice)))
         if str(state.spec.get("display_kind", "") or "") == "d33":
             base_vals = [int(d.get("value", 0) or 0) for d in list(state.dice or []) if not bool(d.get("is_derived", False))]
@@ -793,9 +934,17 @@ class DiceRollManager:
                 continue
             if int(die.get("reroll_count", 0) or 0) >= 1:
                 continue
-            new_val = int(self._next_roll_value(state, faces, game))
+            outcome = dict(self._next_roll_outcome(state, faces, game) or {})
+            new_val = _coerce_int(outcome.get("value", 1), default=1)
+            new_faces = _coerce_int(outcome.get("faces", faces), default=faces)
+            new_raw_val = _coerce_int(outcome.get("raw_value", new_val), default=new_val)
+            new_raw_faces = _coerce_int(outcome.get("raw_faces", new_faces), default=new_faces)
             die["rerolled_from"] = int(die.get("value", 0) or 0)
+            die["raw_rerolled_from"] = int(die.get("raw_value", die.get("value", 0)) or die.get("value", 0) or 0)
             die["value"] = int(new_val)
+            die["faces"] = int(max(1, new_faces))
+            die["raw_value"] = int(new_raw_val)
+            die["raw_faces"] = int(max(1, new_raw_faces))
             die["reroll_count"] = int(die.get("reroll_count", 0) or 0) + 1
             rerolled_ids.append(die_id)
 
@@ -831,6 +980,10 @@ class DiceRollManager:
                     action_id=str(action_id),
                     selected=list(chosen),
                     dice=[int(d.get("value", 0) or 0) for d in list(state.dice or [])],
+                    raw_dice=[
+                        int(d.get("raw_value", d.get("value", 0)) or d.get("value", 0) or 0)
+                        for d in list(state.dice or [])
+                    ],
                     total=int(state.total or 0),
                     reason=str(state.spec.get("reason", "") or ""),
                 )
@@ -867,11 +1020,17 @@ class DiceRollManager:
         spec = dict(getattr(state, "spec", {}) or {})
         player_obj = _resolve_player(game, state.player_id)
         unit_obj = _resolve_unit(game, spec.get("unit_id"))
-        base_dice = [
+        mapped_dice = [
             int(d.get("value", 0) or 0)
             for d in list(state.dice or [])
             if not bool(d.get("is_derived", False))
         ]
+        raw_dice = [
+            int(d.get("raw_value", d.get("value", 0)) or d.get("value", 0) or 0)
+            for d in list(state.dice or [])
+            if not bool(d.get("is_derived", False))
+        ]
+        mapping_mode = str(spec.get("value_mapping", "") or "").strip().lower()
         try:
             event_system.publish(
                 "roll_made",
@@ -880,7 +1039,9 @@ class DiceRollManager:
                 roll_type=str(spec.get("roll_type", "") or ""),
                 value=int(state.total or 0),
                 reroll=None,
-                dice=base_dice,
+                dice=mapped_dice,
+                raw_dice=raw_dice,
+                dice_mapping=mapping_mode if mapping_mode else None,
                 roll_id=int(state.roll_id),
                 reason=str(spec.get("reason", "") or ""),
                 needed=spec.get("target", spec.get("sum_target", None)),
@@ -905,6 +1066,7 @@ class DiceRollManager:
             "roll_id": int(state.roll_id),
             "faces": int(state.spec.get("faces", 6) or 6),
             "values": [int(d.get("value", 0) or 0) for d in list(state.dice or [])],
+            "raw_values": [int(d.get("raw_value", d.get("value", 0)) or d.get("value", 0) or 0) for d in list(state.dice or [])],
             "dice": [dict(d) for d in list(state.dice or [])],
             "total": int(state.total or 0),
             "reroll_options": [dict(r) for r in list(state.reroll_options or [])],
@@ -928,6 +1090,8 @@ class DiceRollManager:
                 "die_id": str(entry.get("die_id") or _die_id(state.roll_id, len(state.dice or []))),
                 "value": int(dval),
                 "faces": int(entry.get("faces", base_faces) or base_faces),
+                "raw_value": int(entry.get("raw_value", dval) or dval),
+                "raw_faces": int(entry.get("raw_faces", entry.get("faces", base_faces) or base_faces) or (entry.get("faces", base_faces) or base_faces)),
                 "is_derived": True,
                 "derived_kind": entry.get("derived_kind"),
                 "reroll_count": 0,

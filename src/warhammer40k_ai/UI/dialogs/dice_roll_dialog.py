@@ -443,6 +443,25 @@ class DiceRollDialog(BaseDialog):
             return "Modifiers: none"
         return f"Modifiers: {'; '.join(parts)}"
 
+    @staticmethod
+    def _format_d3_mapping_text(spec: Dict, state) -> str:
+        mode = str(spec.get("value_mapping", "") or "").strip().lower()
+        if mode != "d3_from_d6":
+            return ""
+        mapped = []
+        raw = []
+        for die in list(getattr(state, "dice", []) or []):
+            if bool(die.get("is_derived", False)):
+                continue
+            try:
+                mapped.append(int(die.get("value", 0) or 0))
+                raw.append(int(die.get("raw_value", die.get("value", 0)) or die.get("value", 0) or 0))
+            except Exception:
+                continue
+        if not mapped:
+            return ""
+        return f"D3 mapping: raw D6 {raw} -> D3 {mapped}"
+
     def draw(self, screen: pygame.Surface):
         if not self.visible:
             return
@@ -615,6 +634,18 @@ class DiceRollDialog(BaseDialog):
                 tag = self.font_small.render(f"Combined: {label}", True, TEXT_SECONDARY)
                 screen.blit(tag, (self.x + 20, y))
                 y += 18
+
+        mapping_text = self._format_d3_mapping_text(spec, state)
+        if mapping_text:
+            y = self.draw_text_wrapped(
+                screen,
+                mapping_text,
+                self.x + 20,
+                y + 2,
+                self.width - 40,
+                self.font_small,
+                TEXT_SECONDARY,
+            )
 
         condition_text = self._format_condition_text(spec)
         if condition_text:

@@ -263,6 +263,10 @@ class DeterministicEventLog:
         }
         if dice is not None:
             payload["dice"] = list(dice)
+        if "raw_dice" in kwargs:
+            payload["raw_dice"] = list(kwargs.get("raw_dice") or [])
+        if "dice_mapping" in kwargs and kwargs.get("dice_mapping") is not None:
+            payload["dice_mapping"] = str(kwargs.get("dice_mapping") or "")
         if "roll_id" in kwargs:
             payload["roll_id"] = kwargs.get("roll_id")
         if "reroll_locked" in kwargs:
@@ -299,6 +303,8 @@ class DeterministicEventLog:
             "total": kwargs.get("total"),
             "reason": kwargs.get("reason", None),
         }
+        if "raw_dice" in kwargs:
+            payload["raw_dice"] = list(kwargs.get("raw_dice", []) or [])
         self.record("roll_rerolled", actor_id=payload.get("player_id"), payload=payload, validate_payload=True)
 
     def _on_decision_requested(self, **kwargs: Any) -> None:

@@ -141,6 +141,10 @@ Setup phase uses this modal adapter in `SetupPhaseHandler._show_mission_selectio
   `stratagem`, `aura`, `core_rule`, `rule`) and optional aura range/distance fields when available.
 - Shadow of Chaos Daemonic Terror (`D3` mortal wounds on failed Battle-shock) now resolves through `REQUEST_DICE_ROLL`
   so the player sees an explicit `Make Roll` decision and resulting roll telemetry/events.
+- Legacy `utility.dice.get_roll(...)` calls now bridge into `REQUEST_DICE_ROLL` automatically when a game context is active,
+  ensuring old call sites still emit dice decision events and roll telemetry.
+- `D3` request rolls now resolve using a physical `D6` with explicit mapping (`1-2 => 1`, `3-4 => 2`, `5-6 => 3`).
+  Roll UI and telemetry expose both raw `D6` values and mapped `D3` results to avoid ambiguity.
 
 ### Battle-shock command step
 

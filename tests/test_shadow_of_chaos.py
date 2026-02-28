@@ -4,7 +4,8 @@ from unittest.mock import patch
 
 class _RandomStub:
     def randint(self, _min_val: int, _max_val: int) -> int:
-        return 2
+        # D3 request rolls map from raw D6; 4 maps to D3 value 2.
+        return 4
 
 
 class _EventSystemStub:
