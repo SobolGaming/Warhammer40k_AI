@@ -658,6 +658,18 @@ class Enhancement:
             is_hammer_of_the_emperor = bool(am_mgr and am_mgr.is_hammer_of_the_emperor())
         except Exception:
             is_hammer_of_the_emperor = False
+        try:
+            is_mechanised_assault = bool(am_mgr and am_mgr.is_mechanised_assault())
+        except Exception:
+            is_mechanised_assault = False
+        try:
+            is_recon_element = bool(am_mgr and am_mgr.is_recon_element())
+        except Exception:
+            is_recon_element = False
+        try:
+            is_siege_regiment = bool(am_mgr and am_mgr.is_siege_regiment())
+        except Exception:
+            is_siege_regiment = False
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
             is_houndpack_lance = bool(ck_mgr and ck_mgr.is_houndpack_lance())
@@ -1948,6 +1960,276 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_advance_augury_bearer_model_id"] = bearer_id
 
+        if name == "bold leadership" or enh_id == "000009861002":
+            if not is_mechanised_assault:
+                return
+            unit.special_rules["enhancement_bold_leadership"] = True
+            unit.special_rules["sticky_objectives"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["sticky_objectives_allow_embarked_transport"] = bool(
+                params.get("allow_embarked_transport", True)
+            )
+            unit.special_rules["enhancement_bold_leadership_source"] = "Bold Leadership"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_bold_leadership_bearer_model_id"] = bearer_id
+
+        if name == "sacred unguents" or enh_id == "000009861003":
+            if not is_mechanised_assault:
+                return
+            unit.special_rules["enhancement_sacred_unguents"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_value = params.get("range", getattr(desc, "range_in", 3.0) if desc is not None else 3.0)
+            try:
+                selection_range = float(range_value or 3.0)
+            except (TypeError, ValueError):
+                selection_range = 3.0
+            include_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("target_keywords_all", ("TRANSPORT",)) or ())
+                if str(v or "").strip()
+            ]
+            if not include_keywords:
+                include_keywords = ["TRANSPORT"]
+            exclude_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("exclude_target_keywords_any", ("AIRCRAFT", "TITANIC")) or ())
+                if str(v or "").strip()
+            ]
+            unit.special_rules["enhancement_sacred_unguents_range"] = float(max(0.0, selection_range))
+            unit.special_rules["enhancement_sacred_unguents_target_keywords_all"] = list(include_keywords)
+            unit.special_rules["enhancement_sacred_unguents_exclude_target_keywords_any"] = list(exclude_keywords)
+            unit.special_rules["enhancement_sacred_unguents_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_sacred_unguents_source"] = "Sacred Unguents"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_sacred_unguents_bearer_model_id"] = bearer_id
+
+        if name == "smoke grenades" or enh_id == "000009861004":
+            if not is_mechanised_assault:
+                return
+            unit.special_rules["enhancement_smoke_grenades"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_value = params.get("range", getattr(desc, "range_in", 3.0) if desc is not None else 3.0)
+            try:
+                aura_range = float(range_value or 3.0)
+            except (TypeError, ValueError):
+                aura_range = 3.0
+            unit.special_rules["enhancement_smoke_grenades_range"] = float(max(0.0, aura_range))
+            unit.special_rules["enhancement_smoke_grenades_require_wholly_within"] = bool(
+                params.get("require_wholly_within", True)
+            )
+            unit.special_rules["enhancement_smoke_grenades_require_friendly_transport"] = bool(
+                params.get("require_friendly_transport", True)
+            )
+            unit.special_rules["enhancement_smoke_grenades_grants_benefit_of_cover"] = bool(
+                params.get("grants_benefit_of_cover", True)
+            )
+            unit.special_rules["enhancement_smoke_grenades_grants_stealth"] = bool(
+                params.get("grants_stealth", True)
+            )
+            unit.special_rules["enhancement_smoke_grenades_source"] = "Smoke Grenades"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_smoke_grenades_bearer_model_id"] = bearer_id
+
+        if name == "vanguard honours" or enh_id == "000009861005":
+            if not is_mechanised_assault:
+                return
+            unit.special_rules["enhancement_vanguard_honours"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_vanguard_honours_allow_after_advance"] = bool(
+                params.get("allow_after_advance", True)
+            )
+            unit.special_rules["enhancement_vanguard_honours_force_cannot_charge_this_turn"] = bool(
+                params.get("force_cannot_charge_this_turn", True)
+            )
+            unit.special_rules["enhancement_vanguard_honours_source"] = "Vanguard Honours"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_vanguard_honours_bearer_model_id"] = bearer_id
+
+        if name == "guerrilla honours" or enh_id == "000009869002":
+            if not is_recon_element:
+                return
+            unit.special_rules["enhancement_guerrilla_honours"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            max_units = _coerce_int(params.get("max_units", 3) or 3, default=3)
+            allow_strategic = bool(params.get("allow_strategic_reserves", True))
+            filters = [
+                str(v or "").strip().upper()
+                for v in list(params.get("redeploy_filters", ("ASTRA MILITARUM", "INFANTRY")) or ())
+                if str(v or "").strip()
+            ]
+            if not filters:
+                filters = ["ASTRA MILITARUM", "INFANTRY"]
+            unit.special_rules["enhancement_guerrilla_honours_max_units"] = int(max(1, int(max_units)))
+            unit.special_rules["enhancement_guerrilla_honours_can_place_in_reserves"] = bool(allow_strategic)
+            unit.special_rules["enhancement_guerrilla_honours_filters"] = list(filters)
+            unit.special_rules["enhancement_guerrilla_honours_exclude_source_unit"] = bool(
+                params.get("exclude_source_unit", True)
+            )
+            unit.special_rules["enhancement_guerrilla_honours_source"] = "Guerrilla Honours"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_guerrilla_honours_bearer_model_id"] = bearer_id
+
+        if name == "scare gas grenades" or enh_id == "000009869003":
+            if not is_recon_element:
+                return
+            unit.special_rules["enhancement_scare_gas_grenades"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_value = params.get("range", getattr(desc, "range_in", 8.0) if desc is not None else 8.0)
+            try:
+                selection_range = float(range_value or 8.0)
+            except (TypeError, ValueError):
+                selection_range = 8.0
+            exclude_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("exclude_target_keywords_any", ("MONSTER", "VEHICLE")) or ())
+                if str(v or "").strip()
+            ]
+            ability_key = str(params.get("ability_key", "scare_gas_grenades") or "scare_gas_grenades").strip().lower()
+            unit.special_rules["enhancement_scare_gas_grenades_range"] = float(max(0.0, selection_range))
+            unit.special_rules["enhancement_scare_gas_grenades_exclude_target_keywords_any"] = list(exclude_keywords)
+            unit.special_rules["enhancement_scare_gas_grenades_ability_key"] = ability_key
+            unit.special_rules["enhancement_scare_gas_grenades_source"] = "Scare Gas Grenades"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_scare_gas_grenades_bearer_model_id"] = bearer_id
+
+        if name == "survival gear" or enh_id == "000009869004":
+            if not is_recon_element:
+                return
+            unit.special_rules["enhancement_survival_gear"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scout_distance = params.get("scouts_distance", 6.0)
+            try:
+                scout_distance_val = float(scout_distance or 6.0)
+            except (TypeError, ValueError):
+                scout_distance_val = 6.0
+            unit.special_rules["enhancement_survival_gear_scout_distance"] = float(max(0.0, scout_distance_val))
+            unit.special_rules["enhancement_survival_gear_source"] = "Survival Gear"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_survival_gear_bearer_model_id"] = bearer_id
+
+        if name == "tripwires" or enh_id == "000009869005":
+            if not is_recon_element:
+                return
+            unit.special_rules["enhancement_tripwires"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_value = params.get("range", getattr(desc, "range_in", 9.0) if desc is not None else 9.0)
+            try:
+                trigger_range = float(range_value or 9.0)
+            except (TypeError, ValueError):
+                trigger_range = 9.0
+            trigger_actions = [
+                str(v or "").strip().lower()
+                for v in list(params.get("trigger_actions", ("move", "advance", "charge", "fall_back")) or ())
+                if str(v or "").strip()
+            ]
+            if not trigger_actions:
+                trigger_actions = ["move", "advance", "charge", "fall_back"]
+            target_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("target_keywords_any", ("INFANTRY", "MOUNTED")) or ())
+                if str(v or "").strip()
+            ]
+            if not target_keywords:
+                target_keywords = ["INFANTRY", "MOUNTED"]
+            success_on = _coerce_int(params.get("success_on", 4) or 4, default=4)
+            hit_roll_modifier = _coerce_int(params.get("hit_roll_modifier", -1) or -1, default=-1)
+            unit.special_rules["enhancement_tripwires_range"] = float(max(0.0, trigger_range))
+            unit.special_rules["enhancement_tripwires_trigger_actions"] = list(trigger_actions)
+            unit.special_rules["enhancement_tripwires_target_keywords_any"] = list(target_keywords)
+            unit.special_rules["enhancement_tripwires_success_on"] = int(max(2, min(6, int(success_on))))
+            unit.special_rules["enhancement_tripwires_hit_roll_modifier"] = int(min(0, int(hit_roll_modifier)))
+            unit.special_rules["enhancement_tripwires_source"] = "Tripwires"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_tripwires_bearer_model_id"] = bearer_id
+
+        if name == "eager advance" or enh_id == "000009857002":
+            if not is_siege_regiment:
+                return
+            unit.special_rules["enhancement_eager_advance"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scout_distance = params.get("scouts_distance", 6.0)
+            try:
+                scout_distance_val = float(scout_distance or 6.0)
+            except (TypeError, ValueError):
+                scout_distance_val = 6.0
+            target_keyword = str(params.get("target_keyword", "REGIMENT") or "REGIMENT").strip().upper()
+            unit.special_rules["enhancement_eager_advance_scout_distance"] = float(max(0.0, scout_distance_val))
+            unit.special_rules["enhancement_eager_advance_target_keyword"] = target_keyword if target_keyword else "REGIMENT"
+            unit.special_rules["enhancement_eager_advance_requires_leading"] = bool(
+                params.get("requires_leading", True)
+            )
+            unit.special_rules["enhancement_eager_advance_source"] = "Eager Advance"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eager_advance_bearer_model_id"] = bearer_id
+
+        if name == "flash grenades" or enh_id == "000009857003":
+            if not is_siege_regiment:
+                return
+            unit.special_rules["enhancement_flash_grenades"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_flash_grenades_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_flash_grenades_source"] = "Flash Grenades"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_flash_grenades_bearer_model_id"] = bearer_id
+
+        if name == "legacy sidearm" or enh_id == "000009857004":
+            if not is_siege_regiment:
+                return
+            unit.special_rules["enhancement_legacy_sidearm"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            attacks_bonus = _coerce_int(params.get("attacks_bonus", 2) or 2, default=2)
+            weapon_keyword = str(params.get("weapon_keyword", "PISTOL") or "PISTOL").strip().upper()
+            unit.special_rules["enhancement_legacy_sidearm_attacks_bonus"] = int(max(0, int(attacks_bonus)))
+            unit.special_rules["enhancement_legacy_sidearm_weapon_keyword"] = weapon_keyword if weapon_keyword else "PISTOL"
+            unit.special_rules["enhancement_legacy_sidearm_bearer_only"] = bool(params.get("bearer_only", True))
+            unit.special_rules["enhancement_legacy_sidearm_source"] = "Legacy Sidearm"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_legacy_sidearm_bearer_model_id"] = bearer_id
+
+        if name in ("stalwart's honours", "stalwarts honours") or enh_id == "000009857005":
+            if not is_siege_regiment:
+                return
+            unit.special_rules["enhancement_stalwarts_honours"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            add_order_key = str(params.get("additional_order_key", "TAKE_COVER") or "TAKE_COVER").strip().upper()
+            unit.special_rules["enhancement_stalwarts_honours_additional_order_key"] = (
+                add_order_key if add_order_key else "TAKE_COVER"
+            )
+            unit.special_rules["enhancement_stalwarts_honours_requires_leading"] = bool(
+                params.get("requires_leading", True)
+            )
+            unit.special_rules["enhancement_stalwarts_honours_source"] = "Stalwart's Honours"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_stalwarts_honours_bearer_model_id"] = bearer_id
+
         if name == "calm under fire" or enh_id == "000009865002":
             if not is_hammer_of_the_emperor:
                 return
@@ -1965,6 +2247,27 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_calm_under_fire_bearer_model_id"] = bearer_id
+
+        if name == "indomitable steed" or enh_id == "000009865003":
+            if not is_hammer_of_the_emperor:
+                return
+            unit.special_rules["enhancement_indomitable_steed"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            feel_no_pain = _coerce_int(params.get("feel_no_pain", 6) or 6, default=6)
+            feel_no_pain = int(max(2, min(6, feel_no_pain)))
+            tag = f"enhancement_fnp_{enh_id or name}"
+            _ensure_enhancement_fnp_entry(
+                unit,
+                feel_no_pain,
+                source="Indomitable Steed",
+                tag=tag,
+            )
+            unit.special_rules["enhancement_indomitable_steed_fnp"] = int(feel_no_pain)
+            unit.special_rules["enhancement_indomitable_steed_source"] = "Indomitable Steed"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_indomitable_steed_bearer_model_id"] = bearer_id
 
         if name == "regimental banner" or enh_id == "000009865004":
             if not is_hammer_of_the_emperor:

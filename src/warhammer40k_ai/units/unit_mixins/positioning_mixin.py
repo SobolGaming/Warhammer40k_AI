@@ -7749,6 +7749,11 @@ class PositioningMixin:
         smoke_fn = getattr(am_mgr, "siege_regiment_smoke_shells_stealth_applies", None) if am_mgr is not None else None
         if callable(smoke_fn) and bool(smoke_fn(self)):
             return True
+        mechanised_smoke_fn = (
+            getattr(am_mgr, "mechanised_assault_smoke_grenades_stealth_applies", None) if am_mgr is not None else None
+        )
+        if callable(mechanised_smoke_fn) and bool(mechanised_smoke_fn(self)):
+            return True
         # Use cached result if available
         if 'stealth' in getattr(self, '_ability_cache', {}):
             found = self._ability_cache['stealth']
@@ -7905,9 +7910,25 @@ class PositioningMixin:
         scout_fn = getattr(dg_mgr, "verminous_haze_scout_distance_for_unit", None) if dg_mgr is not None else None
         if callable(scout_fn):
             verminous_haze_distance = float(scout_fn(self) or 0.0)
+        am_scout_dynamic = False
+        recon_survival_gear_distance = 0.0
+        siege_eager_advance_distance = 0.0
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        recon_scout_fn = (
+            getattr(am_mgr, "recon_element_survival_gear_scout_distance", None) if am_mgr is not None else None
+        )
+        if callable(recon_scout_fn):
+            am_scout_dynamic = True
+            recon_survival_gear_distance = float(recon_scout_fn(self) or 0.0)
+        siege_scout_fn = (
+            getattr(am_mgr, "siege_regiment_eager_advance_scout_distance", None) if am_mgr is not None else None
+        )
+        if callable(siege_scout_fn):
+            am_scout_dynamic = True
+            siege_eager_advance_distance = float(siege_scout_fn(self) or 0.0)
 
         # Use cached result if available
-        if (not verminous_haze_active) and 'scout' in getattr(self, '_ability_cache', {}):
+        if (not verminous_haze_active) and (not am_scout_dynamic) and 'scout' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['scout']
         
         try:
@@ -7954,6 +7975,12 @@ class PositioningMixin:
         if verminous_haze_distance > 0:
             found = True
             dist = max(float(dist or 0.0), float(verminous_haze_distance))
+        if recon_survival_gear_distance > 0:
+            found = True
+            dist = max(float(dist or 0.0), float(recon_survival_gear_distance))
+        if siege_eager_advance_distance > 0:
+            found = True
+            dist = max(float(dist or 0.0), float(siege_eager_advance_distance))
         result = (True, float(dist)) if found else (False, 0.0)
 
         # Attached units can only Scout if every model has Scouts (use smallest distance if mixed).
@@ -7980,7 +8007,7 @@ class PositioningMixin:
             pass
         
         # Cache the result when there are no dynamic Verminous Haze state checks.
-        if not verminous_haze_active:
+        if (not verminous_haze_active) and (not am_scout_dynamic):
             if not hasattr(self, '_ability_cache'):
                 self._ability_cache = {}
             self._ability_cache['scout'] = result
@@ -8147,6 +8174,37 @@ class PositioningMixin:
             self._ability_cache["redeploy_ability_name"] = ability_name
             self._ability_cache["redeploy_requires_source_on_battlefield"] = False
             self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = False
+            return result
+
+        if isinstance(sr, dict) and bool(sr.get("enhancement_guerrilla_honours", False)):
+            try:
+                count = int(sr.get("enhancement_guerrilla_honours_max_units", 3) or 3)
+            except (TypeError, ValueError):
+                count = 3
+            if count <= 0:
+                count = 1
+            can_place_in_reserves = bool(sr.get("enhancement_guerrilla_honours_can_place_in_reserves", True))
+            filters = [
+                str(v or "").strip().upper()
+                for v in list(sr.get("enhancement_guerrilla_honours_filters", []) or [])
+                if str(v or "").strip()
+            ]
+            ability_name = (
+                str(sr.get("enhancement_guerrilla_honours_source", "") or "Guerrilla Honours")
+                .strip()
+                or "Guerrilla Honours"
+            )
+            exclude_source_unit = bool(sr.get("enhancement_guerrilla_honours_exclude_source_unit", True))
+            result = (True, int(count), bool(can_place_in_reserves))
+            if not hasattr(self, "_ability_cache"):
+                self._ability_cache = {}
+            self._ability_cache["redeploy"] = result
+            if filters:
+                self._ability_cache["redeploy_filters"] = list(filters)
+            self._ability_cache["redeploy_ability_name"] = ability_name
+            self._ability_cache["redeploy_requires_source_on_battlefield"] = False
+            self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = False
+            self._ability_cache["redeploy_exclude_source_unit"] = bool(exclude_source_unit)
             return result
 
         if isinstance(sr, dict) and bool(sr.get("enhancement_skitarii_veiled_hunter", False)):

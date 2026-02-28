@@ -321,6 +321,184 @@ _HAMMER_OF_THE_EMPEROR_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HAMMER_OF_THE_EMPEROR_DESCRIPTORS.values()
 }
 
+_MECHANISED_ASSAULT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009861002": EnhancementToolDescriptor(
+        enhancement_id="000009861002",
+        name="Bold Leadership",
+        timing="end_of_command_phase",
+        target="controlled_objective_markers_within_bearer_unit_or_embarked_transport",
+        duration="until_opponent_controls_at_start_or_end_of_turn",
+        effect="sticky_objective_control",
+        effect_params={
+            "allow_embarked_transport": True,
+            "sticky_source": "unit_sticky_objective",
+        },
+    ),
+    "000009861003": EnhancementToolDescriptor(
+        enhancement_id="000009861003",
+        name="Sacred Unguents",
+        timing="start_of_shooting_phase",
+        target="friendly_transport_within_range",
+        duration="until_end_of_phase",
+        effect="selected_transport_reroll_hit",
+        range_in=3.0,
+        effect_params={
+            "target_keywords_all": ("TRANSPORT",),
+            "exclude_target_keywords_any": ("AIRCRAFT", "TITANIC"),
+            "reroll_hit": "full",
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000009861004": EnhancementToolDescriptor(
+        enhancement_id="000009861004",
+        name="Smoke Grenades",
+        timing="passive_while_wholly_within_range_of_transport",
+        target="bearer_unit",
+        duration="conditional",
+        effect="benefit_of_cover_and_stealth",
+        range_in=3.0,
+        effect_params={
+            "require_friendly_transport": True,
+            "require_wholly_within": True,
+            "grants_benefit_of_cover": True,
+            "grants_stealth": True,
+        },
+    ),
+    "000009861005": EnhancementToolDescriptor(
+        enhancement_id="000009861005",
+        name="Vanguard Honours",
+        timing="on_disembark_after_transport_advance",
+        target="bearer_unit",
+        duration="that_phase_and_turn",
+        effect="allow_disembark_after_advance_counts_as_normal_move_no_charge",
+        effect_params={
+            "allow_after_advance": True,
+            "force_cannot_charge_this_turn": True,
+        },
+    ),
+}
+
+_MECHANISED_ASSAULT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _MECHANISED_ASSAULT_DESCRIPTORS.values()
+}
+
+_RECON_ELEMENT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009869002": EnhancementToolDescriptor(
+        enhancement_id="000009869002",
+        name="Guerrilla Honours",
+        timing="after_deployment",
+        target="other_friendly_astra_militarum_infantry_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "allow_strategic_reserves": True,
+            "redeploy_filters": ("ASTRA MILITARUM", "INFANTRY"),
+            "exclude_source_unit": True,
+        },
+    ),
+    "000009869003": EnhancementToolDescriptor(
+        enhancement_id="000009869003",
+        name="Scare Gas Grenades",
+        timing="start_of_any_phase",
+        target="enemy_unit_within_range_excluding_monster_vehicle",
+        duration="instant",
+        effect="enemy_battleshock_test",
+        range_in=8.0,
+        once_per_battle=True,
+        effect_params={
+            "exclude_target_keywords_any": ("MONSTER", "VEHICLE"),
+            "ability_key": "scare_gas_grenades",
+        },
+    ),
+    "000009869004": EnhancementToolDescriptor(
+        enhancement_id="000009869004",
+        name="Survival Gear",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="grant_scouts",
+        effect_params={
+            "scouts_distance": 6.0,
+            "applies_to_bearer_only": True,
+        },
+    ),
+    "000009869005": EnhancementToolDescriptor(
+        enhancement_id="000009869005",
+        name="Tripwires",
+        timing="on_enemy_move_end_within_range",
+        target="enemy_infantry_or_mounted_unit",
+        duration="until_start_of_next_owner_turn_on_success",
+        effect="stun_on_roll",
+        range_in=9.0,
+        effect_params={
+            "trigger_actions": ("move", "advance", "charge", "fall_back"),
+            "target_keywords_any": ("INFANTRY", "MOUNTED"),
+            "roll": "D6",
+            "success_on": 4,
+            "hit_roll_modifier": -1,
+        },
+    ),
+}
+
+_RECON_ELEMENT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RECON_ELEMENT_DESCRIPTORS.values()
+}
+
+_SIEGE_REGIMENT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009857002": EnhancementToolDescriptor(
+        enhancement_id="000009857002",
+        name="Eager Advance",
+        timing="passive_while_leading",
+        target="bearer_led_regiment_unit",
+        duration="while_bearer_alive",
+        effect="grant_scouts",
+        effect_params={
+            "scouts_distance": 6.0,
+            "requires_leading": True,
+            "target_keyword": "REGIMENT",
+        },
+    ),
+    "000009857003": EnhancementToolDescriptor(
+        enhancement_id="000009857003",
+        name="Flash Grenades",
+        timing="overwatch_targeting",
+        target="enemy_units_targeting_bearer_unit_with_fire_overwatch",
+        duration="constant_while_bearer_alive",
+        effect="prevent_fire_overwatch_against_bearer_unit",
+        effect_params={"requires_bearer_alive": True},
+    ),
+    "000009857004": EnhancementToolDescriptor(
+        enhancement_id="000009857004",
+        name="Legacy Sidearm",
+        timing="passive_on_attack_characteristic",
+        target="bearer_pistols",
+        duration="constant",
+        effect="add_pistol_attacks",
+        effect_params={
+            "attacks_bonus": 2,
+            "weapon_keyword": "PISTOL",
+            "bearer_only": True,
+        },
+    ),
+    "000009857005": EnhancementToolDescriptor(
+        enhancement_id="000009857005",
+        name="Stalwart's Honours",
+        timing="when_issued_order_while_leading",
+        target="bearer_led_unit",
+        duration="order_duration",
+        effect="also_apply_take_cover_order",
+        effect_params={
+            "requires_leading": True,
+            "additional_order_key": "TAKE_COVER",
+        },
+    ),
+}
+
+_SIEGE_REGIMENT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SIEGE_REGIMENT_DESCRIPTORS.values()
+}
+
 _POSSESSED_SLAUGHTERBAND_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010082002": EnhancementToolDescriptor(
         enhancement_id="000010082002",
@@ -4957,6 +5135,15 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _HAMMER_OF_THE_EMPEROR_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _MECHANISED_ASSAULT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
+        desc = _RECON_ELEMENT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
+        desc = _SIEGE_REGIMENT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _POSSESSED_SLAUGHTERBAND_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5228,6 +5415,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _BRIDGEHEAD_STRIKE_BY_NAME.get(key)
         or _COMBINED_ARMS_BY_NAME.get(key)
         or _HAMMER_OF_THE_EMPEROR_BY_NAME.get(key)
+        or _MECHANISED_ASSAULT_BY_NAME.get(key)
+        or _RECON_ELEMENT_BY_NAME.get(key)
+        or _SIEGE_REGIMENT_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _ADEPTA_SORORITAS_ARMY_OF_FAITH_BY_NAME.get(key)

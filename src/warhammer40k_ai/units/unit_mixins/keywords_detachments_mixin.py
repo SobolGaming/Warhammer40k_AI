@@ -7733,6 +7733,42 @@ class KeywordsDetachmentsMixin:
                     reroll_full = True
                     source_name = str(source or "Merciless Denunciation").strip() or "Merciless Denunciation"
                     reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+            am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+            sacred_fn = getattr(
+                am_mgr,
+                "mechanised_assault_sacred_unguents_hit_reroll_mods",
+                None,
+            ) if am_mgr is not None else None
+            if callable(sacred_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                sacred_mods = sacred_fn(
+                    model,
+                    target,
+                    attack_type=attack_scope,
+                    game=game,
+                )
+                if isinstance(sacred_mods, dict):
+                    if bool(sacred_mods.get("reroll_full", False)):
+                        reroll_full = True
+                    for value in list(
+                        sacred_mods.get("reroll_values", sacred_mods.get("reroll_hit_values", ())) or ()
+                    ):
+                        try:
+                            reroll_values.add(int(value))
+                        except Exception:
+                            continue
+                    for reason in list(
+                        sacred_mods.get("reroll_reasons", sacred_mods.get("reroll_hit_reasons", ())) or ()
+                    ):
+                        reason_text = str(reason or "").strip()
+                        if reason_text:
+                            reroll_reasons.append(reason_text)
+                    for reason in list(
+                        sacred_mods.get("reroll_full_reasons", sacred_mods.get("reroll_hit_full_reasons", ())) or ()
+                    ):
+                        reason_text = str(reason or "").strip()
+                        if reason_text:
+                            reroll_full_reasons.append(reason_text)
         seen = set()
         deduped_reasons: list[str] = []
         for reason in reroll_reasons:

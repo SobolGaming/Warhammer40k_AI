@@ -3953,6 +3953,40 @@ class Game(
                             range_value=int(trigger_range),
                         )
 
+            am_mgr = getattr(reacting_army, "astra_militarum_detachments", None)
+            if am_mgr is not None:
+                tripwires_fn = getattr(am_mgr, "recon_element_tripwires_on_enemy_move_ended", None)
+                if callable(tripwires_fn):
+                    outcomes = list(
+                        tripwires_fn(
+                            moving_root,
+                            action=action_key,
+                            game=self,
+                            player=reacting_player,
+                        )
+                        or []
+                    )
+                    if outcomes:
+                        mover_name = str(getattr(moving_root, "name", "Unit") or "Unit")
+                        for outcome in outcomes:
+                            source_name = str(outcome.get("source_name", "") or "Tripwires").strip() or "Tripwires"
+                            roll = int(outcome.get("roll", 0) or 0)
+                            success_on = int(outcome.get("success_on", 4) or 4)
+                            append_dice(
+                                reacting_player,
+                                f"{source_name}: {mover_name} triggered Tripwires, rolled {roll} (need {success_on}+).",
+                            )
+                            if bool(outcome.get("applied", False)):
+                                append_action(
+                                    reacting_player,
+                                    f"{source_name}: {mover_name} is stunned and suffers -1 to hit until your next Command phase.",
+                                )
+                            else:
+                                append_action(
+                                    reacting_player,
+                                    f"{source_name}: no effect on {mover_name}.",
+                                )
+
             ae_mgr = getattr(reacting_army, "aeldari_detachments", None)
             if ae_mgr is None:
                 continue

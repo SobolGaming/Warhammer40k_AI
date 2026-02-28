@@ -1443,3 +1443,388 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         if self._unit_is_squadron_model(root, attacker_model) and target_is_monster_or_vehicle:
             return True, "Born Soldiers"
         return False, ""
+
+    def _unit_is_transport_unit(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if self._unit_has_keyword(root, "TRANSPORT"):
+            return True
+        return bool(getattr(root, "is_transport", False))
+
+    def _unit_is_aircraft_or_titanic(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if self._unit_has_keyword(root, "AIRCRAFT"):
+            return True
+        if self._unit_has_keyword(root, "TITANIC"):
+            return True
+        return bool(getattr(root, "is_aircraft", False))
+
+    def _smoke_grenades_active_spec(self, unit) -> tuple[bool, str]:
+        if not self.is_mechanised_assault():
+            return False, ""
+        root = self._unit_root(unit)
+        if root is None:
+            return False, ""
+        if not self._unit_in_army(root):
+            return False, ""
+        source_unit, sr = self._attached_unit_enhancement_source(root, "enhancement_smoke_grenades")
+        if source_unit is None or not isinstance(sr, dict):
+            return False, ""
+        if not bool(sr.get("enhancement_smoke_grenades_require_friendly_transport", True)):
+            source = str(sr.get("enhancement_smoke_grenades_source", "") or "Smoke Grenades").strip()
+            return True, source or "Smoke Grenades"
+        try:
+            range_value = float(sr.get("enhancement_smoke_grenades_range", 3.0) or 3.0)
+        except (TypeError, ValueError):
+            range_value = 3.0
+        range_value = max(0.0, float(range_value))
+        require_wholly_within = bool(sr.get("enhancement_smoke_grenades_require_wholly_within", True))
+
+        from ..utility.aura_utils import unit_wholly_within_range_of_unit, unit_within_range_of_unit
+
+        for friendly in self._friendly_battlefield_roots():
+            if friendly is None or friendly is root:
+                continue
+            if not self._unit_is_transport_unit(friendly):
+                continue
+            if require_wholly_within:
+                in_range = bool(
+                    unit_wholly_within_range_of_unit(
+                        friendly,
+                        root,
+                        range_value,
+                        use_attached_aggregate=True,
+                    )
+                )
+            else:
+                in_range = bool(
+                    unit_within_range_of_unit(
+                        friendly,
+                        root,
+                        range_value,
+                        use_attached_aggregate=True,
+                    )
+                )
+            if not in_range:
+                continue
+            source = str(sr.get("enhancement_smoke_grenades_source", "") or "Smoke Grenades").strip()
+            return True, source or "Smoke Grenades"
+        return False, ""
+
+    def mechanised_assault_smoke_grenades_benefit_of_cover(
+        self,
+        target_model,
+        *,
+        attack_type: str = "any",
+    ) -> tuple[bool, str]:
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return False, ""
+        unit = getattr(target_model, "parent_unit", None)
+        active, source = self._smoke_grenades_active_spec(unit)
+        if not active:
+            return False, ""
+        return True, source or "Smoke Grenades"
+
+    def mechanised_assault_smoke_grenades_stealth_applies(self, unit) -> bool:
+        active, _source = self._smoke_grenades_active_spec(unit)
+        return bool(active)
+
+    def recon_element_survival_gear_scout_distance(self, unit) -> float:
+        if not self.is_recon_element():
+            return 0.0
+        if unit is None:
+            return 0.0
+        root = self._unit_root(unit)
+        if root is None:
+            return 0.0
+        if not self._unit_in_army(root):
+            return 0.0
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_survival_gear", False)):
+            return 0.0
+        if not self._enhancement_bearer_alive(unit, sr, bearer_key="enhancement_survival_gear_bearer_model_id"):
+            return 0.0
+        try:
+            distance = float(sr.get("enhancement_survival_gear_scout_distance", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            distance = 6.0
+        return max(0.0, float(distance))
+
+    def _eager_advance_distance_from_source(self, query_unit, source_unit, sr) -> float:
+        if source_unit is None or not isinstance(sr, dict):
+            return 0.0
+        if not bool(sr.get("enhancement_eager_advance", False)):
+            return 0.0
+        if not self._enhancement_bearer_alive(source_unit, sr, bearer_key="enhancement_eager_advance_bearer_model_id"):
+            return 0.0
+        try:
+            distance = float(sr.get("enhancement_eager_advance_scout_distance", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            distance = 6.0
+        distance = max(0.0, float(distance))
+        if distance <= 0:
+            return 0.0
+        requires_leading = bool(sr.get("enhancement_eager_advance_requires_leading", True))
+        if not requires_leading:
+            return distance
+        target_keyword = str(sr.get("enhancement_eager_advance_target_keyword", "REGIMENT") or "REGIMENT").strip().upper()
+        led_root = self._unit_root(getattr(source_unit, "attached_to", None))
+        if led_root is None:
+            return 0.0
+        if target_keyword and not self._unit_has_keyword(led_root, target_keyword):
+            return 0.0
+        query_root = self._unit_root(query_unit)
+        if query_unit is source_unit:
+            return distance
+        if query_root is not None and query_root is led_root:
+            return distance
+        return 0.0
+
+    def siege_regiment_eager_advance_scout_distance(self, unit) -> float:
+        if not self.is_siege_regiment():
+            return 0.0
+        if unit is None:
+            return 0.0
+        root = self._unit_root(unit)
+        if root is None:
+            return 0.0
+        if not self._unit_in_army(root):
+            return 0.0
+
+        max_distance = 0.0
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict):
+            max_distance = max(max_distance, self._eager_advance_distance_from_source(unit, unit, sr))
+
+        leaders = list(getattr(root, "attached_leaders", []) or [])
+        for leader in leaders:
+            if leader is None:
+                continue
+            leader_sr = getattr(leader, "special_rules", None)
+            if not isinstance(leader_sr, dict):
+                continue
+            max_distance = max(max_distance, self._eager_advance_distance_from_source(unit, leader, leader_sr))
+
+        return max(0.0, float(max_distance))
+
+    def mechanised_assault_sacred_unguents_hit_reroll_mods(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        attack_type: str = "any",
+        game=None,
+        game_map=None,
+        target_visible=None,
+    ) -> dict:
+        _ = target_unit
+        _ = game_map
+        _ = target_visible
+        if not self.is_mechanised_assault():
+            return {}
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return {}
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None:
+            return {}
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return {}
+        if not bool(sr.get("sacred_unguents_active", False)):
+            return {}
+        exp_phase = str(sr.get("sacred_unguents_expires_phase", "") or "").strip().upper()
+        if exp_phase:
+            game_obj = game
+            if game_obj is None:
+                try:
+                    army = root.get_parent_army()
+                    game_obj = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game_obj = None
+            phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            if phase_name and phase_name != exp_phase:
+                return {}
+        try:
+            effect_turn = int(sr.get("sacred_unguents_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        if effect_turn > 0:
+            game_obj = game
+            if game_obj is None:
+                try:
+                    army = root.get_parent_army()
+                    game_obj = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game_obj = None
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if current_turn and current_turn != effect_turn:
+                return {}
+        owner_id = str(sr.get("sacred_unguents_owner", "") or "").strip()
+        if owner_id:
+            try:
+                army = root.get_parent_army()
+                player = getattr(army, "player", None) if army is not None else None
+            except Exception:
+                player = None
+            current_owner_id = str(get_entity_id(player) or getattr(player, "id", "") or "").strip() if player is not None else ""
+            if current_owner_id and current_owner_id != owner_id:
+                return {}
+        source = str(sr.get("sacred_unguents_source", "") or "Sacred Unguents").strip() or "Sacred Unguents"
+        return {
+            "reroll_full": True,
+            "reroll_full_reasons": (f"{source}: re-roll Hit roll",),
+        }
+
+    def _apply_tripwires_stunned(
+        self,
+        target_root,
+        *,
+        owner_id: str,
+        source: str,
+        hit_roll_modifier: int,
+        turn: int,
+    ) -> None:
+        members = []
+        get_members = getattr(target_root, "get_attached_unit_members", None) if target_root is not None else None
+        if callable(get_members):
+            members = list(get_members() or [])
+        if not members and target_root is not None:
+            members = [target_root]
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["tripwires_stunned_active"] = True
+            sr["tripwires_stunned_owner"] = str(owner_id or "")
+            sr["tripwires_stunned_source"] = str(source or "Tripwires").strip() or "Tripwires"
+            sr["tripwires_stunned_hit_roll_modifier"] = int(min(0, int(hit_roll_modifier or -1)))
+            sr["tripwires_stunned_turn"] = int(turn or 0)
+            member.special_rules = sr
+
+    def recon_element_tripwires_on_enemy_move_ended(
+        self,
+        moving_unit,
+        *,
+        action: str,
+        game=None,
+        player=None,
+    ) -> list[dict]:
+        if not self.is_recon_element():
+            return []
+        action_key = str(action or "").strip().lower()
+        if action_key not in {"move", "advance", "charge", "fall_back"}:
+            return []
+        moving_root = self._unit_root(moving_unit)
+        if moving_root is None:
+            return []
+        if not self._unit_is_on_battlefield(moving_root):
+            return []
+        try:
+            owner_army = self.army
+            moving_army = moving_root.get_parent_army()
+        except Exception:
+            moving_army = None
+            owner_army = self.army
+        if owner_army is not None and moving_army is owner_army:
+            return []
+
+        outcome: list[dict] = []
+        game_obj = game if game is not None else self._current_game()
+        owner_player = player if player is not None else getattr(owner_army, "player", None)
+        owner_id = str(get_entity_id(owner_player) or getattr(owner_player, "id", "") or "")
+        if not owner_id and owner_player is not None:
+            owner_id = str(getattr(owner_player, "id", "") or "")
+        try:
+            current_turn = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        seen_sources: set[str] = set()
+        for friendly_root in self._friendly_battlefield_roots():
+            if friendly_root is None:
+                continue
+            source_id = self._entity_id(friendly_root)
+            if source_id and source_id in seen_sources:
+                continue
+            source_unit, sr = self._attached_unit_enhancement_source(friendly_root, "enhancement_tripwires")
+            if source_unit is None or not isinstance(sr, dict):
+                continue
+            if source_id:
+                seen_sources.add(source_id)
+
+            trigger_actions = {
+                str(v or "").strip().lower()
+                for v in list(sr.get("enhancement_tripwires_trigger_actions", ()) or ())
+                if str(v or "").strip()
+            }
+            if trigger_actions and action_key not in trigger_actions:
+                continue
+            target_keywords = {
+                str(v or "").strip().upper()
+                for v in list(sr.get("enhancement_tripwires_target_keywords_any", ("INFANTRY", "MOUNTED")) or ())
+                if str(v or "").strip()
+            }
+            if target_keywords:
+                has_valid_keyword = any(self._unit_has_keyword(moving_root, keyword) for keyword in target_keywords)
+                if not has_valid_keyword:
+                    continue
+            try:
+                trigger_range = float(sr.get("enhancement_tripwires_range", 9.0) or 9.0)
+            except (TypeError, ValueError):
+                trigger_range = 9.0
+            if trigger_range <= 0:
+                continue
+            if not bool(
+                unit_within_range_of_unit(
+                    friendly_root,
+                    moving_root,
+                    float(trigger_range),
+                    use_attached_aggregate=True,
+                )
+            ):
+                continue
+            try:
+                success_on = int(sr.get("enhancement_tripwires_success_on", 4) or 4)
+            except (TypeError, ValueError):
+                success_on = 4
+            success_on = max(2, min(6, int(success_on)))
+            try:
+                roll = int(get_roll("D6") or 0)
+            except Exception:
+                roll = 0
+            source_name = str(sr.get("enhancement_tripwires_source", "") or "Tripwires").strip() or "Tripwires"
+            applied = int(roll) >= int(success_on)
+            if applied:
+                try:
+                    hit_roll_modifier = int(sr.get("enhancement_tripwires_hit_roll_modifier", -1) or -1)
+                except (TypeError, ValueError):
+                    hit_roll_modifier = -1
+                self._apply_tripwires_stunned(
+                    moving_root,
+                    owner_id=owner_id,
+                    source=source_name,
+                    hit_roll_modifier=hit_roll_modifier,
+                    turn=int(current_turn),
+                )
+            outcome.append(
+                {
+                    "source_unit": friendly_root,
+                    "source_name": source_name,
+                    "roll": int(roll),
+                    "success_on": int(success_on),
+                    "applied": bool(applied),
+                    "target_unit": moving_root,
+                }
+            )
+        return outcome

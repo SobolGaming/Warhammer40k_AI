@@ -16623,21 +16623,42 @@ def _validate_choose_unleash_hell_vehicle(game: object, request: DecisionRequest
         return ("Unleash Hell target not found.",)
     if not getattr(target_unit, "is_alive", lambda: True)():
         return ("Unleash Hell target must be alive.",)
-    if not (getattr(target_unit, "is_vehicle", False) or getattr(target_unit, "is_transport", False)):
-        return ("Unleash Hell target must be a Vehicle or Transport.",)
 
     ctx = dict(getattr(request, "context", {}) or {})
+    ability = str(ctx.get("ability", "") or "unleash_hell").strip().lower()
     allowed_ids = ctx.get("allowed_unit_ids")
     if isinstance(allowed_ids, (list, tuple, set)):
         allowed = {str(x or "") for x in allowed_ids if str(x or "")}
         if allowed and str(target_val) not in allowed:
             return ("Unleash Hell target is not eligible.",)
 
-    transport_id = str(ctx.get("transport_id", "") or "")
-    if transport_id:
-        if str(target_val) != transport_id:
-            return ("Unleash Hell target must be the bearer transport.",)
-        return ()
+    if ability == "scare_gas_grenades":
+        target_is_vehicle = bool(getattr(target_unit, "is_vehicle", False) or getattr(target_unit, "is_transport", False))
+        target_has_keyword = getattr(target_unit, "has_any_keyword", None)
+        target_is_monster = bool(target_has_keyword("MONSTER")) if callable(target_has_keyword) else False
+        if target_is_vehicle or target_is_monster:
+            return ("Scare Gas Grenades target cannot be MONSTER or VEHICLE.",)
+        source_unit_id = str(ctx.get("source_unit_id", "") or "")
+        source_unit = resolve_unit(game, source_unit_id)
+        if source_unit is not None:
+            try:
+                source_army = source_unit.get_parent_army()
+            except Exception:
+                source_army = None
+            try:
+                target_army = target_unit.get_parent_army()
+            except Exception:
+                target_army = None
+            if source_army is not None and target_army is not None and source_army is target_army:
+                return ("Scare Gas Grenades target must be an enemy unit.",)
+    else:
+        if not (getattr(target_unit, "is_vehicle", False) or getattr(target_unit, "is_transport", False)):
+            return ("Unleash Hell target must be a Vehicle or Transport.",)
+        transport_id = str(ctx.get("transport_id", "") or "")
+        if transport_id:
+            if str(target_val) != transport_id:
+                return ("Unleash Hell target must be the bearer transport.",)
+            return ()
 
     bearer_id = str(ctx.get("bearer_model_id", "") or "")
     if bearer_id:
@@ -16687,11 +16708,72 @@ def _apply_choose_unleash_hell_vehicle(game: object, request: DecisionRequest, r
             player = source_unit.get_parent_army().player
         except Exception:
             player = None
+    ability = str(ctx.get("ability", "") or "unleash_hell").strip().lower()
     owner_id = str(getattr(player, "id", "") or "")
     try:
         current_turn = int(getattr(game, "turn", 0) or 0)
     except Exception:
         current_turn = 0
+
+    if ability == "sacred_unguents":
+        if not (getattr(target_unit, "is_vehicle", False) or getattr(target_unit, "is_transport", False)):
+            raise RuntimeError("Sacred Unguents target must be a Vehicle or Transport.")
+        sr = getattr(target_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["sacred_unguents_active"] = True
+        sr["sacred_unguents_owner"] = owner_id
+        sr["sacred_unguents_turn"] = int(current_turn)
+        sr["sacred_unguents_source"] = ability_name
+        if source_unit_id:
+            sr["sacred_unguents_source_unit_id"] = str(source_unit_id)
+        sr["sacred_unguents_expires_phase"] = "SHOOTING_PHASE"
+        sr["sacred_unguents_consumed"] = False
+        target_unit.special_rules = sr
+        try:
+            if player is not None:
+                sname = str(getattr(source_unit, "name", "Unit") or "Unit")
+                tname = str(getattr(target_unit, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"Sacred Unguents: {sname} blessed {tname}.")
+        except Exception:
+            pass
+        return target_unit
+
+    if ability == "scare_gas_grenades":
+        target_root = target_unit
+        try:
+            get_root = getattr(target_unit, "get_attached_unit_root", None)
+            if callable(get_root):
+                resolved_root = get_root()
+                if resolved_root is not None:
+                    target_root = resolved_root
+        except Exception:
+            target_root = target_unit
+        source_name = str(ability_name or "Scare Gas Grenades").strip() or "Scare Gas Grenades"
+        ability_key = str(ctx.get("ability_key", "") or "scare_gas_grenades").strip().lower() or "scare_gas_grenades"
+        if source_unit is not None:
+            mark_used = getattr(source_unit, "mark_unit_once_per_battle_used", None)
+            if callable(mark_used):
+                mark_used(ability_key, ability_name=source_name)
+            source_sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(source_sr, dict):
+                source_sr = {}
+            source_sr["enhancement_scare_gas_grenades_used"] = True
+            source_sr["enhancement_scare_gas_grenades_used_turn"] = int(current_turn)
+            source_sr["enhancement_scare_gas_grenades_used_owner"] = owner_id
+            source_unit.special_rules = source_sr
+        take_test = getattr(target_root, "take_battle_shock_test", None)
+        if callable(take_test):
+            take_test(int(current_turn or 1))
+        try:
+            if player is not None:
+                sname = str(getattr(source_unit, "name", "Unit") or "Unit")
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{source_name}: {sname} targeted {tname} for Battle-shock.")
+        except Exception:
+            pass
+        return target_root
+
     if not (getattr(target_unit, "is_vehicle", False) or getattr(target_unit, "is_transport", False)):
         raise RuntimeError("Unleash Hell target must be a Vehicle or Transport.")
     sr = getattr(target_unit, "special_rules", None)

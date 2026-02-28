@@ -4314,6 +4314,34 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(f"Enhancement +{bonus}A (melee)")
         except Exception:
             pass
+        try:
+            if self.parent_wargear and not self.parent_wargear.is_melee() and self.is_pistol():
+                sr = self._unit_special_rules(attacker)
+                if bool(sr.get("enhancement_legacy_sidearm", False)):
+                    weapon_keyword = str(sr.get("enhancement_legacy_sidearm_weapon_keyword", "PISTOL") or "PISTOL").strip().upper()
+                    if not weapon_keyword:
+                        weapon_keyword = "PISTOL"
+                    is_matching_keyword = weapon_keyword == "PISTOL" and self.is_pistol()
+                    if is_matching_keyword:
+                        bearer_only = bool(sr.get("enhancement_legacy_sidearm_bearer_only", True))
+                        if (not bearer_only) or self._attacker_is_enhancement_bearer(attacker, sr):
+                            bonus = int(sr.get("enhancement_legacy_sidearm_attacks_bonus", 2) or 2)
+                            if bonus:
+                                atk_mods.append(
+                                    Modifier(
+                                        ModifierOp.ADD,
+                                        int(bonus),
+                                        source="enhancement:legacy_sidearm_attacks_add",
+                                    )
+                                )
+                                source_name = str(
+                                    sr.get("enhancement_legacy_sidearm_source", "") or "Legacy Sidearm"
+                                ).strip() or "Legacy Sidearm"
+                                attack_result.attacks_special_modifiers.append(
+                                    f"{source_name} +{int(bonus)}A ({weapon_keyword})"
+                                )
+        except Exception:
+            pass
         if self.parent_wargear and self.parent_wargear.is_melee():
             sr = self._unit_special_rules(attacker)
             bearer_bonus = int(sr.get("enhancement_bearer_melee_attacks_bonus", 0) or 0)
@@ -9428,6 +9456,14 @@ class WargearProfile:
                     _add_hit_mod(-1, "-1 from Agonising Suppression (suppressed)")
                 if sr.get("post_shoot_suppressed_active"):
                     _add_hit_mod(-1, "-1 from Suppressed")
+                if sr.get("tripwires_stunned_active"):
+                    try:
+                        penalty = int(sr.get("tripwires_stunned_hit_roll_modifier", -1) or -1)
+                    except Exception:
+                        penalty = -1
+                    if penalty:
+                        source_name = str(sr.get("tripwires_stunned_source", "") or "Tripwires").strip() or "Tripwires"
+                        _add_hit_mod(int(penalty), f"{int(penalty)} from {source_name} (stunned)")
                 if sr.get("shooting_phase_hit_penalty_active"):
                     apply_penalty = True
                     exp = str(sr.get("shooting_phase_hit_penalty_expires_phase", "") or "").strip().upper()
@@ -18302,6 +18338,22 @@ class WargearProfile:
                 if has_cover:
                     attack_instance.setdefault("benefit_of_cover", True)
                     source_name = str(source or "Masters of Camouflage").strip() or "Masters of Camouflage"
+                    existing_source = str(attack_instance.get("benefit_of_cover_source", "") or "").strip()
+                    if not existing_source:
+                        attack_instance["benefit_of_cover_source"] = source_name
+                    elif source_name.lower() not in {
+                        part.strip().lower() for part in existing_source.split(",") if part.strip()
+                    }:
+                        attack_instance["benefit_of_cover_source"] = f"{existing_source}, {source_name}"
+            smoke_cover_fn = (
+                getattr(am_mgr, "mechanised_assault_smoke_grenades_benefit_of_cover", None) if am_mgr is not None else None
+            )
+            if callable(smoke_cover_fn):
+                attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+                has_cover, source = smoke_cover_fn(target_model, attack_type=attack_type)
+                if has_cover:
+                    attack_instance.setdefault("benefit_of_cover", True)
+                    source_name = str(source or "Smoke Grenades").strip() or "Smoke Grenades"
                     existing_source = str(attack_instance.get("benefit_of_cover_source", "") or "").strip()
                     if not existing_source:
                         attack_instance["benefit_of_cover_source"] = source_name

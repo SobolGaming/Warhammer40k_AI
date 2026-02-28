@@ -3625,6 +3625,43 @@ class ShootingMixin:
                         min_enemy = 0.0
                     if min_enemy > 0:
                         overrides["min_enemy_horizontal_distance"] = float(min_enemy)
+        vanguard_honours_active = False
+        try:
+            vanguard_honours_active = bool(
+                self._attached_unit_has_active_enhancement(
+                    "enhancement_vanguard_honours",
+                    enhancement_id="000009861005",
+                    enhancement_name="Vanguard Honours",
+                )
+            )
+        except Exception:
+            vanguard_honours_active = False
+        if vanguard_honours_active:
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in list(members or []):
+                if member is None:
+                    continue
+                member_sr = getattr(member, "special_rules", None)
+                if not isinstance(member_sr, dict) or not bool(member_sr.get("enhancement_vanguard_honours", False)):
+                    continue
+                allow_after_advance = bool(member_sr.get("enhancement_vanguard_honours_allow_after_advance", True))
+                force_cannot_charge = bool(
+                    member_sr.get("enhancement_vanguard_honours_force_cannot_charge_this_turn", True)
+                )
+                if allow_after_advance:
+                    overrides["allow_after_advance"] = True
+                if force_cannot_charge:
+                    overrides["force_cannot_charge_this_turn"] = True
+                break
         try:
             tsr = getattr(transport_unit, "special_rules", None)
         except Exception:

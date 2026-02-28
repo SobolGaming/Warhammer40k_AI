@@ -2322,18 +2322,21 @@ class GameSetupDeploymentReservesMixin:
                 filters = list(cache.get("redeploy_filters") or [])
                 excluded_keywords = list(cache.get("redeploy_excluded_keywords") or [])
                 filter_any_groups = list(cache.get("redeploy_filter_any_groups") or [])
+                exclude_source_unit = bool(cache.get("redeploy_exclude_source_unit", False))
                 ability_name = str(cache.get("redeploy_ability_name") or "")
                 if not ability_name:
                     ability_name = str(getattr(getattr(u, "enhancement", None), "name", "") or "Redeploy")
+                source_unit_id = get_entity_id(u)
+                used_unit_ids = [source_unit_id] if exclude_source_unit and source_unit_id else []
                 tokens.append(
                     {
-                        "source_unit_id": get_entity_id(u),
+                        "source_unit_id": source_unit_id,
                         "remaining": int(count or 0),
                         "can_place_in_reserves": bool(can_place_in_reserves),
                         "filters": list(filters),
                         "excluded_keywords": list(excluded_keywords),
                         "filter_any_groups": [list(group) for group in filter_any_groups],
-                        "used_unit_ids": [],
+                        "used_unit_ids": used_unit_ids,
                         "ability_name": ability_name,
                     }
                 )

@@ -227,6 +227,8 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_godhammer_assault_force_enhancements(player=player, phase=phase)
         self._on_phase_start_lords_of_dread_enhancements(player=player, phase=phase)
         self._on_phase_start_adepta_sororitas_enhancements(player=player, phase=phase)
+        self._on_phase_start_astra_militarum_enhancements(player=player, phase=phase)
+        self._on_phase_start_tripwires_stunned_cleanup(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
                 if p is None:
@@ -10812,6 +10814,350 @@ class GamePhaseHandlersMixin:
             sr["unleash_hell_prompt_owner"] = str(getattr(player, "id", "") or "")
             sr["unleash_hell_prompt_phase"] = pname
             unit.special_rules = sr
+
+    def _on_phase_start_astra_militarum_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if not pname:
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        from ...utility.aura_utils import distance_between_models_bases_3d, unit_within_range_of_unit
+        from ..decision_kinds import DECISION_SELECT_UNLEASH_HELL_VEHICLE
+
+        queue = getattr(self, "decision_queue", None)
+        pending = queue.list() if queue is not None else []
+
+        def _already_pending(*, source_unit_id: str, ability_key: str) -> bool:
+            if not source_unit_id:
+                return False
+            for req in list(pending or []):
+                try:
+                    if req.decision_type != DECISION_SELECT_UNLEASH_HELL_VEHICLE:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "").strip().lower() != ability_key:
+                        continue
+                    if str(ctx.get("source_unit_id", "") or "") != source_unit_id:
+                        continue
+                    return True
+                except Exception:
+                    continue
+            return False
+
+        # Mechanised Assault: Sacred Unguents (start of your Shooting phase).
+        if pname == "SHOOTING_PHASE" and player is not None and player is self.get_current_player():
+            army = self._get_player_army(player)
+            if army is not None:
+                am_mgr = getattr(army, "astra_militarum_detachments", None)
+                if am_mgr is not None and bool(getattr(am_mgr, "is_mechanised_assault", lambda: False)()):
+                    seen_sources: set[str] = set()
+                    for unit in list(getattr(army, "units", []) or []):
+                        if unit is None:
+                            continue
+                        try:
+                            root = unit.get_attached_unit_root()
+                        except Exception:
+                            root = unit
+                        if root is None or root is not unit:
+                            continue
+                        source_id = str(get_entity_id(root) or "")
+                        if not source_id or source_id in seen_sources:
+                            continue
+                        seen_sources.add(source_id)
+                        if not root.is_alive():
+                            continue
+                        if not bool(getattr(root, "deployed", True)):
+                            continue
+                        in_reserves_fn = getattr(root, "is_in_reserves", None)
+                        in_reserves = bool(in_reserves_fn()) if callable(in_reserves_fn) else (
+                            str(getattr(root, "reserve_status", "deployed")) in ("reserves", "strategic_reserves")
+                        )
+                        if in_reserves:
+                            continue
+                        if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                            continue
+                        sr = getattr(root, "special_rules", None)
+                        if not isinstance(sr, dict) or not bool(sr.get("enhancement_sacred_unguents", False)):
+                            continue
+                        get_bearer = getattr(root, "_get_enhancement_bearer_model", None)
+                        bearer_model = get_bearer() if callable(get_bearer) else None
+                        if bearer_model is None or not bool(getattr(bearer_model, "is_alive", False)):
+                            continue
+                        try:
+                            prompt_turn = int(sr.get("sacred_unguents_prompt_turn", 0) or 0)
+                        except Exception:
+                            prompt_turn = 0
+                        prompt_owner = str(sr.get("sacred_unguents_prompt_owner", "") or "")
+                        prompt_phase = str(sr.get("sacred_unguents_prompt_phase", "") or "").strip().upper()
+                        if (
+                            prompt_turn == int(getattr(self, "turn", 0) or 0)
+                            and prompt_owner == str(getattr(player, "id", "") or "")
+                            and prompt_phase == pname
+                        ):
+                            continue
+                        if _already_pending(source_unit_id=source_id, ability_key="sacred_unguents"):
+                            continue
+                        try:
+                            selection_range = float(sr.get("enhancement_sacred_unguents_range", 3.0) or 3.0)
+                        except Exception:
+                            selection_range = 3.0
+                        include_keywords = {
+                            str(v or "").strip().upper()
+                            for v in list(sr.get("enhancement_sacred_unguents_target_keywords_all", ("TRANSPORT",)) or ())
+                            if str(v or "").strip()
+                        }
+                        if not include_keywords:
+                            include_keywords = {"TRANSPORT"}
+                        exclude_keywords = {
+                            str(v or "").strip().upper()
+                            for v in list(sr.get("enhancement_sacred_unguents_exclude_target_keywords_any", ("AIRCRAFT", "TITANIC")) or ())
+                            if str(v or "").strip()
+                        }
+                        candidates: list[Any] = []
+                        seen_targets: set[str] = set()
+                        for candidate in list(getattr(army, "units", []) or []):
+                            if candidate is None:
+                                continue
+                            try:
+                                cand_root = candidate.get_attached_unit_root()
+                            except Exception:
+                                cand_root = candidate
+                            if cand_root is None or cand_root is not candidate:
+                                continue
+                            candidate_id = str(get_entity_id(cand_root) or "")
+                            if not candidate_id or candidate_id in seen_targets:
+                                continue
+                            seen_targets.add(candidate_id)
+                            if not cand_root.is_alive():
+                                continue
+                            if not bool(getattr(cand_root, "deployed", True)):
+                                continue
+                            try:
+                                if cand_root.is_in_reserves() or cand_root.is_embarked:
+                                    continue
+                            except Exception:
+                                pass
+                            if include_keywords:
+                                has_all = True
+                                for kw in include_keywords:
+                                    if not bool(getattr(cand_root, "has_any_keyword", lambda *_a: False)(kw)):
+                                        has_all = False
+                                        break
+                                if not has_all:
+                                    continue
+                            excluded = False
+                            for kw in exclude_keywords:
+                                if bool(getattr(cand_root, "has_any_keyword", lambda *_a: False)(kw)):
+                                    excluded = True
+                                    break
+                            if excluded:
+                                continue
+                            try:
+                                models = list(cand_root.get_attached_unit_models() or [])
+                            except Exception:
+                                models = list(getattr(cand_root, "models", []) or [])
+                            in_range = False
+                            for model in list(models or []):
+                                if not bool(getattr(model, "is_alive", False)):
+                                    continue
+                                if distance_between_models_bases_3d(bearer_model, model) <= selection_range + 1e-6:
+                                    in_range = True
+                                    break
+                            if in_range:
+                                candidates.append(cand_root)
+                        if not candidates:
+                            continue
+                        candidates = sorted(candidates, key=lambda u: str(get_entity_id(u) or ""))
+                        options = [DecisionOption.create("None", payload={"action": "skip"})]
+                        for candidate in candidates:
+                            options.append(
+                                DecisionOption.create(
+                                    str(getattr(candidate, "name", "Unit") or "Unit"),
+                                    payload={"unit_id": get_entity_id(candidate)},
+                                )
+                            )
+                        ctx = {
+                            "ability": "sacred_unguents",
+                            "ability_name": "Sacred Unguents",
+                            "source_unit_id": source_id,
+                            "bearer_model_id": get_entity_id(bearer_model),
+                            "range": float(max(0.0, selection_range)),
+                            "allowed_unit_ids": [str(get_entity_id(c) or "") for c in candidates],
+                        }
+                        request = DecisionRequest.create(
+                            DECISION_SELECT_UNLEASH_HELL_VEHICLE,
+                            "Sacred Unguents: select a friendly Transport to bless.",
+                            player_id=getattr(player, "id", None),
+                            options=options,
+                            context=ctx,
+                        )
+                        self.request_decision(request)
+                        sr["sacred_unguents_prompt_turn"] = int(getattr(self, "turn", 0) or 0)
+                        sr["sacred_unguents_prompt_owner"] = str(getattr(player, "id", "") or "")
+                        sr["sacred_unguents_prompt_phase"] = pname
+                        root.special_rules = sr
+
+        # Recon Element: Scare Gas Grenades (start of any phase, once per battle).
+        for owner_player in list(getattr(self, "players", []) or []):
+            if owner_player is None:
+                continue
+            owner_army = self._get_player_army(owner_player)
+            if owner_army is None:
+                continue
+            am_mgr = getattr(owner_army, "astra_militarum_detachments", None)
+            if am_mgr is None or not bool(getattr(am_mgr, "is_recon_element", lambda: False)()):
+                continue
+            enemy_roots = self._collect_enemy_unit_roots(owner_player)
+            if not enemy_roots:
+                continue
+            seen_sources: set[str] = set()
+            for unit in list(getattr(owner_army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or root is not unit:
+                    continue
+                source_id = str(get_entity_id(root) or "")
+                if not source_id or source_id in seen_sources:
+                    continue
+                seen_sources.add(source_id)
+                if not root.is_alive():
+                    continue
+                if not bool(getattr(root, "deployed", True)):
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                source_unit, sr = am_mgr._attached_unit_enhancement_source(root, "enhancement_scare_gas_grenades")
+                if source_unit is None or not isinstance(sr, dict):
+                    continue
+                ability_key = str(
+                    sr.get("enhancement_scare_gas_grenades_ability_key", "scare_gas_grenades") or "scare_gas_grenades"
+                ).strip().lower()
+                has_used = getattr(source_unit, "has_used_unit_once_per_battle", None)
+                if callable(has_used) and bool(has_used(ability_key)):
+                    continue
+                if bool(sr.get("enhancement_scare_gas_grenades_used", False)):
+                    continue
+                get_bearer = getattr(source_unit, "_get_enhancement_bearer_model", None)
+                bearer_model = get_bearer() if callable(get_bearer) else None
+                if bearer_model is None or not bool(getattr(bearer_model, "is_alive", False)):
+                    continue
+                try:
+                    prompt_turn = int(sr.get("scare_gas_prompt_turn", 0) or 0)
+                except Exception:
+                    prompt_turn = 0
+                prompt_owner = str(sr.get("scare_gas_prompt_owner", "") or "")
+                prompt_phase = str(sr.get("scare_gas_prompt_phase", "") or "").strip().upper()
+                if (
+                    prompt_turn == int(getattr(self, "turn", 0) or 0)
+                    and prompt_owner == str(getattr(owner_player, "id", "") or "")
+                    and prompt_phase == pname
+                ):
+                    continue
+                if _already_pending(source_unit_id=source_id, ability_key="scare_gas_grenades"):
+                    continue
+                try:
+                    selection_range = float(sr.get("enhancement_scare_gas_grenades_range", 8.0) or 8.0)
+                except Exception:
+                    selection_range = 8.0
+                excluded_keywords = {
+                    str(v or "").strip().upper()
+                    for v in list(sr.get("enhancement_scare_gas_grenades_exclude_target_keywords_any", ()) or ())
+                    if str(v or "").strip()
+                }
+                candidates: list[Any] = []
+                for enemy_root in list(enemy_roots or []):
+                    if enemy_root is None or not enemy_root.is_alive():
+                        continue
+                    excluded = False
+                    for keyword in excluded_keywords:
+                        if bool(getattr(enemy_root, "has_any_keyword", lambda *_a: False)(keyword)):
+                            excluded = True
+                            break
+                    if excluded:
+                        continue
+                    if not bool(
+                        unit_within_range_of_unit(
+                            root,
+                            enemy_root,
+                            float(max(0.0, selection_range)),
+                            use_attached_aggregate=True,
+                        )
+                    ):
+                        continue
+                    candidates.append(enemy_root)
+                if not candidates:
+                    continue
+                candidates = sorted(candidates, key=lambda u: str(get_entity_id(u) or ""))
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                for candidate in candidates:
+                    options.append(
+                        DecisionOption.create(
+                            str(getattr(candidate, "name", "Unit") or "Unit"),
+                            payload={"unit_id": get_entity_id(candidate)},
+                        )
+                    )
+                ctx = {
+                    "ability": "scare_gas_grenades",
+                    "ability_name": "Scare Gas Grenades",
+                    "ability_key": ability_key,
+                    "source_unit_id": source_id,
+                    "bearer_model_id": get_entity_id(bearer_model),
+                    "range": float(max(0.0, selection_range)),
+                    "allowed_unit_ids": [str(get_entity_id(c) or "") for c in candidates],
+                }
+                request = DecisionRequest.create(
+                    DECISION_SELECT_UNLEASH_HELL_VEHICLE,
+                    "Scare Gas Grenades: select an enemy unit to take a Battle-shock test.",
+                    player_id=getattr(owner_player, "id", None),
+                    options=options,
+                    context=ctx,
+                )
+                self.request_decision(request)
+                sr["scare_gas_prompt_turn"] = int(getattr(self, "turn", 0) or 0)
+                sr["scare_gas_prompt_owner"] = str(getattr(owner_player, "id", "") or "")
+                sr["scare_gas_prompt_phase"] = pname
+                source_unit.special_rules = sr
+
+    def _on_phase_start_tripwires_stunned_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("tripwires_stunned_owner", "") or "") != owner_id:
+                    continue
+                if not bool(sr.get("tripwires_stunned_active", False)):
+                    continue
+                for key in (
+                    "tripwires_stunned_active",
+                    "tripwires_stunned_owner",
+                    "tripwires_stunned_source",
+                    "tripwires_stunned_hit_roll_modifier",
+                    "tripwires_stunned_turn",
+                ):
+                    sr.pop(key, None)
+                unit.special_rules = sr
 
     def _on_phase_start_chaos_daemons_detachment_rules(self, player=None, phase=None, **_kwargs) -> None:
         """Phase start: snapshot objective-range state for Blood Legion Blood Tainted tracking."""
