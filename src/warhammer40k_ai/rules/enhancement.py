@@ -643,6 +643,10 @@ class Enhancement:
         )
         am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
         try:
+            is_bridgehead_strike = bool(am_mgr and am_mgr.is_bridgehead_strike())
+        except Exception:
+            is_bridgehead_strike = False
+        try:
             is_grizzled_company = bool(am_mgr and am_mgr.is_grizzled_company())
         except Exception:
             is_grizzled_company = False
@@ -1853,6 +1857,88 @@ class Enhancement:
             unit.special_rules["enhancement_laud_hailer_order_range"] = float(max(0.0, order_range))
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name in ("bombast-class vox-array", "bombast class vox array") or enh_id == "000009801002":
+            if not is_bridgehead_strike:
+                return
+            unit.special_rules["enhancement_bombast_class_vox_array"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            max_targets = _coerce_int(params.get("max_order_targets", 3) or 3, default=3)
+            order_target_keyword = str(
+                params.get("order_target_keyword", "REGIMENT") or "REGIMENT"
+            ).strip().upper()
+            if not order_target_keyword:
+                order_target_keyword = "REGIMENT"
+            unit.special_rules["enhancement_bombast_class_vox_array_max_targets"] = int(
+                max(1, int(max_targets))
+            )
+            unit.special_rules["enhancement_bombast_class_vox_array_order_target_keyword"] = order_target_keyword
+            unit.special_rules["enhancement_bombast_class_vox_array_requires_master_vox"] = bool(
+                params.get("requires_master_vox", True)
+            )
+            unit.special_rules["enhancement_bombast_class_vox_array_source"] = "Bombast-class Vox-array"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_bombast_class_vox_array_bearer_model_id"] = bearer_id
+
+        if name == "priority-drop beacon" or enh_id == "000009801003":
+            if not is_bridgehead_strike:
+                return
+            unit.special_rules["enhancement_priority_drop_beacon"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            setup_round_bonus = _coerce_int(
+                params.get("strategic_reserves_setup_round_bonus", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_priority_drop_beacon_round_bonus"] = int(
+                max(0, int(setup_round_bonus))
+            )
+            unit.special_rules["enhancement_priority_drop_beacon_requires_deep_strike"] = bool(
+                params.get("requires_deep_strike", True)
+            )
+            unit.special_rules["enhancement_priority_drop_beacon_source"] = "Priority-drop Beacon"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_priority_drop_beacon_bearer_model_id"] = bearer_id
+
+        if name == "shroud projector" or enh_id == "000009801004":
+            if not is_bridgehead_strike:
+                return
+            unit.special_rules["enhancement_shroud_projector"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_shroud_projector_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_shroud_projector_source"] = "Shroud Projector"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_shroud_projector_bearer_model_id"] = bearer_id
+
+        if name == "advance augury" or enh_id == "000009801005":
+            if not is_bridgehead_strike:
+                return
+            unit.special_rules["enhancement_advance_augury"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            max_units = _coerce_int(params.get("max_units", 3) or 3, default=3)
+            allow_strategic = bool(params.get("allow_strategic_reserves", True))
+            filters = [
+                str(v or "").strip().upper()
+                for v in list(params.get("redeploy_filters", ("REGIMENT",)) or ())
+                if str(v or "").strip()
+            ]
+            if not filters:
+                filters = ["REGIMENT"]
+            unit.special_rules["enhancement_advance_augury_max_units"] = int(max(1, int(max_units)))
+            unit.special_rules["enhancement_advance_augury_can_place_in_reserves"] = bool(allow_strategic)
+            unit.special_rules["enhancement_advance_augury_filters"] = list(filters)
+            unit.special_rules["enhancement_advance_augury_source"] = "Advance Augury"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_advance_augury_bearer_model_id"] = bearer_id
 
         if name == "berzerker glaive" or enh_id == "000008432002":
             if not is_berzerker_warband:

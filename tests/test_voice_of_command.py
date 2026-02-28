@@ -956,6 +956,121 @@ class TestVoiceOfCommand(unittest.TestCase):
         self.assertFalse(bool(no_bonus_hit.get("hit")))
         self.assertFalse(any("Fire Zone Purge" in str(mod or "") for mod in list(no_bonus_hit.get("modifiers", []) or [])))
 
+    def test_bridgehead_bombast_vox_array_issues_same_order_to_up_to_three_regiment_units(self):
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
+
+        orders_text = "This model can issue 1 order to REGIMENT or SQUADRON units within 6\"."
+        army = _ArmyStub(detachment_type="Bridgehead Strike")
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Tempestor Prime",
+            keywords=["OFFICER", "ASTRA MILITARUM", "MILITARUM TEMPESTUS"],
+            abilities=[
+                _Ability("Voice of Command"),
+                _Ability("Orders", orders_text),
+                _Ability("Master Vox", "Each time this model issues an Order, it can issue it to an eligible unit up to 24\" away."),
+            ],
+            army=army,
+        )
+        officer.special_rules["enhancement_bombast_class_vox_array"] = True
+        officer.special_rules["enhancement_bombast_class_vox_array_max_targets"] = 3
+        officer.special_rules["enhancement_bombast_class_vox_array_order_target_keyword"] = "REGIMENT"
+        officer.special_rules["enhancement_bombast_class_vox_array_requires_master_vox"] = True
+
+        regiment_a = _UnitStub("Regiment A", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        regiment_b = _UnitStub("Regiment B", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        regiment_c = _UnitStub("Regiment C", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        regiment_d = _UnitStub("Regiment D", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        squadron = _UnitStub("Squadron", keywords=["SQUADRON", "ASTRA MILITARUM"], army=army)
+
+        army.units = [officer, regiment_a, regiment_b, regiment_c, regiment_d, squadron]
+        for unit in list(army.units):
+            unit.set_parent_army(army)
+
+        game = SimpleNamespace(turn=1, map=_MapStub(list(army.units), distance=3.0))
+        army.player.game = game
+
+        self.assertTrue(mgr.issue_order(game, officer, regiment_a, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+        self.assertEqual(mgr.orders_remaining(officer, 1), 0)
+        self.assertTrue(mgr.issue_order(game, officer, regiment_b, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+        self.assertFalse(mgr.issue_order(game, officer, regiment_a, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+        self.assertTrue(mgr.issue_order(game, officer, regiment_c, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+        self.assertFalse(mgr.issue_order(game, officer, regiment_d, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+        self.assertFalse(mgr.issue_order(game, officer, squadron, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+
+        self.assertEqual(regiment_a.special_rules.get("voice_of_command_order_key"), ORDER_MOVE.key)
+        self.assertEqual(regiment_b.special_rules.get("voice_of_command_order_key"), ORDER_MOVE.key)
+        self.assertEqual(regiment_c.special_rules.get("voice_of_command_order_key"), ORDER_MOVE.key)
+
+    def test_bridgehead_bombast_vox_array_requires_master_vox_for_extra_targets(self):
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
+
+        orders_text = "This model can issue 1 order to REGIMENT units within 6\"."
+        army = _ArmyStub(detachment_type="Bridgehead Strike")
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Tempestor Prime",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text)],
+            army=army,
+        )
+        officer.special_rules["enhancement_bombast_class_vox_array"] = True
+        officer.special_rules["enhancement_bombast_class_vox_array_max_targets"] = 3
+        officer.special_rules["enhancement_bombast_class_vox_array_order_target_keyword"] = "REGIMENT"
+        officer.special_rules["enhancement_bombast_class_vox_array_requires_master_vox"] = True
+
+        regiment_a = _UnitStub("Regiment A", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        regiment_b = _UnitStub("Regiment B", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        army.units = [officer, regiment_a, regiment_b]
+        for unit in list(army.units):
+            unit.set_parent_army(army)
+
+        game = SimpleNamespace(turn=1, map=_MapStub(list(army.units), distance=3.0))
+        army.player.game = game
+
+        self.assertTrue(mgr.issue_order(game, officer, regiment_a, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+        self.assertFalse(mgr.issue_order(game, officer, regiment_b, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+
+    def test_bridgehead_bombast_pending_continuation_keeps_officer_eligible(self):
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
+
+        orders_text = "This model can issue 1 order to REGIMENT units within 6\"."
+        army = _ArmyStub(detachment_type="Bridgehead Strike")
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Tempestor Prime",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text), _Ability("Master Vox", "")],
+            army=army,
+        )
+        officer.special_rules["enhancement_bombast_class_vox_array"] = True
+        officer.special_rules["enhancement_bombast_class_vox_array_max_targets"] = 3
+        officer.special_rules["enhancement_bombast_class_vox_array_order_target_keyword"] = "REGIMENT"
+        officer.special_rules["enhancement_bombast_class_vox_array_requires_master_vox"] = True
+
+        regiment_a = _UnitStub("Regiment A", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        regiment_b = _UnitStub("Regiment B", keywords=["REGIMENT", "ASTRA MILITARUM"], army=army)
+        army.units = [officer, regiment_a, regiment_b]
+        for unit in list(army.units):
+            unit.set_parent_army(army)
+
+        game = SimpleNamespace(turn=1, map=_MapStub(list(army.units), distance=3.0))
+        army.player.game = game
+
+        self.assertTrue(mgr.issue_order(game, officer, regiment_a, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+        self.assertEqual(mgr.orders_remaining(officer, 1), 0)
+        eligible_officers = mgr.get_eligible_officers(game=game, player=army.player, phase_name="COMMAND_PHASE")
+        self.assertIn(officer, eligible_officers)
+
     def test_combined_arms_born_soldiers_lethal_hits_by_regiment_and_squadron_visibility(self):
         from warhammer40k_ai.rules.astra_militarum_detachments import AstraMilitarumDetachmentManager
 

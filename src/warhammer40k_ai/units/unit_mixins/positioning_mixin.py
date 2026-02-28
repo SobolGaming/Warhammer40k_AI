@@ -8120,6 +8120,35 @@ class PositioningMixin:
             self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = False
             return result
 
+        if isinstance(sr, dict) and bool(sr.get("enhancement_advance_augury", False)):
+            try:
+                count = int(sr.get("enhancement_advance_augury_max_units", 3) or 3)
+            except (TypeError, ValueError):
+                count = 3
+            if count <= 0:
+                count = 1
+            can_place_in_reserves = bool(sr.get("enhancement_advance_augury_can_place_in_reserves", True))
+            filters = [
+                str(v or "").strip().upper()
+                for v in list(sr.get("enhancement_advance_augury_filters", []) or [])
+                if str(v or "").strip()
+            ]
+            ability_name = (
+                str(sr.get("enhancement_advance_augury_source", "") or "Advance Augury")
+                .strip()
+                or "Advance Augury"
+            )
+            result = (True, int(count), bool(can_place_in_reserves))
+            if not hasattr(self, "_ability_cache"):
+                self._ability_cache = {}
+            self._ability_cache["redeploy"] = result
+            if filters:
+                self._ability_cache["redeploy_filters"] = list(filters)
+            self._ability_cache["redeploy_ability_name"] = ability_name
+            self._ability_cache["redeploy_requires_source_on_battlefield"] = False
+            self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = False
+            return result
+
         if isinstance(sr, dict) and bool(sr.get("enhancement_skitarii_veiled_hunter", False)):
             try:
                 count = int(sr.get("enhancement_skitarii_veiled_hunter_max_units", 3) or 3)

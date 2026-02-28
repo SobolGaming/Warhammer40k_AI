@@ -168,6 +168,60 @@ _GRIZZLED_COMPANY_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GRIZZLED_COMPANY_DESCRIPTORS.values()
 }
 
+_BRIDGEHEAD_STRIKE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009801002": EnhancementToolDescriptor(
+        enhancement_id="000009801002",
+        name="Bombast-class Vox-array",
+        timing="when_issuing_order",
+        target="bearer_unit_with_master_vox",
+        duration="constant",
+        effect="issue_same_order_to_up_to_three_regiment_units_if_master_vox",
+        effect_params={
+            "max_order_targets": 3,
+            "order_target_keyword": "REGIMENT",
+            "requires_master_vox": True,
+        },
+    ),
+    "000009801003": EnhancementToolDescriptor(
+        enhancement_id="000009801003",
+        name="Priority-drop Beacon",
+        timing="movement_phase_while_in_strategic_reserves",
+        target="bearer_unit_in_strategic_reserves",
+        duration="constant_while_in_strategic_reserves",
+        effect="strategic_reserves_setup_round_bonus_for_deep_strike",
+        effect_params={
+            "strategic_reserves_setup_round_bonus": 1,
+            "requires_deep_strike": True,
+        },
+    ),
+    "000009801004": EnhancementToolDescriptor(
+        enhancement_id="000009801004",
+        name="Shroud Projector",
+        timing="overwatch_targeting",
+        target="enemy_units_targeting_bearer_unit_with_fire_overwatch",
+        duration="constant_while_bearer_alive",
+        effect="prevent_fire_overwatch_against_bearer_unit",
+        effect_params={"requires_bearer_alive": True},
+    ),
+    "000009801005": EnhancementToolDescriptor(
+        enhancement_id="000009801005",
+        name="Advance Augury",
+        timing="after_deployment",
+        target="friendly_regiment_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "allow_strategic_reserves": True,
+            "redeploy_filters": ("REGIMENT",),
+        },
+    ),
+}
+
+_BRIDGEHEAD_STRIKE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _BRIDGEHEAD_STRIKE_DESCRIPTORS.values()
+}
+
 _POSSESSED_SLAUGHTERBAND_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010082002": EnhancementToolDescriptor(
         enhancement_id="000010082002",
@@ -4795,6 +4849,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _GRIZZLED_COMPANY_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _BRIDGEHEAD_STRIKE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _POSSESSED_SLAUGHTERBAND_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5063,6 +5120,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         _GORETRACK_ONSLAUGHT_BY_NAME.get(key)
         or _CULT_OF_BLOOD_BY_NAME.get(key)
         or _GRIZZLED_COMPANY_BY_NAME.get(key)
+        or _BRIDGEHEAD_STRIKE_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _ADEPTA_SORORITAS_ARMY_OF_FAITH_BY_NAME.get(key)

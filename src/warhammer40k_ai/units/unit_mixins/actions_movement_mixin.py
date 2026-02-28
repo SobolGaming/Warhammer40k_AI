@@ -8713,6 +8713,33 @@ class ActionsMovementMixin:
             return True
         return False
 
+    def _shroud_projector_no_overwatch_active(self, *, target_unit: Optional['Unit'] = None) -> bool:
+        try:
+            active = bool(
+                self._attached_unit_has_active_enhancement(
+                    "enhancement_shroud_projector",
+                    enhancement_id="000009801004",
+                    enhancement_name="Shroud Projector",
+                )
+            )
+        except Exception:
+            active = False
+        if not active:
+            return False
+        if target_unit is None:
+            return True
+        try:
+            my_army = self.get_parent_army()
+        except Exception:
+            my_army = None
+        try:
+            target_army = target_unit.get_parent_army()
+        except Exception:
+            target_army = None
+        if my_army is None or target_army is None:
+            return True
+        return my_army is not target_army
+
     def _librarius_obfuscation_no_overwatch_active(self, *, target_unit: Optional['Unit'] = None) -> bool:
         try:
             army = self.get_parent_army()
@@ -8738,6 +8765,8 @@ class ActionsMovementMixin:
         if self._periapt_of_torments_no_overwatch_active(target_unit=target_unit):
             return True
         if self._blazing_icon_no_overwatch_active(target_unit=target_unit):
+            return True
+        if self._shroud_projector_no_overwatch_active(target_unit=target_unit):
             return True
         if self._librarius_obfuscation_no_overwatch_active(target_unit=target_unit):
             return True
