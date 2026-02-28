@@ -94,10 +94,15 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS = "MOBILE_MARAUDERS"
     _RENEGADE_WARBAND_VENDETTA_ABILITY = "renegade_warband_vendetta_target"
     _RENEGADE_WARBAND_VENDETTA_SOURCE = "Vendetta"
+    _RENEGADE_WARBAND_WEAPONISED_HATRED_ABILITY = "renegade_warband_weaponised_hatred_target"
+    _RENEGADE_WARBAND_WEAPONISED_HATRED_SOURCE = "Weaponised Hatred"
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_ABILITY = "renegade_warband_twisted_doctrine"
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_SOURCE = "Twisted Doctrine"
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_FALL_BACK_CHOICE = "FALL_BACK_SHOOT_AND_CHARGE"
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_ADVANCE_CHOICE = "ADVANCE_CHARGE"
+    _RENEGADE_WARBAND_EYES_OF_THE_HUNTER_SOURCE = "Eyes of the Hunter"
+    _RENEGADE_WARBAND_FRATRICIDAL_TROPHIES_SOURCE = "Fratricidal Trophies"
+    _RENEGADE_WARBAND_EMPYRIC_SYMBIOTE_SOURCE = "Empyric Symbiote"
     _VETERANS_OF_THE_LONG_WAR_FOCUS_ABILITY = "veterans_of_the_long_war_focus_of_hatred_target"
     _VETERANS_OF_THE_LONG_WAR_FOCUS_SOURCE = "Focus of Hatred"
     _SOULFORGED_WARPACK_FORGES_BLESSING_ABILITY = "soulforged_warpack_forges_blessing_target"
@@ -142,6 +147,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         self._tyrannical_motivation_phase_hit_bonus_unit_ids: set[str] = set()
         self._tyrannical_motivation_phase_mobile_unit_ids: set[str] = set()
         self.renegade_warband_vendetta_target_unit_id: str = ""
+        self.renegade_warband_weaponised_hatred_target_unit_id: str = ""
         self.veterans_focus_of_hatred_target_unit_id: str = ""
 
     def is_cabal_of_chaos(self) -> bool:
@@ -845,6 +851,10 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
 
     def clear_renegade_warband_vendetta_target(self) -> None:
         self.renegade_warband_vendetta_target_unit_id = ""
+        self.clear_renegade_warband_weaponised_hatred_target()
+
+    def clear_renegade_warband_weaponised_hatred_target(self) -> None:
+        self.renegade_warband_weaponised_hatred_target_unit_id = ""
 
     def _iter_enemy_units_for_player(self, *, game=None, player=None) -> list:
         resolved_game = self._resolve_game(game=game)
@@ -879,6 +889,21 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             return []
         return self._iter_enemy_units_for_player(game=game, player=player)
 
+    def weaponised_hatred_candidate_enemy_units(self, *, game=None, player=None) -> list:
+        if not self.is_renegade_warband() or self.army is None:
+            return []
+        vendetta_target_id = str(self.renegade_warband_vendetta_target_unit_id or "").strip()
+        out = []
+        for unit in list(self.vendetta_candidate_enemy_units(game=game, player=player) or []):
+            unit_id = str(get_entity_id(unit) or "").strip()
+            if not unit_id:
+                continue
+            if vendetta_target_id and unit_id == vendetta_target_id:
+                continue
+            out.append(unit)
+        out.sort(key=lambda unit: str(get_entity_id(unit) or self._unit_root_key(unit)))
+        return out
+
     def _pending_vendetta_choice_request(self, game, *, army_id: str, battle_round: int) -> bool:
         if game is None:
             return False
@@ -892,6 +917,30 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                 continue
             ctx = dict(getattr(req, "context", {}) or {})
             if str(ctx.get("ability", "") or "").strip().lower() != self._RENEGADE_WARBAND_VENDETTA_ABILITY:
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id or ""):
+                continue
+            try:
+                ctx_round = int(ctx.get("battle_round", battle_round) or battle_round)
+            except (TypeError, ValueError):
+                ctx_round = int(battle_round or 0)
+            if int(ctx_round) == int(battle_round):
+                return True
+        return False
+
+    def _pending_weaponised_hatred_choice_request(self, game, *, army_id: str, battle_round: int) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self._RENEGADE_WARBAND_WEAPONISED_HATRED_ABILITY:
                 continue
             if str(ctx.get("army_id", "") or "") != str(army_id or ""):
                 continue
@@ -921,6 +970,27 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         current_owner = str(self._current_turn_owner_id(game=resolved_game, player=owner) or "")
         if current_owner and current_owner != str(getattr(owner, "id", "") or ""):
+            return False
+        return True
+
+    def can_select_weaponised_hatred_target(self, *, game=None, player=None) -> bool:
+        if not self.is_renegade_warband() or self.army is None:
+            return False
+        if not self.can_select_vendetta_target(game=game, player=player):
+            return False
+        vendetta_target_id = str(self.renegade_warband_vendetta_target_unit_id or "").strip()
+        if not vendetta_target_id:
+            return False
+        candidates = list(self.vendetta_candidate_enemy_units(game=game, player=player) or [])
+        candidate_ids = {str(get_entity_id(unit) or "").strip() for unit in candidates}
+        if vendetta_target_id not in candidate_ids:
+            return False
+        source_entry = self._renegade_warband_first_enhancement_source(
+            flag_key="enhancement_weaponised_hatred",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=True,
+        )
+        if source_entry is None:
             return False
         return True
 
@@ -991,12 +1061,89 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if hasattr(resolved_game, "request_decision"):
             resolved_game.request_decision(request)
 
+    def queue_renegade_warband_weaponised_hatred_choice_request(self, *, game=None, player=None) -> None:
+        if not self.is_renegade_warband() or self.army is None:
+            return
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None or not bool(getattr(resolved_game, "is_authoritative", True)):
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        if not self.can_select_weaponised_hatred_target(game=resolved_game, player=owner):
+            return
+
+        candidates = list(self.weaponised_hatred_candidate_enemy_units(game=resolved_game, player=owner) or [])
+        if not candidates:
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "")
+        battle_round = int(self._current_turn(game=resolved_game) or 0)
+        if self._pending_weaponised_hatred_choice_request(
+            resolved_game,
+            army_id=army_id,
+            battle_round=battle_round,
+        ):
+            return
+
+        options: list[DecisionOption] = []
+        candidate_ids: list[str] = []
+        for unit in candidates:
+            unit_id = str(get_entity_id(unit) or "").strip()
+            if not unit_id:
+                continue
+            candidate_ids.append(unit_id)
+            options.append(
+                DecisionOption.create(
+                    str(getattr(unit, "name", "Enemy Unit") or "Enemy Unit"),
+                    payload={
+                        "target_unit_id": unit_id,
+                        "army_id": army_id,
+                    },
+                )
+            )
+        if not options:
+            return
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Weaponised Hatred: select a second enemy unit.",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self._RENEGADE_WARBAND_WEAPONISED_HATRED_ABILITY,
+                "ability_name": self._RENEGADE_WARBAND_WEAPONISED_HATRED_SOURCE,
+                "phase": "Command phase",
+                "army_id": army_id,
+                "battle_round": int(battle_round),
+                "vendetta_target_unit_id": str(self.renegade_warband_vendetta_target_unit_id or "").strip(),
+                "candidate_unit_ids": list(candidate_ids),
+                "optional": False,
+            },
+        )
+        if hasattr(resolved_game, "request_decision"):
+            resolved_game.request_decision(request)
+
     def vendetta_target_is_valid(self, target_unit_id: str, *, game=None, player=None) -> bool:
         target_id = str(target_unit_id or "").strip()
         if not target_id:
             return False
         candidates = list(self.vendetta_candidate_enemy_units(game=game, player=player) or [])
         candidate_ids = {str(get_entity_id(unit) or "") for unit in candidates}
+        return target_id in candidate_ids
+
+    def weaponised_hatred_target_is_valid(self, target_unit_id: str, *, game=None, player=None) -> bool:
+        target_id = str(target_unit_id or "").strip()
+        if not target_id:
+            return False
+        vendetta_target_id = str(self.renegade_warband_vendetta_target_unit_id or "").strip()
+        if vendetta_target_id and target_id == vendetta_target_id:
+            return False
+        candidates = list(self.weaponised_hatred_candidate_enemy_units(game=game, player=player) or [])
+        candidate_ids = {str(get_entity_id(unit) or "").strip() for unit in candidates}
         return target_id in candidate_ids
 
     def select_vendetta_target(self, target_unit_id: str, *, game=None, player=None) -> dict:
@@ -1006,6 +1153,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self.vendetta_target_is_valid(target_id, game=game, player=player):
             return {"ok": False, "reason": "Vendetta target is invalid."}
         self.renegade_warband_vendetta_target_unit_id = target_id
+        self.clear_renegade_warband_weaponised_hatred_target()
         target_name = ""
         for unit in list(self.vendetta_candidate_enemy_units(game=game, player=player) or []):
             if str(get_entity_id(unit) or "") == target_id:
@@ -1017,6 +1165,170 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             "target_name": target_name or "Enemy Unit",
             "source": self._RENEGADE_WARBAND_VENDETTA_SOURCE,
         }
+
+    def select_weaponised_hatred_target(self, target_unit_id: str, *, game=None, player=None) -> dict:
+        if not self.can_select_weaponised_hatred_target(game=game, player=player):
+            return {"ok": False, "reason": "Weaponised Hatred target cannot be selected right now."}
+        target_id = str(target_unit_id or "").strip()
+        if not self.weaponised_hatred_target_is_valid(target_id, game=game, player=player):
+            return {"ok": False, "reason": "Weaponised Hatred target is invalid."}
+        self.renegade_warband_weaponised_hatred_target_unit_id = target_id
+        target_name = ""
+        for unit in list(self.weaponised_hatred_candidate_enemy_units(game=game, player=player) or []):
+            if str(get_entity_id(unit) or "").strip() == target_id:
+                target_name = str(getattr(unit, "name", "") or "").strip()
+                break
+        return {
+            "ok": True,
+            "target_unit_id": target_id,
+            "target_name": target_name or "Enemy Unit",
+            "source": self._RENEGADE_WARBAND_WEAPONISED_HATRED_SOURCE,
+        }
+
+    def _renegade_warband_enhancement_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_on_battlefield: bool = False,
+    ):
+        if not self.is_renegade_warband():
+            return None, None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+                continue
+            bearer = self._find_enhancement_bearer_on_member(member, sr)
+            if require_bearer_alive and not self._model_alive(bearer):
+                continue
+            if require_bearer_on_battlefield:
+                bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None))
+                if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                    continue
+            return root, member, sr, bearer
+        return None, None, None, None
+
+    def _renegade_warband_first_enhancement_source(
+        self,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool,
+        require_bearer_on_battlefield: bool,
+    ) -> Unit | None:
+        if self.army is None:
+            return None
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            source_root, _member, _sr, _bearer = self._renegade_warband_enhancement_source_member(
+                root,
+                flag_key=flag_key,
+                require_bearer_alive=require_bearer_alive,
+                require_bearer_on_battlefield=require_bearer_on_battlefield,
+            )
+            if source_root is not None:
+                return source_root
+        return None
+
+    def _promote_weaponised_hatred_target_if_needed(self, destroyed_unit_id: str) -> bool:
+        primary_target = str(self.renegade_warband_vendetta_target_unit_id or "").strip()
+        if not primary_target or primary_target != str(destroyed_unit_id or "").strip():
+            return False
+        backup_target = str(self.renegade_warband_weaponised_hatred_target_unit_id or "").strip()
+        if not backup_target:
+            return False
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        candidate_ids = {
+            str(get_entity_id(unit) or "").strip()
+            for unit in list(self.vendetta_candidate_enemy_units(game=None, player=owner) or [])
+            if str(get_entity_id(unit) or "").strip()
+        }
+        if backup_target not in candidate_ids:
+            self.renegade_warband_weaponised_hatred_target_unit_id = ""
+            return False
+        self.renegade_warband_vendetta_target_unit_id = backup_target
+        self.renegade_warband_weaponised_hatred_target_unit_id = ""
+        return True
+
+    def renegade_warband_ignores_cover_active(self, unit: Unit, *, attack_type: str = "ranged") -> bool:
+        if not self.is_renegade_warband():
+            return False
+        if str(attack_type or "").strip().lower() != "ranged":
+            return False
+        _root, _source_member, source_sr, _bearer = self._renegade_warband_enhancement_source_member(
+            unit,
+            flag_key="enhancement_eyes_of_the_hunter",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=False,
+        )
+        if source_sr is None:
+            return False
+        if not bool(source_sr.get("enhancement_eyes_of_the_hunter_ignores_cover_ranged", False)):
+            return False
+        return True
+
+    def renegade_warband_fratricidal_trophies_hit_reroll_active(self, unit: Unit, *, game=None) -> bool:
+        if not self.is_renegade_warband():
+            return False
+        root, _source_member, source_sr, _bearer = self._renegade_warband_enhancement_source_member(
+            unit,
+            flag_key="enhancement_fratricidal_trophies",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=False,
+        )
+        if source_sr is None:
+            return False
+        if not bool(source_sr.get("enhancement_fratricidal_trophies_reroll_hit", False)):
+            return False
+        root_rules = getattr(root, "special_rules", {}) if root is not None else {}
+        if bool(source_sr.get("enhancement_fratricidal_trophies_requires_default_to_doctrine", True)):
+            if not self._renegade_warband_default_to_doctrine_active_state(root, game=game):
+                return False
+        return True
+
+    def renegade_warband_empyric_symbiote_roll_bonus(self, unit: Unit, *, roll_kind: str) -> int:
+        if not self.is_renegade_warband():
+            return 0
+        _root, _source_member, source_sr, _bearer = self._renegade_warband_enhancement_source_member(
+            unit,
+            flag_key="enhancement_empyric_symbiote",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=False,
+        )
+        if source_sr is None:
+            return 0
+        kind = str(roll_kind or "").strip().lower()
+        if kind == "advance":
+            value = source_sr.get("enhancement_empyric_symbiote_advance_roll_bonus", 1)
+        elif kind == "charge":
+            value = source_sr.get("enhancement_empyric_symbiote_charge_roll_bonus", 1)
+        else:
+            return 0
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    def renegade_warband_empyric_symbiote_advance_roll_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        _ = game
+        bonus = self.renegade_warband_empyric_symbiote_roll_bonus(unit, roll_kind="advance")
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), self._RENEGADE_WARBAND_EMPYRIC_SYMBIOTE_SOURCE
+
+    def renegade_warband_empyric_symbiote_charge_roll_bonus(self, unit, *, target_units=None, game=None) -> tuple[int, str]:
+        _ = target_units
+        _ = game
+        bonus = self.renegade_warband_empyric_symbiote_roll_bonus(unit, roll_kind="charge")
+        if bonus <= 0:
+            return 0, ""
+        return int(bonus), self._RENEGADE_WARBAND_EMPYRIC_SYMBIOTE_SOURCE
 
     def vendetta_reroll_hit_applies(self, attacker_model, target_unit, *, game=None) -> tuple[bool, str]:
         if not self.is_renegade_warband():
@@ -1034,14 +1346,18 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if target_root is None:
             return False, ""
         stored_target_id = str(self.renegade_warband_vendetta_target_unit_id or "").strip()
-        if not stored_target_id:
-            return False, ""
-        if str(get_entity_id(target_root) or "") != stored_target_id:
-            return False, ""
-        is_alive = getattr(target_root, "is_alive", None)
-        if callable(is_alive) and not bool(is_alive()):
-            return False, ""
-        return True, self._RENEGADE_WARBAND_VENDETTA_SOURCE
+        vendetta_active = False
+        if stored_target_id and str(get_entity_id(target_root) or "") == stored_target_id:
+            is_alive = getattr(target_root, "is_alive", None)
+            vendetta_active = not (callable(is_alive) and not bool(is_alive()))
+        if vendetta_active:
+            return True, self._RENEGADE_WARBAND_VENDETTA_SOURCE
+        if attacker_unit is not None and self.renegade_warband_fratricidal_trophies_hit_reroll_active(
+            attacker_unit,
+            game=game,
+        ):
+            return True, self._RENEGADE_WARBAND_FRATRICIDAL_TROPHIES_SOURCE
+        return False, ""
 
     def clear_veterans_focus_of_hatred_target(self) -> None:
         self.veterans_focus_of_hatred_target_unit_id = ""
@@ -2304,6 +2620,25 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         advance_mode = bool(sr.get("renegade_warband_twisted_doctrine_advance_mode", False))
         return fall_back_mode, advance_mode
 
+    def _renegade_warband_default_to_doctrine_active_state(self, unit, *, game=None) -> bool:
+        if not self.is_renegade_warband():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("renegade_warband_default_to_doctrine_active", False)):
+            return False
+        expected_owner = str(sr.get("renegade_warband_default_to_doctrine_turn_owner", "") or "").strip()
+        expected_turn = int(sr.get("renegade_warband_default_to_doctrine_turn", 0) or 0)
+        current_owner = str(self._current_turn_owner_id(game=game) or "")
+        current_turn = int(self._current_turn(game=game) or 0)
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return False
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return False
+        return True
+
     def activate_twisted_doctrine(
         self,
         unit,
@@ -2343,6 +2678,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         updated["renegade_warband_twisted_doctrine_active"] = True
         updated["renegade_warband_twisted_doctrine_turn"] = int(self._current_turn(game=game) or 0)
         updated["renegade_warband_twisted_doctrine_turn_owner"] = str(
+            self._current_turn_owner_id(game=game, player=player) or ""
+        )
+        updated["renegade_warband_default_to_doctrine_active"] = True
+        updated["renegade_warband_default_to_doctrine_turn"] = int(self._current_turn(game=game) or 0)
+        updated["renegade_warband_default_to_doctrine_turn_owner"] = str(
             self._current_turn_owner_id(game=game, player=player) or ""
         )
         updated["renegade_warband_twisted_doctrine_source"] = self._RENEGADE_WARBAND_TWISTED_DOCTRINE_SOURCE

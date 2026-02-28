@@ -591,6 +591,10 @@ class Enhancement:
         except Exception:
             is_deceptors = False
         try:
+            is_renegade_warband = bool(csm_mgr and csm_mgr.is_renegade_warband())
+        except Exception:
+            is_renegade_warband = False
+        try:
             is_veterans_of_the_long_war = bool(csm_mgr and csm_mgr.is_veterans_of_the_long_war())
         except Exception:
             is_veterans_of_the_long_war = False
@@ -5814,6 +5818,74 @@ class Enhancement:
             unit.special_rules["enhancement_soul_link_source"] = "Soul Link"
             unit.special_rules["enhancement_soul_link_optional"] = bool(params.get("optional", True))
             unit.special_rules["enhancement_soul_link_active"] = False
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "weaponised hatred" or enh_id == "000010694002":
+            if not is_renegade_warband:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Weaponised Hatred").strip() or "Weaponised Hatred"
+            unit.special_rules["enhancement_weaponised_hatred"] = True
+            unit.special_rules["enhancement_weaponised_hatred_source"] = source
+            unit.special_rules["enhancement_weaponised_hatred_optional"] = bool(params.get("optional", False))
+            unit.special_rules["enhancement_weaponised_hatred_requires_vendetta_target"] = bool(
+                params.get("requires_vendetta_target", True)
+            )
+            unit.special_rules["enhancement_weaponised_hatred_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "eyes of the hunter" or enh_id == "000010694003":
+            if not is_renegade_warband:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Eyes of the Hunter").strip() or "Eyes of the Hunter"
+            unit.special_rules["enhancement_eyes_of_the_hunter"] = True
+            unit.special_rules["enhancement_eyes_of_the_hunter_source"] = source
+            unit.special_rules["enhancement_eyes_of_the_hunter_ignores_cover_ranged"] = bool(
+                "IGNORES COVER" in {
+                    str(keyword or "").strip().upper()
+                    for keyword in list(params.get("keywords", ("IGNORES COVER",)) or ("IGNORES COVER",))
+                    if str(keyword or "").strip()
+                }
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "fratricidal trophies" or enh_id == "000010694004":
+            if not is_renegade_warband:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Fratricidal Trophies").strip() or "Fratricidal Trophies"
+            unit.special_rules["enhancement_fratricidal_trophies"] = True
+            unit.special_rules["enhancement_fratricidal_trophies_source"] = source
+            unit.special_rules["enhancement_fratricidal_trophies_reroll_hit"] = bool(params.get("reroll_hit", True))
+            unit.special_rules["enhancement_fratricidal_trophies_requires_default_to_doctrine"] = bool(
+                params.get("requires_default_to_doctrine", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "empyric symbiote" or enh_id == "000010694005":
+            if not is_renegade_warband:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Empyric Symbiote").strip() or "Empyric Symbiote"
+            unit.special_rules["enhancement_empyric_symbiote"] = True
+            unit.special_rules["enhancement_empyric_symbiote_source"] = source
+            unit.special_rules["enhancement_empyric_symbiote_advance_roll_bonus"] = int(
+                max(0, _coerce_int(params.get("advance_roll_bonus", 1), default=1))
+            )
+            unit.special_rules["enhancement_empyric_symbiote_charge_roll_bonus"] = int(
+                max(0, _coerce_int(params.get("charge_roll_bonus", 1), default=1))
+            )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

@@ -1688,13 +1688,23 @@ class WargearProfile:
 
     def _veteran_sharpshooters_ignores_cover_active(self, attacker: 'Model') -> bool:
         """Return True when VETERAN SHARPSHOOTERS grants ignores cover for this attack."""
-        return self._phase_effect_special_rules(
+        if self._phase_effect_special_rules(
             attacker,
             active_key="veteran_sharpshooters_active",
             expires_key="veteran_sharpshooters_expires_phase",
             owner_key="veteran_sharpshooters_owner",
             turn_key="veteran_sharpshooters_turn",
-        ) is not None
+        ) is not None:
+            return True
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return False
+        army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        active_fn = getattr(csm_mgr, "renegade_warband_ignores_cover_active", None) if csm_mgr is not None else None
+        if not callable(active_fn):
+            return False
+        return bool(active_fn(unit, attack_type="ranged"))
 
     def _drukhari_rain_of_cruelty_active(self, attacker: 'Model') -> bool:
         unit = getattr(attacker, "parent_unit", None)

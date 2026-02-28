@@ -1706,6 +1706,11 @@ class Game(
         queue_fn = getattr(mgr, "queue_renegade_warband_vendetta_choice_request", None) if mgr is not None else None
         if callable(queue_fn):
             queue_fn(game=self, player=player)
+        weaponised_queue_fn = (
+            getattr(mgr, "queue_renegade_warband_weaponised_hatred_choice_request", None) if mgr is not None else None
+        )
+        if callable(weaponised_queue_fn):
+            weaponised_queue_fn(game=self, player=player)
 
     def _maybe_prompt_csm_focus_of_hatred(self) -> None:
         player = self.get_current_player()
@@ -7200,6 +7205,25 @@ class Game(
         # Generic partial support for "... destroys an enemy <KEYWORD> unit, gain X CP".
         if unit is None:
             return
+        destroyed_unit_id = str(get_entity_id(unit) or getattr(unit, "_id", "") or "").strip()
+
+        # Chaos Space Marines: Renegade Warband (Weaponised Hatred)
+        # If the current Vendetta target is destroyed, promote the selected secondary target.
+        if destroyed_unit_id:
+            try:
+                for maybe_player in list(getattr(self, "players", []) or []):
+                    if maybe_player is None:
+                        continue
+                    maybe_army = maybe_player.get_army() if hasattr(maybe_player, "get_army") else None
+                    if maybe_army is None:
+                        continue
+                    csm_mgr = getattr(maybe_army, "chaos_space_marines_detachments", None)
+                    promote_fn = getattr(csm_mgr, "_promote_weaponised_hatred_target_if_needed", None) if csm_mgr is not None else None
+                    if not callable(promote_fn):
+                        continue
+                    promote_fn(destroyed_unit_id)
+            except Exception:
+                pass
 
         # Chaos Space Marines: Soulforged Warpack (Soul Harvester).
         try:

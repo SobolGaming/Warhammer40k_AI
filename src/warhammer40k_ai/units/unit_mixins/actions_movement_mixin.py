@@ -7053,6 +7053,17 @@ class ActionsMovementMixin:
                 if int(bonus or 0):
                     source_name = str(source or "Auric Armour").strip() or "Auric Armour"
                     mods.append((int(bonus), source_name))
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            symbiote_advance_fn = (
+                getattr(csm_mgr, "renegade_warband_empyric_symbiote_advance_roll_bonus", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(symbiote_advance_fn):
+                bonus, source = symbiote_advance_fn(self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Empyric Symbiote").strip() or "Empyric Symbiote"
+                    mods.append((int(bonus), source_name))
         except Exception:
             pass
         if isinstance(sr, dict) and sr.get("ere_we_go_active") is True:
@@ -8266,6 +8277,17 @@ class ActionsMovementMixin:
             bonus, source = gsc_bonus_fn(root, target_units=targets, game=game)
             if int(bonus or 0):
                 modifiers.append((int(bonus or 0), str(source or "Hypermorphic Fury")))
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        csm_bonus_fn = (
+            getattr(csm_mgr, "renegade_warband_empyric_symbiote_charge_roll_bonus", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(csm_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = csm_bonus_fn(root, target_units=targets, game=game)
+            if int(bonus or 0):
+                modifiers.append((int(bonus or 0), str(source or "Empyric Symbiote")))
         return modifiers
 
     def _defensive_charge_roll_penalty_specs(self) -> list[dict]:

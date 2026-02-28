@@ -2209,6 +2209,62 @@ _DECEPTORS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DECEPTORS_DESCRIPTORS.values()
 }
 
+_RENEGADE_WARBAND_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010694002": EnhancementToolDescriptor(
+        enhancement_id="000010694002",
+        name="Weaponised Hatred",
+        timing="start_of_command_phase_after_vendetta_selection",
+        target="second_enemy_unit",
+        duration="until_start_of_next_owner_command_phase_or_until_new_vendetta_selected",
+        effect="select_second_vendetta_target_and_promote_when_vendetta_destroyed",
+        effect_params={
+            "optional": False,
+            "requires_vendetta_target": True,
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+    "000010694003": EnhancementToolDescriptor(
+        enhancement_id="000010694003",
+        name="Eyes of the Hunter",
+        timing="passive",
+        target="bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={
+            "keywords": ("IGNORES COVER",),
+            "attack_type": "ranged",
+        },
+    ),
+    "000010694004": EnhancementToolDescriptor(
+        enhancement_id="000010694004",
+        name="Fratricidal Trophies",
+        timing="passive",
+        target="bearer_unit_attacks",
+        duration="constant_conditional",
+        effect="reroll_hit_when_default_to_doctrine",
+        effect_params={
+            "reroll_hit": True,
+            "requires_default_to_doctrine": True,
+        },
+    ),
+    "000010694005": EnhancementToolDescriptor(
+        enhancement_id="000010694005",
+        name="Empyric Symbiote",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="advance_and_charge_roll_bonus",
+        effect_params={
+            "advance_roll_bonus": 1,
+            "charge_roll_bonus": 1,
+        },
+    ),
+}
+
+_RENEGADE_WARBAND_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RENEGADE_WARBAND_DESCRIPTORS.values()
+}
+
 _SOULFORGED_WARPACK_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008985002": EnhancementToolDescriptor(
         enhancement_id="000008985002",
@@ -5411,6 +5467,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DECEPTORS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _RENEGADE_WARBAND_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SOULFORGED_WARPACK_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5628,6 +5687,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CHAOS_CULT_BY_NAME.get(key)
         or _CREATIONS_OF_BILE_BY_NAME.get(key)
         or _DECEPTORS_BY_NAME.get(key)
+        or _RENEGADE_WARBAND_BY_NAME.get(key)
         or _SOULFORGED_WARPACK_BY_NAME.get(key)
         or _VETERANS_OF_THE_LONG_WAR_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
