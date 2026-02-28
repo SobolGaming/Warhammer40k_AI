@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from typing import Any, Iterable, List
 
 from .ref_codec import encode_refs
@@ -52,6 +53,15 @@ def _normalize_ids(value: Any, id_map: dict[str, str], *, key: str | None = None
     return value
 
 
+def _default_event_log_limit() -> int:
+    raw = str(os.getenv("WH40K_EVENT_LOG_MAX", "10000") or "10000").strip()
+    try:
+        limit = int(raw)
+    except ValueError:
+        limit = 10000
+    return max(0, limit)
+
+
 @dataclass(frozen=True)
 class GameEvent:
     event_id: int
@@ -79,15 +89,25 @@ class GameEvent:
 
 
 class DeterministicEventLog:
-    def __init__(self, events: Iterable[GameEvent] | None = None, *, mode: str = "record"):
+    def __init__(
+        self,
+        events: Iterable[GameEvent] | None = None,
+        *,
+        mode: str = "record",
+        max_events: int | None = None,
+    ):
         self.events: List[GameEvent] = list(events or [])
         self.mode = str(mode or "record").lower()
+        self.max_events = _default_event_log_limit() if max_events is None else max(0, int(max_events))
+        self.dropped_through_event_id = 0
         self._cursor = 0
         self._attached_game: object | None = None
         if self.events:
             self.next_id = max(e.event_id for e in self.events) + 1
         else:
             self.next_id = 1
+        if self.mode != "replay":
+            self._prune_overflow()
 
     def _ruleset_context(self) -> dict:
         game = self._attached_game
@@ -176,6 +196,7 @@ class DeterministicEventLog:
             payload=encoded_payload,
         )
         self.events.append(event)
+        self._prune_overflow()
         self.next_id += 1
         return event
 
@@ -209,6 +230,8 @@ class DeterministicEventLog:
             event_id = self.events[-1].event_id
         event_id = int(event_id)
         self.events = [e for e in self.events if int(e.event_id) > event_id]
+        if event_id > self.dropped_through_event_id:
+            self.dropped_through_event_id = event_id
         return event_id
 
     def serialize_events(self, *, since_event_id: int | None = None) -> List[dict]:
@@ -218,6 +241,18 @@ class DeterministicEventLog:
     def from_payload(cls, payload: Iterable[dict], *, mode: str = "record") -> "DeterministicEventLog":
         events = [GameEvent.from_dict(d) for d in list(payload or [])]
         return cls(events=events, mode=mode)
+
+    def _prune_overflow(self) -> None:
+        if self.mode == "replay":
+            return
+        limit = int(self.max_events or 0)
+        overflow = len(self.events) - limit
+        if limit <= 0 or overflow <= 0:
+            return
+        dropped = self.events[:overflow]
+        self.events = self.events[overflow:]
+        if dropped:
+            self.dropped_through_event_id = int(dropped[-1].event_id)
 
     def _next_event(self) -> GameEvent:
         if self._cursor >= len(self.events):

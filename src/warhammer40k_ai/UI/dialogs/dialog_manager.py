@@ -103,6 +103,9 @@ class DialogManager:
     def _sync(self) -> None:
         """Ensure newly-activated discovered dialogs are placed on top of the stack."""
         discovered = self._discover_dialogs()
+        discovered_ids = {id(d) for d in discovered}
+        if self._was_active:
+            self._was_active = {did: state for did, state in self._was_active.items() if did in discovered_ids}
         # Mark inactive ones in was_active dict
         active_now_ids = set()
         for d in discovered:

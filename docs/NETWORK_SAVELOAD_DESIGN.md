@@ -78,7 +78,7 @@ Top-level:
 - models.base: includes `model_height`, optional `z_offset`, and optional `compound_parts` for multi-part hull footprints (see `docs/MODEL_GEOMETRY_OVERRIDES.md`)
 - effects: aura effects, temporary modifiers, timers
 - decisions: pending DecisionRequests
-- events: event log tail since last snapshot (currently full log)
+- events: event log tail since last snapshot (in-memory log is bounded; default `10000` via `WH40K_EVENT_LOG_MAX`)
 - rng_state
 
 Snapshot gating:
@@ -615,6 +615,7 @@ Cleanup:
 - Manual only. No auto-pruning or expiry yet.
 - Snapshot cadence: end of each phase (autosave).
 - Event retention: keep only events since the most recent snapshot; flush on successful snapshot save.
+- Runtime guardrail: deterministic event log keeps a bounded in-memory window (oldest-first pruning) to prevent unbounded growth during long sessions.
 
 ## Snapshot Implementation Notes (PR2)
 

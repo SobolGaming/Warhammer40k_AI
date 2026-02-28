@@ -3033,130 +3033,112 @@ class GameView:
         except Exception:
             pass
 
+    def _unsubscribe_event_hooks(self) -> None:
+        event_group = str(getattr(self, "_ui_event_hook_group", "") or "")
+        event_system = getattr(self, "_subscribed_event_system", None)
+        if event_system is not None and event_group and hasattr(event_system, "unsubscribe_group"):
+            event_system.unsubscribe_group(event_group)
+
+        subscribed_game = getattr(self, "_subscribed_game", None)
+        controller = getattr(self, "_decision_controller", None)
+        if subscribed_game is not None and controller is not None:
+            hub = getattr(subscribed_game, "decision_controller_hub", None)
+            remove_controller = getattr(hub, "remove_controller", None) if hub is not None else None
+            if callable(remove_controller):
+                remove_controller(controller)
+
+        self._subscribed_event_system = None
+        self._subscribed_game = None
+
     def _subscribe_event_hooks(self) -> None:
         """Subscribe UI hooks to the current game event system."""
-        try:
-            if self.game and getattr(self.game, "event_system", None) is not None:
-                event_system = self.game.event_system
-                event_system.subscribe("battle_round_started", self._on_battle_round_started)
-                add_controller = getattr(self.game, "add_decision_controller", None)
-                if callable(add_controller):
-                    from .decision_controller import UIDecisionController
+        game = self.game
+        if game is None:
+            return
+        event_system = getattr(game, "event_system", None)
+        if event_system is None:
+            return
 
-                    if not hasattr(self, "_decision_controller") or self._decision_controller is None:
-                        self._decision_controller = UIDecisionController(self)
-                    add_controller(self._decision_controller)
-                else:
-                    event_system.subscribe("decision_requested", self._on_decision_requested)
-                # Optional ability prompts (phase-start timing windows)
-                event_system.subscribe("phase_start", self._on_phase_start_optional_ability_prompts)
-                # Oath of Moment target selection (start of Command phase)
-                event_system.subscribe("oath_of_moment_prompt", self._on_oath_of_moment_prompt)
-                # Imperial Knights: Code Chivalric selection (setup)
-                event_system.subscribe("code_chivalric_prompt", self._on_code_chivalric_prompt)
-                # Daemonic Allegiance selection (muster phase)
-                event_system.subscribe("daemonic_allegiance_prompt", self._on_daemonic_allegiance_prompt)
-                # Imperial Knights: Bondsman selection (Command phase)
-                event_system.subscribe("bondsman_prompt", self._on_bondsman_prompt)
-                # Necrons enhancements: command phase bearer target selection
-                event_system.subscribe(
-                    "necrons_command_phase_enhancement_prompt",
-                    self._on_necrons_command_phase_enhancement_prompt,
-                )
-                # Tyranids: Shadow in the Warp prompt (either Command phase)
-                event_system.subscribe("shadow_in_the_warp_prompt", self._on_shadow_in_the_warp_prompt)
-                # Fulgrim: Daemon Primarch of Slaanesh selection (opponent Command phase)
-                event_system.subscribe("daemon_primarch_slaanesh_prompt", self._on_daemon_primarch_slaanesh_prompt)
-                # Orks: Waaagh! prompt (start of Command phase)
-                event_system.subscribe("waaagh_prompt", self._on_waaagh_prompt)
-                # T'au Empire: For the Greater Good observer/spotter selection
-                event_system.subscribe("for_the_greater_good_prompt", self._on_for_the_greater_good_prompt)
-                # Dark Pacts prompt when a unit is selected to shoot or fight
-                event_system.subscribe("dark_pacts_prompt", self._on_dark_pacts_prompt)
-                # Astra Militarum: Voice of Command prompt at Command phase start/end
-                event_system.subscribe("voice_of_command_prompt", self._on_voice_of_command_prompt)
-                # Space Marines: Combat Doctrines prompt
-                event_system.subscribe("combat_doctrines_prompt", self._on_combat_doctrines_prompt)
-                # Thousand Sons: Grand Coven prompt
-                event_system.subscribe("grand_coven_prompt", self._on_grand_coven_prompt)
-                # Drukhari: Combat Drugs prompt
-                event_system.subscribe("combat_drugs_prompt", self._on_combat_drugs_prompt)
-                # Grey Knights: Gate of Infinity prompt at end of opponent's Fight phase
-                event_system.subscribe("gate_of_infinity_prompt", self._on_gate_of_infinity_prompt)
-                # End of opponent's turn: Strategic Reserves prompt
-                event_system.subscribe(
-                    "opponent_turn_strategic_reserves_prompt",
-                    self._on_opponent_turn_strategic_reserves_prompt,
-                )
-                # Adeptus Custodes: Martial Ka'tah stance selection
-                event_system.subscribe("martial_katah_prompt", self._on_martial_katah_prompt)
-                # Adeptus Custodes: Gilded Champion prompt after once-per-battle abilities
-                event_system.subscribe("gilded_champion_prompt", self._on_gilded_champion_prompt)
-                # Orks: Careen prompt (Deadly Demise roll 6)
-                event_system.subscribe("careen_prompt", self._on_careen_prompt)
-                # Emperor's Children: Detachment prompts
-                event_system.subscribe("emperors_children_pledge_prompt", self._on_emperors_children_pledge_prompt)
-                event_system.subscribe("emperors_children_exquisite_prompt", self._on_emperors_children_exquisite_prompt)
-                event_system.subscribe("emperors_children_sensational_prompt", self._on_emperors_children_sensational_prompt)
-                event_system.subscribe("emperors_children_pact_points_updated", self._on_emperors_children_pact_points_updated)
-                # Drukhari: Power from Pain prompt when a unit can be empowered
-                event_system.subscribe("pain_token_prompt", self._on_pain_token_prompt)
-                # World Eaters: Blood Tithe prompt (Command phase / fight-phase A Worthy Skull)
-                event_system.subscribe("blood_tithe_prompt", self._on_blood_tithe_prompt)
-                event_system.subscribe("blood_tithe_updated", self._on_blood_tithe_updated)
-                # World Eaters: Blood Surge prompt on opponent shooting casualties
-                event_system.subscribe("blood_surge_prompt", self._on_blood_surge_prompt)
-                # World Eaters: Brazen Fury prompt on opponent shooting casualties
-                event_system.subscribe("brazen_fury_prompt", self._on_brazen_fury_prompt)
-                # Horde Move prompt on enemy shooting casualties
-                event_system.subscribe("horde_move_prompt", self._on_horde_move_prompt)
-                event_system.subscribe("reverberating_summons_prompt", self._on_reverberating_summons_prompt)
-                # Reactive normal move prompt (enemy unit ends move within range)
-                event_system.subscribe("loping_speed_prompt", self._on_loping_speed_prompt)
-                # Setup reactive shoot/charge prompt (enemy unit set up within range)
-                event_system.subscribe("setup_reactive_shoot_charge_prompt", self._on_setup_reactive_shoot_charge_prompt)
-                # World Eaters: Frenzy prompt (Helbrute reactive shoot/fight)
-                event_system.subscribe("frenzy_prompt", self._on_frenzy_prompt)
-                # Charge-end mortal wound target selection
-                event_system.subscribe("charge_mortal_wounds_prompt", self._on_charge_mortal_wounds_prompt)
-                # Move-over mortal wound target selection
-                event_system.subscribe("move_over_mortal_wounds_prompt", self._on_move_over_mortal_wounds_prompt)
-                # Charge phase end leadership test bodyguard loss
-                event_system.subscribe(
-                    "charge_phase_bodyguard_loss_prompt",
-                    self._on_charge_phase_bodyguard_loss_prompt,
-                )
-                event_system.subscribe(
-                    "fight_phase_end_mortal_wounds_prompt",
-                    self._on_fight_phase_end_mortal_wounds_prompt,
-                )
-                # Post-shoot Battle-shock target selection
-                event_system.subscribe("post_shoot_battleshock_prompt", self._on_post_shoot_battleshock_prompt)
-                # Post-shoot suppression target selection
-                event_system.subscribe("post_shoot_suppress_prompt", self._on_post_shoot_suppress_prompt)
-                # Transport reactive disembark prompt
-                event_system.subscribe("transport_reactive_disembark_prompt", self._on_transport_reactive_disembark_prompt)
-                # Quarry re-pick when quarry is destroyed
-                event_system.subscribe("unit_destroyed", self._on_unit_destroyed_for_monarch_of_the_hunt)
-                # Battle Focus reactive prompts (Opportunity Seized / Fade Back)
-                event_system.subscribe("battle_focus_opportunity_prompt", self._on_battle_focus_opportunity_prompt)
-                event_system.subscribe("battle_focus_fade_back_prompt", self._on_battle_focus_fade_back_prompt)
-                # Cabal of Sorcerers: Temporal Surge movement prompt
-                event_system.subscribe("cabal_temporal_surge_move", self._on_cabal_temporal_surge_move)
-                # Warhost: Fire and Fade reactive movement prompt
-                event_system.subscribe("fire_and_fade_move", self._on_fire_and_fade_move)
-                # Necrons: Reactive Reposition movement prompt
-                event_system.subscribe("reactive_reposition_move", self._on_reactive_reposition_move)
-                # Cabal of Sorcerers: Ritual resolution popup
-                event_system.subscribe("cabal_ritual_resolved", self._on_cabal_ritual_resolved)
-                # Leagues of Votann: Prioritised Efficiency updates (Yield Points / mode)
-                event_system.subscribe("prioritised_efficiency_updated", self._on_prioritised_efficiency_updated)
-                # Genestealer Cults: Cult Ambush prompts + HUD updates
-                event_system.subscribe("cult_ambush_prompt", self._on_cult_ambush_prompt)
-                event_system.subscribe("cult_ambush_reinforcements_prompt", self._on_cult_ambush_reinforcements_prompt)
-                event_system.subscribe("cult_ambush_updated", self._on_cult_ambush_updated)
-        except Exception:
-            pass
+        event_group = str(getattr(self, "_ui_event_hook_group", "") or "")
+        if not event_group:
+            event_group = f"ui:game_view:{id(self)}"
+            self._ui_event_hook_group = event_group
+
+        self._unsubscribe_event_hooks()
+
+        def _sub(event_name: str, handler) -> None:
+            event_system.subscribe(event_name, handler, group=event_group)
+
+        _sub("battle_round_started", self._on_battle_round_started)
+        add_controller = getattr(game, "add_decision_controller", None)
+        if callable(add_controller):
+            from .decision_controller import UIDecisionController
+
+            if not hasattr(self, "_decision_controller") or self._decision_controller is None:
+                self._decision_controller = UIDecisionController(self)
+            add_controller(self._decision_controller)
+        else:
+            _sub("decision_requested", self._on_decision_requested)
+
+        subscriptions = [
+            ("phase_start", self._on_phase_start_optional_ability_prompts),
+            ("oath_of_moment_prompt", self._on_oath_of_moment_prompt),
+            ("code_chivalric_prompt", self._on_code_chivalric_prompt),
+            ("daemonic_allegiance_prompt", self._on_daemonic_allegiance_prompt),
+            ("bondsman_prompt", self._on_bondsman_prompt),
+            ("necrons_command_phase_enhancement_prompt", self._on_necrons_command_phase_enhancement_prompt),
+            ("shadow_in_the_warp_prompt", self._on_shadow_in_the_warp_prompt),
+            ("daemon_primarch_slaanesh_prompt", self._on_daemon_primarch_slaanesh_prompt),
+            ("waaagh_prompt", self._on_waaagh_prompt),
+            ("for_the_greater_good_prompt", self._on_for_the_greater_good_prompt),
+            ("dark_pacts_prompt", self._on_dark_pacts_prompt),
+            ("voice_of_command_prompt", self._on_voice_of_command_prompt),
+            ("combat_doctrines_prompt", self._on_combat_doctrines_prompt),
+            ("grand_coven_prompt", self._on_grand_coven_prompt),
+            ("combat_drugs_prompt", self._on_combat_drugs_prompt),
+            ("gate_of_infinity_prompt", self._on_gate_of_infinity_prompt),
+            ("opponent_turn_strategic_reserves_prompt", self._on_opponent_turn_strategic_reserves_prompt),
+            ("martial_katah_prompt", self._on_martial_katah_prompt),
+            ("gilded_champion_prompt", self._on_gilded_champion_prompt),
+            ("careen_prompt", self._on_careen_prompt),
+            ("emperors_children_pledge_prompt", self._on_emperors_children_pledge_prompt),
+            ("emperors_children_exquisite_prompt", self._on_emperors_children_exquisite_prompt),
+            ("emperors_children_sensational_prompt", self._on_emperors_children_sensational_prompt),
+            ("emperors_children_pact_points_updated", self._on_emperors_children_pact_points_updated),
+            ("pain_token_prompt", self._on_pain_token_prompt),
+            ("blood_tithe_prompt", self._on_blood_tithe_prompt),
+            ("blood_tithe_updated", self._on_blood_tithe_updated),
+            ("blood_surge_prompt", self._on_blood_surge_prompt),
+            ("brazen_fury_prompt", self._on_brazen_fury_prompt),
+            ("horde_move_prompt", self._on_horde_move_prompt),
+            ("reverberating_summons_prompt", self._on_reverberating_summons_prompt),
+            ("loping_speed_prompt", self._on_loping_speed_prompt),
+            ("setup_reactive_shoot_charge_prompt", self._on_setup_reactive_shoot_charge_prompt),
+            ("frenzy_prompt", self._on_frenzy_prompt),
+            ("charge_mortal_wounds_prompt", self._on_charge_mortal_wounds_prompt),
+            ("move_over_mortal_wounds_prompt", self._on_move_over_mortal_wounds_prompt),
+            ("charge_phase_bodyguard_loss_prompt", self._on_charge_phase_bodyguard_loss_prompt),
+            ("fight_phase_end_mortal_wounds_prompt", self._on_fight_phase_end_mortal_wounds_prompt),
+            ("post_shoot_battleshock_prompt", self._on_post_shoot_battleshock_prompt),
+            ("post_shoot_suppress_prompt", self._on_post_shoot_suppress_prompt),
+            ("transport_reactive_disembark_prompt", self._on_transport_reactive_disembark_prompt),
+            ("unit_destroyed", self._on_unit_destroyed_for_monarch_of_the_hunt),
+            ("battle_focus_opportunity_prompt", self._on_battle_focus_opportunity_prompt),
+            ("battle_focus_fade_back_prompt", self._on_battle_focus_fade_back_prompt),
+            ("cabal_temporal_surge_move", self._on_cabal_temporal_surge_move),
+            ("fire_and_fade_move", self._on_fire_and_fade_move),
+            ("reactive_reposition_move", self._on_reactive_reposition_move),
+            ("cabal_ritual_resolved", self._on_cabal_ritual_resolved),
+            ("prioritised_efficiency_updated", self._on_prioritised_efficiency_updated),
+            ("cult_ambush_prompt", self._on_cult_ambush_prompt),
+            ("cult_ambush_reinforcements_prompt", self._on_cult_ambush_reinforcements_prompt),
+            ("cult_ambush_updated", self._on_cult_ambush_updated),
+        ]
+        for event_name, handler in subscriptions:
+            _sub(event_name, handler)
+
+        self._subscribed_event_system = event_system
+        self._subscribed_game = game
 
     def _resolve_player_by_id(self, player_id: str | None):
         if not player_id:
@@ -7114,6 +7096,7 @@ class GameView:
 
     def set_game(self, game, game_map, player1, player2) -> None:
         """Swap the underlying game state (used by network resync)."""
+        self._unsubscribe_event_hooks()
         self.game = game
         self.game_map = game_map
         self.player1 = player1

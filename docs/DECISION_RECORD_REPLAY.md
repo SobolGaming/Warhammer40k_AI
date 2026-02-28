@@ -15,3 +15,6 @@ Expected strict failure modes:
 - Chosen action that cannot be mapped back to the current decision.
 
 These failures are intentional and are used to detect replay drift.
+
+Retention note:
+- Runtime in-memory `DecisionRecordStore` is bounded (default `1024` records). Export records you need for long-horizon replay before pruning if your match exceeds that window.

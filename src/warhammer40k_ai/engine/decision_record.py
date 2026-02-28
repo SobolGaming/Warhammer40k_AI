@@ -122,6 +122,15 @@ def _record_validation_enabled() -> bool:
     return flag not in ("0", "false", "off", "no")
 
 
+def _decision_record_limit() -> int:
+    raw = str(os.getenv("WH40K_DECISION_RECORD_MAX", "1024") or "1024").strip()
+    try:
+        limit = int(raw)
+    except ValueError:
+        limit = 1024
+    return max(0, limit)
+
+
 class DecisionRecordSchemaValidator:
     def __init__(self) -> None:
         schema_file = _schema_path()
@@ -186,6 +195,8 @@ class DecisionRecordSchemaValidator:
 class DecisionRecordStore:
     game: object
     records: list[dict[str, Any]] = field(default_factory=list)
+    max_records: int = field(default_factory=_decision_record_limit)
+    dropped_records: int = 0
     _validator: DecisionRecordSchemaValidator = field(default_factory=DecisionRecordSchemaValidator)
 
     def _game_id(self) -> str:
@@ -246,6 +257,11 @@ class DecisionRecordStore:
                 msg = "; ".join(errors)
                 raise ValueError(f"DecisionRecord schema validation failed: {msg}")
         self.records.append(record)
+        limit = int(self.max_records or 0)
+        overflow = len(self.records) - limit
+        if limit > 0 and overflow > 0:
+            del self.records[:overflow]
+            self.dropped_records += int(overflow)
         return record
 
     def record_resolution(

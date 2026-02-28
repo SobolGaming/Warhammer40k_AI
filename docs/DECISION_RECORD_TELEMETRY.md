@@ -11,6 +11,7 @@ Runtime guarantees:
 - Invalid decisions (`valid=false`) include `invalid_attempt` and `rejection_reason`.
 - For freeform human payloads (movement payloads with `model_positions`), the engine may inject a `HumanActionCandidate` so the chosen action is represented inside `candidates`.
 - Network auto-dice resolution paths (controller-hub and fallback event subscription) use the same `AutoDiceDecisionController` logic.
+- In-memory retention is bounded: default `1024` records (`WH40K_DECISION_RECORD_MAX`), oldest-first pruning, with `dropped_records` tracking.
 
 Determinism fields:
 - `global_seed`

@@ -156,3 +156,35 @@ def test_decision_record_player_color_candidates_are_deterministic_and_valid() -
     assert len(rgb) == 3
     assert all(0 <= int(channel) <= 255 for channel in rgb)
     assert int(dict(chosen_candidate.get("params", {}) or {}).get("hue_degrees", 0)) % 15 == 0
+
+
+def test_decision_record_store_prunes_old_records_when_limit_reached() -> None:
+    game, player = _build_game()
+    game.decision_record_store.max_records = 2
+
+    decision_ids: list[str] = []
+    for _ in range(3):
+        request = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            "Confirm action?",
+            player_id=player.id,
+            options=[
+                DecisionOption.create("Yes", payload={"choice": True}),
+                DecisionOption.create("No", payload={"choice": False}),
+            ],
+        )
+        decision_ids.append(str(request.decision_id))
+        game.request_decision(request)
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=player.id,
+            option_id=request.options[0].option_id,
+            payload={},
+        )
+        apply_result = game.resolve_decision(result)
+        assert apply_result.ok is True
+
+    assert len(game.decision_record_store.records) == 2
+    assert game.decision_record_store.dropped_records == 1
+    remaining_ids = [str(r.get("decision_id", "")) for r in game.decision_record_store.records]
+    assert remaining_ids == decision_ids[-2:]

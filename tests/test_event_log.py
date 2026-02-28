@@ -267,3 +267,13 @@ def test_replay_produces_identical_end_state():
 
     replay_snapshot = snapshot_game(replay_game)
     assert replay_snapshot == end_snapshot
+
+
+def test_event_log_prunes_old_events_when_limit_reached():
+    log = DeterministicEventLog(max_events=3)
+    for idx in range(5):
+        log.record("test_event", payload={"idx": idx}, validate_payload=False)
+
+    assert len(log.events) == 3
+    assert [int(event.event_id) for event in log.events] == [3, 4, 5]
+    assert log.dropped_through_event_id == 2
