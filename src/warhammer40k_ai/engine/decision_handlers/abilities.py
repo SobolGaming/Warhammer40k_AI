@@ -3349,6 +3349,115 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if available and choice not in available:
                 return ("Experimental Augmentations choice is not in this request's candidate list.",)
         return ()
+    if ability == "deceptors_falsehood_declare_reserves":
+        if is_skip_choice(request, result):
+            return ("Falsehood deployment selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Falsehood army not found.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_deceptors", lambda: False)()):
+            return ("Falsehood requires the Deceptors detachment.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        if not source_unit_id:
+            return ("Falsehood selection requires source_unit_id.",)
+        can_select = getattr(mgr, "can_select_deceptors_falsehood_declare", None)
+        if not callable(can_select) or not bool(can_select(source_unit_id, game=game, player=player)):
+            return ("Falsehood deployment choice is no longer valid.",)
+        choice_key = str(payload.get("choice_key", "") or payload.get("key", "")).strip().upper()
+        if not choice_key:
+            return ("Falsehood selection requires choice_key.",)
+        allowed_keys = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(v or "").strip()
+        }
+        if allowed_keys and choice_key not in allowed_keys:
+            return ("Falsehood choice is not in this request's candidate list.",)
+        if choice_key not in {"DEPLOY", "RESERVES"}:
+            return ("Falsehood choice must be DEPLOY or RESERVES.",)
+        return ()
+    if ability == "deceptors_falsehood_reinforcements":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Falsehood army not found.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_deceptors", lambda: False)()):
+            return ("Falsehood requires the Deceptors detachment.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        if not source_unit_id:
+            return ("Falsehood selection requires source_unit_id.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_model_id = str(payload.get("target_model_id") or payload.get("model_id") or "").strip()
+        if not target_model_id:
+            return ("Falsehood selection requires target_model_id.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_model_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and target_model_id not in candidate_ids:
+            return ("Falsehood selection contains an ineligible model.",)
+        candidate_fn = getattr(mgr, "deceptors_falsehood_candidate_models", None)
+        if not callable(candidate_fn):
+            return ("Falsehood validation support is unavailable.",)
+        live_ids = {
+            str(entry.get("target_model_id", "") or "").strip()
+            for entry in list(candidate_fn(source_unit_id, game=game, player=player) or [])
+            if str(entry.get("target_model_id", "") or "").strip()
+        }
+        if target_model_id not in live_ids:
+            return ("Falsehood selected model is no longer eligible.",)
+        return ()
+    if ability == "deceptors_soul_link_target":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Soul Link army not found.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_deceptors", lambda: False)()):
+            return ("Soul Link requires the Deceptors detachment.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        can_select = getattr(mgr, "can_select_deceptors_soul_link", None)
+        if not callable(can_select) or not bool(can_select(game=game, player=player)):
+            return ("Soul Link target cannot be selected right now.",)
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        if not source_unit_id:
+            return ("Soul Link selection requires source_unit_id.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_model_id = str(payload.get("target_model_id") or payload.get("model_id") or "").strip()
+        if not target_model_id:
+            return ("Soul Link selection requires target_model_id.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_model_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and target_model_id not in candidate_ids:
+            return ("Soul Link selection contains an ineligible model.",)
+        candidate_fn = getattr(mgr, "deceptors_soul_link_candidate_models", None)
+        if not callable(candidate_fn):
+            return ("Soul Link validation support is unavailable.",)
+        live_ids = {
+            str(entry.get("target_model_id", "") or "").strip()
+            for entry in list(candidate_fn(source_unit_id, game=game, player=player) or [])
+            if str(entry.get("target_model_id", "") or "").strip()
+        }
+        if target_model_id not in live_ids:
+            return ("Soul Link selected model is no longer eligible.",)
+        return ()
     if ability == "tyrannical_motivation_choice":
         if is_skip_choice(request, result):
             return ("Tyrannical Motivation selection cannot be skipped.",)
@@ -6621,6 +6730,101 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             player,
             f"{ability_name}: rolled {rolls_text}; active augmentations {selected_label or 'none'}.",
         )
+        return dict(outcome)
+    if ability == "deceptors_falsehood_declare_reserves":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        choice_key = str(payload.get("choice_key", "") or payload.get("key", "")).strip().upper()
+        if not source_unit_id or not choice_key:
+            return None
+        select_fn = getattr(mgr, "select_deceptors_falsehood_declare_choice", None)
+        if not callable(select_fn):
+            return None
+        outcome = select_fn(source_unit_id, choice_key, game=game, player=player)
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Falsehood").strip() or "Falsehood"
+        label = "Reserves" if choice_key == "RESERVES" else "Deploy normally"
+        _log_action_for_players(game, player, f"{ability_name}: selected {label}.")
+        return dict(outcome)
+    if ability == "deceptors_falsehood_reinforcements":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        if not source_unit_id:
+            return None
+        target_model_id = ""
+        if not is_skip_choice(request, result):
+            target_model_id = str(payload.get("target_model_id") or payload.get("model_id") or "").strip()
+        select_fn = getattr(mgr, "select_deceptors_falsehood_reinforcements_target", None)
+        if not callable(select_fn):
+            return None
+        outcome = select_fn(source_unit_id, target_model_id, game=game, player=player)
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Falsehood").strip() or "Falsehood"
+        if bool(outcome.get("skipped", False)):
+            _log_action_for_players(game, player, f"{ability_name}: selected none this Reinforcements step.")
+        else:
+            target_unit_name = str(outcome.get("target_unit_name", "") or "Unit").strip() or "Unit"
+            target_model_name = str(outcome.get("target_model_name", "") or "Model").strip() or "Model"
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: replaced {target_model_name} in {target_unit_name} and attached the bearer.",
+            )
+        return dict(outcome)
+    if ability == "deceptors_soul_link_target":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        if not source_unit_id:
+            return None
+        target_model_id = ""
+        if not is_skip_choice(request, result):
+            target_model_id = str(payload.get("target_model_id") or payload.get("model_id") or "").strip()
+        select_fn = getattr(mgr, "select_deceptors_soul_link_target", None)
+        if not callable(select_fn):
+            return None
+        outcome = select_fn(source_unit_id, target_model_id, game=game, player=player)
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Soul Link").strip() or "Soul Link"
+        if bool(outcome.get("skipped", False)):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+        else:
+            target_model_name = str(outcome.get("target_model_name", "") or "Model").strip() or "Model"
+            target_unit_name = str(outcome.get("target_unit_name", "") or "Unit").strip() or "Unit"
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: copied datasheet abilities from {target_model_name} ({target_unit_name}).",
+            )
         return dict(outcome)
     if ability == "tyrannical_motivation_choice":
         payload = _option_payload(request, result)

@@ -1352,6 +1352,18 @@ class GameSetupDeploymentReservesMixin:
         """
         arrival_results = {}
         current_player = self.get_current_player()
+        if current_player is None:
+            return arrival_results
+
+        current_army = current_player.get_army()
+        current_mgr = getattr(current_army, "chaos_space_marines_detachments", None) if current_army is not None else None
+        queue_falsehood = (
+            getattr(current_mgr, "queue_deceptors_falsehood_reinforcements_request", None)
+            if current_mgr is not None
+            else None
+        )
+        if callable(queue_falsehood):
+            queue_falsehood(game=self, player=current_player)
 
         # Handle reserves arrivals for the current player
         units_arrived = self.process_player_reserves_arrivals(current_player)
@@ -1389,6 +1401,24 @@ class GameSetupDeploymentReservesMixin:
         units_arrived: list['Unit'] = []
         units_that_can_arrive = self.get_units_that_can_arrive_from_reserves(player)
         units_that_must_arrive = self.get_units_that_must_arrive_from_reserves(player)
+        army = player.get_army() if player is not None else None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        excludes_standard_arrival = (
+            getattr(csm_mgr, "deceptors_falsehood_excludes_standard_reserves_arrival", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(excludes_standard_arrival):
+            units_that_can_arrive = [
+                unit
+                for unit in list(units_that_can_arrive or [])
+                if not bool(excludes_standard_arrival(unit, game=self, player=player))
+            ]
+            units_that_must_arrive = [
+                unit
+                for unit in list(units_that_must_arrive or [])
+                if not bool(excludes_standard_arrival(unit, game=self, player=player))
+            ]
 
         player_name = getattr(player, "name", "Player")
         logger.info("INFO: %s has %d units that can arrive from reserves", player_name, len(units_that_can_arrive))
@@ -2093,6 +2123,9 @@ class GameSetupDeploymentReservesMixin:
             queue_fn = getattr(mgr, "queue_masters_of_misdirection_selection_request", None) if mgr is not None else None
             if callable(queue_fn):
                 queue_fn(game=self, player=p)
+            falsehood_fn = getattr(mgr, "queue_deceptors_falsehood_declare_request", None) if mgr is not None else None
+            if callable(falsehood_fn):
+                falsehood_fn(game=self, player=p)
 
         # Chaos Knights Iconoclast Fiefdom: Pave the Way enhancement unit selection.
         for p in list(self.players or []):

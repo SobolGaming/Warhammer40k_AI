@@ -83,6 +83,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     DETACHMENT_VETERANS_OF_THE_LONG_WAR = "Veterans of the Long War"
     _MASTERS_OF_MISDIRECTION_SELECTION_ABILITY = "deceptors_masters_of_misdirection_selection"
     _MASTERS_OF_MISDIRECTION_SOURCE = "Masters of Misdirection"
+    _DECEPTORS_FALSEHOOD_DECLARE_ABILITY = "deceptors_falsehood_declare_reserves"
+    _DECEPTORS_FALSEHOOD_REINFORCEMENTS_ABILITY = "deceptors_falsehood_reinforcements"
+    _DECEPTORS_FALSEHOOD_SOURCE = "Falsehood"
+    _DECEPTORS_SOUL_LINK_ABILITY = "deceptors_soul_link_target"
+    _DECEPTORS_SOUL_LINK_SOURCE = "Soul Link"
     _TYRANNICAL_MOTIVATION_ABILITY = "tyrannical_motivation_choice"
     _TYRANNICAL_MOTIVATION_SOURCE = "Tyrannical Motivation"
     _TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE = "HURONS_ELITE"
@@ -2471,6 +2476,10 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         return cls._normalize_name(str(getattr(unit, "name", "") or "")) == "cultist mob"
 
     @classmethod
+    def _is_chosen_unit(cls, unit) -> bool:
+        return cls._normalize_name(str(getattr(unit, "name", "") or "")) == "chosen"
+
+    @classmethod
     def _masters_of_misdirection_unit_kind(cls, unit) -> str:
         if cls._is_legionaries_unit(unit):
             return "legionaries"
@@ -2678,6 +2687,799 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if self.army is not None:
             setattr(self.army, "masters_of_misdirection_selected_unit_ids", list(applied_ids))
         return list(applied_ids)
+
+    def _pending_deceptors_choose_quarry_request(
+        self,
+        game,
+        *,
+        ability: str,
+        army_id: str = "",
+        source_unit_id: str = "",
+    ) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        ability_key = str(ability or "").strip().lower()
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != ability_key:
+                continue
+            if army_id and str(ctx.get("army_id", "") or "") != str(army_id):
+                continue
+            if source_unit_id and str(ctx.get("source_unit_id", "") or "") != str(source_unit_id):
+                continue
+            return True
+        return False
+
+    def _deceptors_sources_by_flag(self, *, flag_key: str, require_alive_bearer: bool = True) -> list[tuple]:
+        if not self.is_deceptors() or self.army is None:
+            return []
+        out: list[tuple] = []
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            if root is None or not self._unit_in_army(root):
+                continue
+            get_members = getattr(root, "get_attached_unit_members", None)
+            members = list(get_members() or []) if callable(get_members) else [root]
+            if not members:
+                members = [root]
+            for member in members:
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get(flag_key, False)):
+                    continue
+                bearer = self._find_enhancement_bearer_on_member(member, sr)
+                if bool(require_alive_bearer) and not self._model_alive(bearer):
+                    continue
+                out.append((root, member, sr, bearer))
+                break
+        out.sort(key=lambda entry: str(get_entity_id(entry[0]) or self._unit_root_key(entry[0])))
+        return out
+
+    def _deceptors_source_entry(self, source_unit_id: str, *, flag_key: str):
+        target_id = str(source_unit_id or "").strip()
+        if not target_id:
+            return None
+        for entry in self._deceptors_sources_by_flag(flag_key=flag_key):
+            root = entry[0]
+            rid = str(get_entity_id(root) or "")
+            if rid == target_id:
+                return entry
+        return None
+
+    def _deceptors_unit_by_id(self, unit_id: str):
+        target_id = str(unit_id or "").strip()
+        if not target_id or self.army is None:
+            return None
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            if root is None:
+                continue
+            if str(get_entity_id(root) or "") == target_id:
+                return root
+        return None
+
+    def _deceptors_model_by_id(self, model_id: str):
+        target_id = str(model_id or "").strip()
+        if not target_id or self.army is None:
+            return None
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            if root is None:
+                continue
+            get_members = getattr(root, "get_attached_unit_members", None)
+            members = list(get_members() or []) if callable(get_members) else [root]
+            if not members:
+                members = [root]
+            for member in members:
+                for model in list(getattr(member, "models", []) or []):
+                    model_eid = str(get_entity_id(model) or "")
+                    model_lid = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                    if target_id in {model_eid, model_lid}:
+                        return model
+        return None
+
+    def can_select_deceptors_falsehood_declare(self, source_unit_id: str, *, game=None, player=None) -> bool:
+        if not self.is_deceptors() or self.army is None:
+            return False
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return False
+        army_player = getattr(self.army, "player", None)
+        if army_player is not None and str(getattr(army_player, "id", "") or "") != str(getattr(owner, "id", "") or ""):
+            return False
+        entry = self._deceptors_source_entry(source_unit_id, flag_key="enhancement_falsehood")
+        if entry is None:
+            return False
+        _root, _member, sr, _bearer = entry
+        if not isinstance(sr, dict):
+            return False
+        if bool(sr.get("enhancement_falsehood_declare_resolved", False)):
+            return False
+        return True
+
+    def queue_deceptors_falsehood_declare_request(self, *, game=None, player=None) -> None:
+        if not self.is_deceptors() or self.army is None:
+            return
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None or not bool(getattr(resolved_game, "is_authoritative", True)):
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "")
+        for root, member, sr, bearer in self._deceptors_sources_by_flag(flag_key="enhancement_falsehood"):
+            source_unit_id = str(get_entity_id(root) or "")
+            if not source_unit_id:
+                continue
+            if not self.can_select_deceptors_falsehood_declare(source_unit_id, game=resolved_game, player=owner):
+                continue
+            if self._pending_deceptors_choose_quarry_request(
+                resolved_game,
+                ability=self._DECEPTORS_FALSEHOOD_DECLARE_ABILITY,
+                army_id=army_id,
+                source_unit_id=source_unit_id,
+            ):
+                continue
+            source_model_id = str(get_entity_id(bearer) or getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
+            options = [
+                DecisionOption.create(
+                    "Deploy normally",
+                    payload={
+                        "choice_key": "DEPLOY",
+                        "source_unit_id": source_unit_id,
+                        "source_model_id": source_model_id,
+                        "army_id": army_id,
+                    },
+                ),
+                DecisionOption.create(
+                    "Set up in Reserves",
+                    payload={
+                        "choice_key": "RESERVES",
+                        "source_unit_id": source_unit_id,
+                        "source_model_id": source_model_id,
+                        "army_id": army_id,
+                    },
+                ),
+            ]
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Falsehood: choose whether the bearer starts on the battlefield or in Reserves.",
+                player_id=getattr(owner, "id", None),
+                options=options,
+                context={
+                    "ability": self._DECEPTORS_FALSEHOOD_DECLARE_ABILITY,
+                    "ability_name": self._DECEPTORS_FALSEHOOD_SOURCE,
+                    "phase": "Declare Battle Formations step",
+                    "source_unit_id": source_unit_id,
+                    "source_model_id": source_model_id,
+                    "army_id": army_id,
+                    "allowed_choice_keys": ["DEPLOY", "RESERVES"],
+                    "optional": False,
+                },
+            )
+            if hasattr(resolved_game, "request_decision"):
+                resolved_game.request_decision(request)
+
+    def select_deceptors_falsehood_declare_choice(
+        self,
+        source_unit_id: str,
+        choice_key: str,
+        *,
+        game=None,
+        player=None,
+    ) -> dict:
+        if not self.can_select_deceptors_falsehood_declare(source_unit_id, game=game, player=player):
+            return {"ok": False, "reason": "Falsehood deployment choice is not available."}
+        entry = self._deceptors_source_entry(source_unit_id, flag_key="enhancement_falsehood")
+        if entry is None:
+            return {"ok": False, "reason": "Falsehood source unit was not found."}
+        root, member, sr, _bearer = entry
+        key = str(choice_key or "").strip().upper()
+        if key not in {"DEPLOY", "RESERVES"}:
+            return {"ok": False, "reason": "Falsehood choice must be DEPLOY or RESERVES."}
+
+        updated = dict(sr)
+        updated["enhancement_falsehood_declare_resolved"] = True
+        if key == "RESERVES":
+            updated["enhancement_falsehood_in_reserves"] = True
+            updated["enhancement_falsehood_reinforcements_available"] = True
+            updated["enhancement_falsehood_reinforcements_used"] = False
+            set_reserve_status = getattr(root, "set_reserve_status", None)
+            if callable(set_reserve_status):
+                set_reserve_status("reserves")
+            else:
+                root.reserve_status = "reserves"
+            root.deployed = True
+            root.arrived_from_reserves_this_turn = False
+            game_map = getattr(game, "map", None) if game is not None else None
+            units = getattr(game_map, "units", None)
+            if isinstance(units, list) and root in units:
+                units.remove(root)
+        else:
+            updated["enhancement_falsehood_in_reserves"] = False
+            updated["enhancement_falsehood_reinforcements_available"] = False
+            updated["enhancement_falsehood_reinforcements_used"] = False
+        member.special_rules = updated
+        self._clear_unit_ability_cache(member)
+        self._clear_unit_ability_cache(root)
+        return {
+            "ok": True,
+            "choice_key": key,
+            "source_unit_id": str(get_entity_id(root) or ""),
+            "source": self._DECEPTORS_FALSEHOOD_SOURCE,
+        }
+
+    def deceptors_falsehood_reinforcement_source_unit_ids(self, *, game=None, player=None) -> list[str]:
+        if not self.is_deceptors() or self.army is None:
+            return []
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return []
+        out: list[str] = []
+        for root, _member, sr, bearer in self._deceptors_sources_by_flag(flag_key="enhancement_falsehood"):
+            if not self._model_alive(bearer):
+                continue
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_falsehood_in_reserves", False)):
+                continue
+            if not bool(sr.get("enhancement_falsehood_reinforcements_available", False)):
+                continue
+            if bool(sr.get("enhancement_falsehood_reinforcements_used", False)):
+                continue
+            in_reserves = getattr(root, "is_in_reserves", None)
+            if callable(in_reserves) and not bool(in_reserves()):
+                continue
+            unit_id = str(get_entity_id(root) or "")
+            if unit_id:
+                out.append(unit_id)
+        out.sort()
+        return out
+
+    def deceptors_falsehood_excludes_standard_reserves_arrival(self, unit, *, game=None, player=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        root_id = str(get_entity_id(root) or "")
+        if not root_id:
+            return False
+        ids = set(self.deceptors_falsehood_reinforcement_source_unit_ids(game=game, player=player))
+        return root_id in ids
+
+    def deceptors_falsehood_candidate_models(self, source_unit_id: str, *, game=None, player=None) -> list[dict]:
+        entry = self._deceptors_source_entry(source_unit_id, flag_key="enhancement_falsehood")
+        if entry is None:
+            return []
+        source_root, _source_member, source_sr, _source_bearer = entry
+        if not isinstance(source_sr, dict):
+            return []
+        if not bool(source_sr.get("enhancement_falsehood_reinforcements_available", False)):
+            return []
+        if bool(source_sr.get("enhancement_falsehood_reinforcements_used", False)):
+            return []
+        in_reserves = getattr(source_root, "is_in_reserves", None)
+        if callable(in_reserves) and not bool(in_reserves()):
+            return []
+
+        candidates: list[dict] = []
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            if root is None or root is source_root:
+                continue
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_on_battlefield(root):
+                continue
+            if not (self._is_legionaries_unit(root) or self._is_chosen_unit(root)):
+                continue
+            if list(getattr(root, "attached_leaders", []) or []):
+                continue
+            alive_models = [m for m in list(getattr(root, "models", []) or []) if self._model_alive(m)]
+            if len(alive_models) < 2:
+                continue
+            target_unit_id = str(get_entity_id(root) or "")
+            if not target_unit_id:
+                continue
+            for model in alive_models:
+                target_model_id = str(
+                    get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or ""
+                ).strip()
+                if not target_model_id:
+                    continue
+                candidates.append(
+                    {
+                        "target_unit_id": target_unit_id,
+                        "target_unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+                        "target_model_id": target_model_id,
+                        "target_model_name": str(getattr(model, "name", "Model") or "Model"),
+                    }
+                )
+        candidates.sort(key=lambda item: (str(item["target_unit_id"]), str(item["target_model_id"])))
+        return candidates
+
+    def queue_deceptors_falsehood_reinforcements_request(self, *, game=None, player=None) -> None:
+        if not self.is_deceptors() or self.army is None:
+            return
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None or not bool(getattr(resolved_game, "is_authoritative", True)):
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "")
+        for source_unit_id in self.deceptors_falsehood_reinforcement_source_unit_ids(game=resolved_game, player=owner):
+            if self._pending_deceptors_choose_quarry_request(
+                resolved_game,
+                ability=self._DECEPTORS_FALSEHOOD_REINFORCEMENTS_ABILITY,
+                army_id=army_id,
+                source_unit_id=source_unit_id,
+            ):
+                continue
+            entry = self._deceptors_source_entry(source_unit_id, flag_key="enhancement_falsehood")
+            if entry is None:
+                continue
+            _root, _member, _sr, bearer = entry
+            source_model_id = str(get_entity_id(bearer) or getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
+            candidates = list(self.deceptors_falsehood_candidate_models(source_unit_id, game=resolved_game, player=owner) or [])
+            if not candidates:
+                continue
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            for candidate in candidates:
+                options.append(
+                    DecisionOption.create(
+                        f"{candidate['target_model_name']} ({candidate['target_unit_name']})",
+                        payload={
+                            "source_unit_id": source_unit_id,
+                            "source_model_id": source_model_id,
+                            "target_unit_id": candidate["target_unit_id"],
+                            "target_model_id": candidate["target_model_id"],
+                            "army_id": army_id,
+                        },
+                    )
+                )
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Falsehood: select one model in a friendly Legionaries or Chosen unit (or None).",
+                player_id=getattr(owner, "id", None),
+                options=options,
+                context={
+                    "ability": self._DECEPTORS_FALSEHOOD_REINFORCEMENTS_ABILITY,
+                    "ability_name": self._DECEPTORS_FALSEHOOD_SOURCE,
+                    "phase": "Reinforcements step (Movement phase)",
+                    "army_id": army_id,
+                    "source_unit_id": source_unit_id,
+                    "source_model_id": source_model_id,
+                    "candidate_model_ids": [str(entry["target_model_id"]) for entry in candidates],
+                    "optional": True,
+                },
+            )
+            if hasattr(resolved_game, "request_decision"):
+                resolved_game.request_decision(request)
+
+    def select_deceptors_falsehood_reinforcements_target(
+        self,
+        source_unit_id: str,
+        target_model_id: str,
+        *,
+        game=None,
+        player=None,
+    ) -> dict:
+        entry = self._deceptors_source_entry(source_unit_id, flag_key="enhancement_falsehood")
+        if entry is None:
+            return {"ok": False, "reason": "Falsehood source unit was not found."}
+        source_root, source_member, source_sr, source_bearer = entry
+        if not isinstance(source_sr, dict):
+            return {"ok": False, "reason": "Falsehood source state is unavailable."}
+        if not bool(source_sr.get("enhancement_falsehood_reinforcements_available", False)):
+            return {"ok": False, "reason": "Falsehood Reinforcements selection is unavailable."}
+        if bool(source_sr.get("enhancement_falsehood_reinforcements_used", False)):
+            return {"ok": False, "reason": "Falsehood has already been used."}
+
+        target_id = str(target_model_id or "").strip()
+        if not target_id:
+            return {
+                "ok": True,
+                "skipped": True,
+                "source_unit_id": str(get_entity_id(source_root) or ""),
+                "source": self._DECEPTORS_FALSEHOOD_SOURCE,
+            }
+
+        candidate_by_model_id = {
+            str(entry["target_model_id"]): entry
+            for entry in list(self.deceptors_falsehood_candidate_models(source_unit_id, game=game, player=player) or [])
+            if str(entry.get("target_model_id", "")).strip()
+        }
+        chosen = candidate_by_model_id.get(target_id)
+        if chosen is None:
+            return {"ok": False, "reason": "Falsehood selected model is ineligible."}
+        target_model = self._deceptors_model_by_id(target_id)
+        if target_model is None:
+            return {"ok": False, "reason": "Falsehood target model was not found."}
+        target_parent = getattr(target_model, "parent_unit", None)
+        if target_parent is None:
+            return {"ok": False, "reason": "Falsehood target model has no parent unit."}
+        target_root = self._unit_root(target_parent)
+        if target_root is None:
+            return {"ok": False, "reason": "Falsehood target unit was not found."}
+        can_attach = getattr(source_root, "can_attach_to", None)
+        if callable(can_attach) and not bool(can_attach(target_root)):
+            return {"ok": False, "reason": "Falsehood bearer cannot attach to the selected unit."}
+
+        try:
+            target_location = target_model.get_location()
+        except Exception:
+            return {"ok": False, "reason": "Falsehood target location is unavailable."}
+        game_map = getattr(game, "map", None) if game is not None else None
+
+        engaged_enemy_roots: list = []
+        if game_map is not None and hasattr(game_map, "get_enemy_units"):
+            from ..utility.aura_utils import model_within_engagement_range_of_unit
+
+            enemy_units = list(game_map.get_enemy_units(target_root) or [])
+            for enemy in enemy_units:
+                enemy_root = self._unit_root(enemy)
+                if enemy_root is None or not self._unit_on_battlefield(enemy_root):
+                    continue
+                if model_within_engagement_range_of_unit(target_model, enemy_root):
+                    engaged_enemy_roots.append(enemy_root)
+
+        placement = None
+        if engaged_enemy_roots:
+            placement = target_location
+        else:
+            find_pos = getattr(game, "_find_closest_valid_reposition_position", None) if game is not None else None
+            if callable(find_pos):
+                placement = find_pos(source_root, target_location, game_map=game_map)
+            if not placement:
+                placement = target_location
+        if not placement:
+            return {"ok": False, "reason": "Falsehood cannot set up the bearer near the selected model."}
+
+        remove_model = getattr(target_parent, "remove_model", None)
+        if not callable(remove_model):
+            return {"ok": False, "reason": "Falsehood target model cannot be removed."}
+        remove_model(target_model, fleed=True, game_map=game_map)
+
+        try:
+            facing = float(placement[3]) if len(placement) >= 4 else float(
+                getattr(getattr(source_bearer, "model_base", None), "facing", 0.0) or 0.0
+            )
+        except Exception:
+            facing = 0.0
+        source_bearer.set_location(
+            float(placement[0]),
+            float(placement[1]),
+            float(placement[2]),
+            float(facing),
+        )
+        source_root.position = (float(placement[0]), float(placement[1]), float(placement[2]))
+        if isinstance(getattr(game_map, "units", None), list) and source_root not in game_map.units:
+            game_map.units.append(source_root)
+
+        finalize = getattr(source_root, "_finalize_reserves_arrival", None)
+        if callable(finalize):
+            turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            finalize(turn=turn, game_map=game_map)
+        else:
+            source_root.deployed = True
+            set_reserve_status = getattr(source_root, "set_reserve_status", None)
+            if callable(set_reserve_status):
+                set_reserve_status("deployed")
+            else:
+                source_root.reserve_status = "deployed"
+            source_root.arrived_from_reserves_this_turn = True
+
+        attach_to_unit = getattr(source_root, "attach_to_unit", None)
+        if callable(attach_to_unit):
+            try:
+                attach_to_unit(target_root)
+            except ValueError:
+                return {"ok": False, "reason": "Falsehood bearer cannot attach to the selected unit."}
+
+        updated = dict(source_sr)
+        updated["enhancement_falsehood_in_reserves"] = False
+        updated["enhancement_falsehood_reinforcements_available"] = False
+        updated["enhancement_falsehood_reinforcements_used"] = True
+        updated["enhancement_falsehood_selected_target_model_id"] = str(target_id)
+        updated["enhancement_falsehood_selected_target_unit_id"] = str(get_entity_id(target_root) or "")
+        source_member.special_rules = updated
+        self._clear_unit_ability_cache(source_member)
+        self._clear_unit_ability_cache(source_root)
+        self._clear_unit_ability_cache(target_root)
+        return {
+            "ok": True,
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "source_model_id": str(get_entity_id(source_bearer) or ""),
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "target_model_id": str(target_id),
+            "target_unit_name": str(getattr(target_root, "name", "Unit") or "Unit"),
+            "target_model_name": str(getattr(target_model, "name", "Model") or "Model"),
+            "source": self._DECEPTORS_FALSEHOOD_SOURCE,
+        }
+
+    def _clear_deceptors_soul_link_effect(self, member, sr: dict) -> bool:
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("enhancement_soul_link_active", False)):
+            return False
+        bearer = self._find_enhancement_bearer_on_member(member, sr)
+        if self._model_alive(bearer) and bool(sr.get("enhancement_soul_link_added_psyker_keyword", False)):
+            keywords = list(getattr(bearer, "keywords", []) or [])
+            removed = False
+            filtered: list[str] = []
+            for keyword in keywords:
+                if (not removed) and str(keyword or "").strip().upper() == "PSYKER":
+                    removed = True
+                    continue
+                filtered.append(keyword)
+            bearer.keywords = filtered
+        updated = dict(sr)
+        updated["enhancement_soul_link_active"] = False
+        for key in (
+            "enhancement_soul_link_target_model_id",
+            "enhancement_soul_link_target_unit_id",
+            "enhancement_soul_link_added_psyker_keyword",
+            "enhancement_soul_link_turn",
+            "enhancement_soul_link_turn_owner_id",
+        ):
+            updated.pop(key, None)
+        member.special_rules = updated
+        self._clear_unit_ability_cache(member)
+        return True
+
+    def expire_deceptors_soul_link_effects(self, *, game=None, player=None) -> None:
+        if not self.is_deceptors() or self.army is None:
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        for root, member, sr, _bearer in self._deceptors_sources_by_flag(
+            flag_key="enhancement_soul_link",
+            require_alive_bearer=False,
+        ):
+            if self._clear_deceptors_soul_link_effect(member, sr):
+                self._clear_unit_ability_cache(root)
+
+    def can_select_deceptors_soul_link(self, *, game=None, player=None) -> bool:
+        if not self.is_deceptors() or self.army is None:
+            return False
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return False
+        army_player = getattr(self.army, "player", None)
+        if army_player is not None and str(getattr(army_player, "id", "") or "") != str(getattr(owner, "id", "") or ""):
+            return False
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return False
+        phase_name = self._current_phase_name(game=resolved_game)
+        if phase_name and phase_name != "COMMAND_PHASE":
+            return False
+        current_owner = str(self._current_turn_owner_id(game=resolved_game, player=owner) or "")
+        if current_owner and current_owner != str(getattr(owner, "id", "") or ""):
+            return False
+        return True
+
+    def deceptors_soul_link_candidate_models(self, source_unit_id: str, *, game=None, player=None) -> list[dict]:
+        entry = self._deceptors_source_entry(source_unit_id, flag_key="enhancement_soul_link")
+        if entry is None:
+            return []
+        source_root, _source_member, _source_sr, source_bearer = entry
+        if source_root is None or not self._unit_on_battlefield(source_root):
+            return []
+        source_bearer_id = str(get_entity_id(source_bearer) or getattr(source_bearer, "id", getattr(source_bearer, "_id", "")) or "")
+        candidates: list[dict] = []
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            if root is None:
+                continue
+            get_members = getattr(root, "get_attached_unit_members", None)
+            members = list(get_members() or []) if callable(get_members) else [root]
+            if not members:
+                members = [root]
+            for member in members:
+                if member is None:
+                    continue
+                for model in list(getattr(member, "models", []) or []):
+                    if not self._model_alive(model):
+                        continue
+                    model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "")
+                    if not model_id or model_id == source_bearer_id:
+                        continue
+                    if not self._model_has_keyword(model, "INFANTRY"):
+                        continue
+                    if not self._model_has_keyword(model, "CHARACTER"):
+                        continue
+                    if not self._model_has_keyword(model, "HERETIC ASTARTES"):
+                        continue
+                    if self._model_has_keyword(model, "EPIC HERO"):
+                        continue
+                    candidates.append(
+                        {
+                            "target_unit_id": str(get_entity_id(root) or ""),
+                            "target_unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+                            "target_model_id": model_id,
+                            "target_model_name": str(getattr(model, "name", "Model") or "Model"),
+                        }
+                    )
+        candidates.sort(key=lambda item: (str(item["target_unit_id"]), str(item["target_model_id"])))
+        return candidates
+
+    def queue_deceptors_soul_link_choice_request(self, *, game=None, player=None) -> None:
+        if not self.is_deceptors() or self.army is None:
+            return
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None or not bool(getattr(resolved_game, "is_authoritative", True)):
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        if not self.can_select_deceptors_soul_link(game=resolved_game, player=owner):
+            return
+        self.expire_deceptors_soul_link_effects(game=resolved_game, player=owner)
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "")
+        for root, _member, _sr, bearer in self._deceptors_sources_by_flag(flag_key="enhancement_soul_link"):
+            if not self._unit_on_battlefield(root):
+                continue
+            source_unit_id = str(get_entity_id(root) or "")
+            if not source_unit_id:
+                continue
+            if self._pending_deceptors_choose_quarry_request(
+                resolved_game,
+                ability=self._DECEPTORS_SOUL_LINK_ABILITY,
+                army_id=army_id,
+                source_unit_id=source_unit_id,
+            ):
+                continue
+            source_model_id = str(get_entity_id(bearer) or getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
+            candidates = self.deceptors_soul_link_candidate_models(source_unit_id, game=resolved_game, player=owner)
+            if not candidates:
+                continue
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            for candidate in candidates:
+                options.append(
+                    DecisionOption.create(
+                        f"{candidate['target_model_name']} ({candidate['target_unit_name']})",
+                        payload={
+                            "source_unit_id": source_unit_id,
+                            "source_model_id": source_model_id,
+                            "target_unit_id": candidate["target_unit_id"],
+                            "target_model_id": candidate["target_model_id"],
+                            "army_id": army_id,
+                        },
+                    )
+                )
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Soul Link: select one other friendly HERETIC ASTARTES INFANTRY CHARACTER model (or None).",
+                player_id=getattr(owner, "id", None),
+                options=options,
+                context={
+                    "ability": self._DECEPTORS_SOUL_LINK_ABILITY,
+                    "ability_name": self._DECEPTORS_SOUL_LINK_SOURCE,
+                    "phase": "Command phase",
+                    "army_id": army_id,
+                    "source_unit_id": source_unit_id,
+                    "source_model_id": source_model_id,
+                    "candidate_model_ids": [str(entry["target_model_id"]) for entry in candidates],
+                    "optional": True,
+                },
+            )
+            if hasattr(resolved_game, "request_decision"):
+                resolved_game.request_decision(request)
+
+    def select_deceptors_soul_link_target(
+        self,
+        source_unit_id: str,
+        target_model_id: str,
+        *,
+        game=None,
+        player=None,
+    ) -> dict:
+        if not self.can_select_deceptors_soul_link(game=game, player=player):
+            return {"ok": False, "reason": "Soul Link target cannot be selected right now."}
+        entry = self._deceptors_source_entry(source_unit_id, flag_key="enhancement_soul_link")
+        if entry is None:
+            return {"ok": False, "reason": "Soul Link source unit was not found."}
+        source_root, source_member, source_sr, source_bearer = entry
+        if not isinstance(source_sr, dict):
+            return {"ok": False, "reason": "Soul Link source state is unavailable."}
+        self._clear_deceptors_soul_link_effect(source_member, source_sr)
+        source_sr = dict(getattr(source_member, "special_rules", {}) or {})
+
+        target_id = str(target_model_id or "").strip()
+        if not target_id:
+            return {
+                "ok": True,
+                "skipped": True,
+                "source_unit_id": str(get_entity_id(source_root) or ""),
+                "source": self._DECEPTORS_SOUL_LINK_SOURCE,
+            }
+
+        candidate_by_model_id = {
+            str(entry["target_model_id"]): entry
+            for entry in list(self.deceptors_soul_link_candidate_models(source_unit_id, game=game, player=player) or [])
+            if str(entry.get("target_model_id", "")).strip()
+        }
+        chosen = candidate_by_model_id.get(target_id)
+        if chosen is None:
+            return {"ok": False, "reason": "Soul Link selected model is ineligible."}
+        target_model = self._deceptors_model_by_id(target_id)
+        if target_model is None:
+            return {"ok": False, "reason": "Soul Link target model was not found."}
+        target_parent = getattr(target_model, "parent_unit", None)
+        target_root = self._unit_root(target_parent)
+        if target_root is None:
+            return {"ok": False, "reason": "Soul Link target unit was not found."}
+
+        added_psyker_keyword = False
+        if not self._model_has_keyword(source_bearer, "PSYKER"):
+            keywords = list(getattr(source_bearer, "keywords", []) or [])
+            keywords.append("PSYKER")
+            source_bearer.keywords = keywords
+            added_psyker_keyword = True
+
+        updated = dict(source_sr)
+        updated["enhancement_soul_link_active"] = True
+        updated["enhancement_soul_link_target_model_id"] = str(target_id)
+        updated["enhancement_soul_link_target_unit_id"] = str(get_entity_id(target_root) or "")
+        updated["enhancement_soul_link_added_psyker_keyword"] = bool(added_psyker_keyword)
+        updated["enhancement_soul_link_turn"] = int(self._current_turn(game=game) or 0)
+        updated["enhancement_soul_link_turn_owner_id"] = str(self._current_turn_owner_id(game=game, player=player) or "")
+        source_member.special_rules = updated
+        self._clear_unit_ability_cache(source_member)
+        self._clear_unit_ability_cache(source_root)
+        return {
+            "ok": True,
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "source_model_id": str(get_entity_id(source_bearer) or ""),
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "target_model_id": str(target_id),
+            "target_unit_name": str(getattr(target_root, "name", "Unit") or "Unit"),
+            "target_model_name": str(getattr(target_model, "name", "Model") or "Model"),
+            "added_psyker_keyword": bool(added_psyker_keyword),
+            "source": self._DECEPTORS_SOUL_LINK_SOURCE,
+        }
+
+    def deceptors_soul_link_replacement_abilities(self, unit):
+        if not self.is_deceptors() or self.army is None:
+            return None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is not unit:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_soul_link_active", False)):
+                continue
+            target_unit_id = str(sr.get("enhancement_soul_link_target_unit_id", "") or "").strip()
+            if not target_unit_id:
+                return []
+            target_root = self._deceptors_unit_by_id(target_unit_id)
+            if target_root is None:
+                return []
+            return list(getattr(target_root, "possible_abilities", []) or [])
+        return None
 
     @classmethod
     def _normalize_pactbound_mark(cls, value: str) -> str:

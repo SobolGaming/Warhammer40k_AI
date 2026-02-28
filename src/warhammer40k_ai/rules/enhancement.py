@@ -580,6 +580,10 @@ class Enhancement:
         is_chaos_cult = bool(csm_mgr and csm_mgr.is_chaos_cult())
         is_creations_of_bile = bool(csm_mgr and csm_mgr.is_creations_of_bile())
         try:
+            is_deceptors = bool(csm_mgr and csm_mgr.is_deceptors())
+        except Exception:
+            is_deceptors = False
+        try:
             is_hearthband = bool(lov_mgr and lov_mgr.is_hearthband())
         except Exception:
             is_hearthband = False
@@ -5740,6 +5744,63 @@ class Enhancement:
                 invalidate_root = getattr(unit.attached_to, "_invalidate_ability_cache", None)
                 if callable(invalidate_root):
                     invalidate_root()
+
+        if name == "cursed fang" or enh_id == "000008964002":
+            if not is_deceptors:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_cursed_fang"] = True
+            unit.special_rules["enhancement_cursed_fang_source"] = "Cursed Fang"
+            ap_bonus = _coerce_int(params.get("melee_ap_bonus", 1), default=1)
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0) or 0
+            ) + int(max(0, ap_bonus))
+            if bool(params.get("precision", True)):
+                unit.special_rules["enhancement_bearer_melee_precision"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "falsehood" or enh_id == "000008964003":
+            if not is_deceptors:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_falsehood"] = True
+            unit.special_rules["enhancement_falsehood_source"] = "Falsehood"
+            unit.special_rules["enhancement_falsehood_optional"] = bool(params.get("optional", True))
+            unit.special_rules["enhancement_falsehood_declare_resolved"] = False
+            unit.special_rules["enhancement_falsehood_in_reserves"] = False
+            unit.special_rules["enhancement_falsehood_reinforcements_available"] = False
+            unit.special_rules["enhancement_falsehood_reinforcements_used"] = False
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "shroud of obfuscation" or enh_id == "000008964004":
+            if not is_deceptors:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_shroud_of_obfuscation"] = True
+            unit.special_rules["enhancement_shroud_of_obfuscation_source"] = "Shroud of Obfuscation"
+            unit.special_rules["enhancement_shroud_of_obfuscation_stealth"] = bool(params.get("grants_stealth", True))
+            unit.special_rules["enhancement_shroud_of_obfuscation_lone_operative"] = bool(
+                params.get("grants_lone_operative", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "soul link" or enh_id == "000008964005":
+            if not is_deceptors:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_soul_link"] = True
+            unit.special_rules["enhancement_soul_link_source"] = "Soul Link"
+            unit.special_rules["enhancement_soul_link_optional"] = bool(params.get("optional", True))
+            unit.special_rules["enhancement_soul_link_active"] = False
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "surgical precision" or enh_id == "000009773002":
             if not is_creations_of_bile:

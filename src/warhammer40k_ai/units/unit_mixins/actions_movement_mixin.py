@@ -1680,7 +1680,20 @@ class ActionsMovementMixin:
 
     def _iter_active_possible_abilities(self):
         """Yield unit-level abilities that are currently active for this unit."""
-        for ab in (getattr(self, "possible_abilities", []) or []):
+        active_abilities = None
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("enhancement_soul_link_active", False)):
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            resolve_fn = getattr(mgr, "deceptors_soul_link_replacement_abilities", None) if mgr is not None else None
+            if callable(resolve_fn):
+                replacement = resolve_fn(self)
+                if replacement is not None:
+                    active_abilities = list(replacement or [])
+        if active_abilities is None:
+            active_abilities = list(getattr(self, "possible_abilities", []) or [])
+
+        for ab in active_abilities:
             try:
                 if not self._ability_is_active(ab):
                     continue

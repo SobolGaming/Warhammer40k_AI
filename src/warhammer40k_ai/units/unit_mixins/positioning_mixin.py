@@ -7695,6 +7695,9 @@ class PositioningMixin:
         # Enhancement: Ghostweave Cloak grants Stealth to the bearer model.
         if isinstance(sr, dict) and sr.get("enhancement_ghostweave_cloak_stealth"):
             return True
+        # Deceptors: Shroud of Obfuscation grants Stealth to the bearer model.
+        if isinstance(sr, dict) and sr.get("enhancement_shroud_of_obfuscation_stealth"):
+            return True
         # Chaos Knights (Lords of Dread): Blessing of the Dark Master grants Stealth to the bearer model.
         if isinstance(sr, dict) and sr.get("enhancement_blessing_of_the_dark_master_stealth"):
             return True

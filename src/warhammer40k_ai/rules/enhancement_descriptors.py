@@ -2161,6 +2161,54 @@ _CREATIONS_OF_BILE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CREATIONS_OF_BILE_DESCRIPTORS.values()
 }
 
+_DECEPTORS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008964002": EnhancementToolDescriptor(
+        enhancement_id="000008964002",
+        name="Cursed Fang",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_ap_bonus_and_precision",
+        effect_params={"melee_ap_bonus": 1, "precision": True},
+    ),
+    "000008964003": EnhancementToolDescriptor(
+        enhancement_id="000008964003",
+        name="Falsehood",
+        timing="declare_battle_formations_and_reinforcements_step",
+        target="bearer_and_friendly_legionaries_or_chosen_model",
+        duration="battle_setup_and_once_during_battle",
+        effect="optional_reserves_setup_and_reinforcements_model_swap_attach",
+        effect_params={
+            "optional": True,
+            "declare_choice": ("DEPLOY", "RESERVES"),
+            "target_unit_names": ("Legionaries", "Chosen"),
+            "requires_target_unit_models_remaining_at_least": 2,
+        },
+    ),
+    "000008964004": EnhancementToolDescriptor(
+        enhancement_id="000008964004",
+        name="Shroud of Obfuscation",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_gains_stealth_and_lone_operative",
+        effect_params={"grants_stealth": True, "grants_lone_operative": True},
+    ),
+    "000008964005": EnhancementToolDescriptor(
+        enhancement_id="000008964005",
+        name="Soul Link",
+        timing="start_of_command_phase",
+        target="bearer_and_other_friendly_heretic_astartes_infantry_character_model",
+        duration="until_start_of_next_owner_command_phase",
+        effect="select_model_gain_psyker_and_replace_bearer_datasheet_abilities",
+        effect_params={"optional": True, "granted_keyword": "PSYKER", "exclude_epic_hero": True},
+    ),
+}
+
+_DECEPTORS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DECEPTORS_DESCRIPTORS.values()
+}
+
 _SPECTACLE_OF_SPITE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010580002": EnhancementToolDescriptor(
         enhancement_id="000010580002",
@@ -5240,6 +5288,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _CREATIONS_OF_BILE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _DECEPTORS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPECTACLE_OF_SPITE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5450,6 +5501,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _CHAOS_CULT_BY_NAME.get(key)
         or _CREATIONS_OF_BILE_BY_NAME.get(key)
+        or _DECEPTORS_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_BY_NAME.get(key)
