@@ -9479,6 +9479,23 @@ class ActionsMovementMixin:
             invoke_contract_active = bool(can_invoke_contract_fn(root, game=game))
             if not invoke_contract_active:
                 return False
+        tempting_addendum_active = False
+        tempting_addendum_source = ""
+        tempting_addendum_mortal_bonus = 0
+        tempting_addendum_reroll_hit = False
+        if invoke_contract_active:
+            tempting_addendum_fn = (
+                getattr(csm_mgr, "soulforged_warpack_tempting_addendum_for_invoked_contract", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(tempting_addendum_fn):
+                (
+                    tempting_addendum_active,
+                    tempting_addendum_source,
+                    tempting_addendum_mortal_bonus,
+                    tempting_addendum_reroll_hit,
+                ) = tempting_addendum_fn(root, game=game)
         passed = True
         auto_passed = self._auto_pass_dark_pacts_test()
         contract_test_modifier = 0
@@ -9525,7 +9542,14 @@ class ActionsMovementMixin:
             try:
                 from ...utility.dice import DiceCollection
                 dmg_roll, _dice = DiceCollection.from_string("D3").roll_detailed()
-                self._apply_mortal_wounds_to_unit(self, int(dmg_roll or 0), game_map=getattr(game, "map", None))
+                mortal_wounds = int(dmg_roll or 0)
+                if (
+                    mortal_wounds > 0
+                    and bool(tempting_addendum_active)
+                    and int(tempting_addendum_mortal_bonus or 0) > 0
+                ):
+                    mortal_wounds += int(tempting_addendum_mortal_bonus or 0)
+                self._apply_mortal_wounds_to_unit(self, int(mortal_wounds), game_map=getattr(game, "map", None))
             except Exception:
                 pass
         sr = getattr(root, "special_rules", None)
@@ -9572,6 +9596,18 @@ class ActionsMovementMixin:
                 active=bool(invoke_contract_active),
                 phase_name=phase_key,
                 choice=choice_norm,
+                game=game,
+                player=getattr(army, "player", None) if army is not None else None,
+            )
+        set_tempting_state_fn = (
+            getattr(csm_mgr, "set_soulforged_warpack_tempting_addendum_state", None) if csm_mgr is not None else None
+        )
+        if callable(set_tempting_state_fn):
+            set_tempting_state_fn(
+                root,
+                active=bool(invoke_contract_active and tempting_addendum_active and tempting_addendum_reroll_hit),
+                phase_name=phase_key,
+                source=tempting_addendum_source,
                 game=game,
                 player=getattr(army, "player", None) if army is not None else None,
             )

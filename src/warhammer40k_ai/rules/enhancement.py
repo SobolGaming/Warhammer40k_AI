@@ -127,6 +127,13 @@ def _coerce_int(value, *, default: int) -> int:
         return int(default)
 
 
+def _coerce_float(value, *, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 def _descriptor_params(desc) -> dict:
     raw_params = getattr(desc, "effect_params", {}) if desc is not None else {}
     if isinstance(raw_params, dict):
@@ -587,6 +594,10 @@ class Enhancement:
             is_veterans_of_the_long_war = bool(csm_mgr and csm_mgr.is_veterans_of_the_long_war())
         except Exception:
             is_veterans_of_the_long_war = False
+        try:
+            is_soulforged_warpack = bool(csm_mgr and csm_mgr.is_soulforged_warpack())
+        except Exception:
+            is_soulforged_warpack = False
         try:
             is_hearthband = bool(lov_mgr and lov_mgr.is_hearthband())
         except Exception:
@@ -5803,6 +5814,71 @@ class Enhancement:
             unit.special_rules["enhancement_soul_link_source"] = "Soul Link"
             unit.special_rules["enhancement_soul_link_optional"] = bool(params.get("optional", True))
             unit.special_rules["enhancement_soul_link_active"] = False
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name in {"forge's blessing", "forge’s blessing"} or enh_id == "000008985002":
+            if not is_soulforged_warpack:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Forge's Blessing").strip() or "Forge's Blessing"
+            unit.special_rules["enhancement_forges_blessing"] = True
+            unit.special_rules["enhancement_forges_blessing_source"] = source
+            unit.special_rules["enhancement_forges_blessing_range"] = float(
+                max(0.0, _coerce_float(params.get("range_in", 12.0), default=12.0))
+            )
+            unit.special_rules["enhancement_forges_blessing_fnp"] = int(
+                min(6, max(2, _coerce_int(params.get("fnp", 6), default=6)))
+            )
+            unit.special_rules["enhancement_forges_blessing_target_requires_keyword"] = str(
+                params.get("required_target_keyword", "VEHICLE") or "VEHICLE"
+            ).strip().upper()
+            unit.special_rules["enhancement_forges_blessing_target_requires_faction_keyword"] = str(
+                params.get("required_target_faction_keyword", "HERETIC ASTARTES") or "HERETIC ASTARTES"
+            ).strip().upper()
+            unit.special_rules["enhancement_forges_blessing_ability_key"] = "soulforged_warpack_forges_blessing_target"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "tempting addendum" or enh_id == "000008985004":
+            if not is_soulforged_warpack:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Tempting Addendum").strip() or "Tempting Addendum"
+            unit.special_rules["enhancement_tempting_addendum"] = True
+            unit.special_rules["enhancement_tempting_addendum_source"] = source
+            unit.special_rules["enhancement_tempting_addendum_range"] = float(
+                max(0.0, _coerce_float(params.get("range_in", 3.0), default=3.0))
+            )
+            unit.special_rules["enhancement_tempting_addendum_dark_pact_failure_mortal_wound_bonus"] = int(
+                max(0, _coerce_int(params.get("dark_pact_failure_mortal_wound_bonus", 1), default=1))
+            )
+            unit.special_rules["enhancement_tempting_addendum_reroll_hit"] = bool(params.get("reroll_hit", True))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "soul harvester" or enh_id == "000008985005":
+            if not is_soulforged_warpack:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Soul Harvester").strip() or "Soul Harvester"
+            unit.special_rules["enhancement_soul_harvester"] = True
+            unit.special_rules["enhancement_soul_harvester_source"] = source
+            unit.special_rules["enhancement_soul_harvester_range"] = float(
+                max(0.0, _coerce_float(params.get("range_in", 12.0), default=12.0))
+            )
+            unit.special_rules["enhancement_soul_harvester_success_on"] = int(
+                min(6, max(2, _coerce_int(params.get("success_on", 5), default=5)))
+            )
+            unit.special_rules["enhancement_soul_harvester_cp_gain"] = int(
+                max(1, _coerce_int(params.get("cp_gain", 1), default=1))
+            )
+            unit.special_rules["enhancement_soul_harvester_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

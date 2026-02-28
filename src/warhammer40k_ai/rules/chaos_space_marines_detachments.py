@@ -100,6 +100,10 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_ADVANCE_CHOICE = "ADVANCE_CHARGE"
     _VETERANS_OF_THE_LONG_WAR_FOCUS_ABILITY = "veterans_of_the_long_war_focus_of_hatred_target"
     _VETERANS_OF_THE_LONG_WAR_FOCUS_SOURCE = "Focus of Hatred"
+    _SOULFORGED_WARPACK_FORGES_BLESSING_ABILITY = "soulforged_warpack_forges_blessing_target"
+    _SOULFORGED_WARPACK_FORGES_BLESSING_SOURCE = "Forge's Blessing"
+    _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE = "Tempting Addendum"
+    _SOULFORGED_WARPACK_SOUL_HARVESTER_SOURCE = "Soul Harvester"
     _SOULFORGED_WARPACK_CONTRACT_SOURCE = "Debt to the Soul Forge"
     _SOULFORGED_WARPACK_CONTRACT_ACTIVE_KEY = "soulforged_warpack_contract_active"
     _SOULFORGED_WARPACK_CONTRACT_EXPIRES_PHASE_KEY = "soulforged_warpack_contract_expires_phase"
@@ -111,6 +115,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _SOULFORGED_WARPACK_DARK_PACT_TEST_MODIFIER_SOURCE_KEY = (
         "soulforged_warpack_dark_pact_test_modifier_source"
     )
+    _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_ACTIVE_KEY = "soulforged_warpack_tempting_addendum_active"
+    _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_EXPIRES_PHASE_KEY = "soulforged_warpack_tempting_addendum_expires_phase"
+    _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_TURN_KEY = "soulforged_warpack_tempting_addendum_turn"
+    _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_OWNER_KEY = "soulforged_warpack_tempting_addendum_turn_owner"
+    _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE_KEY = "soulforged_warpack_tempting_addendum_source"
     _PACTBOUND_MARKS = ("KHORNE", "TZEENTCH", "NURGLE", "SLAANESH", "CHAOS UNDIVIDED")
     _PACTBOUND_MARK_SOURCE = "Marks of Chaos"
     _DESPERATE_DEVOTION_ALLOWED_ACTIONS = {"move", "advance", "charge"}
@@ -1541,6 +1550,562 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                 "source_model_id": str(get_entity_id(bearer) or "") if bearer is not None else "",
             }
         return {}
+
+    def _soulforged_sources_by_flag(
+        self,
+        *,
+        flag_key: str,
+        require_alive_bearer: bool = True,
+        require_bearer_on_battlefield: bool = True,
+    ) -> list[tuple]:
+        if not self.is_soulforged_warpack() or self.army is None:
+            return []
+        out: list[tuple] = []
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            if root is None or not self._unit_in_army(root):
+                continue
+            get_members = getattr(root, "get_attached_unit_members", None)
+            members = list(get_members() or []) if callable(get_members) else [root]
+            if not members:
+                members = [root]
+            for member in members:
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get(flag_key, False)):
+                    continue
+                bearer = self._find_enhancement_bearer_on_member(member, sr)
+                if bool(require_alive_bearer) and not self._model_alive(bearer):
+                    continue
+                if bool(require_bearer_on_battlefield):
+                    bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None))
+                    if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                        continue
+                out.append((root, member, sr, bearer))
+                break
+        out.sort(
+            key=lambda entry: (
+                str(get_entity_id(entry[0]) or self._unit_root_key(entry[0])),
+                str(get_entity_id(entry[3]) or ""),
+            )
+        )
+        return out
+
+    def _soulforged_source_entry(self, source_unit_id: str, *, flag_key: str):
+        target_id = str(source_unit_id or "").strip()
+        if not target_id:
+            return None
+        for entry in self._soulforged_sources_by_flag(flag_key=flag_key):
+            root = entry[0]
+            if str(get_entity_id(root) or "") == target_id:
+                return entry
+        return None
+
+    def _soulforged_forges_blessing_effect_active(self, source_sr: dict, *, game=None) -> bool:
+        if not isinstance(source_sr, dict):
+            return False
+        if not str(source_sr.get("enhancement_forges_blessing_target_unit_id", "") or "").strip():
+            return False
+        current_phase = self._current_phase_name(game=game)
+        current_owner = str(self._current_turn_owner_id(game=game) or "")
+        current_turn = int(self._current_turn(game=game) or 0)
+        selected_owner = str(source_sr.get("enhancement_forges_blessing_turn_owner_id", "") or "")
+        try:
+            selected_turn = int(source_sr.get("enhancement_forges_blessing_turn", 0) or 0)
+        except (TypeError, ValueError):
+            selected_turn = 0
+        if (
+            current_phase == "COMMAND_PHASE"
+            and selected_owner
+            and current_owner == selected_owner
+            and selected_turn
+            and current_turn
+            and current_turn != selected_turn
+        ):
+            return False
+        return True
+
+    def can_select_soulforged_forges_blessing(self, *, game=None, player=None) -> bool:
+        if not self.is_soulforged_warpack() or self.army is None:
+            return False
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return False
+        army_player = getattr(self.army, "player", None)
+        if army_player is not None:
+            if str(getattr(army_player, "id", "") or "") != str(getattr(owner, "id", "") or ""):
+                return False
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return False
+        phase_name = self._current_phase_name(game=resolved_game)
+        if phase_name and phase_name != "COMMAND_PHASE":
+            return False
+        current_owner = str(self._current_turn_owner_id(game=resolved_game, player=owner) or "")
+        if current_owner and current_owner != str(getattr(owner, "id", "") or ""):
+            return False
+        return True
+
+    def soulforged_forges_blessing_candidate_units(self, source_unit_id: str, *, game=None, player=None) -> list[dict]:
+        if not self.is_soulforged_warpack() or self.army is None:
+            return []
+        _ = player
+        entry = self._soulforged_source_entry(source_unit_id, flag_key="enhancement_forges_blessing")
+        if entry is None:
+            return []
+        _source_root, _source_member, source_sr, source_bearer = entry
+        if source_sr is None or source_bearer is None or not self._model_alive(source_bearer):
+            return []
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        try:
+            range_in = float(source_sr.get("enhancement_forges_blessing_range", 12.0) or 12.0)
+        except (TypeError, ValueError):
+            range_in = 12.0
+        if range_in < 0:
+            range_in = 0.0
+        required_keyword = str(
+            source_sr.get("enhancement_forges_blessing_target_requires_keyword", "VEHICLE") or "VEHICLE"
+        ).strip().upper()
+        required_faction_keyword = str(
+            source_sr.get("enhancement_forges_blessing_target_requires_faction_keyword", "HERETIC ASTARTES")
+            or "HERETIC ASTARTES"
+        ).strip().upper()
+
+        out: list[dict] = []
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            if root is None or not self._unit_in_army(root):
+                continue
+            if not self._unit_on_battlefield(root):
+                continue
+            if required_keyword and not self._unit_has_keyword(root, required_keyword):
+                continue
+            if required_faction_keyword and not self._unit_has_keyword(root, required_faction_keyword):
+                continue
+            if not bool(model_within_range_of_unit(source_bearer, root, range_in, use_attached_aggregate=True)):
+                continue
+            unit_id = str(get_entity_id(root) or "")
+            if not unit_id:
+                continue
+            out.append(
+                {
+                    "target_unit_id": unit_id,
+                    "target_unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+                }
+            )
+        out.sort(key=lambda item: str(item.get("target_unit_id", "")))
+        return out
+
+    def queue_soulforged_forges_blessing_choice_request(self, *, game=None, player=None) -> None:
+        if not self.is_soulforged_warpack() or self.army is None:
+            return
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None or not bool(getattr(resolved_game, "is_authoritative", True)):
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        if not self.can_select_soulforged_forges_blessing(game=resolved_game, player=owner):
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "")
+        for source_root, _source_member, source_sr, source_bearer in self._soulforged_sources_by_flag(
+            flag_key="enhancement_forges_blessing"
+        ):
+            source_unit_id = str(get_entity_id(source_root) or "")
+            if not source_unit_id:
+                continue
+            if self._pending_deceptors_choose_quarry_request(
+                resolved_game,
+                ability=self._SOULFORGED_WARPACK_FORGES_BLESSING_ABILITY,
+                army_id=army_id,
+                source_unit_id=source_unit_id,
+            ):
+                continue
+            candidates = list(
+                self.soulforged_forges_blessing_candidate_units(
+                    source_unit_id,
+                    game=resolved_game,
+                    player=owner,
+                )
+                or []
+            )
+            if not candidates:
+                continue
+            options: list[DecisionOption] = []
+            candidate_ids: list[str] = []
+            for candidate in candidates:
+                target_unit_id = str(candidate.get("target_unit_id", "") or "").strip()
+                if not target_unit_id:
+                    continue
+                candidate_ids.append(target_unit_id)
+                options.append(
+                    DecisionOption.create(
+                        str(candidate.get("target_unit_name", "Unit") or "Unit"),
+                        payload={
+                            "source_unit_id": source_unit_id,
+                            "target_unit_id": target_unit_id,
+                            "army_id": army_id,
+                        },
+                    )
+                )
+            if not options:
+                continue
+            try:
+                range_in = float(source_sr.get("enhancement_forges_blessing_range", 12.0) or 12.0)
+            except (TypeError, ValueError):
+                range_in = 12.0
+            source_model_id = str(get_entity_id(source_bearer) or "")
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Forge's Blessing: select one friendly HERETIC ASTARTES VEHICLE unit within 12\" of the bearer.",
+                player_id=getattr(owner, "id", None),
+                options=options,
+                context={
+                    "ability": self._SOULFORGED_WARPACK_FORGES_BLESSING_ABILITY,
+                    "ability_name": self._SOULFORGED_WARPACK_FORGES_BLESSING_SOURCE,
+                    "phase": "Command phase",
+                    "army_id": army_id,
+                    "source_unit_id": source_unit_id,
+                    "source_model_id": source_model_id,
+                    "candidate_unit_ids": list(candidate_ids),
+                    "range": float(max(0.0, range_in)),
+                    "optional": False,
+                },
+            )
+            if hasattr(resolved_game, "request_decision"):
+                resolved_game.request_decision(request)
+
+    def soulforged_forges_blessing_target_is_valid(
+        self,
+        source_unit_id: str,
+        target_unit_id: str,
+        *,
+        game=None,
+        player=None,
+    ) -> bool:
+        target_id = str(target_unit_id or "").strip()
+        if not target_id:
+            return False
+        candidates = list(self.soulforged_forges_blessing_candidate_units(source_unit_id, game=game, player=player) or [])
+        candidate_ids = {str(item.get("target_unit_id", "") or "").strip() for item in candidates}
+        return target_id in candidate_ids
+
+    def select_soulforged_forges_blessing_target(
+        self,
+        source_unit_id: str,
+        target_unit_id: str,
+        *,
+        game=None,
+        player=None,
+    ) -> dict:
+        if not self.can_select_soulforged_forges_blessing(game=game, player=player):
+            return {"ok": False, "reason": "Forge's Blessing target cannot be selected right now."}
+        entry = self._soulforged_source_entry(source_unit_id, flag_key="enhancement_forges_blessing")
+        if entry is None:
+            return {"ok": False, "reason": "Forge's Blessing source unit was not found."}
+        source_root, source_member, source_sr, _source_bearer = entry
+        if not isinstance(source_sr, dict):
+            return {"ok": False, "reason": "Forge's Blessing source state is unavailable."}
+        target_id = str(target_unit_id or "").strip()
+        if not self.soulforged_forges_blessing_target_is_valid(source_unit_id, target_id, game=game, player=player):
+            return {"ok": False, "reason": "Forge's Blessing target is invalid."}
+        updated = dict(source_sr)
+        updated["enhancement_forges_blessing_target_unit_id"] = target_id
+        updated["enhancement_forges_blessing_turn"] = int(self._current_turn(game=game) or 0)
+        updated["enhancement_forges_blessing_turn_owner_id"] = str(
+            self._current_turn_owner_id(game=game, player=player) or ""
+        )
+        source_member.special_rules = updated
+        target_name = "Unit"
+        for candidate in list(self.soulforged_forges_blessing_candidate_units(source_unit_id, game=game, player=player) or []):
+            if str(candidate.get("target_unit_id", "") or "") == target_id:
+                target_name = str(candidate.get("target_unit_name", "Unit") or "Unit")
+                break
+        return {
+            "ok": True,
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "target_unit_id": target_id,
+            "target_name": target_name,
+            "source": str(
+                updated.get("enhancement_forges_blessing_source", "")
+                or self._SOULFORGED_WARPACK_FORGES_BLESSING_SOURCE
+            ).strip()
+            or self._SOULFORGED_WARPACK_FORGES_BLESSING_SOURCE,
+        }
+
+    def soulforged_forges_blessing_fnp(self, unit, *, target_model=None, game=None) -> tuple[int, str]:
+        _ = target_model
+        if not self.is_soulforged_warpack():
+            return 0, ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return 0, ""
+        target_unit_id = str(get_entity_id(root) or "")
+        if not target_unit_id:
+            return 0, ""
+        best_value = 0
+        best_source = ""
+        for _source_root, _source_member, source_sr, _source_bearer in self._soulforged_sources_by_flag(
+            flag_key="enhancement_forges_blessing",
+            require_alive_bearer=False,
+            require_bearer_on_battlefield=False,
+        ):
+            if source_sr is None:
+                continue
+            selected_target_id = str(source_sr.get("enhancement_forges_blessing_target_unit_id", "") or "").strip()
+            if not selected_target_id or selected_target_id != target_unit_id:
+                continue
+            if not self._soulforged_forges_blessing_effect_active(source_sr, game=game):
+                continue
+            try:
+                fnp_value = int(source_sr.get("enhancement_forges_blessing_fnp", 6) or 6)
+            except (TypeError, ValueError):
+                fnp_value = 6
+            fnp_value = max(2, min(6, fnp_value))
+            source = str(
+                source_sr.get("enhancement_forges_blessing_source", "")
+                or self._SOULFORGED_WARPACK_FORGES_BLESSING_SOURCE
+            ).strip() or self._SOULFORGED_WARPACK_FORGES_BLESSING_SOURCE
+            if best_value == 0 or fnp_value < best_value:
+                best_value = fnp_value
+                best_source = source
+        if best_value <= 0:
+            return 0, ""
+        return int(best_value), best_source
+
+    def _soulforged_tempting_addendum_source_for_unit(self, unit, *, game=None) -> tuple[dict | None, str]:
+        if not self.is_soulforged_warpack():
+            return None, ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, ""
+        if not self._unit_is_daemon_vehicle(root):
+            return None, ""
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        for _source_root, _source_member, source_sr, source_bearer in self._soulforged_sources_by_flag(
+            flag_key="enhancement_tempting_addendum"
+        ):
+            if source_sr is None or source_bearer is None:
+                continue
+            try:
+                range_in = float(source_sr.get("enhancement_tempting_addendum_range", 3.0) or 3.0)
+            except (TypeError, ValueError):
+                range_in = 3.0
+            if range_in < 0:
+                range_in = 0.0
+            if not bool(model_within_range_of_unit(source_bearer, root, range_in, use_attached_aggregate=True)):
+                continue
+            source = str(
+                source_sr.get("enhancement_tempting_addendum_source", "")
+                or self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE
+            ).strip() or self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE
+            return source_sr, source
+        return None, ""
+
+    def soulforged_warpack_tempting_addendum_for_invoked_contract(self, unit, *, game=None) -> tuple[bool, str, int, bool]:
+        source_sr, source = self._soulforged_tempting_addendum_source_for_unit(unit, game=game)
+        if source_sr is None:
+            return False, "", 0, False
+        try:
+            mortal_bonus = int(
+                source_sr.get("enhancement_tempting_addendum_dark_pact_failure_mortal_wound_bonus", 1) or 1
+            )
+        except (TypeError, ValueError):
+            mortal_bonus = 1
+        mortal_bonus = max(0, mortal_bonus)
+        reroll_hit = bool(source_sr.get("enhancement_tempting_addendum_reroll_hit", True))
+        return True, source, int(mortal_bonus), reroll_hit
+
+    def _soulforged_warpack_tempting_addendum_state(self, unit, *, game=None) -> tuple[bool, str]:
+        if not self.is_soulforged_warpack():
+            return False, ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False, ""
+        if not bool(sr.get(self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_ACTIVE_KEY, False)):
+            return False, ""
+        expected_phase = str(sr.get(self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_EXPIRES_PHASE_KEY, "") or "").strip().upper()
+        current_phase = self._current_phase_name(game=game)
+        if expected_phase and current_phase and expected_phase != current_phase:
+            return False, ""
+        expected_owner = str(sr.get(self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_OWNER_KEY, "") or "").strip()
+        current_owner = self._current_turn_owner_id(game=game)
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return False, ""
+        try:
+            expected_turn = int(sr.get(self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_TURN_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+        current_turn = self._current_turn(game=game)
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return False, ""
+        source = str(
+            sr.get(self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE_KEY, "")
+            or self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE
+        ).strip() or self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE
+        return True, source
+
+    def set_soulforged_warpack_tempting_addendum_state(
+        self,
+        unit,
+        *,
+        active: bool,
+        phase_name: str = "",
+        source: str = "",
+        game=None,
+        player=None,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        updated = dict(sr)
+        if not bool(active):
+            updated.pop(self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_ACTIVE_KEY, None)
+            updated.pop(self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_EXPIRES_PHASE_KEY, None)
+            updated.pop(self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_TURN_KEY, None)
+            updated.pop(self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_OWNER_KEY, None)
+            updated.pop(self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE_KEY, None)
+            root.special_rules = updated
+            return
+        updated[self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_ACTIVE_KEY] = True
+        updated[self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_EXPIRES_PHASE_KEY] = (
+            str(phase_name or "").strip().upper() or self._current_phase_name(game=game)
+        )
+        updated[self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_TURN_KEY] = int(self._current_turn(game=game) or 0)
+        updated[self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_OWNER_KEY] = str(
+            self._current_turn_owner_id(game=game, player=player) or ""
+        ).strip()
+        updated[self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE_KEY] = (
+            str(source or self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE).strip()
+            or self._SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE
+        )
+        root.special_rules = updated
+
+    def soulforged_warpack_tempting_addendum_reroll_hit_applies(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        _ = weapon_profile
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None:
+            return False, ""
+        return self._soulforged_warpack_tempting_addendum_state(root, game=game)
+
+    def _model_within_range_of_unit_allow_destroyed_target(
+        self,
+        source_model,
+        target_unit,
+        *,
+        range_in: float,
+    ) -> bool:
+        if source_model is None or target_unit is None:
+            return False
+        if not self._model_alive(source_model):
+            return False
+        try:
+            radius = float(range_in)
+        except (TypeError, ValueError):
+            return False
+        if radius < 0:
+            return False
+        get_models = getattr(target_unit, "get_attached_unit_models", None)
+        target_models = list(get_models() or []) if callable(get_models) else list(getattr(target_unit, "models", []) or [])
+        if not target_models:
+            return False
+        from ..utility.aura_utils import distance_between_models_bases_3d
+
+        for target_model in target_models:
+            if target_model is None:
+                continue
+            try:
+                distance = float(distance_between_models_bases_3d(source_model, target_model))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if distance <= radius + 1e-6:
+                return True
+        return False
+
+    def soulforged_soul_harvester_on_enemy_unit_destroyed(self, destroyed_unit, *, game=None) -> list[dict]:
+        if not self.is_soulforged_warpack() or self.army is None:
+            return []
+        destroyed_root = self._unit_root(destroyed_unit)
+        if destroyed_root is None:
+            return []
+        destroyed_army = getattr(destroyed_root, "get_parent_army", None)
+        destroyed_owner = destroyed_army() if callable(destroyed_army) else None
+        if destroyed_owner is None or destroyed_owner is self.army:
+            return []
+        owner = getattr(self.army, "player", None)
+        gain_cp = getattr(owner, "gain_command_points", None) if owner is not None else None
+        if not callable(gain_cp):
+            return []
+        results: list[dict] = []
+        for source_root, _source_member, source_sr, source_bearer in self._soulforged_sources_by_flag(
+            flag_key="enhancement_soul_harvester"
+        ):
+            if source_sr is None or source_bearer is None:
+                continue
+            if bool(source_sr.get("enhancement_soul_harvester_requires_bearer_on_battlefield", True)):
+                bearer_unit = self._unit_root(getattr(source_bearer, "parent_unit", None))
+                if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                    continue
+            try:
+                range_in = float(source_sr.get("enhancement_soul_harvester_range", 12.0) or 12.0)
+            except (TypeError, ValueError):
+                range_in = 12.0
+            if not self._model_within_range_of_unit_allow_destroyed_target(
+                source_bearer,
+                destroyed_root,
+                range_in=range_in,
+            ):
+                continue
+            try:
+                success_on = int(source_sr.get("enhancement_soul_harvester_success_on", 5) or 5)
+            except (TypeError, ValueError):
+                success_on = 5
+            success_on = int(min(6, max(2, success_on)))
+            try:
+                cp_gain = int(source_sr.get("enhancement_soul_harvester_cp_gain", 1) or 1)
+            except (TypeError, ValueError):
+                cp_gain = 1
+            cp_gain = int(max(1, cp_gain))
+            source = str(
+                source_sr.get("enhancement_soul_harvester_source", "")
+                or self._SOULFORGED_WARPACK_SOUL_HARVESTER_SOURCE
+            ).strip() or self._SOULFORGED_WARPACK_SOUL_HARVESTER_SOURCE
+            roll = int(get_roll("D6"))
+            gained = 0
+            if roll >= success_on:
+                gained = int(gain_cp(cp_gain, reason=source) or 0)
+            results.append(
+                {
+                    "triggered": True,
+                    "source": source,
+                    "roll": int(roll),
+                    "success_on": int(success_on),
+                    "cp_gain": int(cp_gain),
+                    "gained": int(gained),
+                    "destroyed_unit_id": str(get_entity_id(destroyed_root) or ""),
+                    "source_unit_id": str(get_entity_id(source_root) or ""),
+                    "source_model_id": str(get_entity_id(source_bearer) or ""),
+                }
+            )
+        return results
 
     def twisted_doctrine_can_trigger(
         self,

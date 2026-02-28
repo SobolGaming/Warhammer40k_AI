@@ -2209,6 +2209,64 @@ _DECEPTORS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DECEPTORS_DESCRIPTORS.values()
 }
 
+_SOULFORGED_WARPACK_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008985002": EnhancementToolDescriptor(
+        enhancement_id="000008985002",
+        name="Forge's Blessing",
+        timing="start_of_command_phase",
+        target="friendly_heretic_astartes_vehicle_unit_within_range_of_bearer",
+        duration="until_start_of_next_owner_command_phase",
+        effect="select_vehicle_unit_gain_fnp",
+        range_in=12.0,
+        effect_params={
+            "fnp": 6,
+            "required_target_keyword": "VEHICLE",
+            "required_target_faction_keyword": "HERETIC ASTARTES",
+        },
+    ),
+    "000008985003": EnhancementToolDescriptor(
+        enhancement_id="000008985003",
+        name="Invigorated Mechatendrils",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_move_bonus",
+        effect_params={"move_bonus": 4},
+    ),
+    "000008985004": EnhancementToolDescriptor(
+        enhancement_id="000008985004",
+        name="Tempting Addendum",
+        timing="on_contract_invoked_within_range_of_bearer",
+        target="friendly_heretic_astartes_daemon_vehicle_unit",
+        duration="until_end_of_phase",
+        effect="contract_failure_mortal_wound_bonus_and_attack_hit_reroll",
+        range_in=3.0,
+        effect_params={
+            "required_target_keywords_all": ("HERETIC ASTARTES", "DAEMON", "VEHICLE"),
+            "dark_pact_failure_mortal_wound_bonus": 1,
+            "reroll_hit": True,
+        },
+    ),
+    "000008985005": EnhancementToolDescriptor(
+        enhancement_id="000008985005",
+        name="Soul Harvester",
+        timing="any_phase_on_enemy_unit_destroyed_within_range_of_bearer",
+        target="army",
+        duration="constant_while_bearer_on_battlefield",
+        effect="gain_cp_on_destroyed_enemy_unit_within_range",
+        range_in=12.0,
+        effect_params={
+            "success_on": 5,
+            "cp_gain": 1,
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+}
+
+_SOULFORGED_WARPACK_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SOULFORGED_WARPACK_DESCRIPTORS.values()
+}
+
 _VETERANS_OF_THE_LONG_WAR_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008960002": EnhancementToolDescriptor(
         enhancement_id="000008960002",
@@ -5353,6 +5411,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DECEPTORS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SOULFORGED_WARPACK_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _VETERANS_OF_THE_LONG_WAR_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5567,6 +5628,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CHAOS_CULT_BY_NAME.get(key)
         or _CREATIONS_OF_BILE_BY_NAME.get(key)
         or _DECEPTORS_BY_NAME.get(key)
+        or _SOULFORGED_WARPACK_BY_NAME.get(key)
         or _VETERANS_OF_THE_LONG_WAR_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_BY_NAME.get(key)

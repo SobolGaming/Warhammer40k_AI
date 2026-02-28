@@ -10529,6 +10529,20 @@ class WargearProfile:
             if bool(reroll_full):
                 source_name = str(source or "Prime Test Subject").strip() or "Prime Test Subject"
                 reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        tempting_addendum_fn = (
+            getattr(csm_mgr, "soulforged_warpack_tempting_addendum_reroll_hit_applies", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(tempting_addendum_fn):
+            reroll_full, source = tempting_addendum_fn(
+                attacker,
+                weapon_profile=self,
+                game=csm_game,
+            )
+            if bool(reroll_full):
+                source_name = str(source or "Tempting Addendum").strip() or "Tempting Addendum"
+                reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         # Contextual reroll sources carried on the attack instance (best-effort).
         try:
             if bool(attack_instance.get("furious_onslaught_applies")):

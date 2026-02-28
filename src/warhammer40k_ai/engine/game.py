@@ -1731,6 +1731,18 @@ class Game(
         if callable(queue_fn):
             queue_fn(game=self, player=player)
 
+    def _maybe_prompt_csm_forges_blessing(self) -> None:
+        player = self.get_current_player()
+        if player is None:
+            raise RuntimeError("Forge's Blessing prompt requires current player.")
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError("Forge's Blessing prompt requires an army.")
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        queue_fn = getattr(mgr, "queue_soulforged_forges_blessing_choice_request", None) if mgr is not None else None
+        if callable(queue_fn):
+            queue_fn(game=self, player=player)
+
     def _refresh_csm_tyrannical_motivation_phase_state(self) -> None:
         for player in list(getattr(self, "players", []) or []):
             if player is None:
@@ -7186,7 +7198,44 @@ class Game(
 
     def _on_unit_destroyed_rules(self, unit=None, destroyed_by_unit=None, destroyed_by_model=None, destroyed_by_weapon_profile=None, **_kwargs) -> None:
         # Generic partial support for "... destroys an enemy <KEYWORD> unit, gain X CP".
-        if unit is None or destroyed_by_unit is None:
+        if unit is None:
+            return
+
+        # Chaos Space Marines: Soulforged Warpack (Soul Harvester).
+        try:
+            for maybe_player in list(getattr(self, "players", []) or []):
+                if maybe_player is None:
+                    continue
+                maybe_army = maybe_player.get_army() if hasattr(maybe_player, "get_army") else None
+                if maybe_army is None:
+                    continue
+                csm_mgr = getattr(maybe_army, "chaos_space_marines_detachments", None)
+                harvester_fn = (
+                    getattr(csm_mgr, "soulforged_soul_harvester_on_enemy_unit_destroyed", None)
+                    if csm_mgr is not None
+                    else None
+                )
+                if not callable(harvester_fn):
+                    continue
+                for outcome in list(harvester_fn(unit, game=self) or []):
+                    if not isinstance(outcome, dict) or not bool(outcome.get("triggered", False)):
+                        continue
+                    self.event_system.publish(
+                        "command_points_gained",
+                        player=maybe_player,
+                        amount=int(outcome.get("gained", 0) or 0),
+                        reason=str(outcome.get("source", "") or "Soul Harvester"),
+                        attacker_unit=destroyed_by_unit,
+                        target_unit=unit,
+                        attacker_model=destroyed_by_model,
+                        roll=int(outcome.get("roll", 0) or 0),
+                        success_on=int(outcome.get("success_on", 5) or 5),
+                        cp_gain=int(outcome.get("cp_gain", 1) or 1),
+                    )
+        except Exception:
+            pass
+
+        if destroyed_by_unit is None:
             return
 
         if destroyed_by_unit.get_parent_army() == unit.get_parent_army():
@@ -9556,6 +9605,7 @@ class Game(
         self._maybe_prompt_csm_vendetta()
         self._maybe_prompt_csm_focus_of_hatred()
         self._maybe_prompt_csm_soul_link()
+        self._maybe_prompt_csm_forges_blessing()
         self._maybe_prompt_csm_experimental_augmentations()
         self._refresh_csm_tyrannical_motivation_phase_state()
 

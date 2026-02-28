@@ -3458,6 +3458,46 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if target_model_id not in live_ids:
             return ("Soul Link selected model is no longer eligible.",)
         return ()
+    if ability == "soulforged_warpack_forges_blessing_target":
+        if is_skip_choice(request, result):
+            return ("Forge's Blessing target selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Forge's Blessing army not found.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_soulforged_warpack", lambda: False)()):
+            return ("Forge's Blessing requires Soulforged Warpack.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        can_select = getattr(mgr, "can_select_soulforged_forges_blessing", None)
+        if not callable(can_select) or not bool(can_select(game=game, player=player)):
+            return ("Forge's Blessing target cannot be selected right now.",)
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        if not source_unit_id:
+            return ("Forge's Blessing selection requires source_unit_id.",)
+        target_unit_id = str(
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ""
+        ).strip()
+        if not target_unit_id:
+            return ("Forge's Blessing selection requires target_unit_id.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and target_unit_id not in candidate_ids:
+            return ("Forge's Blessing selection contains an ineligible target.",)
+        validate_target = getattr(mgr, "soulforged_forges_blessing_target_is_valid", None)
+        if not callable(validate_target) or not bool(
+            validate_target(source_unit_id, target_unit_id, game=game, player=player)
+        ):
+            return ("Forge's Blessing selected target is invalid.",)
+        return ()
     if ability == "tyrannical_motivation_choice":
         if is_skip_choice(request, result):
             return ("Tyrannical Motivation selection cannot be skipped.",)
@@ -6825,6 +6865,36 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 player,
                 f"{ability_name}: copied datasheet abilities from {target_model_name} ({target_unit_name}).",
             )
+        return dict(outcome)
+    if ability == "soulforged_warpack_forges_blessing_target":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        source_unit_id = str(payload.get("source_unit_id") or ctx.get("source_unit_id") or "").strip()
+        target_unit_id = str(
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ""
+        ).strip()
+        if not source_unit_id or not target_unit_id:
+            return None
+        select_fn = getattr(mgr, "select_soulforged_forges_blessing_target", None)
+        if not callable(select_fn):
+            return None
+        outcome = select_fn(source_unit_id, target_unit_id, game=game, player=player)
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Forge's Blessing").strip() or "Forge's Blessing"
+        target_name = str(outcome.get("target_name", "") or "Unit").strip() or "Unit"
+        _log_action_for_players(game, player, f"{ability_name}: selected {target_name}.")
         return dict(outcome)
     if ability == "tyrannical_motivation_choice":
         payload = _option_payload(request, result)
