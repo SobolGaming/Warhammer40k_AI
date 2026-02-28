@@ -1206,6 +1206,342 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False, ""
         return True, self._VETERANS_OF_THE_LONG_WAR_FOCUS_SOURCE
 
+    def _veterans_focus_of_hatred_target_matches(self, target_unit, *, require_alive: bool = True) -> bool:
+        if not self.is_veterans_of_the_long_war():
+            return False
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return False
+        stored_target_id = str(self.veterans_focus_of_hatred_target_unit_id or "").strip()
+        if not stored_target_id:
+            return False
+        if str(get_entity_id(target_root) or "") != stored_target_id:
+            return False
+        if not require_alive:
+            return True
+        is_alive = getattr(target_root, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            return False
+        return True
+
+    def _veterans_enhancement_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_on_battlefield: bool = False,
+    ):
+        if not self.is_veterans_of_the_long_war():
+            return None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+                continue
+            bearer = self._find_enhancement_bearer_on_member(member, sr)
+            if require_bearer_alive and not self._model_alive(bearer):
+                continue
+            if require_bearer_on_battlefield:
+                bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None)) if bearer is not None else root
+                if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                    continue
+            return member, sr, bearer
+        return None, None, None
+
+    @staticmethod
+    def _model_matches_bearer(model, bearer) -> bool:
+        if model is None or bearer is None:
+            return False
+        if model is bearer:
+            return True
+        model_entity_id = str(get_entity_id(model) or "").strip()
+        bearer_entity_id = str(get_entity_id(bearer) or "").strip()
+        if model_entity_id and bearer_entity_id and model_entity_id == bearer_entity_id:
+            return True
+        model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+        bearer_local_id = str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "").strip()
+        if model_local_id and bearer_local_id and model_local_id == bearer_local_id:
+            return True
+        return False
+
+    def veterans_eager_for_vengeance_hit_bonus(self, attacker_model, target_unit, *, game=None) -> tuple[int, str]:
+        _ = game
+        if not self.is_veterans_of_the_long_war():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if not self._model_in_army(attacker_model):
+            return 0, ""
+        attacker_root = self._unit_root(getattr(attacker_model, "parent_unit", None))
+        if attacker_root is None:
+            return 0, ""
+        _source_member, source_sr, _bearer = self._veterans_enhancement_source_member(
+            attacker_root,
+            flag_key="enhancement_eager_for_vengeance",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=True,
+        )
+        if source_sr is None:
+            return 0, ""
+        if bool(source_sr.get("enhancement_eager_for_vengeance_requires_focus_of_hatred_target", True)):
+            if not self._veterans_focus_of_hatred_target_matches(target_unit):
+                return 0, ""
+        if bool(source_sr.get("enhancement_eager_for_vengeance_requires_fell_back_this_turn", True)):
+            fell_back = bool(getattr(getattr(attacker_root, "round_state", None), "fell_back_this_round", False))
+            if not fell_back:
+                return 0, ""
+        try:
+            bonus = int(source_sr.get("enhancement_eager_for_vengeance_hit_roll_bonus", 1) or 0)
+        except (TypeError, ValueError):
+            bonus = 0
+        if bonus <= 0:
+            return 0, ""
+        source = str(source_sr.get("enhancement_eager_for_vengeance_source", "") or "Eager for Vengeance").strip()
+        return int(bonus), (source or "Eager for Vengeance")
+
+    def veterans_eager_for_vengeance_can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
+        _ = game
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        _source_member, source_sr, _bearer = self._veterans_enhancement_source_member(
+            root,
+            flag_key="enhancement_eager_for_vengeance",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=True,
+        )
+        if source_sr is None:
+            return False
+        if not bool(source_sr.get("enhancement_eager_for_vengeance_allow_shoot_after_fall_back", True)):
+            return False
+        parent = getattr(profile, "parent_wargear", None) if profile is not None else None
+        is_ranged = getattr(parent, "is_ranged", None) if parent is not None else None
+        if callable(is_ranged):
+            return bool(is_ranged())
+        return True
+
+    def veterans_eager_for_vengeance_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        _ = game
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        _source_member, source_sr, _bearer = self._veterans_enhancement_source_member(
+            root,
+            flag_key="enhancement_eager_for_vengeance",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=True,
+        )
+        if source_sr is None:
+            return False
+        return bool(source_sr.get("enhancement_eager_for_vengeance_allow_charge_after_fall_back", True))
+
+    def veterans_eager_for_vengeance_charge_roll_bonus(self, unit, *, target_units=None, game=None) -> tuple[int, str]:
+        _ = game
+        root = self._unit_root(unit)
+        if root is None:
+            return 0, ""
+        _source_member, source_sr, _bearer = self._veterans_enhancement_source_member(
+            root,
+            flag_key="enhancement_eager_for_vengeance",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=True,
+        )
+        if source_sr is None:
+            return 0, ""
+        if bool(source_sr.get("enhancement_eager_for_vengeance_requires_fell_back_this_turn", True)):
+            fell_back = bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False))
+            if not fell_back:
+                return 0, ""
+        if bool(source_sr.get("enhancement_eager_for_vengeance_requires_focus_of_hatred_target", True)):
+            targets = []
+            if target_units is None:
+                targets = []
+            elif isinstance(target_units, (list, tuple, set)):
+                targets = list(target_units)
+            else:
+                targets = [target_units]
+            if not any(self._veterans_focus_of_hatred_target_matches(target) for target in targets):
+                return 0, ""
+        try:
+            bonus = int(source_sr.get("enhancement_eager_for_vengeance_charge_roll_bonus", 1) or 0)
+        except (TypeError, ValueError):
+            bonus = 0
+        if bonus <= 0:
+            return 0, ""
+        source = str(source_sr.get("enhancement_eager_for_vengeance_source", "") or "Eager for Vengeance").strip()
+        return int(bonus), (source or "Eager for Vengeance")
+
+    def veterans_warmasters_gift_crit_wound_threshold(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = game
+        if not self.is_veterans_of_the_long_war():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if not self._model_in_army(attacker_model):
+            return 0, ""
+        attacker_root = self._unit_root(getattr(attacker_model, "parent_unit", None))
+        if attacker_root is None:
+            return 0, ""
+        _source_member, source_sr, bearer = self._veterans_enhancement_source_member(
+            attacker_root,
+            flag_key="enhancement_warmasters_gift",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=True,
+        )
+        if source_sr is None or bearer is None:
+            return 0, ""
+        if not self._model_matches_bearer(attacker_model, bearer):
+            return 0, ""
+        if bool(source_sr.get("enhancement_warmasters_gift_requires_focus_of_hatred_target", True)):
+            if not self._veterans_focus_of_hatred_target_matches(target_unit):
+                return 0, ""
+        try:
+            threshold = int(source_sr.get("enhancement_warmasters_gift_crit_wound_threshold", 5) or 0)
+        except (TypeError, ValueError):
+            threshold = 0
+        if threshold <= 0:
+            return 0, ""
+        threshold = int(min(6, max(2, threshold)))
+        source = str(source_sr.get("enhancement_warmasters_gift_source", "") or "Warmaster's Gift").strip()
+        return threshold, (source or "Warmaster's Gift")
+
+    def _veterans_mark_of_legend_source_for_model(self, model):
+        if model is None or not self._model_in_army(model):
+            return None, None, None
+        root = self._unit_root(getattr(model, "parent_unit", None))
+        if root is None:
+            return None, None, None
+        source_member, source_sr, bearer = self._veterans_enhancement_source_member(
+            root,
+            flag_key="enhancement_mark_of_legend",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=False,
+        )
+        if source_sr is None or bearer is None:
+            return None, None, None
+        if not self._model_matches_bearer(model, bearer):
+            return None, None, None
+        return source_member, source_sr, bearer
+
+    def _veterans_mark_of_legend_usage_key(self, *, game=None) -> tuple[int, str]:
+        turn = int(self._current_turn(game=game) or 0)
+        owner = str(self._current_turn_owner_id(game=game) or "")
+        return int(turn), owner
+
+    def _veterans_mark_of_legend_reroll_available(self, model, *, game=None, roll_type: str) -> tuple[bool, str]:
+        source_member, source_sr, _bearer = self._veterans_mark_of_legend_source_for_model(model)
+        if source_member is None or source_sr is None:
+            return False, ""
+        allow_key = f"enhancement_mark_of_legend_allow_{str(roll_type or '').strip().lower()}_reroll"
+        if not bool(source_sr.get(allow_key, True)):
+            return False, ""
+        if bool(source_sr.get("enhancement_mark_of_legend_once_per_turn", True)):
+            current_turn, current_owner = self._veterans_mark_of_legend_usage_key(game=game)
+            try:
+                used_turn = int(source_sr.get("enhancement_mark_of_legend_last_used_turn", 0) or 0)
+            except (TypeError, ValueError):
+                used_turn = 0
+            used_owner = str(source_sr.get("enhancement_mark_of_legend_last_used_turn_owner", "") or "")
+            if used_turn and used_turn == int(current_turn) and used_owner == str(current_owner):
+                return False, ""
+        source = str(source_sr.get("enhancement_mark_of_legend_source", "") or "Mark of Legend").strip()
+        return True, (source or "Mark of Legend")
+
+    def veterans_mark_of_legend_reroll_hit_available(self, attacker_model, *, game=None) -> tuple[bool, str]:
+        return self._veterans_mark_of_legend_reroll_available(attacker_model, game=game, roll_type="hit")
+
+    def veterans_mark_of_legend_reroll_wound_available(self, attacker_model, *, game=None) -> tuple[bool, str]:
+        return self._veterans_mark_of_legend_reroll_available(attacker_model, game=game, roll_type="wound")
+
+    def veterans_mark_of_legend_reroll_save_available(self, target_model, *, game=None) -> tuple[bool, str]:
+        return self._veterans_mark_of_legend_reroll_available(target_model, game=game, roll_type="save")
+
+    def veterans_mark_of_legend_consume_reroll(self, model, *, roll_type: str, game=None) -> bool:
+        source_member, source_sr, _bearer = self._veterans_mark_of_legend_source_for_model(model)
+        if source_member is None or source_sr is None:
+            return False
+        allowed, _source = self._veterans_mark_of_legend_reroll_available(
+            model,
+            game=game,
+            roll_type=roll_type,
+        )
+        if not allowed:
+            return False
+        current_turn, current_owner = self._veterans_mark_of_legend_usage_key(game=game)
+        source_sr["enhancement_mark_of_legend_last_used_turn"] = int(current_turn)
+        source_sr["enhancement_mark_of_legend_last_used_turn_owner"] = str(current_owner)
+        source_sr["enhancement_mark_of_legend_last_used_roll_type"] = str(roll_type or "").strip().lower()
+        source_member.special_rules = source_sr
+        self._clear_unit_ability_cache(self._unit_root(getattr(model, "parent_unit", None)))
+        return True
+
+    def veterans_eye_of_abaddon_on_focus_destroyed(self, destroyed_unit, *, game=None) -> dict:
+        if not self.is_veterans_of_the_long_war() or self.army is None:
+            return {}
+        if destroyed_unit is None:
+            return {}
+        if not self._veterans_focus_of_hatred_target_matches(destroyed_unit, require_alive=False):
+            return {}
+        owner = getattr(self.army, "player", None)
+        gain_cp = getattr(owner, "gain_command_points", None) if owner is not None else None
+        if not callable(gain_cp):
+            return {}
+        roots = list(self._iter_unique_roots(getattr(self.army, "units", []) or []))
+        roots.sort(key=lambda unit: str(get_entity_id(unit) or self._unit_root_key(unit)))
+        for root in roots:
+            _source_member, source_sr, bearer = self._veterans_enhancement_source_member(
+                root,
+                flag_key="enhancement_eye_of_abaddon",
+                require_bearer_alive=True,
+                require_bearer_on_battlefield=False,
+            )
+            if source_sr is None:
+                continue
+            if bool(source_sr.get("enhancement_eye_of_abaddon_requires_bearer_on_battlefield", True)):
+                bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None)) if bearer is not None else None
+                if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                    continue
+            source = str(source_sr.get("enhancement_eye_of_abaddon_source", "") or "Eye of Abaddon").strip() or "Eye of Abaddon"
+            try:
+                success_on = int(source_sr.get("enhancement_eye_of_abaddon_success_on", 4) or 4)
+            except (TypeError, ValueError):
+                success_on = 4
+            success_on = int(min(6, max(2, success_on)))
+            try:
+                cp_gain = int(source_sr.get("enhancement_eye_of_abaddon_cp_gain", 1) or 1)
+            except (TypeError, ValueError):
+                cp_gain = 1
+            cp_gain = int(max(1, cp_gain))
+            roll = int(get_roll("D6"))
+            gained = 0
+            if roll >= success_on:
+                gained = int(gain_cp(cp_gain, reason=source) or 0)
+            return {
+                "triggered": True,
+                "source": source,
+                "roll": int(roll),
+                "success_on": int(success_on),
+                "cp_gain": int(cp_gain),
+                "gained": int(gained),
+                "focus_unit_id": str(get_entity_id(self._unit_root(destroyed_unit)) or ""),
+                "source_unit_id": str(get_entity_id(root) or ""),
+                "source_model_id": str(get_entity_id(bearer) or "") if bearer is not None else "",
+            }
+        return {}
+
     def twisted_doctrine_can_trigger(
         self,
         unit,

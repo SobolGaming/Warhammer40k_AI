@@ -9605,6 +9605,20 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), f"+{int(bonus)} to hit from {str(source or 'Tyrannical Motivation').strip()}")
         except Exception:
             pass
+        # Chaos Space Marines: Veterans of the Long War - Eager for Vengeance.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "veterans_eager_for_vengeance_hit_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                bonus, source = bonus_fn(attacker, target, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Eager for Vengeance").strip() or "Eager for Vengeance"
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} to hit from {source_name}")
+        except Exception:
+            pass
         # Chaos Space Marines: Nightmare Hunt - Terror Made Manifest.
         attacker_unit = getattr(attacker, "parent_unit", None)
         get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
@@ -10847,6 +10861,21 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         except Exception:
             pass
+        mark_of_legend_hit_reason = ""
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            available_fn = getattr(csm_mgr, "veterans_mark_of_legend_reroll_hit_available", None) if csm_mgr is not None else None
+            if callable(available_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                applies, source = available_fn(attacker, game=game)
+                if bool(applies):
+                    source_name = str(source or "Mark of Legend").strip() or "Mark of Legend"
+                    mark_of_legend_hit_reason = f"{source_name}: re-roll Hit roll"
+                    reroll_full_reasons.append(mark_of_legend_hit_reason)
+        except Exception:
+            mark_of_legend_hit_reason = ""
 
         hit_result["reroll_values"] = list(sorted(reroll_hit_values))
         hit_result["reroll_value_reasons"] = list(reroll_value_reasons)
@@ -10886,6 +10915,7 @@ class WargearProfile:
                         is_human = False
                         provider = None
                         player = None
+                        game = None
                     reason = reroll_full_reasons[0] if reroll_full_reasons else "Unit ability"
                     if is_human and callable(provider):
                         try:
@@ -10909,6 +10939,14 @@ class WargearProfile:
                         hit_result["reroll"] = rr
                         dice_roll = rr
                         reroll_used = True
+                        if mark_of_legend_hit_reason and reason == mark_of_legend_hit_reason:
+                            consume_fn = (
+                                getattr(csm_mgr, "veterans_mark_of_legend_consume_reroll", None)
+                                if csm_mgr is not None
+                                else None
+                            )
+                            if callable(consume_fn):
+                                consume_fn(attacker, roll_type="hit", game=csm_game)
             except Exception:
                 pass
 
@@ -15067,6 +15105,21 @@ class WargearProfile:
                                 crit_wound_reasons.append(f"{src}: critical wound on {val}+")
         except Exception:
             pass
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            csm_mgr = getattr(attacker_army, "chaos_space_marines_detachments", None) if attacker_army is not None else None
+            threshold_fn = getattr(csm_mgr, "veterans_warmasters_gift_crit_wound_threshold", None) if csm_mgr is not None else None
+            if callable(threshold_fn):
+                game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+                threshold, source = threshold_fn(attacker, target, game=game)
+                if int(threshold or 0):
+                    val = int(threshold)
+                    crit_wound_threshold = val if crit_wound_threshold is None else min(int(crit_wound_threshold), val)
+                    source_name = str(source or "Warmaster's Gift").strip() or "Warmaster's Gift"
+                    crit_wound_reasons.append(f"{source_name}: critical wound on {val}+")
+        except Exception:
+            pass
 
         wound_result["crit_threshold"] = int(crit_wound_threshold or 6)
 
@@ -15857,6 +15910,22 @@ class WargearProfile:
         except Exception:
             pass
 
+        mark_of_legend_wound_reason = ""
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            available_fn = getattr(csm_mgr, "veterans_mark_of_legend_reroll_wound_available", None) if csm_mgr is not None else None
+            if callable(available_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                applies, source = available_fn(attacker, game=game)
+                if bool(applies):
+                    source_name = str(source or "Mark of Legend").strip() or "Mark of Legend"
+                    mark_of_legend_wound_reason = f"{source_name}: re-roll Wound roll"
+                    reroll_full_reasons.append(mark_of_legend_wound_reason)
+        except Exception:
+            mark_of_legend_wound_reason = ""
+
         wound_result["reroll_values"] = list(sorted(reroll_wound_values))
         wound_result["reroll_value_reasons"] = list(reroll_value_reasons)
         wound_result["reroll_full_reasons"] = list(reroll_full_reasons)
@@ -15940,6 +16009,14 @@ class WargearProfile:
                         wound_result["reroll"] = rr
                         dice_roll = rr
                         reroll_used = True
+                        if mark_of_legend_wound_reason and reason == mark_of_legend_wound_reason:
+                            consume_fn = (
+                                getattr(csm_mgr, "veterans_mark_of_legend_consume_reroll", None)
+                                if csm_mgr is not None
+                                else None
+                            )
+                            if callable(consume_fn):
+                                consume_fn(attacker, roll_type="wound", game=game)
             except Exception:
                 pass
 
@@ -18940,6 +19017,54 @@ class WargearProfile:
 
             if dice_modifier != 0:
                 save_result['special_effects'].append(f"Modifier {dice_modifier:+d}")
+
+        # Chaos Space Marines: Veterans of the Long War - Mark of Legend.
+        try:
+            if rerolls_allowed and not bool(save_result.get("saved", False)) and "reroll" not in save_result:
+                target_unit = getattr(target_model, "parent_unit", None)
+                target_army = target_unit.get_parent_army() if target_unit is not None else None
+                csm_mgr = getattr(target_army, "chaos_space_marines_detachments", None) if target_army is not None else None
+                available_fn = getattr(csm_mgr, "veterans_mark_of_legend_reroll_save_available", None) if csm_mgr is not None else None
+                consume_fn = getattr(csm_mgr, "veterans_mark_of_legend_consume_reroll", None) if csm_mgr is not None else None
+                if callable(available_fn):
+                    game = getattr(getattr(target_army, "player", None), "game", None) if target_army is not None else None
+                    applies, source = available_fn(target_model, game=game)
+                    if bool(applies):
+                        rr = _reroll_save()
+                        save_result["reroll"] = rr
+                        if int(dice_roll) == 1:
+                            save_result["reroll_of_one"] = 1
+                        dice_roll = int(rr)
+                        save_result["roll"] = int(dice_roll)
+                        source_name = str(source or "Mark of Legend").strip() or "Mark of Legend"
+                        save_result.setdefault("special_effects", []).append(f"{source_name}: re-roll Save roll")
+                        save_result["special_effects"] = [
+                            eff
+                            for eff in list(save_result.get("special_effects", []) or [])
+                            if str(eff or "").strip().lower() != "natural 1 (auto-fail)"
+                        ]
+                        if dice_roll == 1:
+                            save_result["saved"] = False
+                            save_result.setdefault("special_effects", []).append("Natural 1 (auto-fail)")
+                        else:
+                            from ..utility.modifiers import compute_save_roll_modifier
+
+                            dice_modifier, effects = compute_save_roll_modifier(
+                                target_model,
+                                attack_instance=attack_instance,
+                                ap=ap,
+                                save_type=save_result.get("save_type"),
+                                weapon_profile=self,
+                            )
+                            if effects:
+                                save_result.setdefault("special_effects", []).extend(list(effects))
+                            save_result["saved"] = (dice_roll + dice_modifier) >= save_value
+                            if dice_modifier != 0:
+                                save_result.setdefault("special_effects", []).append(f"Modifier {dice_modifier:+d}")
+                        if callable(consume_fn):
+                            consume_fn(target_model, roll_type="save", game=game)
+        except Exception:
+            pass
 
         # Shadow Field: on first failed invulnerable save, bearer loses invulnerable save.
         try:

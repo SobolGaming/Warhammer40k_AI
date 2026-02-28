@@ -7202,6 +7202,31 @@ class Game(
         except Exception:
             attacker_root = destroyed_by_unit
 
+        # Chaos Space Marines: Veterans of the Long War (Eye of Abaddon).
+        try:
+            attacker_army = attacker_root.get_parent_army() if attacker_root is not None else None
+            csm_mgr = getattr(attacker_army, "chaos_space_marines_detachments", None) if attacker_army is not None else None
+            eye_fn = getattr(csm_mgr, "veterans_eye_of_abaddon_on_focus_destroyed", None) if csm_mgr is not None else None
+            if callable(eye_fn):
+                eye_result = eye_fn(unit, game=self)
+                if isinstance(eye_result, dict) and bool(eye_result.get("triggered", False)):
+                    player = getattr(attacker_army, "player", None)
+                    if player is not None:
+                        self.event_system.publish(
+                            "command_points_gained",
+                            player=player,
+                            amount=int(eye_result.get("gained", 0) or 0),
+                            reason=str(eye_result.get("source", "") or "Eye of Abaddon"),
+                            attacker_unit=attacker_root,
+                            target_unit=unit,
+                            attacker_model=destroyed_by_model,
+                            roll=int(eye_result.get("roll", 0) or 0),
+                            success_on=int(eye_result.get("success_on", 4) or 4),
+                            cp_gain=int(eye_result.get("cp_gain", 1) or 1),
+                        )
+        except Exception:
+            pass
+
         # Custom: Vox-diabolus (Vessels of Wrath) has a conditional D6 roll gate.
         # Skip the generic gain-CP parser for this named source to avoid incorrect auto-grants.
         skip_cp_sources: set[str] = set()
@@ -10671,6 +10696,17 @@ class Game(
             bonus, source = desperate_charge_bonus_fn(charging_unit, game=self)
             if int(bonus or 0):
                 modifiers.append((int(bonus), str(source or "Desperate Devotion").strip() or "Desperate Devotion"))
+        eager_charge_bonus_fn = (
+            getattr(csm_mgr, "veterans_eager_for_vengeance_charge_roll_bonus", None) if csm_mgr is not None else None
+        )
+        if callable(eager_charge_bonus_fn):
+            bonus, source = eager_charge_bonus_fn(
+                charging_unit,
+                target_units=target_unit,
+                game=self,
+            )
+            if int(bonus or 0):
+                modifiers.append((int(bonus), str(source or "Eager for Vengeance").strip() or "Eager for Vengeance"))
         tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
         synaptic_charge_bonus_fn = getattr(tyr_mgr, "synaptic_imperatives_charge_roll_bonus", None) if tyr_mgr is not None else None
         if callable(synaptic_charge_bonus_fn):

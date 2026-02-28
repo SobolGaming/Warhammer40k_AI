@@ -2209,6 +2209,68 @@ _DECEPTORS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DECEPTORS_DESCRIPTORS.values()
 }
 
+_VETERANS_OF_THE_LONG_WAR_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008960002": EnhancementToolDescriptor(
+        enhancement_id="000008960002",
+        name="Eager for Vengeance",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_conditional",
+        effect="fallback_shoot_charge_and_focus_bonuses_after_fall_back",
+        effect_params={
+            "allow_shoot_after_fall_back": True,
+            "allow_charge_after_fall_back": True,
+            "requires_focus_of_hatred_target": True,
+            "requires_unit_fell_back_this_turn_for_hit_bonus": True,
+            "focus_hit_roll_bonus": 1,
+            "focus_charge_roll_bonus": 1,
+        },
+    ),
+    "000008960003": EnhancementToolDescriptor(
+        enhancement_id="000008960003",
+        name="Eye of Abaddon",
+        timing="any_phase_on_focus_of_hatred_destroyed",
+        target="army",
+        duration="constant_conditional",
+        effect="gain_cp_on_focus_of_hatred_destroyed",
+        effect_params={
+            "requires_bearer_on_battlefield": True,
+            "success_on": 4,
+            "cp_gain": 1,
+        },
+    ),
+    "000008960004": EnhancementToolDescriptor(
+        enhancement_id="000008960004",
+        name="Mark of Legend",
+        timing="on_bearer_hit_wound_or_save_roll",
+        target="bearer",
+        duration="constant",
+        effect="once_per_turn_reroll_hit_wound_or_save_for_bearer",
+        effect_params={
+            "once_per_turn": True,
+            "allow_hit_reroll": True,
+            "allow_wound_reroll": True,
+            "allow_save_reroll": True,
+        },
+    ),
+    "000008960005": EnhancementToolDescriptor(
+        enhancement_id="000008960005",
+        name="Warmaster's Gift",
+        timing="on_bearer_wound_roll",
+        target="bearer_attacks_vs_focus_of_hatred",
+        duration="constant_conditional",
+        effect="focus_of_hatred_wound_roll_critical_on_5_plus_for_bearer",
+        effect_params={
+            "requires_focus_of_hatred_target": True,
+            "critical_wound_threshold": 5,
+        },
+    ),
+}
+
+_VETERANS_OF_THE_LONG_WAR_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _VETERANS_OF_THE_LONG_WAR_DESCRIPTORS.values()
+}
+
 _SPECTACLE_OF_SPITE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010580002": EnhancementToolDescriptor(
         enhancement_id="000010580002",
@@ -5291,6 +5353,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DECEPTORS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _VETERANS_OF_THE_LONG_WAR_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPECTACLE_OF_SPITE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5502,6 +5567,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CHAOS_CULT_BY_NAME.get(key)
         or _CREATIONS_OF_BILE_BY_NAME.get(key)
         or _DECEPTORS_BY_NAME.get(key)
+        or _VETERANS_OF_THE_LONG_WAR_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_BY_NAME.get(key)

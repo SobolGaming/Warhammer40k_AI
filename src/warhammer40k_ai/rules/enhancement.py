@@ -584,6 +584,10 @@ class Enhancement:
         except Exception:
             is_deceptors = False
         try:
+            is_veterans_of_the_long_war = bool(csm_mgr and csm_mgr.is_veterans_of_the_long_war())
+        except Exception:
+            is_veterans_of_the_long_war = False
+        try:
             is_hearthband = bool(lov_mgr and lov_mgr.is_hearthband())
         except Exception:
             is_hearthband = False
@@ -5799,6 +5803,95 @@ class Enhancement:
             unit.special_rules["enhancement_soul_link_source"] = "Soul Link"
             unit.special_rules["enhancement_soul_link_optional"] = bool(params.get("optional", True))
             unit.special_rules["enhancement_soul_link_active"] = False
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "eager for vengeance" or enh_id == "000008960002":
+            if not is_veterans_of_the_long_war:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Eager for Vengeance").strip() or "Eager for Vengeance"
+            unit.special_rules["enhancement_eager_for_vengeance"] = True
+            unit.special_rules["enhancement_eager_for_vengeance_source"] = source
+            unit.special_rules["enhancement_eager_for_vengeance_allow_shoot_after_fall_back"] = bool(
+                params.get("allow_shoot_after_fall_back", True)
+            )
+            unit.special_rules["enhancement_eager_for_vengeance_allow_charge_after_fall_back"] = bool(
+                params.get("allow_charge_after_fall_back", True)
+            )
+            unit.special_rules["enhancement_eager_for_vengeance_requires_focus_of_hatred_target"] = bool(
+                params.get("requires_focus_of_hatred_target", True)
+            )
+            unit.special_rules["enhancement_eager_for_vengeance_requires_fell_back_this_turn"] = bool(
+                params.get("requires_unit_fell_back_this_turn_for_hit_bonus", True)
+            )
+            unit.special_rules["enhancement_eager_for_vengeance_hit_roll_bonus"] = int(
+                max(0, _coerce_int(params.get("focus_hit_roll_bonus", 1), default=1))
+            )
+            unit.special_rules["enhancement_eager_for_vengeance_charge_roll_bonus"] = int(
+                max(0, _coerce_int(params.get("focus_charge_roll_bonus", 1), default=1))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "eye of abaddon" or enh_id == "000008960003":
+            if not is_veterans_of_the_long_war:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Eye of Abaddon").strip() or "Eye of Abaddon"
+            unit.special_rules["enhancement_eye_of_abaddon"] = True
+            unit.special_rules["enhancement_eye_of_abaddon_source"] = source
+            unit.special_rules["enhancement_eye_of_abaddon_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
+            unit.special_rules["enhancement_eye_of_abaddon_success_on"] = int(
+                min(6, max(2, _coerce_int(params.get("success_on", 4), default=4)))
+            )
+            unit.special_rules["enhancement_eye_of_abaddon_cp_gain"] = int(
+                max(1, _coerce_int(params.get("cp_gain", 1), default=1))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "mark of legend" or enh_id == "000008960004":
+            if not is_veterans_of_the_long_war:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Mark of Legend").strip() or "Mark of Legend"
+            unit.special_rules["enhancement_mark_of_legend"] = True
+            unit.special_rules["enhancement_mark_of_legend_source"] = source
+            unit.special_rules["enhancement_mark_of_legend_once_per_turn"] = bool(params.get("once_per_turn", True))
+            unit.special_rules["enhancement_mark_of_legend_allow_hit_reroll"] = bool(params.get("allow_hit_reroll", True))
+            unit.special_rules["enhancement_mark_of_legend_allow_wound_reroll"] = bool(
+                params.get("allow_wound_reroll", True)
+            )
+            unit.special_rules["enhancement_mark_of_legend_allow_save_reroll"] = bool(params.get("allow_save_reroll", True))
+            unit.special_rules["enhancement_mark_of_legend_last_used_turn"] = int(
+                unit.special_rules.get("enhancement_mark_of_legend_last_used_turn", 0) or 0
+            )
+            unit.special_rules["enhancement_mark_of_legend_last_used_turn_owner"] = str(
+                unit.special_rules.get("enhancement_mark_of_legend_last_used_turn_owner", "") or ""
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name in {"warmaster's gift", "warmasters gift", "warmaster’s gift"} or enh_id == "000008960005":
+            if not is_veterans_of_the_long_war:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Warmaster's Gift").strip() or "Warmaster's Gift"
+            unit.special_rules["enhancement_warmasters_gift"] = True
+            unit.special_rules["enhancement_warmasters_gift_source"] = source
+            unit.special_rules["enhancement_warmasters_gift_crit_wound_threshold"] = int(
+                min(6, max(2, _coerce_int(params.get("critical_wound_threshold", 5), default=5)))
+            )
+            unit.special_rules["enhancement_warmasters_gift_requires_focus_of_hatred_target"] = bool(
+                params.get("requires_focus_of_hatred_target", True)
+            )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

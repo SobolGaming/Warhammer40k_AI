@@ -12831,6 +12831,15 @@ class ActionsMovementMixin:
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(twisted_apply_fn(self, profile=profile, game=game)):
                     return True
+            eager_apply_fn = (
+                getattr(mgr, "veterans_eager_for_vengeance_can_shoot_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(eager_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(eager_apply_fn(self, profile=profile, game=game)):
+                    return True
         except Exception:
             pass
         try:
@@ -13282,6 +13291,15 @@ class ActionsMovementMixin:
             if callable(twisted_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(twisted_apply_fn(self, game=game)):
+                    return True
+            eager_apply_fn = (
+                getattr(mgr, "veterans_eager_for_vengeance_can_charge_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(eager_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(eager_apply_fn(self, game=game)):
                     return True
         except Exception:
             pass
