@@ -12789,6 +12789,15 @@ class ActionsMovementMixin:
             pass
         try:
             army = self.get_parent_army()
+            mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "flyblown_host_droning_chorus_assault_applies", None)):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr.flyblown_host_droning_chorus_assault_applies(self, profile, game=game):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
             mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
             if mgr is not None and callable(getattr(mgr, "killing_blow_assault_applies", None)):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None

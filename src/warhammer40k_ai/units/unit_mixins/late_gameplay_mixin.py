@@ -3132,6 +3132,20 @@ class LateGameplayMixin:
             if float(dist or 0.0) > 0.0:
                 _consider(float(dist), source or "Helm of the Fly King")
 
+        plagueveil_cap_fn = (
+            getattr(dg_mgr, "flyblown_host_plagueveil_ranged_targeting_cap", None)
+            if dg_mgr is not None
+            else None
+        )
+        if callable(plagueveil_cap_fn):
+            try:
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                dist, source = plagueveil_cap_fn(root, game=game)
+            except Exception:
+                dist, source = 0.0, ""
+            if float(dist or 0.0) > 0.0:
+                _consider(float(dist), source or "Plagueveil")
+
         try:
             sr = getattr(root, "special_rules", None)
             if isinstance(sr, dict) and sr.get("imperial_agents_orbital_oversight_active"):

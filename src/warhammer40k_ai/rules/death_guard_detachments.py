@@ -20,6 +20,10 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
     _VILE_VIGOUR_SOURCE = "Vile Vigour"
     _WARPROT_TALISMAN_SOURCE = "Warprot Talisman"
     _HELM_OF_THE_FLY_KING_SOURCE = "Helm of the Fly King"
+    _DRONING_CHORUS_SOURCE = "Droning Chorus"
+    _INSECTILE_MURMURATION_SOURCE = "Insectile Murmuration"
+    _REJUVENATING_SWARM_SOURCE = "Rejuvenating Swarm"
+    _PLAGUEVEIL_SOURCE = "Plagueveil"
     _MIASMIC_BOMBARDMENT_SOURCE = "Miasmic Bombardment"
     _MIASMIC_BOMBARDMENT_RANGE = 12.0
     _NUMBERLESS_HORDE_SOURCE = "Numberless Horde"
@@ -650,15 +654,16 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
 
         return list(dict.fromkeys([str(key or "").strip().upper() for key in list(keys or []) if str(key or "").strip()]))
 
-    def _death_lords_source_member(
+    def _detachment_source_member(
         self,
         unit,
         *,
+        detachment_is_active: bool,
         flag_key: str,
         require_bearer_alive: bool = True,
         require_bearer_leading: bool = False,
     ):
-        if not self.is_death_lords_chosen():
+        if not bool(detachment_is_active):
             return None, None, None, None
         if unit is None or not flag_key:
             return None, None, None, None
@@ -694,6 +699,38 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
                     continue
             return root, member, sr, bearer
         return root, None, None, None
+
+    def _death_lords_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_leading: bool = False,
+    ):
+        return self._detachment_source_member(
+            unit,
+            detachment_is_active=self.is_death_lords_chosen(),
+            flag_key=flag_key,
+            require_bearer_alive=require_bearer_alive,
+            require_bearer_leading=require_bearer_leading,
+        )
+
+    def _flyblown_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_leading: bool = False,
+    ):
+        return self._detachment_source_member(
+            unit,
+            detachment_is_active=self.is_flyblown_host(),
+            flag_key=flag_key,
+            require_bearer_alive=require_bearer_alive,
+            require_bearer_leading=require_bearer_leading,
+        )
 
     def death_lords_chosen_vile_vigour_movement_bonus(self, unit, *, game=None) -> tuple[int, str]:
         del game
@@ -756,6 +793,195 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
         if not source:
             source = self._HELM_OF_THE_FLY_KING_SOURCE
         return max(0.0, float(cap)), source
+
+    def flyblown_host_droning_chorus_assault_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        del game
+        if not self.is_flyblown_host():
+            return False
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+        if parent_wargear is None or not bool(getattr(parent_wargear, "is_ranged", lambda: False)()):
+            return False
+        root, _member, source_sr, _bearer = self._flyblown_source_member(
+            unit,
+            flag_key="enhancement_droning_chorus",
+            require_bearer_alive=True,
+            require_bearer_leading=False,
+        )
+        if source_sr is None or root is None:
+            return False
+        if not self._unit_in_army(root) or not root.is_alive() or not bool(getattr(root, "deployed", False)):
+            return False
+        return bool(source_sr.get("enhancement_droning_chorus_assault_ranged", True))
+
+    def _unit_within_any_friendly_contagion_range(self, target_unit, *, game=None, game_map=None) -> bool:
+        if target_unit is None or self.army is None:
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        if game is None or game_map is None:
+            return False
+        battle_round = self._resolve_battle_round(game=game)
+        if battle_round is None:
+            return False
+        gift_mgr = getattr(self.army, "nurgles_gift", None)
+        if gift_mgr is None:
+            return False
+        valid_source = getattr(gift_mgr, "_unit_is_valid_contagion_source", None)
+        if not callable(valid_source):
+            return False
+        from ..utility import aura_utils as _aura_utils
+
+        for source_unit in list(self._iter_unique_attached_roots() or []):
+            if source_unit is None:
+                continue
+            if not bool(valid_source(source_unit, game=game, game_map=game_map)):
+                continue
+            contagion_range = float(
+                gift_mgr.get_contagion_range(
+                    int(battle_round),
+                    source_unit=source_unit,
+                    game=game,
+                    game_map=game_map,
+                )
+            )
+            if _aura_utils.unit_within_range_of_unit(
+                source_unit,
+                target_unit,
+                float(contagion_range),
+                use_attached_aggregate=True,
+            ):
+                return True
+        return False
+
+    def flyblown_host_insectile_murmuration_reroll_wound_ones(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        target_unit=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[bool, str]:
+        del weapon_profile
+        if not self.is_flyblown_host():
+            return False, ""
+        if attacker_model is None or target_unit is None:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root, _member, source_sr, _bearer = self._flyblown_source_member(
+            attacker_unit,
+            flag_key="enhancement_insectile_murmuration",
+            require_bearer_alive=True,
+            require_bearer_leading=False,
+        )
+        if source_sr is None or root is None:
+            return False, ""
+        if not self._unit_in_army(root) or not root.is_alive() or not bool(getattr(root, "deployed", False)):
+            return False, ""
+        if not self._unit_within_any_friendly_contagion_range(target_unit, game=game, game_map=game_map):
+            return False, ""
+        source = str(
+            source_sr.get("enhancement_insectile_murmuration_source", "") or self._INSECTILE_MURMURATION_SOURCE
+        ).strip()
+        if not source:
+            source = self._INSECTILE_MURMURATION_SOURCE
+        return True, source
+
+    def flyblown_host_plagueveil_ranged_targeting_cap(self, target_unit, *, game=None) -> tuple[float, str]:
+        if not self.is_flyblown_host():
+            return 0.0, ""
+        root, _member, source_sr, _bearer = self._flyblown_source_member(
+            target_unit,
+            flag_key="enhancement_plagueveil",
+            require_bearer_alive=True,
+            require_bearer_leading=False,
+        )
+        if source_sr is None or root is None:
+            return 0.0, ""
+        if not self._unit_in_army(root) or not root.is_alive() or not bool(getattr(root, "deployed", False)):
+            return 0.0, ""
+        if bool(source_sr.get("enhancement_plagueveil_requires_within_controlled_objective_range", True)):
+            if game is None:
+                owner = getattr(self.army, "player", None) if self.army is not None else None
+                game = getattr(owner, "game", None) if owner is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+            within_controlled = getattr(root, "_within_controlled_objective_range", None)
+            if not callable(within_controlled) or not bool(within_controlled(game_map)):
+                return 0.0, ""
+        try:
+            cap = float(source_sr.get("enhancement_plagueveil_ranged_targeting_max_distance", 18.0) or 18.0)
+        except (TypeError, ValueError):
+            cap = 18.0
+        source = str(source_sr.get("enhancement_plagueveil_source", "") or self._PLAGUEVEIL_SOURCE).strip()
+        if not source:
+            source = self._PLAGUEVEIL_SOURCE
+        return max(0.0, float(cap)), source
+
+    def resolve_rejuvenating_swarm_phase_end(self, *, phase=None, game=None) -> list[dict]:
+        del phase
+        if not self.is_flyblown_host() or self.army is None:
+            return []
+        if game is not None and not bool(getattr(game, "is_authoritative", True)):
+            return []
+        outcomes: list[dict] = []
+        seen_roots: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root, _member, source_sr, bearer = self._flyblown_source_member(
+                unit,
+                flag_key="enhancement_rejuvenating_swarm",
+                require_bearer_alive=True,
+                require_bearer_leading=False,
+            )
+            if source_sr is None or root is None or bearer is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if not self._unit_in_army(root) or not root.is_alive():
+                continue
+            try:
+                max_wounds = int(
+                    getattr(bearer, "max_wounds", 0)
+                    or getattr(bearer, "_base_wounds", 0)
+                    or 0
+                )
+            except (TypeError, ValueError):
+                max_wounds = 0
+            try:
+                current_wounds = int(getattr(bearer, "wounds", max_wounds) or 0)
+            except (TypeError, ValueError):
+                current_wounds = 0
+            if max_wounds <= 0:
+                continue
+            lost_wounds = max(0, max_wounds - current_wounds)
+            if lost_wounds <= 0:
+                continue
+            heal_fn = getattr(bearer, "heal", None)
+            if not callable(heal_fn):
+                continue
+            heal_fn(int(lost_wounds))
+            source = str(
+                source_sr.get("enhancement_rejuvenating_swarm_source", "") or self._REJUVENATING_SWARM_SOURCE
+            ).strip()
+            if not source:
+                source = self._REJUVENATING_SWARM_SOURCE
+            outcomes.append(
+                {
+                    "source_unit_id": str(get_entity_id(root) or ""),
+                    "bearer_model_id": self._model_identifier(bearer),
+                    "healed": int(lost_wounds),
+                    "source": source,
+                }
+            )
+        return outcomes
+
+    def on_phase_end(self, phase, active_player=None, *, game=None) -> None:
+        del active_player
+        self.resolve_rejuvenating_swarm_phase_end(phase=phase, game=game)
 
     def resolve_face_of_death(self, *, game=None) -> list[dict]:
         if not self.is_death_lords_chosen() or self.army is None:

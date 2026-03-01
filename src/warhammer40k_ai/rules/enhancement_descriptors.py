@@ -5381,6 +5381,63 @@ _DEATH_GUARD_DEATH_LORDS_CHOSEN_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DEATH_GUARD_DEATH_LORDS_CHOSEN_DESCRIPTORS.values()
 }
 
+_DEATH_GUARD_FLYBLOWN_HOST_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009729002": EnhancementToolDescriptor(
+        enhancement_id="000009729002",
+        name="Droning Chorus",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_ranged_weapons_gain_assault",
+        effect_params={
+            "assault_ranged": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000009729003": EnhancementToolDescriptor(
+        enhancement_id="000009729003",
+        name="Insectile Murmuration",
+        timing="passive",
+        target="bearer_unit_attacks_vs_targets_in_friendly_contagion_range",
+        duration="constant",
+        effect="reroll_wound_ones_vs_units_in_friendly_contagion_range",
+        effect_params={
+            "reroll_wound_ones": True,
+            "requires_target_within_friendly_contagion_range": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000009729004": EnhancementToolDescriptor(
+        enhancement_id="000009729004",
+        name="Rejuvenating Swarm",
+        timing="end_of_each_phase",
+        target="bearer",
+        duration="repeat_each_phase",
+        effect="end_of_each_phase_bearer_regain_all_lost_wounds",
+        effect_params={
+            "regain_all_lost_wounds": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000009729005": EnhancementToolDescriptor(
+        enhancement_id="000009729005",
+        name="Plagueveil",
+        timing="passive",
+        target="bearer_unit_while_within_controlled_objective_range",
+        duration="constant_while_condition_met",
+        effect="controlled_objective_bearer_unit_ranged_targeting_cap",
+        effect_params={
+            "ranged_targeting_max_distance": 18,
+            "requires_within_controlled_objective_range": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_DEATH_GUARD_FLYBLOWN_HOST_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DEATH_GUARD_FLYBLOWN_HOST_DESCRIPTORS.values()
+}
+
 _SCINTILLATING_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009810002": EnhancementToolDescriptor(
         enhancement_id="000009810002",
@@ -6121,6 +6178,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DEATH_GUARD_DEATH_LORDS_CHOSEN_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _DEATH_GUARD_FLYBLOWN_HOST_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SCINTILLATING_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6251,6 +6311,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _DEATH_GUARD_CHAMPIONS_OF_CONTAGION_BY_NAME.get(key)
         or _DEATH_GUARD_DEATH_LORDS_CHOSEN_BY_NAME.get(key)
+        or _DEATH_GUARD_FLYBLOWN_HOST_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)
         or _GRAND_COVEN_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_BY_NAME.get(key)

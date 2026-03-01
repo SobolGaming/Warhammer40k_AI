@@ -16035,6 +16035,32 @@ class WargearProfile:
         except Exception:
             pass
 
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(dg_mgr, "flyblown_host_insectile_murmuration_reroll_wound_ones", None)
+                if dg_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                game_map = self._get_game_map_from_model(attacker)
+                reroll_ones, source = reroll_fn(
+                    attacker,
+                    weapon_profile=self,
+                    target_unit=target,
+                    game=game,
+                    game_map=game_map,
+                )
+                if bool(reroll_ones):
+                    reroll_wound_values.add(1)
+                    source_name = str(source or "Insectile Murmuration").strip() or "Insectile Murmuration"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
+        except Exception:
+            pass
+
         mark_of_legend_wound_reason = ""
         try:
             unit = getattr(attacker, "parent_unit", None)

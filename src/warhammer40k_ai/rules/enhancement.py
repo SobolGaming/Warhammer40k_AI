@@ -423,6 +423,10 @@ class Enhancement:
         except Exception:
             is_death_lords_chosen = False
         try:
+            is_flyblown_host = bool(dg_mgr and dg_mgr.is_flyblown_host())
+        except Exception:
+            is_flyblown_host = False
+        try:
             is_virulent_vectorium = bool(dg_mgr and dg_mgr.is_virulent_vectorium())
         except Exception:
             is_virulent_vectorium = False
@@ -8182,6 +8186,75 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_helm_of_the_fly_king_bearer_model_id"] = bearer_id
+
+        if name == "droning chorus" or enh_id == "000009729002":
+            if not is_flyblown_host:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_droning_chorus"] = True
+            unit.special_rules["enhancement_droning_chorus_source"] = "Droning Chorus"
+            unit.special_rules["enhancement_droning_chorus_assault_ranged"] = bool(params.get("assault_ranged", True))
+            unit.special_rules["enhancement_droning_chorus_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_droning_chorus_bearer_model_id"] = bearer_id
+
+        if name == "insectile murmuration" or enh_id == "000009729003":
+            if not is_flyblown_host:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_insectile_murmuration"] = True
+            unit.special_rules["enhancement_insectile_murmuration_source"] = "Insectile Murmuration"
+            unit.special_rules["enhancement_insectile_murmuration_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_insectile_murmuration_requires_target_within_friendly_contagion_range"] = bool(
+                params.get("requires_target_within_friendly_contagion_range", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_insectile_murmuration_bearer_model_id"] = bearer_id
+
+        if name == "rejuvenating swarm" or enh_id == "000009729004":
+            if not is_flyblown_host:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_rejuvenating_swarm"] = True
+            unit.special_rules["enhancement_rejuvenating_swarm_source"] = "Rejuvenating Swarm"
+            unit.special_rules["enhancement_rejuvenating_swarm_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_rejuvenating_swarm_regain_all_lost_wounds"] = bool(
+                params.get("regain_all_lost_wounds", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_rejuvenating_swarm_bearer_model_id"] = bearer_id
+
+        if name == "plagueveil" or enh_id == "000009729005":
+            if not is_flyblown_host:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_plagueveil"] = True
+            unit.special_rules["enhancement_plagueveil_source"] = "Plagueveil"
+            unit.special_rules["enhancement_plagueveil_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_plagueveil_requires_within_controlled_objective_range"] = bool(
+                params.get("requires_within_controlled_objective_range", True)
+            )
+            unit.special_rules["enhancement_plagueveil_ranged_targeting_max_distance"] = float(
+                max(0.0, _coerce_float(params.get("ranged_targeting_max_distance", 18.0), default=18.0))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_plagueveil_bearer_model_id"] = bearer_id
 
         if name == "daemon weapon of nurgle" or enh_id == "000010123002":
             if not is_virulent_vectorium:
