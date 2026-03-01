@@ -2835,19 +2835,41 @@ class GameShootingFightHandlersMixin:
                 return False
             return True
 
-        def _target_hit_with_weapon(target, weapon_key: str) -> bool:
+        def _models_include_source(models, source_model_id: str) -> bool:
+            if not models:
+                return False
+            source_id = str(source_model_id or "").strip()
+            if not source_id:
+                return True
+            for model in list(models or []):
+                if str(maybe_entity_id(model) or "") == source_id:
+                    return True
+            return False
+
+        def _target_hit_with_weapon(target, weapon_key: str, *, source_model_id: str = "") -> bool:
             if not isinstance(hit_models_by_target_weapon, dict):
                 return False
             target_map = hit_models_by_target_weapon.get(target)
             if not isinstance(target_map, dict):
                 return False
             models = target_map.get(weapon_key)
-            if models:
+            if _models_include_source(models, source_model_id):
                 return True
             if weapon_key.endswith("s"):
                 alt_key = weapon_key[:-1]
                 models = target_map.get(alt_key)
-                if models:
+                if _models_include_source(models, source_model_id):
+                    return True
+            return False
+
+        def _target_hit_by_source_model(target, source_model_id: str) -> bool:
+            if not isinstance(hit_models_by_target_weapon, dict):
+                return False
+            target_map = hit_models_by_target_weapon.get(target)
+            if not isinstance(target_map, dict):
+                return False
+            for models in list(target_map.values() or []):
+                if _models_include_source(models, source_model_id):
                     return True
             return False
 
@@ -2860,6 +2882,7 @@ class GameShootingFightHandlersMixin:
         for spec in specs:
             weapon_key = str(spec.get("weapon_key", "") or "")
             any_weapon = bool(spec.get("any_weapon", False))
+            source_model_id = str(spec.get("source_model_id", "") or "").strip()
             if not weapon_key and not any_weapon:
                 continue
             candidates: list[Any] = []
@@ -2871,7 +2894,10 @@ class GameShootingFightHandlersMixin:
                 if not _is_enemy_unit(target_unit):
                     continue
                 if weapon_key:
-                    if not _target_hit_with_weapon(target_unit, weapon_key):
+                    if not _target_hit_with_weapon(target_unit, weapon_key, source_model_id=source_model_id):
+                        continue
+                elif source_model_id:
+                    if not _target_hit_by_source_model(target_unit, source_model_id):
                         continue
                 candidates.append(target_unit)
             if not candidates:
@@ -2908,6 +2934,7 @@ class GameShootingFightHandlersMixin:
                     "ability_name": ability_name,
                     "weapon_key": weapon_key,
                     "weapon_name": str(spec.get("weapon_name", "") or ""),
+                    "source_model_id": source_model_id,
                     "expires_phase": expires_phase,
                     "expires_timing": expires_timing,
                 },

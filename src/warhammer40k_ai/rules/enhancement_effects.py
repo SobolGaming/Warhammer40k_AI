@@ -461,6 +461,62 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
             )
         )
 
+    # Fellhammer Siege-host: Bastion Plate.
+    if re.search(
+        r"once\s+per\s+battle\s+round,\s+when\s+a\s+saving\s+throw\s+is\s+failed\s+for\s+the\s+bearer'?s\s+unit,\s+you\s+can\s+change\s+the\s+damage\s+characteristic\s+of\s+that\s+attack\s+to\s+0\.",
+        r,
+        flags=re.IGNORECASE,
+    ):
+        out.append(
+            EnhancementEffectSpec(
+                kind="failed_save_damage_set_zero_once_per_battle_round",
+                value=0,
+                notes="Once per battle round after a failed save for the bearer unit, you can set that attack's damage to 0.",
+            )
+        )
+
+    # Fellhammer Siege-host: Iron Artifice.
+    if re.search(
+        r"the\s+bearer'?s\s+weapons\s+have\s+the\s+\[anti-vehicle\s+(\d)\+\]\s+and\s+\[anti-fortification\s+(\d)\+\]\s+abilities\.",
+        r,
+        flags=re.IGNORECASE,
+    ):
+        out.append(
+            EnhancementEffectSpec(
+                kind="bearer_weapons_gain_anti_vehicle_and_fortification",
+                value=1,
+                notes="Bearer weapons gain ANTI-VEHICLE and ANTI-FORTIFICATION abilities.",
+            )
+        )
+
+    # Fellhammer Siege-host: Ironbound Enmity.
+    if re.search(
+        r"each\s+time\s+the\s+bearer\s+makes\s+an\s+attack\s+while\s+within\s+range\s+of\s+an\s+objective\s+marker,\s+add\s+1\s+to\s+the\s+wound\s+roll\.",
+        r,
+        flags=re.IGNORECASE,
+    ):
+        out.append(
+            EnhancementEffectSpec(
+                kind="bearer_wound_roll_bonus_while_on_objective",
+                value=1,
+                notes="Bearer gets +1 to wound while within range of an objective marker.",
+            )
+        )
+
+    # Fellhammer Siege-host: Warp Tracer.
+    if re.search(
+        r"in\s+your\s+shooting\s+phase,\s+after\s+the\s+bearer\s+has\s+shot,\s+select\s+one\s+enemy\s+unit\s+hit\s+by\s+one\s+or\s+more\s+of\s+those\s+attacks\.\s+until\s+the\s+end\s+of\s+the\s+phase,\s+that\s+enemy\s+unit\s+cannot\s+have\s+the\s+benefit\s+of\s+cover\.",
+        r,
+        flags=re.IGNORECASE,
+    ):
+        out.append(
+            EnhancementEffectSpec(
+                kind="post_shoot_select_hit_enemy_loses_cover",
+                value=1,
+                notes="After bearer shoots, select a hit enemy unit; it cannot have Benefit of Cover until end of phase.",
+            )
+        )
+
     return out
 
 
@@ -505,6 +561,14 @@ def _enhancement_rules_fully_consumed(description: str) -> bool:
         r"each time the bearer destroys an enemy model with a melee attack roll one d6 adding 1 to the result if the bearer is within your armys shadow of chaos on a 4 the bearer regains 1 lost wound",
         # The Everstave.
         r"add \d+ to the strength characteristic of the bearers ranged weapons and increase the range characteristic of such weapons by \d+ while the bearer is within your armys shadow of chaos add \d+ to the strength characteristic of the bearers ranged weapons and increase the range characteristic of such weapons by \d+ instead",
+        # Bastion Plate.
+        r"once per battle round when a saving throw is failed for the bearers unit you can change the damage characteristic of that attack to 0",
+        # Iron Artifice.
+        r"the bearers weapons have the anti vehicle \d and anti fortification \d abilities",
+        # Ironbound Enmity.
+        r"each time the bearer makes an attack while within range of an objective marker add 1 to the wound roll",
+        # Warp Tracer.
+        r"in your shooting phase after the bearer has shot select one enemy unit hit by one or more of those attacks until the end of the phase that enemy unit cannot have the benefit of cover",
     )
     return any(re.fullmatch(pat, tokens) for pat in fullmatch_patterns)
 

@@ -467,6 +467,45 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             "tag": "detachment:iron_fortitude",
         }
 
+    def fellhammer_ironbound_enmity_wound_bonus(self, attacker_model, target_unit, *, game=None) -> tuple[int, str]:
+        if not self.is_fellhammer_siege_host():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._model_is_heretic_astartes(attacker_model):
+            return 0, ""
+        attacker_unit = self._unit_root(getattr(attacker_model, "parent_unit", None))
+        if attacker_unit is None:
+            return 0, ""
+        _source_member, source_sr, bearer = self._fellhammer_siege_host_enhancement_source_member(
+            attacker_unit,
+            flag_key="enhancement_ironbound_enmity",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=False,
+        )
+        if source_sr is None or bearer is None:
+            return 0, ""
+        if not self._model_matches_bearer(attacker_model, bearer):
+            return 0, ""
+        if bool(source_sr.get("enhancement_ironbound_enmity_requires_within_objective_range", True)):
+            resolved_game = self._resolve_game(game=game)
+            game_map = getattr(resolved_game, "map", None) if resolved_game is not None else None
+            within_any = getattr(attacker_unit, "is_within_any_objective_range", None)
+            if not callable(within_any):
+                return 0, ""
+            if not bool(within_any(game_map)):
+                return 0, ""
+        try:
+            bonus = int(source_sr.get("enhancement_ironbound_enmity_wound_roll_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(source_sr.get("enhancement_ironbound_enmity_source", "") or "Ironbound Enmity").strip()
+        return bonus, (source or "Ironbound Enmity")
+
     def terror_made_manifest_hit_bonus(self, attacker_model, target_unit) -> tuple[int, str]:
         if not self.is_nightmare_hunt():
             return 0, ""
@@ -1600,6 +1639,37 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         require_bearer_on_battlefield: bool = False,
     ):
         if not self.is_veterans_of_the_long_war():
+            return None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+                continue
+            bearer = self._find_enhancement_bearer_on_member(member, sr)
+            if require_bearer_alive and not self._model_alive(bearer):
+                continue
+            if require_bearer_on_battlefield:
+                bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None)) if bearer is not None else root
+                if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                    continue
+            return member, sr, bearer
+        return None, None, None
+
+    def _fellhammer_siege_host_enhancement_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_on_battlefield: bool = False,
+    ):
+        if not self.is_fellhammer_siege_host():
             return None, None, None
         root = self._unit_root(unit)
         if root is None or not self._unit_in_army(root):

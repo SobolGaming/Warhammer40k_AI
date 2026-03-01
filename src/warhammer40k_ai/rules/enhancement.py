@@ -613,6 +613,9 @@ class Enhancement:
             is_veterans_of_the_long_war = bool(csm_mgr and csm_mgr.is_veterans_of_the_long_war())
         except Exception:
             is_veterans_of_the_long_war = False
+        is_fellhammer_siege_host = bool(
+            csm_mgr and getattr(csm_mgr, "is_fellhammer_siege_host", lambda: False)()
+        )
         try:
             is_soulforged_warpack = bool(csm_mgr and csm_mgr.is_soulforged_warpack())
         except Exception:
@@ -6343,6 +6346,82 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_willbreaker_bearer_model_id"] = bearer_id
+
+        if name == "bastion plate" or enh_id == "000008976002":
+            if not is_fellhammer_siege_host:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Bastion Plate").strip() or "Bastion Plate"
+            unit.special_rules["enhancement_bastion_plate"] = True
+            unit.special_rules["enhancement_bastion_plate_source"] = source
+            unit.special_rules["enhancement_bastion_plate_set_damage_to"] = int(
+                max(0, _coerce_int(params.get("set_damage_to", 0), default=0))
+            )
+            unit.special_rules["enhancement_bastion_plate_usage_scope"] = str(
+                params.get("usage_scope", "battle_round") or "battle_round"
+            ).strip().lower()
+            unit.special_rules["enhancement_bastion_plate_optional"] = bool(params.get("optional", True))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_bastion_plate_bearer_model_id"] = bearer_id
+
+        if name == "iron artifice" or enh_id == "000008976003":
+            if not is_fellhammer_siege_host:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Iron Artifice").strip() or "Iron Artifice"
+            unit.special_rules["enhancement_iron_artifice"] = True
+            unit.special_rules["enhancement_iron_artifice_source"] = source
+            unit.special_rules["enhancement_iron_artifice_anti_vehicle"] = int(
+                min(6, max(2, _coerce_int(params.get("anti_vehicle", 4), default=4)))
+            )
+            unit.special_rules["enhancement_iron_artifice_anti_fortification"] = int(
+                min(6, max(2, _coerce_int(params.get("anti_fortification", 4), default=4)))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_iron_artifice_bearer_model_id"] = bearer_id
+
+        if name == "ironbound enmity" or enh_id == "000008976004":
+            if not is_fellhammer_siege_host:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Ironbound Enmity").strip() or "Ironbound Enmity"
+            unit.special_rules["enhancement_ironbound_enmity"] = True
+            unit.special_rules["enhancement_ironbound_enmity_source"] = source
+            unit.special_rules["enhancement_ironbound_enmity_wound_roll_bonus"] = int(
+                max(0, _coerce_int(params.get("wound_roll_bonus", 1), default=1))
+            )
+            unit.special_rules["enhancement_ironbound_enmity_requires_within_objective_range"] = bool(
+                params.get("requires_within_objective_range", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_ironbound_enmity_bearer_model_id"] = bearer_id
+
+        if name == "warp tracer" or enh_id == "000008976005":
+            if not is_fellhammer_siege_host:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Warp Tracer").strip() or "Warp Tracer"
+            unit.special_rules["enhancement_warp_tracer"] = True
+            unit.special_rules["enhancement_warp_tracer_source"] = source
+            unit.special_rules["enhancement_warp_tracer_attack_type"] = str(
+                params.get("attack_type", "ranged") or "ranged"
+            ).strip().lower()
+            unit.special_rules["enhancement_warp_tracer_requires_bearer_hit_target"] = bool(
+                params.get("requires_bearer_hit_target", True)
+            )
+            unit.special_rules["enhancement_warp_tracer_expires_timing"] = str(
+                params.get("expires_timing", "phase_end") or "phase_end"
+            ).strip().lower()
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_warp_tracer_bearer_model_id"] = bearer_id
 
         if name == "eager for vengeance" or enh_id == "000008960002":
             if not is_veterans_of_the_long_war:

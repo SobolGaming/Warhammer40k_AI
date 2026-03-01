@@ -2454,6 +2454,30 @@ class AbilitySpecsMixin:
                         "duration": str(duration),
                     }
                 )
+            source_sr = getattr(unit, "special_rules", None)
+            if isinstance(source_sr, dict) and bool(source_sr.get("enhancement_warp_tracer")):
+                source = str(source_sr.get("enhancement_warp_tracer_source", "") or "Warp Tracer").strip() or "Warp Tracer"
+                duration = str(source_sr.get("enhancement_warp_tracer_expires_timing", "") or "phase_end").strip().lower()
+                if duration not in {"phase_end", "owner_next_shooting_start"}:
+                    duration = "phase_end"
+                key = (source.lower(), "any", duration)
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "weapon_key": None,
+                        "weapon_name": "",
+                        "any_weapon": True,
+                        "duration": str(duration),
+                        "source_model_id": str(
+                            source_sr.get("enhancement_warp_tracer_bearer_model_id", "")
+                            or source_sr.get("enhancement_bearer_model_id", "")
+                            or ""
+                        ),
+                    }
+                )
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
@@ -7594,6 +7618,41 @@ class AbilitySpecsMixin:
                     "usage_scope": usage_scope,
                     "usage_key": f"aegis_projector:{source_unit_id}",
                     "source_unit_id": source_unit_id,
+                }
+            )
+
+        # Chaos Space Marines (Fellhammer Siege-host): Bastion Plate.
+        for member in members:
+            if member is None:
+                continue
+            source_sr = getattr(member, "special_rules", None)
+            if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_bastion_plate")):
+                continue
+            get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+            source_bearer = get_bearer() if callable(get_bearer) else None
+            if source_bearer is None or not bool(getattr(source_bearer, "is_alive", True)):
+                continue
+            source_name = str(source_sr.get("enhancement_bastion_plate_source", "") or "Bastion Plate").strip()
+            if not source_name:
+                source_name = "Bastion Plate"
+            source_unit_id = str(get_entity_id(member) or "")
+            if not source_unit_id:
+                continue
+            usage_scope = str(source_sr.get("enhancement_bastion_plate_usage_scope", "") or "battle_round").strip().lower()
+            if usage_scope not in {"turn", "battle_round", "battle"}:
+                usage_scope = "battle_round"
+            key = f"{source_name.lower()}:{source_unit_id}"
+            if key in seen_local:
+                continue
+            seen_local.add(key)
+            sources.append(
+                {
+                    "source": source_name,
+                    "usage_scope": usage_scope,
+                    "usage_key": f"bastion_plate:{source_unit_id}",
+                    "source_unit_id": source_unit_id,
+                    "set_damage_to": int(source_sr.get("enhancement_bastion_plate_set_damage_to", 0) or 0),
+                    "optional": bool(source_sr.get("enhancement_bastion_plate_optional", True)),
                 }
             )
 

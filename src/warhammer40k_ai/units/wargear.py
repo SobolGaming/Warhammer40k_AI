@@ -14948,6 +14948,17 @@ class WargearProfile:
                 source_name = str(source or "Terror Made Manifest").strip() or "Terror Made Manifest"
                 dice_modifier += int(bonus)
                 wound_result["modifiers"].append(f"+{int(bonus)} to wound from {source_name}")
+        ironbound_bonus_fn = getattr(csm_mgr, "fellhammer_ironbound_enmity_wound_bonus", None) if csm_mgr is not None else None
+        if callable(ironbound_bonus_fn):
+            ironbound_bonus, ironbound_source = ironbound_bonus_fn(
+                attacker,
+                target,
+                game=getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None,
+            )
+            if int(ironbound_bonus or 0):
+                source_name = str(ironbound_source or "Ironbound Enmity").strip() or "Ironbound Enmity"
+                dice_modifier += int(ironbound_bonus)
+                wound_result["modifiers"].append(f"+{int(ironbound_bonus)} to wound from {source_name}")
         # Leagues of Votann: Prioritised Efficiency (Fortify Takeover -1 to wound vs non-vehicle).
         try:
             target_army = target.get_parent_army()
@@ -19297,6 +19308,7 @@ class WargearProfile:
                             "source": source_name,
                             "usage_scope": usage_scope,
                             "usage_key": usage_key,
+                            "optional": bool(source_entry.get("optional", False)),
                         }
                         chosen_root = source_root
                         chosen_sr = source_sr
@@ -19306,17 +19318,75 @@ class WargearProfile:
                         source = str(chosen_entry.get("source", "") or "First failed save").strip() or "First failed save"
                         usage_scope = str(chosen_entry.get("usage_scope", "turn") or "turn").strip().lower()
                         usage_key = _normalize_usage_key(chosen_entry.get("usage_key", "first_failed_save_damage_zero"))
-                        attack_instance["force_damage_zero"] = True
-                        attack_instance["force_damage_zero_source"] = source
-                        if usage_scope == "battle_round":
-                            chosen_sr[f"{usage_key}_battle_round"] = int(turn or 0)
-                        else:
-                            chosen_sr[f"{usage_key}_turn"] = int(turn or 0)
-                            if owner_id:
-                                chosen_sr[f"{usage_key}_turn_owner"] = owner_id
-                        chosen_sr[f"{usage_key}_source"] = source
-                        chosen_root.special_rules = chosen_sr
-                        save_result['special_effects'].append(f"{source}: damage set to 0")
+                        use_it = True
+                        if bool(chosen_entry.get("optional", False)):
+                            use_it = False
+                            if game is not None and player is not None:
+                                try:
+                                    from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                                    from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+                                    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+                                except Exception:
+                                    use_it = False
+                                else:
+                                    request = DecisionRequest.create(
+                                        DECISION_CONFIRM_YES_NO,
+                                        source,
+                                        player_id=getattr(player, "id", None),
+                                        options=[
+                                            DecisionOption.create("Use", payload={"choice": True}),
+                                            DecisionOption.create("Skip", payload={"choice": False}),
+                                        ],
+                                        context={
+                                            "ability": "first_failed_save_damage_zero",
+                                            "ability_name": source,
+                                            "usage_key": usage_key,
+                                        },
+                                    )
+                                    if hasattr(game, "request_decision"):
+                                        game.request_decision(request)
+                                    use_now = False
+                                    try:
+                                        use_now = bool(
+                                            getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
+                                                "FIRST_FAILED_SAVE_DAMAGE_ZERO",
+                                                {"ability_name": source, "usage_key": usage_key},
+                                            )
+                                        )
+                                    except Exception:
+                                        use_now = False
+                                    option_id = None
+                                    for option in list(getattr(request, "options", []) or []):
+                                        payload = dict(getattr(option, "payload", {}) or {})
+                                        if bool(payload.get("choice", False)) == bool(use_now):
+                                            option_id = option.option_id
+                                            break
+                                    if option_id:
+                                        value, apply_result = resolve_decision_value(
+                                            game,
+                                            request,
+                                            option_id,
+                                            player_id=getattr(player, "id", None),
+                                        )
+                                        if apply_result is not None and getattr(apply_result, "ok", False):
+                                            if isinstance(value, dict):
+                                                use_it = bool(value.get("choice", bool(use_now)))
+                                            elif value is None:
+                                                use_it = bool(use_now)
+                                            else:
+                                                use_it = bool(value)
+                        if use_it:
+                            attack_instance["force_damage_zero"] = True
+                            attack_instance["force_damage_zero_source"] = source
+                            if usage_scope == "battle_round":
+                                chosen_sr[f"{usage_key}_battle_round"] = int(turn or 0)
+                            else:
+                                chosen_sr[f"{usage_key}_turn"] = int(turn or 0)
+                                if owner_id:
+                                    chosen_sr[f"{usage_key}_turn_owner"] = owner_id
+                            chosen_sr[f"{usage_key}_source"] = source
+                            chosen_root.special_rules = chosen_sr
+                            save_result['special_effects'].append(f"{source}: damage set to 0")
         except Exception:
             pass
 

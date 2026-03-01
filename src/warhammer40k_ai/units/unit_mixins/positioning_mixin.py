@@ -4489,6 +4489,34 @@ class PositioningMixin:
             ]
         if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(
             model,
+            flag_key="enhancement_iron_artifice",
+            enhancement_id="000008976003",
+            enhancement_name="iron artifice",
+            require_leading=False,
+        ):
+            root = self.get_attached_unit_root()
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                anti_vehicle = int(sr.get("enhancement_iron_artifice_anti_vehicle", 4) or 4)
+            except (TypeError, ValueError):
+                anti_vehicle = 4
+            try:
+                anti_fortification = int(sr.get("enhancement_iron_artifice_anti_fortification", 4) or 4)
+            except (TypeError, ValueError):
+                anti_fortification = 4
+            source = str(sr.get("enhancement_iron_artifice_source", "") or "Iron Artifice").strip() or "Iron Artifice"
+            rules = list(rules or []) + [
+                {"attack_type": "ranged", "keyword": f"ANTI-VEHICLE {int(max(2, anti_vehicle))}+", "source": source},
+                {
+                    "attack_type": "ranged",
+                    "keyword": f"ANTI-FORTIFICATION {int(max(2, anti_fortification))}+",
+                    "source": source,
+                },
+            ]
+        if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(
+            model,
             flag_key="enhancement_micromelta_rounds",
             enhancement_id="000009757005",
             enhancement_name="micromelta rounds",

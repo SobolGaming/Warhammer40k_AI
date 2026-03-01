@@ -2386,6 +2386,63 @@ _DREAD_TALONS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DREAD_TALONS_DESCRIPTORS.values()
 }
 
+_FELLHAMMER_SIEGE_HOST_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008976002": EnhancementToolDescriptor(
+        enhancement_id="000008976002",
+        name="Bastion Plate",
+        timing="on_failed_save_for_bearer_unit",
+        target="bearer_unit",
+        duration="constant_once_per_battle_round",
+        effect="failed_save_damage_set_zero_for_bearer_unit",
+        effect_params={
+            "usage_scope": "battle_round",
+            "set_damage_to": 0,
+            "optional": True,
+        },
+    ),
+    "000008976003": EnhancementToolDescriptor(
+        enhancement_id="000008976003",
+        name="Iron Artifice",
+        timing="passive",
+        target="bearer_weapons",
+        duration="constant",
+        effect="grant_bearer_weapon_anti_vehicle_and_fortification",
+        effect_params={
+            "anti_vehicle": 4,
+            "anti_fortification": 4,
+        },
+    ),
+    "000008976004": EnhancementToolDescriptor(
+        enhancement_id="000008976004",
+        name="Ironbound Enmity",
+        timing="passive",
+        target="bearer_attacks",
+        duration="constant_conditional",
+        effect="bearer_wound_roll_bonus_while_within_objective_range",
+        effect_params={
+            "wound_roll_bonus": 1,
+            "requires_within_objective_range": True,
+        },
+    ),
+    "000008976005": EnhancementToolDescriptor(
+        enhancement_id="000008976005",
+        name="Warp Tracer",
+        timing="post_shoot_after_bearer_attacks",
+        target="hit_enemy_unit",
+        duration="until_end_of_phase",
+        effect="post_shoot_select_hit_enemy_loses_cover",
+        effect_params={
+            "attack_type": "ranged",
+            "requires_bearer_hit_target": True,
+            "expires_timing": "phase_end",
+        },
+    ),
+}
+
+_FELLHAMMER_SIEGE_HOST_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _FELLHAMMER_SIEGE_HOST_DESCRIPTORS.values()
+}
+
 _NIGHTMARE_HUNT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010641002": EnhancementToolDescriptor(
         enhancement_id="000010641002",
@@ -5719,6 +5776,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DREAD_TALONS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _FELLHAMMER_SIEGE_HOST_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _NIGHTMARE_HUNT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5949,6 +6009,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CREATIONS_OF_BILE_BY_NAME.get(key)
         or _DECEPTORS_BY_NAME.get(key)
         or _DREAD_TALONS_BY_NAME.get(key)
+        or _FELLHAMMER_SIEGE_HOST_BY_NAME.get(key)
         or _NIGHTMARE_HUNT_BY_NAME.get(key)
         or _PACTBOUND_ZEALOTS_BY_NAME.get(key)
         or _RENEGADE_RAIDERS_BY_NAME.get(key)
