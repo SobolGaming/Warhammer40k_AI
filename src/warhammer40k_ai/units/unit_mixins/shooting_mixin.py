@@ -353,6 +353,28 @@ class ShootingMixin:
             "hit_models_by_target_psychic": hit_models_by_target_psychic,
             "killing_models_by_target": killing_models_by_target,
         }
+        sorrowsyphon_triggered = False
+        sorrowsyphon_note_fn = None
+        sorrowsyphon_consume_fn = None
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        try:
+            dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+            sorrowsyphon_note_fn = (
+                getattr(dg_mgr, "shamblerot_note_sorrowsyphon_plague_wind_attacks", None)
+                if dg_mgr is not None
+                else None
+            )
+            sorrowsyphon_consume_fn = (
+                getattr(dg_mgr, "shamblerot_consume_sorrowsyphon_bodyguard_loss", None)
+                if dg_mgr is not None
+                else None
+            )
+        except Exception:
+            sorrowsyphon_note_fn = None
+            sorrowsyphon_consume_fn = None
         remaining_by_target: dict[str, dict] = {}
         for decl in weapon_declarations:
             t = decl.get("target_unit")
@@ -416,6 +438,21 @@ class ShootingMixin:
                     linked_fire_mode=linked_fire_mode,
                 )
                 successful_attacks += weapon_attacks
+                if (
+                    int(weapon_attacks or 0) > 0
+                    and (not sorrowsyphon_triggered)
+                    and callable(sorrowsyphon_note_fn)
+                ):
+                    try:
+                        sorrowsyphon_triggered = bool(
+                            sorrowsyphon_note_fn(
+                                self,
+                                weapon_declarations=[declaration],
+                                game=game,
+                            )
+                        )
+                    except Exception:
+                        sorrowsyphon_triggered = sorrowsyphon_triggered
             finally:
                 if target_unit is not None:
                     tid = get_entity_id(target_unit)
@@ -441,6 +478,43 @@ class ShootingMixin:
                     )
         except Exception:
             pass
+
+        if sorrowsyphon_triggered and callable(sorrowsyphon_consume_fn):
+            try:
+                game_for_loss = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game_for_loss = None
+            try:
+                loss_count, loss_source, _source_unit, bodyguard_root = sorrowsyphon_consume_fn(
+                    self,
+                    game=game_for_loss,
+                )
+            except Exception:
+                loss_count, loss_source, _source_unit, bodyguard_root = 0, "", None, None
+            if int(loss_count or 0) > 0 and bodyguard_root is not None:
+                alive_models = []
+                for model in list(getattr(bodyguard_root, "models", []) or []):
+                    alive_attr = getattr(model, "is_alive", False)
+                    model_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    if model_alive:
+                        alive_models.append(model)
+                alive_models.sort(key=lambda m: str(get_entity_id(m) or ""))
+                models_to_destroy = list(alive_models[: int(loss_count)])
+                for doomed in models_to_destroy:
+                    try:
+                        bodyguard_root.remove_model(doomed, game_map=getattr(game_for_loss, "map", None))
+                    except Exception:
+                        continue
+                try:
+                    from ...utility.event_bus import append_action
+                    player = getattr(bodyguard_root.get_parent_army(), "player", None)
+                    source_name = str(loss_source or "Sorrowsyphon").strip() or "Sorrowsyphon"
+                    append_action(
+                        player,
+                        f"{source_name}: {len(models_to_destroy)} bodyguard model(s) destroyed in {getattr(bodyguard_root, 'name', 'unit')}.",
+                    )
+                except Exception:
+                    pass
 
         try:
             game = self.get_parent_army().player.game
@@ -1874,6 +1948,22 @@ class ShootingMixin:
         except Exception:
             aura_mod = 0
             aura_mod_reasons = []
+        try:
+            dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+            modifier_fn = (
+                getattr(dg_mgr, "shamblerot_witherbone_pipes_leadership_test_modifier", None)
+                if dg_mgr is not None
+                else None
+            )
+            if callable(modifier_fn):
+                dg_mod, dg_source = modifier_fn(self, game=game)
+                dg_mod = int(dg_mod or 0)
+                if dg_mod:
+                    extra_mod += int(dg_mod)
+                    src_name = str(dg_source or "Witherbone Pipes").strip() or "Witherbone Pipes"
+                    extra_mod_reasons.append(f"{src_name} ({int(dg_mod):+d})")
+        except Exception:
+            pass
         # Core Stratagem: INSANE BRAVERY can make this unit automatically pass this test.
         # It is consumed on use (one-shot for the next Battle-shock test).
         auto_passed = False

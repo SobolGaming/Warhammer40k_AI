@@ -5499,6 +5499,72 @@ _DEATH_GUARD_MORTARIONS_HAMMER_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DEATH_GUARD_MORTARIONS_HAMMER_DESCRIPTORS.values()
 }
 
+_DEATH_GUARD_SHAMBLEROT_VECTORIUM_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010139002": EnhancementToolDescriptor(
+        enhancement_id="000010139002",
+        name="Witherbone Pipes",
+        timing="passive",
+        target="models_in_bearer_led_poxwalkers_unit",
+        duration="constant_while_bearer_leading",
+        effect="leading_poxwalkers_unit_objective_control_bonus_and_leadership_test_modifier",
+        effect_params={
+            "objective_control_bonus": 1,
+            "leadership_test_modifier": 1,
+            "requires_bearer_alive": True,
+            "requires_bearer_leading": True,
+            "requires_led_unit_name": "Poxwalkers",
+        },
+    ),
+    "000010139003": EnhancementToolDescriptor(
+        enhancement_id="000010139003",
+        name="Lord of the Walking Pox",
+        timing="movement_phase_while_in_strategic_reserves",
+        target="bearer_led_poxwalkers_unit_in_strategic_reserves",
+        duration="constant_while_in_strategic_reserves",
+        effect="strategic_reserves_setup_treat_current_round_as_third",
+        effect_params={
+            "strategic_reserves_setup_treat_as_round": 3,
+            "requires_bearer_alive": True,
+            "requires_bearer_leading": True,
+            "requires_led_unit_name": "Poxwalkers",
+        },
+    ),
+    "000010139004": EnhancementToolDescriptor(
+        enhancement_id="000010139004",
+        name="Sorrowsyphon",
+        timing="passive_and_post_shooting",
+        target="bearer_plague_wind_attacks_while_leading_poxwalkers_unit",
+        duration="constant_and_instant_post_attack",
+        effect="leading_poxwalkers_unit_bearer_plague_wind_damage_bonus_with_bodyguard_loss",
+        effect_params={
+            "weapon_name": "Plague Wind",
+            "plague_wind_damage_bonus": 1,
+            "bodyguard_loss_die": "D3",
+            "requires_bearer_alive": True,
+            "requires_bearer_leading": True,
+            "requires_led_unit_name": "Poxwalkers",
+        },
+    ),
+    "000010139005": EnhancementToolDescriptor(
+        enhancement_id="000010139005",
+        name="Talisman of Burgeoning",
+        timing="passive",
+        target="poxwalkers_models_in_bearer_led_unit",
+        duration="constant_while_bearer_leading",
+        effect="leading_unit_poxwalkers_models_toughness_bonus",
+        effect_params={
+            "toughness_bonus": 1,
+            "requires_bearer_alive": True,
+            "requires_bearer_leading": True,
+            "requires_led_unit_name": "Poxwalkers",
+        },
+    ),
+}
+
+_DEATH_GUARD_SHAMBLEROT_VECTORIUM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DEATH_GUARD_SHAMBLEROT_VECTORIUM_DESCRIPTORS.values()
+}
+
 _SCINTILLATING_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009810002": EnhancementToolDescriptor(
         enhancement_id="000009810002",
@@ -6245,6 +6311,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DEATH_GUARD_MORTARIONS_HAMMER_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _DEATH_GUARD_SHAMBLEROT_VECTORIUM_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SCINTILLATING_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6377,6 +6446,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _DEATH_GUARD_DEATH_LORDS_CHOSEN_BY_NAME.get(key)
         or _DEATH_GUARD_FLYBLOWN_HOST_BY_NAME.get(key)
         or _DEATH_GUARD_MORTARIONS_HAMMER_BY_NAME.get(key)
+        or _DEATH_GUARD_SHAMBLEROT_VECTORIUM_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)
         or _GRAND_COVEN_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_BY_NAME.get(key)

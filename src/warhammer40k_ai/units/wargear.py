@@ -20653,6 +20653,34 @@ class WargearProfile:
 
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+                bonus_fn = (
+                    getattr(dg_mgr, "shamblerot_sorrowsyphon_plague_wind_damage_bonus", None)
+                    if dg_mgr is not None
+                    else None
+                )
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    d_bonus, source = bonus_fn(attacker, self, game=game)
+                    if int(d_bonus or 0):
+                        source_name = str(source or "Sorrowsyphon").strip() or "Sorrowsyphon"
+                        damage_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(d_bonus),
+                                source="enhancement:sorrowsyphon_damage_add",
+                            )
+                        )
+                        damage_result["special_effects"].append(
+                            f"{source_name} +{int(d_bonus)}D (bearer Plague Wind)"
+                        )
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
                 _sp_s_bonus, _sp_ap_bonus, sp_d_bonus, _sp_a_bonus, _sp_m_bonus, sp_source = self._supernova_launcher_bonuses(attacker)
                 if sp_d_bonus:
                     damage_mods.append(

@@ -1253,6 +1253,18 @@ class StateAttachmentMixin:
                 pass
             mod += int(self._canticles_binharic_courage_test_modifier(game=game) or 0)
             try:
+                dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+                modifier_fn = (
+                    getattr(dg_mgr, "shamblerot_witherbone_pipes_leadership_test_modifier", None)
+                    if dg_mgr is not None
+                    else None
+                )
+                if callable(modifier_fn):
+                    test_mod, _source = modifier_fn(self, game=game)
+                    mod += int(test_mod or 0)
+            except Exception:
+                pass
+            try:
                 root_for_mod = self.get_attached_unit_root()
             except Exception:
                 root_for_mod = self
@@ -1477,6 +1489,15 @@ class StateAttachmentMixin:
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             mod = int(self._post_shoot_leadership_debuff_modifier(game))
             mod += int(self._canticles_binharic_courage_test_modifier(game=game) or 0)
+            dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+            modifier_fn = (
+                getattr(dg_mgr, "shamblerot_witherbone_pipes_leadership_test_modifier", None)
+                if dg_mgr is not None
+                else None
+            )
+            if callable(modifier_fn):
+                test_mod, _source = modifier_fn(self, game=game)
+                mod += int(test_mod or 0)
         except Exception:
             mod = 0
         try:

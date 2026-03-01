@@ -28,6 +28,10 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
     _BILEMAW_BLIGHT_SOURCE = "Bilemaw Blight"
     _SHRIEKWORM_FAMILIAR_SOURCE = "Shriekworm Familiar"
     _TENDRILOUS_EMISSIONS_SOURCE = "Tendrilous Emissions"
+    _WITHERBONE_PIPES_SOURCE = "Witherbone Pipes"
+    _LORD_OF_THE_WALKING_POX_SOURCE = "Lord of the Walking Pox"
+    _SORROWSYPHON_SOURCE = "Sorrowsyphon"
+    _TALISMAN_OF_BURGEONING_SOURCE = "Talisman of Burgeoning"
     _MIASMIC_BOMBARDMENT_SOURCE = "Miasmic Bombardment"
     _MIASMIC_BOMBARDMENT_RANGE = 12.0
     _NUMBERLESS_HORDE_SOURCE = "Numberless Horde"
@@ -752,6 +756,22 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
             require_bearer_leading=require_bearer_leading,
         )
 
+    def _shamblerot_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_leading: bool = False,
+    ):
+        return self._detachment_source_member(
+            unit,
+            detachment_is_active=self.is_shamblerot_vectorium(),
+            flag_key=flag_key,
+            require_bearer_alive=require_bearer_alive,
+            require_bearer_leading=require_bearer_leading,
+        )
+
     def death_lords_chosen_vile_vigour_movement_bonus(self, unit, *, game=None) -> tuple[int, str]:
         del game
         if not self.is_death_lords_chosen() or unit is None:
@@ -1184,6 +1204,285 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
                 source = self._TENDRILOUS_EMISSIONS_SOURCE
             return True, source
         return False, ""
+
+    def shamblerot_witherbone_pipes_objective_control_bonus(self, model, *, unit=None, game=None) -> tuple[int, str]:
+        del game
+        if not self.is_shamblerot_vectorium():
+            return 0, ""
+        if model is None:
+            return 0, ""
+        root, _member, source_sr, _bearer = self._shamblerot_source_member(
+            unit,
+            flag_key="enhancement_witherbone_pipes",
+            require_bearer_alive=True,
+            require_bearer_leading=True,
+        )
+        if source_sr is None or root is None:
+            return 0, ""
+        if not self._unit_is_poxwalkers(root):
+            return 0, ""
+        model_unit = getattr(model, "parent_unit", None)
+        model_root = model_unit.get_attached_unit_root() if hasattr(model_unit, "get_attached_unit_root") else model_unit
+        if model_root is not root:
+            return 0, ""
+        try:
+            bonus = int(source_sr.get("enhancement_witherbone_pipes_objective_control_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        source = str(source_sr.get("enhancement_witherbone_pipes_source", "") or self._WITHERBONE_PIPES_SOURCE).strip()
+        if not source:
+            source = self._WITHERBONE_PIPES_SOURCE
+        return max(0, int(bonus)), source
+
+    def shamblerot_witherbone_pipes_leadership_test_modifier(self, unit, *, game=None) -> tuple[int, str]:
+        del game
+        if not self.is_shamblerot_vectorium():
+            return 0, ""
+        root, _member, source_sr, _bearer = self._shamblerot_source_member(
+            unit,
+            flag_key="enhancement_witherbone_pipes",
+            require_bearer_alive=True,
+            require_bearer_leading=True,
+        )
+        if source_sr is None or root is None:
+            return 0, ""
+        if not self._unit_is_poxwalkers(root):
+            return 0, ""
+        try:
+            modifier = int(source_sr.get("enhancement_witherbone_pipes_leadership_test_modifier", 1) or 1)
+        except (TypeError, ValueError):
+            modifier = 1
+        source = str(source_sr.get("enhancement_witherbone_pipes_source", "") or self._WITHERBONE_PIPES_SOURCE).strip()
+        if not source:
+            source = self._WITHERBONE_PIPES_SOURCE
+        return int(modifier), source
+
+    def shamblerot_lord_of_the_walking_pox_strategic_reserves_round_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        if not self.is_shamblerot_vectorium():
+            return 0, ""
+        root, _member, source_sr, _bearer = self._shamblerot_source_member(
+            unit,
+            flag_key="enhancement_lord_of_the_walking_pox",
+            require_bearer_alive=True,
+            require_bearer_leading=True,
+        )
+        if source_sr is None or root is None:
+            return 0, ""
+        if not self._unit_is_poxwalkers(root):
+            return 0, ""
+        is_in_reserves = bool(getattr(root, "is_in_strategic_reserves", lambda: False)())
+        if not is_in_reserves:
+            return 0, ""
+        if game is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(owner, "game", None) if owner is not None else None
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if current_turn <= 0:
+            return 0, ""
+        effective_turn = 3
+        bonus = int(max(0, int(effective_turn) - int(current_turn)))
+        if bonus <= 0:
+            return 0, ""
+        source = str(
+            source_sr.get("enhancement_lord_of_the_walking_pox_source", "")
+            or self._LORD_OF_THE_WALKING_POX_SOURCE
+        ).strip()
+        if not source:
+            source = self._LORD_OF_THE_WALKING_POX_SOURCE
+        return int(bonus), source
+
+    def shamblerot_sorrowsyphon_plague_wind_damage_bonus(
+        self,
+        attacker_model,
+        weapon_profile,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_shamblerot_vectorium():
+            return 0, ""
+        if attacker_model is None or weapon_profile is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root, _member, source_sr, bearer = self._shamblerot_source_member(
+            attacker_unit,
+            flag_key="enhancement_sorrowsyphon",
+            require_bearer_alive=True,
+            require_bearer_leading=True,
+        )
+        if source_sr is None or root is None or bearer is None:
+            return 0, ""
+        if not self._unit_is_poxwalkers(root):
+            return 0, ""
+        if self._model_identifier(attacker_model) != self._model_identifier(bearer):
+            return 0, ""
+        expected_weapon = str(source_sr.get("enhancement_sorrowsyphon_weapon_name", "") or "Plague Wind").strip()
+        if not self._weapon_profile_matches_name(weapon_profile, expected_weapon):
+            return 0, ""
+        if game is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(owner, "game", None) if owner is not None else None
+        if game is not None:
+            owner = getattr(self.army, "player", None)
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            if owner is None or current_player is not owner:
+                return 0, ""
+        try:
+            bonus = int(source_sr.get("enhancement_sorrowsyphon_plague_wind_damage_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        source = str(source_sr.get("enhancement_sorrowsyphon_source", "") or self._SORROWSYPHON_SOURCE).strip()
+        if not source:
+            source = self._SORROWSYPHON_SOURCE
+        return max(0, int(bonus)), source
+
+    def shamblerot_note_sorrowsyphon_plague_wind_attacks(
+        self,
+        attacker_unit,
+        *,
+        weapon_declarations=None,
+        game=None,
+    ) -> bool:
+        if not self.is_shamblerot_vectorium():
+            return False
+        if attacker_unit is None:
+            return False
+        root, _member, source_sr, bearer = self._shamblerot_source_member(
+            attacker_unit,
+            flag_key="enhancement_sorrowsyphon",
+            require_bearer_alive=True,
+            require_bearer_leading=True,
+        )
+        if source_sr is None or root is None or bearer is None:
+            return False
+        if not self._unit_is_poxwalkers(root):
+            return False
+        expected_weapon = str(source_sr.get("enhancement_sorrowsyphon_weapon_name", "") or "Plague Wind").strip()
+        bearer_id = self._model_identifier(bearer)
+        used_plague_wind = False
+        for declaration in list(weapon_declarations or []):
+            if not isinstance(declaration, dict):
+                continue
+            weapon_profile = declaration.get("weapon_profile")
+            if not self._weapon_profile_matches_name(weapon_profile, expected_weapon):
+                continue
+            models = list(declaration.get("models") or [])
+            if not models:
+                continue
+            selected_ids = {self._model_identifier(model) for model in models if model is not None}
+            if bearer_id and bearer_id in selected_ids:
+                used_plague_wind = True
+                break
+        if not used_plague_wind:
+            return False
+        root_sr = getattr(root, "special_rules", None)
+        if not isinstance(root_sr, dict):
+            root_sr = {}
+        root_sr["enhancement_sorrowsyphon_pending_bodyguard_loss"] = True
+        try:
+            root_sr["enhancement_sorrowsyphon_pending_turn"] = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            root_sr["enhancement_sorrowsyphon_pending_turn"] = 0
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        root_sr["enhancement_sorrowsyphon_pending_owner"] = str(getattr(owner, "id", "") or "")
+        root.special_rules = root_sr
+        return True
+
+    def shamblerot_consume_sorrowsyphon_bodyguard_loss(self, attacker_unit, *, game=None) -> tuple[int, str, object, object]:
+        if not self.is_shamblerot_vectorium():
+            return 0, "", None, None
+        if attacker_unit is None:
+            return 0, "", None, None
+        root, source_unit, source_sr, _bearer = self._shamblerot_source_member(
+            attacker_unit,
+            flag_key="enhancement_sorrowsyphon",
+            require_bearer_alive=True,
+            require_bearer_leading=True,
+        )
+        if source_sr is None or root is None or source_unit is None:
+            return 0, "", None, None
+        if not self._unit_is_poxwalkers(root):
+            return 0, "", None, None
+        root_sr = getattr(root, "special_rules", None)
+        if not isinstance(root_sr, dict):
+            return 0, "", None, None
+        if not bool(root_sr.get("enhancement_sorrowsyphon_pending_bodyguard_loss", False)):
+            return 0, "", None, None
+        if game is not None:
+            try:
+                marked_turn = int(root_sr.get("enhancement_sorrowsyphon_pending_turn", 0) or 0)
+            except (TypeError, ValueError):
+                marked_turn = 0
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if marked_turn and current_turn and marked_turn != current_turn:
+                root_sr.pop("enhancement_sorrowsyphon_pending_bodyguard_loss", None)
+                root_sr.pop("enhancement_sorrowsyphon_pending_turn", None)
+                root_sr.pop("enhancement_sorrowsyphon_pending_owner", None)
+                root.special_rules = root_sr
+                return 0, "", None, None
+        root_sr.pop("enhancement_sorrowsyphon_pending_bodyguard_loss", None)
+        root_sr.pop("enhancement_sorrowsyphon_pending_turn", None)
+        root_sr.pop("enhancement_sorrowsyphon_pending_owner", None)
+        root.special_rules = root_sr
+        alive_bodyguard: list = []
+        for model in list(getattr(root, "models", []) or []):
+            alive_attr = getattr(model, "is_alive", False)
+            model_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if model_alive:
+                alive_bodyguard.append(model)
+        if not alive_bodyguard:
+            return 0, "", None, None
+        loss_die = str(source_sr.get("enhancement_sorrowsyphon_bodyguard_loss_die", "") or "D3").strip().upper() or "D3"
+        try:
+            loss_count = int(get_roll(loss_die) or 0)
+        except (TypeError, ValueError):
+            loss_count = 0
+        loss_count = int(max(0, min(int(loss_count), len(alive_bodyguard))))
+        if loss_count <= 0:
+            return 0, "", None, None
+        source = str(source_sr.get("enhancement_sorrowsyphon_source", "") or self._SORROWSYPHON_SOURCE).strip()
+        if not source:
+            source = self._SORROWSYPHON_SOURCE
+        return int(loss_count), source, source_unit, root
+
+    def shamblerot_talisman_of_burgeoning_toughness_bonus(self, model, *, unit=None, game=None) -> tuple[int, str]:
+        del game
+        if not self.is_shamblerot_vectorium():
+            return 0, ""
+        if model is None:
+            return 0, ""
+        root, _member, source_sr, _bearer = self._shamblerot_source_member(
+            unit,
+            flag_key="enhancement_talisman_of_burgeoning",
+            require_bearer_alive=True,
+            require_bearer_leading=True,
+        )
+        if source_sr is None or root is None:
+            return 0, ""
+        if not self._unit_is_poxwalkers(root):
+            return 0, ""
+        model_unit = getattr(model, "parent_unit", None)
+        model_root = model_unit.get_attached_unit_root() if hasattr(model_unit, "get_attached_unit_root") else model_unit
+        if model_root is not root:
+            return 0, ""
+        if model_unit is not root and not self._model_has_keyword(model, "POXWALKERS"):
+            return 0, ""
+        try:
+            bonus = int(source_sr.get("enhancement_talisman_of_burgeoning_toughness_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        source = str(
+            source_sr.get("enhancement_talisman_of_burgeoning_source", "")
+            or self._TALISMAN_OF_BURGEONING_SOURCE
+        ).strip()
+        if not source:
+            source = self._TALISMAN_OF_BURGEONING_SOURCE
+        return max(0, int(bonus)), source
 
     def resolve_rejuvenating_swarm_phase_end(self, *, phase=None, game=None) -> list[dict]:
         del phase

@@ -863,6 +863,27 @@ class Unit(
                         mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
             except Exception:
                 pass
+            try:
+                dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+                bonus_fn = (
+                    getattr(dg_mgr, "shamblerot_witherbone_pipes_objective_control_bonus", None)
+                    if dg_mgr is not None
+                    else None
+                )
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = bonus_fn(model, unit=self, game=game)
+                    if int(bonus or 0):
+                        source_name = str(source or "Witherbone Pipes").strip() or "Witherbone Pipes"
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source=f"detachment:{source_name}",
+                            )
+                        )
+            except Exception:
+                pass
 
             # Warpmeld Pact: TZAANGOR models gain +1 OC while in non-Battle-shocked Tzaangors units.
             try:
@@ -1348,6 +1369,27 @@ class Unit(
                     if int(bonus or 0):
                         source_name = str(source or "Noospheric Transference").strip() or "Noospheric Transference"
                         mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            except Exception:
+                pass
+            try:
+                dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+                bonus_fn = (
+                    getattr(dg_mgr, "shamblerot_talisman_of_burgeoning_toughness_bonus", None)
+                    if dg_mgr is not None
+                    else None
+                )
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = bonus_fn(model, unit=self, game=game)
+                    if int(bonus or 0):
+                        source_name = str(source or "Talisman of Burgeoning").strip() or "Talisman of Burgeoning"
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source=f"detachment:{source_name}",
+                            )
+                        )
             except Exception:
                 pass
             try:

@@ -431,6 +431,10 @@ class Enhancement:
         except Exception:
             is_mortarions_hammer = False
         try:
+            is_shamblerot_vectorium = bool(dg_mgr and dg_mgr.is_shamblerot_vectorium())
+        except Exception:
+            is_shamblerot_vectorium = False
+        try:
             is_virulent_vectorium = bool(dg_mgr and dg_mgr.is_virulent_vectorium())
         except Exception:
             is_virulent_vectorium = False
@@ -8346,6 +8350,107 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_tendrilous_emissions_bearer_model_id"] = bearer_id
+
+        if name == "witherbone pipes" or enh_id == "000010139002":
+            if not is_shamblerot_vectorium:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_witherbone_pipes"] = True
+            unit.special_rules["enhancement_witherbone_pipes_source"] = "Witherbone Pipes"
+            unit.special_rules["enhancement_witherbone_pipes_objective_control_bonus"] = int(
+                max(0, _coerce_int(params.get("objective_control_bonus", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_witherbone_pipes_leadership_test_modifier"] = int(
+                _coerce_int(params.get("leadership_test_modifier", 1) or 1, default=1)
+            )
+            unit.special_rules["enhancement_witherbone_pipes_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_witherbone_pipes_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_witherbone_pipes_requires_led_unit_name"] = str(
+                params.get("requires_led_unit_name", "Poxwalkers") or "Poxwalkers"
+            ).strip() or "Poxwalkers"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_witherbone_pipes_bearer_model_id"] = bearer_id
+
+        if name == "lord of the walking pox" or enh_id == "000010139003":
+            if not is_shamblerot_vectorium:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_lord_of_the_walking_pox"] = True
+            unit.special_rules["enhancement_lord_of_the_walking_pox_source"] = "Lord of the Walking Pox"
+            unit.special_rules["enhancement_lord_of_the_walking_pox_strategic_reserves_setup_treat_as_round"] = int(
+                max(1, _coerce_int(params.get("strategic_reserves_setup_treat_as_round", 3) or 3, default=3))
+            )
+            unit.special_rules["enhancement_lord_of_the_walking_pox_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_lord_of_the_walking_pox_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_lord_of_the_walking_pox_requires_led_unit_name"] = str(
+                params.get("requires_led_unit_name", "Poxwalkers") or "Poxwalkers"
+            ).strip() or "Poxwalkers"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_lord_of_the_walking_pox_bearer_model_id"] = bearer_id
+
+        if name == "sorrowsyphon" or enh_id == "000010139004":
+            if not is_shamblerot_vectorium:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_sorrowsyphon"] = True
+            unit.special_rules["enhancement_sorrowsyphon_source"] = "Sorrowsyphon"
+            unit.special_rules["enhancement_sorrowsyphon_weapon_name"] = str(
+                params.get("weapon_name", "Plague Wind") or "Plague Wind"
+            ).strip() or "Plague Wind"
+            unit.special_rules["enhancement_sorrowsyphon_plague_wind_damage_bonus"] = int(
+                max(0, _coerce_int(params.get("plague_wind_damage_bonus", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_sorrowsyphon_bodyguard_loss_die"] = str(
+                params.get("bodyguard_loss_die", "D3") or "D3"
+            ).strip().upper() or "D3"
+            unit.special_rules["enhancement_sorrowsyphon_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_sorrowsyphon_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_sorrowsyphon_requires_led_unit_name"] = str(
+                params.get("requires_led_unit_name", "Poxwalkers") or "Poxwalkers"
+            ).strip() or "Poxwalkers"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_sorrowsyphon_bearer_model_id"] = bearer_id
+
+        if name == "talisman of burgeoning" or enh_id == "000010139005":
+            if not is_shamblerot_vectorium:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_talisman_of_burgeoning"] = True
+            unit.special_rules["enhancement_talisman_of_burgeoning_source"] = "Talisman of Burgeoning"
+            unit.special_rules["enhancement_talisman_of_burgeoning_toughness_bonus"] = int(
+                max(0, _coerce_int(params.get("toughness_bonus", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_talisman_of_burgeoning_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_talisman_of_burgeoning_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_talisman_of_burgeoning_requires_led_unit_name"] = str(
+                params.get("requires_led_unit_name", "Poxwalkers") or "Poxwalkers"
+            ).strip() or "Poxwalkers"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_talisman_of_burgeoning_bearer_model_id"] = bearer_id
 
         if name == "daemon weapon of nurgle" or enh_id == "000010123002":
             if not is_virulent_vectorium:
