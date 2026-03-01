@@ -9583,8 +9583,12 @@ class WargearProfile:
                 game = None
                 game_map = None
             from ..rules.nurgles_gift import NurglesGiftManager, PLAGUE_SKULLSQUIRM
-            plague = NurglesGiftManager.get_afflicted_plague_for_unit(unit, game=game, game_map=game_map)
-            if plague is not None and plague.key == PLAGUE_SKULLSQUIRM.key:
+            plague_keys = {
+                str(value or "").strip().upper()
+                for value in list(NurglesGiftManager.get_afflicted_plague_keys_for_unit(unit, game=game, game_map=game_map) or [])
+                if str(value or "").strip()
+            }
+            if PLAGUE_SKULLSQUIRM.key in plague_keys:
                 _add_hit_mod(-1, "-1 to hit from Skullsquirm Blight (Nurgle's Gift)")
         except Exception:
             pass

@@ -5262,6 +5262,67 @@ _PLAGUE_LEGION_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _PLAGUE_LEGION_DESCRIPTORS.values()
 }
 
+_DEATH_GUARD_CHAMPIONS_OF_CONTAGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010131002": EnhancementToolDescriptor(
+        enhancement_id="000010131002",
+        name="Final Ingredient",
+        timing="fight_phase_after_unit_fights_and_character_destroyed",
+        target="bearer_unit",
+        duration="until_end_of_battle",
+        effect="select_additional_plague_for_all_afflicted_units",
+        once_per_battle=True,
+        effect_params={
+            "requires_enemy_character_model_destroyed": True,
+            "select_from_default_plagues": True,
+            "requires_target_is_afflicted": True,
+            "once_per_battle_key": "final_ingredient",
+        },
+    ),
+    "000010131003": EnhancementToolDescriptor(
+        enhancement_id="000010131003",
+        name="Visions of Virulence",
+        timing="passive",
+        target="enemy_units_enfeebled_by_bearer_pestilent_fallout",
+        duration="while_enfeebled_state_active",
+        effect="treat_enfeebled_units_as_afflicted",
+        effect_params={
+            "required_source_name": "Pestilent Fallout",
+            "requires_bearer_source_match": True,
+        },
+    ),
+    "000010131004": EnhancementToolDescriptor(
+        enhancement_id="000010131004",
+        name="Needle of Nurgle",
+        timing="command_phase_when_tainted_narthecium_resolves",
+        target="bearer_unit_bodyguard_models",
+        duration="instant",
+        effect="override_bodyguard_return_amount_roll",
+        effect_params={
+            "command_phase_bodyguard_return_amount_roll": "D3",
+            "command_phase_bodyguard_return_max": 3,
+            "requires_bearer_leading": True,
+            "ability_key": "needle_of_nurgle",
+        },
+    ),
+    "000010131005": EnhancementToolDescriptor(
+        enhancement_id="000010131005",
+        name="Cornucophagus",
+        timing="declare_battle_formations",
+        target="bearer_contagion_range_enemy_units",
+        duration="until_end_of_battle",
+        effect="select_additional_plague_within_bearer_contagion_range",
+        effect_params={
+            "select_from_default_plagues": True,
+            "requires_contagion_range": True,
+            "source_name": "Cornucophagus",
+        },
+    ),
+}
+
+_DEATH_GUARD_CHAMPIONS_OF_CONTAGION_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DEATH_GUARD_CHAMPIONS_OF_CONTAGION_DESCRIPTORS.values()
+}
+
 _SCINTILLATING_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009810002": EnhancementToolDescriptor(
         enhancement_id="000009810002",
@@ -5996,6 +6057,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _PLAGUE_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _DEATH_GUARD_CHAMPIONS_OF_CONTAGION_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SCINTILLATING_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6124,6 +6188,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_VINDICATION_TASK_FORCE_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
+        or _DEATH_GUARD_CHAMPIONS_OF_CONTAGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)
         or _GRAND_COVEN_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_BY_NAME.get(key)

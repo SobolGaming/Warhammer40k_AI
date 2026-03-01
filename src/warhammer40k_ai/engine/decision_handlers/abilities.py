@@ -2789,6 +2789,42 @@ def _validate_choose_plague(game: object, request: DecisionRequest, result: Deci
         if choice_key not in valid_keys:
             return ("Invalid Plague choice.",)
         return ()
+    if ability in ("final_ingredient", "cornucophagus"):
+        dg_mgr = getattr(army, "death_guard_detachments", None)
+        if dg_mgr is None:
+            return ("Death Guard detachment manager not found.",)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        if source_unit is None:
+            return ("Plague choice requires a valid source unit.",)
+        if ability == "final_ingredient":
+            can_select = getattr(dg_mgr, "can_select_final_ingredient", None)
+            if not callable(can_select) or not bool(can_select(source_unit, game=game)):
+                return ("Final Ingredient cannot be selected right now.",)
+        if ability == "cornucophagus":
+            can_select = getattr(dg_mgr, "can_select_cornucophagus", None)
+            if not callable(can_select) or not bool(can_select(source_unit, game=game)):
+                return ("Cornucophagus cannot be selected right now.",)
+        if is_skip_choice(request, result):
+            return ()
+        choice = payload.get("choice_key") or payload.get("key")
+        if choice is None:
+            return ("Plague choice requires key.",)
+        choice_key = str(choice or "").strip().upper()
+        allowed_keys = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(v or "").strip()
+        }
+        if allowed_keys and choice_key not in allowed_keys:
+            return ("Selected Plague is not in this request's candidate list.",)
+        try:
+            from ...rules.nurgles_gift import DEFAULT_PLAGUES
+        except Exception:
+            DEFAULT_PLAGUES = ()
+        valid_keys = {str(getattr(plague, "key", "") or "").strip().upper() for plague in list(DEFAULT_PLAGUES)}
+        if choice_key not in valid_keys:
+            return ("Invalid Plague choice.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
     choice = payload.get("choice_key") or payload.get("key")
@@ -2837,6 +2873,38 @@ def _apply_choose_plague(game: object, request: DecisionRequest, result: Decisio
             player,
             f"{ability_name}: {label} (Battle Round {battle_round}).",
         )
+        return str(choice)
+    if ability in ("final_ingredient", "cornucophagus"):
+        dg_mgr = getattr(army, "death_guard_detachments", None)
+        if dg_mgr is None:
+            raise RuntimeError("Death Guard detachment manager not found.")
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        if source_unit is None:
+            raise RuntimeError("Plague choice source unit not found.")
+        choice = payload.get("choice_key") or payload.get("key")
+        if ability == "final_ingredient":
+            select_fn = getattr(dg_mgr, "select_final_ingredient", None)
+            if not callable(select_fn):
+                raise RuntimeError("Final Ingredient selector is unavailable.")
+            applied = bool(select_fn(source_unit, choice, game=game))
+            if not applied:
+                raise RuntimeError("Final Ingredient selection failed.")
+        else:
+            select_fn = getattr(dg_mgr, "select_cornucophagus", None)
+            if not callable(select_fn):
+                raise RuntimeError("Cornucophagus selector is unavailable.")
+            applied = bool(select_fn(source_unit, choice))
+            if not applied:
+                raise RuntimeError("Cornucophagus selection failed.")
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(
+            ctx.get("ability_name", "")
+            or ("Final Ingredient" if ability == "final_ingredient" else "Cornucophagus")
+        ).strip() or ("Final Ingredient" if ability == "final_ingredient" else "Cornucophagus")
+        label = _option_label(request, result) or str(choice)
+        _log_action_for_players(game, player, f"{ability_name}: {label}.")
         return str(choice)
     if is_skip_choice(request, result):
         return None
@@ -16650,6 +16718,10 @@ def _apply_post_shoot_wracked_agonies_target(game: object, request: DecisionRequ
         except Exception:
             player = None
     owner_id = str(getattr(player, "id", "") or "")
+    source_unit_id = str(ctx.get("attacker_unit_id", "") or payload.get("attacker_unit_id", "") or "")
+    if not source_unit_id and attacker_unit is not None:
+        source_unit_id = str(get_entity_id(attacker_unit) or "")
+    source_model_id = str(ctx.get("model_id", "") or payload.get("model_id", "") or "")
 
     apply_fn = getattr(target_unit, "apply_wracked_with_agonies", None)
     if callable(apply_fn):
@@ -16660,6 +16732,12 @@ def _apply_post_shoot_wracked_agonies_target(game: object, request: DecisionRequ
             move_penalty=move_penalty,
             charge_penalty=charge_penalty,
         )
+        sr_after = getattr(target_unit, "special_rules", None)
+        if not isinstance(sr_after, dict):
+            sr_after = {}
+        sr_after["wracked_with_agonies_source_unit_id"] = source_unit_id
+        sr_after["wracked_with_agonies_source_model_id"] = source_model_id
+        target_unit.special_rules = sr_after
     else:
         sr = getattr(target_unit, "special_rules", None)
         if not isinstance(sr, dict):
@@ -16670,6 +16748,8 @@ def _apply_post_shoot_wracked_agonies_target(game: object, request: DecisionRequ
         sr["wracked_with_agonies_source"] = ability_name
         sr["wracked_with_agonies_move_penalty"] = int(move_penalty or 0)
         sr["wracked_with_agonies_charge_penalty"] = int(charge_penalty or 0)
+        sr["wracked_with_agonies_source_unit_id"] = source_unit_id
+        sr["wracked_with_agonies_source_model_id"] = source_model_id
         if hasattr(target_unit, "add_characteristic_modifier"):
             from ...utility.modifiers import Modifier, ModifierOp
             target_unit.add_characteristic_modifier(

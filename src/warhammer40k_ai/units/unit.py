@@ -1460,25 +1460,29 @@ class Unit(
             except Exception:
                 pass
 
-        afflicted_plague = None
+        afflicted_plague_keys: set[str] = set()
         try:
             from ..rules.nurgles_gift import (
                 NurglesGiftManager,
                 PLAGUE_RATTLEJOINT,
                 PLAGUE_SCABROUS,
             )
-            afflicted_plague = NurglesGiftManager.get_afflicted_plague_for_unit(self, game_map=game_map)
+            afflicted_plague_keys = {
+                str(value or "").strip().upper()
+                for value in list(NurglesGiftManager.get_afflicted_plague_keys_for_unit(self, game_map=game_map) or [])
+                if str(value or "").strip()
+            }
         except Exception:
-            afflicted_plague = None
+            afflicted_plague_keys = set()
 
-        if afflicted_plague is not None:
-            if ckey == "save" and afflicted_plague.key == PLAGUE_RATTLEJOINT.key:
+        if afflicted_plague_keys:
+            if ckey == "save" and PLAGUE_RATTLEJOINT.key in afflicted_plague_keys:
                 mods.append(Modifier(ModifierOp.ADD, 1, source="nurgles_gift:rattlejoint_ague"))
-            elif ckey == "movement" and afflicted_plague.key == PLAGUE_SCABROUS.key:
+            elif ckey == "movement" and PLAGUE_SCABROUS.key in afflicted_plague_keys:
                 mods.append(Modifier(ModifierOp.ADD, -1, source="nurgles_gift:scabrous_soulrot"))
-            elif ckey == "leadership" and afflicted_plague.key == PLAGUE_SCABROUS.key:
+            elif ckey == "leadership" and PLAGUE_SCABROUS.key in afflicted_plague_keys:
                 mods.append(Modifier(ModifierOp.ADD, 1, source="nurgles_gift:scabrous_soulrot"))
-            elif ckey == "objective_control" and afflicted_plague.key == PLAGUE_SCABROUS.key:
+            elif ckey == "objective_control" and PLAGUE_SCABROUS.key in afflicted_plague_keys:
                 mods.append(Modifier(ModifierOp.ADD, -1, source="nurgles_gift:scabrous_soulrot"))
                 objective_control_floor = max(objective_control_floor, 1)
 

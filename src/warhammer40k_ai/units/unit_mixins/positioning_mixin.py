@@ -1481,8 +1481,52 @@ class PositioningMixin:
                 ability = None
             else:
                 ability = self._scan_command_phase_bodyguard_return_ability()
+                sr = getattr(self, "special_rules", None)
+                if ability and isinstance(sr, dict) and bool(sr.get("enhancement_needle_of_nurgle", False)):
+                    bearer_id = str(
+                        sr.get("enhancement_needle_of_nurgle_bearer_model_id", "")
+                        or sr.get("enhancement_bearer_model_id", "")
+                        or ""
+                    ).strip()
+                    bearer_alive = False
+                    if bearer_id:
+                        for model in list(getattr(self, "models", []) or []):
+                            model_entity_id = str(get_entity_id(model) or "").strip()
+                            model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                            if bearer_id != model_entity_id and bearer_id != model_local_id:
+                                continue
+                            alive_attr = getattr(model, "is_alive", True)
+                            bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                            break
+                    else:
+                        get_bearer = getattr(self, "_get_enhancement_bearer_model", None)
+                        bearer = get_bearer() if callable(get_bearer) else None
+                        if bearer is not None:
+                            alive_attr = getattr(bearer, "is_alive", True)
+                            bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    requires_leading = bool(sr.get("enhancement_needle_of_nurgle_requires_bearer_leading", True))
+                    if bearer_alive and (not requires_leading or bool(getattr(self, "is_attached_leader", False))):
+                        amount_roll = str(
+                            sr.get("enhancement_needle_of_nurgle_command_phase_return_amount_roll", "D3") or "D3"
+                        ).strip().upper()
+                        try:
+                            max_return = int(sr.get("enhancement_needle_of_nurgle_command_phase_return_max", 3) or 3)
+                        except Exception:
+                            max_return = 3
+                        ability_key = str(
+                            sr.get("enhancement_needle_of_nurgle_ability_key", "needle_of_nurgle")
+                            or "needle_of_nurgle"
+                        ).strip().lower()
+                        merged = dict(ability or {})
+                        merged["name"] = str(
+                            sr.get("enhancement_needle_of_nurgle_source", "Needle of Nurgle") or "Needle of Nurgle"
+                        ).strip() or "Needle of Nurgle"
+                        merged["ability_key"] = ability_key if ability_key else "needle_of_nurgle"
+                        merged["amount_roll"] = amount_roll if amount_roll else "D3"
+                        merged["amount"] = int(max(1, max_return))
+                        merged["allow_skip"] = bool(merged.get("allow_skip", True))
+                        ability = merged
                 if not ability:
-                    sr = getattr(self, "special_rules", None)
                     if isinstance(sr, dict) and bool(sr.get("enhancement_steel_font", False)):
                         bearer_id = str(
                             sr.get("enhancement_bearer_model_id", "")

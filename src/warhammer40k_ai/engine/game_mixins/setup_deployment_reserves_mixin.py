@@ -2164,6 +2164,18 @@ class GameSetupDeploymentReservesMixin:
                 continue
             mgr.on_declare_battle_formations_start(game=self)
 
+        # Death Guard Champions of Contagion: Cornucophagus pre-battle Plague selection.
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Missing player during Declare Battle Formations.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Missing army for {p.name} during Declare Battle Formations.")
+            mgr = getattr(army, "death_guard_detachments", None)
+            queue_fn = getattr(mgr, "queue_cornucophagus_declare_requests", None) if mgr is not None else None
+            if callable(queue_fn):
+                queue_fn(game=self, player=p)
+
         logger.info("INFO: Battle formations declared")
 
     def _apply_ethereal_pathway_declarations(self) -> None:

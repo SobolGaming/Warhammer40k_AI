@@ -11,6 +11,11 @@ from .nurgles_gift import DEFAULT_PLAGUES, NurglesGiftManager
 class DeathGuardDetachmentManager(DetachmentManagerBase):
     faction_id = "DG"
     _MANIFOLD_MALADIES_SOURCE = "Manifold Maladies"
+    _FINAL_INGREDIENT_SOURCE = "Final Ingredient"
+    _VISIONS_OF_VIRULENCE_SOURCE = "Visions of Virulence"
+    _VISIONS_OF_VIRULENCE_TRIGGER_SOURCE = "Pestilent Fallout"
+    _NEEDLE_OF_NURGLE_SOURCE = "Needle of Nurgle"
+    _CORNUCOPHAGUS_SOURCE = "Cornucophagus"
     _MIASMIC_BOMBARDMENT_SOURCE = "Miasmic Bombardment"
     _MIASMIC_BOMBARDMENT_RANGE = 12.0
     _NUMBERLESS_HORDE_SOURCE = "Numberless Horde"
@@ -203,6 +208,443 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
         if hasattr(game, "request_decision"):
             game.request_decision(request)
         return request
+
+    @staticmethod
+    def _model_identifier(model) -> str:
+        if model is None:
+            return ""
+        return str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+
+    def _resolve_champions_source_root(self, source_unit):
+        if source_unit is None:
+            return None
+        root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if root is None or not self._unit_in_army(root):
+            return None
+        return root
+
+    @staticmethod
+    def _source_root_special_rules(root) -> dict:
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict):
+            return sr
+        return {}
+
+    @staticmethod
+    def _set_source_root_special_rules(root, sr: dict) -> None:
+        root.special_rules = dict(sr or {})
+
+    def _attached_root_has_enhancement_flag(self, root, *, flag_key: str) -> bool:
+        if root is None or not flag_key:
+            return False
+        members = list(root.get_attached_unit_members() or [])
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return True
+        return False
+
+    def _attached_root_enhancement_bearer_id(self, root, *, specific_key: str) -> str:
+        if root is None:
+            return ""
+        members = list(root.get_attached_unit_members() or [])
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            bearer_id = str(sr.get(specific_key, "") or sr.get("enhancement_bearer_model_id", "") or "").strip()
+            if bearer_id:
+                return bearer_id
+        return ""
+
+    def _champions_enhancement_sources(self, *, flag_key: str) -> list:
+        if not self.is_champions_of_contagion() or self.army is None:
+            return []
+        roots: list = []
+        for root in list(self._iter_unique_attached_roots() or []):
+            if root is None or not self._unit_in_army(root):
+                continue
+            if self._attached_root_has_enhancement_flag(root, flag_key=flag_key):
+                roots.append(root)
+        roots.sort(key=lambda item: str(get_entity_id(item) or ""))
+        return roots
+
+    def _pending_choose_plague_request(self, game, *, ability: str, army_id: str, source_unit_id: str = ""):
+        if game is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is None:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_PLAGUE
+
+        for req in list(getattr(queue, "list", lambda: [])() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_PLAGUE:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != str(ability or "").strip().lower():
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id):
+                continue
+            if source_unit_id and str(ctx.get("source_unit_id", "") or "") != str(source_unit_id):
+                continue
+            return req
+        return None
+
+    def _build_choose_plague_request_for_source(
+        self,
+        *,
+        game,
+        player,
+        source_root,
+        ability: str,
+        ability_name: str,
+        optional: bool,
+        prompt: str,
+    ):
+        if game is None or player is None or source_root is None:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_PLAGUE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "") if self.army is not None else ""
+        source_unit_id = str(get_entity_id(source_root) or "")
+        if self._pending_choose_plague_request(
+            game,
+            ability=str(ability),
+            army_id=army_id,
+            source_unit_id=source_unit_id,
+        ):
+            return None
+
+        options: list = []
+        if optional:
+            options.append(
+                DecisionOption.create(
+                    "None",
+                    payload={
+                        "action": "skip",
+                        "skip": True,
+                        "choice_key": "",
+                        "army_id": army_id,
+                        "source_unit_id": source_unit_id,
+                    },
+                )
+            )
+        for plague in list(DEFAULT_PLAGUES):
+            options.append(
+                DecisionOption.create(
+                    str(getattr(plague, "name", "Plague") or "Plague"),
+                    payload={
+                        "choice_key": str(getattr(plague, "key", "") or ""),
+                        "summary": str(getattr(plague, "summary", "") or ""),
+                        "army_id": army_id,
+                        "source_unit_id": source_unit_id,
+                    },
+                )
+            )
+        if not options:
+            return None
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_PLAGUE,
+            prompt,
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": str(ability),
+                "ability_name": str(ability_name),
+                "army_id": army_id,
+                "source_unit_id": source_unit_id,
+                "allowed_choice_keys": [str(getattr(plague, "key", "") or "") for plague in list(DEFAULT_PLAGUES)],
+                "optional": bool(optional),
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+        return request
+
+    @staticmethod
+    def _model_is_character(target_model, *, target_unit=None) -> bool:
+        if target_model is None and target_unit is None:
+            return False
+        if target_model is not None and bool(getattr(target_model, "is_character", False)):
+            return True
+        if target_model is not None:
+            for fn_name in ("has_any_keyword", "has_keyword"):
+                fn = getattr(target_model, fn_name, None)
+                if callable(fn) and bool(fn("CHARACTER")):
+                    return True
+        if target_unit is None and target_model is not None:
+            target_unit = getattr(target_model, "parent_unit", None)
+        if target_unit is None:
+            return False
+        for fn_name in ("has_any_keyword", "has_keyword"):
+            fn = getattr(target_unit, fn_name, None)
+            if callable(fn) and bool(fn("CHARACTER")):
+                return True
+        keywords = list(getattr(target_unit, "keywords", []) or []) + list(getattr(target_unit, "faction_keywords", []) or [])
+        return any(str(token or "").strip().upper() == "CHARACTER" for token in keywords)
+
+    def can_select_final_ingredient(self, source_unit, *, game=None) -> bool:
+        if not self.is_champions_of_contagion():
+            return False
+        source_root = self._resolve_champions_source_root(source_unit)
+        if source_root is None:
+            return False
+        if not self._attached_root_has_enhancement_flag(source_root, flag_key="enhancement_final_ingredient"):
+            return False
+        sr = self._source_root_special_rules(source_root)
+        if bool(sr.get("enhancement_final_ingredient_used", False)):
+            return False
+        if not bool(sr.get("enhancement_final_ingredient_pending", False)):
+            return False
+        if game is not None:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+                pending_turn = int(sr.get("enhancement_final_ingredient_pending_turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+                pending_turn = 0
+            if pending_turn > 0 and current_turn > 0 and pending_turn != current_turn:
+                return False
+        return True
+
+    def select_final_ingredient(self, source_unit, choice, *, game=None) -> bool:
+        source_root = self._resolve_champions_source_root(source_unit)
+        if source_root is None:
+            return False
+        if not self.can_select_final_ingredient(source_root, game=game):
+            return False
+        choice_key = str(choice or "").strip().upper()
+        if not self._is_valid_plague_choice(choice_key):
+            return False
+        sr = self._source_root_special_rules(source_root)
+        sr["enhancement_final_ingredient_selected_plague_key"] = choice_key
+        sr["enhancement_final_ingredient_used"] = True
+        sr["enhancement_final_ingredient_pending"] = False
+        sr.pop("enhancement_final_ingredient_pending_turn", None)
+        self._set_source_root_special_rules(source_root, sr)
+        return True
+
+    def note_final_ingredient_character_model_destroyed(
+        self,
+        *,
+        attacker_unit=None,
+        target_model=None,
+        target_unit=None,
+        game=None,
+    ) -> None:
+        source_root = self._resolve_champions_source_root(attacker_unit)
+        if source_root is None:
+            return
+        if not self._attached_root_has_enhancement_flag(source_root, flag_key="enhancement_final_ingredient"):
+            return
+        if not self._model_is_character(target_model, target_unit=target_unit):
+            return
+        sr = self._source_root_special_rules(source_root)
+        if bool(sr.get("enhancement_final_ingredient_used", False)):
+            return
+        sr["enhancement_final_ingredient_pending"] = True
+        try:
+            sr["enhancement_final_ingredient_pending_turn"] = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            sr["enhancement_final_ingredient_pending_turn"] = 0
+        self._set_source_root_special_rules(source_root, sr)
+
+    def queue_final_ingredient_request_for_unit(self, source_unit, *, game=None):
+        source_root = self._resolve_champions_source_root(source_unit)
+        if source_root is None:
+            return None
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return None
+        if not self.can_select_final_ingredient(source_root, game=game):
+            return None
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if player is None:
+            return None
+        return self._build_choose_plague_request_for_source(
+            game=game,
+            player=player,
+            source_root=source_root,
+            ability="final_ingredient",
+            ability_name=self._FINAL_INGREDIENT_SOURCE,
+            optional=False,
+            prompt="Final Ingredient: select one additional Plague.",
+        )
+
+    def can_select_cornucophagus(self, source_unit, *, game=None) -> bool:
+        if not self.is_champions_of_contagion():
+            return False
+        source_root = self._resolve_champions_source_root(source_unit)
+        if source_root is None:
+            return False
+        if not self._attached_root_has_enhancement_flag(source_root, flag_key="enhancement_cornucophagus"):
+            return False
+        sr = self._source_root_special_rules(source_root)
+        if str(sr.get("enhancement_cornucophagus_selected_plague_key", "") or "").strip().upper():
+            return False
+        if game is None:
+            return True
+        if not bool(getattr(game, "is_authoritative", True)):
+            return False
+        return True
+
+    def select_cornucophagus(self, source_unit, choice) -> bool:
+        source_root = self._resolve_champions_source_root(source_unit)
+        if source_root is None:
+            return False
+        if not self.can_select_cornucophagus(source_root):
+            return False
+        choice_key = str(choice or "").strip().upper()
+        if not self._is_valid_plague_choice(choice_key):
+            return False
+        sr = self._source_root_special_rules(source_root)
+        sr["enhancement_cornucophagus_selected_plague_key"] = choice_key
+        self._set_source_root_special_rules(source_root, sr)
+        return True
+
+    def queue_cornucophagus_declare_requests(self, *, game=None, player=None) -> list:
+        if not self.is_champions_of_contagion():
+            return []
+        if game is None or player is None:
+            return []
+        if not bool(getattr(game, "is_authoritative", True)):
+            return []
+        requests = []
+        for source_root in list(self._champions_enhancement_sources(flag_key="enhancement_cornucophagus") or []):
+            if not self.can_select_cornucophagus(source_root, game=game):
+                continue
+            request = self._build_choose_plague_request_for_source(
+                game=game,
+                player=player,
+                source_root=source_root,
+                ability="cornucophagus",
+                ability_name=self._CORNUCOPHAGUS_SOURCE,
+                optional=False,
+                prompt="Cornucophagus: select one additional Plague for the bearer.",
+            )
+            if request is not None:
+                requests.append(request)
+        return requests
+
+    def _resolve_unit_by_id_in_army(self, unit_id: str):
+        uid = str(unit_id or "").strip()
+        if not uid or self.army is None:
+            return None
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            if str(get_entity_id(root) or "") == uid:
+                return root
+        return None
+
+    def visions_of_virulence_afflicts_wracked_unit(self, unit, *, game=None) -> bool:
+        if not self.is_champions_of_contagion():
+            return False
+        if unit is None or self.army is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("wracked_with_agonies_active", False)):
+            return False
+        owner = getattr(self.army, "player", None)
+        owner_id = str(getattr(owner, "id", "") or "")
+        if owner_id and str(sr.get("wracked_with_agonies_owner", "") or "") != owner_id:
+            return False
+        source_name = str(sr.get("wracked_with_agonies_source", "") or "").strip().lower()
+        if self._norm(self._VISIONS_OF_VIRULENCE_TRIGGER_SOURCE) not in self._norm(source_name):
+            return False
+        source_unit_id = str(sr.get("wracked_with_agonies_source_unit_id", "") or "").strip()
+        if not source_unit_id:
+            return False
+        source_root = self._resolve_unit_by_id_in_army(source_unit_id)
+        if source_root is None:
+            return False
+        if not self._attached_root_has_enhancement_flag(source_root, flag_key="enhancement_visions_of_virulence"):
+            return False
+        expected_bearer_id = self._attached_root_enhancement_bearer_id(
+            source_root,
+            specific_key="enhancement_visions_of_virulence_bearer_model_id",
+        )
+        source_model_id = str(sr.get("wracked_with_agonies_source_model_id", "") or "").strip()
+        if expected_bearer_id and source_model_id and expected_bearer_id != source_model_id:
+            return False
+        return True
+
+    def _unit_within_cornucophagus_range(self, source_root, target_unit, *, game=None, game_map=None) -> bool:
+        if source_root is None or target_unit is None or self.army is None:
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        if game_map is None:
+            return False
+        gift_mgr = getattr(self.army, "nurgles_gift", None)
+        if gift_mgr is None:
+            return False
+        valid_source = getattr(gift_mgr, "_unit_is_valid_contagion_source", None)
+        if not callable(valid_source) or not bool(valid_source(source_root, game=game, game_map=game_map)):
+            return False
+        battle_round = self._resolve_battle_round(game=game)
+        if battle_round is None:
+            return False
+        from ..utility import aura_utils as _aura_utils
+
+        contagion_range = float(
+            gift_mgr.get_contagion_range(int(battle_round), source_unit=source_root, game=game, game_map=game_map)
+        )
+        return bool(
+            _aura_utils.unit_within_range_of_unit(
+                source_root,
+                target_unit,
+                float(contagion_range),
+                use_attached_aggregate=True,
+            )
+        )
+
+    def additional_afflicted_plague_keys_for_unit(
+        self,
+        unit,
+        *,
+        game=None,
+        game_map=None,
+        is_afflicted: bool = False,
+    ) -> list[str]:
+        if not self.is_champions_of_contagion() or unit is None:
+            return []
+        keys: list[str] = []
+
+        if bool(is_afflicted):
+            for source_root in list(self._champions_enhancement_sources(flag_key="enhancement_final_ingredient") or []):
+                sr = self._source_root_special_rules(source_root)
+                choice_key = str(sr.get("enhancement_final_ingredient_selected_plague_key", "") or "").strip().upper()
+                if not choice_key:
+                    continue
+                if not bool(sr.get("enhancement_final_ingredient_used", False)):
+                    continue
+                if not self._is_valid_plague_choice(choice_key):
+                    continue
+                keys.append(choice_key)
+
+        for source_root in list(self._champions_enhancement_sources(flag_key="enhancement_cornucophagus") or []):
+            sr = self._source_root_special_rules(source_root)
+            choice_key = str(sr.get("enhancement_cornucophagus_selected_plague_key", "") or "").strip().upper()
+            if not choice_key:
+                continue
+            if not self._is_valid_plague_choice(choice_key):
+                continue
+            if not self._unit_within_cornucophagus_range(source_root, unit, game=game, game_map=game_map):
+                continue
+            keys.append(choice_key)
+
+        return list(dict.fromkeys([str(key or "").strip().upper() for key in list(keys or []) if str(key or "").strip()]))
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
         round_value = self._resolve_battle_round(game=game, battle_round=battle_round)

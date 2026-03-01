@@ -10003,6 +10003,47 @@ class GameShootingFightHandlersMixin:
             ability_name="Curse of the Walking Pox",
         )
 
+    def _on_model_destroyed_death_guard_final_ingredient(
+        self,
+        attacker_unit=None,
+        target_model=None,
+        target_unit=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or target_model is None:
+            return
+        if not self.is_fight_phase():
+            return
+        attacker_army = attacker_unit.get_parent_army() if hasattr(attacker_unit, "get_parent_army") else None
+        if attacker_army is None:
+            return
+        mgr = getattr(attacker_army, "death_guard_detachments", None)
+        note_fn = getattr(mgr, "note_final_ingredient_character_model_destroyed", None) if mgr is not None else None
+        if not callable(note_fn):
+            return
+        note_fn(
+            attacker_unit=attacker_unit,
+            target_model=target_model,
+            target_unit=target_unit,
+            game=self,
+        )
+
+    def _on_fight_sequence_complete_death_guard_final_ingredient(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if not self.is_fight_phase():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        if army is None:
+            return
+        mgr = getattr(army, "death_guard_detachments", None)
+        queue_fn = getattr(mgr, "queue_final_ingredient_request_for_unit", None) if mgr is not None else None
+        if not callable(queue_fn):
+            return
+        queue_fn(unit, game=self)
+
     def _on_fight_sequence_complete_lethal_ichor(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return

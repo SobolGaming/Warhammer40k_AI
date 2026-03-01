@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
@@ -268,6 +268,53 @@ class NurglesGiftManager:
         return self.get_afflicted_plague_for_unit(unit, game=game, game_map=game_map) is not None
 
     @staticmethod
+    def get_afflicted_plague_keys_for_unit(unit, *, game=None, game_map=None) -> tuple[str, ...]:
+        keys: list[str] = []
+        base_plague = NurglesGiftManager.get_afflicted_plague_for_unit(unit, game=game, game_map=game_map)
+        if base_plague is not None:
+            keys.append(str(getattr(base_plague, "key", "") or "").strip().upper())
+
+        if unit is None:
+            return tuple(dict.fromkeys([key for key in keys if key]))
+
+        if game is None:
+            try:
+                army = unit.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        if game is None:
+            return tuple(dict.fromkeys([key for key in keys if key]))
+
+        try:
+            unit_army = unit.get_parent_army()
+        except Exception:
+            unit_army = None
+
+        for player in list(getattr(game, "players", []) or []):
+            if player is None:
+                continue
+            enemy_army = getattr(player, "army", None)
+            if enemy_army is None and hasattr(player, "get_army"):
+                enemy_army = player.get_army()
+            if enemy_army is None or enemy_army is unit_army:
+                continue
+            dg_mgr = getattr(enemy_army, "death_guard_detachments", None)
+            extra_fn = getattr(dg_mgr, "additional_afflicted_plague_keys_for_unit", None) if dg_mgr is not None else None
+            if not callable(extra_fn):
+                continue
+            for value in list(
+                extra_fn(unit, game=game, game_map=game_map, is_afflicted=base_plague is not None) or []
+            ):
+                key = str(value or "").strip().upper()
+                if key:
+                    keys.append(key)
+
+        return tuple(dict.fromkeys([key for key in keys if key]))
+
+    @staticmethod
     def get_afflicted_plague_for_unit(unit, *, game=None, game_map=None) -> Optional[NurglesPlague]:
         if unit is None:
             return None
@@ -334,6 +381,19 @@ class NurglesGiftManager:
             if round_matches:
                 source_army = _resolve_source_army(owner_id)
                 if source_army is not None:
+                    mgr = getattr(source_army, "nurgles_gift", None)
+                    if mgr is not None:
+                        plague = mgr.get_active_plague()
+                        if plague is not None:
+                            return plague
+
+        if isinstance(sr, dict) and sr.get("wracked_with_agonies_active"):
+            owner_id = str(sr.get("wracked_with_agonies_owner", "") or "")
+            source_army = _resolve_source_army(owner_id)
+            if source_army is not None:
+                dg_mgr = getattr(source_army, "death_guard_detachments", None)
+                visions_fn = getattr(dg_mgr, "visions_of_virulence_afflicts_wracked_unit", None) if dg_mgr is not None else None
+                if callable(visions_fn) and bool(visions_fn(unit, game=game)):
                     mgr = getattr(source_army, "nurgles_gift", None)
                     if mgr is not None:
                         plague = mgr.get_active_plague()

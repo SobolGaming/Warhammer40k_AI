@@ -2360,6 +2360,8 @@ class GamePhaseHandlersMixin:
                             "wracked_with_agonies_source",
                             "wracked_with_agonies_move_penalty",
                             "wracked_with_agonies_charge_penalty",
+                            "wracked_with_agonies_source_unit_id",
+                            "wracked_with_agonies_source_model_id",
                         ):
                             sr.pop(key, None)
                         unit.special_rules = sr

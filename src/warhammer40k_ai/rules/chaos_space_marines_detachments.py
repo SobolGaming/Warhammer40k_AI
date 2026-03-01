@@ -1002,9 +1002,9 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         get_enemy_units = getattr(game, "get_enemy_units", None)
         if not callable(get_enemy_units):
             return []
-        from ..utility.aura_utils import unit_within_range_of_unit
+        from ..utility.aura_utils import min_distance_between_units_3d, unit_within_range_of_unit
 
-        out = []
+        out: list[tuple[float, str, object]] = []
         seen: set[str] = set()
         for enemy in list(get_enemy_units(owner) or []):
             enemy_root = self._unit_root(enemy)
@@ -1017,10 +1017,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                 continue
             if not bool(unit_within_range_of_unit(source_unit, enemy_root, float(range_in), use_attached_aggregate=True)):
                 continue
-            out.append(enemy_root)
+            distance = float(min_distance_between_units_3d(source_unit, enemy_root, use_attached_aggregate=True))
+            out.append((distance, enemy_id, enemy_root))
             seen.add(enemy_id)
-        out.sort(key=lambda unit: str(get_entity_id(unit) or self._unit_root_key(unit)))
-        return out
+        out.sort(key=lambda entry: (entry[0], entry[1]))
+        return [entry[2] for entry in out]
 
     def on_unit_set_up(
         self,

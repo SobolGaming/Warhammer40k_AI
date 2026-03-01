@@ -415,6 +415,10 @@ class Enhancement:
         except Exception:
             is_corsair_veterans = False
         try:
+            is_champions_of_contagion = bool(dg_mgr and dg_mgr.is_champions_of_contagion())
+        except Exception:
+            is_champions_of_contagion = False
+        try:
             is_virulent_vectorium = bool(dg_mgr and dg_mgr.is_virulent_vectorium())
         except Exception:
             is_virulent_vectorium = False
@@ -8034,6 +8038,66 @@ class Enhancement:
             unit.special_rules["enhancement_improbable_shield"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "final ingredient" or enh_id == "000010131002":
+            if not is_champions_of_contagion:
+                return
+            unit.special_rules["enhancement_final_ingredient"] = True
+            unit.special_rules["enhancement_final_ingredient_source"] = "Final Ingredient"
+            unit.special_rules["enhancement_final_ingredient_once_key"] = "final_ingredient"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_final_ingredient_bearer_model_id"] = bearer_id
+
+        if name == "visions of virulence" or enh_id == "000010131003":
+            if not is_champions_of_contagion:
+                return
+            unit.special_rules["enhancement_visions_of_virulence"] = True
+            unit.special_rules["enhancement_visions_of_virulence_source"] = "Visions of Virulence"
+            unit.special_rules["enhancement_visions_of_virulence_required_source_name"] = "Pestilent Fallout"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_visions_of_virulence_bearer_model_id"] = bearer_id
+
+        if name == "needle of nurgle" or enh_id == "000010131004":
+            if not is_champions_of_contagion:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            amount_roll = str(params.get("command_phase_bodyguard_return_amount_roll", "D3") or "D3").strip().upper()
+            max_return = _coerce_int(params.get("command_phase_bodyguard_return_max", 3) or 3, default=3)
+            ability_key = str(params.get("ability_key", "needle_of_nurgle") or "needle_of_nurgle").strip().lower()
+            requires_leading = bool(params.get("requires_bearer_leading", True))
+            unit.special_rules["enhancement_needle_of_nurgle"] = True
+            unit.special_rules["enhancement_needle_of_nurgle_source"] = "Needle of Nurgle"
+            unit.special_rules["enhancement_needle_of_nurgle_command_phase_return_amount_roll"] = (
+                amount_roll if amount_roll else "D3"
+            )
+            unit.special_rules["enhancement_needle_of_nurgle_command_phase_return_max"] = int(max(1, int(max_return)))
+            unit.special_rules["enhancement_needle_of_nurgle_requires_bearer_leading"] = bool(requires_leading)
+            unit.special_rules["enhancement_needle_of_nurgle_ability_key"] = (
+                ability_key if ability_key else "needle_of_nurgle"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_needle_of_nurgle_bearer_model_id"] = bearer_id
+
+        if name == "cornucophagus" or enh_id == "000010131005":
+            if not is_champions_of_contagion:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(params.get("source_name", "Cornucophagus") or "Cornucophagus").strip()
+            if not source_name:
+                source_name = "Cornucophagus"
+            unit.special_rules["enhancement_cornucophagus"] = True
+            unit.special_rules["enhancement_cornucophagus_source"] = source_name
+            unit.special_rules["enhancement_cornucophagus_requires_contagion_range"] = bool(
+                params.get("requires_contagion_range", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_cornucophagus_bearer_model_id"] = bearer_id
 
         if name == "daemon weapon of nurgle" or enh_id == "000010123002":
             if not is_virulent_vectorium:
