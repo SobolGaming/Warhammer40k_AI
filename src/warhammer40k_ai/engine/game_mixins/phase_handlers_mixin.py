@@ -149,6 +149,54 @@ class GamePhaseHandlersMixin:
                         player,
                         f"{source}: gained {int(gained)}CP.",
                     )
+        despots_claim_fn = (
+            getattr(csm_mgr, "renegade_raiders_despots_claim_on_command_phase_start", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(despots_claim_fn):
+            for result in list(despots_claim_fn(game=self) or []):
+                if not isinstance(result, dict) or not bool(result.get("triggered", False)):
+                    continue
+                source = str(result.get("source", "") or "Despot's Claim").strip() or "Despot's Claim"
+                try:
+                    rolled = int(result.get("roll", 0) or 0)
+                except (TypeError, ValueError):
+                    rolled = 0
+                try:
+                    modifier = int(result.get("roll_modifier", 0) or 0)
+                except (TypeError, ValueError):
+                    modifier = 0
+                try:
+                    total = int(result.get("total", rolled + modifier) or (rolled + modifier))
+                except (TypeError, ValueError):
+                    total = int(rolled + modifier)
+                try:
+                    success_on = int(result.get("success_on", 5) or 5)
+                except (TypeError, ValueError):
+                    success_on = 5
+                try:
+                    gained = int(result.get("gained", 0) or 0)
+                except (TypeError, ValueError):
+                    gained = 0
+
+                bonus_txt = ""
+                if modifier:
+                    bonus_txt = " +1 (wholly within 12\" of opponent deployment zone)"
+                append_dice(
+                    player,
+                    f"{source}: rolled D6={int(rolled)}{bonus_txt} -> {int(total)} (need {int(success_on)}+).",
+                )
+                if total < success_on:
+                    append_action(
+                        player,
+                        f"{source}: failed to gain CP ({int(total)} < {int(success_on)}).",
+                    )
+                else:
+                    append_action(
+                        player,
+                        f"{source}: gained {int(gained)}CP.",
+                    )
 
     def _on_phase_start_death_guard_detachments(self, player=None, phase=None, **_kwargs) -> None:
         """Command phase start: resolve Death Guard detachment start-of-opponent-command effects."""

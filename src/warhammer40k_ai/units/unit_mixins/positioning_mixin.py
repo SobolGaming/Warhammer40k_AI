@@ -7975,9 +7975,23 @@ class PositioningMixin:
         if callable(siege_scout_fn):
             am_scout_dynamic = True
             siege_eager_advance_distance = float(siege_scout_fn(self) or 0.0)
+        csm_scout_dynamic = False
+        mark_of_the_hound_distance = 0.0
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        csm_scout_fn = (
+            getattr(csm_mgr, "renegade_raiders_mark_of_the_hound_scout_distance", None) if csm_mgr is not None else None
+        )
+        if callable(csm_scout_fn):
+            csm_scout_dynamic = True
+            mark_of_the_hound_distance = float(csm_scout_fn(self) or 0.0)
 
         # Use cached result if available
-        if (not verminous_haze_active) and (not am_scout_dynamic) and 'scout' in getattr(self, '_ability_cache', {}):
+        if (
+            (not verminous_haze_active)
+            and (not am_scout_dynamic)
+            and (not csm_scout_dynamic)
+            and 'scout' in getattr(self, '_ability_cache', {})
+        ):
             return self._ability_cache['scout']
         
         try:
@@ -8030,6 +8044,9 @@ class PositioningMixin:
         if siege_eager_advance_distance > 0:
             found = True
             dist = max(float(dist or 0.0), float(siege_eager_advance_distance))
+        if mark_of_the_hound_distance > 0:
+            found = True
+            dist = max(float(dist or 0.0), float(mark_of_the_hound_distance))
         result = (True, float(dist)) if found else (False, 0.0)
 
         # Attached units can only Scout if every model has Scouts (use smallest distance if mixed).
@@ -8056,7 +8073,7 @@ class PositioningMixin:
             pass
         
         # Cache the result when there are no dynamic Verminous Haze state checks.
-        if (not verminous_haze_active) and (not am_scout_dynamic):
+        if (not verminous_haze_active) and (not am_scout_dynamic) and (not csm_scout_dynamic):
             if not hasattr(self, '_ability_cache'):
                 self._ability_cache = {}
             self._ability_cache['scout'] = result

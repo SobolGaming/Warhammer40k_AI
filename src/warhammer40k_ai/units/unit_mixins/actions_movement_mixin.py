@@ -6257,6 +6257,15 @@ class ActionsMovementMixin:
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             if bool(cultist_brand_advance(self, game=game)):
                 return True
+        tyrants_lash_advance = (
+            getattr(csm_mgr, "renegade_raiders_tyrants_lash_reroll_advance_applies", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(tyrants_lash_advance):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if bool(tyrants_lash_advance(self, game=game)):
+                return True
         try:
             active_fn = getattr(self, "_avatar_of_perfection_phase_active", None)
             if callable(active_fn) and bool(active_fn()):
@@ -12897,6 +12906,15 @@ class ActionsMovementMixin:
             if callable(eager_apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(eager_apply_fn(self, profile=profile, game=game)):
+                    return True
+            tyrants_lash_apply_fn = (
+                getattr(mgr, "renegade_raiders_tyrants_lash_can_shoot_after_fall_back", None)
+                if mgr is not None
+                else None
+            )
+            if callable(tyrants_lash_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(tyrants_lash_apply_fn(self, profile=profile, game=game)):
                     return True
         except Exception:
             pass

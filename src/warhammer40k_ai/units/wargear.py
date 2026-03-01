@@ -10525,6 +10525,20 @@ class WargearProfile:
             if bool(reroll_full):
                 source_name = str(source or "Focus of Hatred").strip() or "Focus of Hatred"
                 reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        dread_reaver_reroll_fn = (
+            getattr(csm_mgr, "renegade_raiders_dread_reaver_reroll_hit_applies", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(dread_reaver_reroll_fn):
+            reroll_full, source = dread_reaver_reroll_fn(
+                attacker,
+                weapon_profile=self,
+                game=csm_game,
+            )
+            if bool(reroll_full):
+                source_name = str(source or "Dread Reaver").strip() or "Dread Reaver"
+                reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         prime_test_subject_fn = (
             getattr(csm_mgr, "creations_of_bile_prime_test_subject_melee_reroll_hit_applies", None)
             if csm_mgr is not None
@@ -15931,6 +15945,28 @@ class WargearProfile:
             if mgr is not None and getattr(mgr, "extremis_level_threat_reroll_wound_applies", None):
                 if mgr.extremis_level_threat_reroll_wound_applies(unit, target):
                     reroll_full_reasons.append("Extremis-level Threat")
+        except Exception:
+            pass
+
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(csm_mgr, "renegade_raiders_dread_reaver_reroll_wound_applies", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_full, source = reroll_fn(
+                    attacker,
+                    weapon_profile=self,
+                    game=game,
+                )
+                if bool(reroll_full):
+                    source_name = str(source or "Dread Reaver").strip() or "Dread Reaver"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
         except Exception:
             pass
 

@@ -100,6 +100,10 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_SOURCE = "Twisted Doctrine"
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_FALL_BACK_CHOICE = "FALL_BACK_SHOOT_AND_CHARGE"
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_ADVANCE_CHOICE = "ADVANCE_CHARGE"
+    _RENEGADE_RAIDERS_DESPOTS_CLAIM_SOURCE = "Despot's Claim"
+    _RENEGADE_RAIDERS_DREAD_REAVER_SOURCE = "Dread Reaver"
+    _RENEGADE_RAIDERS_MARK_OF_THE_HOUND_SOURCE = "Mark of the Hound"
+    _RENEGADE_RAIDERS_TYRANTS_LASH_SOURCE = "Tyrant's Lash"
     _RENEGADE_WARBAND_EYES_OF_THE_HUNTER_SOURCE = "Eyes of the Hunter"
     _RENEGADE_WARBAND_FRATRICIDAL_TROPHIES_SOURCE = "Fratricidal Trophies"
     _RENEGADE_WARBAND_EMPYRIC_SYMBIOTE_SOURCE = "Empyric Symbiote"
@@ -5187,3 +5191,413 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if bool(within_objective(target_unit, game_map)):
             return 1
         return 0
+
+    def _renegade_raiders_enhancement_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_on_battlefield: bool = False,
+    ):
+        if not self.is_renegade_raiders():
+            return None, None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+                continue
+            bearer = self._find_enhancement_bearer_on_member(member, sr)
+            if require_bearer_alive and not self._model_alive(bearer):
+                continue
+            if require_bearer_on_battlefield:
+                bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None))
+                if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                    continue
+            return root, member, sr, bearer
+        return None, None, None, None
+
+    @staticmethod
+    def _model_base_radius(model) -> float:
+        if model is None:
+            return 0.0
+        base = getattr(model, "model_base", None)
+        if base is None:
+            return 0.0
+        radius = getattr(base, "radius", 0.0)
+        get_radius = getattr(base, "get_radius", None)
+        if callable(get_radius):
+            radius = get_radius()
+        if isinstance(radius, (tuple, list)):
+            values = [float(v) for v in list(radius) if v is not None]
+            if not values:
+                return 0.0
+            return max(0.0, float(max(values)))
+        try:
+            return max(0.0, float(radius))
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _distance_to_rect_zone(x: float, y: float, zone) -> float | None:
+        if not all(hasattr(zone, attr) for attr in ("x_min", "x_max", "y_min", "y_max")):
+            return None
+        try:
+            x_min = float(getattr(zone, "x_min"))
+            x_max = float(getattr(zone, "x_max"))
+            y_min = float(getattr(zone, "y_min"))
+            y_max = float(getattr(zone, "y_max"))
+            px = float(x)
+            py = float(y)
+        except (TypeError, ValueError):
+            return None
+        dx = 0.0
+        if px < x_min:
+            dx = x_min - px
+        elif px > x_max:
+            dx = px - x_max
+        dy = 0.0
+        if py < y_min:
+            dy = y_min - py
+        elif py > y_max:
+            dy = py - y_max
+        return float((dx * dx + dy * dy) ** 0.5)
+
+    def _enemy_deployment_zone_distance_for_point(
+        self,
+        *,
+        game,
+        owner_player_id: str,
+        x: float,
+        y: float,
+    ) -> float:
+        distance_fn = getattr(game, "get_distance_to_enemy_deployment_zone", None) if game is not None else None
+        if callable(distance_fn):
+            try:
+                distance = float(distance_fn(float(x), float(y), str(owner_player_id)) or 0.0)
+                if distance >= 0.0:
+                    return distance
+            except (TypeError, ValueError, AttributeError, RuntimeError):
+                pass
+
+        deployment_zones = dict(getattr(game, "deployment_zones", {}) or {}) if game is not None else {}
+        min_distance = float("inf")
+        for zone_player_id, zone in deployment_zones.items():
+            if str(zone_player_id) == str(owner_player_id):
+                continue
+            mission_zones = list(dict(zone or {}).get("mission_zones", []) or [])
+            for mission_zone in mission_zones:
+                contains_point = getattr(mission_zone, "contains_point", None)
+                if callable(contains_point):
+                    try:
+                        if bool(contains_point(float(x), float(y))):
+                            return 0.0
+                    except (TypeError, ValueError):
+                        pass
+
+                rect_distance = self._distance_to_rect_zone(float(x), float(y), mission_zone)
+                if rect_distance is not None:
+                    min_distance = min(min_distance, float(rect_distance))
+                    continue
+
+                vertices = getattr(mission_zone, "vertices", None)
+                if not vertices:
+                    continue
+                try:
+                    from shapely.geometry import Point as ShapelyPoint, Polygon as ShapelyPolygon
+                except ImportError:
+                    continue
+                try:
+                    polygon = ShapelyPolygon(vertices)
+                    if not bool(getattr(polygon, "is_valid", True)):
+                        polygon = polygon.buffer(0)
+                    distance = float(ShapelyPoint(float(x), float(y)).distance(polygon))
+                except (TypeError, ValueError):
+                    continue
+                if distance < min_distance:
+                    min_distance = float(distance)
+        return float(min_distance)
+
+    def _model_wholly_within_enemy_deployment_zone_distance(
+        self,
+        model,
+        *,
+        game=None,
+        distance_in: float,
+    ) -> bool:
+        if model is None or not self._model_alive(model):
+            return False
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return False
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        owner_id = str(getattr(owner, "id", "") or "").strip()
+        if not owner_id:
+            return False
+        get_location = getattr(model, "get_location", None)
+        if not callable(get_location):
+            return False
+        try:
+            x, y = get_location()[:2]
+            x = float(x)
+            y = float(y)
+            max_distance = float(distance_in)
+        except (TypeError, ValueError):
+            return False
+        if max_distance < 0.0:
+            return False
+        center_distance = self._enemy_deployment_zone_distance_for_point(
+            game=resolved_game,
+            owner_player_id=owner_id,
+            x=x,
+            y=y,
+        )
+        if center_distance == float("inf"):
+            return False
+        radius = self._model_base_radius(model)
+        return bool(float(center_distance + radius) <= float(max_distance) + 1e-6)
+
+    def _renegade_raiders_dread_reaver_source_for_model(self, model, *, game=None):
+        if not self.is_renegade_raiders():
+            return None
+        if model is None or not self._model_in_army(model):
+            return None
+        root = self._unit_root(getattr(model, "parent_unit", None))
+        if root is None:
+            return None
+        _source_root, _source_member, source_sr, bearer = self._renegade_raiders_enhancement_source_member(
+            root,
+            flag_key="enhancement_dread_reaver",
+            require_bearer_alive=False,
+            require_bearer_on_battlefield=False,
+        )
+        if source_sr is None or bearer is None:
+            return None
+        if not self._model_matches_bearer(model, bearer):
+            return None
+        if bool(source_sr.get("enhancement_dread_reaver_requires_bearer_alive", True)):
+            if not self._model_alive(bearer):
+                return None
+        if bool(source_sr.get("enhancement_dread_reaver_requires_bearer_on_battlefield", True)):
+            bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None))
+            if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                return None
+        try:
+            distance_in = float(source_sr.get("enhancement_dread_reaver_enemy_deployment_zone_distance_in", 12.0) or 12.0)
+        except (TypeError, ValueError):
+            distance_in = 12.0
+        if distance_in > 0.0 and not self._model_wholly_within_enemy_deployment_zone_distance(
+            bearer,
+            game=game,
+            distance_in=distance_in,
+        ):
+            return None
+        return source_sr
+
+    def renegade_raiders_dread_reaver_reroll_hit_applies(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        _ = game
+        if not self.is_renegade_raiders():
+            return False, ""
+        parent = getattr(weapon_profile, "parent_wargear", None) if weapon_profile is not None else None
+        is_melee = getattr(parent, "is_melee", None) if parent is not None else None
+        if callable(is_melee) and not bool(is_melee()):
+            return False, ""
+        source_sr = self._renegade_raiders_dread_reaver_source_for_model(attacker_model, game=game)
+        if source_sr is None:
+            return False, ""
+        if not bool(source_sr.get("enhancement_dread_reaver_reroll_hit", True)):
+            return False, ""
+        source = str(
+            source_sr.get("enhancement_dread_reaver_source", "") or self._RENEGADE_RAIDERS_DREAD_REAVER_SOURCE
+        ).strip() or self._RENEGADE_RAIDERS_DREAD_REAVER_SOURCE
+        return True, source
+
+    def renegade_raiders_dread_reaver_reroll_wound_applies(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, str]:
+        _ = game
+        if not self.is_renegade_raiders():
+            return False, ""
+        parent = getattr(weapon_profile, "parent_wargear", None) if weapon_profile is not None else None
+        is_melee = getattr(parent, "is_melee", None) if parent is not None else None
+        if callable(is_melee) and not bool(is_melee()):
+            return False, ""
+        source_sr = self._renegade_raiders_dread_reaver_source_for_model(attacker_model, game=game)
+        if source_sr is None:
+            return False, ""
+        if not bool(source_sr.get("enhancement_dread_reaver_reroll_wound", True)):
+            return False, ""
+        source = str(
+            source_sr.get("enhancement_dread_reaver_source", "") or self._RENEGADE_RAIDERS_DREAD_REAVER_SOURCE
+        ).strip() or self._RENEGADE_RAIDERS_DREAD_REAVER_SOURCE
+        return True, source
+
+    def renegade_raiders_mark_of_the_hound_scout_distance(self, unit) -> float:
+        if not self.is_renegade_raiders():
+            return 0.0
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return 0.0
+        _source_root, _source_member, source_sr, bearer = self._renegade_raiders_enhancement_source_member(
+            root,
+            flag_key="enhancement_mark_of_the_hound",
+            require_bearer_alive=False,
+            require_bearer_on_battlefield=False,
+        )
+        if source_sr is None or bearer is None:
+            return 0.0
+        if bool(source_sr.get("enhancement_mark_of_the_hound_requires_bearer_alive", True)):
+            if not self._model_alive(bearer):
+                return 0.0
+        try:
+            distance = float(source_sr.get("enhancement_mark_of_the_hound_scout_distance", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            distance = 6.0
+        return max(0.0, float(distance))
+
+    def _renegade_raiders_tyrants_lash_source(self, unit):
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None
+        _source_root, _source_member, source_sr, bearer = self._renegade_raiders_enhancement_source_member(
+            root,
+            flag_key="enhancement_tyrants_lash",
+            require_bearer_alive=False,
+            require_bearer_on_battlefield=False,
+        )
+        if source_sr is None or bearer is None:
+            return None
+        if bool(source_sr.get("enhancement_tyrants_lash_requires_bearer_alive", True)):
+            if not self._model_alive(bearer):
+                return None
+        if bool(source_sr.get("enhancement_tyrants_lash_requires_bearer_on_battlefield", True)):
+            bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None))
+            if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                return None
+        return source_sr
+
+    def renegade_raiders_tyrants_lash_reroll_advance_applies(self, unit, *, game=None) -> bool:
+        _ = game
+        if not self.is_renegade_raiders():
+            return False
+        source_sr = self._renegade_raiders_tyrants_lash_source(unit)
+        if source_sr is None:
+            return False
+        return bool(source_sr.get("enhancement_tyrants_lash_reroll_advance", True))
+
+    def renegade_raiders_tyrants_lash_can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
+        _ = game
+        if not self.is_renegade_raiders():
+            return False
+        source_sr = self._renegade_raiders_tyrants_lash_source(unit)
+        if source_sr is None:
+            return False
+        if not bool(source_sr.get("enhancement_tyrants_lash_allow_shoot_after_fall_back", True)):
+            return False
+        parent = getattr(profile, "parent_wargear", None) if profile is not None else None
+        is_ranged = getattr(parent, "is_ranged", None) if parent is not None else None
+        if callable(is_ranged):
+            return bool(is_ranged())
+        return True
+
+    def renegade_raiders_despots_claim_on_command_phase_start(self, *, game=None) -> list[dict]:
+        if not self.is_renegade_raiders() or self.army is None:
+            return []
+        owner = getattr(self.army, "player", None)
+        gain_cp = getattr(owner, "gain_command_points", None) if owner is not None else None
+        if not callable(gain_cp):
+            return []
+
+        roots = list(self._iter_unique_roots(getattr(self.army, "units", []) or []))
+        roots.sort(key=lambda unit: str(get_entity_id(unit) or self._unit_root_key(unit)))
+
+        out: list[dict] = []
+        for root in roots:
+            _source_root, _source_member, source_sr, bearer = self._renegade_raiders_enhancement_source_member(
+                root,
+                flag_key="enhancement_despots_claim",
+                require_bearer_alive=True,
+                require_bearer_on_battlefield=False,
+            )
+            if source_sr is None or bearer is None:
+                continue
+            if bool(source_sr.get("enhancement_despots_claim_requires_bearer_on_battlefield", True)):
+                bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None))
+                if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                    continue
+
+            try:
+                success_on = int(source_sr.get("enhancement_despots_claim_success_on", 5) or 5)
+            except (TypeError, ValueError):
+                success_on = 5
+            success_on = int(min(6, max(2, success_on)))
+
+            try:
+                cp_gain = int(source_sr.get("enhancement_despots_claim_cp_gain", 1) or 1)
+            except (TypeError, ValueError):
+                cp_gain = 1
+            cp_gain = int(max(1, cp_gain))
+
+            try:
+                zone_bonus = int(source_sr.get("enhancement_despots_claim_enemy_deployment_zone_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                zone_bonus = 1
+            zone_bonus = int(max(0, zone_bonus))
+
+            try:
+                zone_distance = float(
+                    source_sr.get("enhancement_despots_claim_enemy_deployment_zone_distance_in", 12.0) or 12.0
+                )
+            except (TypeError, ValueError):
+                zone_distance = 12.0
+            zone_distance = max(0.0, float(zone_distance))
+
+            source = str(
+                source_sr.get("enhancement_despots_claim_source", "") or self._RENEGADE_RAIDERS_DESPOTS_CLAIM_SOURCE
+            ).strip() or self._RENEGADE_RAIDERS_DESPOTS_CLAIM_SOURCE
+
+            roll = int(get_roll("D6"))
+            modifier = 0
+            if zone_bonus > 0 and zone_distance > 0.0:
+                if self._model_wholly_within_enemy_deployment_zone_distance(
+                    bearer,
+                    game=game,
+                    distance_in=zone_distance,
+                ):
+                    modifier = int(zone_bonus)
+            total = int(roll + modifier)
+            gained = 0
+            if total >= success_on:
+                gained = int(gain_cp(cp_gain, reason=source) or 0)
+
+            out.append(
+                {
+                    "triggered": True,
+                    "source": source,
+                    "roll": int(roll),
+                    "roll_modifier": int(modifier),
+                    "total": int(total),
+                    "success_on": int(success_on),
+                    "cp_gain": int(cp_gain),
+                    "gained": int(gained),
+                    "source_unit_id": str(get_entity_id(root) or ""),
+                    "source_model_id": str(get_entity_id(bearer) or ""),
+                }
+            )
+        return out

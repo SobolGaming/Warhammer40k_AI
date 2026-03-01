@@ -2209,6 +2209,70 @@ _DECEPTORS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DECEPTORS_DESCRIPTORS.values()
 }
 
+_RENEGADE_RAIDERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008968002": EnhancementToolDescriptor(
+        enhancement_id="000008968002",
+        name="Despot's Claim",
+        timing="start_of_command_phase",
+        target="army",
+        duration="instant",
+        effect="command_phase_cp_roll_with_enemy_deployment_zone_bonus",
+        effect_params={
+            "roll": "D6",
+            "success_on": 5,
+            "cp_gain": 1,
+            "enemy_deployment_zone_bonus_if_wholly_within_distance": 1,
+            "enemy_deployment_zone_distance_in": 12.0,
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+    "000008968003": EnhancementToolDescriptor(
+        enhancement_id="000008968003",
+        name="Dread Reaver",
+        timing="on_bearer_melee_attack",
+        target="bearer_melee_attacks",
+        duration="constant_conditional",
+        effect="bearer_melee_hit_wound_reroll_within_enemy_deployment_zone_distance",
+        effect_params={
+            "distance_in": 12.0,
+            "reroll_hit": True,
+            "reroll_wound": True,
+            "requires_bearer_alive": True,
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+    "000008968004": EnhancementToolDescriptor(
+        enhancement_id="000008968004",
+        name="Mark of the Hound",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_gains_scouts",
+        effect_params={
+            "scout_distance": 6,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000008968005": EnhancementToolDescriptor(
+        enhancement_id="000008968005",
+        name="Tyrant's Lash",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="reroll_advance_and_shoot_after_fall_back_for_bearer_unit",
+        effect_params={
+            "reroll_advance": True,
+            "allow_shoot_after_fall_back": True,
+            "requires_bearer_alive": True,
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+}
+
+_RENEGADE_RAIDERS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RENEGADE_RAIDERS_DESCRIPTORS.values()
+}
+
 _RENEGADE_WARBAND_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010694002": EnhancementToolDescriptor(
         enhancement_id="000010694002",
@@ -5527,6 +5591,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DREAD_TALONS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _RENEGADE_RAIDERS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _RENEGADE_WARBAND_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5748,6 +5815,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CREATIONS_OF_BILE_BY_NAME.get(key)
         or _DECEPTORS_BY_NAME.get(key)
         or _DREAD_TALONS_BY_NAME.get(key)
+        or _RENEGADE_RAIDERS_BY_NAME.get(key)
         or _RENEGADE_WARBAND_BY_NAME.get(key)
         or _SOULFORGED_WARPACK_BY_NAME.get(key)
         or _VETERANS_OF_THE_LONG_WAR_BY_NAME.get(key)

@@ -594,6 +594,10 @@ class Enhancement:
             csm_mgr and callable(getattr(csm_mgr, "is_dread_talons", None)) and csm_mgr.is_dread_talons()
         )
         try:
+            is_renegade_raiders = bool(csm_mgr and csm_mgr.is_renegade_raiders())
+        except Exception:
+            is_renegade_raiders = False
+        try:
             is_renegade_warband = bool(csm_mgr and csm_mgr.is_renegade_warband())
         except Exception:
             is_renegade_warband = False
@@ -5821,6 +5825,92 @@ class Enhancement:
             unit.special_rules["enhancement_soul_link_source"] = "Soul Link"
             unit.special_rules["enhancement_soul_link_optional"] = bool(params.get("optional", True))
             unit.special_rules["enhancement_soul_link_active"] = False
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name in {"despot's claim", "despot’s claim"} or enh_id == "000008968002":
+            if not is_renegade_raiders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Despot's Claim").strip() or "Despot's Claim"
+            unit.special_rules["enhancement_despots_claim"] = True
+            unit.special_rules["enhancement_despots_claim_source"] = source
+            unit.special_rules["enhancement_despots_claim_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
+            unit.special_rules["enhancement_despots_claim_success_on"] = int(
+                min(6, max(2, _coerce_int(params.get("success_on", 5), default=5)))
+            )
+            unit.special_rules["enhancement_despots_claim_cp_gain"] = int(
+                max(1, _coerce_int(params.get("cp_gain", 1), default=1))
+            )
+            unit.special_rules["enhancement_despots_claim_enemy_deployment_zone_bonus"] = int(
+                max(0, _coerce_int(params.get("enemy_deployment_zone_bonus_if_wholly_within_distance", 1), default=1))
+            )
+            unit.special_rules["enhancement_despots_claim_enemy_deployment_zone_distance_in"] = float(
+                max(0.0, _coerce_float(params.get("enemy_deployment_zone_distance_in", 12.0), default=12.0))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "dread reaver" or enh_id == "000008968003":
+            if not is_renegade_raiders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Dread Reaver").strip() or "Dread Reaver"
+            unit.special_rules["enhancement_dread_reaver"] = True
+            unit.special_rules["enhancement_dread_reaver_source"] = source
+            unit.special_rules["enhancement_dread_reaver_reroll_hit"] = bool(params.get("reroll_hit", True))
+            unit.special_rules["enhancement_dread_reaver_reroll_wound"] = bool(params.get("reroll_wound", True))
+            unit.special_rules["enhancement_dread_reaver_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_dread_reaver_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
+            unit.special_rules["enhancement_dread_reaver_enemy_deployment_zone_distance_in"] = float(
+                max(0.0, _coerce_float(params.get("distance_in", 12.0), default=12.0))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "mark of the hound" or enh_id == "000008968004":
+            if not is_renegade_raiders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Mark of the Hound").strip() or "Mark of the Hound"
+            unit.special_rules["enhancement_mark_of_the_hound"] = True
+            unit.special_rules["enhancement_mark_of_the_hound_source"] = source
+            unit.special_rules["enhancement_mark_of_the_hound_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_mark_of_the_hound_scout_distance"] = int(
+                max(0, _coerce_int(params.get("scout_distance", 6), default=6))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name in {"tyrant's lash", "tyrant’s lash"} or enh_id == "000008968005":
+            if not is_renegade_raiders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Tyrant's Lash").strip() or "Tyrant's Lash"
+            unit.special_rules["enhancement_tyrants_lash"] = True
+            unit.special_rules["enhancement_tyrants_lash_source"] = source
+            unit.special_rules["enhancement_tyrants_lash_reroll_advance"] = bool(params.get("reroll_advance", True))
+            unit.special_rules["enhancement_tyrants_lash_allow_shoot_after_fall_back"] = bool(
+                params.get("allow_shoot_after_fall_back", True)
+            )
+            unit.special_rules["enhancement_tyrants_lash_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_tyrants_lash_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
