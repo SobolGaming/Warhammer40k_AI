@@ -594,6 +594,10 @@ class Enhancement:
             csm_mgr and callable(getattr(csm_mgr, "is_dread_talons", None)) and csm_mgr.is_dread_talons()
         )
         try:
+            is_pactbound_zealots = bool(csm_mgr and csm_mgr.is_pactbound_zealots())
+        except Exception:
+            is_pactbound_zealots = False
+        try:
             is_renegade_raiders = bool(csm_mgr and csm_mgr.is_renegade_raiders())
         except Exception:
             is_renegade_raiders = False
@@ -5827,6 +5831,134 @@ class Enhancement:
             unit.special_rules["enhancement_soul_link_active"] = False
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "eye of tzeentch" or enh_id == "000008357002":
+            if not is_pactbound_zealots:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Eye of Tzeentch").strip() or "Eye of Tzeentch"
+            unit.special_rules["enhancement_eye_of_tzeentch"] = True
+            unit.special_rules["enhancement_eye_of_tzeentch_source"] = source
+            unit.special_rules["enhancement_eye_of_tzeentch_modified_roll_threshold"] = int(
+                min(12, max(2, _coerce_int(params.get("modified_roll_threshold", 8), default=8)))
+            )
+            unit.special_rules["enhancement_eye_of_tzeentch_cp_gain"] = int(
+                max(1, _coerce_int(params.get("cp_gain", 1), default=1))
+            )
+            unit.special_rules["enhancement_eye_of_tzeentch_requires_dark_pact_passed"] = bool(
+                params.get("requires_dark_pact_passed", True)
+            )
+            unit.special_rules["enhancement_eye_of_tzeentch_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_eye_of_tzeentch_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eye_of_tzeentch_bearer_model_id"] = bearer_id
+
+        if name == "intoxicating elixir" or enh_id == "000008357003":
+            if not is_pactbound_zealots:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Intoxicating Elixir").strip() or "Intoxicating Elixir"
+            unit.special_rules["enhancement_intoxicating_elixir"] = True
+            unit.special_rules["enhancement_intoxicating_elixir_source"] = source
+            unit.special_rules["enhancement_intoxicating_elixir_requires_dark_pact_passed"] = bool(
+                params.get("requires_dark_pact_passed", True)
+            )
+            unit.special_rules["enhancement_intoxicating_elixir_applies_after_fight"] = bool(
+                params.get("applies_after_fight", True)
+            )
+            unit.special_rules["enhancement_intoxicating_elixir_requires_bearer_hit_target"] = bool(
+                params.get("requires_bearer_hit_target", True)
+            )
+            fnp_value = int(min(6, max(2, _coerce_int(params.get("fnp", 5), default=5))))
+            tag = f"enhancement_fnp_{enh_id or name}"
+            _ensure_enhancement_fnp_entry(
+                unit,
+                fnp_value,
+                source=source,
+                tag=tag,
+                source_model_id=str(bearer_id) if bearer_id else None,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_intoxicating_elixir_bearer_model_id"] = bearer_id
+                entries = list(unit.special_rules.get("enhancement_bearer_fnp_entries", []) or [])
+                changed = False
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    if str(entry.get("tag", "") or "") != tag:
+                        continue
+                    entry["source_model_id"] = str(bearer_id)
+                    changed = True
+                if changed:
+                    unit.special_rules["enhancement_bearer_fnp_entries"] = entries
+
+        if name == "orbs of unlife" or enh_id == "000008357004":
+            if not is_pactbound_zealots:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Orbs of Unlife").strip() or "Orbs of Unlife"
+            unit.special_rules["enhancement_orbs_of_unlife"] = True
+            unit.special_rules["enhancement_orbs_of_unlife_source"] = source
+            unit.special_rules["enhancement_orbs_of_unlife_range"] = float(
+                max(0.0, _coerce_float(params.get("range_in", 3.0), default=3.0))
+            )
+            unit.special_rules["enhancement_orbs_of_unlife_threshold"] = int(
+                min(6, max(2, _coerce_int(params.get("base_threshold", 4), default=4)))
+            )
+            unit.special_rules["enhancement_orbs_of_unlife_threshold_if_dark_pact_passed"] = int(
+                min(6, max(2, _coerce_int(params.get("threshold_if_dark_pact_passed", 3), default=3)))
+            )
+            mortal_raw = str(params.get("mortal_wounds", "D3") or "D3").strip().lower()
+            unit.special_rules["enhancement_orbs_of_unlife_mortal_wounds"] = "d3" if mortal_raw not in {"d3", "d6"} else mortal_raw
+            unit.special_rules["enhancement_orbs_of_unlife_requires_dark_pact_passed_for_threshold_bonus"] = bool(
+                params.get("requires_dark_pact_passed_for_threshold_bonus", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_orbs_of_unlife_bearer_model_id"] = bearer_id
+
+        if name == "talisman of burning blood" or enh_id == "000008357005":
+            if not is_pactbound_zealots:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = (
+                str(getattr(desc, "name", "") or "Talisman of Burning Blood").strip()
+                or "Talisman of Burning Blood"
+            )
+            unit.special_rules["enhancement_talisman_of_burning_blood"] = True
+            unit.special_rules["enhancement_talisman_of_burning_blood_source"] = source
+            unit.special_rules["enhancement_talisman_of_burning_blood_base_attacks_bonus"] = int(
+                max(0, _coerce_int(params.get("base_attacks_bonus", 1), default=1))
+            )
+            unit.special_rules["enhancement_talisman_of_burning_blood_base_strength_bonus"] = int(
+                max(0, _coerce_int(params.get("base_strength_bonus", 1), default=1))
+            )
+            unit.special_rules["enhancement_talisman_of_burning_blood_dark_pact_roll"] = str(
+                params.get("dark_pact_roll", "D3") or "D3"
+            ).strip().upper()
+            unit.special_rules["enhancement_talisman_of_burning_blood_requires_dark_pact_passed"] = bool(
+                params.get("requires_dark_pact_passed", True)
+            )
+            for key in (
+                "enhancement_talisman_of_burning_blood_dark_pact_bonus",
+                "enhancement_talisman_of_burning_blood_dark_pact_expires_phase",
+                "enhancement_talisman_of_burning_blood_dark_pact_turn",
+                "enhancement_talisman_of_burning_blood_dark_pact_owner",
+            ):
+                unit.special_rules.pop(key, None)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_talisman_of_burning_blood_bearer_model_id"] = bearer_id
 
         if name in {"despot's claim", "despot’s claim"} or enh_id == "000008968002":
             if not is_renegade_raiders:

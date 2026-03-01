@@ -9618,6 +9618,24 @@ class ActionsMovementMixin:
                 sr["unholy_bloodshed_source"] = "Unholy Bloodshed"
                 root.mark_unit_once_per_battle_used(once_key, ability_name="Unholy Bloodshed")
         root.special_rules = sr
+        eye_of_tzeentch_fn = (
+            getattr(csm_mgr, "pactbound_zealots_eye_of_tzeentch_on_dark_pact", None) if csm_mgr is not None else None
+        )
+        if callable(eye_of_tzeentch_fn):
+            eye_of_tzeentch_fn(root, game=game)
+        set_talisman_bonus_fn = (
+            getattr(csm_mgr, "set_pactbound_zealots_talisman_of_burning_blood_dark_pact_bonus", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(set_talisman_bonus_fn):
+            set_talisman_bonus_fn(
+                root,
+                dark_pact_passed=bool(passed),
+                phase_name=phase_key,
+                game=game,
+                player=getattr(army, "player", None) if army is not None else None,
+            )
         set_contract_state_fn = (
             getattr(csm_mgr, "set_soulforged_warpack_contract_state", None) if csm_mgr is not None else None
         )

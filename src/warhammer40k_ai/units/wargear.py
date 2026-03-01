@@ -4518,6 +4518,21 @@ class WargearProfile:
             try:
                 unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None
+                csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+                talisman_bonus_fn = (
+                    getattr(csm_mgr, "pactbound_zealots_talisman_of_burning_blood_bonus", None)
+                    if csm_mgr is not None
+                    else None
+                )
+                if callable(talisman_bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    _attacks_bonus, strength_bonus, source = talisman_bonus_fn(attacker, weapon_profile=self, game=game)
+                    if int(strength_bonus or 0):
+                        strength = strength + int(strength_bonus)
+                        source_name = str(source or "Talisman of Burning Blood").strip() or "Talisman of Burning Blood"
+                        wound_result.setdefault("modifiers", []).append(
+                            f"+{int(strength_bonus)}S from {source_name}"
+                        )
                 sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
                 oath_bonus_fn = getattr(sm_mgr, "blade_of_ultramar_oath_of_macragge_bonus", None) if sm_mgr is not None else None
                 if callable(oath_bonus_fn):
@@ -4549,6 +4564,27 @@ class WargearProfile:
             unit = getattr(attacker, "parent_unit", None)
             get_parent_army = getattr(unit, "get_parent_army", None)
             army = get_parent_army() if callable(get_parent_army) else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            talisman_bonus_fn = (
+                getattr(csm_mgr, "pactbound_zealots_talisman_of_burning_blood_bonus", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(talisman_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                attacks_bonus, _strength_bonus, source = talisman_bonus_fn(attacker, weapon_profile=self, game=game)
+                if int(attacks_bonus or 0):
+                    source_name = str(source or "Talisman of Burning Blood").strip() or "Talisman of Burning Blood"
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(attacks_bonus),
+                            source="enhancement:talisman_of_burning_blood_attacks",
+                        )
+                    )
+                    attack_result.attacks_special_modifiers.append(
+                        f"{source_name} +{int(attacks_bonus)}A (melee)"
+                    )
             ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
             bonus_fn = getattr(ac_mgr, "raptor_blade_conditional_melee_bonus", None) if ac_mgr is not None else None
             if callable(bonus_fn):
@@ -5082,7 +5118,6 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(
                         f"{source_name} +{int(bonus)}A (melee)"
                     )
-
         try:
             if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
                 set_val = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_attacks_set_non_character", 0) or 0)
@@ -13845,6 +13880,21 @@ class WargearProfile:
             try:
                 unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None
+                csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+                talisman_bonus_fn = (
+                    getattr(csm_mgr, "pactbound_zealots_talisman_of_burning_blood_bonus", None)
+                    if csm_mgr is not None
+                    else None
+                )
+                if callable(talisman_bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    _attacks_bonus, strength_bonus, source = talisman_bonus_fn(attacker, weapon_profile=self, game=game)
+                    if int(strength_bonus or 0):
+                        strength = strength + int(strength_bonus)
+                        source_name = str(source or "Talisman of Burning Blood").strip() or "Talisman of Burning Blood"
+                        wound_result.setdefault("modifiers", []).append(
+                            f"+{int(strength_bonus)}S from {source_name}"
+                        )
                 sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
                 oath_bonus_fn = getattr(sm_mgr, "blade_of_ultramar_oath_of_macragge_bonus", None) if sm_mgr is not None else None
                 if callable(oath_bonus_fn):

@@ -2386,6 +2386,72 @@ _DREAD_TALONS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DREAD_TALONS_DESCRIPTORS.values()
 }
 
+_PACTBOUND_ZEALOTS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008357002": EnhancementToolDescriptor(
+        enhancement_id="000008357002",
+        name="Eye of Tzeentch",
+        timing="after_dark_pact_leadership_test",
+        target="bearer",
+        duration="instant",
+        effect="gain_cp_on_dark_pact_passed_modified_roll_threshold",
+        effect_params={
+            "modified_roll_threshold": 8,
+            "cp_gain": 1,
+            "requires_dark_pact_passed": True,
+            "requires_bearer_alive": True,
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+    "000008357003": EnhancementToolDescriptor(
+        enhancement_id="000008357003",
+        name="Intoxicating Elixir",
+        timing="passive_and_after_bearer_shoots_or_fights",
+        target="bearer_and_one_enemy_unit_hit_by_bearer",
+        duration="constant_and_instant",
+        effect="bearer_gains_fnp_and_post_attack_select_hit_enemy_battleshock_test_on_passed_dark_pact",
+        effect_params={
+            "fnp": 5,
+            "applies_after_fight": True,
+            "requires_bearer_hit_target": True,
+            "requires_dark_pact_passed": True,
+        },
+    ),
+    "000008357004": EnhancementToolDescriptor(
+        enhancement_id="000008357004",
+        name="Orbs of Unlife",
+        timing="end_of_fight_phase",
+        target="enemy_units_within_range_of_bearer",
+        duration="instant",
+        effect="roll_for_each_enemy_within_range_mortal_wounds_with_dark_pact_threshold_bonus",
+        range_in=3.0,
+        effect_params={
+            "roll": "D6",
+            "base_threshold": 4,
+            "threshold_if_dark_pact_passed": 3,
+            "mortal_wounds": "D3",
+            "requires_dark_pact_passed_for_threshold_bonus": True,
+        },
+    ),
+    "000008357005": EnhancementToolDescriptor(
+        enhancement_id="000008357005",
+        name="Talisman of Burning Blood",
+        timing="passive_and_after_dark_pact_leadership_test",
+        target="bearer_melee_weapons",
+        duration="constant_and_until_end_of_current_phase",
+        effect="bearer_melee_attacks_strength_bonus_replaced_by_dark_pact_roll",
+        effect_params={
+            "base_attacks_bonus": 1,
+            "base_strength_bonus": 1,
+            "dark_pact_roll": "D3",
+            "requires_dark_pact_passed": True,
+        },
+    ),
+}
+
+_PACTBOUND_ZEALOTS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _PACTBOUND_ZEALOTS_DESCRIPTORS.values()
+}
+
 _SOULFORGED_WARPACK_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008985002": EnhancementToolDescriptor(
         enhancement_id="000008985002",
@@ -5591,6 +5657,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DREAD_TALONS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _PACTBOUND_ZEALOTS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _RENEGADE_RAIDERS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5815,6 +5884,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CREATIONS_OF_BILE_BY_NAME.get(key)
         or _DECEPTORS_BY_NAME.get(key)
         or _DREAD_TALONS_BY_NAME.get(key)
+        or _PACTBOUND_ZEALOTS_BY_NAME.get(key)
         or _RENEGADE_RAIDERS_BY_NAME.get(key)
         or _RENEGADE_WARBAND_BY_NAME.get(key)
         or _SOULFORGED_WARPACK_BY_NAME.get(key)

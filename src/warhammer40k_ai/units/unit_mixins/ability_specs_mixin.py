@@ -14,8 +14,16 @@ class AbilitySpecsMixin:
         """
         if model is None:
             return []
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        root_sr = getattr(root, "special_rules", None)
+        has_intoxicating_elixir = bool(
+            isinstance(root_sr, dict) and bool(root_sr.get("enhancement_intoxicating_elixir", False))
+        )
         cache_key = f"model_post_shoot_battleshock:{get_entity_id(model)}"
-        if cache_key in getattr(self, "_ability_cache", {}):
+        if (not has_intoxicating_elixir) and cache_key in getattr(self, "_ability_cache", {}):
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
@@ -150,25 +158,63 @@ class AbilitySpecsMixin:
                 }
             )
 
-        try:
-            root = self.get_attached_unit_root()
-        except Exception:
-            root = self
-        sr = getattr(root, "special_rules", None)
-        if isinstance(sr, dict) and sr.get("enhancement_storm_of_whispers"):
-            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+        if isinstance(root_sr, dict) and root_sr.get("enhancement_storm_of_whispers"):
+            bearer_id = str(root_sr.get("enhancement_bearer_model_id", "") or "")
             model_id = str(get_entity_id(model) or "")
             if bearer_id and model_id and bearer_id == model_id:
-                source = str(sr.get("enhancement_storm_of_whispers_source", "") or "Storm of Whispers").strip()
+                source = str(root_sr.get("enhancement_storm_of_whispers_source", "") or "Storm of Whispers").strip()
                 source = source or "Storm of Whispers"
                 key = (source.lower(), False, 0, 0, False)
                 if key not in seen:
                     seen.add(key)
                     specs.append({"infantry_only": False, "exclude_monster_vehicle": False, "source": source})
 
+        if isinstance(root_sr, dict) and bool(root_sr.get("enhancement_intoxicating_elixir", False)):
+            bearer_id = str(
+                root_sr.get("enhancement_intoxicating_elixir_bearer_model_id", "")
+                or root_sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            model_id = str(get_entity_id(model) or "").strip()
+            model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+            model_is_bearer = bool(
+                bearer_id and (model_id == bearer_id or (model_local_id and model_local_id == bearer_id))
+            )
+            if model_is_bearer:
+                phase_name = ""
+                try:
+                    army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                except Exception:
+                    phase_name = ""
+                dark_pacts_active = bool(root_sr.get("dark_pacts_active", False))
+                dark_pacts_passed = bool(root_sr.get("dark_pacts_test_passed", False))
+                dark_pacts_phase = str(root_sr.get("dark_pacts_expires_phase", "") or "").strip().upper()
+                dark_pact_ok = bool(
+                    dark_pacts_active and dark_pacts_passed and dark_pacts_phase and (not phase_name or dark_pacts_phase == phase_name)
+                )
+                if dark_pact_ok:
+                    source = str(
+                        root_sr.get("enhancement_intoxicating_elixir_source", "") or "Intoxicating Elixir"
+                    ).strip() or "Intoxicating Elixir"
+                    key = (source.lower(), False, 0, 0, True)
+                    if key not in seen:
+                        seen.add(key)
+                        specs.append(
+                            {
+                                "infantry_only": False,
+                                "exclude_monster_vehicle": False,
+                                "exclude_vehicle_only": False,
+                                "applies_after_fight": True,
+                                "source": source,
+                            }
+                        )
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
-        self._ability_cache[cache_key] = list(specs)
+        if not has_intoxicating_elixir:
+            self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def unit_post_shoot_battleshock_specs(self) -> List[dict]:
@@ -6771,8 +6817,14 @@ class AbilitySpecsMixin:
         """
         if model is None:
             return []
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        root_sr = getattr(root, "special_rules", None)
+        has_orbs_of_unlife = bool(isinstance(root_sr, dict) and bool(root_sr.get("enhancement_orbs_of_unlife", False)))
         cache_key = f"model_fight_phase_end_enemy_within_range_mortal_threshold:{get_entity_id(model)}"
-        if cache_key in getattr(self, "_ability_cache", {}):
+        if (not has_orbs_of_unlife) and cache_key in getattr(self, "_ability_cache", {}):
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
@@ -6828,9 +6880,58 @@ class AbilitySpecsMixin:
                 }
             )
 
+        if isinstance(root_sr, dict) and bool(root_sr.get("enhancement_orbs_of_unlife", False)):
+            bearer_id = str(
+                root_sr.get("enhancement_orbs_of_unlife_bearer_model_id", "")
+                or root_sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            model_id = str(get_entity_id(model) or "").strip()
+            model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+            model_is_bearer = bool(
+                bearer_id and (model_id == bearer_id or (model_local_id and model_local_id == bearer_id))
+            )
+            if model_is_bearer:
+                try:
+                    range_value = float(root_sr.get("enhancement_orbs_of_unlife_range", 3.0) or 3.0)
+                except Exception:
+                    range_value = 3.0
+                try:
+                    threshold = int(root_sr.get("enhancement_orbs_of_unlife_threshold", 4) or 4)
+                except Exception:
+                    threshold = 4
+                if bool(root_sr.get("enhancement_orbs_of_unlife_requires_dark_pact_passed_for_threshold_bonus", True)):
+                    dark_pacts_active = bool(root_sr.get("dark_pacts_active", False))
+                    dark_pacts_passed = bool(root_sr.get("dark_pacts_test_passed", False))
+                    dark_pacts_phase = str(root_sr.get("dark_pacts_expires_phase", "") or "").strip().upper()
+                    if dark_pacts_active and dark_pacts_passed and dark_pacts_phase == "FIGHT_PHASE":
+                        try:
+                            threshold = int(
+                                root_sr.get("enhancement_orbs_of_unlife_threshold_if_dark_pact_passed", threshold) or threshold
+                            )
+                        except Exception:
+                            threshold = int(threshold)
+                source = str(root_sr.get("enhancement_orbs_of_unlife_source", "") or "Orbs of Unlife").strip()
+                source = source or "Orbs of Unlife"
+                mortal_wounds = str(root_sr.get("enhancement_orbs_of_unlife_mortal_wounds", "d3") or "d3").strip().lower()
+                if mortal_wounds not in ("d3", "d6"):
+                    mortal_wounds = "d3"
+                key = (source.lower(), int(max(0.0, range_value)), int(max(2, min(6, threshold))), str(mortal_wounds))
+                if key not in seen:
+                    seen.add(key)
+                    specs.append(
+                        {
+                            "source": source,
+                            "range": float(max(0.0, range_value)),
+                            "threshold": int(max(2, min(6, threshold))),
+                            "mortal_wounds": mortal_wounds,
+                        }
+                    )
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
-        self._ability_cache[cache_key] = list(specs)
+        if not has_orbs_of_unlife:
+            self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def unit_start_fight_phase_malign_sacrifice_specs(self) -> List[dict]:

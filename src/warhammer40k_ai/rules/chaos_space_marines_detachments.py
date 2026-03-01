@@ -131,6 +131,12 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _SOULFORGED_WARPACK_TEMPTING_ADDENDUM_SOURCE_KEY = "soulforged_warpack_tempting_addendum_source"
     _PACTBOUND_MARKS = ("KHORNE", "TZEENTCH", "NURGLE", "SLAANESH", "CHAOS UNDIVIDED")
     _PACTBOUND_MARK_SOURCE = "Marks of Chaos"
+    _PACTBOUND_EYE_OF_TZEENTCH_SOURCE = "Eye of Tzeentch"
+    _PACTBOUND_TALISMAN_OF_BURNING_BLOOD_SOURCE = "Talisman of Burning Blood"
+    _PACTBOUND_TALISMAN_DARK_PACT_BONUS_KEY = "enhancement_talisman_of_burning_blood_dark_pact_bonus"
+    _PACTBOUND_TALISMAN_DARK_PACT_EXPIRES_PHASE_KEY = "enhancement_talisman_of_burning_blood_dark_pact_expires_phase"
+    _PACTBOUND_TALISMAN_DARK_PACT_TURN_KEY = "enhancement_talisman_of_burning_blood_dark_pact_turn"
+    _PACTBOUND_TALISMAN_DARK_PACT_OWNER_KEY = "enhancement_talisman_of_burning_blood_dark_pact_owner"
     _DESPERATE_DEVOTION_ALLOWED_ACTIONS = {"move", "advance", "charge"}
     _EXPERIMENTAL_AUGMENTATION_REROLL_MODES = {"keep", "reroll_first", "reroll_second", "reroll_both"}
     _TWISTED_DOCTRINE_ALLOWED_ACTIONS = {"move", "advance", "fall_back", "set_up"}
@@ -1593,6 +1599,37 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         require_bearer_on_battlefield: bool = False,
     ):
         if not self.is_dread_talons():
+            return None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+                continue
+            bearer = self._find_enhancement_bearer_on_member(member, sr)
+            if require_bearer_alive and not self._model_alive(bearer):
+                continue
+            if require_bearer_on_battlefield:
+                bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None)) if bearer is not None else root
+                if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                    continue
+            return member, sr, bearer
+        return None, None, None
+
+    def _pactbound_zealots_enhancement_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_on_battlefield: bool = False,
+    ):
+        if not self.is_pactbound_zealots():
             return None, None, None
         root = self._unit_root(unit)
         if root is None or not self._unit_in_army(root):
@@ -4963,6 +5000,211 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             return "", False
         passed = bool(sr.get("dark_pacts_test_passed", True))
         return choice, passed
+
+    def pactbound_zealots_eye_of_tzeentch_on_dark_pact(self, unit, *, game=None) -> dict:
+        if not self.is_pactbound_zealots() or self.army is None:
+            return {}
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return {}
+        member, source_sr, bearer = self._pactbound_zealots_enhancement_source_member(
+            root,
+            flag_key="enhancement_eye_of_tzeentch",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=True,
+        )
+        if member is None or not isinstance(source_sr, dict):
+            return {}
+        root_sr = getattr(root, "special_rules", None)
+        if not isinstance(root_sr, dict) or not bool(root_sr.get("dark_pacts_active", False)):
+            return {}
+        if bool(source_sr.get("enhancement_eye_of_tzeentch_requires_dark_pact_passed", True)) and not bool(
+            root_sr.get("dark_pacts_test_passed", False)
+        ):
+            return {}
+        try:
+            modified_roll = int(getattr(root, "_last_leadership_test_modified_roll", 0) or 0)
+        except (TypeError, ValueError):
+            modified_roll = 0
+        try:
+            threshold = int(source_sr.get("enhancement_eye_of_tzeentch_modified_roll_threshold", 8) or 8)
+        except (TypeError, ValueError):
+            threshold = 8
+        threshold = min(12, max(2, threshold))
+        source = (
+            str(source_sr.get("enhancement_eye_of_tzeentch_source", "") or self._PACTBOUND_EYE_OF_TZEENTCH_SOURCE).strip()
+            or self._PACTBOUND_EYE_OF_TZEENTCH_SOURCE
+        )
+        if modified_roll < threshold:
+            return {
+                "triggered": False,
+                "source": source,
+                "modified_roll": int(modified_roll),
+                "modified_roll_threshold": int(threshold),
+                "gained": 0,
+            }
+        owner = getattr(self.army, "player", None)
+        gain_cp = getattr(owner, "gain_command_points", None) if owner is not None else None
+        if not callable(gain_cp):
+            return {}
+        try:
+            cp_gain = int(source_sr.get("enhancement_eye_of_tzeentch_cp_gain", 1) or 1)
+        except (TypeError, ValueError):
+            cp_gain = 1
+        cp_gain = max(1, cp_gain)
+        try:
+            gained = int(gain_cp(cp_gain, reason=source) or 0)
+        except (TypeError, ValueError):
+            gained = 0
+        return {
+            "triggered": True,
+            "source": source,
+            "modified_roll": int(modified_roll),
+            "modified_roll_threshold": int(threshold),
+            "cp_gain": int(cp_gain),
+            "gained": int(gained),
+            "source_unit_id": str(get_entity_id(root) or ""),
+            "source_model_id": str(get_entity_id(bearer) or "") if bearer is not None else "",
+            "phase": str(self._current_phase_name(game=game) or ""),
+        }
+
+    def set_pactbound_zealots_talisman_of_burning_blood_dark_pact_bonus(
+        self,
+        unit,
+        *,
+        dark_pact_passed: bool,
+        phase_name: str = "",
+        game=None,
+        player=None,
+    ) -> dict:
+        if not self.is_pactbound_zealots():
+            return {}
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return {}
+        member, source_sr, bearer = self._pactbound_zealots_enhancement_source_member(
+            root,
+            flag_key="enhancement_talisman_of_burning_blood",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=False,
+        )
+        if member is None or not isinstance(source_sr, dict):
+            return {}
+        updated = dict(source_sr)
+        for key in (
+            self._PACTBOUND_TALISMAN_DARK_PACT_BONUS_KEY,
+            self._PACTBOUND_TALISMAN_DARK_PACT_EXPIRES_PHASE_KEY,
+            self._PACTBOUND_TALISMAN_DARK_PACT_TURN_KEY,
+            self._PACTBOUND_TALISMAN_DARK_PACT_OWNER_KEY,
+        ):
+            updated.pop(key, None)
+        if not bool(dark_pact_passed):
+            member.special_rules = updated
+            return {"triggered": False, "source": "", "bonus": 0}
+        if bool(updated.get("enhancement_talisman_of_burning_blood_requires_dark_pact_passed", True)) and not bool(
+            dark_pact_passed
+        ):
+            member.special_rules = updated
+            return {"triggered": False, "source": "", "bonus": 0}
+        roll_spec = str(updated.get("enhancement_talisman_of_burning_blood_dark_pact_roll", "D3") or "D3").strip().upper()
+        if not roll_spec:
+            roll_spec = "D3"
+        try:
+            rolled_bonus = int(get_roll(roll_spec) or 0)
+        except (TypeError, ValueError):
+            rolled_bonus = 0
+        if rolled_bonus <= 0:
+            rolled_bonus = 1
+        phase_key = str(phase_name or "").strip().upper() or self._current_phase_name(game=game)
+        updated[self._PACTBOUND_TALISMAN_DARK_PACT_BONUS_KEY] = int(rolled_bonus)
+        updated[self._PACTBOUND_TALISMAN_DARK_PACT_EXPIRES_PHASE_KEY] = str(phase_key or "")
+        updated[self._PACTBOUND_TALISMAN_DARK_PACT_TURN_KEY] = int(self._current_turn(game=game) or 0)
+        updated[self._PACTBOUND_TALISMAN_DARK_PACT_OWNER_KEY] = str(
+            self._current_turn_owner_id(game=game, player=player) or ""
+        ).strip()
+        member.special_rules = updated
+        source = str(
+            updated.get("enhancement_talisman_of_burning_blood_source", "") or self._PACTBOUND_TALISMAN_OF_BURNING_BLOOD_SOURCE
+        ).strip() or self._PACTBOUND_TALISMAN_OF_BURNING_BLOOD_SOURCE
+        return {
+            "triggered": True,
+            "source": source,
+            "bonus": int(rolled_bonus),
+            "source_unit_id": str(get_entity_id(root) or ""),
+            "source_model_id": str(get_entity_id(bearer) or "") if bearer is not None else "",
+            "phase": str(phase_key or ""),
+        }
+
+    def _pactbound_zealots_talisman_dark_pact_window_active(self, source_sr: dict, *, game=None) -> bool:
+        expected_phase = str(source_sr.get(self._PACTBOUND_TALISMAN_DARK_PACT_EXPIRES_PHASE_KEY, "") or "").strip().upper()
+        current_phase = self._current_phase_name(game=game)
+        if expected_phase and current_phase and expected_phase != current_phase:
+            return False
+        expected_owner = str(source_sr.get(self._PACTBOUND_TALISMAN_DARK_PACT_OWNER_KEY, "") or "").strip()
+        current_owner = self._current_turn_owner_id(game=game)
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return False
+        try:
+            expected_turn = int(source_sr.get(self._PACTBOUND_TALISMAN_DARK_PACT_TURN_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+        current_turn = self._current_turn(game=game)
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return False
+        return True
+
+    def pactbound_zealots_talisman_of_burning_blood_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, int, str]:
+        if not self.is_pactbound_zealots():
+            return 0, 0, ""
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, 0, ""
+        if not self._model_is_heretic_astartes(attacker_model):
+            return 0, 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_melee = getattr(parent, "is_melee", None) if parent is not None else None
+            if callable(is_melee) and not bool(is_melee()):
+                return 0, 0, ""
+        root = self._unit_root(getattr(attacker_model, "parent_unit", None))
+        if root is None:
+            return 0, 0, ""
+        member, source_sr, bearer = self._pactbound_zealots_enhancement_source_member(
+            root,
+            flag_key="enhancement_talisman_of_burning_blood",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=False,
+        )
+        if member is None or not isinstance(source_sr, dict):
+            return 0, 0, ""
+        if not self._model_matches_bearer(attacker_model, bearer):
+            return 0, 0, ""
+        try:
+            base_attacks_bonus = int(source_sr.get("enhancement_talisman_of_burning_blood_base_attacks_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            base_attacks_bonus = 1
+        try:
+            base_strength_bonus = int(source_sr.get("enhancement_talisman_of_burning_blood_base_strength_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            base_strength_bonus = 1
+        base_attacks_bonus = max(0, base_attacks_bonus)
+        base_strength_bonus = max(0, base_strength_bonus)
+        try:
+            dark_pact_bonus = int(source_sr.get(self._PACTBOUND_TALISMAN_DARK_PACT_BONUS_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            dark_pact_bonus = 0
+        if dark_pact_bonus > 0 and self._pactbound_zealots_talisman_dark_pact_window_active(source_sr, game=game):
+            base_attacks_bonus = int(dark_pact_bonus)
+            base_strength_bonus = int(dark_pact_bonus)
+        source = str(
+            source_sr.get("enhancement_talisman_of_burning_blood_source", "") or self._PACTBOUND_TALISMAN_OF_BURNING_BLOOD_SOURCE
+        ).strip() or self._PACTBOUND_TALISMAN_OF_BURNING_BLOOD_SOURCE
+        return int(base_attacks_bonus), int(base_strength_bonus), source
 
     def pactbound_zealots_crit_hit_threshold(self, attacker_model, *, weapon_profile=None) -> tuple[int, str]:
         if not self.is_pactbound_zealots():
