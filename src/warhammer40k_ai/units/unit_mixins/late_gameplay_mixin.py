@@ -3117,6 +3117,21 @@ class LateGameplayMixin:
             if float(dist or 0.0) > 0.0:
                 _consider(float(dist), source or "Greyveil Hex")
 
+        dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+        fly_king_cap_fn = (
+            getattr(dg_mgr, "death_lords_chosen_helm_of_the_fly_king_ranged_targeting_cap", None)
+            if dg_mgr is not None
+            else None
+        )
+        if callable(fly_king_cap_fn):
+            try:
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                dist, source = fly_king_cap_fn(root, game=game)
+            except Exception:
+                dist, source = 0.0, ""
+            if float(dist or 0.0) > 0.0:
+                _consider(float(dist), source or "Helm of the Fly King")
+
         try:
             sr = getattr(root, "special_rules", None)
             if isinstance(sr, dict) and sr.get("imperial_agents_orbital_oversight_active"):

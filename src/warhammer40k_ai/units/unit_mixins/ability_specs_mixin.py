@@ -2762,6 +2762,31 @@ class AbilitySpecsMixin:
                                 "penalty_applies_when_below_half": False,
                             }
                         )
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        model_id = str(get_entity_id(model) or "")
+        for member in members:
+            sr_member = getattr(member, "special_rules", None)
+            if not isinstance(sr_member, dict) or not bool(sr_member.get("enhancement_face_of_death", False)):
+                continue
+            bearer_id = str(
+                sr_member.get("enhancement_face_of_death_bearer_model_id", "")
+                or sr_member.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if bearer_id and model_id and bearer_id != model_id:
+                continue
+            requires_bearer_alive = bool(sr_member.get("enhancement_face_of_death_requires_bearer_alive", True))
+            if requires_bearer_alive and not bool(getattr(model, "is_alive", False)):
+                continue
+            source = str(sr_member.get("enhancement_face_of_death_source", "") or "Face of Death").strip() or "Face of Death"
+            key = source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source, "penalty": 0})
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

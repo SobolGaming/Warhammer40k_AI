@@ -1572,6 +1572,18 @@ class Unit(
                 if int(bonus or 0):
                     source_name = str(source or "Desperate Devotion").strip() or "Desperate Devotion"
                     mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+            bonus_fn = (
+                getattr(dg_mgr, "death_lords_chosen_vile_vigour_movement_bonus", None)
+                if dg_mgr is not None
+                else None
+            )
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Vile Vigour").strip() or "Vile Vigour"
+                    mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
             as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
             bonus_fn = getattr(as_mgr, "righteous_purpose_move_bonus", None) if as_mgr is not None else None
             if callable(bonus_fn):

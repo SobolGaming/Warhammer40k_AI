@@ -419,6 +419,10 @@ class Enhancement:
         except Exception:
             is_champions_of_contagion = False
         try:
+            is_death_lords_chosen = bool(dg_mgr and dg_mgr.is_death_lords_chosen())
+        except Exception:
+            is_death_lords_chosen = False
+        try:
             is_virulent_vectorium = bool(dg_mgr and dg_mgr.is_virulent_vectorium())
         except Exception:
             is_virulent_vectorium = False
@@ -8098,6 +8102,86 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_cornucophagus_bearer_model_id"] = bearer_id
+
+        if name == "face of death" or enh_id == "000010143002":
+            if not is_death_lords_chosen:
+                return
+            unit.special_rules["enhancement_face_of_death"] = True
+            unit.special_rules["enhancement_face_of_death_source"] = "Face of Death"
+            unit.special_rules["enhancement_face_of_death_requires_bearer_alive"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_face_of_death_bearer_model_id"] = bearer_id
+
+        if name == "vile vigour" or enh_id == "000010143003":
+            if not is_death_lords_chosen:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_vile_vigour"] = True
+            unit.special_rules["enhancement_vile_vigour_source"] = "Vile Vigour"
+            unit.special_rules["enhancement_vile_vigour_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_vile_vigour_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_vile_vigour_reroll_advance"] = bool(
+                params.get("reroll_advance_roll", True)
+            )
+            unit.special_rules["enhancement_vile_vigour_move_bonus"] = int(
+                max(0, _coerce_int(params.get("movement_bonus", 1) or 1, default=1))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_vile_vigour_bearer_model_id"] = bearer_id
+
+        if name == "warprot talisman" or enh_id == "000010143004":
+            if not is_death_lords_chosen:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            ability_key = str(params.get("ability_key", "warprot_talisman") or "warprot_talisman").strip().lower()
+            if not ability_key:
+                ability_key = "warprot_talisman"
+            unit.special_rules["enhancement_warprot_talisman"] = True
+            unit.special_rules["enhancement_warprot_talisman_source"] = "Warprot Talisman"
+            unit.special_rules["enhancement_warprot_talisman_once_per_battle"] = bool(
+                params.get("once_per_battle", True)
+            )
+            unit.special_rules["enhancement_warprot_talisman_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_warprot_talisman_trigger_phase"] = str(
+                params.get("trigger_phase", "OPPONENT_TURN_END") or "OPPONENT_TURN_END"
+            ).strip().upper()
+            unit.special_rules["enhancement_warprot_talisman_ability_key"] = ability_key
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_warprot_talisman_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("opponent_turn_strategic_reserves_ability", None)
+
+        if name == "helm of the fly king" or enh_id == "000010143005":
+            if not is_death_lords_chosen:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_helm_of_the_fly_king"] = True
+            unit.special_rules["enhancement_helm_of_the_fly_king_source"] = "Helm of the Fly King"
+            unit.special_rules["enhancement_helm_of_the_fly_king_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_helm_of_the_fly_king_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_helm_of_the_fly_king_ranged_targeting_max_distance"] = float(
+                max(0.0, _coerce_float(params.get("ranged_targeting_max_distance", 18.0), default=18.0))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_helm_of_the_fly_king_bearer_model_id"] = bearer_id
 
         if name == "daemon weapon of nurgle" or enh_id == "000010123002":
             if not is_virulent_vectorium:

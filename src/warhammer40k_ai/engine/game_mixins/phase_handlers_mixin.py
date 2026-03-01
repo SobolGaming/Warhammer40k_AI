@@ -199,8 +199,26 @@ class GamePhaseHandlersMixin:
                     )
 
     def _on_phase_start_death_guard_detachments(self, player=None, phase=None, **_kwargs) -> None:
-        """Command phase start: resolve Death Guard detachment start-of-opponent-command effects."""
+        """Resolve Death Guard phase-start detachment effects."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname == "FIGHT_PHASE":
+            if player is None or player is not self.get_current_player():
+                return
+            if not bool(getattr(self, "is_authoritative", True)):
+                return
+            for p in list(getattr(self, "players", []) or []):
+                if p is None:
+                    continue
+                army = self._get_player_army(p)
+                if army is None:
+                    continue
+                mgr = getattr(army, "death_guard_detachments", None)
+                resolve_fn = getattr(mgr, "resolve_face_of_death", None)
+                if not callable(resolve_fn):
+                    continue
+                resolve_fn(game=self)
+            return
+
         if pname != "COMMAND_PHASE":
             return
         if player is None or player is not self.get_current_player():

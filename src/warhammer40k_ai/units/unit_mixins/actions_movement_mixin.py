@@ -6266,6 +6266,16 @@ class ActionsMovementMixin:
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             if bool(tyrants_lash_advance(self, game=game)):
                 return True
+        dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+        vile_vigour_reroll = (
+            getattr(dg_mgr, "death_lords_chosen_vile_vigour_reroll_advance_applies", None)
+            if dg_mgr is not None
+            else None
+        )
+        if callable(vile_vigour_reroll):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if bool(vile_vigour_reroll(self, game=game)):
+                return True
         try:
             active_fn = getattr(self, "_avatar_of_perfection_phase_active", None)
             if callable(active_fn) and bool(active_fn()):

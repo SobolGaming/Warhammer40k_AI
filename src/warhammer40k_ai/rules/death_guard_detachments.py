@@ -16,6 +16,10 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
     _VISIONS_OF_VIRULENCE_TRIGGER_SOURCE = "Pestilent Fallout"
     _NEEDLE_OF_NURGLE_SOURCE = "Needle of Nurgle"
     _CORNUCOPHAGUS_SOURCE = "Cornucophagus"
+    _FACE_OF_DEATH_SOURCE = "Face of Death"
+    _VILE_VIGOUR_SOURCE = "Vile Vigour"
+    _WARPROT_TALISMAN_SOURCE = "Warprot Talisman"
+    _HELM_OF_THE_FLY_KING_SOURCE = "Helm of the Fly King"
     _MIASMIC_BOMBARDMENT_SOURCE = "Miasmic Bombardment"
     _MIASMIC_BOMBARDMENT_RANGE = 12.0
     _NUMBERLESS_HORDE_SOURCE = "Numberless Horde"
@@ -645,6 +649,185 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
             keys.append(choice_key)
 
         return list(dict.fromkeys([str(key or "").strip().upper() for key in list(keys or []) if str(key or "").strip()]))
+
+    def _death_lords_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_leading: bool = False,
+    ):
+        if not self.is_death_lords_chosen():
+            return None, None, None, None
+        if unit is None or not flag_key:
+            return None, None, None, None
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None or not self._unit_in_army(root):
+            return None, None, None, None
+        members = list(root.get_attached_unit_members() or [])
+        members.sort(key=lambda item: str(get_entity_id(item) or ""))
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(flag_key, False)):
+                continue
+            if require_bearer_leading and not bool(getattr(member, "is_attached_leader", False)):
+                continue
+            bearer = None
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+            if bearer_id:
+                for model in list(getattr(member, "models", []) or []):
+                    model_id = self._model_identifier(model)
+                    if model_id != bearer_id:
+                        continue
+                    bearer = model
+                    break
+            if bearer is None:
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+            if require_bearer_alive:
+                if bearer is None:
+                    continue
+                alive_attr = getattr(bearer, "is_alive", False)
+                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not bearer_alive:
+                    continue
+            return root, member, sr, bearer
+        return root, None, None, None
+
+    def death_lords_chosen_vile_vigour_movement_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        del game
+        if not self.is_death_lords_chosen() or unit is None:
+            return 0, ""
+        root, _member, source_sr, _bearer = self._death_lords_source_member(
+            unit,
+            flag_key="enhancement_vile_vigour",
+            require_bearer_alive=True,
+            require_bearer_leading=True,
+        )
+        if source_sr is None or root is None:
+            return 0, ""
+        if not self._unit_in_army(root) or not root.is_alive() or not bool(getattr(root, "deployed", False)):
+            return 0, ""
+        source = str(source_sr.get("enhancement_vile_vigour_source", "") or self._VILE_VIGOUR_SOURCE).strip()
+        if not source:
+            source = self._VILE_VIGOUR_SOURCE
+        try:
+            bonus = int(source_sr.get("enhancement_vile_vigour_move_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        return max(0, int(bonus)), source
+
+    def death_lords_chosen_vile_vigour_reroll_advance_applies(self, unit, *, game=None) -> bool:
+        del game
+        if not self.is_death_lords_chosen() or unit is None:
+            return False
+        root, _member, source_sr, _bearer = self._death_lords_source_member(
+            unit,
+            flag_key="enhancement_vile_vigour",
+            require_bearer_alive=True,
+            require_bearer_leading=True,
+        )
+        if source_sr is None or root is None:
+            return False
+        if not self._unit_in_army(root) or not root.is_alive() or not bool(getattr(root, "deployed", False)):
+            return False
+        return bool(source_sr.get("enhancement_vile_vigour_reroll_advance", True))
+
+    def death_lords_chosen_helm_of_the_fly_king_ranged_targeting_cap(self, target_unit, *, game=None) -> tuple[float, str]:
+        del game
+        if not self.is_death_lords_chosen():
+            return 0.0, ""
+        root, _member, source_sr, _bearer = self._death_lords_source_member(
+            target_unit,
+            flag_key="enhancement_helm_of_the_fly_king",
+            require_bearer_alive=True,
+            require_bearer_leading=True,
+        )
+        if source_sr is None or root is None:
+            return 0.0, ""
+        if not self._unit_in_army(root) or not root.is_alive() or not bool(getattr(root, "deployed", False)):
+            return 0.0, ""
+        try:
+            cap = float(source_sr.get("enhancement_helm_of_the_fly_king_ranged_targeting_max_distance", 18.0) or 18.0)
+        except (TypeError, ValueError):
+            cap = 18.0
+        source = str(source_sr.get("enhancement_helm_of_the_fly_king_source", "") or self._HELM_OF_THE_FLY_KING_SOURCE).strip()
+        if not source:
+            source = self._HELM_OF_THE_FLY_KING_SOURCE
+        return max(0.0, float(cap)), source
+
+    def resolve_face_of_death(self, *, game=None) -> list[dict]:
+        if not self.is_death_lords_chosen() or self.army is None:
+            return []
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return []
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return []
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return []
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 1)
+        except (TypeError, ValueError):
+            current_turn = 1
+        outcomes: list[dict] = []
+        source_roots: list = []
+        seen_source_ids: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root, _member, source_sr, _bearer = self._death_lords_source_member(
+                unit,
+                flag_key="enhancement_face_of_death",
+                require_bearer_alive=True,
+                require_bearer_leading=False,
+            )
+            if source_sr is None or root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id in seen_source_ids:
+                continue
+            seen_source_ids.add(root_id)
+            source_roots.append((root, source_sr))
+        source_roots.sort(key=lambda entry: str(get_entity_id(entry[0]) or ""))
+
+        for source_root, source_sr in source_roots:
+            if not self._unit_eligible_for_deadly_vectors(source_root):
+                continue
+            tested_enemy_ids: set[str] = set()
+            enemy_roots: list = []
+            for enemy in list(game_map.get_enemy_units(source_root) or []):
+                if enemy is None:
+                    continue
+                enemy_root = enemy.get_attached_unit_root()
+                enemy_id = str(get_entity_id(enemy_root) or "")
+                if enemy_id in tested_enemy_ids:
+                    continue
+                tested_enemy_ids.add(enemy_id)
+                enemy_roots.append(enemy_root)
+            enemy_roots.sort(key=self._enemy_root_sort_key)
+            source_name = str(source_sr.get("enhancement_face_of_death_source", "") or self._FACE_OF_DEATH_SOURCE).strip()
+            if not source_name:
+                source_name = self._FACE_OF_DEATH_SOURCE
+            for enemy_root in enemy_roots:
+                if enemy_root is None:
+                    continue
+                if not self._unit_eligible_for_deadly_vectors(enemy_root):
+                    continue
+                if not bool(game_map.is_within_engagement_range(source_root, enemy_root)):
+                    continue
+                take_test = getattr(enemy_root, "take_battle_shock_test", None)
+                if not callable(take_test):
+                    continue
+                take_test(int(current_turn))
+                outcomes.append(
+                    {
+                        "source_unit_id": str(get_entity_id(source_root) or ""),
+                        "target_unit_id": str(get_entity_id(enemy_root) or ""),
+                        "source": source_name,
+                    }
+                )
+        return outcomes
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
         round_value = self._resolve_battle_round(game=game, battle_round=battle_round)

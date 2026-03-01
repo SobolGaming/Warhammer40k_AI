@@ -5323,6 +5323,64 @@ _DEATH_GUARD_CHAMPIONS_OF_CONTAGION_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DEATH_GUARD_CHAMPIONS_OF_CONTAGION_DESCRIPTORS.values()
 }
 
+_DEATH_GUARD_DEATH_LORDS_CHOSEN_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010143002": EnhancementToolDescriptor(
+        enhancement_id="000010143002",
+        name="Face of Death",
+        timing="start_of_fight_phase",
+        target="enemy_units_within_engagement_range_of_bearer_unit",
+        duration="instant",
+        effect="start_of_fight_phase_bearer_engagement_range_enemy_battleshock",
+        effect_params={"requires_bearer_alive": True},
+    ),
+    "000010143003": EnhancementToolDescriptor(
+        enhancement_id="000010143003",
+        name="Vile Vigour",
+        timing="passive",
+        target="bearer_unit_while_bearer_is_leading",
+        duration="constant_while_bearer_leading",
+        effect="leading_bearer_unit_movement_bonus_and_advance_reroll",
+        effect_params={
+            "movement_bonus": 1,
+            "reroll_advance_roll": True,
+            "requires_bearer_alive": True,
+            "requires_bearer_leading": True,
+        },
+    ),
+    "000010143004": EnhancementToolDescriptor(
+        enhancement_id="000010143004",
+        name="Warprot Talisman",
+        timing="end_of_opponent_turn_once_per_battle",
+        target="bearer_unit_not_within_engagement_range",
+        duration="instant",
+        effect="once_per_battle_end_of_opponent_turn_enter_strategic_reserves",
+        once_per_battle=True,
+        effect_params={
+            "ability_key": "warprot_talisman",
+            "trigger_phase": "OPPONENT_TURN_END",
+            "destination": "strategic_reserves",
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010143005": EnhancementToolDescriptor(
+        enhancement_id="000010143005",
+        name="Helm of the Fly King",
+        timing="passive",
+        target="bearer_unit_while_bearer_is_leading",
+        duration="constant_while_bearer_leading",
+        effect="leading_bearer_unit_ranged_targeting_cap",
+        effect_params={
+            "ranged_targeting_max_distance": 18,
+            "requires_bearer_alive": True,
+            "requires_bearer_leading": True,
+        },
+    ),
+}
+
+_DEATH_GUARD_DEATH_LORDS_CHOSEN_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DEATH_GUARD_DEATH_LORDS_CHOSEN_DESCRIPTORS.values()
+}
+
 _SCINTILLATING_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009810002": EnhancementToolDescriptor(
         enhancement_id="000009810002",
@@ -6060,6 +6118,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DEATH_GUARD_CHAMPIONS_OF_CONTAGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _DEATH_GUARD_DEATH_LORDS_CHOSEN_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SCINTILLATING_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6189,6 +6250,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _DEATH_GUARD_CHAMPIONS_OF_CONTAGION_BY_NAME.get(key)
+        or _DEATH_GUARD_DEATH_LORDS_CHOSEN_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)
         or _GRAND_COVEN_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_BY_NAME.get(key)
