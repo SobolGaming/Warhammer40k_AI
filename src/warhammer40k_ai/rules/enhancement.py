@@ -427,6 +427,10 @@ class Enhancement:
         except Exception:
             is_flyblown_host = False
         try:
+            is_mortarions_hammer = bool(dg_mgr and dg_mgr.is_mortarions_hammer())
+        except Exception:
+            is_mortarions_hammer = False
+        try:
             is_virulent_vectorium = bool(dg_mgr and dg_mgr.is_virulent_vectorium())
         except Exception:
             is_virulent_vectorium = False
@@ -8255,6 +8259,93 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_plagueveil_bearer_model_id"] = bearer_id
+
+        if name == "eye of affliction" or enh_id == "000010127002":
+            if not is_mortarions_hammer:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_eye_of_affliction"] = True
+            unit.special_rules["enhancement_eye_of_affliction_source"] = "Eye of Affliction"
+            unit.special_rules["enhancement_eye_of_affliction_requires_target_afflicted"] = bool(
+                params.get("requires_target_afflicted", True)
+            )
+            unit.special_rules["enhancement_eye_of_affliction_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eye_of_affliction_bearer_model_id"] = bearer_id
+
+        if name == "bilemaw blight" or enh_id == "000010127003":
+            if not is_mortarions_hammer:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_bilemaw_blight"] = True
+            unit.special_rules["enhancement_bilemaw_blight_source"] = "Bilemaw Blight"
+            unit.special_rules["enhancement_bilemaw_blight_weapon_name"] = str(
+                params.get("weapon_name", "Plague Wind") or "Plague Wind"
+            ).strip() or "Plague Wind"
+            unit.special_rules["enhancement_bilemaw_blight_range_bonus"] = int(
+                max(0, _coerce_int(params.get("range_bonus", 12) or 12, default=12))
+            )
+            unit.special_rules["enhancement_bilemaw_blight_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_bilemaw_blight_bearer_model_id"] = bearer_id
+
+        if name == "shriekworm familiar" or enh_id == "000010127004":
+            if not is_mortarions_hammer:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_shriekworm_familiar"] = True
+            unit.special_rules["enhancement_shriekworm_familiar_source"] = "Shriekworm Familiar"
+            unit.special_rules["enhancement_shriekworm_familiar_once_per_battle_round"] = bool(
+                params.get("once_per_battle_round", True)
+            )
+            stratagem_names = [
+                str(v or "").strip().upper()
+                for v in list(params.get("stratagem_names", ["OVERWATCH", "FIRE OVERWATCH"]) or [])
+                if str(v or "").strip()
+            ]
+            if stratagem_names:
+                unit.special_rules["enhancement_shriekworm_familiar_stratagem_names"] = list(stratagem_names)
+            unit.special_rules["enhancement_shriekworm_familiar_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_shriekworm_familiar_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("shriekworm_familiar_overwatch_rule", None)
+
+        if name == "tendrilous emissions" or enh_id == "000010127005":
+            if not is_mortarions_hammer:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_tendrilous_emissions"] = True
+            unit.special_rules["enhancement_tendrilous_emissions_source"] = "Tendrilous Emissions"
+            unit.special_rules["enhancement_tendrilous_emissions_vehicle_aura_range"] = float(
+                max(0.0, _coerce_float(params.get("vehicle_aura_range", 3.0), default=3.0))
+            )
+            unit.special_rules["enhancement_tendrilous_emissions_grant_lone_operative_to_bearer"] = bool(
+                params.get("grant_lone_operative_to_bearer", True)
+            )
+            unit.special_rules["enhancement_tendrilous_emissions_vehicle_reroll_wound_ones"] = bool(
+                params.get("vehicle_reroll_wound_ones", True)
+            )
+            unit.special_rules["enhancement_tendrilous_emissions_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_tendrilous_emissions_bearer_model_id"] = bearer_id
 
         if name == "daemon weapon of nurgle" or enh_id == "000010123002":
             if not is_virulent_vectorium:

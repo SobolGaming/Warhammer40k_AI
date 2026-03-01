@@ -5438,6 +5438,67 @@ _DEATH_GUARD_FLYBLOWN_HOST_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DEATH_GUARD_FLYBLOWN_HOST_DESCRIPTORS.values()
 }
 
+_DEATH_GUARD_MORTARIONS_HAMMER_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010127002": EnhancementToolDescriptor(
+        enhancement_id="000010127002",
+        name="Eye of Affliction",
+        timing="passive",
+        target="bearer_unit_ranged_attacks_vs_afflicted_enemy_units",
+        duration="constant",
+        effect="ranged_attacks_vs_afflicted_targets_gain_ignores_cover",
+        effect_params={
+            "ignores_cover": True,
+            "requires_target_afflicted": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010127003": EnhancementToolDescriptor(
+        enhancement_id="000010127003",
+        name="Bilemaw Blight",
+        timing="start_of_shooting_phase",
+        target="bearer_plague_wind_weapon",
+        duration="until_end_of_phase",
+        effect="start_of_shooting_phase_bearer_plague_wind_range_bonus",
+        effect_params={
+            "weapon_name": "Plague Wind",
+            "range_bonus": 12,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010127004": EnhancementToolDescriptor(
+        enhancement_id="000010127004",
+        name="Shriekworm Familiar",
+        timing="stratagem_cost_modification",
+        target="bearer_unit",
+        duration="once_per_battle_round",
+        effect="once_per_battle_round_fire_overwatch_zero_cp",
+        effect_params={
+            "stratagem_names": ["OVERWATCH", "FIRE OVERWATCH"],
+            "once_per_battle_round": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010127005": EnhancementToolDescriptor(
+        enhancement_id="000010127005",
+        name="Tendrilous Emissions",
+        timing="passive_aura",
+        target="bearer_and_friendly_death_guard_vehicle_units_within_range",
+        duration="constant_while_within_aura_range",
+        effect="conditional_lone_operative_and_vehicle_reroll_wound_ones_aura",
+        range_in=3.0,
+        effect_params={
+            "vehicle_aura_range": 3.0,
+            "grant_lone_operative_to_bearer": True,
+            "vehicle_reroll_wound_ones": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_DEATH_GUARD_MORTARIONS_HAMMER_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DEATH_GUARD_MORTARIONS_HAMMER_DESCRIPTORS.values()
+}
+
 _SCINTILLATING_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009810002": EnhancementToolDescriptor(
         enhancement_id="000009810002",
@@ -6181,6 +6242,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DEATH_GUARD_FLYBLOWN_HOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _DEATH_GUARD_MORTARIONS_HAMMER_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SCINTILLATING_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6312,6 +6376,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _DEATH_GUARD_CHAMPIONS_OF_CONTAGION_BY_NAME.get(key)
         or _DEATH_GUARD_DEATH_LORDS_CHOSEN_BY_NAME.get(key)
         or _DEATH_GUARD_FLYBLOWN_HOST_BY_NAME.get(key)
+        or _DEATH_GUARD_MORTARIONS_HAMMER_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)
         or _GRAND_COVEN_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_BY_NAME.get(key)

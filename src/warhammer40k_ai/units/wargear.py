@@ -1263,6 +1263,17 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+            range_bonus_fn = getattr(mgr, "mortarions_hammer_bilemaw_blight_range_bonus", None) if mgr is not None else None
+            if callable(range_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                range_bonus, _source = range_bonus_fn(attacker, self, game=game)
+                bonus += int(range_bonus or 0)
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 unit = getattr(attacker, "parent_unit", None)
                 sr = getattr(unit, "special_rules", None)
@@ -8379,6 +8390,28 @@ class WargearProfile:
                 ignores_cover_fn = getattr(mgr, "root_out_heresy_ranged_ignores_cover", None) if mgr is not None else None
                 if callable(ignores_cover_fn):
                     applies, _source = ignores_cover_fn(attacker, attacker_unit=unit, weapon_profile=self)
+                    if bool(applies):
+                        attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+                ignores_cover_fn = (
+                    getattr(mgr, "mortarions_hammer_eye_of_affliction_ranged_ignores_cover", None)
+                    if mgr is not None
+                    else None
+                )
+                if callable(ignores_cover_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    game_map = self._get_game_map_from_model(attacker)
+                    applies, _source = ignores_cover_fn(
+                        attacker,
+                        target,
+                        game=game,
+                        game_map=game_map,
+                    )
                     if bool(applies):
                         attack_instance["ignores_cover"] = True
             except Exception:
@@ -16057,6 +16090,33 @@ class WargearProfile:
                 if bool(reroll_ones):
                     reroll_wound_values.add(1)
                     source_name = str(source or "Insectile Murmuration").strip() or "Insectile Murmuration"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(dg_mgr, "mortarions_hammer_tendrilous_emissions_vehicle_reroll_wound_ones", None)
+                if dg_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                game_map = self._get_game_map_from_model(attacker)
+                reroll_ones, source = reroll_fn(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    game=game,
+                    game_map=game_map,
+                )
+                if bool(reroll_ones):
+                    reroll_wound_values.add(1)
+                    source_name = (
+                        str(source or "Tendrilous Emissions").strip() or "Tendrilous Emissions"
+                    )
                     reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         except Exception:
             pass

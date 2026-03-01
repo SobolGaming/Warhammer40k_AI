@@ -2547,6 +2547,21 @@ class LateGameplayMixin:
             return True
         if isinstance(sr, dict) and sr.get("enhancement_shroud_of_obfuscation_lone_operative"):
             return True
+        try:
+            army = self.get_parent_army()
+            dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+            lone_operative_fn = (
+                getattr(dg_mgr, "mortarions_hammer_tendrilous_emissions_lone_operative_applies", None)
+                if dg_mgr is not None
+                else None
+            )
+            if callable(lone_operative_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                game_map = getattr(game, "map", None) if game is not None else None
+                if lone_operative_fn(self, game=game, game_map=game_map):
+                    return True
+        except Exception:
+            pass
         if isinstance(sr, dict) and sr.get("enhancement_spirit_stone_of_raelyth"):
             try:
                 game_map = self.get_parent_army().player.game.map

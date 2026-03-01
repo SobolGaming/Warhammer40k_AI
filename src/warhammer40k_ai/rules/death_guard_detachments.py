@@ -24,6 +24,10 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
     _INSECTILE_MURMURATION_SOURCE = "Insectile Murmuration"
     _REJUVENATING_SWARM_SOURCE = "Rejuvenating Swarm"
     _PLAGUEVEIL_SOURCE = "Plagueveil"
+    _EYE_OF_AFFLICTION_SOURCE = "Eye of Affliction"
+    _BILEMAW_BLIGHT_SOURCE = "Bilemaw Blight"
+    _SHRIEKWORM_FAMILIAR_SOURCE = "Shriekworm Familiar"
+    _TENDRILOUS_EMISSIONS_SOURCE = "Tendrilous Emissions"
     _MIASMIC_BOMBARDMENT_SOURCE = "Miasmic Bombardment"
     _MIASMIC_BOMBARDMENT_RANGE = 12.0
     _NUMBERLESS_HORDE_SOURCE = "Numberless Horde"
@@ -732,6 +736,22 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
             require_bearer_leading=require_bearer_leading,
         )
 
+    def _mortarions_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_leading: bool = False,
+    ):
+        return self._detachment_source_member(
+            unit,
+            detachment_is_active=self.is_mortarions_hammer(),
+            flag_key=flag_key,
+            require_bearer_alive=require_bearer_alive,
+            require_bearer_leading=require_bearer_leading,
+        )
+
     def death_lords_chosen_vile_vigour_movement_bonus(self, unit, *, game=None) -> tuple[int, str]:
         del game
         if not self.is_death_lords_chosen() or unit is None:
@@ -919,6 +939,251 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
         if not source:
             source = self._PLAGUEVEIL_SOURCE
         return max(0.0, float(cap)), source
+
+    def mortarions_hammer_eye_of_affliction_ranged_ignores_cover(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        game=None,
+        game_map=None,
+    ) -> tuple[bool, str]:
+        if not self.is_mortarions_hammer():
+            return False, ""
+        if attacker_model is None or target_unit is None:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root, _member, source_sr, _bearer = self._mortarions_source_member(
+            attacker_unit,
+            flag_key="enhancement_eye_of_affliction",
+            require_bearer_alive=True,
+            require_bearer_leading=False,
+        )
+        if source_sr is None or root is None:
+            return False, ""
+        if not self._unit_in_army(root) or not root.is_alive() or not bool(getattr(root, "deployed", False)):
+            return False, ""
+        if game is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(owner, "game", None) if owner is not None else None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        afflicted = NurglesGiftManager.get_afflicted_plague_for_unit(target_unit, game=game, game_map=game_map)
+        if afflicted is None:
+            return False, ""
+        source = str(source_sr.get("enhancement_eye_of_affliction_source", "") or self._EYE_OF_AFFLICTION_SOURCE).strip()
+        if not source:
+            source = self._EYE_OF_AFFLICTION_SOURCE
+        return True, source
+
+    @staticmethod
+    def _weapon_profile_matches_name(weapon_profile, expected_name: str) -> bool:
+        if weapon_profile is None or not expected_name:
+            return False
+        expected = "".join(ch for ch in str(expected_name).lower() if ch.isalnum())
+        if not expected:
+            return False
+        candidates = []
+        profile_name = str(getattr(weapon_profile, "name", "") or "").strip()
+        if profile_name:
+            candidates.append(profile_name)
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+        wargear_name = str(getattr(parent_wargear, "name", "") or "").strip()
+        if wargear_name:
+            candidates.append(wargear_name)
+        for candidate in candidates:
+            normalized = "".join(ch for ch in str(candidate).lower() if ch.isalnum())
+            if not normalized:
+                continue
+            if expected == normalized or expected in normalized or normalized in expected:
+                return True
+        return False
+
+    def mortarions_hammer_bilemaw_blight_range_bonus(
+        self,
+        attacker_model,
+        weapon_profile,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_mortarions_hammer():
+            return 0, ""
+        if attacker_model is None or weapon_profile is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root, _member, source_sr, bearer = self._mortarions_source_member(
+            attacker_unit,
+            flag_key="enhancement_bilemaw_blight",
+            require_bearer_alive=True,
+            require_bearer_leading=False,
+        )
+        if source_sr is None or root is None or bearer is None:
+            return 0, ""
+        if not self._unit_in_army(root) or not root.is_alive() or not bool(getattr(root, "deployed", False)):
+            return 0, ""
+        if self._model_identifier(attacker_model) != self._model_identifier(bearer):
+            return 0, ""
+        expected_weapon = str(source_sr.get("enhancement_bilemaw_blight_weapon_name", "") or "Plague Wind").strip()
+        if not self._weapon_profile_matches_name(weapon_profile, expected_weapon):
+            return 0, ""
+        if game is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(owner, "game", None) if owner is not None else None
+        if game is None:
+            return 0, ""
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "SHOOTING_PHASE":
+            return 0, ""
+        owner = getattr(self.army, "player", None)
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        if owner is None or current_player is not owner:
+            return 0, ""
+        try:
+            bonus = int(source_sr.get("enhancement_bilemaw_blight_range_bonus", 12) or 12)
+        except (TypeError, ValueError):
+            bonus = 12
+        source = str(source_sr.get("enhancement_bilemaw_blight_source", "") or self._BILEMAW_BLIGHT_SOURCE).strip()
+        if not source:
+            source = self._BILEMAW_BLIGHT_SOURCE
+        return max(0, int(bonus)), source
+
+    def _unit_is_death_guard_vehicle(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not self._unit_in_army(unit):
+            return False
+        if not self._unit_eligible_for_deadly_vectors(unit):
+            return False
+        if not self._unit_is_death_guard(unit):
+            return False
+        return self._unit_has_keyword(unit, "VEHICLE")
+
+    def _friendly_vehicle_units_within_range_of_source(
+        self,
+        source_unit,
+        *,
+        range_inches: float,
+    ) -> list:
+        if source_unit is None:
+            return []
+        from ..utility import aura_utils as _aura_utils
+
+        units_in_range: list = []
+        for candidate in list(self._iter_unique_attached_roots() or []):
+            if candidate is None or candidate is source_unit:
+                continue
+            if not self._unit_is_death_guard_vehicle(candidate):
+                continue
+            if not _aura_utils.unit_within_range_of_unit(
+                source_unit,
+                candidate,
+                float(range_inches),
+                use_attached_aggregate=True,
+            ):
+                continue
+            units_in_range.append(candidate)
+        units_in_range.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return units_in_range
+
+    def mortarions_hammer_tendrilous_emissions_lone_operative_applies(self, unit, *, game=None, game_map=None) -> bool:
+        del game, game_map
+        if not self.is_mortarions_hammer():
+            return False
+        root, _member, source_sr, _bearer = self._mortarions_source_member(
+            unit,
+            flag_key="enhancement_tendrilous_emissions",
+            require_bearer_alive=True,
+            require_bearer_leading=False,
+        )
+        if source_sr is None or root is None:
+            return False
+        if not self._unit_in_army(root) or not root.is_alive() or not bool(getattr(root, "deployed", False)):
+            return False
+        if not bool(source_sr.get("enhancement_tendrilous_emissions_grant_lone_operative_to_bearer", True)):
+            return False
+        try:
+            aura_range = float(source_sr.get("enhancement_tendrilous_emissions_vehicle_aura_range", 3.0) or 3.0)
+        except (TypeError, ValueError):
+            aura_range = 3.0
+        if aura_range <= 0:
+            return False
+        nearby = self._friendly_vehicle_units_within_range_of_source(root, range_inches=float(aura_range))
+        return bool(nearby)
+
+    def mortarions_hammer_tendrilous_emissions_vehicle_reroll_wound_ones(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[bool, str]:
+        if not self.is_mortarions_hammer():
+            return False, ""
+        if attacker_model is None or target_unit is None:
+            return False, ""
+        if weapon_profile is None:
+            return False, ""
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+        is_ranged = bool(getattr(parent_wargear, "is_ranged", lambda: False)()) if parent_wargear is not None else False
+        if not is_ranged:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = attacker_unit.get_attached_unit_root() if attacker_unit is not None else None
+        if not self._unit_is_death_guard_vehicle(attacker_root):
+            return False, ""
+        if game is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(owner, "game", None) if owner is not None else None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        if game_map is None:
+            return False, ""
+        source_entries: list[tuple[object, dict, object]] = []
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            source_root, _member, source_sr, bearer = self._mortarions_source_member(
+                unit,
+                flag_key="enhancement_tendrilous_emissions",
+                require_bearer_alive=True,
+                require_bearer_leading=False,
+            )
+            if source_sr is None or source_root is None or bearer is None:
+                continue
+            source_id = str(get_entity_id(source_root) or "")
+            if source_id in seen:
+                continue
+            seen.add(source_id)
+            source_entries.append((source_root, source_sr, bearer))
+        source_entries.sort(key=lambda entry: str(get_entity_id(entry[0]) or ""))
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        for source_root, source_sr, bearer in source_entries:
+            if not self._unit_in_army(source_root) or not source_root.is_alive() or not bool(getattr(source_root, "deployed", False)):
+                continue
+            if not bool(source_sr.get("enhancement_tendrilous_emissions_vehicle_reroll_wound_ones", True)):
+                continue
+            try:
+                aura_range = float(source_sr.get("enhancement_tendrilous_emissions_vehicle_aura_range", 3.0) or 3.0)
+            except (TypeError, ValueError):
+                aura_range = 3.0
+            if aura_range <= 0:
+                continue
+            nearby_units = self._friendly_vehicle_units_within_range_of_source(source_root, range_inches=float(aura_range))
+            attacker_id = str(get_entity_id(attacker_root) or "")
+            nearby_ids = {str(get_entity_id(unit) or "") for unit in list(nearby_units or [])}
+            if attacker_id not in nearby_ids:
+                continue
+            has_los_fn = getattr(source_root, "_has_line_of_sight_to_target", None)
+            if callable(has_los_fn) and not bool(has_los_fn(bearer, target_root, game_map)):
+                continue
+            source = str(
+                source_sr.get("enhancement_tendrilous_emissions_source", "") or self._TENDRILOUS_EMISSIONS_SOURCE
+            ).strip()
+            if not source:
+                source = self._TENDRILOUS_EMISSIONS_SOURCE
+            return True, source
+        return False, ""
 
     def resolve_rejuvenating_swarm_phase_end(self, *, phase=None, game=None) -> list[dict]:
         del phase

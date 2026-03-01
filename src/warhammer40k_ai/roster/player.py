@@ -1428,6 +1428,14 @@ class Player:
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
 
+    def _target_unit_can_use_shriekworm_familiar_overwatch(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        fn = getattr(target_unit, "can_use_shriekworm_familiar_overwatch", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
     def _target_unit_can_use_snarling_protector_heroic_intervention(self, target_unit) -> bool:
         if target_unit is None:
             return False
@@ -1549,6 +1557,17 @@ class Player:
         if name not in ("OVERWATCH", "FIRE OVERWATCH"):
             return 0
         if not self._target_unit_can_use_protector_of_paths_overwatch(target_unit, stratagem_name=name):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_shriekworm_familiar_overwatch_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name not in ("OVERWATCH", "FIRE OVERWATCH"):
+            return 0
+        if not self._target_unit_can_use_shriekworm_familiar_overwatch(target_unit, stratagem_name=name):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -1974,6 +1993,34 @@ class Player:
             }
             if self._should_preview_optional_ability(
                 "PROTECTOR_OF_PATHS_OVERWATCH",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Fire Overwatch for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        shriekworm = self._preview_shriekworm_familiar_overwatch_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if shriekworm:
+            ability_name = "Shriekworm Familiar"
+            try:
+                get_rule = getattr(target_unit, "get_shriekworm_familiar_overwatch_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "SHRIEKWORM_FAMILIAR_OVERWATCH",
                 ctx,
                 assume=assume_optional_discounts,
             ):
@@ -2638,6 +2685,12 @@ class Player:
                     stratagem_name=name_u,
                 )
             )
+            can_shriekworm = bool(
+                self._target_unit_can_use_shriekworm_familiar_overwatch(
+                    target_unit,
+                    stratagem_name=name_u,
+                )
+            )
             mgr = getattr(self, "stratagems", None)
             used_this_turn = getattr(mgr, "_used_this_turn", {}) if mgr is not None else {}
             overwatch_used = bool(used_this_turn.get("OVERWATCH", False)) if isinstance(used_this_turn, dict) else False
@@ -2748,6 +2801,54 @@ class Player:
                         "reasons": [f"{ability_name}: Fire Overwatch for 0CP (used)"],
                         "protector_of_paths_overwatch_use": True,
                         "protector_of_paths_overwatch_source": ability_name,
+                    }
+            if can_shriekworm:
+                ability_name = "Shriekworm Familiar"
+                try:
+                    get_sr_rule = getattr(target_unit, "get_shriekworm_familiar_overwatch_rule", None)
+                    sr_rule = get_sr_rule() if callable(get_sr_rule) else None
+                    if isinstance(sr_rule, dict):
+                        ability_name = str(sr_rule.get("source", "") or ability_name).strip() or ability_name
+                except Exception:
+                    pass
+                ctx = {
+                    "ability_name": ability_name,
+                    "stratagem": getattr(stratagem, "name", None) or "",
+                    "target_unit": getattr(target_unit, "name", None) or "",
+                    "base_cp_cost": base,
+                }
+                use_shriekworm = self._should_use_optional_ability("SHRIEKWORM_FAMILIAR_OVERWATCH", ctx)
+                if use_shriekworm:
+                    applied_discount = base
+                    cost = max(0, base - applied_discount)
+                    increase = 0
+                    increase_reasons: list[str] = []
+                    opponent = self._get_opponent_player()
+                    if opponent is not None:
+                        inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                            target_unit=target_unit,
+                            stratagem=stratagem,
+                            current_cost=cost,
+                        )
+                        increase = int(inc_info.get("increase", 0) or 0)
+                        increase_reasons = list(inc_info.get("reasons", []) or [])
+                        if increase:
+                            cost = max(0, cost + increase)
+                    self._pending_stratagem_cp_increase = {
+                        "increase": int(increase or 0),
+                        "reasons": increase_reasons,
+                        "stratagem_name": getattr(stratagem, "name", None) or "",
+                    }
+                    return {
+                        "base": base,
+                        "discount": applied_discount,
+                        "available_discount": applied_discount,
+                        "cost": cost,
+                        "increase": increase,
+                        "increase_reasons": increase_reasons,
+                        "reasons": [f"{ability_name}: Fire Overwatch for 0CP (used)"],
+                        "shriekworm_familiar_overwatch_use": True,
+                        "shriekworm_familiar_overwatch_source": ability_name,
                     }
             if can_traitor:
                 ability_name = str(rule.get("source", "") or "Brutal Example").strip() or "Brutal Example"

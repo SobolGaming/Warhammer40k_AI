@@ -3557,6 +3557,173 @@ class KeywordsDetachmentsMixin:
             return int(controlled_threshold)
         return int(base_threshold)
 
+    def _shriekworm_familiar_overwatch_source_unit(self):
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_shriekworm_familiar", False)):
+                continue
+            attached_to = getattr(member, "attached_to", None)
+            if attached_to is not None:
+                try:
+                    attached_root = attached_to.get_attached_unit_root()
+                except Exception:
+                    attached_root = attached_to
+                if attached_root is not root:
+                    continue
+            bearer = None
+            get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+            if callable(get_bearer):
+                bearer = get_bearer()
+            if bearer is None:
+                bearer_id = str(
+                    sr.get("enhancement_shriekworm_familiar_bearer_model_id", "")
+                    or sr.get("enhancement_bearer_model_id", "")
+                    or ""
+                ).strip()
+                if bearer_id:
+                    for model in list(getattr(member, "models", []) or []):
+                        if str(get_entity_id(model) or "").strip() == bearer_id:
+                            bearer = model
+                            break
+            if bearer is None:
+                continue
+            alive_attr = getattr(bearer, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            return member, sr
+        return None, None
+
+    def get_shriekworm_familiar_overwatch_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "shriekworm_familiar_overwatch_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        source_unit, source_sr = root._shriekworm_familiar_overwatch_source_unit()
+        rule = None
+        if source_unit is not None and isinstance(source_sr, dict):
+            source = str(source_sr.get("enhancement_shriekworm_familiar_source", "") or "Shriekworm Familiar").strip()
+            if not source:
+                source = "Shriekworm Familiar"
+            allowed = [
+                str(v or "").strip().upper()
+                for v in list(
+                    source_sr.get("enhancement_shriekworm_familiar_stratagem_names", ["OVERWATCH", "FIRE OVERWATCH"]) or []
+                )
+                if str(v or "").strip()
+            ]
+            if not allowed:
+                allowed = ["OVERWATCH", "FIRE OVERWATCH"]
+            rule = {
+                "source": source,
+                "ability_key": "shriekworm_familiar_overwatch",
+                "stratagems": tuple(allowed),
+                "limit": "battle_round",
+            }
+            try:
+                source_id = get_entity_id(source_unit)
+            except Exception:
+                source_id = None
+            if source_id:
+                rule["source_unit_id"] = str(source_id)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _shriekworm_familiar_battle_round_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        return str(br)
+
+    def shriekworm_familiar_used_this_battle_round(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._shriekworm_familiar_battle_round_key(game)
+        if not key:
+            return False
+        return str(sr.get("shriekworm_familiar_used_battle_round", "") or "") == key
+
+    def mark_shriekworm_familiar_used(self, game=None, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["shriekworm_familiar_used_battle_round"] = self._shriekworm_familiar_battle_round_key(game)
+        if source:
+            sr["shriekworm_familiar_used_source"] = str(source or "").strip()
+        if stratagem_name:
+            sr["shriekworm_familiar_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+    def can_use_shriekworm_familiar_overwatch(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_shriekworm_familiar_overwatch_rule()
+        if not rule:
+            return False
+        if root.shriekworm_familiar_used_this_battle_round(game):
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        return True
+
     def _guardian_battlehost_breath_source_unit(self):
         try:
             root = self.get_attached_unit_root()

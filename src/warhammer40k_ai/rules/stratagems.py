@@ -2472,6 +2472,14 @@ class StratagemManager(
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
 
+    def _unit_can_use_shriekworm_familiar_overwatch(self, unit, *, stratagem_name: str = "") -> bool:
+        if unit is None:
+            return False
+        fn = getattr(unit, "can_use_shriekworm_familiar_overwatch", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
     def _unit_can_use_intraneural_biotech_stratagem_discount(self, unit, *, stratagem_name: str = "") -> bool:
         if unit is None:
             return False
@@ -2542,6 +2550,10 @@ class StratagemManager(
                     target_unit,
                     stratagem_name="OVERWATCH",
                 )
+                or self._unit_can_use_shriekworm_familiar_overwatch(
+                    target_unit,
+                    stratagem_name="OVERWATCH",
+                )
             )
         for cand in list(candidates or []):
             if self._unit_can_use_traitor_enforcer_overwatch(cand):
@@ -2552,6 +2564,11 @@ class StratagemManager(
             ):
                 return True
             if self._unit_can_use_protector_of_paths_overwatch(
+                cand,
+                stratagem_name="OVERWATCH",
+            ):
+                return True
+            if self._unit_can_use_shriekworm_familiar_overwatch(
                 cand,
                 stratagem_name="OVERWATCH",
             ):
@@ -12918,6 +12935,7 @@ class StratagemManager(
                 return False
             traitor_overwatch = bool(apply_info.get("traitor_enforcer_overwatch_use", False))
             protector_overwatch = bool(apply_info.get("protector_of_paths_overwatch_use", False))
+            shriekworm_overwatch = bool(apply_info.get("shriekworm_familiar_overwatch_use", False))
             if self._used_this_turn.get("OVERWATCH", False) and not traitor_overwatch:
                 logger.error("ERROR: Overwatch already used this turn")
                 return False
@@ -13024,6 +13042,15 @@ class StratagemManager(
                         shooter.mark_protector_of_paths_used(
                             self.game,
                             source=str(apply_info.get("protector_of_paths_overwatch_source", "") or ""),
+                            stratagem_name=str(getattr(s, "name", "") or ""),
+                        )
+                    except Exception:
+                        pass
+                if shriekworm_overwatch:
+                    try:
+                        shooter.mark_shriekworm_familiar_used(
+                            self.game,
+                            source=str(apply_info.get("shriekworm_familiar_overwatch_source", "") or ""),
                             stratagem_name=str(getattr(s, "name", "") or ""),
                         )
                     except Exception:

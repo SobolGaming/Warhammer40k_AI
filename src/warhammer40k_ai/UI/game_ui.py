@@ -19465,6 +19465,15 @@ class GameView:
                                         )
                                 except Exception:
                                     pass
+                            if apply_info.get("shriekworm_familiar_overwatch_use", False):
+                                try:
+                                    shooter_unit.mark_shriekworm_familiar_used(
+                                        self.game,
+                                        source=str(apply_info.get("shriekworm_familiar_overwatch_source", "") or ""),
+                                        stratagem_name=str(getattr(s, "name", "") or ""),
+                                    )
+                                except Exception:
+                                    pass
                             logger.info(f"Used stratagem: {name}")
                         else:
                             logger.error("Overwatch: failed to spend CP")
