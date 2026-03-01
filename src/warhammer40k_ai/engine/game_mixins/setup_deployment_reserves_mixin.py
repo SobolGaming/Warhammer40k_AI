@@ -1217,6 +1217,28 @@ class GameSetupDeploymentReservesMixin:
                 override = None
             if override:
                 min_enemy_distance = min(float(min_enemy_distance), float(override))
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+            beckoning_fn = (
+                getattr(dg_mgr, "tallyband_beckoning_blight_deep_strike_min_enemy_distance", None)
+                if dg_mgr is not None
+                else None
+            )
+            if callable(beckoning_fn):
+                try:
+                    beckoning_distance, _beckoning_source = beckoning_fn(
+                        unit,
+                        prospective_positions=list(prospective),
+                        game=self,
+                        game_map=self.map,
+                    )
+                except Exception:
+                    beckoning_distance = 0.0
+                if float(beckoning_distance or 0.0) > 0.0:
+                    min_enemy_distance = min(float(min_enemy_distance), float(beckoning_distance))
 
         from ...utility.aura_utils import horizontal_distance_between_bases_2d
         enemy_units = self.get_enemy_units(unit.get_parent_army().player)

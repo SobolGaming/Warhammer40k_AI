@@ -32,6 +32,10 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
     _LORD_OF_THE_WALKING_POX_SOURCE = "Lord of the Walking Pox"
     _SORROWSYPHON_SOURCE = "Sorrowsyphon"
     _TALISMAN_OF_BURGEONING_SOURCE = "Talisman of Burgeoning"
+    _BECKONING_BLIGHT_SOURCE = "Beckoning Blight"
+    _FELL_HARVESTER_SOURCE = "Fell Harvester"
+    _ENTROPIC_KNELL_SOURCE = "Entropic Knell"
+    _TOME_OF_BOUNTEOUS_BLESSINGS_SOURCE = "Tome of Bounteous Blessings"
     _MIASMIC_BOMBARDMENT_SOURCE = "Miasmic Bombardment"
     _MIASMIC_BOMBARDMENT_RANGE = 12.0
     _NUMBERLESS_HORDE_SOURCE = "Numberless Horde"
@@ -772,6 +776,22 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
             require_bearer_leading=require_bearer_leading,
         )
 
+    def _tallyband_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_leading: bool = False,
+    ):
+        return self._detachment_source_member(
+            unit,
+            detachment_is_active=self.is_tallyband_summoners(),
+            flag_key=flag_key,
+            require_bearer_alive=require_bearer_alive,
+            require_bearer_leading=require_bearer_leading,
+        )
+
     def death_lords_chosen_vile_vigour_movement_bonus(self, unit, *, game=None) -> tuple[int, str]:
         del game
         if not self.is_death_lords_chosen() or unit is None:
@@ -1483,6 +1503,418 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
         if not source:
             source = self._TALISMAN_OF_BURGEONING_SOURCE
         return max(0, int(bonus)), source
+
+    def tallyband_beckoning_blight_deep_strike_min_enemy_distance(
+        self,
+        unit,
+        *,
+        prospective_positions=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[float, str]:
+        del game
+        del game_map
+        if not self.is_tallyband_summoners():
+            return 0.0, ""
+        if unit is None:
+            return 0.0, ""
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None or not self._unit_in_army(root):
+            return 0.0, ""
+        if not self._unit_is_plague_legions(root):
+            return 0.0, ""
+        prospective = list(prospective_positions or [])
+        if not prospective:
+            return 0.0, ""
+
+        models = list(getattr(root, "models", []) or [])
+        if not models:
+            return 0.0, ""
+        potential_bases = []
+        for idx, (x, y, z, facing) in enumerate(prospective):
+            if idx >= len(models):
+                break
+            make_base = getattr(root, "_create_potential_base", None)
+            if not callable(make_base):
+                return 0.0, ""
+            base = make_base(x, y, z, facing, model=models[idx])
+            if base is None:
+                return 0.0, ""
+            potential_bases.append(base)
+        if not potential_bases:
+            return 0.0, ""
+
+        from ..utility import aura_utils as _aura_utils
+
+        best_distance: Optional[float] = None
+        best_source = ""
+        seen_source_roots: set[str] = set()
+        for source_unit in list(getattr(self.army, "units", []) or []):
+            source_root, _member, source_sr, bearer = self._tallyband_source_member(
+                source_unit,
+                flag_key="enhancement_beckoning_blight",
+                require_bearer_alive=True,
+                require_bearer_leading=False,
+            )
+            if source_sr is None or source_root is None or bearer is None:
+                continue
+            source_root_id = str(get_entity_id(source_root) or "")
+            if source_root_id in seen_source_roots:
+                continue
+            seen_source_roots.add(source_root_id)
+            if not self._unit_eligible_for_deadly_vectors(source_root):
+                continue
+
+            bearer_base = getattr(bearer, "model_base", None)
+            if bearer_base is None:
+                continue
+            try:
+                bearer_range = float(source_sr.get("enhancement_beckoning_blight_bearer_range", 12.0) or 12.0)
+            except (TypeError, ValueError):
+                bearer_range = 12.0
+            try:
+                min_enemy_distance = float(
+                    source_sr.get("enhancement_beckoning_blight_min_enemy_distance", 6.0) or 6.0
+                )
+            except (TypeError, ValueError):
+                min_enemy_distance = 6.0
+            if bearer_range <= 0.0 or min_enemy_distance <= 0.0:
+                continue
+
+            wholly_within = True
+            for potential_base in list(potential_bases):
+                dist = float(_aura_utils.horizontal_distance_between_bases_2d(potential_base, bearer_base))
+                if dist > float(bearer_range) + 1e-6:
+                    wholly_within = False
+                    break
+            if not wholly_within:
+                continue
+
+            source = str(
+                source_sr.get("enhancement_beckoning_blight_source", "") or self._BECKONING_BLIGHT_SOURCE
+            ).strip()
+            if not source:
+                source = self._BECKONING_BLIGHT_SOURCE
+            if best_distance is None or float(min_enemy_distance) < float(best_distance):
+                best_distance = float(min_enemy_distance)
+                best_source = source
+
+        if best_distance is None:
+            return 0.0, ""
+        return float(best_distance), str(best_source or self._BECKONING_BLIGHT_SOURCE)
+
+    def _tallyband_tome_sources_for_unit(self, unit, *, game=None, game_map=None):
+        del game
+        del game_map
+        if not self.is_tallyband_summoners() or unit is None or self.army is None:
+            return []
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None or not self._unit_in_army(root):
+            return []
+        if not self._unit_is_plague_legions(root):
+            return []
+        if not self._unit_eligible_for_deadly_vectors(root):
+            return []
+
+        from ..utility import aura_utils as _aura_utils
+
+        entries = []
+        seen_sources: set[str] = set()
+        for source_unit in list(getattr(self.army, "units", []) or []):
+            source_root, _member, source_sr, bearer = self._tallyband_source_member(
+                source_unit,
+                flag_key="enhancement_tome_of_bounteous_blessings",
+                require_bearer_alive=True,
+                require_bearer_leading=False,
+            )
+            if source_sr is None or source_root is None or bearer is None:
+                continue
+            source_root_id = str(get_entity_id(source_root) or "")
+            if source_root_id in seen_sources:
+                continue
+            seen_sources.add(source_root_id)
+            if not self._unit_eligible_for_deadly_vectors(source_root):
+                continue
+            try:
+                aura_range = float(source_sr.get("enhancement_tome_of_bounteous_blessings_range", 12.0) or 12.0)
+            except (TypeError, ValueError):
+                aura_range = 12.0
+            if aura_range <= 0.0:
+                continue
+            if not bool(
+                _aura_utils.model_within_range_of_unit(
+                    bearer,
+                    root,
+                    float(aura_range),
+                    use_attached_aggregate=True,
+                )
+            ):
+                continue
+            entries.append((source_root, source_sr, bearer))
+        entries.sort(key=lambda entry: str(get_entity_id(entry[0]) or ""))
+        return entries
+
+    def tallyband_tome_of_bounteous_blessings_battle_shock_modifier(self, unit, *, game=None) -> tuple[int, str]:
+        entries = list(self._tallyband_tome_sources_for_unit(unit, game=game, game_map=getattr(game, "map", None)))
+        if not entries:
+            return 0, ""
+        total = 0
+        source_names: list[str] = []
+        for _source_root, source_sr, _bearer in list(entries):
+            try:
+                modifier = int(
+                    source_sr.get("enhancement_tome_of_bounteous_blessings_battle_shock_test_modifier", 1) or 1
+                )
+            except (TypeError, ValueError):
+                modifier = 1
+            total += int(modifier)
+            source_name = str(
+                source_sr.get("enhancement_tome_of_bounteous_blessings_source", "")
+                or self._TOME_OF_BOUNTEOUS_BLESSINGS_SOURCE
+            ).strip()
+            if not source_name:
+                source_name = self._TOME_OF_BOUNTEOUS_BLESSINGS_SOURCE
+            if source_name not in source_names:
+                source_names.append(source_name)
+        if not source_names:
+            return int(total), self._TOME_OF_BOUNTEOUS_BLESSINGS_SOURCE
+        if len(source_names) == 1:
+            return int(total), source_names[0]
+        return int(total), " / ".join(source_names)
+
+    def tallyband_tome_of_bounteous_blessings_on_battle_shock_pass(self, unit, *, game=None) -> list[dict]:
+        entries = list(self._tallyband_tome_sources_for_unit(unit, game=game, game_map=getattr(game, "map", None)))
+        if not entries:
+            return []
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return []
+        game_map = getattr(game, "map", None) if game is not None else None
+        outcomes: list[dict] = []
+        is_battleline = bool(self._unit_has_keyword(root, "BATTLELINE"))
+
+        for _source_root, source_sr, _bearer in list(entries):
+            roll_expr = str(
+                source_sr.get("enhancement_tome_of_bounteous_blessings_restore_die", "") or "D3"
+            ).strip().upper() or "D3"
+            try:
+                amount = int(get_roll(roll_expr) or 0)
+            except (TypeError, ValueError):
+                amount = 0
+            amount = int(max(0, amount))
+            source = str(
+                source_sr.get("enhancement_tome_of_bounteous_blessings_source", "")
+                or self._TOME_OF_BOUNTEOUS_BLESSINGS_SOURCE
+            ).strip()
+            if not source:
+                source = self._TOME_OF_BOUNTEOUS_BLESSINGS_SOURCE
+            healed = 0
+            returned = 0
+            if amount > 0:
+                if is_battleline:
+                    destroyed = list(getattr(root, "models_lost", []) or [])
+                    destroyed.sort(key=lambda model: str(get_entity_id(model) or ""))
+                    for model in list(destroyed[: int(amount)]):
+                        if hasattr(root, "models_lost") and model in root.models_lost:
+                            root.models_lost.remove(model)
+                        set_parent = getattr(model, "set_parent_unit", None)
+                        if callable(set_parent):
+                            set_parent(root)
+                        else:
+                            model.parent_unit = root
+                        try:
+                            model.wounds = int(
+                                getattr(model, "_base_wounds", 0)
+                                or getattr(model, "base_wounds", 0)
+                                or getattr(model, "max_wounds", 0)
+                                or 1
+                            )
+                        except (TypeError, ValueError):
+                            model.wounds = 1
+                        check_profile = getattr(model, "_check_damaged_profile", None)
+                        if callable(check_profile):
+                            check_profile()
+                        mark_pending = getattr(root, "_mark_models_pending_placement", None)
+                        if callable(mark_pending):
+                            mark_pending([model], source="tome_of_bounteous_blessings")
+                        add_model = getattr(root, "add_model", None)
+                        if callable(add_model):
+                            add_model(model)
+                        else:
+                            root.models.append(model)
+                        returned += 1
+                    request_pending = getattr(root, "_request_pending_placement_decision", None)
+                    if int(returned) > 0 and callable(request_pending):
+                        request_pending(game_map=game_map)
+                    update_coherency = getattr(root, "update_coherency", None)
+                    if int(returned) > 0 and callable(update_coherency):
+                        update_coherency()
+                else:
+                    attached_models_fn = getattr(root, "get_attached_unit_models", None)
+                    models = list(attached_models_fn() or []) if callable(attached_models_fn) else list(getattr(root, "models", []) or [])
+                    wounded = []
+                    for model in list(models or []):
+                        alive_attr = getattr(model, "is_alive", False)
+                        model_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                        if not model_alive:
+                            continue
+                        try:
+                            max_wounds = int(
+                                getattr(model, "max_wounds", 0)
+                                or getattr(model, "_base_wounds", 0)
+                                or getattr(model, "base_wounds", 0)
+                                or 0
+                            )
+                        except (TypeError, ValueError):
+                            max_wounds = 0
+                        try:
+                            current_wounds = int(getattr(model, "wounds", max_wounds) or 0)
+                        except (TypeError, ValueError):
+                            current_wounds = 0
+                        if max_wounds <= 0 or current_wounds >= max_wounds:
+                            continue
+                        wounded.append((str(get_entity_id(model) or ""), model, current_wounds, max_wounds))
+                    wounded.sort(key=lambda entry: entry[0])
+                    if wounded:
+                        _model_id, target_model, current_wounds, max_wounds = wounded[0]
+                        heal_fn = getattr(target_model, "heal", None)
+                        if callable(heal_fn):
+                            heal_fn(int(amount))
+                        else:
+                            updated = min(int(max_wounds), int(current_wounds) + int(amount))
+                            target_model.wounds = int(updated)
+                        try:
+                            post_wounds = int(getattr(target_model, "wounds", 0) or 0)
+                        except (TypeError, ValueError):
+                            post_wounds = int(current_wounds)
+                        healed = int(max(0, min(int(amount), int(post_wounds) - int(current_wounds))))
+            outcomes.append(
+                {
+                    "target_unit_id": str(get_entity_id(root) or ""),
+                    "source": source,
+                    "roll": int(amount),
+                    "healed_wounds": int(healed),
+                    "returned_models": int(returned),
+                    "battleline_target": bool(is_battleline),
+                }
+            )
+        return outcomes
+
+    def resolve_tallyband_entropic_knell_forced_tests(
+        self,
+        *,
+        game=None,
+        opponent_player=None,
+        tested_ids: Optional[set[str]] = None,
+    ) -> list[dict]:
+        if not self.is_tallyband_summoners() or self.army is None:
+            return []
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return []
+        owner = getattr(self.army, "player", None)
+        if owner is None or opponent_player is None or opponent_player is owner:
+            return []
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return []
+        try:
+            turn = int(getattr(game, "turn", 0) or 1)
+        except (TypeError, ValueError):
+            turn = 1
+
+        from ..utility import aura_utils as _aura_utils
+
+        outcomes: list[dict] = []
+        seen_sources: set[str] = set()
+        source_entries = []
+        for source_unit in list(getattr(self.army, "units", []) or []):
+            source_root, _member, source_sr, bearer = self._tallyband_source_member(
+                source_unit,
+                flag_key="enhancement_entropic_knell",
+                require_bearer_alive=True,
+                require_bearer_leading=False,
+            )
+            if source_sr is None or source_root is None or bearer is None:
+                continue
+            source_root_id = str(get_entity_id(source_root) or "")
+            if source_root_id in seen_sources:
+                continue
+            seen_sources.add(source_root_id)
+            if not self._unit_eligible_for_deadly_vectors(source_root):
+                continue
+            source_entries.append((source_root, source_sr, bearer))
+        source_entries.sort(key=lambda entry: str(get_entity_id(entry[0]) or ""))
+
+        for source_root, source_sr, bearer in list(source_entries):
+            try:
+                aura_range = float(source_sr.get("enhancement_entropic_knell_range", 6.0) or 6.0)
+            except (TypeError, ValueError):
+                aura_range = 6.0
+            if aura_range <= 0.0:
+                continue
+            try:
+                test_modifier = int(source_sr.get("enhancement_entropic_knell_battle_shock_test_modifier", -1) or -1)
+            except (TypeError, ValueError):
+                test_modifier = -1
+            source = str(source_sr.get("enhancement_entropic_knell_source", "") or self._ENTROPIC_KNELL_SOURCE).strip()
+            if not source:
+                source = self._ENTROPIC_KNELL_SOURCE
+
+            candidate_targets: dict[str, object] = {}
+            for enemy in list(game_map.get_enemy_units(source_root) or []):
+                if enemy is None:
+                    continue
+                enemy_root = enemy.get_attached_unit_root() if hasattr(enemy, "get_attached_unit_root") else enemy
+                enemy_id = str(get_entity_id(enemy_root) or "")
+                if not enemy_id:
+                    continue
+                candidate_targets[enemy_id] = enemy_root
+            for enemy_id in sorted(candidate_targets):
+                target_root = candidate_targets[enemy_id]
+                if target_root is None:
+                    continue
+                if tested_ids is not None and enemy_id in tested_ids:
+                    continue
+                if not self._unit_eligible_for_deadly_vectors(target_root):
+                    continue
+                below_starting_fn = getattr(target_root, "is_below_starting_strength", None)
+                if not callable(below_starting_fn) or not bool(below_starting_fn()):
+                    continue
+                if not bool(
+                    _aura_utils.model_within_range_of_unit(
+                        bearer,
+                        target_root,
+                        float(aura_range),
+                        use_attached_aggregate=True,
+                    )
+                ):
+                    continue
+                if test_modifier:
+                    target_sr = getattr(target_root, "special_rules", None)
+                    if not isinstance(target_sr, dict):
+                        target_sr = {}
+                    target_sr = dict(target_sr)
+                    current_modifier = int(target_sr.get("battle_shock_test_modifier", 0) or 0)
+                    target_sr["battle_shock_test_modifier"] = int(current_modifier + int(test_modifier))
+                    reasons = list(target_sr.get("battle_shock_test_modifier_reasons", []) or [])
+                    reasons.append(f"{source} ({int(test_modifier):+d})")
+                    target_sr["battle_shock_test_modifier_reasons"] = reasons
+                    target_root.special_rules = target_sr
+                take_test = getattr(target_root, "take_battle_shock_test", None)
+                if not callable(take_test):
+                    continue
+                take_test(int(turn))
+                if tested_ids is not None:
+                    tested_ids.add(enemy_id)
+                outcomes.append(
+                    {
+                        "source_unit_id": str(get_entity_id(source_root) or ""),
+                        "target_unit_id": enemy_id,
+                        "source": source,
+                        "modifier": int(test_modifier),
+                    }
+                )
+        return outcomes
 
     def resolve_rejuvenating_swarm_phase_end(self, *, phase=None, game=None) -> list[dict]:
         del phase

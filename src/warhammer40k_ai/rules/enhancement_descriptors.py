@@ -5499,6 +5499,70 @@ _DEATH_GUARD_MORTARIONS_HAMMER_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DEATH_GUARD_MORTARIONS_HAMMER_DESCRIPTORS.values()
 }
 
+_DEATH_GUARD_TALLYBAND_SUMMONERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010135002": EnhancementToolDescriptor(
+        enhancement_id="000010135002",
+        name="Beckoning Blight",
+        timing="deep_strike_setup",
+        target="friendly_plague_legions_unit_being_set_up",
+        duration="instant_at_setup",
+        effect="deep_strike_plague_legions_within_bearer_reduced_enemy_distance",
+        effect_params={
+            "bearer_range": 12.0,
+            "min_enemy_distance": 6.0,
+            "requires_unit_keyword": "PLAGUE LEGIONS",
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010135003": EnhancementToolDescriptor(
+        enhancement_id="000010135003",
+        name="Fell Harvester",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_weapons_attacks_bonus",
+        effect_params={
+            "melee_attacks_bonus": 2,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010135004": EnhancementToolDescriptor(
+        enhancement_id="000010135004",
+        name="Entropic Knell",
+        timing="opponent_command_phase_battle_shock_step",
+        target="enemy_units_within_bearer_range_below_starting_strength",
+        duration="instant",
+        effect="forced_battleshock_test_with_modifier",
+        range_in=6.0,
+        effect_params={
+            "range": 6.0,
+            "battle_shock_test_modifier": -1,
+            "requires_target_below_starting_strength": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010135005": EnhancementToolDescriptor(
+        enhancement_id="000010135005",
+        name="Tome of Bounteous Blessings",
+        timing="on_friendly_battleshock_test",
+        target="friendly_plague_legions_units_within_bearer_range",
+        duration="instant_per_test",
+        effect="friendly_battleshock_modifier_with_restore_on_pass",
+        range_in=12.0,
+        effect_params={
+            "range": 12.0,
+            "battle_shock_test_modifier": 1,
+            "restore_die": "D3",
+            "requires_target_keyword": "PLAGUE LEGIONS",
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_DEATH_GUARD_TALLYBAND_SUMMONERS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DEATH_GUARD_TALLYBAND_SUMMONERS_DESCRIPTORS.values()
+}
+
 _DEATH_GUARD_SHAMBLEROT_VECTORIUM_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010139002": EnhancementToolDescriptor(
         enhancement_id="000010139002",
@@ -6311,6 +6375,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DEATH_GUARD_MORTARIONS_HAMMER_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _DEATH_GUARD_TALLYBAND_SUMMONERS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _DEATH_GUARD_SHAMBLEROT_VECTORIUM_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6446,6 +6513,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _DEATH_GUARD_DEATH_LORDS_CHOSEN_BY_NAME.get(key)
         or _DEATH_GUARD_FLYBLOWN_HOST_BY_NAME.get(key)
         or _DEATH_GUARD_MORTARIONS_HAMMER_BY_NAME.get(key)
+        or _DEATH_GUARD_TALLYBAND_SUMMONERS_BY_NAME.get(key)
         or _DEATH_GUARD_SHAMBLEROT_VECTORIUM_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)
         or _GRAND_COVEN_BY_NAME.get(key)

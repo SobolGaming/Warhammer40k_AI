@@ -435,6 +435,10 @@ class Enhancement:
         except Exception:
             is_shamblerot_vectorium = False
         try:
+            is_tallyband_summoners = bool(dg_mgr and dg_mgr.is_tallyband_summoners())
+        except Exception:
+            is_tallyband_summoners = False
+        try:
             is_virulent_vectorium = bool(dg_mgr and dg_mgr.is_virulent_vectorium())
         except Exception:
             is_virulent_vectorium = False
@@ -8350,6 +8354,96 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_tendrilous_emissions_bearer_model_id"] = bearer_id
+
+        if name == "beckoning blight" or enh_id == "000010135002":
+            if not is_tallyband_summoners:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_beckoning_blight"] = True
+            unit.special_rules["enhancement_beckoning_blight_source"] = "Beckoning Blight"
+            unit.special_rules["enhancement_beckoning_blight_bearer_range"] = float(
+                max(0.0, _coerce_float(params.get("bearer_range", 12.0) or 12.0, default=12.0))
+            )
+            unit.special_rules["enhancement_beckoning_blight_min_enemy_distance"] = float(
+                max(0.0, _coerce_float(params.get("min_enemy_distance", 6.0) or 6.0, default=6.0))
+            )
+            unit.special_rules["enhancement_beckoning_blight_requires_unit_keyword"] = str(
+                params.get("requires_unit_keyword", "PLAGUE LEGIONS") or "PLAGUE LEGIONS"
+            ).strip().upper() or "PLAGUE LEGIONS"
+            unit.special_rules["enhancement_beckoning_blight_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_beckoning_blight_bearer_model_id"] = bearer_id
+
+        if name == "fell harvester" or enh_id == "000010135003":
+            if not is_tallyband_summoners:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_fell_harvester"] = True
+            unit.special_rules["enhancement_fell_harvester_source"] = "Fell Harvester"
+            attacks_bonus = int(max(0, _coerce_int(params.get("melee_attacks_bonus", 2) or 2, default=2)))
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+            ) + int(attacks_bonus)
+            unit.special_rules["enhancement_fell_harvester_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_fell_harvester_bearer_model_id"] = bearer_id
+
+        if name == "entropic knell" or enh_id == "000010135004":
+            if not is_tallyband_summoners:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_entropic_knell"] = True
+            unit.special_rules["enhancement_entropic_knell_source"] = "Entropic Knell"
+            unit.special_rules["enhancement_entropic_knell_range"] = float(
+                max(0.0, _coerce_float(params.get("range", 6.0) or 6.0, default=6.0))
+            )
+            unit.special_rules["enhancement_entropic_knell_battle_shock_test_modifier"] = int(
+                _coerce_int(params.get("battle_shock_test_modifier", -1) or -1, default=-1)
+            )
+            unit.special_rules["enhancement_entropic_knell_requires_target_below_starting_strength"] = bool(
+                params.get("requires_target_below_starting_strength", True)
+            )
+            unit.special_rules["enhancement_entropic_knell_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_entropic_knell_bearer_model_id"] = bearer_id
+
+        if name == "tome of bounteous blessings" or enh_id == "000010135005":
+            if not is_tallyband_summoners:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_tome_of_bounteous_blessings"] = True
+            unit.special_rules["enhancement_tome_of_bounteous_blessings_source"] = "Tome of Bounteous Blessings"
+            unit.special_rules["enhancement_tome_of_bounteous_blessings_range"] = float(
+                max(0.0, _coerce_float(params.get("range", 12.0) or 12.0, default=12.0))
+            )
+            unit.special_rules["enhancement_tome_of_bounteous_blessings_battle_shock_test_modifier"] = int(
+                _coerce_int(params.get("battle_shock_test_modifier", 1) or 1, default=1)
+            )
+            unit.special_rules["enhancement_tome_of_bounteous_blessings_restore_die"] = str(
+                params.get("restore_die", "D3") or "D3"
+            ).strip().upper() or "D3"
+            unit.special_rules["enhancement_tome_of_bounteous_blessings_requires_target_keyword"] = str(
+                params.get("requires_target_keyword", "PLAGUE LEGIONS") or "PLAGUE LEGIONS"
+            ).strip().upper() or "PLAGUE LEGIONS"
+            unit.special_rules["enhancement_tome_of_bounteous_blessings_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_tome_of_bounteous_blessings_bearer_model_id"] = bearer_id
 
         if name == "witherbone pipes" or enh_id == "000010139002":
             if not is_shamblerot_vectorium:

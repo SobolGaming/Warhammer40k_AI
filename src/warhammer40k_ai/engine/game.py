@@ -611,6 +611,45 @@ class Game(
                         tested_ids.add(uid)
                         break
 
+    def _apply_death_guard_tallyband_entropic_knell_forced_tests(
+        self,
+        current_player,
+        tested_ids: set[str],
+    ) -> None:
+        if current_player is None:
+            return
+
+        def _get_army(player):
+            getter = getattr(self, "_get_player_army", None)
+            if callable(getter):
+                return getter(player)
+            if player is None:
+                return None
+            getter = getattr(player, "get_army", None)
+            if callable(getter):
+                return getter()
+            return getattr(player, "army", None)
+
+        current_army = _get_army(current_player)
+        if current_army is None:
+            return
+
+        for enemy_player in [p for p in (self.players or []) if p is not current_player]:
+            army = _get_army(enemy_player)
+            if army is None:
+                continue
+            mgr = getattr(army, "death_guard_detachments", None)
+            if mgr is None:
+                continue
+            resolve_fn = getattr(mgr, "resolve_tallyband_entropic_knell_forced_tests", None)
+            if not callable(resolve_fn):
+                continue
+            resolve_fn(
+                game=self,
+                opponent_player=current_player,
+                tested_ids=tested_ids,
+            )
+
     def _apply_csm_dread_talons_terror_descends_forced_tests(self, current_player, tested_ids: set[str]) -> None:
         if current_player is None:
             return
@@ -9880,6 +9919,8 @@ class Game(
         self._apply_pall_of_despair_forced_tests(current_player, tested_ids)
         # Chaos Knights: Dismay can force additional tests for eligible enemy units.
         self._apply_harbingers_dismay_forced_tests(current_player, tested_ids)
+        # Death Guard (Tallyband Summoners): Entropic Knell can force additional tests.
+        self._apply_death_guard_tallyband_entropic_knell_forced_tests(current_player, tested_ids)
         self.battle_shock_step_active = False
 
         # Necrons: Reanimation Protocols at end of Command phase (resolve before scoring).

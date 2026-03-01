@@ -1964,6 +1964,25 @@ class ShootingMixin:
                     extra_mod_reasons.append(f"{src_name} ({int(dg_mod):+d})")
         except Exception:
             pass
+        try:
+            dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+            modifier_fn = (
+                getattr(dg_mgr, "tallyband_tome_of_bounteous_blessings_battle_shock_modifier", None)
+                if dg_mgr is not None
+                else None
+            )
+            if callable(modifier_fn):
+                dg_mod, dg_source = modifier_fn(self, game=game)
+                dg_mod = int(dg_mod or 0)
+                if dg_mod:
+                    extra_mod += int(dg_mod)
+                    src_name = (
+                        str(dg_source or "Tome of Bounteous Blessings").strip()
+                        or "Tome of Bounteous Blessings"
+                    )
+                    extra_mod_reasons.append(f"{src_name} ({int(dg_mod):+d})")
+        except Exception:
+            pass
         # Core Stratagem: INSANE BRAVERY can make this unit automatically pass this test.
         # It is consumed on use (one-shot for the next Battle-shock test).
         auto_passed = False
@@ -2417,6 +2436,23 @@ class ShootingMixin:
                 ShadowOfChaosManager.apply_battle_shock_outcome(self, passed=passed, context=apply_ctx, game=game)
             except Exception:
                 pass
+
+        if passed:
+            try:
+                army = self.get_parent_army()
+            except Exception:
+                army = None
+            dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+            on_pass_fn = (
+                getattr(dg_mgr, "tallyband_tome_of_bounteous_blessings_on_battle_shock_pass", None)
+                if dg_mgr is not None
+                else None
+            )
+            if callable(on_pass_fn):
+                try:
+                    on_pass_fn(self, game=game)
+                except Exception:
+                    pass
 
         if event_system is not None:
             try:
