@@ -617,6 +617,10 @@ class Enhancement:
             csm_mgr and getattr(csm_mgr, "is_fellhammer_siege_host", lambda: False)()
         )
         try:
+            is_hurons_marauders = bool(csm_mgr and csm_mgr.is_hurons_marauders())
+        except Exception:
+            is_hurons_marauders = False
+        try:
             is_soulforged_warpack = bool(csm_mgr and csm_mgr.is_soulforged_warpack())
         except Exception:
             is_soulforged_warpack = False
@@ -5966,6 +5970,102 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_talisman_of_burning_blood_bearer_model_id"] = bearer_id
+
+        if name in {"voice of the tyrant", "voice of tyrant"} or enh_id == "000010688002":
+            if not is_hurons_marauders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Voice of the Tyrant").strip() or "Voice of the Tyrant"
+            unit.special_rules["enhancement_voice_of_the_tyrant"] = True
+            unit.special_rules["enhancement_voice_of_the_tyrant_source"] = source
+            unit.special_rules["enhancement_voice_of_the_tyrant_grant_hurons_elite"] = bool(
+                params.get("grant_hurons_elite", True)
+            )
+            unit.special_rules["enhancement_voice_of_the_tyrant_grant_mobile_marauders"] = bool(
+                params.get("grant_mobile_marauders", True)
+            )
+            unit.special_rules["enhancement_voice_of_the_tyrant_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_voice_of_the_tyrant_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", False)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_voice_of_the_tyrant_bearer_model_id"] = bearer_id
+
+        if name == "raid leader" or enh_id == "000010688003":
+            if not is_hurons_marauders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Raid Leader").strip() or "Raid Leader"
+            unit.special_rules["enhancement_raid_leader"] = True
+            unit.special_rules["enhancement_raid_leader_source"] = source
+            unit.special_rules["enhancement_raid_leader_allow_charge_after_normal_move"] = bool(
+                params.get("allow_charge_after_normal_move", True)
+            )
+            unit.special_rules["enhancement_raid_leader_requires_disembarked_from_moved_transport"] = bool(
+                params.get("requires_disembarked_from_moved_transport", True)
+            )
+            unit.special_rules["enhancement_raid_leader_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_raid_leader_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", False)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_raid_leader_bearer_model_id"] = bearer_id
+
+        if name == "dread reputation" or enh_id == "000010688004":
+            if not is_hurons_marauders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Dread Reputation").strip() or "Dread Reputation"
+            unit.special_rules["enhancement_dread_reputation"] = True
+            unit.special_rules["enhancement_dread_reputation_source"] = source
+            unit.special_rules["enhancement_dread_reputation_range_in"] = float(
+                max(0.0, _coerce_float(params.get("range_in", 6.0), default=6.0))
+            )
+            unit.special_rules["enhancement_dread_reputation_deep_strike_range_in"] = float(
+                max(0.0, _coerce_float(params.get("deep_strike_range_in", 12.0), default=12.0))
+            )
+            unit.special_rules["enhancement_dread_reputation_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_dread_reputation_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", False)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_dread_reputation_bearer_model_id"] = bearer_id
+
+        if name == "eager for bloodshed" or enh_id == "000010688005":
+            if not is_hurons_marauders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Eager for Bloodshed").strip() or "Eager for Bloodshed"
+            unit.special_rules["enhancement_eager_for_bloodshed"] = True
+            unit.special_rules["enhancement_eager_for_bloodshed_source"] = source
+            unit.special_rules["enhancement_eager_for_bloodshed_grants_infiltrators"] = bool(
+                params.get("grants_infiltrators", True)
+            )
+            unit.special_rules["enhancement_eager_for_bloodshed_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_eager_for_bloodshed_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", False)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eager_for_bloodshed_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
 
         if name in {"despot's claim", "despot’s claim"} or enh_id == "000008968002":
             if not is_renegade_raiders:

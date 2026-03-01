@@ -3663,6 +3663,22 @@ class ShootingMixin:
                     overrides["force_cannot_charge_this_turn"] = True
                 break
         try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        raid_leader_apply_fn = (
+            getattr(csm_mgr, "hurons_marauders_raid_leader_allows_charge_after_normal_move_disembark", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(raid_leader_apply_fn):
+            try:
+                if bool(raid_leader_apply_fn(self, transport_unit=transport_unit, game=game)):
+                    overrides["allow_charge_after_normal_move"] = True
+            except Exception:
+                pass
+        try:
             tsr = getattr(transport_unit, "special_rules", None)
         except Exception:
             tsr = None

@@ -3618,6 +3618,7 @@ class Game(
         self,
         unit=None,
         set_up_as_reinforcements: bool = False,
+        used_deep_strike: bool = False,
         **_kwargs,
     ) -> None:
         if unit is None:
@@ -3626,6 +3627,52 @@ class Game(
             unit=unit,
             action="set_up",
             set_up_as_reinforcements=bool(set_up_as_reinforcements),
+        )
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        if root is None:
+            return
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        if army is None:
+            return
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return
+        on_unit_set_up = getattr(mgr, "on_unit_set_up", None)
+        if not callable(on_unit_set_up):
+            return
+        on_unit_set_up(
+            unit=root,
+            game=self,
+            set_up_as_reinforcements=bool(set_up_as_reinforcements),
+            used_deep_strike=bool(used_deep_strike),
+            set_up_from_disembark=False,
+        )
+
+    def _on_unit_disembarked_csm_detachment_rules(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        if root is None or root is not unit:
+            return
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        if army is None:
+            return
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return
+        on_unit_set_up = getattr(mgr, "on_unit_set_up", None)
+        if not callable(on_unit_set_up):
+            return
+        on_unit_set_up(
+            unit=root,
+            game=self,
+            set_up_as_reinforcements=False,
+            used_deep_strike=False,
+            set_up_from_disembark=True,
         )
 
     def _on_charge_declared_detachment_rules(self, unit=None, **_kwargs) -> None:

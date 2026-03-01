@@ -7746,6 +7746,16 @@ class PositioningMixin:
             except (AttributeError, TypeError, ValueError):
                 pass
         if not found:
+            try:
+                if self._attached_unit_has_active_enhancement(
+                    "enhancement_eager_for_bloodshed",
+                    enhancement_id="000010688005",
+                    enhancement_name="eager for bloodshed",
+                ):
+                    found = True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        if not found:
             found, _ = self._find_ability_with_patterns(["infiltrators", "infiltrate"])
         
         # Cache the result

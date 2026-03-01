@@ -890,19 +890,37 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._unit_is_heretic_astartes_infantry(root):
             return False, False
 
+        _voice_root, _voice_member, voice_sr, _voice_bearer = self._hurons_marauders_enhancement_source_member(
+            root,
+            flag_key="enhancement_voice_of_the_tyrant",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=False,
+        )
+        voice_grants_hurons_elite = bool(
+            isinstance(voice_sr, dict) and bool(voice_sr.get("enhancement_voice_of_the_tyrant_grant_hurons_elite", True))
+        )
+        voice_grants_mobile_marauders = bool(
+            isinstance(voice_sr, dict)
+            and bool(voice_sr.get("enhancement_voice_of_the_tyrant_grant_mobile_marauders", True))
+        )
+
         choice_key = str(self.tyrannical_motivation_choice_key or "").strip().upper()
         if choice_key not in {
             self._TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE,
             self._TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS,
         }:
-            return False, False
+            return voice_grants_hurons_elite, voice_grants_mobile_marauders
 
         self.refresh_tyrannical_motivation_phase_state(game=game)
         unit_id = self._tyrannical_motivation_unit_id(root)
         if not unit_id:
-            return False, False
+            return voice_grants_hurons_elite, voice_grants_mobile_marauders
         has_hit_bonus = bool(choice_key == self._TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE)
         has_mobile_marauders = bool(choice_key == self._TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS)
+        if voice_grants_hurons_elite:
+            has_hit_bonus = True
+        if voice_grants_mobile_marauders:
+            has_mobile_marauders = True
         if unit_id in self._tyrannical_motivation_phase_hit_bonus_unit_ids:
             has_hit_bonus = True
         if unit_id in self._tyrannical_motivation_phase_mobile_unit_ids:
@@ -929,6 +947,136 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     def tyrannical_motivation_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
         _has_hit_bonus, has_mobile = self._tyrannical_motivation_effects_for_unit(unit, game=game)
         return bool(has_mobile)
+
+    def hurons_marauders_raid_leader_allows_charge_after_normal_move_disembark(
+        self,
+        unit,
+        *,
+        transport_unit=None,
+        game=None,
+    ) -> bool:
+        _ = game
+        if not self.is_hurons_marauders():
+            return False
+        root, _source_member, source_sr, _bearer = self._hurons_marauders_enhancement_source_member(
+            unit,
+            flag_key="enhancement_raid_leader",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=False,
+        )
+        if source_sr is None:
+            return False
+        if not bool(source_sr.get("enhancement_raid_leader_allow_charge_after_normal_move", True)):
+            return False
+        if not bool(source_sr.get("enhancement_raid_leader_requires_disembarked_from_moved_transport", True)):
+            return True
+
+        if transport_unit is not None:
+            moved_this_round = bool(getattr(getattr(transport_unit, "round_state", None), "moved_this_round", False))
+            remained_stationary = bool(
+                getattr(getattr(transport_unit, "round_state", None), "remained_stationary_this_round", False)
+            )
+            advanced = bool(getattr(getattr(transport_unit, "round_state", None), "advanced_this_round", False))
+            fell_back = bool(getattr(getattr(transport_unit, "round_state", None), "fell_back_this_round", False))
+            return bool(moved_this_round and not remained_stationary and not advanced and not fell_back)
+
+        if root is None:
+            return False
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "disembarked_from_destroyed_transport", False)):
+            return False
+        return bool(getattr(round_state, "disembarked_from_moved_transport", False))
+
+    def _dread_reputation_enemy_units_in_range(
+        self,
+        *,
+        source_unit,
+        game,
+        range_in: float,
+    ) -> list:
+        if source_unit is None or game is None:
+            return []
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if owner is None:
+            return []
+        get_enemy_units = getattr(game, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        out = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(owner) or []):
+            enemy_root = self._unit_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = str(get_entity_id(enemy_root) or self._unit_root_key(enemy_root))
+            if not enemy_id or enemy_id in seen:
+                continue
+            if not self._unit_on_battlefield(enemy_root):
+                continue
+            if not bool(unit_within_range_of_unit(source_unit, enemy_root, float(range_in), use_attached_aggregate=True)):
+                continue
+            out.append(enemy_root)
+            seen.add(enemy_id)
+        out.sort(key=lambda unit: str(get_entity_id(unit) or self._unit_root_key(unit)))
+        return out
+
+    def on_unit_set_up(
+        self,
+        *,
+        unit=None,
+        game=None,
+        set_up_as_reinforcements: bool = False,
+        used_deep_strike: bool = False,
+        set_up_from_disembark: bool = False,
+    ) -> None:
+        _ = set_up_from_disembark
+        if not self.is_hurons_marauders():
+            return
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        root, _source_member, source_sr, _bearer = self._hurons_marauders_enhancement_source_member(
+            unit,
+            flag_key="enhancement_dread_reputation",
+            require_bearer_alive=True,
+            require_bearer_on_battlefield=False,
+        )
+        if source_sr is None or root is None:
+            return
+        if not self._unit_in_army(root):
+            return
+        if not self._unit_on_battlefield(root):
+            return
+        try:
+            base_range = float(source_sr.get("enhancement_dread_reputation_range_in", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            base_range = 6.0
+        try:
+            deep_strike_range = float(source_sr.get("enhancement_dread_reputation_deep_strike_range_in", 12.0) or 12.0)
+        except (TypeError, ValueError):
+            deep_strike_range = 12.0
+        if base_range < 0.0:
+            base_range = 0.0
+        if deep_strike_range < 0.0:
+            deep_strike_range = 0.0
+        used_deep_strike_setup = bool(used_deep_strike)
+        if not used_deep_strike_setup and bool(set_up_as_reinforcements):
+            has_deep_strike = getattr(root, "has_deep_strike", None)
+            if callable(has_deep_strike):
+                used_deep_strike_setup = bool(has_deep_strike())
+        effective_range = float(deep_strike_range if used_deep_strike_setup else base_range)
+        if effective_range <= 0.0:
+            return
+        current_turn = int(self._current_turn(game=game) or 1)
+        for enemy in self._dread_reputation_enemy_units_in_range(
+            source_unit=root,
+            game=game,
+            range_in=effective_range,
+        ):
+            take_test = getattr(enemy, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(current_turn)
 
     def clear_renegade_warband_vendetta_target(self) -> None:
         self.renegade_warband_vendetta_target_unit_id = ""
@@ -1753,6 +1901,37 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                     continue
             return member, sr, bearer
         return None, None, None
+
+    def _hurons_marauders_enhancement_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_on_battlefield: bool = False,
+    ):
+        if not self.is_hurons_marauders():
+            return None, None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+                continue
+            bearer = self._find_enhancement_bearer_on_member(member, sr)
+            if require_bearer_alive and not self._model_alive(bearer):
+                continue
+            if require_bearer_on_battlefield:
+                bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None)) if bearer is not None else root
+                if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                    continue
+            return root, member, sr, bearer
+        return None, None, None, None
 
     def _pactbound_zealots_enhancement_source_member(
         self,

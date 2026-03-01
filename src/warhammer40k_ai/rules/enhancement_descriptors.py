@@ -2209,6 +2209,64 @@ _DECEPTORS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DECEPTORS_DESCRIPTORS.values()
 }
 
+_HURONS_MARAUDERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010688002": EnhancementToolDescriptor(
+        enhancement_id="000010688002",
+        name="Voice of the Tyrant",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_has_both_tyrannical_motivation_abilities",
+        effect_params={
+            "grant_hurons_elite": True,
+            "grant_mobile_marauders": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010688003": EnhancementToolDescriptor(
+        enhancement_id="000010688003",
+        name="Raid Leader",
+        timing="on_disembark_after_transport_normal_move",
+        target="bearer_unit",
+        duration="that_turn",
+        effect="allow_charge_after_disembark_from_transport_normal_move",
+        effect_params={
+            "allow_charge_after_normal_move": True,
+            "requires_disembarked_from_moved_transport": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010688004": EnhancementToolDescriptor(
+        enhancement_id="000010688004",
+        name="Dread Reputation",
+        timing="on_unit_set_up",
+        target="enemy_units_within_range_of_bearer_unit",
+        duration="instant",
+        effect="on_set_up_enemy_units_within_range_take_battleshock_test",
+        effect_params={
+            "range_in": 6.0,
+            "deep_strike_range_in": 12.0,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010688005": EnhancementToolDescriptor(
+        enhancement_id="000010688005",
+        name="Eager for Bloodshed",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_gains_infiltrators",
+        effect_params={
+            "grants_infiltrators": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+}
+
+_HURONS_MARAUDERS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HURONS_MARAUDERS_DESCRIPTORS.values()
+}
+
 _RENEGADE_RAIDERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008968002": EnhancementToolDescriptor(
         enhancement_id="000008968002",
@@ -5779,6 +5837,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _FELLHAMMER_SIEGE_HOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _HURONS_MARAUDERS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _NIGHTMARE_HUNT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6010,6 +6071,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _DECEPTORS_BY_NAME.get(key)
         or _DREAD_TALONS_BY_NAME.get(key)
         or _FELLHAMMER_SIEGE_HOST_BY_NAME.get(key)
+        or _HURONS_MARAUDERS_BY_NAME.get(key)
         or _NIGHTMARE_HUNT_BY_NAME.get(key)
         or _PACTBOUND_ZEALOTS_BY_NAME.get(key)
         or _RENEGADE_RAIDERS_BY_NAME.get(key)

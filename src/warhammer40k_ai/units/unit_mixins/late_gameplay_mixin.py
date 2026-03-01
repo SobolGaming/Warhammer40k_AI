@@ -1982,9 +1982,11 @@ class LateGameplayMixin:
         except Exception:
             pass
 
+        used_deep_strike_for_setup = False
         # Grey Knights: Fury of Titan (Deep Strike arrivals re-roll hit/wound 1s until end of turn).
         try:
             used_deep_strike = bool(pre_reserve_status == "reserves" or pending_deep_strike)
+            used_deep_strike_for_setup = bool(used_deep_strike and self.has_deep_strike())
             if used_deep_strike and self.has_deep_strike():
                 army = self.get_parent_army()
                 mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
@@ -2240,6 +2242,7 @@ class LateGameplayMixin:
                     "unit_set_up",
                     unit=self,
                     set_up_as_reinforcements=True,
+                    used_deep_strike=bool(used_deep_strike_for_setup),
                 )
         except Exception:
             pass
