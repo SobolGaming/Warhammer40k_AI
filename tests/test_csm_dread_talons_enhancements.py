@@ -323,7 +323,7 @@ def test_eater_of_dread_command_phase_cp_roll_counts_only_on_battlefield_battle_
     game.rebuild_entity_registry()
 
     before_cp = int(csm_player.command_points or 0)
-    with patch("warhammer40k_ai.engine.game_mixins.phase_handlers_mixin.get_roll", return_value=3):
+    with patch("warhammer40k_ai.rules.chaos_space_marines_detachments.get_roll", return_value=3):
         game._on_phase_start_command_phase_cp_rolls(player=csm_player, phase=game.phase)
     after_cp = int(csm_player.command_points or 0)
 
@@ -351,7 +351,7 @@ def test_eater_of_dread_does_not_trigger_when_bearer_not_on_battlefield():
     game.rebuild_entity_registry()
 
     before_cp = int(csm_player.command_points or 0)
-    with patch("warhammer40k_ai.engine.game_mixins.phase_handlers_mixin.get_roll", return_value=6):
+    with patch("warhammer40k_ai.rules.chaos_space_marines_detachments.get_roll", return_value=6):
         game._on_phase_start_command_phase_cp_rolls(player=csm_player, phase=game.phase)
     after_cp = int(csm_player.command_points or 0)
 

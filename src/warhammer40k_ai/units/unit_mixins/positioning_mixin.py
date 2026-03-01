@@ -1689,6 +1689,11 @@ class PositioningMixin:
                     "description": "",
                     "once_per_battle": bool(sr.get("enhancement_warp_fuelled_thrusters_once_per_battle", False)),
                     "ability_key": ability_key,
+                    "trigger_phase": (
+                        str(sr.get("enhancement_warp_fuelled_thrusters_trigger_phase", "") or "OPPONENT_TURN_END")
+                        .strip()
+                        .upper()
+                    ),
                     "min_enemy_distance_horiz": 0,
                     "min_battlefield_edge_distance_horiz": 0,
                 }
@@ -7747,6 +7752,9 @@ class PositioningMixin:
         # Dread Talons: Night's Shroud grants Stealth to models in the bearer's unit.
         if isinstance(sr, dict) and sr.get("enhancement_nights_shroud_stealth"):
             return True
+        # Nightmare Hunt: Greyveil Hex grants Stealth to models in the bearer's unit.
+        if isinstance(sr, dict) and sr.get("enhancement_greyveil_hex_stealth"):
+            return True
         # Enhancement: Phial of the Abyss grants Stealth to models in the bearer's unit.
         if isinstance(sr, dict) and sr.get("enhancement_phial_of_the_abyss"):
             return True
@@ -7977,13 +7985,22 @@ class PositioningMixin:
             siege_eager_advance_distance = float(siege_scout_fn(self) or 0.0)
         csm_scout_dynamic = False
         mark_of_the_hound_distance = 0.0
+        sorrowscent_vulture_distance = 0.0
         csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
         csm_scout_fn = (
             getattr(csm_mgr, "renegade_raiders_mark_of_the_hound_scout_distance", None) if csm_mgr is not None else None
         )
+        csm_nightmare_scout_fn = (
+            getattr(csm_mgr, "nightmare_hunt_sorrowscent_vulture_scout_distance", None)
+            if csm_mgr is not None
+            else None
+        )
         if callable(csm_scout_fn):
             csm_scout_dynamic = True
             mark_of_the_hound_distance = float(csm_scout_fn(self) or 0.0)
+        if callable(csm_nightmare_scout_fn):
+            csm_scout_dynamic = True
+            sorrowscent_vulture_distance = float(csm_nightmare_scout_fn(self) or 0.0)
 
         # Use cached result if available
         if (
@@ -8047,6 +8064,9 @@ class PositioningMixin:
         if mark_of_the_hound_distance > 0:
             found = True
             dist = max(float(dist or 0.0), float(mark_of_the_hound_distance))
+        if sorrowscent_vulture_distance > 0:
+            found = True
+            dist = max(float(dist or 0.0), float(sorrowscent_vulture_distance))
         result = (True, float(dist)) if found else (False, 0.0)
 
         # Attached units can only Scout if every model has Scouts (use smallest distance if mixed).

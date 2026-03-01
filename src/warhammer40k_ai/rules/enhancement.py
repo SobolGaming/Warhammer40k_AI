@@ -594,6 +594,10 @@ class Enhancement:
             csm_mgr and callable(getattr(csm_mgr, "is_dread_talons", None)) and csm_mgr.is_dread_talons()
         )
         try:
+            is_nightmare_hunt = bool(csm_mgr and csm_mgr.is_nightmare_hunt())
+        except Exception:
+            is_nightmare_hunt = False
+        try:
             is_pactbound_zealots = bool(csm_mgr and csm_mgr.is_pactbound_zealots())
         except Exception:
             is_pactbound_zealots = False
@@ -6203,6 +6207,28 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_eater_of_dread_bearer_model_id"] = bearer_id
 
+        if name == "greyveil hex" or enh_id == "000010641002":
+            if not is_nightmare_hunt:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Greyveil Hex").strip() or "Greyveil Hex"
+            unit.special_rules["enhancement_greyveil_hex"] = True
+            unit.special_rules["enhancement_greyveil_hex_source"] = source
+            unit.special_rules["enhancement_greyveil_hex_stealth"] = bool(params.get("grants_stealth", True))
+            unit.special_rules["enhancement_greyveil_hex_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_greyveil_hex_requires_within_controlled_objective_range"] = bool(
+                params.get("requires_bearer_unit_within_controlled_objective_range", True)
+            )
+            unit.special_rules["enhancement_greyveil_hex_ranged_targeting_max_distance"] = float(
+                max(0.0, _coerce_float(params.get("ranged_targeting_max_distance", 18.0), default=18.0))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_greyveil_hex_bearer_model_id"] = bearer_id
+
         if name in {"night's shroud", "nights shroud", "night’s shroud"} or enh_id == "000008972003":
             if not is_dread_talons:
                 return
@@ -6215,12 +6241,15 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_nights_shroud_bearer_model_id"] = bearer_id
 
-        if name == "warp-fuelled thrusters" or enh_id == "000008972004":
-            if not is_dread_talons:
+        if name == "warp-fuelled thrusters" or enh_id in {"000008972004", "000010641003"}:
+            if not (is_dread_talons or is_nightmare_hunt):
                 return
             desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
             params = _descriptor_params(desc)
             source = str(getattr(desc, "name", "") or "Warp-fuelled Thrusters").strip() or "Warp-fuelled Thrusters"
+            trigger_phase = str(params.get("trigger_phase", "OPPONENT_TURN_END") or "OPPONENT_TURN_END").strip().upper()
+            if not trigger_phase:
+                trigger_phase = "OPPONENT_TURN_END"
             unit.special_rules["enhancement_warp_fuelled_thrusters"] = True
             unit.special_rules["enhancement_warp_fuelled_thrusters_source"] = source
             unit.special_rules["enhancement_warp_fuelled_thrusters_requires_not_engagement_range"] = bool(
@@ -6235,9 +6264,67 @@ class Enhancement:
             unit.special_rules["enhancement_warp_fuelled_thrusters_ability_key"] = (
                 str(params.get("ability_key", "warp_fuelled_thrusters") or "warp_fuelled_thrusters").strip().lower()
             )
+            unit.special_rules["enhancement_warp_fuelled_thrusters_trigger_phase"] = trigger_phase
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_warp_fuelled_thrusters_bearer_model_id"] = bearer_id
+
+        if name == "terrorglut parasite" or enh_id == "000010641004":
+            if not is_nightmare_hunt:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Terrorglut Parasite").strip() or "Terrorglut Parasite"
+            modifier = _coerce_int(params.get("battle_shock_test_modifier", -1), default=-1)
+            if modifier > 0:
+                modifier = -modifier
+            if modifier == 0:
+                modifier = -1
+            unit.special_rules["enhancement_terrorglut_parasite"] = True
+            unit.special_rules["enhancement_terrorglut_parasite_source"] = source
+            unit.special_rules["enhancement_terrorglut_parasite_battle_shock_test_modifier"] = int(modifier)
+            unit.special_rules["enhancement_terrorglut_parasite_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_terrorglut_parasite_bearer_model_id"] = bearer_id
+
+        if name == "sorrowscent vulture" or enh_id == "000010641005":
+            if not is_nightmare_hunt:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Sorrowscent Vulture").strip() or "Sorrowscent Vulture"
+            scout_distance = _coerce_int(params.get("scouts_distance", 6), default=6)
+            attach_names = [
+                str(v).strip()
+                for v in list(params.get("attachment_override_unit_names_any", ("Warp Talons",)) or ())
+                if str(v or "").strip()
+            ]
+            attach_ids = [
+                str(v).strip()
+                for v in list(params.get("attachment_override_unit_datasheet_ids_any", ("000000959",)) or ())
+                if str(v or "").strip()
+            ]
+            unit.special_rules["enhancement_sorrowscent_vulture"] = True
+            unit.special_rules["enhancement_sorrowscent_vulture_source"] = source
+            unit.special_rules["enhancement_sorrowscent_vulture_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_sorrowscent_vulture_scout_distance"] = int(max(0, scout_distance))
+            unit.special_rules["enhancement_sorrowscent_vulture_attach_unit_names"] = list(attach_names)
+            unit.special_rules["enhancement_sorrowscent_vulture_attach_unit_datasheet_ids"] = list(attach_ids)
+            allowed_attach = [str(v).strip() for v in list(getattr(unit, "can_be_attached_to", []) or []) if str(v).strip()]
+            allowed_set = set(allowed_attach)
+            for attach_id in attach_ids:
+                if attach_id not in allowed_set:
+                    allowed_attach.append(attach_id)
+                    allowed_set.add(attach_id)
+            unit.can_be_attached_to = list(allowed_attach)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_sorrowscent_vulture_bearer_model_id"] = bearer_id
 
         if name == "willbreaker" or enh_id == "000008972005":
             if not is_dread_talons:

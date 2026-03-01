@@ -2386,6 +2386,68 @@ _DREAD_TALONS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DREAD_TALONS_DESCRIPTORS.values()
 }
 
+_NIGHTMARE_HUNT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010641002": EnhancementToolDescriptor(
+        enhancement_id="000010641002",
+        name="Greyveil Hex",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_gains_stealth_and_objective_controlled_ranged_targeting_cap",
+        effect_params={
+            "grants_stealth": True,
+            "ranged_targeting_max_distance": 18,
+            "requires_bearer_alive": True,
+            "requires_bearer_unit_within_controlled_objective_range": True,
+        },
+    ),
+    "000010641003": EnhancementToolDescriptor(
+        enhancement_id="000010641003",
+        name="Warp-fuelled Thrusters",
+        timing="end_of_opponent_fight_phase",
+        target="bearer_unit",
+        duration="instant",
+        effect="end_of_opponent_fight_phase_enter_strategic_reserves_if_not_engaged",
+        effect_params={
+            "requires_not_engagement_range": True,
+            "requires_bearer_alive": True,
+            "once_per_battle": False,
+            "ability_key": "warp_fuelled_thrusters",
+            "trigger_phase": "OPPONENT_FIGHT_PHASE_END",
+        },
+    ),
+    "000010641004": EnhancementToolDescriptor(
+        enhancement_id="000010641004",
+        name="Terrorglut Parasite",
+        timing="start_of_fight_phase",
+        target="enemy_units_in_engagement_range_of_bearer",
+        duration="instant",
+        effect="start_of_fight_phase_bearer_engagement_range_enemy_battleshock_minus_one",
+        effect_params={
+            "battle_shock_test_modifier": -1,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010641005": EnhancementToolDescriptor(
+        enhancement_id="000010641005",
+        name="Sorrowscent Vulture",
+        timing="passive_and_declare_battle_formations_attachment_override",
+        target="bearer_unit_and_bearer",
+        duration="constant_and_declare_battle_formations",
+        effect="grant_scouts_to_bearer_unit_and_allow_attach_to_warp_talons",
+        effect_params={
+            "scouts_distance": 6,
+            "requires_bearer_alive": True,
+            "attachment_override_unit_names_any": ("Warp Talons",),
+            "attachment_override_unit_datasheet_ids_any": ("000000959",),
+        },
+    ),
+}
+
+_NIGHTMARE_HUNT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _NIGHTMARE_HUNT_DESCRIPTORS.values()
+}
+
 _PACTBOUND_ZEALOTS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008357002": EnhancementToolDescriptor(
         enhancement_id="000008357002",
@@ -5657,6 +5719,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DREAD_TALONS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _NIGHTMARE_HUNT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _PACTBOUND_ZEALOTS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -5884,6 +5949,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CREATIONS_OF_BILE_BY_NAME.get(key)
         or _DECEPTORS_BY_NAME.get(key)
         or _DREAD_TALONS_BY_NAME.get(key)
+        or _NIGHTMARE_HUNT_BY_NAME.get(key)
         or _PACTBOUND_ZEALOTS_BY_NAME.get(key)
         or _RENEGADE_RAIDERS_BY_NAME.get(key)
         or _RENEGADE_WARBAND_BY_NAME.get(key)

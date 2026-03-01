@@ -2919,11 +2919,22 @@ class LateGameplayMixin:
             pass
 
         for spec in root.ranged_targeting_restriction_specs():
+            source_name = str(spec.get("source", "") or "Ranged targeting restriction").strip()
+            if source_name.lower() == "greyveil hex":
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and bool(sr.get("enhancement_greyveil_hex")):
+                    requires_controlled = bool(
+                        sr.get("enhancement_greyveil_hex_requires_within_controlled_objective_range", True)
+                    )
+                    if requires_controlled:
+                        within_controlled = getattr(root, "_within_controlled_objective_range", None)
+                        if callable(within_controlled) and not bool(within_controlled(game_map)):
+                            continue
             try:
                 dist = float(spec.get("range", 0) or 0)
             except Exception:
                 dist = 0.0
-            _consider(dist, spec.get("source", "Ranged targeting restriction"))
+            _consider(dist, source_name or "Ranged targeting restriction")
 
         get_parent_army = getattr(root, "get_parent_army", None)
         army = get_parent_army() if callable(get_parent_army) else None
@@ -3087,6 +3098,21 @@ class LateGameplayMixin:
                 dist, source = 0.0, ""
             if float(dist or 0.0) > 0.0:
                 _consider(float(dist), source or "Obfuscation")
+
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        greyveil_cap_fn = (
+            getattr(csm_mgr, "nightmare_hunt_greyveil_hex_ranged_targeting_cap", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(greyveil_cap_fn):
+            try:
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                dist, source = greyveil_cap_fn(root, game=game)
+            except Exception:
+                dist, source = 0.0, ""
+            if float(dist or 0.0) > 0.0:
+                _consider(float(dist), source or "Greyveil Hex")
 
         try:
             sr = getattr(root, "special_rules", None)

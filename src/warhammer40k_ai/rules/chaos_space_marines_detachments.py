@@ -522,6 +522,38 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             return 0, ""
         return 1, "Terror Made Manifest"
 
+    def nightmare_hunt_greyveil_hex_ranged_targeting_cap(self, target_unit, *, game=None) -> tuple[float, str]:
+        if not self.is_nightmare_hunt():
+            return 0.0, ""
+        root = self._unit_root(target_unit)
+        if root is None or not self._unit_in_army(root):
+            return 0.0, ""
+        _source_member, source_sr, bearer = self._nightmare_hunt_enhancement_source_member(
+            root,
+            flag_key="enhancement_greyveil_hex",
+            require_bearer_alive=False,
+            require_bearer_on_battlefield=False,
+        )
+        if source_sr is None or bearer is None:
+            return 0.0, ""
+        if bool(source_sr.get("enhancement_greyveil_hex_requires_bearer_alive", True)):
+            if not self._model_alive(bearer):
+                return 0.0, ""
+        if bool(source_sr.get("enhancement_greyveil_hex_requires_within_controlled_objective_range", True)):
+            resolved_game = self._resolve_game(game=game)
+            game_map = getattr(resolved_game, "map", None) if resolved_game is not None else None
+            within_controlled = getattr(root, "_within_controlled_objective_range", None)
+            if not callable(within_controlled):
+                return 0.0, ""
+            if not bool(within_controlled(game_map)):
+                return 0.0, ""
+        try:
+            cap = float(source_sr.get("enhancement_greyveil_hex_ranged_targeting_max_distance", 18.0) or 18.0)
+        except (TypeError, ValueError):
+            cap = 18.0
+        source = str(source_sr.get("enhancement_greyveil_hex_source", "") or "Greyveil Hex").strip() or "Greyveil Hex"
+        return max(0.0, cap), source
+
     @classmethod
     def _tyrannical_motivation_choice_label(cls, choice_key: str) -> str:
         key = str(choice_key or "").strip().upper()
@@ -1599,6 +1631,37 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         require_bearer_on_battlefield: bool = False,
     ):
         if not self.is_dread_talons():
+            return None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+                continue
+            bearer = self._find_enhancement_bearer_on_member(member, sr)
+            if require_bearer_alive and not self._model_alive(bearer):
+                continue
+            if require_bearer_on_battlefield:
+                bearer_unit = self._unit_root(getattr(bearer, "parent_unit", None)) if bearer is not None else root
+                if bearer_unit is None or not self._unit_on_battlefield(bearer_unit):
+                    continue
+            return member, sr, bearer
+        return None, None, None
+
+    def _nightmare_hunt_enhancement_source_member(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        require_bearer_alive: bool = True,
+        require_bearer_on_battlefield: bool = False,
+    ):
+        if not self.is_nightmare_hunt():
             return None, None, None
         root = self._unit_root(unit)
         if root is None or not self._unit_in_army(root):
@@ -5709,6 +5772,29 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                 return 0.0
         try:
             distance = float(source_sr.get("enhancement_mark_of_the_hound_scout_distance", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            distance = 6.0
+        return max(0.0, float(distance))
+
+    def nightmare_hunt_sorrowscent_vulture_scout_distance(self, unit) -> float:
+        if not self.is_nightmare_hunt():
+            return 0.0
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return 0.0
+        _source_member, source_sr, bearer = self._nightmare_hunt_enhancement_source_member(
+            root,
+            flag_key="enhancement_sorrowscent_vulture",
+            require_bearer_alive=False,
+            require_bearer_on_battlefield=False,
+        )
+        if source_sr is None or bearer is None:
+            return 0.0
+        if bool(source_sr.get("enhancement_sorrowscent_vulture_requires_bearer_alive", True)):
+            if not self._model_alive(bearer):
+                return 0.0
+        try:
+            distance = float(source_sr.get("enhancement_sorrowscent_vulture_scout_distance", 6.0) or 6.0)
         except (TypeError, ValueError):
             distance = 6.0
         return max(0.0, float(distance))

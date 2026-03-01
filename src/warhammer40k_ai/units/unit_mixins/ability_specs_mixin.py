@@ -2707,6 +2707,37 @@ class AbilitySpecsMixin:
                 if key not in seen:
                     seen.add(key)
                     specs.append({"source": source, "penalty": 0})
+        if isinstance(sr, dict) and sr.get("enhancement_terrorglut_parasite"):
+            bearer_id = str(
+                sr.get("enhancement_terrorglut_parasite_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            model_id = str(get_entity_id(model) or "")
+            if bearer_id and model_id and bearer_id == model_id:
+                requires_bearer_alive = bool(sr.get("enhancement_terrorglut_parasite_requires_bearer_alive", True))
+                if (not requires_bearer_alive) or bool(getattr(model, "is_alive", False)):
+                    source = str(
+                        sr.get("enhancement_terrorglut_parasite_source", "") or "Terrorglut Parasite"
+                    ).strip() or "Terrorglut Parasite"
+                    key = source.lower()
+                    if key not in seen:
+                        seen.add(key)
+                        try:
+                            penalty = int(sr.get("enhancement_terrorglut_parasite_battle_shock_test_modifier", -1) or -1)
+                        except (TypeError, ValueError):
+                            penalty = -1
+                        if penalty > 0:
+                            penalty = -penalty
+                        if penalty == 0:
+                            penalty = -1
+                        specs.append(
+                            {
+                                "source": source,
+                                "penalty": int(penalty),
+                                "penalty_applies_when_below_half": False,
+                            }
+                        )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

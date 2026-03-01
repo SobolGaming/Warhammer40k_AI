@@ -3124,6 +3124,7 @@ class GamePhaseHandlersMixin:
                         penalty = int(spec.get("penalty", 0) or 0)
                     except Exception:
                         penalty = 0
+                    apply_when_below_half = bool(spec.get("penalty_applies_when_below_half", True))
                     for enemy_root in enemy_roots:
                         if not _unit_in_engagement_with_unit(unit, enemy_root):
                             continue
@@ -3133,9 +3134,14 @@ class GamePhaseHandlersMixin:
                         tested_units.add(key)
                         mod = 0
                         reason = ""
-                        if penalty and enemy_root.is_below_half_strength():
-                            mod = -penalty
-                            reason = "Below Half-strength"
+                        if penalty:
+                            if apply_when_below_half:
+                                if enemy_root.is_below_half_strength():
+                                    mod = -abs(int(penalty))
+                                    reason = "Below Half-strength"
+                            else:
+                                mod = int(penalty)
+                                reason = "Ability modifier"
                         _apply_battleshock(enemy_root, modifier=mod, reason=reason)
                         from ...utility.event_bus import append_action
                         if p is not None:
@@ -3157,14 +3163,20 @@ class GamePhaseHandlersMixin:
                                 penalty = int(spec.get("penalty", 0) or 0)
                             except Exception:
                                 penalty = 0
+                            apply_when_below_half = bool(spec.get("penalty_applies_when_below_half", True))
                             for enemy_root in enemy_roots:
                                 if not model_within_engagement_range_of_unit(model, enemy_root):
                                     continue
                                 mod = 0
                                 reason = ""
-                                if penalty and enemy_root.is_below_half_strength():
-                                    mod = -penalty
-                                    reason = "Below Half-strength"
+                                if penalty:
+                                    if apply_when_below_half:
+                                        if enemy_root.is_below_half_strength():
+                                            mod = -abs(int(penalty))
+                                            reason = "Below Half-strength"
+                                    else:
+                                        mod = int(penalty)
+                                        reason = "Ability modifier"
                                 _apply_battleshock(enemy_root, modifier=mod, reason=reason)
                                 from ...utility.event_bus import append_action
                                 if p is not None:
@@ -15001,7 +15013,10 @@ class GamePhaseHandlersMixin:
                 if not ability:
                     continue
                 ability_key = str(ability.get("ability_key") or "").strip().lower()
-                if ability_key != "dedicated_gunship":
+                trigger_phase = str(ability.get("trigger_phase", "") or "OPPONENT_TURN_END").strip().upper()
+                if not trigger_phase:
+                    trigger_phase = "OPPONENT_TURN_END"
+                if ability_key != "dedicated_gunship" and trigger_phase != "OPPONENT_FIGHT_PHASE_END":
                     continue
                 if bool(ability.get("once_per_battle")) and root.has_used_unit_once_per_battle(ability_key):
                     continue
@@ -15038,7 +15053,7 @@ class GamePhaseHandlersMixin:
                         "ability_key": ability_key,
                         "once_per_battle": bool(ability.get("once_per_battle")),
                     },
-                    instance_key=f"dedicated_gunship:{uid}",
+                    instance_key=f"opponent_fight_phase_strat_reserves:{ability_key}:{uid}",
                 )
 
     def _on_phase_end_fight_phase_destroyed_strategic_reserves(self, player=None, phase=None, **_kwargs) -> None:

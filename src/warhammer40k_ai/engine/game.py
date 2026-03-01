@@ -2127,6 +2127,11 @@ class Game(
                 if not ability:
                     continue
                 ability_key = str(ability.get("ability_key") or "opponent_turn_strategic_reserves").strip().lower()
+                trigger_phase = str(ability.get("trigger_phase", "") or "OPPONENT_TURN_END").strip().upper()
+                if not trigger_phase:
+                    trigger_phase = "OPPONENT_TURN_END"
+                if trigger_phase != "OPPONENT_TURN_END":
+                    continue
                 if ability_key == "dedicated_gunship":
                     continue
                 if ability.get("once_per_battle") and ability_key:
@@ -2246,6 +2251,7 @@ class Game(
                     "phase": "End of opponent's turn",
                     "unit_id": unit_id,
                     "ability_key": ability_key,
+                    "trigger_phase": trigger_phase,
                     "once_per_battle": bool(ability.get("once_per_battle")),
                 }
                 message = (
