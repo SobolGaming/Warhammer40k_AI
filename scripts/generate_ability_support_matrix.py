@@ -5373,6 +5373,7 @@ def _classify_ability_base(
     dark_pacts_leadership_reroll_support = _dark_pacts_leadership_reroll_support(description)
     start_of_battle_keyword_reroll_support = _start_of_battle_keyword_reroll_ones_support(description)
     daemonic_patrons_support = _daemonic_patrons_support(description)
+    plasmacyte_support = _plasmacyte_support(description)
     return_on_death_support = _return_on_death_support(description)
     crewed_platform_support = _crewed_platform_support(description)
     melee_fight_on_death_support = _melee_fight_on_death_after_attacks_support(description)
@@ -5702,6 +5703,8 @@ def _classify_ability_base(
         return start_of_battle_keyword_reroll_support
     if daemonic_patrons_support:
         return daemonic_patrons_support
+    if plasmacyte_support:
+        return plasmacyte_support
     if melee_fight_on_death_support:
         return melee_fight_on_death_support
     if return_on_death_support:
@@ -10307,6 +10310,31 @@ def _daemonic_patrons_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         f"Fight phase (selected to fight): optional critical wound on {thresh}+; end of phase, if no enemy models destroyed, destroy 1 model.",
+    )
+
+
+def _plasmacyte_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle(?P<per> for each plasmacyte this unit has)? when this unit is selected to fight "
+        r"you can use this ability if you do until the end of the phase melee weapons equipped by models in this unit "
+        r"have the devastating wounds ability(?: .*)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    if bool(m.group("per")):
+        return (
+            "Supported",
+            "Plasmacyte: when selected to fight, optional activation grants [DEVASTATING WOUNDS] to unit melee weapons until end of phase; uses are tracked per Plasmacyte.",
+        )
+    return (
+        "Supported",
+        "Plasmacyte: once per battle when selected to fight, optional activation grants [DEVASTATING WOUNDS] to unit melee weapons until end of phase.",
     )
 
 

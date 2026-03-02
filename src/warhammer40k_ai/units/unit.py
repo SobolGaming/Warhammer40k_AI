@@ -3154,6 +3154,12 @@ class Unit(
         r"have the lethal hits ability(?: .*)?",
         re.IGNORECASE,
     )
+    _PLASMACYTE_RE = re.compile(
+        r"once per battle(?P<per_plasmacyte> for each plasmacyte this unit has)? when this unit is selected to fight "
+        r"you can use this ability if you do until the end of the phase melee weapons equipped by models in this unit "
+        r"have the devastating wounds ability(?: .*)?",
+        re.IGNORECASE,
+    )
     _BOMB_SQUIGS_RE = re.compile(
         r"once per battle for each bomb squig this unit has after this unit ends a normal move "
         r"you can use one bomb squig if you do select one enemy unit within (?P<range>\d+) and visible to this unit "

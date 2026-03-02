@@ -86,6 +86,14 @@ import pytest
                 "the [DEVASTATING WOUNDS] ability."
             ),
         ),
+        (
+            "Plasmacyte",
+            (
+                "Once per battle for each Plasmacyte this unit has, when this unit is selected to fight, you can use this "
+                "ability. If you do, until the end of the phase, melee weapons equipped by models in this unit have the "
+                "[DEVASTATING WOUNDS] ability."
+            ),
+        ),
     ],
 )
 def test_support_matrix_necrons_group3_datasheet_abilities_supported(name, description):

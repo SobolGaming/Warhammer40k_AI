@@ -12350,6 +12350,16 @@ class GamePhaseHandlersMixin:
                         "fight_selected_enemy_melee_hit_penalty_sources",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("plasmacyte_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "plasmacyte_active",
+                        "plasmacyte_expires_phase",
+                        "plasmacyte_source",
+                        "plasmacyte_turn",
+                        "plasmacyte_owner",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("dark_pacts_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (

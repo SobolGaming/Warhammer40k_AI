@@ -6230,6 +6230,116 @@ class GameShootingFightHandlersMixin:
             instance_key=str(unit_id or ""),
         )
 
+    def _on_fight_unit_selected_plasmacyte(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        pname = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if pname and pname != "FIGHT_PHASE":
+            return
+        root_getter = getattr(unit, "get_attached_unit_root", None)
+        root = root_getter() if callable(root_getter) else unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        army_getter = getattr(root, "get_parent_army", None)
+        army = army_getter() if callable(army_getter) else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None:
+            return
+        if selecting_player is not None and selecting_player is not player:
+            return
+        specs = sorted(
+            list(getattr(root, "unit_plasmacyte_specs", lambda: [])() or []),
+            key=lambda s: str(s.get("source", "") or "").strip().lower(),
+        )
+        if not specs:
+            return
+        spec = specs[0]
+        ability_name = str(spec.get("source", "") or "Plasmacyte").strip() or "Plasmacyte"
+        per_plasmacyte = bool(spec.get("per_plasmacyte"))
+
+        def _count_plasmacytes(unit_obj) -> int:
+            count = 0
+            models_getter = getattr(unit_obj, "_get_bodyguard_support_models", None)
+            models = list(models_getter() or []) if callable(models_getter) else list(getattr(unit_obj, "models", []) or [])
+            for model in models:
+                if model is None or not getattr(model, "is_alive", False):
+                    continue
+                model_name = Unit._norm_wargear_name(getattr(model, "name", ""))
+                if "plasmacyte" in model_name:
+                    count += 1
+                for wg in list(getattr(model, "wargear", []) or []):
+                    if wg is None:
+                        continue
+                    if Unit._norm_wargear_name(getattr(wg, "name", "")) == "plasmacyte":
+                        count += 1
+                for ow in list(getattr(model, "optional_wargear", []) or []):
+                    if Unit._norm_wargear_name(str(ow or "")) == "plasmacyte":
+                        count += 1
+            return max(0, int(count))
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if bool(sr.get("plasmacyte_active")):
+            exp = str(sr.get("plasmacyte_expires_phase", "") or "").strip().upper()
+            if not exp or exp == "FIGHT_PHASE":
+                return
+        try:
+            used = int(sr.get("plasmacyte_uses", 0) or 0)
+        except (TypeError, ValueError):
+            used = 0
+        has_explicit_total = "plasmacyte_token_total" in sr
+        if per_plasmacyte:
+            if has_explicit_total:
+                try:
+                    max_uses = max(0, int(sr.get("plasmacyte_token_total", 0) or 0))
+                except (TypeError, ValueError):
+                    max_uses = 0
+            else:
+                max_uses = _count_plasmacytes(root)
+                if max_uses <= 0:
+                    # Fallback for roster contexts that omit explicit token equipment.
+                    max_uses = 1
+        else:
+            max_uses = 1
+        max_uses = max(0, int(max_uses))
+        if used >= max_uses:
+            return
+
+        unit_id = get_entity_id(root)
+        if not unit_id:
+            return
+        remaining = max(0, int(max_uses - used))
+        message = f"Use {ability_name} for {getattr(root, 'name', 'Unit')}?"
+        if max_uses > 1:
+            suffix = "use" if remaining == 1 else "uses"
+            message = f"{message} ({remaining} {suffix} remaining)"
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="plasmacyte",
+            ability_name=ability_name,
+            message=message,
+            context={
+                "ability": "plasmacyte",
+                "ability_name": ability_name,
+                "phase": "Fight phase",
+                "unit": getattr(root, "name", "") or "",
+                "unit_id": unit_id,
+                "max_uses": int(max_uses),
+                "remaining_uses": int(remaining),
+            },
+            payload={
+                "unit_id": unit_id,
+                "ability_name": ability_name,
+                "max_uses": int(max_uses),
+            },
+            instance_key=f"{unit_id}:plasmacyte:{used}",
+        )
+
     def _on_fight_unit_selected_sacrificial_dagger(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None:
             return

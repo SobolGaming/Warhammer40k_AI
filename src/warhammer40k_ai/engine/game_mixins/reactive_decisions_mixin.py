@@ -3906,6 +3906,7 @@ class GameReactiveDecisionsMixin:
             "soulless_horror",
             "lord_of_the_storm",
             "ammo_runt",
+            "plasmacyte",
             "flickerjump",
             "daemonic_patrons",
             "power_from_pain_command",
@@ -6215,6 +6216,119 @@ class GameReactiveDecisionsMixin:
                 mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
                 if callable(mark_used):
                     mark_used("ammo_runt", ability_name=ability_name)
+            return
+
+        if ability_key == "plasmacyte":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            root_getter = getattr(unit, "get_attached_unit_root", None)
+            root = root_getter() if callable(root_getter) else unit
+            if root is None or not root.is_alive():
+                return
+            try:
+                max_uses = int(payload.get("max_uses") or ctx.get("max_uses") or 1)
+            except (TypeError, ValueError):
+                max_uses = 1
+            max_uses = max(0, int(max_uses))
+            if max_uses <= 0:
+                return
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            if bool(sr.get("plasmacyte_active")):
+                exp = str(sr.get("plasmacyte_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "FIGHT_PHASE":
+                    return
+            try:
+                used = int(sr.get("plasmacyte_uses", 0) or 0)
+            except (TypeError, ValueError):
+                used = 0
+            if used >= max_uses:
+                return
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Plasmacyte").strip() or "Plasmacyte"
+            next_use = int(used + 1)
+
+            def _iter_models() -> list:
+                models_getter = getattr(root, "get_attached_unit_models", None)
+                if callable(models_getter):
+                    return list(models_getter() or [])
+                return list(getattr(root, "models", []) or [])
+
+            for model in sorted(_iter_models(), key=lambda m: str(get_entity_id(m) or "")):
+                if model is None or not getattr(model, "is_alive", False):
+                    continue
+                set_fn = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_fn):
+                    continue
+                names: list[str] = []
+                seen: set[str] = set()
+                for wg in list(getattr(model, "wargear", []) or []):
+                    if wg is None:
+                        continue
+                    is_melee_fn = getattr(wg, "is_melee", None)
+                    if not callable(is_melee_fn):
+                        continue
+                    try:
+                        if not bool(is_melee_fn()):
+                            continue
+                    except (TypeError, ValueError):
+                        continue
+                    weapon_name = str(getattr(wg, "name", "") or "").strip()
+                    if not weapon_name:
+                        continue
+                    key_norm = Unit._norm_wargear_name(weapon_name)
+                    if not key_norm or key_norm in seen:
+                        continue
+                    seen.add(key_norm)
+                    names.append(weapon_name)
+                for idx, weapon_name in enumerate(names):
+                    set_fn(
+                        key=f"plasmacyte:{next_use}:{get_entity_id(model)}:{idx}",
+                        weapon_name=weapon_name,
+                        keywords=["DEVASTATING WOUNDS"],
+                        source=ability_name,
+                        expires_phase="FIGHT_PHASE",
+                        attack_type="melee",
+                    )
+
+            owner_id = str(getattr(request, "player_id", "") or getattr(result, "player_id", "") or "")
+            try:
+                turn = int(getattr(self, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                turn = 0
+            sr["plasmacyte_active"] = True
+            sr["plasmacyte_expires_phase"] = "FIGHT_PHASE"
+            sr["plasmacyte_source"] = ability_name
+            sr["plasmacyte_uses"] = int(next_use)
+            sr["plasmacyte_turn"] = int(turn or 0)
+            if owner_id:
+                sr["plasmacyte_owner"] = owner_id
+            try:
+                prev_max = int(sr.get("plasmacyte_max_uses", 0) or 0)
+            except (TypeError, ValueError):
+                prev_max = 0
+            sr["plasmacyte_max_uses"] = max(int(max_uses), int(prev_max))
+            root.special_rules = sr
+            if next_use >= max_uses:
+                mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
+                if callable(mark_used):
+                    mark_used("plasmacyte", ability_name=ability_name)
+            try:
+                from ...utility.event_bus import append_action
+                army_getter = getattr(root, "get_parent_army", None)
+                army = army_getter() if callable(army_getter) else None
+                player = getattr(army, "player", None)
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(root, 'name', 'Unit')} gains [DEVASTATING WOUNDS] on melee weapons this phase.",
+                    )
+            except (ImportError, AttributeError, TypeError, ValueError):
+                pass
             return
 
         if ability_key == "flickerjump":

@@ -269,6 +269,22 @@ class TestNecronsDatasheetGroup1Abilities(unittest.TestCase):
         mods = attacker.get_unit_hit_reroll_modifiers("melee", target=target)
         self.assertTrue(bool(mods.get("reroll_hit_full", False)))
 
+    def test_plasmacyte_parses_selected_fight_devastating_wounds_spec(self):
+        ability = {
+            "name": "Plasmacyte",
+            "description": (
+                "Once per battle for each Plasmacyte this unit has, when this unit is selected to fight, you can use "
+                "this ability. If you do, until the end of the phase, melee weapons equipped by models in this unit "
+                "have the [DEVASTATING WOUNDS] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Skorpekh Destroyers", abilities=[ability])
+        specs = unit.unit_plasmacyte_specs()
+        self.assertEqual(len(specs), 1)
+        self.assertTrue(bool(specs[0].get("per_plasmacyte", False)))
+
     def test_sentinel_construct_overwatch_threshold(self):
         ability = {
             "name": "Sentinel Construct",

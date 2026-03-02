@@ -776,6 +776,65 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_plasmacyte_specs(self) -> List[dict]:
+        """
+        Unit-level rule: when selected to fight, can gain [DEVASTATING WOUNDS] for melee weapons.
+
+        Returns specs with keys:
+            - source: ability name
+            - per_plasmacyte: bool (True when uses scale with Plasmacyte count)
+        """
+        root_getter = getattr(self, "get_attached_unit_root", None)
+        root = root_getter() if callable(root_getter) else self
+        if root is None:
+            root = self
+        cache_key = "unit_plasmacyte_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, bool]] = set()
+        members_getter = getattr(root, "get_attached_unit_members", None)
+        members = list(members_getter() or []) if callable(members_getter) else [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                is_named_plasmacyte = str(name or "").strip().lower() == "plasmacyte"
+                mentions_plasmacyte = "plasmacyte" in normalized
+                if not (is_named_plasmacyte or mentions_plasmacyte):
+                    continue
+                m = self._PLASMACYTE_RE.fullmatch(normalized)
+                if not m:
+                    if not is_named_plasmacyte:
+                        continue
+                    if "selected to fight" not in normalized or "devastating wounds" not in normalized:
+                        continue
+                per_plasmacyte = bool(
+                    (m and m.group("per_plasmacyte")) or ("for each plasmacyte this unit has" in normalized)
+                )
+                source = str(name or "Plasmacyte").strip() or "Plasmacyte"
+                key = (source.lower(), bool(per_plasmacyte))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append({"source": source, "per_plasmacyte": bool(per_plasmacyte)})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_bomb_squigs_specs(self) -> List[dict]:
         """
         Unit-level rule: after ending a Normal move, optionally select one visible enemy within range
