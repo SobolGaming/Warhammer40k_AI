@@ -8,6 +8,7 @@ from typing import Any
 
 from warhammer40k_ai.engine.relabel import relabel_decision_records
 from warhammer40k_ai.engine.ruleset import RulesetBundle
+from warhammer40k_ai.engine.semantic_diff import classify_semantic_diff
 
 
 def _load_document(path: Path) -> Any:
@@ -93,6 +94,10 @@ def main() -> None:
     print(f"Relabeled records: {len(relabeled_records)}")
     print(f"Target rules bundle id: {target_bundle.rules_bundle_id}")
     print(json.dumps(counts, sort_keys=True))
+    if records:
+        source_bundle = RulesetBundle.from_dict(dict(records[0].get("rules_bundle", {}) or {}))
+        diff = classify_semantic_diff(source_bundle, target_bundle)
+        print(json.dumps(diff.training_scope.to_dict(), sort_keys=True))
 
 
 if __name__ == "__main__":

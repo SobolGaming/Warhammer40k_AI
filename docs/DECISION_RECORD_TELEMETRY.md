@@ -26,3 +26,4 @@ Determinism fields:
 Relabel tooling:
 - Cross-version relabel helper: `src/warhammer40k_ai/engine/relabel.py`
 - Batch relabel CLI: `scripts/relabel_decision_records.py`
+- Semantic diff classifier: `src/warhammer40k_ai/engine/semantic_diff.py`

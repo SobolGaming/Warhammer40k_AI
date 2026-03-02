@@ -47,3 +47,6 @@ Relabel outputs include:
 - `relabel_status`
 - `relabel_candidate_map`
 - `chosen_action_status_under_relabel`
+
+The relabel CLI also prints a training-scope recommendation from
+`docs/SEMANTIC_DIFF_CLASSIFIER.md` for adapter-first retraining selection.
