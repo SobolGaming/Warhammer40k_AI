@@ -825,6 +825,31 @@ This is the preferred path for mission-pack churn, terrain-pack churn, and editi
 - Model version-adapter boundary is finalized.
 - Semantic diff classifier is finalized and wired into retraining scope selection.
 
+## Pre-ML PR Tracker (Living)
+
+This section is the authoritative tracker for remaining AI reintroduction work before ML-library onboarding.
+As of March 2, 2026, the foundational portability PR set is complete on `dev`.
+
+### Completed Foundation PRs
+
+| PR ID | Scope | Status | Primary Artifacts |
+| --- | --- | --- | --- |
+| `PR-AI-001` | Rules-bundle decomposition and DecisionRecord schema support | DONE | `docs/DECISION_RECORD_SCHEMA.json`, `docs/DECISION_RECORD_TELEMETRY.md` |
+| `PR-AI-002` | StateBlob portability top-level fields | DONE | `docs/STATE_BLOB_SCHEMA.md` |
+| `PR-AI-003` | Tier 1 and Tier 2 opportunity-first migration | DONE | `docs/TIER1_PLAN_SCHEMA.md`, `docs/TIER2_ORCHESTRATION.md` |
+| `PR-AI-004` | Descriptor compiler (mission/objective/terrain/deployment/tools) | DONE | `docs/RULES_DESCRIPTOR_COMPILER.md`, `tests/test_descriptor_compiler.py` |
+| `PR-AI-005` | Cross-version replay-to-relabel pipeline and CLI | DONE | `docs/DECISION_RECORD_REPLAY.md`, `scripts/relabel_decision_records.py`, `tests/test_relabel_pipeline.py` |
+| `PR-AI-006` | Semantic diff classifier and retraining-scope selector | DONE | `docs/SEMANTIC_DIFF_CLASSIFIER.md`, `scripts/classify_semantic_diff.py`, `tests/test_semantic_diff.py` |
+| `PR-AI-007` | Semantic candidate metadata normalization across decision types | DONE | `src/warhammer40k_ai/engine/candidate_semantics.py`, `tests/test_candidate_semantic_metadata.py` |
+| `PR-AI-008` | Version-adapter boundary contract in decision context | DONE | `docs/VERSION_ADAPTER_BOUNDARY.md`, `tests/test_version_adapter_boundary.py` |
+| `PR-AI-009` | Training-data manifest specification and CLI checks | DONE | `docs/TRAINING_DATA_SPEC.md`, `scripts/build_training_manifest.py`, `tests/test_training_manifest.py` |
+| `PR-AI-010` | Network/save-load rules-bundle contract alignment | DONE | `docs/NETWORK_SAVELOAD_DESIGN.md` |
+
+### Remaining PR Queue
+
+- Open items: none.
+- Reopen policy: if any item in `## ML Gate Criteria (Must Be Closed Before PR 15)` fails in regression, add a new `PR-AI-0XX` entry here and block ML dependency introduction until closed.
+
 ## Related Documents To Update In Lockstep
 
 - `docs/TIER1_PLAN_SCHEMA.md`
