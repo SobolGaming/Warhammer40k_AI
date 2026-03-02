@@ -22,6 +22,19 @@ def _safe_float(value: object, default: float = 0.0) -> float:
         return float(default)
 
 
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in sorted(value.items(), key=lambda item: str(item[0]))}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, set):
+        items = [_json_safe(v) for v in value]
+        return sorted(items, key=lambda item: str(item))
+    return str(value)
+
+
 def _phase_name(game: object) -> str:
     phase = getattr(game, "phase", None)
     name = getattr(phase, "name", None)
@@ -158,6 +171,107 @@ def _objective_entries(game: object) -> list[dict[str, Any]]:
     return entries
 
 
+def _rules_bundle_entry(game: object) -> dict[str, Any]:
+    bundle = getattr(game, "ruleset_bundle", None)
+    if bundle is None:
+        return {}
+    payload = {}
+    to_dict = getattr(bundle, "to_dict", None)
+    if callable(to_dict):
+        payload = dict(to_dict() or {})
+    rules_bundle_id = getattr(bundle, "rules_bundle_id", None)
+    if isinstance(rules_bundle_id, str) and rules_bundle_id:
+        payload["rules_bundle_id"] = rules_bundle_id
+    return _json_safe(payload)
+
+
+def _mission_state(game: object) -> dict[str, Any]:
+    selected = dict(getattr(game, "selected_mission_info", {}) or {})
+    return {
+        "secondary_mission_mode": str(getattr(game, "secondary_mission_mode", "") or ""),
+        "selected_mission_info": _json_safe(selected),
+        "battle_shock_step_active": bool(getattr(game, "battle_shock_step_active", False)),
+    }
+
+
+def _deployment_state(game: object) -> dict[str, Any]:
+    deployment_zones = dict(getattr(game, "deployment_zones", {}) or {})
+    return {
+        "setup_phase": str(getattr(getattr(game, "setup_phase", None), "name", "") or ""),
+        "setup_complete": bool(getattr(game, "setup_complete", False)),
+        "attacker_index": getattr(game, "attacker_index", None),
+        "defender_index": getattr(game, "defender_index", None),
+        "deployment_turn_index": _safe_int(getattr(game, "deployment_turn_index", 0), 0),
+        "waiting_for_deployment_input": bool(getattr(game, "waiting_for_deployment_input", False)),
+        "deployment_notice": str(getattr(game, "deployment_notice", "") or ""),
+        "deployment_zone_player_ids": sorted(str(player_id) for player_id in deployment_zones.keys()),
+    }
+
+
+def _terrain_entries(game: object) -> list[dict[str, Any]]:
+    game_map = getattr(game, "map", None)
+    terrain = list(getattr(game_map, "terrain_features", []) or [])
+    entries: list[dict[str, Any]] = []
+    for idx, feature in enumerate(terrain):
+        feature_id = str(getattr(feature, "id", "") or f"terrain_{idx}")
+        terrain_type_obj = getattr(feature, "terrain_type", None)
+        terrain_type_name = str(getattr(terrain_type_obj, "name", terrain_type_obj or "") or "")
+        footprint = getattr(feature, "footprint", None)
+        footprint_coords: list[list[float]] = []
+        exterior = getattr(footprint, "exterior", None)
+        coords = list(getattr(exterior, "coords", []) or []) if exterior is not None else []
+        for coord in coords:
+            if len(coord) >= 2:
+                footprint_coords.append([_safe_float(coord[0]), _safe_float(coord[1])])
+        bounding_box = _json_safe(dict(getattr(feature, "bounding_box", {}) or {}))
+        traversal_rules = _json_safe(dict(getattr(feature, "traversal_rules", {}) or {}))
+        entries.append(
+            {
+                "terrain_id": feature_id,
+                "terrain_type": terrain_type_name,
+                "footprint": footprint_coords,
+                "bounding_box": bounding_box,
+                "traversal_rules": traversal_rules,
+            }
+        )
+    entries.sort(key=lambda entry: str(entry["terrain_id"]))
+    return entries
+
+
+def _scoring_surfaces(objective_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    surfaces: list[dict[str, Any]] = []
+    for objective in objective_entries:
+        objective_id = str(objective.get("objective_id", "") or "")
+        surfaces.append(
+            {
+                "score_source_id": f"score_source:objective:{objective_id}",
+                "kind": "OBJECTIVE_CONTROL",
+                "objective_id": objective_id,
+                "controller_player_id": str(objective.get("controller_player_id", "") or ""),
+            }
+        )
+    surfaces.sort(key=lambda entry: str(entry["score_source_id"]))
+    return surfaces
+
+
+def _control_regions(objective_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    regions: list[dict[str, Any]] = []
+    for objective in objective_entries:
+        objective_id = str(objective.get("objective_id", "") or "")
+        position = list(objective.get("position", [0.0, 0.0, 0.0]) or [0.0, 0.0, 0.0])
+        regions.append(
+            {
+                "region_id": f"region:objective:{objective_id}",
+                "kind": "OBJECTIVE_CONTROL_RADIUS",
+                "center": [_safe_float(position[0]), _safe_float(position[1]), _safe_float(position[2])],
+                "radius": _safe_float(objective.get("control_radius", 0.0), 0.0),
+                "objective_id": objective_id,
+            }
+        )
+    regions.sort(key=lambda entry: str(entry["region_id"]))
+    return regions
+
+
 def _objective_ids_in_range(unit: object, objective_entries: list[dict[str, Any]]) -> list[str]:
     in_range: list[str] = []
     for model in _alive_models(unit):
@@ -228,7 +342,7 @@ def _unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) 
             nearest_objective = min((_distance_2d(centroid, objective) for objective in objective_centroids), default=9999.0)
             threat_flags = {
                 "can_reach_enemy_engagement_this_turn": bool(nearest_enemy <= (max_move + 12.0 + float(ENGAGEMENT_RANGE_HORIZONTAL))),
-                "can_reach_objective_this_turn": bool(nearest_objective <= max_move),
+                "can_reach_score_source_this_turn": bool(nearest_objective <= max_move),
             }
             entry: dict[str, Any] = {
                 "unit_id": unit_id,
@@ -238,7 +352,8 @@ def _unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) 
                 "alive_model_count": int(len(alive_models)),
                 "position": [float(centroid[0]), float(centroid[1]), float(centroid[2])],
                 "in_engagement_range": bool(_is_unit_in_engagement_range(unit, enemies)),
-                "objective_ids_in_range": _objective_ids_in_range(unit, objective_entries),
+                "control_region_ids_in_range": [f"region:objective:{oid}" for oid in _objective_ids_in_range(unit, objective_entries)],
+                "score_source_ids_in_range": [f"score_source:objective:{oid}" for oid in _objective_ids_in_range(unit, objective_entries)],
                 "threat_flags": threat_flags,
             }
             if include_hidden or str(getattr(player, "id", "") or "") == str(viewer_id or ""):
@@ -251,13 +366,25 @@ def _unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) 
 def canonical_omniscient_state(game: object) -> dict[str, Any]:
     players = _sorted_players(game)
     objectives = _objective_entries(game)
+    rules_bundle = _rules_bundle_entry(game)
+    mission_state = _mission_state(game)
+    deployment_state = _deployment_state(game)
+    terrain = _terrain_entries(game)
+    scoring_surfaces = _scoring_surfaces(objectives)
+    control_regions = _control_regions(objectives)
     return {
         "state_blob_version": STATE_BLOB_VERSION,
+        "rules_bundle": rules_bundle,
         "battle_round": _battle_round(game),
         "phase": _phase_name(game),
         "active_player_id": _current_player_id(game),
         "players": [_player_entry(player, viewer_id=None, include_hidden=True) for player in players],
+        "mission_state": mission_state,
+        "deployment_state": deployment_state,
         "objectives": objectives,
+        "scoring_surfaces": scoring_surfaces,
+        "control_regions": control_regions,
+        "terrain": terrain,
         "units": _unit_entries(game, viewer_id=None, include_hidden=True),
     }
 
@@ -265,8 +392,15 @@ def canonical_omniscient_state(game: object) -> dict[str, Any]:
 def player_obs_state(game: object, player_id: str) -> dict[str, Any]:
     players = _sorted_players(game)
     objectives = _objective_entries(game)
+    rules_bundle = _rules_bundle_entry(game)
+    mission_state = _mission_state(game)
+    deployment_state = _deployment_state(game)
+    terrain = _terrain_entries(game)
+    scoring_surfaces = _scoring_surfaces(objectives)
+    control_regions = _control_regions(objectives)
     return {
         "state_blob_version": STATE_BLOB_VERSION,
+        "rules_bundle": rules_bundle,
         "battle_round": _battle_round(game),
         "phase": _phase_name(game),
         "active_player_id": _current_player_id(game),
@@ -274,7 +408,12 @@ def player_obs_state(game: object, player_id: str) -> dict[str, Any]:
         "players": [
             _player_entry(player, viewer_id=str(player_id or ""), include_hidden=False) for player in players
         ],
+        "mission_state": mission_state,
+        "deployment_state": deployment_state,
         "objectives": objectives,
+        "scoring_surfaces": scoring_surfaces,
+        "control_regions": control_regions,
+        "terrain": terrain,
         "units": _unit_entries(game, viewer_id=str(player_id or ""), include_hidden=False),
     }
 
