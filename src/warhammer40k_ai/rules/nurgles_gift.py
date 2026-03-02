@@ -265,7 +265,7 @@ class NurglesGiftManager:
             game.request_decision(req)
 
     def is_unit_afflicted(self, unit, *, game=None, game_map=None) -> bool:
-        return self.get_afflicted_plague_for_unit(unit, game=game, game_map=game_map) is not None
+        return NurglesGiftManager.get_afflicted_plague_for_unit(unit, game=game, game_map=game_map) is not None
 
     @staticmethod
     def get_afflicted_plague_keys_for_unit(unit, *, game=None, game_map=None) -> tuple[str, ...]:

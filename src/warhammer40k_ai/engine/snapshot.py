@@ -1115,6 +1115,8 @@ def _serialize_game_state(game: Game) -> dict:
         skip_turns.append({"player_index": int(idx), "skip_count": int(count or 0)})
     ruleset_bundle = getattr(game, "ruleset_bundle", None)
     ruleset_payload = ruleset_bundle.to_dict() if ruleset_bundle is not None else RulesetBundle.from_values().to_dict()
+    ruleset_for_id = ruleset_bundle if ruleset_bundle is not None else RulesetBundle.from_values()
+    ruleset_payload["rules_bundle_id"] = str(ruleset_for_id.rules_bundle_id)
 
     return {
         "ruleset": ruleset_payload,

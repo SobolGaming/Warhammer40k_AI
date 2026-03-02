@@ -8,6 +8,23 @@ Strict mode guarantees:
 - `chosen_action_id` must appear in recorded candidates.
 - Resolution failure during strict replay raises an error immediately.
 
+## Rules-Bundle Reproducibility Matrix (PR-AI-012)
+
+Regression gate:
+- `tests/test_rules_bundle_reproducibility_matrix.py`
+
+Locked invariants:
+- DecisionRecord logging:
+  - recorded `rules_bundle` always matches game atomic ids.
+  - recorded `rules_bundle_id` always matches the derived bundle id.
+- Snapshot save/load:
+  - snapshot `game.ruleset` contains atomic ids and `rules_bundle_id`.
+  - load preserves atomic ids and derived `rules_bundle_id`.
+- StateBlob:
+  - `canonical_omniscient_state(...)` and `player_obs_state(...)` include identical `rules_bundle` payloads.
+- Strict replay round-trip:
+  - replayed DecisionRecord keeps identical atomic `rules_bundle` and `rules_bundle_id` under `strict=True`.
+
 Expected strict failure modes:
 - Candidate mismatch after engine behavior changes.
 - Mask mismatch after legality/rules changes.
