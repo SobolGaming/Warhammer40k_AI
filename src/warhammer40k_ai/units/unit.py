@@ -3619,7 +3619,11 @@ class Unit(
         r"(?:an enemy unit that is below its starting strength is within (?P<range>\d+)\s*\"?\s*of this model|"
         r"such an enemy unit is below its starting strength) "
         r"(?:that enemy unit|it) must take a battle shock test"
-        r"(?: subtracting (?P<pen>\d+) from that test if it is a psyker unit)?",
+        r"(?: (?:"
+        r"subtracting (?P<test_pen>\d+) from (?:(?:that|the) )?(?:test|result)(?: when it does so)?|"
+        r"subtracting (?P<pen>\d+) from that test if it is a psyker unit|"
+        r"with (?P<with_pen>\d+) to that test"
+        r"))?",
         re.IGNORECASE,
     )
     _START_ANY_COMMAND_PHASE_ENEMY_RANGE_BATTLESHOCK_RE = re.compile(

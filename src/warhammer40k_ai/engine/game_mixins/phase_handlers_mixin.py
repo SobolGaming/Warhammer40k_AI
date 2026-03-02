@@ -4274,6 +4274,24 @@ class GamePhaseHandlersMixin:
             except Exception:
                 return str(getattr(m, "name", "") or "")
 
+        def _apply_battleshock_test_modifier(target_root, modifier: int, reason: str) -> None:
+            if int(modifier or 0) == 0:
+                return
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                existing = int(sr.get("battle_shock_test_modifier", 0) or 0)
+            except (TypeError, ValueError):
+                existing = 0
+            sr["battle_shock_test_modifier"] = int(existing + int(modifier))
+            reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+            reason_text = str(reason or "").strip()
+            if reason_text:
+                reasons.append(reason_text)
+            sr["battle_shock_test_modifier_reasons"] = reasons
+            target_root.special_rules = sr
+
         try:
             turn = int(getattr(self, "turn", 0) or 0)
         except Exception:
@@ -4324,11 +4342,15 @@ class GamePhaseHandlersMixin:
                     for spec in specs:
                         try:
                             range_value = float(int(spec.get("range", 0) or 0))
-                        except Exception:
+                        except (TypeError, ValueError):
                             range_value = 0.0
                         try:
+                            test_penalty = int(spec.get("test_penalty", 0) or 0)
+                        except (TypeError, ValueError):
+                            test_penalty = 0
+                        try:
                             psyker_penalty = int(spec.get("psyker_penalty", 0) or 0)
-                        except Exception:
+                        except (TypeError, ValueError):
                             psyker_penalty = 0
                         if range_value <= 0:
                             continue
@@ -4369,6 +4391,13 @@ class GamePhaseHandlersMixin:
                             if not in_range:
                                 continue
 
+                            if test_penalty > 0:
+                                _apply_battleshock_test_modifier(
+                                    target_root,
+                                    -abs(int(test_penalty)),
+                                    f"{source_name}: -{abs(int(test_penalty))}",
+                                )
+
                             is_psyker = False
                             if psyker_penalty > 0:
                                 try:
@@ -4379,18 +4408,11 @@ class GamePhaseHandlersMixin:
                                     except Exception:
                                         is_psyker = False
                             if is_psyker and psyker_penalty > 0:
-                                sr = getattr(target_root, "special_rules", None)
-                                if not isinstance(sr, dict):
-                                    sr = {}
-                                try:
-                                    existing = int(sr.get("battle_shock_test_modifier", 0) or 0)
-                                except Exception:
-                                    existing = 0
-                                sr["battle_shock_test_modifier"] = int(existing - abs(int(psyker_penalty)))
-                                reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
-                                reasons.append(f"{source_name}: -{abs(int(psyker_penalty))} vs PSYKER")
-                                sr["battle_shock_test_modifier_reasons"] = reasons
-                                target_root.special_rules = sr
+                                _apply_battleshock_test_modifier(
+                                    target_root,
+                                    -abs(int(psyker_penalty)),
+                                    f"{source_name}: -{abs(int(psyker_penalty))} vs PSYKER",
+                                )
 
                             try:
                                 target_root.take_battle_shock_test(int(turn or 1))

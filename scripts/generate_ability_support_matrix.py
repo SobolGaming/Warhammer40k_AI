@@ -5330,6 +5330,7 @@ def _classify_ability_base(
     repulsor_grid_support = _repulsor_grid_support(description)
     battle_protocols_support = _battle_protocols_support(description)
     start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
+    opponent_command_phase_below_starting_battleshock_support = _opponent_command_phase_below_starting_battleshock_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
     start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
@@ -5620,6 +5621,8 @@ def _classify_ability_base(
         return repulsor_grid_support
     if start_shooting_phase_visible_battleshock_support:
         return start_shooting_phase_visible_battleshock_support
+    if opponent_command_phase_below_starting_battleshock_support:
+        return opponent_command_phase_below_starting_battleshock_support
     if shooting_phase_dice_pool_mortal_support:
         return shooting_phase_dice_pool_mortal_support
     if start_shooting_phase_vehicle_mortal_heal_support:
@@ -9412,6 +9415,77 @@ def _start_shooting_phase_visible_battleshock_support(description: str) -> Optio
     return (
         "Supported",
         f"Start of Shooting phase: select a visible enemy unit within {m.group('range')}\" to take a Battle-shock test.",
+    )
+
+
+def _opponent_command_phase_below_starting_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:while an enemy unit is within (?P<range_alt>\d+) of this model )?"
+        r"in the battle shock step of your opponent(?:s| s) command phase if "
+        r"(?:an enemy unit that is below its starting strength is within (?P<range>\d+) of this model|"
+        r"such an enemy unit is below its starting strength) "
+        r"(?:that enemy unit|it) must take a battle shock test"
+        r"(?P<suffix>(?: .+)?)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        rng = int(m.group("range") or m.group("range_alt") or 0)
+    except (TypeError, ValueError):
+        rng = 0
+    if rng <= 0:
+        return None
+
+    suffix = str(m.group("suffix") or "").strip()
+    flat_penalty = 0
+    psyker_penalty = 0
+    if suffix:
+        m_flat = re.fullmatch(
+            r"subtracting (?P<val>\d+) from (?:(?:that|the) )?(?:test|result)(?: when it does so)?",
+            suffix,
+        )
+        m_psyker = re.fullmatch(
+            r"subtracting (?P<val>\d+) from that test if it is a psyker unit",
+            suffix,
+        )
+        m_with = re.fullmatch(r"with (?P<val>\d+) to that test", suffix)
+        if m_flat:
+            try:
+                flat_penalty = int(m_flat.group("val") or 0)
+            except (TypeError, ValueError):
+                flat_penalty = 0
+        elif m_psyker:
+            try:
+                psyker_penalty = int(m_psyker.group("val") or 0)
+            except (TypeError, ValueError):
+                psyker_penalty = 0
+        elif m_with:
+            try:
+                flat_penalty = int(m_with.group("val") or 0)
+            except (TypeError, ValueError):
+                flat_penalty = 0
+        else:
+            return None
+
+    if flat_penalty > 0:
+        return (
+            "Supported",
+            f"Opponent Command phase Battle-shock step: enemy units below Starting Strength within {rng}\" take Battle-shock tests at -{flat_penalty}.",
+        )
+    if psyker_penalty > 0:
+        return (
+            "Supported",
+            f"Opponent Command phase Battle-shock step: enemy units below Starting Strength within {rng}\" take Battle-shock tests; PSYKER units take the test at -{psyker_penalty}.",
+        )
+    return (
+        "Supported",
+        f"Opponent Command phase Battle-shock step: enemy units below Starting Strength within {rng}\" take Battle-shock tests.",
     )
 
 

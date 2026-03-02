@@ -294,6 +294,91 @@ def test_tocsin_of_misery_forces_battleshock_and_applies_psyker_penalty():
     assert non_psyker_calls == [(2, 0)]
 
 
+def test_opponent_command_phase_battleshock_aura_applies_flat_minus_one_penalty():
+    game, dg_army, enemy_army, _dg_player, enemy_player = _build_game()
+    aura_ability = {
+        "name": "Dread Toll (Aura)",
+        "description": (
+            "In the Battle-shock step of your opponent's Command phase, if an enemy unit that is below its Starting Strength "
+            "is within 6\" of this model, that enemy unit must take a Battle-shock test, subtracting 1 from the test when it does so."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    source = _make_unit(
+        "Test Source",
+        "dg-src",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["INFANTRY"],
+        abilities=[aura_ability],
+    )
+    target_a = _make_unit(
+        "Enemy A",
+        "en-a",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+        leadership="6",
+    )
+    target_b = _make_unit(
+        "Enemy B",
+        "en-b",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY", "PSYKER"],
+        leadership="6",
+    )
+    dg_army.add_unit(source)
+    enemy_army.add_unit(target_a)
+    enemy_army.add_unit(target_b)
+    _deploy(source, target_a, target_b)
+    game.map.units = [source, target_a, target_b]
+    game.rebuild_entity_registry()
+
+    specs = source.model_opponent_command_phase_below_starting_battleshock_specs(source.models[0])
+    assert len(specs) == 1
+    assert int(specs[0].get("range", 0) or 0) == 6
+    assert int(specs[0].get("test_penalty", 0) or 0) == 1
+    assert int(specs[0].get("psyker_penalty", 0) or 0) == 0
+
+    source._model_within_range_of_unit = lambda _m, _u, _r: True
+    target_a.is_below_starting_strength = lambda: True
+    target_b.is_below_starting_strength = lambda: True
+
+    target_a_calls = []
+    target_b_calls = []
+
+    def _capture_a(current_turn=1):
+        target_a_calls.append(
+            (
+                int(current_turn),
+                int(target_a.special_rules.get("battle_shock_test_modifier", 0) or 0),
+                list(target_a.special_rules.get("battle_shock_test_modifier_reasons", []) or []),
+            )
+        )
+
+    def _capture_b(current_turn=1):
+        target_b_calls.append(
+            (
+                int(current_turn),
+                int(target_b.special_rules.get("battle_shock_test_modifier", 0) or 0),
+                list(target_b.special_rules.get("battle_shock_test_modifier_reasons", []) or []),
+            )
+        )
+
+    target_a.take_battle_shock_test = _capture_a
+    target_b.take_battle_shock_test = _capture_b
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.current_player_index = 1
+    game._on_phase_start_tocsin_of_misery(player=enemy_player, phase=game.phase)
+
+    assert target_a_calls == [(2, -1, ["Dread Toll (Aura): -1"])]
+    assert target_b_calls == [(2, -1, ["Dread Toll (Aura): -1"])]
+
+
 def test_pestilent_fallout_parses_enfeebled_post_shoot_spec():
     pestilent_fallout = {
         "name": "Pestilent Fallout (Psychic)",

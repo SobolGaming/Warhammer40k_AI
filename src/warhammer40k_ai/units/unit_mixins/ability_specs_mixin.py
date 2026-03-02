@@ -1390,6 +1390,7 @@ class AbilitySpecsMixin:
         Returns specs with keys:
             - source: ability name
             - range: int
+            - test_penalty: int
             - psyker_penalty: int
         """
         if model is None:
@@ -1399,7 +1400,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, int]] = set()
+        seen: set[tuple[str, int, int, int]] = set()
 
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
@@ -1416,17 +1417,22 @@ class AbilitySpecsMixin:
                 continue
             try:
                 range_value = int(m.group("range") or m.group("range_alt") or 0)
-            except Exception:
+            except (TypeError, ValueError):
                 range_value = 0
             try:
                 psyker_penalty = int(m.group("pen") or 0)
-            except Exception:
+            except (TypeError, ValueError):
                 psyker_penalty = 0
+            try:
+                test_penalty = int(m.group("test_pen") or m.group("with_pen") or 0)
+            except (TypeError, ValueError):
+                test_penalty = 0
             if range_value <= 0:
                 continue
             psyker_penalty = max(0, int(psyker_penalty))
+            test_penalty = max(0, int(test_penalty))
             source = str(name or "Opponent Command phase Battle-shock").strip() or "Opponent Command phase Battle-shock"
-            key = (source.lower(), int(range_value), int(psyker_penalty))
+            key = (source.lower(), int(range_value), int(test_penalty), int(psyker_penalty))
             if key in seen:
                 continue
             seen.add(key)
@@ -1434,6 +1440,7 @@ class AbilitySpecsMixin:
                 {
                     "source": source,
                     "range": int(range_value),
+                    "test_penalty": int(test_penalty),
                     "psyker_penalty": int(psyker_penalty),
                 }
             )
@@ -1471,7 +1478,7 @@ class AbilitySpecsMixin:
                 range_value = 9
             if range_value <= 0:
                 continue
-            key = (source.lower(), int(range_value), 0)
+            key = (source.lower(), int(range_value), 0, 0)
             if key in seen:
                 continue
             seen.add(key)
@@ -1479,6 +1486,7 @@ class AbilitySpecsMixin:
                 {
                     "source": source,
                     "range": int(range_value),
+                    "test_penalty": 0,
                     "psyker_penalty": 0,
                 }
             )
