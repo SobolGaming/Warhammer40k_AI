@@ -4241,7 +4241,6 @@ class GameReactiveDecisionsMixin:
                 models = []
             if len(models) != 1:
                 return
-            from ...utility.entity_ids import get_entity_id
             root_id = str(get_entity_id(root) or unit_id)
             if not root_id:
                 return

@@ -16,7 +16,36 @@ Defaults:
 
 Budget derivation:
 - `time_budget_ms = round(cap(decision_type) * multiplier(compute_tier))`
+- minimum budget is clamped to `1ms`
+- `MOVE_UNIT` examples:
+  - `P0`: `round(220 * 1.8) = 396ms`
+  - `P1`: `round(220 * 1.0) = 220ms`
+  - `P2`: `round(220 * 0.5) = 110ms`
 
 Timeout behavior:
-- Time-constrained helpers may return fallback/best-so-far candidates when wall-clock exceeds budget.
+- `TimeManager.run_with_time_budget(...)` measures wall clock around the full solver action call.
+- If elapsed wall clock is `> budget_ms`, the time manager returns the provided fallback value and marks `fallback_used=True`.
+- This is a post-action enforcement contract (soft cap): the action is not interrupted mid-call.
+
+## Movement Solver Fallback Contract (PR-AI-011)
+
+For `DECISION_MOVE_UNIT`, `Game.request_decision(...)` decorates context via `TimeManager` and calls
+`generate_move_unit_candidates(...)`.
+
+When `time_budget_ms > 0` and a `TimeManager` is present:
+- solver action executes through `run_with_time_budget(...)`.
+- on over-budget elapsed runtime:
+  - solver output is discarded.
+  - fallback candidates are rebuilt deterministically from `request.candidates` (already canonicalized/sorted by action id).
+  - fallback candidate metadata sets `fallback_mode=true`.
+  - fallback mask reuses `request.mask`; if lengths diverge, mask is reset to all `True`.
+- on in-budget elapsed runtime:
+  - solver candidates are returned unchanged.
+  - `fallback_mode=false`.
+
+When no time manager is present or budget is non-positive:
+- movement solver runs directly without budget fallback wrapping.
+
+Telemetry behavior:
+- movement candidates are annotated with `solver_ms` and final `fallback_mode` at request-time normalization.
 - Decision telemetry records both `time_budget_ms` and `wall_clock_ms` for each decision.
