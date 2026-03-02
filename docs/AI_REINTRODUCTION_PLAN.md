@@ -845,10 +845,18 @@ As of March 2, 2026, the foundational portability PR set is complete on `dev`.
 | `PR-AI-009` | Training-data manifest specification and CLI checks | DONE | `docs/TRAINING_DATA_SPEC.md`, `scripts/build_training_manifest.py`, `tests/test_training_manifest.py` |
 | `PR-AI-010` | Network/save-load rules-bundle contract alignment | DONE | `docs/NETWORK_SAVELOAD_DESIGN.md` |
 
-### Remaining PR Queue
+### Remaining Required PRs Before PR-AI-015
 
-- Open items: none.
-- Reopen policy: if any item in `## ML Gate Criteria (Must Be Closed Before PR 15)` fails in regression, add a new `PR-AI-0XX` entry here and block ML dependency introduction until closed.
+| PR ID | Scope | Status | Why Open | Exit Criteria |
+| --- | --- | --- | --- | --- |
+| `PR-AI-011` | Movement solver worst-case budget + fallback hardening | OPEN | Current coverage validates `TimeManager` fallback behavior, but does not lock worst-case movement solver path behavior with explicit stress-style runtime/fallback assertions. | Add movement-solver runtime/fallback regression tests and document enforced caps/fallback semantics in `docs/TIME_MANAGER_POLICY.md`. |
+| `PR-AI-012` | Rules-bundle reproducibility matrix across snapshot/replay/state blob | OPEN | Rules bundle fields are present in schemas and contexts, but replay reproducibility tests are not yet documented/tracked as a dedicated matrix gate artifact. | Add/lock tests proving atomic `rules_bundle` + `rules_bundle_id` stability across record logging, snapshot save/load, and replay round-trips under strict mode. |
+| `PR-AI-013` | Semantic candidate metadata v2 (computed, not heuristic defaults) | OPEN | Current `candidate_semantics` path guarantees key presence and provenance, but still relies on lightweight heuristic defaults rather than decision-specific computed deltas for all required classes. | Implement decision-specific semantic projections for movement, targeting, charges, fight activations, and tool decisions; add regression tests for value-shift behavior under bundle changes. |
+| `PR-AI-014` | Training-data gate profile finalization | OPEN | `training_manifest` supports configurable thresholds, but a locked pre-ML baseline profile (minimum records and required coverage) is not yet tracked here as a normative gate artifact. | Add a canonical gate profile in docs and enforce it in manifest/CLI checks used by CI gating before ML onboarding. |
+| `PR-AI-015` | ML dependency onboarding boundary PR | BLOCKED | By definition this PR must only land after all pre-ML gates are closed. | All items in `## ML Gate Criteria (Must Be Closed Before PR 15)` are explicitly marked closed in this tracker, with passing regression evidence. |
+
+Reopen policy:
+- If any item in `## ML Gate Criteria (Must Be Closed Before PR 15)` regresses, add a new `PR-AI-0XX` row here and block `PR-AI-015` until resolved.
 
 ## Related Documents To Update In Lockstep
 
