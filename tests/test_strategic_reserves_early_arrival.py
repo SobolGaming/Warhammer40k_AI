@@ -17,17 +17,21 @@ HOVER_ABILITY_TEXT = (
     "If this model starts the game in Hover mode and in Strategic Reserves, it can be set up in the Reinforcements "
     "step of your first, second or third Movement phase, regardless of any mission rules."
 )
+DIRECT_EARLY_ARRIVAL_TEXT = (
+    "This model can be set up in the Reinforcements step of your first, second or third Movement phase, regardless of "
+    "any mission rules."
+)
 
 
 class TestStrategicReservesEarlyArrival(unittest.TestCase):
-    def _make_unit(self, name: str, army: Army, *, abilities=None) -> Unit:
+    def _make_unit(self, name: str, army: Army, *, abilities=None, reserve_status: str = "strategic_reserves") -> Unit:
         unit = Unit.__new__(Unit)
         unit.name = name
         unit._id = name
         unit.parent_army = army
         unit.faction = getattr(army, "faction_id", "")
         unit.deployed = True
-        unit.reserve_status = "strategic_reserves"
+        unit.reserve_status = reserve_status
         unit.models = []
         unit.keywords = []
         unit.faction_keywords = []
@@ -115,6 +119,33 @@ class TestStrategicReservesEarlyArrival(unittest.TestCase):
         self.assertFalse(unit.can_arrive_from_reserves(1))
         self.assertTrue(unit.can_arrive_from_reserves(2))
         self.assertEqual(unit.get_strategic_reserves_setup_turn(current_turn=1), 1)
+
+    def test_direct_early_arrival_text_allows_turn_one_from_standard_reserves(self):
+        army = Army("Test", detachment_type="Other")
+        army.faction_id = "TEST"
+
+        ability = Ability("Quantum Invader", "TEST", DIRECT_EARLY_ARRIVAL_TEXT, "Datasheet", "")
+        unit = self._make_unit("Monolith", army, abilities=[ability], reserve_status="reserves")
+        unit._started_in_reserves = True
+
+        rule = unit.get_strategic_reserves_round_bonus_rule()
+        self.assertTrue(bool(rule))
+        self.assertFalse(bool(rule.get("requires_strategic_reserves", True)))
+        self.assertTrue(unit.can_arrive_from_reserves(1))
+        self.assertTrue(unit.can_arrive_from_reserves(2))
+        self.assertTrue(unit.can_arrive_from_reserves(3))
+        self.assertFalse(unit.can_arrive_from_reserves(4))
+
+    def test_direct_early_arrival_text_still_requires_started_in_reserves(self):
+        army = Army("Test", detachment_type="Other")
+        army.faction_id = "TEST"
+
+        ability = Ability("Quantum Invader", "TEST", DIRECT_EARLY_ARRIVAL_TEXT, "Datasheet", "")
+        unit = self._make_unit("Monolith", army, abilities=[ability], reserve_status="reserves")
+        unit._started_in_reserves = False
+
+        self.assertFalse(unit.can_arrive_from_reserves(1))
+        self.assertTrue(unit.can_arrive_from_reserves(2))
 
 
 if __name__ == "__main__":

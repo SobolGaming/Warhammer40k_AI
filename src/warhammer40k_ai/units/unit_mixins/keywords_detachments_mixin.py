@@ -4791,11 +4791,17 @@ class KeywordsDetachmentsMixin:
                 normalized = normalized.lower()
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
-                if "strategic reserves" not in normalized:
-                    continue
                 if "reinforcements step" not in normalized:
                     continue
                 if "first second or third" not in normalized or "movement phase" not in normalized:
+                    continue
+                if "the bearer s unit can be set up" in normalized or "the bearers unit can be set up" in normalized:
+                    continue
+                self_setup_reference = bool(
+                    re.search(r"\bthis (?:unit|model)\b.*\bcan be set up\b", normalized)
+                    or re.search(r"\bif this (?:unit|model)\b.*\bit can be set up\b", normalized)
+                )
+                if not self_setup_reference:
                     continue
                 starts_in_strategic_reserves = "starts the game in strategic reserves" in normalized
                 starts_in_hover_and_strategic_reserves = (
@@ -4806,14 +4812,18 @@ class KeywordsDetachmentsMixin:
                     "battle round number as being one higher" in normalized
                     or "battle round as being one higher" in normalized
                 )
-                if not (
+                has_explicit_strategic_reserves_gate = bool(
                     starts_in_strategic_reserves
                     or starts_in_hover_and_strategic_reserves
                     or has_round_number_bonus_clause
-                ):
-                    continue
+                )
                 source = str(name or "Strategic Reserves").strip() or "Strategic Reserves"
-                rule = {"source": source, "round_bonus": 1, "ability_key": "strategic_reserves_round_bonus"}
+                rule = {
+                    "source": source,
+                    "round_bonus": 1,
+                    "ability_key": "strategic_reserves_round_bonus",
+                    "requires_strategic_reserves": has_explicit_strategic_reserves_gate,
+                }
                 if starts_in_hover_and_strategic_reserves:
                     rule["requires_hover_mode"] = True
                 break
@@ -4986,14 +4996,22 @@ class KeywordsDetachmentsMixin:
                 started = False
             if started:
                 try:
+                    in_reserves = bool(getattr(root, "is_in_reserves", lambda: False)())
+                except Exception:
+                    in_reserves = False
+                try:
                     in_strategic = bool(getattr(root, "is_in_strategic_reserves", lambda: False)())
                 except Exception:
                     in_strategic = False
-                if in_strategic:
-                    requires_hover_mode = bool(rule.get("requires_hover_mode", False)) if isinstance(rule, dict) else False
-                    if requires_hover_mode and not bool(getattr(root, "hover_mode", False)):
-                        rule = None
-                if rule is not None and in_strategic:
+                if not in_reserves:
+                    rule = None
+                requires_hover_mode = bool(rule.get("requires_hover_mode", False)) if isinstance(rule, dict) else False
+                if rule is not None and requires_hover_mode and not bool(getattr(root, "hover_mode", False)):
+                    rule = None
+                requires_strategic_reserves = bool(rule.get("requires_strategic_reserves", True)) if isinstance(rule, dict) else True
+                if rule is not None and requires_strategic_reserves and not in_strategic:
+                    rule = None
+                if rule is not None:
                     try:
                         total_bonus += int(rule.get("round_bonus", 1) or 0)
                     except Exception:

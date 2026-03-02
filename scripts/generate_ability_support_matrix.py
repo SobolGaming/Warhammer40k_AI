@@ -9110,6 +9110,16 @@ def _strategic_reserves_early_arrival_support(description: str) -> Optional[Tupl
             "Supported",
             "Strategic Reserves: may arrive in battle rounds 1-3 regardless of mission restrictions.",
         )
+
+    direct_self_arrival_pattern = (
+        r"this (?:unit|model) can be set up in the reinforcements step of your first second or third movement phase"
+        r"(?: regardless of any mission rules)?"
+    )
+    if re.fullmatch(direct_self_arrival_pattern, norm):
+        return (
+            "Supported",
+            "Reserves arrivals: may be set up in battle rounds 1-3 regardless of mission restrictions.",
+        )
     return None
 
 
