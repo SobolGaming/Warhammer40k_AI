@@ -48,6 +48,7 @@ from .decision_controller import DecisionController, DecisionControllerHub
 from .decision_record import DecisionRecordStore
 from .descriptor_compiler import compile_descriptor_bundle
 from .ruleset import RulesetBundle
+from .version_adapter import ensure_version_adapter_boundary
 from .tier1_plan import Tier1Plan, build_heuristic_tier1_plan
 from .tier2_orchestrator import Tier2TaskBundle, build_tier2_task_bundle
 from .time_manager import TimeManager
@@ -8834,6 +8835,7 @@ class Game(
             ctx["descriptor_ids"] = descriptor_ids
         if "descriptor_bundle_id" not in ctx:
             ctx["descriptor_bundle_id"] = str(descriptor_bundle.bundle_id)
+        ctx = ensure_version_adapter_boundary(ctx)
         plan_player_id = str(getattr(request, "player_id", "") or "")
         if not plan_player_id:
             current_player = self.get_current_player() if self.players else None
