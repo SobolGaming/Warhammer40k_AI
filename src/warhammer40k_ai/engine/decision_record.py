@@ -8,6 +8,7 @@ from pathlib import Path
 import time
 from typing import Any, Optional
 
+from .descriptor_compiler import compile_descriptor_bundle
 from .decisions import CandidateAction, DecisionRequest, DecisionResult
 from .path_witness import build_model_path_witness_for_unit
 from .ruleset import RulesetBundle
@@ -86,7 +87,24 @@ def _context_rules_bundle(request: DecisionRequest, game: object) -> RulesetBund
     return RulesetBundle.from_dict(game_ctx)
 
 
-def _context_descriptor_ids(request: DecisionRequest) -> dict[str, Any]:
+def _descriptor_ids_complete(value: dict[str, Any]) -> bool:
+    mission_descriptor_id = str(value.get("mission_descriptor_id", "") or "")
+    deployment_descriptor_id = str(value.get("deployment_descriptor_id", "") or "")
+    objective_descriptor_ids = value.get("objective_descriptor_ids")
+    terrain_descriptor_ids = value.get("terrain_descriptor_ids")
+    tool_descriptor_ids = value.get("tool_descriptor_ids")
+    return (
+        bool(mission_descriptor_id)
+        and mission_descriptor_id != DEFAULT_MISSION_DESCRIPTOR_ID
+        and bool(deployment_descriptor_id)
+        and deployment_descriptor_id != DEFAULT_DEPLOYMENT_DESCRIPTOR_ID
+        and isinstance(objective_descriptor_ids, list)
+        and isinstance(terrain_descriptor_ids, list)
+        and isinstance(tool_descriptor_ids, list)
+    )
+
+
+def _context_descriptor_ids(request: DecisionRequest, game: object) -> dict[str, Any]:
     ctx = dict(getattr(request, "context", {}) or {})
     raw = ctx.get("descriptor_ids")
     if isinstance(raw, dict):
@@ -101,12 +119,43 @@ def _context_descriptor_ids(request: DecisionRequest) -> dict[str, Any]:
         objective_descriptor_ids = _normalize_str_list(ctx.get("objective_descriptor_ids"))
         terrain_descriptor_ids = _normalize_str_list(ctx.get("terrain_descriptor_ids"))
         tool_descriptor_ids = _normalize_str_list(ctx.get("tool_descriptor_ids"))
-    return {
+    resolved = {
         "mission_descriptor_id": mission_descriptor_id or DEFAULT_MISSION_DESCRIPTOR_ID,
         "objective_descriptor_ids": objective_descriptor_ids,
         "terrain_descriptor_ids": terrain_descriptor_ids,
         "deployment_descriptor_id": deployment_descriptor_id or DEFAULT_DEPLOYMENT_DESCRIPTOR_ID,
         "tool_descriptor_ids": tool_descriptor_ids,
+    }
+    if _descriptor_ids_complete(resolved):
+        return resolved
+    compiled_descriptor_ids = compile_descriptor_bundle(game).descriptor_ids()
+    mission_descriptor_id = str(resolved.get("mission_descriptor_id", "") or "")
+    if not mission_descriptor_id or mission_descriptor_id == DEFAULT_MISSION_DESCRIPTOR_ID:
+        mission_descriptor_id = str(
+            compiled_descriptor_ids.get("mission_descriptor_id", "")
+            or DEFAULT_MISSION_DESCRIPTOR_ID
+        )
+    deployment_descriptor_id = str(resolved.get("deployment_descriptor_id", "") or "")
+    if not deployment_descriptor_id or deployment_descriptor_id == DEFAULT_DEPLOYMENT_DESCRIPTOR_ID:
+        deployment_descriptor_id = str(
+            compiled_descriptor_ids.get("deployment_descriptor_id", "")
+            or DEFAULT_DEPLOYMENT_DESCRIPTOR_ID
+        )
+    return {
+        "mission_descriptor_id": mission_descriptor_id,
+        "objective_descriptor_ids": _normalize_str_list(
+            resolved.get("objective_descriptor_ids")
+            or compiled_descriptor_ids.get("objective_descriptor_ids")
+        ),
+        "terrain_descriptor_ids": _normalize_str_list(
+            resolved.get("terrain_descriptor_ids")
+            or compiled_descriptor_ids.get("terrain_descriptor_ids")
+        ),
+        "deployment_descriptor_id": deployment_descriptor_id,
+        "tool_descriptor_ids": _normalize_str_list(
+            resolved.get("tool_descriptor_ids")
+            or compiled_descriptor_ids.get("tool_descriptor_ids")
+        ),
     }
 
 
@@ -297,7 +346,7 @@ class DecisionRecordStore:
         outcome: dict[str, Any],
     ) -> dict[str, Any]:
         rules_bundle = _context_rules_bundle(request, self.game)
-        descriptor_ids = _context_descriptor_ids(request)
+        descriptor_ids = _context_descriptor_ids(request, self.game)
         global_seed = self._global_seed()
         decision_seed = self._decision_seed(request, global_seed)
         record = {

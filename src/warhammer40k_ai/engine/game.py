@@ -45,6 +45,7 @@ from .decision_kinds import (
 from .random_source import RandomSource
 from .decision_controller import DecisionController, DecisionControllerHub
 from .decision_record import DecisionRecordStore
+from .descriptor_compiler import compile_descriptor_bundle
 from .ruleset import RulesetBundle
 from .tier1_plan import Tier1Plan, build_heuristic_tier1_plan
 from .tier2_orchestrator import Tier2TaskBundle, build_tier2_task_bundle
@@ -8819,6 +8820,19 @@ class Game(
         rules_bundle_id = str(getattr(rules_bundle, "rules_bundle_id", "") or "")
         if rules_bundle_id and "rules_bundle_id" not in ctx:
             ctx["rules_bundle_id"] = rules_bundle_id
+        descriptor_bundle = compile_descriptor_bundle(self)
+        if "descriptor_ids" not in ctx or not isinstance(ctx.get("descriptor_ids"), dict):
+            ctx["descriptor_ids"] = descriptor_bundle.descriptor_ids()
+        else:
+            descriptor_ids = dict(ctx.get("descriptor_ids", {}) or {})
+            expected_descriptor_ids = descriptor_bundle.descriptor_ids()
+            for key, value in expected_descriptor_ids.items():
+                existing_value = descriptor_ids.get(key)
+                if existing_value in (None, "", []):
+                    descriptor_ids[key] = value
+            ctx["descriptor_ids"] = descriptor_ids
+        if "descriptor_bundle_id" not in ctx:
+            ctx["descriptor_bundle_id"] = str(descriptor_bundle.bundle_id)
         plan_player_id = str(getattr(request, "player_id", "") or "")
         if not plan_player_id:
             current_player = self.get_current_player() if self.players else None
