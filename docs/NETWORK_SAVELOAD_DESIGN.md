@@ -31,7 +31,10 @@ Status: Draft
 - All ordering over collections is deterministic (stable ID ordering).
 - Coordinates are serialized in fixed-point units (1/1000 inch for positions/lengths; 1/10000 radians for facing).
 - Derived/cached values are never serialized; they are recomputed on load.
-- Every game carries a single active ruleset bundle (`ruleset_id`, `dataslate_id`, `points_id`).
+- Every game carries a single active rules bundle with atomic ids:
+  `core_rules_id`, `rules_commentary_id`, `mission_pack_id`, `terrain_pack_id`,
+  `dataslate_id`, `points_id`, `faction_pack_id`, `detachment_pack_id`, plus
+  derived `rules_bundle_id`.
 
 ## Ruleset Bundle Versioning
 
@@ -40,9 +43,9 @@ Canonical ID source:
 - If the Core Rules PDF has no explicit version string, use the date token in the filename (e.g., `core_rules_24.09`).
 
 Storage locations:
-- Snapshot: `game.ruleset` includes `ruleset_id`, `dataslate_id`, `points_id`.
-- Event log: every deterministic event payload includes the same three fields.
-- Decision context: every DecisionRequest context includes the same three fields.
+- Snapshot: `game.ruleset` includes all atomic rules ids plus `rules_bundle_id`.
+- Event log: deterministic event payloads include the active bundle context.
+- Decision context: every DecisionRequest context includes `rules_bundle` and `rules_bundle_id`.
 
 ## Entity Identity & Registries
 
@@ -68,7 +71,7 @@ Top-level:
 - fixed_point_scale
 - angle_scale
 - game: battle_round, phase, step, active_player_id
-- game.ruleset: ruleset_id, dataslate_id, points_id
+- game.ruleset: core_rules_id, rules_commentary_id, mission_pack_id, terrain_pack_id, dataslate_id, points_id, faction_pack_id, detachment_pack_id, rules_bundle_id
 - players: CP, victory points, stratagem usage, once-per-battle flags
 - map: terrain, objectives, boundaries, mission metadata
 - units: state, positions, attachment relationships, embarked status
@@ -136,7 +139,7 @@ DecisionRequest:
 - request_id
 - actor_player_id
 - decision_type (enum)
-- context (phase, unit_id, target_id, weapon_id, ruleset_id, etc)
+- context (phase, unit_id, target_id, weapon_id, rules_bundle, rules_bundle_id, descriptor_ids, etc)
 - options (list of valid options with IDs and parameters)
 - candidates (list of CandidateAction: action_id, params, metadata)
 - mask (bool list aligned to candidates; false = illegal)
