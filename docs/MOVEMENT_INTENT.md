@@ -3,24 +3,35 @@
 `MovementIntent` is stored in move decision context under `movement_intent`.
 
 Schema:
-- `objective_targets`: list of objective ids
+- `target_region_ids`: list of region ids
+- `target_opportunity_ids`: list of opportunity ids
+- `desired_affordances`: list of semantic goals (hold, deny, stage, action-enable, reserve-deny, lane-control)
 - `screen_deny_targets`: list of deny lanes/regions
-- `weights`:
-  - `screen_coverage`
-  - `coherency`
-  - `threat_avoid`
-  - `obj_proximity`
+- `weights`: weighting map for intent preferences
 - `anchors`: optional stable anchor ids
 - `constraint_toggles`: optional constraint switches
+
+Design note:
+- `objective_targets` can exist as a late-bound execution field inside Tier 0 and Tier 2, but it is not the primary strategic abstraction.
 
 Move candidate metadata includes:
 - `candidate_kind` (`noop` or `move`)
 - `solver_ms`
 - `fallback_mode`
 - `intent_hash`
-- scoring fields:
+- solver/geometry fields:
   - `screen_coverage_score`
   - `coherency_score`
   - `threat_score`
-  - `objective_score`
+- semantic projection fields:
+  - `projected_score_delta_next_window`
+  - `projected_deny_delta_next_window`
+  - `projected_control_delta`
+  - `projected_action_enablement_delta`
+  - `projected_exposure_delta`
+  - `cover_delta`
+  - `los_delta`
+  - `resource_delta`
+- provenance fields:
+  - `rules_provenance_refs`
 - `path_witness_ref` for non-noop move candidates

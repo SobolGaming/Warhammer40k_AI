@@ -10,9 +10,9 @@
     "phase",
     "decision_id",
     "decision_type",
-    "ruleset_id",
-    "dataslate_id",
-    "points_id",
+    "rules_bundle",
+    "rules_bundle_id",
+    "descriptor_ids",
     "global_seed",
     "decision_seed",
     "omniscient_state",
@@ -41,14 +41,14 @@
     "decision_type": {
       "type": "string"
     },
-    "ruleset_id": {
+    "rules_bundle": {
+      "$ref": "#/$defs/RulesBundle"
+    },
+    "rules_bundle_id": {
       "type": "string"
     },
-    "dataslate_id": {
-      "type": "string"
-    },
-    "points_id": {
-      "type": "string"
+    "descriptor_ids": {
+      "$ref": "#/$defs/DescriptorIds"
     },
     "global_seed": {
       "type": "integer",
@@ -106,7 +106,32 @@
     },
     "invalid_attempt": {
       "$ref": "#/$defs/CandidateAction"
+    },
+    "relabel_rules_bundle": {
+      "$ref": "#/$defs/RulesBundle"
+    },
+    "relabel_rules_bundle_id": {
+      "type": "string"
+    },
+    "relabel_status": {
+      "$ref": "#/$defs/RelabelStatus"
+    },
+    "relabel_candidate_map": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/RelabelCandidateMapEntry"
+      }
+    },
+    "chosen_action_status_under_relabel": {
+      "$ref": "#/$defs/ChosenActionStatusUnderRelabel"
+    },
+    "relabel_notes": {
+      "type": "string"
     }
+  },
+  "dependentRequired": {
+    "relabel_rules_bundle": ["relabel_rules_bundle_id"],
+    "relabel_rules_bundle_id": ["relabel_rules_bundle"]
   },
   "allOf": [
     {
@@ -123,9 +148,140 @@
       "else": {
         "required": ["chosen_action_id"]
       }
+    },
+    {
+      "if": {
+        "required": ["relabel_status"]
+      },
+      "then": {
+        "required": ["relabel_rules_bundle", "chosen_action_status_under_relabel"]
+      }
     }
   ],
   "$defs": {
+    "RulesBundle": {
+      "type": "object",
+      "required": [
+        "core_rules_id",
+        "rules_commentary_id",
+        "mission_pack_id",
+        "terrain_pack_id",
+        "dataslate_id",
+        "points_id",
+        "faction_pack_id",
+        "detachment_pack_id"
+      ],
+      "properties": {
+        "core_rules_id": {
+          "type": "string"
+        },
+        "rules_commentary_id": {
+          "type": "string"
+        },
+        "mission_pack_id": {
+          "type": "string"
+        },
+        "terrain_pack_id": {
+          "type": "string"
+        },
+        "dataslate_id": {
+          "type": "string"
+        },
+        "points_id": {
+          "type": "string"
+        },
+        "faction_pack_id": {
+          "type": "string"
+        },
+        "detachment_pack_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "DescriptorIds": {
+      "type": "object",
+      "required": [
+        "mission_descriptor_id",
+        "objective_descriptor_ids",
+        "terrain_descriptor_ids",
+        "deployment_descriptor_id",
+        "tool_descriptor_ids"
+      ],
+      "properties": {
+        "mission_descriptor_id": {
+          "type": "string"
+        },
+        "objective_descriptor_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "terrain_descriptor_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deployment_descriptor_id": {
+          "type": "string"
+        },
+        "tool_descriptor_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "RelabelStatus": {
+      "type": "string",
+      "enum": [
+        "NOT_RELABELED",
+        "RELABELED_LEGAL_SEMANTICALLY_COMPARABLE",
+        "RELABELED_LEGAL_VALUE_CHANGED",
+        "RELABELED_INVALID_UNDER_TARGET_BUNDLE",
+        "RELABELED_MAPPED_TO_ANALOGUE",
+        "RELABELED_UNREPRESENTABLE",
+        "RELABEL_FAILED"
+      ]
+    },
+    "ChosenActionStatusUnderRelabel": {
+      "type": "string",
+      "enum": [
+        "LEGAL_SEMANTICALLY_COMPARABLE",
+        "LEGAL_VALUE_CHANGED",
+        "INVALID_UNDER_TARGET_BUNDLE",
+        "MAPPED_TO_ANALOGUE",
+        "UNREPRESENTABLE",
+        "UNKNOWN"
+      ]
+    },
+    "RelabelCandidateMapEntry": {
+      "type": "object",
+      "properties": {
+        "mapped_action_id": {
+          "type": "string"
+        },
+        "mapping_status": {
+          "type": "string",
+          "enum": [
+            "UNCHANGED",
+            "VALUE_CHANGED",
+            "MAPPED_TO_ANALOGUE",
+            "INVALID_UNDER_TARGET_BUNDLE",
+            "UNREPRESENTABLE",
+            "NOT_FOUND"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "CandidateAction": {
       "type": "object",
       "required": ["action_id", "params", "metadata"],
