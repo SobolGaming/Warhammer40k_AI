@@ -5272,6 +5272,7 @@ def _classify_ability_base(
     aura_toughness_support = _aura_toughness_support(description)
     aura_melee_ap_support = _aura_melee_ap_support(description)
     fall_back_shoot_support = _fall_back_shoot_support(description)
+    advance_selected_redeploy_support = _advance_selected_redeploy_support(description)
     advance_no_roll_phase_move_support = _advance_no_roll_with_phase_move_support(description)
     advance_no_roll_support = _advance_no_roll_fixed_distance_support(description)
     movement_ignore_vertical_support = _movement_ignore_vertical_distance_support(description)
@@ -5502,6 +5503,8 @@ def _classify_ability_base(
         return aura_melee_ap_support
     if fall_back_shoot_support:
         return fall_back_shoot_support
+    if advance_selected_redeploy_support:
+        return advance_selected_redeploy_support
     if advance_no_roll_phase_move_support:
         return advance_no_roll_phase_move_support
     if advance_no_roll_support:
@@ -10648,6 +10651,34 @@ def _fall_back_shoot_support(description: str) -> Optional[Tuple[str, str]]:
         else:
             notes.append("Charge-after-Fall-Back eligibility.")
     return ("Supported", " ".join(notes))
+
+
+def _advance_selected_redeploy_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:[a-z0-9 ]+ model only )?"
+        r"each time this model is selected to advance "
+        r"you can remove it from the battlefield and set it up again anywhere on the battlefield "
+        r"that is more than (?P<min_dist>\d+) horizontally away from all enemy (?:units|models)"
+        r"(?: instead of making an advance move(?: this model is still considered to have advanced this turn)?)?"
+    )
+    match = re.fullmatch(pattern, norm)
+    if not match:
+        return None
+    try:
+        min_dist = int(match.group("min_dist") or 0)
+    except Exception:
+        min_dist = 0
+    if min_dist <= 0:
+        return None
+    return (
+        "Supported",
+        f"When selected to Advance, the model can be set up again anywhere more than {min_dist}\" horizontally from enemy models (counts as Advanced).",
+    )
 
 
 def _advance_no_roll_with_phase_move_support(description: str) -> Optional[Tuple[str, str]]:

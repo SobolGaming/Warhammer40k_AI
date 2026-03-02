@@ -613,6 +613,83 @@ class GameReactiveDecisionsMixin:
             )
         return None
 
+    def _queue_movement_phase_advance_redeploy(
+        self,
+        *,
+        player,
+        unit,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        phase = getattr(self, "phase", None)
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname and pname != "MOVEMENT_PHASE":
+            return None
+        if player is not self.get_current_player():
+            return None
+        if not getattr(unit, "is_alive", lambda: False)():
+            return None
+        if not getattr(unit, "deployed", True):
+            return None
+        try:
+            if unit.is_in_reserves() or unit.is_embarked:
+                return None
+        except Exception:
+            pass
+
+        try:
+            models = [m for m in list(getattr(unit, "models", []) or []) if getattr(m, "is_alive", True)]
+        except Exception:
+            models = []
+        if len(models) != 1:
+            return None
+
+        try:
+            specs = list(unit.unit_movement_phase_advance_redeploy_specs() or [])
+        except Exception:
+            specs = []
+        if not specs:
+            return None
+
+        unit_id = maybe_entity_id(unit)
+        if not unit_id:
+            return None
+
+        for spec in specs:
+            try:
+                min_enemy_distance = int(spec.get("min_enemy_distance_horiz", 0) or 0)
+            except Exception:
+                min_enemy_distance = 0
+            if min_enemy_distance <= 0:
+                continue
+            ability_name = str(spec.get("source", "") or "Advance redeploy").strip() or "Advance redeploy"
+            ctx = {
+                "ability_name": ability_name,
+                "phase": "Movement phase",
+                "unit": getattr(unit, "name", "") or "",
+                "unit_id": unit_id,
+                "min_enemy_distance_horiz": int(min_enemy_distance),
+            }
+            message = (
+                f"Use {ability_name} for {getattr(unit, 'name', 'Unit')} "
+                f"instead of making an Advance move?"
+            )
+            return self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="advance_redeploy",
+                ability_name=ability_name,
+                message=message,
+                context=ctx,
+                payload={
+                    "unit_id": unit_id,
+                    "min_enemy_distance_horiz": int(min_enemy_distance),
+                },
+                instance_key=f"{unit_id}:advance_redeploy",
+            )
+        return None
+
     def _queue_movement_phase_visible_bonus(
         self,
         *,
@@ -3908,6 +3985,7 @@ class GameReactiveDecisionsMixin:
             "ammo_runt",
             "plasmacyte",
             "flickerjump",
+            "advance_redeploy",
             "daemonic_patrons",
             "power_from_pain_command",
             "power_from_pain_empower",
@@ -4010,6 +4088,75 @@ class GameReactiveDecisionsMixin:
                 source=source,
                 allow_engagement_range=allow_engagement_range,
             )
+            return
+        if ability_key == "advance_redeploy":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not getattr(unit, "is_alive", lambda: False)():
+                return
+            if not choice:
+                prepare = getattr(unit, "prepare_advance", None)
+                if callable(prepare):
+                    prepare()
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not getattr(root, "is_alive", lambda: False)():
+                return
+            if not self._unit_on_battlefield_for_reposition(root):
+                return
+            try:
+                models = [m for m in list(getattr(root, "models", []) or []) if getattr(m, "is_alive", True)]
+            except Exception:
+                models = []
+            if len(models) != 1:
+                return
+            from ...utility.entity_ids import get_entity_id
+            root_id = str(get_entity_id(root) or unit_id)
+            if not root_id:
+                return
+            allowed_ids = [str(get_entity_id(model) or "") for model in list(models or [])]
+            allowed_ids = [model_id for model_id in allowed_ids if model_id]
+            if not allowed_ids:
+                return
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "") or "") != str(DECISION_MOVE_UNIT):
+                        continue
+                    req_ctx = dict(getattr(req, "context", {}) or {})
+                    if str(req_ctx.get("placement_kind", "") or "") != "advance_redeploy_9h":
+                        continue
+                    if str(req_ctx.get("unit_id", "") or "") != root_id:
+                        continue
+                    return
+
+            ability_name = str(ctx.get("ability_name", "") or "Advance redeploy").strip() or "Advance redeploy"
+            request_move = DecisionRequest.create(
+                DECISION_MOVE_UNIT,
+                f"{ability_name}: set up {getattr(root, 'name', 'Unit')}",
+                player_id=getattr(request, "player_id", None),
+                options=[
+                    DecisionOption.create(
+                        "Confirm",
+                        payload={"unit_id": root_id, "movement_type": "advance", "action": "confirm"},
+                    )
+                ],
+                context={
+                    "unit_id": root_id,
+                    "movement_type": "advance",
+                    "placement_kind": "advance_redeploy_9h",
+                    "allowed_model_ids": list(allowed_ids),
+                    "allow_skip": False,
+                    "ability_name": ability_name,
+                    "min_enemy_distance_horiz": int(ctx.get("min_enemy_distance_horiz", 9) or 9),
+                },
+            )
+            self.request_decision(request_move)
             return
         if not choice:
             return

@@ -3,7 +3,7 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
-from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.ability import Ability
@@ -65,6 +65,15 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         option_id = None
         for opt in list(request.options or []):
             if bool((opt.payload or {}).get("choice", False)):
+                option_id = opt.option_id
+                break
+        self.assertIsNotNone(option_id)
+        resolve_decision_command(game, request, option_id, player_id=player.id)
+
+    def _resolve_no(self, game, request, player):
+        option_id = None
+        for opt in list(request.options or []):
+            if not bool((opt.payload or {}).get("choice", False)):
                 option_id = opt.option_id
                 break
         self.assertIsNotNone(option_id)
@@ -391,6 +400,124 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
 
         alive = [m for m in unit.models if m.is_alive]
         self.assertEqual(len(alive), 0)
+
+    def test_advance_redeploy_queues_and_creates_placement_decision(self):
+        army = Army("Necrons", detachment_type="Other")
+        army.faction_id = "NEC"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Necron", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "Each time this model is selected to Advance, you can remove it from the battlefield and set it up again "
+            "anywhere on the battlefield that is more than 9\" horizontally away from all enemy units."
+        )
+        ability = Ability("Transdimensional Displacement", "NEC", ability_desc, "Datasheet", "")
+        unit = self._make_unit("Transcendent C'tan", army, abilities=[ability])
+        model = self._make_model("C'tan", unit, wounds=12)
+        model.set_location(0.0, 0.0, 0.0, 0.0)
+        unit.models = [model]
+        army.units = [unit]
+
+        enemy_unit = self._make_unit("Enemy Unit", enemy_army)
+        enemy_model = self._make_model("Enemy Model", enemy_unit)
+        enemy_model.set_location(40.0, 0.0, 0.0, 0.0)
+        enemy_unit.models = [enemy_model]
+        enemy_army.units = [enemy_unit]
+
+        game.map.units = [unit, enemy_unit]
+        game.map.is_within_boundary = lambda *_args, **_kwargs: True
+        game.map.check_collision_with_obstacles = lambda *_args, **_kwargs: False
+        game.rebuild_entity_registry()
+
+        game._queue_movement_phase_advance_redeploy(player=player, unit=unit)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+        self.assertEqual((request.context or {}).get("ability"), "advance_redeploy")
+        self.assertEqual((request.context or {}).get("unit_id"), get_entity_id(unit))
+
+        self._resolve_yes(game, request, player)
+
+        pending_after_yes = game.decision_queue.list()
+        self.assertEqual(len(pending_after_yes), 1)
+        move_request = pending_after_yes[0]
+        self.assertEqual(move_request.decision_type, DECISION_MOVE_UNIT)
+        move_ctx = dict(getattr(move_request, "context", {}) or {})
+        self.assertEqual(move_ctx.get("placement_kind"), "advance_redeploy_9h")
+        self.assertEqual(move_ctx.get("movement_type"), "advance")
+        self.assertFalse(bool(move_ctx.get("allow_skip", True)))
+
+        move_option_id = move_request.options[0].option_id
+        resolve_result = resolve_decision_command(
+            game,
+            move_request,
+            move_option_id,
+            player_id=player.id,
+            result_payload={
+                "model_positions": [
+                    {
+                        "model_id": get_entity_id(model),
+                        "position": [0.0, 0.0, 0.0],
+                        "facing": 0.0,
+                    }
+                ]
+            },
+        )
+        self.assertTrue(bool(getattr(resolve_result, "ok", False)))
+        self.assertTrue(bool(getattr(unit.round_state, "advanced_this_round", False)))
+        self.assertTrue(bool(getattr(unit.round_state, "moved_this_round", False)))
+
+    def test_advance_redeploy_skip_calls_prepare_advance(self):
+        army = Army("Orks", detachment_type="Other")
+        army.faction_id = "ORK"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Ork", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "Each time this model is selected to Advance, you can remove it from the battlefield and set it up again "
+            "anywhere on the battlefield that is more than 9\" horizontally away from all enemy models instead of making "
+            "an Advance move (this model is still considered to have Advanced this turn)."
+        )
+        ability = Ability("Shokk Tunnel", "ORK", ability_desc, "Datasheet", "")
+        unit = self._make_unit("Shokkjump Dragsta", army, abilities=[ability])
+        model = self._make_model("Dragsta", unit, wounds=8)
+        unit.models = [model]
+        army.units = [unit]
+        game.map.units = [unit]
+        game.rebuild_entity_registry()
+
+        called = {"prepare_advance": 0}
+
+        def _prepare_advance():
+            called["prepare_advance"] += 1
+            return None
+
+        unit.prepare_advance = _prepare_advance
+
+        game._queue_movement_phase_advance_redeploy(player=player, unit=unit)
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual((request.context or {}).get("ability"), "advance_redeploy")
+
+        self._resolve_no(game, request, player)
+        self.assertEqual(called["prepare_advance"], 1)
 
     def test_power_from_pain_command_phase_queues_and_applies(self):
         army = Army("Drukhari", detachment_type="Other")

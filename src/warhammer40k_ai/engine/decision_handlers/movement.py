@@ -326,6 +326,18 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
         queue_fn = getattr(game, "_queue_chaos_cult_desperate_devotion", None)
         if callable(queue_fn):
             queue_fn(unit=unit, action="advance")
+        queued_redeploy_prompt = False
+        try:
+            army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+            player = getattr(army, "player", None) if army is not None else None
+        except Exception:
+            player = None
+        try:
+            queue_fn = getattr(game, "_queue_movement_phase_advance_redeploy", None)
+            if callable(queue_fn):
+                queued_redeploy_prompt = queue_fn(player=player, unit=unit) is not None
+        except Exception:
+            queued_redeploy_prompt = False
         try:
             army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
             mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
@@ -334,6 +346,8 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
         except Exception:
             pass
         if bool(getattr(game, "is_authoritative", True)):
+            if queued_redeploy_prompt:
+                return None
             try:
                 unit.prepare_advance()
             except Exception as exc:
@@ -679,8 +693,13 @@ def _validate_placement_positions(
         reserves_errors = _validate_reserves_arrival_positions(game, unit, model_positions)
         if reserves_errors:
             return reserves_errors
-    if str(placement_kind or "") == "aeldari_unshrouded_truth":
-        unshrouded_errors = _validate_aeldari_unshrouded_truth_positions(game, unit, candidate_bases)
+    if str(placement_kind or "") in ("aeldari_unshrouded_truth", "advance_redeploy_9h"):
+        unshrouded_errors = _validate_aeldari_unshrouded_truth_positions(
+            game,
+            unit,
+            candidate_bases,
+            placement_kind=str(placement_kind or ""),
+        )
         if unshrouded_errors:
             return unshrouded_errors
 
@@ -691,6 +710,8 @@ def _validate_aeldari_unshrouded_truth_positions(
     game: object,
     unit: object,
     candidate_bases: dict[str, object],
+    *,
+    placement_kind: str = "",
 ) -> Sequence[str]:
     if not candidate_bases:
         return ()
@@ -740,7 +761,9 @@ def _validate_aeldari_unshrouded_truth_positions(
                 except Exception:
                     continue
                 if horizontal <= 9.0 + 1e-6:
-                    return ("Move unit: Unshrouded Truth placement must be more than 9\" horizontally from enemy models.",)
+                    if placement_kind == "aeldari_unshrouded_truth":
+                        return ("Move unit: Unshrouded Truth placement must be more than 9\" horizontally from enemy models.",)
+                    return ("Move unit: placement must be more than 9\" horizontally from enemy models.",)
 
     return ()
 

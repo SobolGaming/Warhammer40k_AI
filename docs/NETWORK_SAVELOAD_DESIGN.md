@@ -180,6 +180,7 @@ Deployment / Pre-battle:
 - floor_selection_dialog: SELECT_FLOOR {unit_id, floor_id}
 - deployment_placement_dialog: MOVE_UNIT {unit_id, model_positions} (context `placement_kind="deployment"`, engine finalizes deployment + advances deployment turn)
 - reserves_arrival_placement_dialog: MOVE_UNIT {unit_id, model_positions} (context `placement_kind="reserves_arrival"`, `allow_skip`, `battle_round`, `reserve_status`)
+- advance_redeploy_placement_dialog: MOVE_UNIT {unit_id, model_positions} (context `placement_kind="advance_redeploy_9h"`, `movement_type="advance"`, `allowed_model_ids[]`, `allow_skip=false`, `ability_name`)
 - aeldari_guileful_strategist_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="aeldari_guileful_strategist"`, `redeploy_action`, `remaining`)
 - auric_armour_walker_selection_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="solar_spearhead_walker_character_selection"`, `ability_name="Auric Armour"`, `phase="Muster Armies step"`, `army_id`, `allowed_unit_ids[]`, `max_units=2`)
 - houndpack_lance_character_selection_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids} (context `ability="houndpack_lance_character_selection"`, `ability_name="Marked Prey"`, `phase="Muster Armies step"`, `army_id`, `allowed_unit_ids[]`, `max_units=3`, `required_units=3`)
@@ -428,6 +429,7 @@ Optional ability confirmations (yes/no):
 - power_from_pain_empower_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="power_from_pain_empower"`, `unit_id`, `trigger`)
 - enhancement_fight_first_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="enhancement_fight_first"`, `unit_id`)
 - enhancement_charge_after_advance_once_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="enhancement_charge_after_advance_once"`, `unit_id`)
+- advance_redeploy_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="advance_redeploy"`, `unit_id`, `min_enemy_distance_horiz`)
 - opponent_turn_strategic_reserves_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="opponent_turn_strategic_reserves"`, `unit_id`)
 - putrid_carapace_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="putrid_carapace"`, `unit_id`)
 - fight_phase_destroyed_strategic_reserves_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="fight_phase_destroyed_strategic_reserves"`, `unit_id`)

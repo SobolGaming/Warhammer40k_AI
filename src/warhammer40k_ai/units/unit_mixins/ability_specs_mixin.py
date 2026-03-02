@@ -4048,6 +4048,69 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_movement_phase_advance_redeploy_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: when selected to Advance, optionally set the unit up again >X" from enemies.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - min_enemy_distance_horiz: int
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_movement_phase_advance_redeploy_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for member in members:
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = member._strip_eligibility_prefix(text_src)
+                normalized = member._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                match = member._MOVEMENT_PHASE_ADVANCE_REDEPLOY_RE.fullmatch(normalized)
+                if not match:
+                    continue
+                try:
+                    min_enemy = int(match.group("min_dist") or 0)
+                except Exception:
+                    min_enemy = 0
+                if min_enemy <= 0:
+                    continue
+                source = str(name or "Advance redeploy").strip() or "Advance redeploy"
+                key = (source.lower(), int(min_enemy))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "min_enemy_distance_horiz": int(min_enemy),
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_movement_phase_end_visible_wound_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: end of Movement phase, select a visible enemy within range;
@@ -8250,4 +8313,3 @@ class AbilitySpecsMixin:
                 "source_ability": ability_name or "",
             }
         ]
-

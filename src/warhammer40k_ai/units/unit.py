@@ -3845,6 +3845,14 @@ class Unit(
         r"this unit suffers 1 mortal wounds?",
         re.IGNORECASE,
     )
+    _MOVEMENT_PHASE_ADVANCE_REDEPLOY_RE = re.compile(
+        r"(?:[a-z0-9 ]+ model only )?"
+        r"each time this model is selected to advance "
+        r"you can remove it from the battlefield and set it up again anywhere on the battlefield "
+        r"that is more than (?P<min_dist>\d+) horizontally away from all enemy (?:units|models)"
+        r"(?: instead of making an advance move(?: this model is still considered to have advanced this turn)?)?",
+        re.IGNORECASE,
+    )
     _MOVEMENT_PHASE_END_VISIBLE_WOUND_BONUS_RE = re.compile(
         r"at the end of your movement phase select one enemy unit within (?P<range>\d+) of and visible to this model "
         r"until the start of your next command phase each time a friendly (?P<keyword>[a-z0-9 ]+) models? make(?:s)? an attack that targets that enemy unit "

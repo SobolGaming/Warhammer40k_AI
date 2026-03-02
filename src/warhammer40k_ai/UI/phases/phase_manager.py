@@ -3485,7 +3485,11 @@ class BattlePhaseHandler(BasePhaseHandler):
                         pass
             if getattr(request, "decision_type", None) == DECISION_CONFIRM_YES_NO:
                 ctx = dict(getattr(request, "context", {}) or {})
-                if str(ctx.get("ability", "") or "") in ("movement_phase_move_weapon_bonus", "flickerjump"):
+                if str(ctx.get("ability", "") or "") in (
+                    "movement_phase_move_weapon_bonus",
+                    "flickerjump",
+                    "advance_redeploy",
+                ):
                     unit_id = str(ctx.get("unit_id", "") or "")
                     if unit_id:
                         self._resume_pending_pre_move_ability_action(unit_id)
@@ -4795,8 +4799,52 @@ class BattlePhaseHandler(BasePhaseHandler):
                     return
             _begin_movement()
 
+        def _maybe_begin_advance_redeploy_placement() -> bool:
+            if choice != "advance":
+                return False
+            if self.game is None or unit is None:
+                return False
+            from ...engine.decision_kinds import DECISION_MOVE_UNIT
+            try:
+                from ...utility.entity_ids import get_entity_id
+                unit_id = get_entity_id(unit)
+            except Exception:
+                unit_id = ""
+            if not unit_id:
+                return False
+            queue = getattr(self.game, "decision_queue", None)
+            if queue is None or not hasattr(queue, "list"):
+                return False
+            pending_req = None
+            for req in list(queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_MOVE_UNIT:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("placement_kind", "") or "") != "advance_redeploy_9h":
+                    continue
+                if str(ctx.get("unit_id", "") or "") != str(unit_id):
+                    continue
+                pending_req = req
+                break
+            if pending_req is None:
+                return False
+
+            def _on_complete(_completed: bool):
+                self._pending_advance_units.discard(str(unit_id))
+                self.game_view.selected_unit_for_movement = None
+                self.game_view.movement_action = None
+                self.game_view.selected_model_for_movement = None
+
+            self._request_move_unit_decision(
+                unit,
+                "advance",
+                _on_complete,
+                decision_request=pending_req,
+            )
+            return True
+
         def _maybe_prompt_pre_normal_move_ability(next_step) -> bool:
-            if choice != "move":
+            if choice not in ("move", "advance"):
                 return False
             if self.game is None or unit is None:
                 return False
@@ -4809,40 +4857,50 @@ class BattlePhaseHandler(BasePhaseHandler):
             has_ability = False
             ability_key = ""
             queue_method = None
-            try:
-                specs = unit.unit_movement_phase_normal_move_speed_mortal_wounds_specs() or []
-            except Exception:
-                specs = []
-            if specs:
-                has_ability = True
-                ability_key = "flickerjump"
-                queue_method = "_queue_movement_phase_flickerjump"
-            if not has_ability:
+            if choice == "move":
                 try:
-                    models = list(getattr(unit, "models", []) or [])
+                    specs = unit.unit_movement_phase_normal_move_speed_mortal_wounds_specs() or []
                 except Exception:
-                    models = []
-                for m in models:
-                    if not getattr(m, "is_alive", True):
-                        continue
+                    specs = []
+                if specs:
+                    has_ability = True
+                    ability_key = "flickerjump"
+                    queue_method = "_queue_movement_phase_flickerjump"
+                if not has_ability:
                     try:
-                        specs = unit.model_movement_phase_normal_move_weapon_attacks_bonus_specs(m) or []
+                        models = list(getattr(unit, "models", []) or [])
                     except Exception:
-                        specs = []
-                    if not specs:
-                        continue
-                    for spec in specs:
-                        key = str(spec.get("key") or "movement_phase_normal_move_bonus").strip().lower()
-                        if not key:
-                            key = "movement_phase_normal_move_bonus"
-                        if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
+                        models = []
+                    for m in models:
+                        if not getattr(m, "is_alive", True):
                             continue
-                        has_ability = True
-                        ability_key = "movement_phase_move_weapon_bonus"
-                        queue_method = "_queue_movement_phase_normal_move_weapon_attacks_bonus"
-                        break
-                    if has_ability:
-                        break
+                        try:
+                            specs = unit.model_movement_phase_normal_move_weapon_attacks_bonus_specs(m) or []
+                        except Exception:
+                            specs = []
+                        if not specs:
+                            continue
+                        for spec in specs:
+                            key = str(spec.get("key") or "movement_phase_normal_move_bonus").strip().lower()
+                            if not key:
+                                key = "movement_phase_normal_move_bonus"
+                            if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
+                                continue
+                            has_ability = True
+                            ability_key = "movement_phase_move_weapon_bonus"
+                            queue_method = "_queue_movement_phase_normal_move_weapon_attacks_bonus"
+                            break
+                        if has_ability:
+                            break
+            else:
+                try:
+                    specs = unit.unit_movement_phase_advance_redeploy_specs() or []
+                except Exception:
+                    specs = []
+                if specs:
+                    has_ability = True
+                    ability_key = "advance_redeploy"
+                    queue_method = "_queue_movement_phase_advance_redeploy"
             if not has_ability:
                 return False
 
@@ -4868,6 +4926,9 @@ class BattlePhaseHandler(BasePhaseHandler):
                         continue
                     pending_req = req
                     break
+
+            if pending_req is None:
+                return False
 
             if unit_id:
                 self._pending_pre_move_ability_actions[str(unit_id)] = {"callback": next_step}
@@ -4903,10 +4964,15 @@ class BattlePhaseHandler(BasePhaseHandler):
                     pass
             return True
 
-        def _begin_movement_with_pre_ability():
-            if _maybe_prompt_pre_normal_move_ability(_begin_movement_with_move_choice):
+        def _begin_movement_after_pre_ability():
+            if _maybe_begin_advance_redeploy_placement():
                 return
             _begin_movement_with_move_choice()
+
+        def _begin_movement_with_pre_ability():
+            if _maybe_prompt_pre_normal_move_ability(_begin_movement_after_pre_ability):
+                return
+            _begin_movement_after_pre_ability()
 
         if choice in ("move", "advance", "fall_back"):
             self.game_view._maybe_prompt_battle_focus_move(unit, choice, _begin_movement_with_pre_ability)
