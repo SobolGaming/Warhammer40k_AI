@@ -10,9 +10,12 @@ from typing import Any, Optional
 
 from .decisions import CandidateAction, DecisionRequest, DecisionResult
 from .path_witness import build_model_path_witness_for_unit
+from .ruleset import RulesetBundle
 from .state_blob import all_player_obs_states, canonical_omniscient_state
 
 SCHEMA_VERSION = "1.0.0"
+DEFAULT_MISSION_DESCRIPTOR_ID = "unknown_mission_descriptor"
+DEFAULT_DEPLOYMENT_DESCRIPTOR_ID = "unknown_deployment_descriptor"
 
 
 def _repo_root() -> Path:
@@ -53,20 +56,58 @@ def _safe_turn_id(game: object) -> int:
     return int(get_round() or 0) if callable(get_round) else int(getattr(game, "turn", 0) or 0)
 
 
-def _context_ruleset(request: DecisionRequest, game: object) -> tuple[str, str, str]:
+def _normalize_str_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return sorted({str(item) for item in value if str(item)})
+    return []
+
+
+def _context_rules_bundle(request: DecisionRequest, game: object) -> RulesetBundle:
     ctx = dict(getattr(request, "context", {}) or {})
-    ruleset_id = str(ctx.get("ruleset_id") or "")
-    dataslate_id = str(ctx.get("dataslate_id") or "")
-    points_id = str(ctx.get("points_id") or "")
-    if ruleset_id and dataslate_id and points_id:
-        return (ruleset_id, dataslate_id, points_id)
+    raw_bundle = ctx.get("rules_bundle")
+    if isinstance(raw_bundle, dict):
+        return RulesetBundle.from_dict(raw_bundle)
+    bundle = RulesetBundle.from_values(
+        core_rules_id=ctx.get("core_rules_id"),
+        rules_commentary_id=ctx.get("rules_commentary_id"),
+        mission_pack_id=ctx.get("mission_pack_id"),
+        terrain_pack_id=ctx.get("terrain_pack_id"),
+        dataslate_id=ctx.get("dataslate_id"),
+        points_id=ctx.get("points_id"),
+        faction_pack_id=ctx.get("faction_pack_id"),
+        detachment_pack_id=ctx.get("detachment_pack_id"),
+    )
+    if not bundle.is_placeholder():
+        return bundle
     get_ruleset_context = getattr(game, "get_ruleset_context", None)
     game_ctx = dict(get_ruleset_context() or {}) if callable(get_ruleset_context) else {}
-    return (
-        str(ruleset_id or game_ctx.get("ruleset_id") or ""),
-        str(dataslate_id or game_ctx.get("dataslate_id") or ""),
-        str(points_id or game_ctx.get("points_id") or ""),
-    )
+    if isinstance(game_ctx.get("rules_bundle"), dict):
+        return RulesetBundle.from_dict(game_ctx["rules_bundle"])
+    return RulesetBundle.from_dict(game_ctx)
+
+
+def _context_descriptor_ids(request: DecisionRequest) -> dict[str, Any]:
+    ctx = dict(getattr(request, "context", {}) or {})
+    raw = ctx.get("descriptor_ids")
+    if isinstance(raw, dict):
+        mission_descriptor_id = str(raw.get("mission_descriptor_id") or "")
+        deployment_descriptor_id = str(raw.get("deployment_descriptor_id") or "")
+        objective_descriptor_ids = _normalize_str_list(raw.get("objective_descriptor_ids"))
+        terrain_descriptor_ids = _normalize_str_list(raw.get("terrain_descriptor_ids"))
+        tool_descriptor_ids = _normalize_str_list(raw.get("tool_descriptor_ids"))
+    else:
+        mission_descriptor_id = str(ctx.get("mission_descriptor_id") or "")
+        deployment_descriptor_id = str(ctx.get("deployment_descriptor_id") or "")
+        objective_descriptor_ids = _normalize_str_list(ctx.get("objective_descriptor_ids"))
+        terrain_descriptor_ids = _normalize_str_list(ctx.get("terrain_descriptor_ids"))
+        tool_descriptor_ids = _normalize_str_list(ctx.get("tool_descriptor_ids"))
+    return {
+        "mission_descriptor_id": mission_descriptor_id or DEFAULT_MISSION_DESCRIPTOR_ID,
+        "objective_descriptor_ids": objective_descriptor_ids,
+        "terrain_descriptor_ids": terrain_descriptor_ids,
+        "deployment_descriptor_id": deployment_descriptor_id or DEFAULT_DEPLOYMENT_DESCRIPTOR_ID,
+        "tool_descriptor_ids": tool_descriptor_ids,
+    }
 
 
 def _ensure_outcome_shape(outcome: dict[str, Any]) -> dict[str, Any]:
@@ -139,6 +180,8 @@ class DecisionRecordSchemaValidator:
         self._required_fields = set(self._schema.get("required", []) or [])
         defs = dict(self._schema.get("$defs", {}) or {})
         self._candidate_required = set(defs.get("CandidateAction", {}).get("required", []) or [])
+        self._rules_bundle_required = set(defs.get("RulesBundle", {}).get("required", []) or [])
+        self._descriptor_required = set(defs.get("DescriptorIds", {}).get("required", []) or [])
 
     def validate(self, record: dict[str, Any]) -> list[str]:
         errors: list[str] = []
@@ -167,6 +210,28 @@ class DecisionRecordSchemaValidator:
         if any(not isinstance(v, bool) for v in mask):
             errors.append("mask values must be booleans")
 
+        rules_bundle = record.get("rules_bundle")
+        if not isinstance(rules_bundle, dict):
+            errors.append("rules_bundle must be an object")
+        else:
+            missing_rules = sorted(field for field in self._rules_bundle_required if field not in rules_bundle)
+            if missing_rules:
+                errors.append(f"rules_bundle missing required fields: {', '.join(missing_rules)}")
+        rules_bundle_id = str(record.get("rules_bundle_id", "") or "")
+        if not rules_bundle_id:
+            errors.append("rules_bundle_id must be a non-empty string")
+
+        descriptor_ids = record.get("descriptor_ids")
+        if not isinstance(descriptor_ids, dict):
+            errors.append("descriptor_ids must be an object")
+        else:
+            missing_descriptors = sorted(field for field in self._descriptor_required if field not in descriptor_ids)
+            if missing_descriptors:
+                errors.append(f"descriptor_ids missing required fields: {', '.join(missing_descriptors)}")
+            for key in ("objective_descriptor_ids", "terrain_descriptor_ids", "tool_descriptor_ids"):
+                if key in descriptor_ids and not isinstance(descriptor_ids.get(key), list):
+                    errors.append(f"descriptor_ids.{key} must be a list")
+
         valid_flag = record.get("valid", True)
         if valid_flag is False:
             if "invalid_attempt" not in record:
@@ -188,6 +253,13 @@ class DecisionRecordSchemaValidator:
             value = record.get("time_budget_ms")
             if not isinstance(value, int) or value < 0:
                 errors.append("time_budget_ms must be a non-negative integer when present")
+        if "relabel_status" in record:
+            if "relabel_rules_bundle" not in record:
+                errors.append("relabel_rules_bundle is required when relabel_status is present")
+            if "chosen_action_status_under_relabel" not in record:
+                errors.append("chosen_action_status_under_relabel is required when relabel_status is present")
+        if ("relabel_rules_bundle" in record) != ("relabel_rules_bundle_id" in record):
+            errors.append("relabel_rules_bundle and relabel_rules_bundle_id must be provided together")
         return errors
 
 
@@ -224,7 +296,8 @@ class DecisionRecordStore:
         time_budget_ms: Optional[int],
         outcome: dict[str, Any],
     ) -> dict[str, Any]:
-        ruleset_id, dataslate_id, points_id = _context_ruleset(request, self.game)
+        rules_bundle = _context_rules_bundle(request, self.game)
+        descriptor_ids = _context_descriptor_ids(request)
         global_seed = self._global_seed()
         decision_seed = self._decision_seed(request, global_seed)
         record = {
@@ -234,9 +307,9 @@ class DecisionRecordStore:
             "phase": _safe_phase_name(self.game),
             "decision_id": str(request.decision_id or ""),
             "decision_type": _decision_type(request),
-            "ruleset_id": ruleset_id,
-            "dataslate_id": dataslate_id,
-            "points_id": points_id,
+            "rules_bundle": rules_bundle.to_dict(),
+            "rules_bundle_id": str(rules_bundle.rules_bundle_id),
+            "descriptor_ids": descriptor_ids,
             "global_seed": global_seed,
             "decision_seed": decision_seed,
             "omniscient_state": _default_omniscient_state(self.game),

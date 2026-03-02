@@ -119,11 +119,7 @@ class DeterministicEventLog:
         to_dict = getattr(bundle, "to_dict", None)
         if callable(to_dict):
             return dict(to_dict() or {})
-        return {
-            "ruleset_id": getattr(bundle, "ruleset_id", None),
-            "dataslate_id": getattr(bundle, "dataslate_id", None),
-            "points_id": getattr(bundle, "points_id", None),
-        }
+        return {}
 
     def _inject_ruleset(self, payload: dict | None) -> dict:
         enriched = dict(payload or {})

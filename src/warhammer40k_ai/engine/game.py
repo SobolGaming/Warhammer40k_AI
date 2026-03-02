@@ -95,9 +95,14 @@ class Game(
         players: List[Player] | None = None,
         *,
         ruleset_bundle: RulesetBundle | None = None,
-        ruleset_id: str | None = None,
+        core_rules_id: str | None = None,
+        rules_commentary_id: str | None = None,
+        mission_pack_id: str | None = None,
+        terrain_pack_id: str | None = None,
         dataslate_id: str | None = None,
         points_id: str | None = None,
+        faction_pack_id: str | None = None,
+        detachment_pack_id: str | None = None,
     ):
         self.battlefield = battlefield
         # Avoid mutable default arg: always create a fresh list per Game instance.
@@ -124,18 +129,37 @@ class Game(
         self._ruleset_bundle: RulesetBundle | None = None
         if ruleset_bundle is None:
             ruleset_bundle = RulesetBundle.from_values(
-                ruleset_id=ruleset_id,
+                core_rules_id=core_rules_id,
+                rules_commentary_id=rules_commentary_id,
+                mission_pack_id=mission_pack_id,
+                terrain_pack_id=terrain_pack_id,
                 dataslate_id=dataslate_id,
                 points_id=points_id,
+                faction_pack_id=faction_pack_id,
+                detachment_pack_id=detachment_pack_id,
             )
         else:
             override = RulesetBundle.from_values(
-                ruleset_id=ruleset_id,
+                core_rules_id=core_rules_id,
+                rules_commentary_id=rules_commentary_id,
+                mission_pack_id=mission_pack_id,
+                terrain_pack_id=terrain_pack_id,
                 dataslate_id=dataslate_id,
                 points_id=points_id,
+                faction_pack_id=faction_pack_id,
+                detachment_pack_id=detachment_pack_id,
             )
             if (
-                (ruleset_id or dataslate_id or points_id)
+                (
+                    core_rules_id
+                    or rules_commentary_id
+                    or mission_pack_id
+                    or terrain_pack_id
+                    or dataslate_id
+                    or points_id
+                    or faction_pack_id
+                    or detachment_pack_id
+                )
                 and ruleset_bundle != override
             ):
                 raise ValueError("Ruleset bundle values conflict with explicit ids.")
@@ -264,11 +288,7 @@ class Game(
         to_dict = getattr(bundle, "to_dict", None)
         if callable(to_dict):
             return dict(to_dict() or {})
-        return {
-            "ruleset_id": getattr(bundle, "ruleset_id", None),
-            "dataslate_id": getattr(bundle, "dataslate_id", None),
-            "points_id": getattr(bundle, "points_id", None),
-        }
+        return {}
 
     def _current_battle_round(self) -> int:
         getter = getattr(self, "get_battle_round", None)
