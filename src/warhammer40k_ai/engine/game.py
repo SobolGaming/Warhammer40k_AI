@@ -23,6 +23,7 @@ from .command_kinds import (
     CMD_SET_DEPLOYMENT_WAITING,
 )
 from .decisions import CandidateAction, DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
+from .candidate_semantics import ensure_candidate_semantic_metadata
 from .decision_kinds import (
     DECISION_CHOOSE_MISSION,
     DECISION_CHOOSE_PLEDGE,
@@ -8910,6 +8911,11 @@ class Game(
                 if len(request.mask) != len(request.candidates):
                     request.mask = [True] * len(request.candidates)
                 request.mask_reasons = [None if val else "masked_as_illegal" for val in request.mask]
+        semantic_rules_bundle_id = str(ctx.get("rules_bundle_id", "") or "")
+        ensure_candidate_semantic_metadata(
+            request,
+            rules_bundle_id=semantic_rules_bundle_id,
+        )
         request.context = ctx
         self.decision_queue.add(request)
         self.event_system.publish("decision_requested", request=request, game=self)

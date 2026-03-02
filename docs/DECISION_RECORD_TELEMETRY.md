@@ -11,6 +11,7 @@ Runtime guarantees:
 - Every record includes `descriptor_ids` (`mission/objective/terrain/deployment/tool`) used at record time.
 - Decision context descriptor ids are compiled by Tier 0 (`docs/RULES_DESCRIPTOR_COMPILER.md`) and injected by `Game.request_decision(...)`.
 - If a request is recorded without descriptor ids in context, `DecisionRecordStore` recompiles descriptor ids from current game state before emission.
+- Candidate metadata is normalized to include portability semantic keys (`projected_*`, `cover_delta`, `los_delta`, `resource_delta`, `rules_provenance_refs`) for all decision types.
 - Valid decisions (`valid=true`) include `chosen_action_id`, and that action is present in `candidates`.
 - Invalid decisions (`valid=false`) include `invalid_attempt` and `rejection_reason`.
 - For freeform human payloads (movement payloads with `model_positions`), the engine may inject a `HumanActionCandidate` so the chosen action is represented inside `candidates`.
