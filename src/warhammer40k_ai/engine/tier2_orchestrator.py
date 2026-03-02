@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .movement_intent import MovementIntent, MovementIntentWeights
+from .movement_intent import MovementIntent
 from .tier1_plan import Tier1Plan
 from ..utility.entity_ids import get_entity_id
 
@@ -77,50 +77,68 @@ def _task_for_tier(compute_tier: str) -> str:
     return TASK_PROTECT
 
 
+def _priority_region_ids(plan: Tier1Plan) -> list[str]:
+    region_ids = [str(opp.target_region_id) for opp in list(plan.priority_opportunities or []) if str(opp.target_region_id)]
+    if region_ids:
+        return sorted(dict.fromkeys(region_ids))
+    return sorted({str(region) for region in list(plan.staging_regions or []) if str(region)})
+
+
+def _priority_opportunity_ids(plan: Tier1Plan) -> list[str]:
+    return sorted(
+        {
+            str(opp.opportunity_id)
+            for opp in list(plan.priority_opportunities or [])
+            if str(opp.opportunity_id)
+        }
+    )
+
+
+def _denial_opportunity_ids(plan: Tier1Plan) -> list[str]:
+    return sorted(
+        {
+            str(opp.opportunity_id)
+            for opp in list(plan.denial_opportunities or [])
+            if str(opp.opportunity_id)
+        }
+    )
+
+
 def _movement_intent_for_task(task_type: str, plan: Tier1Plan) -> MovementIntent:
     task = str(task_type or TASK_STAGE).upper()
+    priority_regions = _priority_region_ids(plan)
+    priority_opportunities = _priority_opportunity_ids(plan)
+    denial_opportunities = _denial_opportunity_ids(plan)
     if task == TASK_SCORE:
         return MovementIntent(
-            objective_targets=list(plan.contest_objective_ids or plan.primary_hold_objective_ids),
+            target_region_ids=priority_regions,
+            target_opportunity_ids=priority_opportunities,
+            desired_affordances=["HOLD_SCORE_SOURCE", "STAGE_FOR_NEXT_WINDOW"],
             screen_deny_targets=[],
-            weights=MovementIntentWeights(
-                screen_coverage=0.1,
-                coherency=0.2,
-                threat_avoid=0.25,
-                obj_proximity=0.45,
-            ),
+            weights={"score": 0.5, "deny": 0.1, "safety": 0.2, "coherency": 0.15, "action_enable": 0.05},
         )
     if task == TASK_SCREEN:
         return MovementIntent(
-            objective_targets=[],
-            screen_deny_targets=list(plan.contest_objective_ids or []),
-            weights=MovementIntentWeights(
-                screen_coverage=0.55,
-                coherency=0.25,
-                threat_avoid=0.15,
-                obj_proximity=0.05,
-            ),
+            target_region_ids=priority_regions,
+            target_opportunity_ids=denial_opportunities,
+            desired_affordances=["RESERVE_DENY", "LANE_CONTROL", "DENY_SCORE_SOURCE"],
+            screen_deny_targets=list(plan.staging_regions or []),
+            weights={"score": 0.05, "deny": 0.5, "safety": 0.25, "coherency": 0.15, "action_enable": 0.05},
         )
     if task == TASK_PROTECT:
         return MovementIntent(
-            objective_targets=list(plan.primary_hold_objective_ids or []),
+            target_region_ids=priority_regions,
+            target_opportunity_ids=priority_opportunities,
+            desired_affordances=["HOLD_SCORE_SOURCE", "STAGE_FOR_NEXT_WINDOW"],
             screen_deny_targets=[],
-            weights=MovementIntentWeights(
-                screen_coverage=0.2,
-                coherency=0.4,
-                threat_avoid=0.3,
-                obj_proximity=0.1,
-            ),
+            weights={"score": 0.2, "deny": 0.1, "safety": 0.45, "coherency": 0.2, "action_enable": 0.05},
         )
     return MovementIntent(
-        objective_targets=list(plan.primary_hold_objective_ids or []),
-        screen_deny_targets=list(plan.contest_objective_ids or []),
-        weights=MovementIntentWeights(
-            screen_coverage=0.25,
-            coherency=0.3,
-            threat_avoid=0.25,
-            obj_proximity=0.2,
-        ),
+        target_region_ids=priority_regions,
+        target_opportunity_ids=priority_opportunities + denial_opportunities,
+        desired_affordances=["STAGE_FOR_NEXT_WINDOW", "DENY_SCORE_SOURCE"],
+        screen_deny_targets=list(plan.staging_regions or []),
+        weights={"score": 0.25, "deny": 0.25, "safety": 0.25, "coherency": 0.2, "action_enable": 0.05},
     )
 
 

@@ -89,7 +89,15 @@ def _solver_candidates(game: object, request: DecisionRequest, intent: MovementI
         if store is None:
             raise RuntimeError("Game is missing path_witness_store.")
         path_witness_ref = store.put(witness)
-        weights = intent.weights.to_dict()
+        weights = dict(intent.weights or {})
+        score_weight = float(weights.get("score", 0.0))
+        deny_weight = float(weights.get("deny", 0.0))
+        safety_weight = float(weights.get("safety", 0.0))
+        coherency_weight = float(weights.get("coherency", 0.0))
+        action_enable_weight = float(weights.get("action_enable", 0.0))
+        trade_weight = float(weights.get("trade", 0.0))
+        rules_bundle_id = str(ctx.get("rules_bundle_id", "") or "")
+        rules_provenance_refs = [rules_bundle_id] if rules_bundle_id else []
         candidates.append(
             CandidateAction(
                 action_id=str(confirm_action_id),
@@ -100,10 +108,20 @@ def _solver_candidates(game: object, request: DecisionRequest, intent: MovementI
                     "fallback_mode": False,
                     "intent_hash": intent.stable_hash(),
                     "path_witness_ref": path_witness_ref,
-                    "screen_coverage_score": float(weights.get("screen_coverage", 0.0)),
-                    "coherency_score": float(weights.get("coherency", 0.0)),
-                    "threat_score": float(max(0.0, 1.0 - float(weights.get("threat_avoid", 0.0)))),
-                    "objective_score": float(weights.get("obj_proximity", 0.0)),
+                    "screen_coverage_score": float(deny_weight + action_enable_weight),
+                    "coherency_score": coherency_weight,
+                    "threat_score": float(max(0.0, 1.0 - safety_weight)),
+                    "projected_score_delta_next_window": score_weight * 2.0,
+                    "projected_score_delta_round": score_weight * 3.0,
+                    "projected_deny_delta_next_window": deny_weight * 2.0,
+                    "projected_control_delta": (score_weight + deny_weight) * 1.5,
+                    "projected_action_enablement_delta": action_enable_weight * 2.0,
+                    "projected_exposure_delta": -safety_weight,
+                    "projected_trade_ev": trade_weight - (1.0 - safety_weight) * 0.25,
+                    "cover_delta": safety_weight * 0.5,
+                    "los_delta": score_weight * 0.25 - safety_weight * 0.15,
+                    "resource_delta": -max(0.0, action_enable_weight * 0.1),
+                    "rules_provenance_refs": rules_provenance_refs,
                 },
             )
         )

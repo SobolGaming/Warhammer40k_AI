@@ -8806,11 +8806,19 @@ class Game(
             pass
         ctx = dict(getattr(request, "context", {}) or {})
         ruleset_ctx = self.get_ruleset_context()
+        if "rules_bundle" not in ctx:
+            ctx["rules_bundle"] = dict(ruleset_ctx or {})
+        elif dict(ctx.get("rules_bundle", {}) or {}) != dict(ruleset_ctx or {}):
+            raise ValueError("Decision context rules_bundle mismatch with game rules bundle.")
         for key, value in ruleset_ctx.items():
             if key not in ctx:
                 ctx[key] = value
             elif ctx.get(key) != value:
                 raise ValueError(f"Decision context ruleset mismatch for {key}: {ctx.get(key)} != {value}")
+        rules_bundle = getattr(self, "ruleset_bundle", None)
+        rules_bundle_id = str(getattr(rules_bundle, "rules_bundle_id", "") or "")
+        if rules_bundle_id and "rules_bundle_id" not in ctx:
+            ctx["rules_bundle_id"] = rules_bundle_id
         plan_player_id = str(getattr(request, "player_id", "") or "")
         if not plan_player_id:
             current_player = self.get_current_player() if self.players else None
@@ -8822,6 +8830,29 @@ class Game(
                 ctx["plan_id"] = plan.plan_id
             if "turn_plan" not in ctx:
                 ctx["turn_plan"] = plan.to_dict()
+            if "score_window_state" not in ctx:
+                ctx["score_window_state"] = {
+                    "windows": [window.to_dict() for window in list(plan.scoring_windows or [])],
+                    "battle_round": int(getattr(plan, "battle_round", 0) or 0),
+                }
+            if "opportunity_catalog" not in ctx:
+                ctx["opportunity_catalog"] = {
+                    "priority": [opp.to_dict() for opp in list(plan.priority_opportunities or [])],
+                    "denial": [opp.to_dict() for opp in list(plan.denial_opportunities or [])],
+                }
+            if "mission_state" not in ctx:
+                ctx["mission_state"] = {
+                    "selected_mission_info": dict(getattr(self, "selected_mission_info", {}) or {}),
+                    "secondary_mission_mode": str(getattr(self, "secondary_mission_mode", "") or ""),
+                }
+            if "terrain_state_summary" not in ctx:
+                map_obj = getattr(self, "map", None)
+                terrain_features = list(getattr(map_obj, "terrain_features", []) or [])
+                terrain_ids = sorted(str(getattr(feature, "id", "") or "") for feature in terrain_features)
+                ctx["terrain_state_summary"] = {
+                    "terrain_count": int(len(terrain_features)),
+                    "terrain_ids": terrain_ids,
+                }
             if "cp_reserve_policy" not in ctx:
                 ctx["cp_reserve_policy"] = dict(tier2_bundle.cp_reserve_policy or {})
             unit_id = str(ctx.get("unit_id", "") or "")

@@ -85,13 +85,17 @@ def _build_move_request(player_id: str, unit_id: str) -> DecisionRequest:
             "movement_type": "move",
             "decision_seed": 42,
             "movement_intent": {
-                "objective_targets": ["obj-1"],
+                "target_region_ids": ["region:objective:obj-1"],
+                "target_opportunity_ids": ["opp_capture_obj-1"],
+                "desired_affordances": ["HOLD_SCORE_SOURCE", "STAGE_FOR_NEXT_WINDOW"],
                 "screen_deny_targets": ["lane-a"],
                 "weights": {
-                    "screen_coverage": 0.55,
+                    "score": 0.55,
+                    "deny": 0.1,
+                    "safety": 0.2,
                     "coherency": 0.2,
-                    "threat_avoid": 0.15,
-                    "obj_proximity": 0.1,
+                    "action_enable": 0.1,
+                    "trade": 0.05,
                 },
             },
         },
@@ -118,6 +122,9 @@ def test_move_candidates_include_path_witness_ref_and_metadata() -> None:
     witness_ref = move_candidates[0].metadata.get("path_witness_ref")
     assert str(witness_ref).startswith("pathwitness://")
     assert game.path_witness_store.get(witness_ref) is not None
+    assert "projected_score_delta_next_window" in move_candidates[0].metadata
+    assert "projected_control_delta" in move_candidates[0].metadata
+    assert "projected_action_enablement_delta" in move_candidates[0].metadata
 
 
 def test_move_candidates_are_deterministic_for_same_intent_and_seed() -> None:

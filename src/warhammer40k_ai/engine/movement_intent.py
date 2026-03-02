@@ -7,34 +7,22 @@ from typing import Any
 
 
 @dataclass(frozen=True)
-class MovementIntentWeights:
-    screen_coverage: float = 0.25
-    coherency: float = 0.25
-    threat_avoid: float = 0.25
-    obj_proximity: float = 0.25
-
-    def to_dict(self) -> dict[str, float]:
-        return {
-            "screen_coverage": float(self.screen_coverage),
-            "coherency": float(self.coherency),
-            "threat_avoid": float(self.threat_avoid),
-            "obj_proximity": float(self.obj_proximity),
-        }
-
-
-@dataclass(frozen=True)
 class MovementIntent:
-    objective_targets: list[str] = field(default_factory=list)
+    target_region_ids: list[str] = field(default_factory=list)
+    target_opportunity_ids: list[str] = field(default_factory=list)
+    desired_affordances: list[str] = field(default_factory=list)
     screen_deny_targets: list[str] = field(default_factory=list)
-    weights: MovementIntentWeights = field(default_factory=MovementIntentWeights)
+    weights: dict[str, float] = field(default_factory=dict)
     anchors: dict[str, str] = field(default_factory=dict)
     constraint_toggles: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "objective_targets": list(self.objective_targets),
+            "target_region_ids": sorted({str(v) for v in list(self.target_region_ids or []) if str(v)}),
+            "target_opportunity_ids": sorted({str(v) for v in list(self.target_opportunity_ids or []) if str(v)}),
+            "desired_affordances": sorted({str(v) for v in list(self.desired_affordances or []) if str(v)}),
             "screen_deny_targets": list(self.screen_deny_targets),
-            "weights": self.weights.to_dict(),
+            "weights": {str(k): float(v) for k, v in sorted((self.weights or {}).items())},
             "anchors": {str(key): str(value) for key, value in sorted(self.anchors.items())},
             "constraint_toggles": dict(sorted((self.constraint_toggles or {}).items())),
         }
@@ -47,24 +35,25 @@ class MovementIntent:
     def from_context(cls, context: dict[str, Any] | None) -> "MovementIntent":
         ctx = dict(context or {})
         raw = dict(ctx.get("movement_intent", {}) or {})
-        objective_targets = raw.get("objective_targets", ctx.get("objective_targets", []))
+        target_region_ids = raw.get("target_region_ids", ctx.get("target_region_ids", []))
+        target_opportunity_ids = raw.get("target_opportunity_ids", ctx.get("target_opportunity_ids", []))
+        desired_affordances = raw.get("desired_affordances", ctx.get("desired_affordances", []))
         screen_deny_targets = raw.get("screen_deny_targets", ctx.get("screen_deny_targets", []))
         weights_raw = dict(raw.get("weights", {}) or {})
         if not weights_raw:
             weights_raw = {
-                "screen_coverage": ctx.get("weight_screen_coverage", 0.25),
+                "score": ctx.get("weight_score", 0.3),
+                "deny": ctx.get("weight_deny", 0.2),
+                "safety": ctx.get("weight_safety", 0.25),
                 "coherency": ctx.get("weight_coherency", 0.25),
-                "threat_avoid": ctx.get("weight_threat_avoid", 0.25),
-                "obj_proximity": ctx.get("weight_obj_proximity", 0.25),
+                "action_enable": ctx.get("weight_action_enable", 0.1),
+                "trade": ctx.get("weight_trade", 0.1),
             }
-        weights = MovementIntentWeights(
-            screen_coverage=float(weights_raw.get("screen_coverage", 0.25)),
-            coherency=float(weights_raw.get("coherency", 0.25)),
-            threat_avoid=float(weights_raw.get("threat_avoid", 0.25)),
-            obj_proximity=float(weights_raw.get("obj_proximity", 0.25)),
-        )
+        weights = {str(k): float(v) for k, v in weights_raw.items()}
         return cls(
-            objective_targets=[str(v) for v in list(objective_targets or [])],
+            target_region_ids=[str(v) for v in list(target_region_ids or [])],
+            target_opportunity_ids=[str(v) for v in list(target_opportunity_ids or [])],
+            desired_affordances=[str(v) for v in list(desired_affordances or [])],
             screen_deny_targets=[str(v) for v in list(screen_deny_targets or [])],
             weights=weights,
             anchors={str(k): str(v) for k, v in dict(raw.get("anchors", {}) or {}).items()},

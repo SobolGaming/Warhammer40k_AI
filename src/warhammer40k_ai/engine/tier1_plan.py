@@ -7,15 +7,6 @@ from ..utility.entity_ids import get_entity_id
 
 
 @dataclass(frozen=True)
-class SecondaryPosture:
-    mode: str
-    discard_policy: str
-
-    def to_dict(self) -> dict[str, str]:
-        return {"mode": str(self.mode), "discard_policy": str(self.discard_policy)}
-
-
-@dataclass(frozen=True)
 class RiskPosture:
     variance: str
     aggression: str
@@ -37,18 +28,70 @@ class CPBudgetPosture:
 
 
 @dataclass(frozen=True)
+class ResourcePosture:
+    cp_spend_profile: str
+    preserve_command_reactions: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "cp_spend_profile": str(self.cp_spend_profile),
+            "preserve_command_reactions": bool(self.preserve_command_reactions),
+        }
+
+
+@dataclass(frozen=True)
+class Tier1ScoringWindow:
+    window_id: str
+    owner: str
+    phase: str
+    urgency: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "window_id": str(self.window_id),
+            "owner": str(self.owner),
+            "phase": str(self.phase),
+            "urgency": str(self.urgency),
+        }
+
+
+@dataclass(frozen=True)
+class Tier1Opportunity:
+    opportunity_id: str
+    kind: str
+    source_ref: str
+    target_region_id: str
+    horizon: str
+    estimated_value: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "opportunity_id": str(self.opportunity_id),
+            "kind": str(self.kind),
+            "source_ref": str(self.source_ref),
+            "target_region_id": str(self.target_region_id),
+            "horizon": str(self.horizon),
+            "estimated_value": float(self.estimated_value),
+        }
+
+
+@dataclass(frozen=True)
 class Tier1Plan:
     plan_id: str
     battle_round: int
     player_id: str
-    primary_hold_objective_ids: list[str] = field(default_factory=list)
-    contest_objective_ids: list[str] = field(default_factory=list)
-    deny_opponent_primary_next_round: bool = True
-    secondary_posture: SecondaryPosture = field(
-        default_factory=lambda: SecondaryPosture(mode="TACTICAL", discard_policy="discard_if_p_success_lt_0.35")
+    scoring_windows: list[Tier1ScoringWindow] = field(default_factory=list)
+    priority_opportunities: list[Tier1Opportunity] = field(default_factory=list)
+    denial_opportunities: list[Tier1Opportunity] = field(default_factory=list)
+    staging_regions: list[str] = field(default_factory=list)
+    action_enablement_goals: list[str] = field(default_factory=list)
+    resource_posture: ResourcePosture = field(
+        default_factory=lambda: ResourcePosture(cp_spend_profile="BALANCED", preserve_command_reactions=True)
     )
     risk_posture: RiskPosture = field(default_factory=lambda: RiskPosture(variance="MEDIUM", aggression="MEDIUM"))
-    cp_budget: CPBudgetPosture = field(default_factory=lambda: CPBudgetPosture(reserve_for_defense=1, max_offensive_spend_this_turn=1))
+    cp_budget: CPBudgetPosture = field(
+        default_factory=lambda: CPBudgetPosture(reserve_for_defense=1, max_offensive_spend_this_turn=1)
+    )
     unit_priority_tiers: dict[str, list[str]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -56,10 +99,14 @@ class Tier1Plan:
             "plan_id": str(self.plan_id),
             "battle_round": int(self.battle_round),
             "player_id": str(self.player_id),
-            "primary_hold_objective_ids": list(self.primary_hold_objective_ids),
-            "contest_objective_ids": list(self.contest_objective_ids),
-            "deny_opponent_primary_next_round": bool(self.deny_opponent_primary_next_round),
-            "secondary_posture": self.secondary_posture.to_dict(),
+            "scoring_windows": [window.to_dict() for window in list(self.scoring_windows or [])],
+            "priority_opportunities": [opp.to_dict() for opp in list(self.priority_opportunities or [])],
+            "denial_opportunities": [opp.to_dict() for opp in list(self.denial_opportunities or [])],
+            "staging_regions": sorted({str(region) for region in list(self.staging_regions or []) if str(region)}),
+            "action_enablement_goals": sorted(
+                {str(goal) for goal in list(self.action_enablement_goals or []) if str(goal)}
+            ),
+            "resource_posture": self.resource_posture.to_dict(),
             "risk_posture": self.risk_posture.to_dict(),
             "cp_budget": self.cp_budget.to_dict(),
             "unit_priority_tiers": {
@@ -113,6 +160,14 @@ def _unit_priority_tiers(player: object) -> dict[str, list[str]]:
     return {"P0": p0, "P1": p1, "P2": p2}
 
 
+def _region_id(objective_id: str) -> str:
+    return f"region:objective:{str(objective_id or '')}"
+
+
+def _score_source_id(objective_id: str) -> str:
+    return f"score_source:objective:{str(objective_id or '')}"
+
+
 def build_heuristic_tier1_plan(game: object, player_id: str) -> Tier1Plan:
     player = _resolve_player(game, player_id)
     if player is None:
@@ -120,16 +175,46 @@ def build_heuristic_tier1_plan(game: object, player_id: str) -> Tier1Plan:
     battle_round_getter = getattr(game, "get_battle_round", None)
     battle_round = int(battle_round_getter() if callable(battle_round_getter) else getattr(game, "turn", 0) or 0)
     objectives = _sorted_objectives(game)
-    hold_ids: list[str] = []
-    contest_ids: list[str] = []
+    priority_opportunities: list[Tier1Opportunity] = []
+    denial_opportunities: list[Tier1Opportunity] = []
     for objective in objectives:
         objective_id = str(getattr(objective, "id", "") or "")
         controller = getattr(objective, "controlling_player", None)
         controller_id = str(getattr(controller, "id", "") or "")
+        source_ref = _score_source_id(objective_id)
+        region_id = _region_id(objective_id)
         if controller_id == str(player_id):
-            hold_ids.append(objective_id)
+            priority_opportunities.append(
+                Tier1Opportunity(
+                    opportunity_id=f"opp_hold_{objective_id}",
+                    kind="SCORING_SOURCE",
+                    source_ref=source_ref,
+                    target_region_id=region_id,
+                    horizon="NEXT_SCORE_WINDOW",
+                    estimated_value=4.0,
+                )
+            )
         else:
-            contest_ids.append(objective_id)
+            denial_opportunities.append(
+                Tier1Opportunity(
+                    opportunity_id=f"opp_deny_{objective_id}",
+                    kind="DENY_SOURCE",
+                    source_ref=source_ref,
+                    target_region_id=region_id,
+                    horizon="NEXT_OPPONENT_SCORE_WINDOW",
+                    estimated_value=3.0,
+                )
+            )
+            priority_opportunities.append(
+                Tier1Opportunity(
+                    opportunity_id=f"opp_capture_{objective_id}",
+                    kind="SCORING_SOURCE",
+                    source_ref=source_ref,
+                    target_region_id=region_id,
+                    horizon="NEXT_SCORE_WINDOW",
+                    estimated_value=2.5,
+                )
+            )
 
     opponent_scores: list[int] = []
     for other in list(getattr(game, "players", []) or []):
@@ -148,16 +233,36 @@ def build_heuristic_tier1_plan(game: object, player_id: str) -> Tier1Plan:
     command_points = int(getattr(player, "command_points", 0) or 0)
     reserve_cp = min(2, max(0, command_points))
     offensive_cap = max(0, command_points - reserve_cp)
+    if command_points <= 1:
+        resource_posture = ResourcePosture(cp_spend_profile="CONSERVATIVE", preserve_command_reactions=True)
+    elif command_points >= 4:
+        resource_posture = ResourcePosture(cp_spend_profile="AGGRESSIVE", preserve_command_reactions=False)
+    else:
+        resource_posture = ResourcePosture(cp_spend_profile="BALANCED", preserve_command_reactions=True)
     plan_id = f"plan_r{battle_round}_{str(player_id)[:8]}"
+
+    scoring_windows = [
+        Tier1ScoringWindow(
+            window_id=f"window_r{battle_round}_next_primary",
+            owner=str(player_id),
+            phase="COMMAND",
+            urgency="HIGH",
+        )
+    ]
+
+    staging_regions = sorted({opp.target_region_id for opp in denial_opportunities[:2]})
+    action_enablement_goals = [f"enable_action_site:{region}" for region in staging_regions]
 
     return Tier1Plan(
         plan_id=plan_id,
         battle_round=battle_round,
         player_id=str(player_id),
-        primary_hold_objective_ids=hold_ids,
-        contest_objective_ids=contest_ids,
-        deny_opponent_primary_next_round=True,
-        secondary_posture=SecondaryPosture(mode="TACTICAL", discard_policy="discard_if_p_success_lt_0.35"),
+        scoring_windows=scoring_windows,
+        priority_opportunities=priority_opportunities,
+        denial_opportunities=denial_opportunities,
+        staging_regions=staging_regions,
+        action_enablement_goals=action_enablement_goals,
+        resource_posture=resource_posture,
         risk_posture=risk_posture,
         cp_budget=CPBudgetPosture(
             reserve_for_defense=reserve_cp,
