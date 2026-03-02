@@ -6636,6 +6636,102 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if _unit_has_keyword(target_unit, keyword):
                 return (f"Opponent Shooting phase disruption target cannot have keyword {keyword}.",)
         return ()
+    if ability == "harbinger_of_despair_battleshock":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if model is None:
+            return ("Harbinger of Despair source model was not found.",)
+        if source_unit is None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return ("Harbinger of Despair source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Harbinger of Despair source unit was not found.",)
+        model_parent = getattr(model, "parent_unit", None)
+        model_parent_root = (
+            model_parent.get_attached_unit_root()
+            if model_parent is not None and hasattr(model_parent, "get_attached_unit_root")
+            else model_parent
+        )
+        if model_parent_root is not None and model_parent_root is not source_root:
+            return ("Harbinger of Despair source model does not belong to the source unit.",)
+        ability_key = str(payload.get("ability_key") or ctx.get("ability_key") or "").strip().lower()
+        if not ability_key:
+            return ("Harbinger of Despair ability_key is required.",)
+        phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name and current_phase and current_phase != phase_name:
+            return ("Harbinger of Despair can only be resolved in the queued phase.",)
+        try:
+            queued_turn = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            queued_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if queued_turn > 0 and current_turn > 0 and queued_turn != current_turn:
+            return ("Harbinger of Despair decision is no longer valid this turn.",)
+        if is_skip_choice(request, result):
+            return ()
+        used_fn = getattr(model, "has_used_once_per_battle_round", None)
+        if callable(used_fn) and current_turn > 0:
+            if bool(used_fn(ability_key, battle_round=int(current_turn))):
+                return ("Harbinger of Despair has already been used this turn.",)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Harbinger of Despair target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Harbinger of Despair target unit was not found.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Harbinger of Despair target is not an eligible candidate.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is target_army:
+            return ("Harbinger of Despair target must be an enemy unit.",)
+        try:
+            range_value = float(ctx.get("range", payload.get("range", 0)) or 0)
+        except (TypeError, ValueError):
+            range_value = 0.0
+        if range_value <= 0:
+            return ("Harbinger of Despair range is invalid.",)
+        try:
+            test_penalty = int(ctx.get("test_penalty", payload.get("test_penalty", 0)) or 0)
+        except (TypeError, ValueError):
+            test_penalty = 0
+        if test_penalty <= 0:
+            return ("Harbinger of Despair test_penalty is invalid.",)
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        if callable(in_range_fn):
+            if not bool(in_range_fn(model, target_root, range_value=float(range_value))):
+                return ("Harbinger of Despair target is out of range.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability not in ("strategic_conqueror", "archons_will_objective"):
@@ -12492,6 +12588,94 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"{ability_name}: no wounds were regained.",
             )
         return model
+    if ability == "harbinger_of_despair_battleshock":
+        payload = _option_payload(request, result)
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        if model is None or source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Harbinger of Despair").strip() or "Harbinger of Despair"
+        ability_key = str(ctx.get("ability_key", "") or payload.get("ability_key", "") or "").strip().lower()
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if is_skip_choice(request, result):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: selected none.",
+            )
+            return None
+        has_used = getattr(model, "has_used_once_per_battle_round", None)
+        if callable(has_used) and ability_key and current_turn > 0:
+            if bool(has_used(ability_key, battle_round=int(current_turn))):
+                return None
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+        try:
+            test_penalty = int(ctx.get("test_penalty", payload.get("test_penalty", 0)) or 0)
+        except (TypeError, ValueError):
+            test_penalty = 0
+        if test_penalty <= 0:
+            return None
+        modifier = -abs(int(test_penalty))
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current_modifier = int(sr.get("battle_shock_test_modifier", 0) or 0)
+        sr["battle_shock_test_modifier"] = int(current_modifier + modifier)
+        reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+        reasons.append(f"{ability_name}: {int(modifier)}")
+        sr["battle_shock_test_modifier_reasons"] = reasons
+        target_root.special_rules = sr
+        mark_used = getattr(model, "mark_used_once_per_battle_round", None)
+        if callable(mark_used) and ability_key and current_turn > 0:
+            mark_used(
+                ability_key,
+                battle_round=int(current_turn),
+                ability_name=ability_name,
+                source="datasheet",
+            )
+        take_test = getattr(target_root, "take_battle_shock_test", None)
+        if callable(take_test):
+            take_test(int(current_turn or 1))
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} takes a Battle-shock test at {int(modifier)}.",
+        )
+        return target_root
     if is_skip_choice(request, result):
         return None
     payload = _option_payload(request, result)

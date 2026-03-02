@@ -1243,6 +1243,132 @@ class GameReactiveDecisionsMixin:
         self.request_decision(request)
         return request
 
+    def _queue_start_phase_select_enemy_battleshock(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+        phase_name: str,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
+
+        model_id = str(get_entity_id(model) or "").strip()
+        unit_id = str(get_entity_id(source_unit) or "").strip()
+        if not model_id or not unit_id:
+            return None
+
+        ability_name = str(spec.get("source", "") or "Harbinger of Despair").strip() or "Harbinger of Despair"
+        ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+        if not ability_key:
+            source_key = re.sub(r"[^a-z0-9]+", "_", ability_name.lower()).strip("_")
+            if not source_key:
+                source_key = "harbinger_of_despair"
+            ability_key = f"start_phase_select_battleshock:{source_key}"
+        phase_key = str(phase_name or "").strip().upper()
+        if not phase_key:
+            return None
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "harbinger_of_despair_battleshock":
+                    continue
+                if str(ctx.get("model_id", "") or "") != model_id:
+                    continue
+                if str(ctx.get("ability_key", "") or "").strip().lower() != ability_key:
+                    continue
+                if str(ctx.get("phase_name", "") or "").strip().upper() != phase_key:
+                    continue
+                try:
+                    queued_turn = int(ctx.get("turn", 0) or 0)
+                except (TypeError, ValueError):
+                    queued_turn = 0
+                if queued_turn and current_turn and queued_turn != current_turn:
+                    continue
+                return None
+
+        def _cand_sort_key(unit):
+            try:
+                return str(get_entity_id(unit))
+            except (AttributeError, TypeError, ValueError):
+                return str(getattr(unit, "name", "") or "")
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        candidate_ids: list[str] = []
+        for cand in sorted(list(candidates), key=_cand_sort_key):
+            cand_id = str(get_entity_id(cand) or "").strip()
+            if not cand_id:
+                continue
+            candidate_ids.append(cand_id)
+            options.append(
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={
+                        "target_unit_id": cand_id,
+                        "unit_id": unit_id,
+                        "model_id": model_id,
+                    },
+                )
+            )
+        if len(options) <= 1:
+            return None
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except (TypeError, ValueError):
+            range_value = 0
+        try:
+            test_penalty = int(spec.get("test_penalty", 0) or 0)
+        except (TypeError, ValueError):
+            test_penalty = 0
+        if range_value <= 0 or test_penalty <= 0:
+            return None
+        ctx = {
+            "ability": "harbinger_of_despair_battleshock",
+            "ability_name": ability_name,
+            "ability_key": ability_key,
+            "phase_name": phase_key,
+            "phase": phase_key.replace("_", " ").title(),
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(range_value),
+            "test_penalty": int(test_penalty),
+            "candidate_unit_ids": list(candidate_ids),
+            "optional": True,
+            "once_per_turn": bool(spec.get("once_per_turn", True)),
+            "turn": int(current_turn or 0),
+        }
+        phase_label = phase_key.replace("_", " ").title()
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select one enemy unit within {int(range_value)}\" to take a Battle-shock test ({phase_label}).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_start_shooting_phase_visible_hit_bonus(
         self,
         *,

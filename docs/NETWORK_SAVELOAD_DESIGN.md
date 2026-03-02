@@ -258,6 +258,7 @@ Command phase:
 - code_chivalric_target_dialog: SELECT_TARGET_MODEL {model_id} (context `selection_kind="code_chivalric_target"`)
 - malefic_surge_unit_dialog: CHOOSE_MALEFIC_SURGE_UNIT {unit_id | skip} (context `ability="malefic_surge"`, `battle_round`)
 - soulless_horror_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="soulless_horror"`, `unit_id`, `model_id`, `ability_key`, `range`, `test_penalty`, `psyker_test_penalty`)
+- harbinger_of_despair_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="harbinger_of_despair_battleshock"`, `ability_name`, `ability_key`, `phase_name`, `unit_id`, `model_id`, `range`, `test_penalty`, `candidate_unit_ids[]`, `optional=true`, `once_per_turn=true`, `turn`)
 
 Movement:
 - movement_choice_dialog: SELECT_MOVEMENT_ACTION {unit_id, action_type}
@@ -497,6 +498,7 @@ Faction / Detachment / Ability choices:
 - quarry_selection_dialog (Vendetta): CHOOSE_QUARRY {target_unit_id} (context `ability="renegade_warband_vendetta_target"`, `ability_name="Vendetta"`, `army_id`, `battle_round`, `candidate_unit_ids[]`)
 - quarry_selection_dialog (Focus of Hatred): CHOOSE_QUARRY {target_unit_id} (context `ability="veterans_of_the_long_war_focus_of_hatred_target"`, `ability_name="Focus of Hatred"`, `army_id`, `battle_round`, `candidate_unit_ids[]`)
 - quarry_selection_dialog (Twisted Doctrine): CHOOSE_QUARRY {choice_key | skip} (context `ability="renegade_warband_twisted_doctrine"`, `ability_name="Twisted Doctrine"`, `unit_id`, `trigger_action`, `set_up_as_reinforcements`, `turn`, `turn_owner_id`, `allowed_choice_keys[]`)
+- quarry_selection_dialog (Harbinger of Despair): CHOOSE_QUARRY {target_unit_id | skip} (context `ability="harbinger_of_despair_battleshock"`, `ability_name`, `ability_key`, `phase_name`, `unit_id`, `model_id`, `range`, `test_penalty`, `candidate_unit_ids[]`, `optional=true`, `once_per_turn=true`, `turn`)
 - quarry_selection_dialog (Huntress' Eye): CHOOSE_QUARRY {target_unit_id} (context `ability="huntress_eye"`, `ability_name="Huntress' Eye"`, `army_id`, `command_phase_owner_id`, `source_unit_id`, `source_member_unit_id`, `source_model_id`, `range`)
 - quarry_selection_dialog (Veteran of the Kataphraktoi): CHOOSE_QUARRY {target_unit_id | skip} (context `ability="veteran_of_the_kataphraktoi"`, `ability_name="Veteran of the Kataphraktoi"`, `army_id`, `command_phase_owner_id`, `source_unit_id`, `source_member_unit_id`, `source_model_id`, `range`, `optional=true`)
 - quarry_selection_dialog (Divine Aspect): CHOOSE_QUARRY {target_unit_id | skip} (context `ability="divine_aspect_target"`, `ability_name="Divine Aspect"`, `army_id`, `source_unit_id`, `source_model_id`, `range_inches=12`, `candidate_unit_ids[]`, `phase="Movement phase"`, `optional=true`)

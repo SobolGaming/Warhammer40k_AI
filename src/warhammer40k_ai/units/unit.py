@@ -3632,6 +3632,13 @@ class Unit(
         r"subtracting (?P<pen>\d+) from that test(?: or subtracting (?P<psyker_pen>\d+) if that unit is a psyker)?",
         re.IGNORECASE,
     )
+    _START_SELECTED_PHASES_ENEMY_RANGE_BATTLESHOCK_RE = re.compile(
+        r"once per turn at the start of your (?P<phases>[a-z ]+?) phase(?:s)? "
+        r"you can select one enemy unit within (?P<range>\d+)\s*\"?\s*of this model "
+        r"that(?: enemy)? unit must take a battle shock test "
+        r"subtracting (?P<pen>\d+) from (?:(?:that|the) )?test(?: when it does so)?",
+        re.IGNORECASE,
+    )
     _CHARGE_END_ENGAGEMENT_BATTLESHOCK_RE = re.compile(
         r"each time this (?:model s )?unit ends a charge move each enemy unit within engagement range of (?:(?:that|this) unit|it) must take a battle shock test",
         re.IGNORECASE,

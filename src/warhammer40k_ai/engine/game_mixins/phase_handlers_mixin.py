@@ -4543,6 +4543,124 @@ class GamePhaseHandlersMixin:
                             instance_key=f"{str(get_entity_id(model) or '')}:{ability_key}",
                         )
 
+    def _on_phase_start_harbinger_of_despair_battleshock(self, player=None, phase=None, **_kwargs) -> None:
+        """Start of selected phases: optional single-target Battle-shock selection (Harbinger of Despair style)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname not in {"COMMAND_PHASE", "MOVEMENT_PHASE", "SHOOTING_PHASE", "CHARGE_PHASE", "FIGHT_PHASE"}:
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        enemy_roots = list(self._collect_enemy_unit_roots(player) or [])
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            spec_fn = getattr(root, "model_start_selected_phases_enemy_range_battleshock_specs", None)
+            if not callable(spec_fn):
+                continue
+
+            for model in sorted([m for m in list(models or []) if getattr(m, "is_alive", True)], key=_model_sort_key):
+                specs = list(spec_fn(model) or [])
+                if not specs:
+                    continue
+                for spec in list(specs or []):
+                    phase_names = {
+                        str(v or "").strip().upper()
+                        for v in list(spec.get("phase_names", []) or [])
+                        if str(v or "").strip()
+                    }
+                    if phase_names and pname not in phase_names:
+                        continue
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except (TypeError, ValueError):
+                        range_value = 0
+                    try:
+                        test_penalty = int(spec.get("test_penalty", 0) or 0)
+                    except (TypeError, ValueError):
+                        test_penalty = 0
+                    if range_value <= 0 or test_penalty <= 0:
+                        continue
+                    ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+                    if not ability_key:
+                        ability_key = "start_phase_select_battleshock"
+                    if bool(spec.get("once_per_turn", True)):
+                        used_fn = getattr(model, "has_used_once_per_battle_round", None)
+                        if callable(used_fn) and current_turn > 0:
+                            if bool(used_fn(ability_key, battle_round=int(current_turn))):
+                                continue
+                    candidates = self._enemy_candidates_within_range_of_model(
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                    )
+                    if not candidates:
+                        continue
+                    source_unit = getattr(model, "parent_unit", None) or root
+                    queue_fn = getattr(self, "_queue_start_phase_select_enemy_battleshock", None)
+                    if not callable(queue_fn):
+                        continue
+                    queue_fn(
+                        player=player,
+                        source_unit=source_unit,
+                        model=model,
+                        candidates=list(candidates),
+                        spec=dict(spec),
+                        phase_name=pname,
+                    )
+
     def _on_phase_start_empowered_by_death(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase: below Starting Strength units with Empowered by Death gain Fight First until end of phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

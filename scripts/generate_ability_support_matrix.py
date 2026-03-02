@@ -5331,6 +5331,7 @@ def _classify_ability_base(
     battle_protocols_support = _battle_protocols_support(description)
     start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
     opponent_command_phase_below_starting_battleshock_support = _opponent_command_phase_below_starting_battleshock_support(description)
+    start_selected_phases_enemy_range_battleshock_support = _start_selected_phases_enemy_range_battleshock_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
     start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
@@ -5623,6 +5624,8 @@ def _classify_ability_base(
         return start_shooting_phase_visible_battleshock_support
     if opponent_command_phase_below_starting_battleshock_support:
         return opponent_command_phase_below_starting_battleshock_support
+    if start_selected_phases_enemy_range_battleshock_support:
+        return start_selected_phases_enemy_range_battleshock_support
     if shooting_phase_dice_pool_mortal_support:
         return shooting_phase_dice_pool_mortal_support
     if start_shooting_phase_vehicle_mortal_heal_support:
@@ -9486,6 +9489,56 @@ def _opponent_command_phase_below_starting_battleshock_support(description: str)
     return (
         "Supported",
         f"Opponent Command phase Battle-shock step: enemy units below Starting Strength within {rng}\" take Battle-shock tests.",
+    )
+
+
+def _start_selected_phases_enemy_range_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per turn at the start of your (?P<phases>[a-z ]+?) phase(?:s)? "
+        r"you can select one enemy unit within (?P<range>\d+) of this model "
+        r"that(?: enemy)? unit must take a battle shock test "
+        r"subtracting (?P<pen>\d+) from (?:(?:that|the) )?test(?: when it does so)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        rng = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        rng = 0
+    try:
+        pen = int(m.group("pen") or 0)
+    except (TypeError, ValueError):
+        pen = 0
+    if rng <= 0 or pen <= 0:
+        return None
+    phases_raw = str(m.group("phases") or "").strip().lower()
+    phase_tokens = [
+        ("command", "Command"),
+        ("movement", "Movement"),
+        ("shooting", "Shooting"),
+        ("charge", "Charge"),
+        ("fight", "Fight"),
+    ]
+    phase_labels = [
+        label
+        for token, label in phase_tokens
+        if re.search(rf"\b{re.escape(token)}\b", phases_raw)
+    ]
+    if not phase_labels:
+        return None
+    if len(phase_labels) == 1:
+        phase_text = phase_labels[0]
+    else:
+        phase_text = ", ".join(phase_labels[:-1]) + f" or {phase_labels[-1]}"
+    return (
+        "Supported",
+        f"Once per turn at the start of your {phase_text} phase: select one enemy unit within {rng}\" to take a Battle-shock test at -{pen}.",
     )
 
 
