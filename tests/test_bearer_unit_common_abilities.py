@@ -503,6 +503,31 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertNotIn((4, None), non_officer_leader.has_feel_no_pain(target_model=non_officer_leader.models[0]))
 
+    def test_bound_creation_cryptek_fnp_applies(self):
+        """Bound Creation: while this unit is in the same unit as a Cryptek, that Cryptek gains FNP 4+."""
+        ability = {
+            "name": "Bound Creation",
+            "description": (
+                "While this unit is in the same unit as a Cryptek model, that CRYPTEK model has the Feel No Pain 4+ ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        bodyguard = _make_unit("Cryptothralls", abilities=[ability])
+        cryptek_leader = _make_unit("Technomancer", attached_to=["Cryptothralls"])
+        other_leader = _make_unit("Overlord", attached_to=["Cryptothralls"])
+        cryptek_leader.keywords = ["Character", "Cryptek", "Infantry"]
+        other_leader.keywords = ["Character", "Noble", "Infantry"]
+        bodyguard.attached_leaders = [cryptek_leader, other_leader]
+        cryptek_leader.attached_to = bodyguard
+        other_leader.attached_to = bodyguard
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertIn((4, None), cryptek_leader.has_feel_no_pain(target_model=cryptek_leader.models[0]))
+        self.assertNotIn((4, None), other_leader.has_feel_no_pain(target_model=other_leader.models[0]))
+        self.assertNotIn((4, None), bodyguard.has_feel_no_pain(target_model=bodyguard.models[0]))
+
     def test_bearer_wounds_characteristic_set_value_applies(self):
         ability = {
             "name": "Slabshield",

@@ -2787,6 +2787,12 @@ class Unit(
         r"those\s+(?P=keyword)\s+models\s+have\s+(?:a|the)?\s*feel\s+no\s+pain\s*(?P<value>[1-6])\+?(?:\s+ability)?",
         re.IGNORECASE,
     )
+    _THIS_UNIT_IN_SAME_UNIT_AS_KEYWORD_FNP_RE = re.compile(
+        r"while\s+this\s+unit\s+is\s+in\s+the\s+same\s+unit\s+as\s+an?\s+"
+        r"(?P<keyword>[a-z0-9][a-z0-9 '\-]*?)\s+model,?\s*"
+        r"that\s+(?P=keyword)\s+model\s+has\s+(?:a|the)?\s*feel\s+no\s+pain\s*(?P<value>[1-6])\+?(?:\s+ability)?",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_INVULNERABLE_SAVE_RE = re.compile(
         r"(?:models\s+in\s+)?(?:the\s+bearer'?s|that|this)\s+unit\s+(?:have|has)\s+(?:a|the)?\s*([1-6])\+?\s*invulnerable\s+save",
         re.IGNORECASE,

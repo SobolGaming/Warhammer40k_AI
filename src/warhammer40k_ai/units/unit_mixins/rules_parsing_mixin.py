@@ -2780,6 +2780,22 @@ class RulesParsingMixin:
                                     "keyword": keyword,
                                 }
                             )
+                    m = self._THIS_UNIT_IN_SAME_UNIT_AS_KEYWORD_FNP_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group("value"))
+                        except Exception:
+                            val = None
+                        keyword = str(m.group("keyword") or "").strip()
+                        if val and keyword and _attached_unit_has_model_with_keyword(keyword):
+                            source = str(name or "Unit keyword ability").strip() or "Unit keyword ability"
+                            same_unit_keyword_fnp_entries.append(
+                                {
+                                    "value": int(val),
+                                    "source": source,
+                                    "keyword": keyword,
+                                }
+                            )
 
                     unit_contains_invuln_matched = False
                     m = self._UNIT_CONTAINS_INVULNERABLE_SAVE_RE.search(sentence)
