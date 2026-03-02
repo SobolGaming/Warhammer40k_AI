@@ -22,3 +22,7 @@ Determinism fields:
 - `decision_seed`
 - deterministically ordered `candidates`
 - `mask` aligned to `candidates`
+
+Relabel tooling:
+- Cross-version relabel helper: `src/warhammer40k_ai/engine/relabel.py`
+- Batch relabel CLI: `scripts/relabel_decision_records.py`
