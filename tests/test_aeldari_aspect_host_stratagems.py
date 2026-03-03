@@ -428,7 +428,7 @@ class TestAeldariAspectHostStratagems(unittest.TestCase):
         aeldari_army.add_unit(transport)
         aeldari_army.add_unit(unit)
         _place_unit(game, transport, 10.0, 10.0)
-        _place_unit(game, unit, 12.0, 10.0)
+        _place_unit(game, unit, 15.0, 10.0)
 
         _set_phase(game, p2, "FIGHT_PHASE", 1)
         game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="FIGHT_PHASE"))

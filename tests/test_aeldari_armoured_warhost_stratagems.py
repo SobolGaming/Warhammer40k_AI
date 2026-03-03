@@ -239,7 +239,7 @@ class TestAeldariArmouredWarhostStratagems(unittest.TestCase):
         aeldari_army.add_unit(target)
         enemy_army.add_unit(attacker)
         _place_unit(game, target, 10.0, 10.0)
-        _place_unit(game, attacker, 14.0, 10.0)
+        _place_unit(game, attacker, 16.0, 10.0)
 
         _set_phase(game, p2, "SHOOTING_PHASE", 1)
         game.event_system.publish(

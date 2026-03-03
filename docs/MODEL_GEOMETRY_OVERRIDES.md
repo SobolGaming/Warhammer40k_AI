@@ -20,14 +20,22 @@ Geometry is resolved in `src/warhammer40k_ai/utility/model_geometry.py` via `res
 1. Parse base from datasheet/base-size text (existing flow).
 2. Apply Base Size Guide classification override (if configured).
 3. Apply unit geometry override entry (if present).
-4. Resolve model height in this order:
+4. If no unit override is present and `settings.hull_proxy_policy == "bounding"`, flying-base
+   `VEHICLE`/`MONSTER` datasheets resolve to an automatic compound footprint:
+   - `support_base`: the parsed flying base geometry
+   - `hull_proxy`: a deterministic hull rectangle scaled from the support base size class
+5. Resolve model height in this order:
    - explicit override (`height_mm` or per-part max for compound)
    - keyword heuristic
    - fallback: base minor-axis diameter (legacy behavior)
-5. Resolve `z_offset` in this order:
+6. Resolve `z_offset` in this order:
    - explicit `z_offset_mm` override
    - flying-base size mapping (for bases parsed as `* flying base`)
    - fallback: `0`
+
+For models with a footprint override (e.g. compound base-or-hull vehicles), flying-base
+size mapping is derived from the parsed support base size, not from the overridden hull
+footprint bounds.
 
 If Base Size Guide marks a unit as `hull` or `unique` and `requires_manual_geometry=true`, missing override data raises a `ValueError`.
 
@@ -48,6 +56,10 @@ For Aegis Defence Line (`DEPLOYMENT` ability), section composition and connectiv
 
 - `Aegis Defence Line` (compound hull footprint)
 - `Khorne Lord of Skulls` (manual hull rectangle)
+- `Wave Serpent` (compound support-base + hull proxy footprint for closest-of-base-or-hull measurement)
+
+When `hull_proxy_policy` is `bounding`, flying-base `VEHICLE`/`MONSTER` datasheets without
+explicit overrides also receive deterministic auto-generated support-base + hull-proxy geometry.
 
 Aliases are keyed by datasheet IDs and normalized names.
 

@@ -83,6 +83,103 @@ def test_resolve_applies_flying_base_size_z_offset(radius_mm, expected_z_offset_
     assert resolved.z_offset == pytest.approx(convert_mm_to_inches(expected_z_offset_mm), abs=1e-4)
 
 
+def test_resolve_flying_base_z_offset_uses_parsed_support_base_when_override_changes_footprint(tmp_path):
+    overrides = {
+        "schema_version": "5.3",
+        "units": {
+            "test_vehicle": {
+                "type": "hull",
+                "length_mm": 190.5,
+                "width_mm": 139.7,
+                "height_mm": 88.9,
+            }
+        },
+    }
+    path = tmp_path / "overrides.json"
+    path.write_text(json.dumps(overrides), encoding="utf-8")
+
+    parsed_radius = (convert_mm_to_inches(60.0 / 2.0), convert_mm_to_inches(60.0 / 2.0))
+    resolved = resolve_model_geometry(
+        datasheet_id="test_vehicle",
+        datasheet_name="Test Vehicle",
+        model_name="Test Vehicle",
+        unit_keywords=["Vehicle"],
+        parsed_base_type=BaseType.CIRCULAR,
+        parsed_radius=parsed_radius,
+        parsed_is_flying_base=True,
+        catalog_path=str(path),
+    )
+    assert resolved.z_offset == pytest.approx(convert_mm_to_inches(32.0), abs=1e-4)
+
+
+def test_resolve_auto_compound_for_flying_vehicle_without_override():
+    parsed_radius = (convert_mm_to_inches(60.0 / 2.0), convert_mm_to_inches(60.0 / 2.0))
+    resolved = resolve_model_geometry(
+        datasheet_id="test_auto_flying_vehicle",
+        datasheet_name="Test Auto Flying Vehicle",
+        model_name="Test Auto Flying Vehicle",
+        unit_keywords=["Vehicle"],
+        parsed_base_type=BaseType.CIRCULAR,
+        parsed_radius=parsed_radius,
+        parsed_is_flying_base=True,
+    )
+    assert resolved.geometry_source == "auto_flying_vehicle_compound"
+    assert resolved.base_type == BaseType.HULL
+    assert len(resolved.compound_parts) == 2
+    support = resolved.compound_parts[0]
+    hull = resolved.compound_parts[1]
+    assert support["part_id"] == "support_base"
+    assert support["shape"] == "circle"
+    assert hull["part_id"] == "hull_proxy"
+    assert hull["shape"] == "hull"
+    assert hull["radius"][0] > support["radius"][0]
+    assert hull["radius"][1] > support["radius"][1]
+
+
+def test_resolve_flying_non_vehicle_keeps_parsed_geometry():
+    parsed_radius = (convert_mm_to_inches(60.0 / 2.0), convert_mm_to_inches(60.0 / 2.0))
+    resolved = resolve_model_geometry(
+        datasheet_id="test_flying_non_vehicle",
+        datasheet_name="Test Flying Non Vehicle",
+        model_name="Test Flying Non Vehicle",
+        unit_keywords=["Infantry"],
+        parsed_base_type=BaseType.CIRCULAR,
+        parsed_radius=parsed_radius,
+        parsed_is_flying_base=True,
+    )
+    assert resolved.geometry_source == "parsed_base"
+    assert resolved.base_type == BaseType.CIRCULAR
+    assert not resolved.compound_parts
+
+
+def test_resolve_wave_serpent_compound_override_uses_base_or_hull_footprint():
+    parsed_radius = (convert_mm_to_inches(60.0 / 2.0), convert_mm_to_inches(60.0 / 2.0))
+    resolved = resolve_model_geometry(
+        datasheet_id="000000599",
+        datasheet_name="Wave Serpent",
+        model_name="Wave Serpent",
+        unit_keywords=["Vehicle", "Transport", "Aeldari"],
+        parsed_base_type=BaseType.CIRCULAR,
+        parsed_radius=parsed_radius,
+        parsed_is_flying_base=True,
+    )
+    assert resolved.geometry_source == "geometry_override:wave_serpent"
+    assert resolved.base_type == BaseType.HULL
+    assert len(resolved.compound_parts) == 2
+    assert resolved.z_offset == pytest.approx(convert_mm_to_inches(32.0), abs=1e-4)
+
+    wave_base = Base(resolved.base_type, resolved.radius)
+    wave_base.set_compound_parts(resolved.compound_parts)
+    plain_base = Base(BaseType.CIRCULAR, convert_mm_to_inches(60.0 / 2.0))
+    probe = Base(BaseType.CIRCULAR, 0.1)
+    probe.set_position(convert_mm_to_inches(80.0), 0.0, 0.0)
+
+    wave_distance = horizontal_distance_between_bases_2d(wave_base, probe)
+    plain_distance = horizontal_distance_between_bases_2d(plain_base, probe)
+    assert wave_distance < plain_distance
+    assert wave_distance == pytest.approx(0.0, abs=1e-6)
+
+
 def test_clone_base_preserves_compound_geometry():
     compound = Base(BaseType.HULL, (0.5, 0.5))
     compound.set_compound_parts(

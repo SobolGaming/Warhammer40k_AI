@@ -33,6 +33,14 @@ _FLYING_BASE_Z_OFFSET_BY_MINOR_MM: tuple[tuple[float, float], ...] = (
     (120.0, 55.0),
     (math.inf, 65.0),
 )
+_AUTO_FLYING_HULL_SCALE_BY_MINOR_MM: tuple[tuple[float, tuple[float, float]], ...] = (
+    (35.0, (1.8, 1.5)),
+    (65.0, (3.0, 2.25)),
+    (100.0, (2.3, 1.85)),
+    (120.0, (2.1, 1.75)),
+    (math.inf, (1.9, 1.6)),
+)
+_AUTO_FLYING_PROXY_MIN_SUPPORT_BASE_MM = 0.0
 
 
 @dataclass(frozen=True)
@@ -392,6 +400,91 @@ def _estimate_flying_base_z_offset(parsed_radius: tuple[float, float]) -> float:
     return 0.0
 
 
+def _normalized_keywords(unit_keywords: Iterable[str]) -> set[str]:
+    return {
+        normalize_geometry_key(k)
+        for k in list(unit_keywords or [])
+        if str(k or "").strip()
+    }
+
+
+def _auto_flying_hull_scale(parsed_radius: tuple[float, float]) -> tuple[float, float]:
+    minor_diameter_in = 2.0 * float(min(parsed_radius))
+    if minor_diameter_in <= 0.0:
+        return (1.0, 1.0)
+    minor_diameter_mm = minor_diameter_in * 25.4
+    for max_minor_mm, scales in _AUTO_FLYING_HULL_SCALE_BY_MINOR_MM:
+        if minor_diameter_mm <= float(max_minor_mm) + 1e-6:
+            return (float(scales[0]), float(scales[1]))
+    return (1.0, 1.0)
+
+
+def _support_part_from_parsed_base(
+    *,
+    parsed_base_type: BaseType,
+    parsed_radius: tuple[float, float],
+) -> dict:
+    rx = float(parsed_radius[0])
+    ry = float(parsed_radius[1])
+    if parsed_base_type == BaseType.CIRCULAR:
+        return {
+            "part_id": "support_base",
+            "shape": "circle",
+            "radius": (rx, ry),
+            "offset": (0.0, 0.0),
+            "facing": 0.0,
+        }
+    if parsed_base_type == BaseType.ELLIPTICAL:
+        return {
+            "part_id": "support_base",
+            "shape": "ellipse",
+            "radius": (rx, ry),
+            "offset": (0.0, 0.0),
+            "facing": 0.0,
+        }
+    return {
+        "part_id": "support_base",
+        "shape": "hull",
+        "radius": (rx, ry),
+        "offset": (0.0, 0.0),
+        "facing": 0.0,
+    }
+
+
+def _auto_flying_vehicle_compound_geometry(
+    *,
+    parsed_base_type: BaseType,
+    parsed_radius: tuple[float, float],
+) -> tuple[tuple[float, float], tuple[dict, ...]]:
+    support_part = _support_part_from_parsed_base(
+        parsed_base_type=parsed_base_type,
+        parsed_radius=parsed_radius,
+    )
+    major_diameter = 2.0 * float(max(parsed_radius))
+    minor_diameter = 2.0 * float(min(parsed_radius))
+    major_scale, minor_scale = _auto_flying_hull_scale(parsed_radius)
+    hull_radius = (
+        max(float(parsed_radius[0]), (major_diameter * major_scale) / 2.0),
+        max(float(parsed_radius[1]), (minor_diameter * minor_scale) / 2.0),
+    )
+    hull_part = {
+        "part_id": "hull_proxy",
+        "shape": "hull",
+        "radius": (float(hull_radius[0]), float(hull_radius[1])),
+        "offset": (0.0, 0.0),
+        "facing": 0.0,
+    }
+    compound_parts = (support_part, hull_part)
+
+    union_shape = unary_union([_part_local_shape(part) for part in compound_parts])
+    bounds = union_shape.bounds
+    radius = (
+        float(max(abs(bounds[0]), abs(bounds[2]))),
+        float(max(abs(bounds[1]), abs(bounds[3]))),
+    )
+    return radius, compound_parts
+
+
 def resolve_model_geometry(
     *,
     datasheet_id: Optional[str],
@@ -450,6 +543,27 @@ def resolve_model_geometry(
         entry_has_z_offset = "z_offset_mm" in entry
         geometry_source = f"geometry_override:{unit_key}"
 
+    settings = dict(catalog.get("settings", {}) or {})
+    hull_proxy_policy = str(settings.get("hull_proxy_policy", "")).strip().lower()
+    if (
+        not entry
+        and bool(parsed_is_flying_base)
+        and hull_proxy_policy == "bounding"
+    ):
+        normalized_keywords = _normalized_keywords(unit_keywords)
+        has_vehicle = "vehicle" in normalized_keywords
+        has_monster = "monster" in normalized_keywords
+        support_minor_mm = 2.0 * float(min(parsed_radius)) * 25.4
+        if (has_vehicle or has_monster) and support_minor_mm >= _AUTO_FLYING_PROXY_MIN_SUPPORT_BASE_MM - 1e-6:
+            auto_radius, auto_parts = _auto_flying_vehicle_compound_geometry(
+                parsed_base_type=parsed_base_type,
+                parsed_radius=(float(parsed_radius[0]), float(parsed_radius[1])),
+            )
+            base_type = BaseType.HULL
+            radius = auto_radius
+            compound_parts = auto_parts
+            geometry_source = "auto_flying_vehicle_compound"
+
     base_minor_diameter = 2.0 * float(min(radius))
     heuristic_height, heuristic_source = _estimate_height_from_keywords(
         unit_keywords=unit_keywords,
@@ -474,7 +588,11 @@ def resolve_model_geometry(
             )
 
     if bool(parsed_is_flying_base) and not entry_has_z_offset and z_offset <= 0.0:
-        z_offset = _estimate_flying_base_z_offset(radius)
+        # Flying stem height should follow the parsed support base, not an override
+        # hull/compound footprint that may be substantially larger.
+        z_offset = _estimate_flying_base_z_offset(
+            (float(parsed_radius[0]), float(parsed_radius[1]))
+        )
 
     return ResolvedModelGeometry(
         base_type=base_type,

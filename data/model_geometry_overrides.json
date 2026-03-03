@@ -44,7 +44,11 @@
     "000000970": "khorne_lord_of_skulls",
     "000002642": "khorne_lord_of_skulls",
     "khorne_lord_of_skulls": "khorne_lord_of_skulls",
-    "khorne lord of skulls": "khorne_lord_of_skulls"
+    "khorne lord of skulls": "khorne_lord_of_skulls",
+
+    "000000599": "wave_serpent",
+    "wave_serpent": "wave_serpent",
+    "wave serpent": "wave_serpent"
   },
   "units": {
     "aegis_defence_line": {
@@ -194,6 +198,34 @@
       "width_mm": 127.0,
       "height_mm": 178.0,
       "notes": "Bounding rectangle proxy to keep hull handling deterministic."
+    },
+    "wave_serpent": {
+      "display_name": "Wave Serpent",
+      "type": "compound",
+      "rules_footprint": "closest_of_base_or_hull",
+      "height_mm": 88.9,
+      "parts": [
+        {
+          "part_id": "support_base",
+          "shape": "circle",
+          "diameter_mm": 60.0,
+          "offset_mm": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "part_id": "hull_proxy",
+          "shape": "hull",
+          "length_mm": 190.5,
+          "width_mm": 139.7,
+          "offset_mm": [
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "notes": "Rules footprint uses closest point of base or hull; hull proxy uses conservative 190.5x139.7mm bounds."
     }
   }
 }
