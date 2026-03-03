@@ -7,13 +7,22 @@ import re
 def _read_version() -> str:
     version_path = Path(__file__).parent / "src" / "warhammer40k_ai" / "version.py"
     content = version_path.read_text(encoding="utf-8")
-    match = re.search(r'^APP_VERSION\\s*=\\s*["\\\']([^"\\\']+)["\\\']', content, re.M)
+    match = re.search(r'^APP_VERSION\s*=\s*["\']([^"\']+)["\']', content, re.M)
     if not match:
         raise RuntimeError("APP_VERSION not found in version.py")
     return match.group(1)
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
+
+
+ML_OPTIONAL_EXTRAS = [
+    "torch>=2.2,<3.0",
+    "torchrl>=0.6,<1.0",
+    "torch-geometric>=2.6,<3.0",
+    "ray[rllib]>=2.0,<3.0",
+    "wandb>=0.16,<1.0",
+]
 
 setup(
     name="warhammer40k_ai",
@@ -39,6 +48,9 @@ setup(
     ],
     python_requires=">=3.7",
     install_requires=[],
+    extras_require={
+        "ml": ML_OPTIONAL_EXTRAS,
+    },
     entry_points={
         'console_scripts': [
             'warhammer40k_ai=warhammer40k_ai.UI.ModelUI:main',

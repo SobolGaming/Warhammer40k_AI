@@ -20,6 +20,35 @@ pip3 install -r requirements.txt
 pip3 install -e .
 ```
 
+### Optional ML Setup
+
+Install optional ML dependencies only when you are working on ML-boundary components.
+
+```bash
+# Recommended: isolated virtual environment
+python -m venv .venv
+
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+
+# Linux/macOS
+# source .venv/bin/activate
+
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -r requirements.txt
+python -m pip install -e ".[ml]"
+```
+
+Verify optional ML dependencies are visible:
+
+```bash
+python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; print(detect_ml_dependency_status().to_dict())"
+```
+
+Expected result:
+- `"ready": True`
+- `missing_packages` is empty
+
 2. **Updated Warhammer 40k Data**:
 ```bash
 python3 scripts/get_wahapedia_data.py -f -c -o wahapedia_data -s wahapedia_data
@@ -140,7 +169,8 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
 
 - **AI planning and telemetry**
   - [AI reintroduction plan](docs/AI_REINTRODUCTION_PLAN.md): HRL architecture, movement solver design, and training roadmap.
-    - Roadmap status: PR1-PR11 completed; PR12+ pending (see Engineering Roadmap section in the plan).
+    - Roadmap status: PR1-PR15 completed (see Engineering Roadmap section in the plan).
+  - [ML dependency boundary](docs/ML_DEPENDENCY_BOUNDARY.md): optional ML extras, runtime guards, and core/ML dependency-lane separation.
   - [DecisionRecord schema](docs/DECISION_RECORD_SCHEMA.json): telemetry contract for human/AI decisions and replay.
   - [DecisionRecord telemetry](docs/DECISION_RECORD_TELEMETRY.md): runtime record guarantees and required fields.
   - [DecisionRecord replay](docs/DECISION_RECORD_REPLAY.md): strict replay guarantees and failure modes.
