@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from warhammer40k_ai.engine.training_manifest import (
+    PRE_ML_BASELINE_GATE_PROFILE_ID,
     build_training_manifest,
+    validate_gate_profile_compliance,
     validate_training_manifest,
 )
 
 
-def _record(decision_id: str, decision_type: str) -> dict:
+def _record(decision_id: str, decision_type: str, *, relabel_status: str = "updated_under_target_rules_bundle") -> dict:
     metadata = {
         "projected_score_delta_next_window": 0.0,
         "projected_score_delta_round": 0.0,
@@ -24,6 +26,7 @@ def _record(decision_id: str, decision_type: str) -> dict:
         "decision_id": decision_id,
         "decision_type": decision_type,
         "rules_bundle_id": "rules_bundle:test",
+        "relabel_status": relabel_status,
         "descriptor_ids": {
             "mission_descriptor_id": "mission_descriptor:test",
             "objective_descriptor_ids": ["objective_descriptor:test"],
@@ -53,7 +56,9 @@ def test_build_training_manifest_counts_records_and_decision_types() -> None:
     assert manifest["decision_type_counts"]["MOVE_UNIT"] == 2
     assert manifest["decision_type_counts"]["DECLARE_SHOTS"] == 1
     assert manifest["gate_requirements"]["meets_minimum_tier3_pretraining_records"] is True
+    assert manifest["gate_requirements"]["gate_profile_id"] == PRE_ML_BASELINE_GATE_PROFILE_ID
     assert manifest["coverage"]["records_with_semantic_candidate_metadata"] == 3
+    assert manifest["coverage"]["records_with_relabel_status"] == 3
     assert validate_training_manifest(manifest) == []
 
 
@@ -63,3 +68,18 @@ def test_validate_training_manifest_detects_total_count_mismatch() -> None:
     manifest["total_records"] = 2
     errors = validate_training_manifest(manifest)
     assert any("total_records mismatch" in err for err in errors)
+
+
+def test_validate_gate_profile_compliance_fails_when_canonical_thresholds_are_not_met() -> None:
+    records = [_record("d1", "MOVE_UNIT")]
+    manifest = build_training_manifest(records, source_tag="human", min_tier3_records=1).to_dict()
+    failures = validate_gate_profile_compliance(manifest)
+    assert any("minimum Tier3 record threshold" in failure for failure in failures)
+    assert any("aggregate check did not pass" in failure for failure in failures)
+
+
+def test_validate_gate_profile_compliance_passes_with_full_baseline_dataset() -> None:
+    records = [_record(f"d{idx}", "MOVE_UNIT") for idx in range(10000)]
+    manifest = build_training_manifest(records, source_tag="self_play", min_tier3_records=10000).to_dict()
+    assert manifest["gate_requirements"]["meets_gate_profile"] is True
+    assert validate_gate_profile_compliance(manifest) == []

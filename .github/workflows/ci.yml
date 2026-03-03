@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - dev
+
+jobs:
+  training-data-gate:
+    name: Training Data Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build relabeled DecisionRecord fixture for gate check
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          metadata = {
+              "projected_score_delta_next_window": 0.0,
+              "projected_score_delta_round": 0.0,
+              "projected_deny_delta_next_window": 0.0,
+              "projected_control_delta": 0.0,
+              "projected_action_enablement_delta": 0.0,
+              "projected_exposure_delta": 0.0,
+              "projected_trade_ev": 0.0,
+              "cover_delta": 0.0,
+              "los_delta": 0.0,
+              "resource_delta": 0.0,
+              "rules_provenance_refs": ["rules_bundle:ci"],
+          }
+
+          records = []
+          for idx in range(10000):
+              decision_id = f"ci_decision_{idx}"
+              records.append(
+                  {
+                      "decision_id": decision_id,
+                      "decision_type": "MOVE_UNIT",
+                      "rules_bundle_id": "rules_bundle:ci",
+                      "relabel_status": "updated_under_target_rules_bundle",
+                      "descriptor_ids": {
+                          "mission_descriptor_id": "mission_descriptor:ci",
+                          "objective_descriptor_ids": ["objective_descriptor:ci"],
+                          "terrain_descriptor_ids": ["terrain_descriptor:ci"],
+                          "deployment_descriptor_id": "deployment_descriptor:ci",
+                          "tool_descriptor_ids": ["tool_descriptor:ci"],
+                      },
+                      "candidates": [
+                          {
+                              "action_id": f"{decision_id}:a",
+                              "params": {},
+                              "metadata": dict(metadata),
+                          }
+                      ],
+                  }
+              )
+
+          output_path = Path("data/ci_decision_records_relabeled.json")
+          output_path.parent.mkdir(parents=True, exist_ok=True)
+          output_path.write_text(
+              json.dumps(records, indent=2, sort_keys=True, ensure_ascii=True),
+              encoding="utf-8",
+          )
+          print(f"Wrote {len(records)} records to {output_path}")
+          PY
+
+      - name: Enforce canonical pre-ML training-data gate profile
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+        run: |
+          python scripts/build_training_manifest.py \
+            --input data/ci_decision_records_relabeled.json \
+            --output data/ci_training_manifest.json \
+            --source-tag ci \
+            --enforce-gate-profile

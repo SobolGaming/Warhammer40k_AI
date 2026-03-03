@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from warhammer40k_ai.engine.training_manifest import (
+    PRE_ML_BASELINE_GATE_PROFILE_ID,
     build_training_manifest,
+    validate_gate_profile_compliance,
     validate_training_manifest,
 )
 
@@ -32,6 +34,14 @@ def main() -> None:
     parser.add_argument("--output", required=True, help="Output manifest JSON path.")
     parser.add_argument("--source-tag", required=True, help="Data source tag (human, heuristic, self_play, mixed).")
     parser.add_argument("--min-tier3-records", type=int, default=10000, help="Minimum Tier3 pretraining gate.")
+    parser.add_argument(
+        "--enforce-gate-profile",
+        action="store_true",
+        help=(
+            "Fail with non-zero exit when the canonical training-data gate profile "
+            f"({PRE_ML_BASELINE_GATE_PROFILE_ID}) is not met."
+        ),
+    )
     args = parser.parse_args()
 
     input_path = Path(args.input).resolve()
@@ -46,6 +56,9 @@ def main() -> None:
     errors = validate_training_manifest(manifest)
     if errors:
         raise ValueError(f"Manifest validation failed: {'; '.join(errors)}")
+    gate_failures = validate_gate_profile_compliance(manifest)
+    if args.enforce_gate_profile and gate_failures:
+        raise ValueError(f"Gate profile enforcement failed: {'; '.join(gate_failures)}")
 
     output_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=True),
