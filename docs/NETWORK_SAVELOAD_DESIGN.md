@@ -622,12 +622,15 @@ Snapshots and event logs are stored under:
 Files:
 - `manifest.json`: UX metadata (player stubs with id/control/agent_type, factions/detachments, battle round/phase, scores).
 - `snapshot.json`: single snapshot per session (event log is embedded in the snapshot).
+- `replay.sqlite3`: decision-indexed replay timeline (steps, event ranges, sparse keyframes) for step-by-step UI playback.
+  Format details: `docs/REPLAY_STORAGE_FORMAT.md`.
 
 Cleanup:
 - Manual only. No auto-pruning or expiry yet.
 - Snapshot cadence: end of each phase (autosave).
 - Event retention: keep only events since the most recent snapshot; flush on successful snapshot save.
 - Runtime guardrail: deterministic event log keeps a bounded in-memory window (oldest-first pruning) to prevent unbounded growth during long sessions.
+- Replay capture is independent of event-log trimming. Decision steps and linked events are persisted in `replay.sqlite3`.
 
 ## Snapshot Implementation Notes (PR2)
 

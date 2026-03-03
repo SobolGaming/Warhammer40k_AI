@@ -7,10 +7,18 @@ from pathlib import Path
 from typing import Any
 
 from .game import Game
+from .replay_store import (
+    DEFAULT_KEYFRAME_INTERVAL,
+    REPLAY_DB_FILENAME,
+    REPLAY_FORMAT_ID,
+    ReplayStoreReader,
+    enable_decision_replay_recording,
+)
 
 DEFAULT_BASE_DIR = Path("games") / "data"
 MANIFEST_FILENAME = "manifest.json"
 SNAPSHOT_FILENAME = "snapshot.json"
+REPLAY_FILENAME = REPLAY_DB_FILENAME
 AUTOSAVE_GROUP = "session_autosave"
 
 
@@ -78,6 +86,8 @@ def _build_manifest(game: Game, session_id: str, *, label: str | None = None) ->
         current_player = get_current_player()
     ruleset_bundle = getattr(game, "ruleset_bundle", None)
     ruleset_payload = ruleset_bundle.to_dict() if ruleset_bundle is not None else {}
+    replay_path = str(getattr(game, "_decision_replay_path", "") or "")
+    replay_file = Path(replay_path).name if replay_path else None
     return {
         "session_id": str(session_id),
         "label": str(label) if label is not None else None,
@@ -87,6 +97,8 @@ def _build_manifest(game: Game, session_id: str, *, label: str | None = None) ->
         "phase": _phase_name(getattr(game, "phase", None)),
         "current_player_id": getattr(current_player, "id", None),
         "ruleset": ruleset_payload,
+        "replay_file": replay_file,
+        "replay_format": REPLAY_FORMAT_ID if replay_file else None,
         "players": [_player_stub(p) for p in players],
     }
 
@@ -171,6 +183,59 @@ def load_session_snapshot(
     return game
 
 
+def _session_replay_path(session_id: str, base_dir: Path) -> Path:
+    return _session_dir(session_id, base_dir) / REPLAY_FILENAME
+
+
+def enable_session_replay_recording(
+    game: Game,
+    *,
+    base_dir: str | Path | None = None,
+    session_id: str | None = None,
+    label: str | None = None,
+    keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
+) -> Path:
+    if game is None:
+        raise ValueError("Game is required.")
+    session_id = session_id or getattr(game, "session_id", None)
+    if not session_id:
+        session_id = create_session(game, base_dir=base_dir, label=label)
+    base_path = _resolve_base_dir(base_dir)
+    replay_path = _session_replay_path(str(session_id), base_path)
+    recorded_path = enable_decision_replay_recording(
+        game,
+        replay_path=replay_path,
+        keyframe_interval=keyframe_interval,
+        session_id=str(session_id),
+        label=label,
+    )
+    manifest_path = _session_dir(str(session_id), base_path) / MANIFEST_FILENAME
+    manifest = _build_manifest(game, str(session_id), label=label)
+    if manifest_path.exists():
+        existing = _read_json(manifest_path)
+        manifest["created_at"] = existing.get("created_at")
+        if label is None:
+            manifest["label"] = existing.get("label")
+    now = _utc_now()
+    if not manifest.get("created_at"):
+        manifest["created_at"] = now
+    manifest["updated_at"] = now
+    _write_json(manifest_path, manifest)
+    return recorded_path
+
+
+def load_session_replay_reader(
+    session_id: str,
+    *,
+    base_dir: str | Path | None = None,
+) -> ReplayStoreReader:
+    base_path = _resolve_base_dir(base_dir)
+    replay_path = _session_replay_path(str(session_id), base_path)
+    if not replay_path.exists():
+        raise FileNotFoundError(f"Replay store not found for session {session_id}.")
+    return ReplayStoreReader(replay_path)
+
+
 def list_sessions(base_dir: str | Path | None = None) -> list[dict[str, Any]]:
     base_path = _resolve_base_dir(base_dir)
     if not base_path.exists():
@@ -208,12 +273,22 @@ def enable_phase_end_autosave(
     base_dir: str | Path | None = None,
     session_id: str | None = None,
     label: str | None = None,
+    enable_replay: bool = True,
+    replay_keyframe_interval: int = DEFAULT_KEYFRAME_INTERVAL,
 ) -> str:
     if game is None:
         raise ValueError("Game is required.")
     session_id = session_id or getattr(game, "session_id", None)
     if not session_id:
         session_id = create_session(game, base_dir=base_dir, label=label)
+    if bool(enable_replay):
+        enable_session_replay_recording(
+            game,
+            base_dir=base_dir,
+            session_id=session_id,
+            label=label,
+            keyframe_interval=replay_keyframe_interval,
+        )
 
     event_system = getattr(game, "event_system", None)
     if event_system is None:

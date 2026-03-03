@@ -5,14 +5,19 @@ import pytest
 from warhammer40k_ai.engine.battlefield import Battlefield
 from warhammer40k_ai.engine.command_kinds import CMD_SET_DEPLOYMENT_WAITING
 from warhammer40k_ai.engine.commands import GameCommand
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.session_store import (
     MANIFEST_FILENAME,
+    REPLAY_FILENAME,
     SNAPSHOT_FILENAME,
     create_session,
     delete_session,
     enable_phase_end_autosave,
+    enable_session_replay_recording,
     list_sessions,
+    load_session_replay_reader,
     load_session_snapshot,
     save_session_snapshot,
 )
@@ -79,3 +84,44 @@ def test_phase_end_autosave_flushes_events(tmp_path):
     snapshot_path = tmp_path / session_id / SNAPSHOT_FILENAME
     assert snapshot_path.exists()
     assert game.event_log.events == []
+
+
+def test_session_replay_recording_persists_decision_timeline(tmp_path):
+    game = _build_game()
+    session_id = create_session(game, base_dir=tmp_path, label="Replay Session")
+    replay_path = enable_session_replay_recording(
+        game,
+        base_dir=tmp_path,
+        session_id=session_id,
+        label="Replay Session",
+        keyframe_interval=1,
+    )
+    assert replay_path == tmp_path / session_id / REPLAY_FILENAME
+    assert replay_path.exists()
+
+    player = game.players[0]
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm replay capture",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Yes", payload={"choice": True}),
+            DecisionOption.create("No", payload={"choice": False}),
+        ],
+    )
+    game.request_decision(request)
+    apply_result = game.resolve_decision(
+        DecisionResult(
+            decision_id=request.decision_id,
+            player_id=player.id,
+            option_id=request.options[0].option_id,
+            payload={},
+        )
+    )
+    assert bool(getattr(apply_result, "ok", False))
+
+    reader = load_session_replay_reader(session_id, base_dir=tmp_path)
+    assert reader.decision_count() == 1
+    steps = reader.list_steps(limit=10)
+    assert len(steps) == 1
+    assert steps[0].decision_type == DECISION_CONFIRM_YES_NO
