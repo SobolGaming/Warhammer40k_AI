@@ -1,0 +1,118 @@
+# Headless Self-Play Runbook
+
+This runbook shows how to generate headless AI-vs-AI DecisionRecords from army lists and evaluate dataset quality before any expensive ML training.
+
+Related docs:
+- `docs/TRAINING_DATA_SPEC.md`
+- `docs/TRAINING_REWARD_PROFILES.md`
+
+## Prerequisites
+
+Install the base project dependencies:
+
+```bash
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -r requirements.txt
+python -m pip install -e .
+```
+
+Optional ML dependencies are only needed for later model training code paths:
+
+```bash
+python -m pip install -e ".[ml]"
+python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; print(detect_ml_dependency_status().to_dict())"
+```
+
+## 1) Generate headless AI-vs-AI games from army lists
+
+`run_headless_self_play.py` runs full setup (including deployment) and battle phases in headless mode, then exports DecisionRecords.
+
+```bash
+python scripts/run_headless_self_play.py \
+  --games 200 \
+  --player1-army army_lists/chaos_test.txt \
+  --player2-army army_lists/aeldari_test.txt \
+  --max-phase-steps 80 \
+  --output data/headless_self_play_decision_records.json
+```
+
+What `--max-phase-steps 80` means:
+- It is a safety cap on battle-phase transitions per game after setup.
+- If a game appears stuck and reaches this cap, the script fails fast instead of running forever.
+
+By default, this script also applies reward annotation using `dense_vp_delta_v1`.
+
+## 2) Relabel records for target rules bundle (recommended for cross-version data)
+
+If your source records were produced under older rules-pack identifiers, relabel before manifest gating:
+
+```bash
+python scripts/relabel_decision_records.py \
+  --input data/headless_self_play_decision_records.json \
+  --output data/headless_self_play_decision_records_relabeled.json \
+  --core-rules-id unknown_core_rules \
+  --rules-commentary-id unknown_rules_commentary \
+  --mission-pack-id unknown_mission_pack \
+  --terrain-pack-id unknown_terrain_pack \
+  --dataslate-id unknown_dataslate \
+  --points-id unknown_points \
+  --faction-pack-id unknown_faction_pack \
+  --detachment-pack-id unknown_detachment_pack
+```
+
+If you skip relabeling, ensure your records already contain `relabel_status` because the canonical gate requires full relabel coverage.
+
+## 3) Annotate rewards (if needed)
+
+If you generated raw records (for example with `--no-reward-annotation`) or want a different reward profile:
+
+```bash
+python scripts/annotate_decision_rewards.py \
+  --input data/headless_self_play_decision_records_relabeled.json \
+  --output data/headless_self_play_decision_records_rewarded.json \
+  --reward-profile dense_vp_delta_v1
+```
+
+## 4) Build manifest and enforce quality gate
+
+```bash
+python scripts/build_training_manifest.py \
+  --input data/headless_self_play_decision_records_rewarded.json \
+  --output data/training_manifest.json \
+  --source-tag self_play \
+  --enforce-gate-profile
+```
+
+If this command exits non-zero, do not proceed to training. Fix data generation first.
+
+## 5) Evaluate dataset quality (what pass/fail means)
+
+The canonical gate profile (`pre_ml_baseline_v1`) currently enforces:
+- minimum records: `10000`
+- semantic candidate metadata ratio: `1.0`
+- relabel status ratio: `1.0`
+- minimum games observed: `20`
+- records-with-`game_id` ratio: `1.0`
+- minimum tactical decisions per game: `25`
+- combat-or-scoring active game ratio: `0.8`
+- maximum no-progress game ratio: `0.2`
+- nontrivial VP game ratio: `0.8`
+- minimum nontrivial total VP per game: `5`
+
+These checks are designed to reject low-information corpora (for example many stalled 0-0 style games with little tactical activity).
+
+## 6) Quick inspection tips
+
+After manifest generation, inspect:
+- `gameplay_quality`
+- `gate_requirements`
+
+Example:
+
+```bash
+python -c "import json; m=json.load(open('data/training_manifest.json', encoding='utf-8')); print(json.dumps({'gameplay_quality': m['gameplay_quality'], 'gate_requirements': m['gate_requirements']}, indent=2, sort_keys=True))"
+```
+
+Interpretation:
+- `gate_requirements.meets_gate_profile == true`: dataset is acceptable for baseline pre-ML training use.
+- any `meets_* == false`: treat as a data-generation quality issue and regenerate/retune self-play settings.

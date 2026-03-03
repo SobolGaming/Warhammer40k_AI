@@ -108,9 +108,14 @@ python scripts/run_headless_self_play.py \
   --player2-army army_lists/aeldari_test.txt \
   --output data/headless_self_play_decision_records.json
 
-# Optional: re-annotate rewards on an existing DecisionRecord file
-python scripts/annotate_decision_rewards.py \
+# Relabel records to a target rules bundle before gate enforcement
+python scripts/relabel_decision_records.py \
   --input data/headless_self_play_decision_records.json \
+  --output data/headless_self_play_decision_records_relabeled.json
+
+# Optional: re-annotate rewards on an existing relabeled DecisionRecord file
+python scripts/annotate_decision_rewards.py \
+  --input data/headless_self_play_decision_records_relabeled.json \
   --output data/headless_self_play_decision_records_rewarded.json \
   --reward-profile dense_vp_delta_v1
 
@@ -127,6 +132,7 @@ python scripts/build_training_manifest.py \
 # - combat-or-scoring activity ratio
 # - no-progress game ratio
 # - nontrivial VP game ratio
+# Full workflow guidance: docs/HEADLESS_SELF_PLAY_RUNBOOK.md
 ```
 
 ## Command Line Options
@@ -201,6 +207,7 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
   - [AI reintroduction plan](docs/AI_REINTRODUCTION_PLAN.md): HRL architecture, movement solver design, and training roadmap.
     - Roadmap status: PR1-PR15 completed (see Engineering Roadmap section in the plan).
   - [ML dependency boundary](docs/ML_DEPENDENCY_BOUNDARY.md): optional ML extras, runtime guards, and core/ML dependency-lane separation.
+  - [Headless self-play runbook](docs/HEADLESS_SELF_PLAY_RUNBOOK.md): end-to-end AI-vs-AI data generation, reward annotation, and quality-gate evaluation.
   - [Training reward profiles](docs/TRAINING_REWARD_PROFILES.md): deterministic reward-label profiles and annotation pipeline.
   - [DecisionRecord schema](docs/DECISION_RECORD_SCHEMA.json): telemetry contract for human/AI decisions and replay.
   - [DecisionRecord telemetry](docs/DECISION_RECORD_TELEMETRY.md): runtime record guarantees and required fields.

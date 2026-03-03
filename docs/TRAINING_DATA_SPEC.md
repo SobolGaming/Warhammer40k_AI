@@ -7,6 +7,9 @@ CLI:
 - `scripts/build_training_manifest.py`
 - `scripts/annotate_decision_rewards.py`
 
+Operational runbook:
+- `docs/HEADLESS_SELF_PLAY_RUNBOOK.md`
+
 Manifest fields:
 - `manifest_version`
 - `generated_at_utc`

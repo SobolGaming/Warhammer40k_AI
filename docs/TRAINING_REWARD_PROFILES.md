@@ -8,6 +8,9 @@ Module:
 CLI:
 - `scripts/annotate_decision_rewards.py`
 
+Operational runbook:
+- `docs/HEADLESS_SELF_PLAY_RUNBOOK.md`
+
 ## Why this exists
 
 Raw DecisionRecords are legality/telemetry artifacts. They are not automatically reward-labeled.
