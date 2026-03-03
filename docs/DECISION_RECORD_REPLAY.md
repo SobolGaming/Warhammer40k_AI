@@ -65,5 +65,9 @@ Relabel outputs include:
 - `relabel_candidate_map`
 - `chosen_action_status_under_relabel`
 
+When relabeling to a different rules bundle, semantic candidate metadata is recomputed
+with decision-class projections (movement, targeting, charge, fight, tool) under the
+target bundle, then persisted with updated `rules_provenance_refs`.
+
 The relabel CLI also prints a training-scope recommendation from
 `docs/SEMANTIC_DIFF_CLASSIFIER.md` for adapter-first retraining selection.

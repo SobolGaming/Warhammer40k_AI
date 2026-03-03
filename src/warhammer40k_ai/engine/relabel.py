@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from .candidate_semantics import SEMANTIC_NUMERIC_KEYS, normalize_candidate_semantic_metadata
 from .ruleset import RulesetBundle
 
 
@@ -28,64 +29,55 @@ MAPPING_STATUS_INVALID_UNDER_TARGET_BUNDLE = "INVALID_UNDER_TARGET_BUNDLE"
 MAPPING_STATUS_UNREPRESENTABLE = "UNREPRESENTABLE"
 MAPPING_STATUS_NOT_FOUND = "NOT_FOUND"
 
-_SEMANTIC_METADATA_NUMERIC_KEYS = (
-    "projected_score_delta_next_window",
-    "projected_score_delta_round",
-    "projected_deny_delta_next_window",
-    "projected_control_delta",
-    "projected_action_enablement_delta",
-    "projected_exposure_delta",
-    "projected_trade_ev",
-    "cover_delta",
-    "los_delta",
-    "resource_delta",
-)
-
-
-def _safe_float(value: object, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return float(default)
-
-
-def _candidate_ids(record: dict[str, Any]) -> set[str]:
-    action_ids: set[str] = set()
-    for candidate in list(record.get("candidates", []) or []):
-        action_id = str(dict(candidate or {}).get("action_id", "") or "")
-        if action_id:
-            action_ids.add(action_id)
-    return action_ids
-
-
-def _normalized_rules_provenance_refs(
-    metadata: dict[str, Any],
-    *,
-    target_rules_bundle_id: str,
-) -> list[str]:
-    refs = metadata.get("rules_provenance_refs", [])
-    if not isinstance(refs, list):
-        refs = []
-    normalized = {str(ref) for ref in refs if str(ref)}
-    if target_rules_bundle_id:
-        normalized.add(str(target_rules_bundle_id))
-    return sorted(normalized)
-
 
 def _relabel_candidate_metadata(
-    metadata: dict[str, Any],
     *,
+    decision_type: str,
+    params: dict[str, Any],
+    metadata: dict[str, Any],
+    context: dict[str, Any],
     target_rules_bundle_id: str,
+    target_rules_bundle: dict[str, Any],
+    recompute_semantics: bool,
 ) -> dict[str, Any]:
-    updated = dict(metadata or {})
-    for key in _SEMANTIC_METADATA_NUMERIC_KEYS:
-        updated[key] = _safe_float(updated.get(key, 0.0), 0.0)
-    updated["rules_provenance_refs"] = _normalized_rules_provenance_refs(
-        updated,
-        target_rules_bundle_id=target_rules_bundle_id,
+    updated = normalize_candidate_semantic_metadata(
+        decision_type=decision_type,
+        params=dict(params or {}),
+        metadata=dict(metadata or {}),
+        context=dict(context or {}),
+        rules_bundle_id=target_rules_bundle_id,
+        rules_bundle=dict(target_rules_bundle or {}),
+        overwrite_existing=bool(recompute_semantics),
     )
     updated["relabel_generated"] = True
+    for key in SEMANTIC_NUMERIC_KEYS:
+        updated[key] = float(updated.get(key, 0.0))
     return updated
+
+
+def _relabel_context(record: dict[str, Any]) -> dict[str, Any]:
+    context: dict[str, Any] = {}
+    phase = str(record.get("phase", "") or "")
+    if phase:
+        context["phase"] = phase
+    descriptor_ids = dict(record.get("descriptor_ids", {}) or {})
+    if descriptor_ids:
+        context["descriptor_ids"] = descriptor_ids
+        context["tool_descriptor_ids"] = list(descriptor_ids.get("tool_descriptor_ids", []) or [])
+    omniscient_state = record.get("omniscient_state")
+    if isinstance(omniscient_state, dict):
+        for key in (
+            "movement_intent",
+            "score_window_state",
+            "opportunity_catalog",
+            "mission_state",
+            "terrain_state_summary",
+            "cp_reserve_policy",
+        ):
+            value = omniscient_state.get(key)
+            if isinstance(value, dict):
+                context[key] = dict(value)
+    return context
 
 
 def _mapping_status_for_candidate(
@@ -153,6 +145,9 @@ def relabel_decision_record(
     source_rules_bundle_id = str(relabeled.get("rules_bundle_id", "") or "")
     target_rules_bundle_id = str(target_rules_bundle.rules_bundle_id or "")
     relabel_candidate_map: dict[str, dict[str, str]] = {}
+    semantic_context = _relabel_context(relabeled)
+    target_bundle_payload = target_rules_bundle.to_dict()
+    recompute_semantics = source_rules_bundle_id != target_rules_bundle_id
 
     for idx, candidate in enumerate(candidates):
         action_id = str(candidate.get("action_id", "") or "")
@@ -169,8 +164,13 @@ def relabel_decision_record(
                 "reason": reason,
             }
         candidate["metadata"] = _relabel_candidate_metadata(
-            dict(candidate.get("metadata", {}) or {}),
+            decision_type=str(relabeled.get("decision_type", "") or ""),
+            params=dict(candidate.get("params", {}) or {}),
+            metadata=dict(candidate.get("metadata", {}) or {}),
+            context=semantic_context,
             target_rules_bundle_id=target_rules_bundle_id,
+            target_rules_bundle=target_bundle_payload,
+            recompute_semantics=recompute_semantics,
         )
 
     relabeled["candidates"] = candidates

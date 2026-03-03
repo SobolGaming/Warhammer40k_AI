@@ -1,7 +1,17 @@
 from __future__ import annotations
 
+import copy
+
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
-from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.candidate_semantics import SEMANTIC_NUMERIC_KEYS
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_ALLOCATE_MELEE_TARGETS,
+    DECISION_CONFIRM_YES_NO,
+    DECISION_DECLARE_CHARGE,
+    DECISION_DECLARE_SHOTS,
+    DECISION_MOVE_UNIT,
+    DECISION_USE_GILDED_CHAMPION,
+)
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.relabel import (
@@ -94,3 +104,108 @@ def test_relabel_marks_invalid_when_chosen_action_missing() -> None:
     assert relabeled["chosen_action_status_under_relabel"] == CHOSEN_ACTION_STATUS_INVALID_UNDER_TARGET_BUNDLE
     mapping = dict(relabeled.get("relabel_candidate_map", {}) or {})
     assert "missing_action_id" in mapping
+
+
+def _semantic_record(decision_type: str, params: dict, metadata: dict | None = None) -> dict:
+    source_bundle = _target_bundle_with_suffix("source")
+    return {
+        "decision_type": decision_type,
+        "rules_bundle": source_bundle.to_dict(),
+        "rules_bundle_id": source_bundle.rules_bundle_id,
+        "candidates": [
+            {
+                "action_id": f"{decision_type}:candidate",
+                "params": dict(params),
+                "metadata": dict(metadata or {}),
+            }
+        ],
+        "mask": [True],
+        "chosen_action_id": f"{decision_type}:candidate",
+        "valid": True,
+        "phase": "MOVEMENT",
+        "descriptor_ids": {
+            "mission_descriptor_id": "mission_descriptor:test",
+            "objective_descriptor_ids": ["objective_descriptor:test"],
+            "terrain_descriptor_ids": ["terrain_descriptor:test"],
+            "deployment_descriptor_id": "deployment_descriptor:test",
+            "tool_descriptor_ids": ["tool_descriptor:stratagem:test"],
+        },
+        "omniscient_state": {},
+    }
+
+
+def test_relabel_semantic_metadata_value_shift_for_required_decision_classes() -> None:
+    target_bundle = _target_bundle_with_suffix("target")
+    records = [
+        _semantic_record(
+            DECISION_MOVE_UNIT,
+            {
+                "action": "confirm",
+                "unit_id": "unit_1",
+                "movement_type": "move",
+            },
+            metadata={
+                "candidate_kind": "move",
+                "threat_score": 0.2,
+            },
+        ),
+        _semantic_record(
+            DECISION_DECLARE_SHOTS,
+            {
+                "action": "declare",
+                "unit_id": "unit_1",
+                "target_unit_ids": ["target_1", "target_2"],
+                "declared_shots": [{"weapon_id": "weapon_1", "shots": 4}],
+            },
+        ),
+        _semantic_record(
+            DECISION_DECLARE_CHARGE,
+            {
+                "action": "declare",
+                "unit_id": "unit_1",
+                "target_unit_ids": ["target_1"],
+                "charge_distance": 8,
+            },
+        ),
+        _semantic_record(
+            DECISION_ALLOCATE_MELEE_TARGETS,
+            {
+                "action": "allocate",
+                "attack_declarations": [
+                    {
+                        "model_id": "model_1",
+                        "wargear_id": "wargear_1",
+                        "profile_name": "talons",
+                        "target_unit_id": "target_1",
+                        "attacks_override": 5,
+                    }
+                ],
+            },
+        ),
+        _semantic_record(
+            DECISION_USE_GILDED_CHAMPION,
+            {
+                "action": "use",
+                "model_id": "model_1",
+                "ability_key": "precision_cut",
+                "ability_name": "Precision Strike",
+                "cp_cost": 1,
+            },
+            metadata={"semantic_tags": ["damage_spike"]},
+        ),
+    ]
+
+    for record in records:
+        source_metadata = copy.deepcopy(record["candidates"][0]["metadata"])
+        relabeled = relabel_decision_record(record, target_rules_bundle=target_bundle)
+        metadata = dict(relabeled["candidates"][0]["metadata"] or {})
+
+        assert metadata.get("relabel_generated") is True
+        assert target_bundle.rules_bundle_id in list(metadata.get("rules_provenance_refs", []) or [])
+        assert relabeled["relabel_status"] == RELABEL_STATUS_LEGAL_VALUE_CHANGED
+        assert relabeled["chosen_action_status_under_relabel"] == CHOSEN_ACTION_STATUS_LEGAL_VALUE_CHANGED
+
+        assert any(
+            float(metadata.get(key, 0.0)) != float(source_metadata.get(key, 0.0))
+            for key in SEMANTIC_NUMERIC_KEYS
+        )
