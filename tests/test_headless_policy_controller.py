@@ -1,0 +1,241 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT, DECISION_REQUEST_DICE_ROLL
+from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
+from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
+
+
+@dataclass(frozen=True)
+class _ApplyResult:
+    ok: bool = True
+
+
+class _FakeGame:
+    def __init__(self) -> None:
+        self.is_authoritative = True
+        self.commands = []
+
+    def apply_command(self, command):
+        self.commands.append(command)
+        return _ApplyResult(ok=True)
+
+
+def test_headless_policy_controller_picks_best_legal_candidate_and_applies_candidate_payload() -> None:
+    game = _FakeGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    options = [
+        DecisionOption.create("Option A", payload={"action_id": "a"}),
+        DecisionOption.create("Option B", payload={"action_id": "b"}),
+    ]
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Pick one",
+        player_id="p1",
+        options=options,
+        candidates=[
+            CandidateAction(action_id="a", params={"choice": "A"}, metadata={"projected_score_delta_next_window": 1.0}),
+            CandidateAction(action_id="b", params={"choice": "B"}, metadata={"projected_score_delta_next_window": 3.0}),
+        ],
+        mask=[True, True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == str(options[1].option_id)
+    assert dict(payload.get("result_payload", {}) or {}) == {"choice": "B"}
+
+
+def test_headless_policy_controller_respects_mask_and_skips_illegal_candidates() -> None:
+    game = _FakeGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    options = [
+        DecisionOption.create("Option A", payload={"action_id": "a"}),
+        DecisionOption.create("Option B", payload={"action_id": "b"}),
+    ]
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Pick one",
+        player_id="p1",
+        options=options,
+        candidates=[
+            CandidateAction(action_id="a", params={"choice": "A"}, metadata={"projected_score_delta_next_window": 5.0}),
+            CandidateAction(action_id="b", params={"choice": "B"}, metadata={"projected_score_delta_next_window": 1.0}),
+        ],
+        mask=[False, True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    payload = dict(game.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == str(options[1].option_id)
+    assert dict(payload.get("result_payload", {}) or {}) == {"choice": "B"}
+
+
+def test_headless_policy_controller_does_not_handle_dice_decisions() -> None:
+    game = _FakeGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    request = DecisionRequest.create(
+        DECISION_REQUEST_DICE_ROLL,
+        "Roll",
+        player_id="p1",
+        options=[DecisionOption.create("Roll", payload={"action_id": "roll"})],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert game.commands == []
+
+
+def test_headless_policy_controller_marks_skip_payload_when_falling_back_to_skip_option() -> None:
+    class _SkipGame(_FakeGame):
+        def apply_command(self, command):
+            self.commands.append(command)
+            payload = dict(command.payload or {})
+            result_payload = dict(payload.get("result_payload", {}) or {})
+            option_id = str(payload.get("option_id", "") or "")
+            if option_id.endswith(":confirm"):
+                return _ApplyResult(ok=False)
+            return _ApplyResult(ok=bool(result_payload.get("skipped", False)))
+
+    game = _SkipGame()
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    options = [
+        DecisionOption(option_id="opt:confirm", label="Confirm", payload={"action": "confirm", "action_id": "confirm"}),
+        DecisionOption(option_id="opt:skip", label="Skip", payload={"action": "skip", "action_id": "skip"}),
+    ]
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Resolve choice",
+        player_id="p1",
+        options=options,
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) >= 1
+    found_skip = False
+    for command in list(game.commands):
+        payload = dict(command.payload or {})
+        if str(payload.get("option_id", "")) != "opt:skip":
+            continue
+        result_payload = dict(payload.get("result_payload", {}) or {})
+        if bool(result_payload.get("skipped", False)):
+            found_skip = True
+            break
+    assert found_skip
+
+
+def test_headless_policy_controller_bruteforces_reserves_arrival_when_solver_candidate_is_invalid() -> None:
+    class _Base:
+        def get_radius(self) -> float:
+            return 0.5
+
+    class _Model:
+        def __init__(self, model_id: str) -> None:
+            self._id = model_id
+            self.id = model_id
+            self.model_base = _Base()
+
+    class _Unit:
+        def __init__(self, unit_id: str, model_id: str) -> None:
+            self._id = unit_id
+            self.id = unit_id
+            self.models = [_Model(model_id)]
+
+        def is_in_strategic_reserves(self) -> bool:
+            return True
+
+        def calculate_model_positions(self, x, y, _game_map, avoid_friendly_units=False, boundary_repulsors=None):
+            return [(float(x), float(y), 0.0, 0.0)]
+
+    class _Army:
+        def __init__(self, unit) -> None:
+            self.units = [unit]
+
+    class _Player:
+        def __init__(self, army) -> None:
+            self.army = army
+
+    class _Map:
+        width = 4.0
+        height = 4.0
+
+    class _Battlefield:
+        width = 4.0
+        height = 4.0
+
+    class _ReservesGame:
+        def __init__(self, unit) -> None:
+            self.is_authoritative = True
+            self.commands = []
+            self.players = [_Player(_Army(unit))]
+            self.map = _Map()
+            self.battlefield = _Battlefield()
+
+        def _resolve_unit_by_id(self, unit_id: str):
+            for player in self.players:
+                for candidate in player.army.units:
+                    if str(getattr(candidate, "id", "")) == str(unit_id):
+                        return candidate
+            return None
+
+        def get_boundary_repulsors(self, _unit, context=""):
+            return None
+
+        def apply_command(self, command):
+            self.commands.append(command)
+            payload = dict(command.payload or {})
+            result_payload = dict(payload.get("result_payload", {}) or {})
+            model_positions = list(result_payload.get("model_positions", []) or [])
+            if not model_positions:
+                return _ApplyResult(ok=False)
+            pos = list(model_positions[0].get("position", []) or [])
+            if len(pos) < 2:
+                return _ApplyResult(ok=False)
+            x = float(pos[0])
+            y = float(pos[1])
+            return _ApplyResult(ok=(abs(x - 0.0) < 1e-6 and abs(y - 0.0) < 1e-6))
+
+    unit = _Unit("unit:1", "model:1")
+    game = _ReservesGame(unit)
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False)
+    options = [
+        DecisionOption(option_id="confirm", label="Confirm", payload={"action": "confirm", "action_id": "confirm"}),
+    ]
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Arrive from Reserves",
+        player_id="p1",
+        options=options,
+        context={
+            "placement_kind": "reserves_arrival",
+            "unit_id": "unit:1",
+            "allow_skip": False,
+        },
+        candidates=[
+            CandidateAction(
+                action_id="confirm",
+                params={
+                    "action": "confirm",
+                    "model_positions": [{"model_id": "model:1", "position": [9.0, 9.0, 0.0], "facing": 0.0}],
+                },
+                metadata={"projected_score_delta_next_window": 1.0},
+            )
+        ],
+        mask=[True],
+    )
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) >= 2
+    last_payload = dict(game.commands[-1].payload or {})
+    last_result_payload = dict(last_payload.get("result_payload", {}) or {})
+    pos = list(last_result_payload.get("model_positions", [{}])[0].get("position", []) or [])
+    assert len(pos) >= 2
+    assert abs(float(pos[0]) - 0.0) < 1e-6
+    assert abs(float(pos[1]) - 0.0) < 1e-6

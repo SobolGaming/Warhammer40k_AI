@@ -97,6 +97,12 @@ class DeploymentManager:
             
             deployment_results['deployment_zones'][self.defender.id] = defender_zone
             deployment_results['deployment_zones'][self.attacker.id] = attacker_zone
+            # Keep game-level deployment zone mapping aligned with selected zones so
+            # deployment legality checks use the same assignment during placement.
+            self.game.deployment_zones = {
+                self.defender.id: defender_zone,
+                self.attacker.id: attacker_zone,
+            }
         else:
             # Default: create standard zones if none exist
             logger.warning("No pre-configured zones found, creating standard zones")
@@ -220,13 +226,21 @@ class DeploymentManager:
             if choice not in buckets:
                 choice = "deploy"
             buckets[choice].append(unit_key)
-        resolve_decision_command(
-            self.game,
-            request,
-            option_id,
-            result_payload={"unit_ids_by_bucket": buckets},
-            player_id=getattr(player, "id", None),
-        )
+        queue = getattr(self.game, "decision_queue", None)
+        pending = queue.get(request.decision_id) if queue is not None and hasattr(queue, "get") else request
+        if pending is not None:
+            apply_result = resolve_decision_command(
+                self.game,
+                request,
+                option_id,
+                result_payload={"unit_ids_by_bucket": buckets},
+                player_id=getattr(player, "id", None),
+            )
+            if not bool(getattr(apply_result, "ok", False)):
+                errors = tuple(getattr(apply_result, "errors", ()) or ())
+                raise RuntimeError(
+                    f"Reserves allocation decision rejected for player {getattr(player, 'name', 'Player')}: {list(errors)}"
+                )
         return decisions
 
     def _build_deployment_move_request(self, unit: 'Unit') -> DecisionRequest:
@@ -374,13 +388,26 @@ class DeploymentManager:
                 self.game.request_decision(request)
                 model_positions = self._build_deployment_model_positions(unit, position)
                 option_id = request.options[0].option_id if getattr(request, "options", None) else ""
-                resolve_decision_command(
-                    self.game,
-                    request,
-                    option_id,
-                    result_payload={"model_positions": model_positions},
-                    player_id=getattr(request, "player_id", None),
-                )
+                queue = getattr(self.game, "decision_queue", None)
+                pending = queue.get(request.decision_id) if queue is not None and hasattr(queue, "get") else request
+                if pending is not None:
+                    apply_result = resolve_decision_command(
+                        self.game,
+                        request,
+                        option_id,
+                        result_payload={"model_positions": model_positions},
+                        player_id=getattr(request, "player_id", None),
+                    )
+                    if not bool(getattr(apply_result, "ok", False)):
+                        errors = tuple(getattr(apply_result, "errors", ()) or ())
+                        raise RuntimeError(
+                            f"Deployment placement rejected for {getattr(unit, 'name', 'Unit')}: {list(errors)}"
+                        )
+                elif not bool(getattr(unit, "deployed", False)):
+                    raise RuntimeError(
+                        f"Deployment placement unresolved for {getattr(unit, 'name', 'Unit')}: "
+                        "decision was consumed by another controller but unit is not deployed."
+                    )
                 current_deployed.append(unit)
                 deployment_order.append((current_player.id, unit.id, position))
                 

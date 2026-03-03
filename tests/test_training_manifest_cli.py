@@ -23,8 +23,15 @@ def _record(decision_id: str, decision_type: str) -> dict:
     return {
         "decision_id": decision_id,
         "decision_type": decision_type,
+        "game_id": "game:test",
         "rules_bundle_id": "rules_bundle:test",
         "relabel_status": "updated_under_target_rules_bundle",
+        "omniscient_state": {
+            "players": [
+                {"player_id": "player:test:1", "score": 0},
+                {"player_id": "player:test:2", "score": 0},
+            ]
+        },
         "descriptor_ids": {
             "mission_descriptor_id": "mission_descriptor:test",
             "objective_descriptor_ids": ["objective_descriptor:test"],
@@ -40,6 +47,33 @@ def _record(decision_id: str, decision_type: str) -> dict:
             }
         ],
     }
+
+
+def _baseline_profile_records(*, games: int, records_per_game: int) -> list[dict]:
+    decision_types = [
+        "MOVE_UNIT",
+        "DECLARE_SHOTS",
+        "DECLARE_CHARGE",
+        "SELECT_FIGHTER",
+        "SELECT_FIGHT_TARGETS",
+    ]
+    output: list[dict] = []
+    counter = 0
+    for game_idx in range(int(games)):
+        game_id = f"game:{game_idx}"
+        for step in range(int(records_per_game)):
+            decision_type = decision_types[step % len(decision_types)]
+            record = _record(f"d{counter}", decision_type)
+            record["game_id"] = game_id
+            record["omniscient_state"] = {
+                "players": [
+                    {"player_id": "player:test:1", "score": int(step // 50)},
+                    {"player_id": "player:test:2", "score": int(step // 100)},
+                ]
+            }
+            output.append(record)
+            counter += 1
+    return output
 
 
 def test_build_training_manifest_cli_outputs_manifest(tmp_path: Path) -> None:
@@ -116,7 +150,7 @@ def test_build_training_manifest_cli_enforce_gate_profile_passes_for_baseline_da
     input_path = tmp_path / "records.json"
     output_path = tmp_path / "manifest.json"
     input_path.write_text(
-        json.dumps([_record(f"d{idx}", "MOVE_UNIT") for idx in range(10000)], indent=2, sort_keys=True),
+        json.dumps(_baseline_profile_records(games=20, records_per_game=500), indent=2, sort_keys=True),
         encoding="utf-8",
     )
 

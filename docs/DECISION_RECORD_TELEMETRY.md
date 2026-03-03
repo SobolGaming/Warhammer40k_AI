@@ -13,6 +13,7 @@ Runtime guarantees:
 - If a request is recorded without descriptor ids in context, `DecisionRecordStore` recompiles descriptor ids from current game state before emission.
 - Candidate metadata is normalized to include portability semantic keys (`projected_*`, `cover_delta`, `los_delta`, `resource_delta`, `rules_provenance_refs`) for all decision types.
 - Semantic numeric metadata is computed deterministically from decision context and candidate params (movement, targeting, charge, fight, and tool classes), rather than static heuristic defaults.
+- `outcome.immediate_deltas.actor_player_id` is recorded for each decision resolution and is used by reward-profile labeling.
 - Valid decisions (`valid=true`) include `chosen_action_id`, and that action is present in `candidates`.
 - Invalid decisions (`valid=false`) include `invalid_attempt` and `rejection_reason`.
 - For freeform human payloads (movement payloads with `model_positions`), the engine may inject a `HumanActionCandidate` so the chosen action is represented inside `candidates`.
@@ -29,3 +30,7 @@ Relabel tooling:
 - Cross-version relabel helper: `src/warhammer40k_ai/engine/relabel.py`
 - Batch relabel CLI: `scripts/relabel_decision_records.py`
 - Semantic diff classifier: `src/warhammer40k_ai/engine/semantic_diff.py`
+
+Reward labeling:
+- Reward profiles: `src/warhammer40k_ai/engine/reward_profile.py`
+- Reward annotation CLI: `scripts/annotate_decision_rewards.py`

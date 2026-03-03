@@ -25,8 +25,15 @@ def _record(decision_id: str, decision_type: str, *, relabel_status: str = "upda
     return {
         "decision_id": decision_id,
         "decision_type": decision_type,
+        "game_id": "game:test",
         "rules_bundle_id": "rules_bundle:test",
         "relabel_status": relabel_status,
+        "omniscient_state": {
+            "players": [
+                {"player_id": "player:test:1", "score": 0},
+                {"player_id": "player:test:2", "score": 0},
+            ]
+        },
         "descriptor_ids": {
             "mission_descriptor_id": "mission_descriptor:test",
             "objective_descriptor_ids": ["objective_descriptor:test"],
@@ -42,6 +49,33 @@ def _record(decision_id: str, decision_type: str, *, relabel_status: str = "upda
             }
         ],
     }
+
+
+def _baseline_profile_records(*, games: int, records_per_game: int) -> list[dict]:
+    decision_types = [
+        "MOVE_UNIT",
+        "DECLARE_SHOTS",
+        "DECLARE_CHARGE",
+        "SELECT_FIGHTER",
+        "SELECT_FIGHT_TARGETS",
+    ]
+    output: list[dict] = []
+    counter = 0
+    for game_idx in range(int(games)):
+        game_id = f"game:{game_idx}"
+        for step in range(int(records_per_game)):
+            decision_type = decision_types[step % len(decision_types)]
+            record = _record(f"d{counter}", decision_type)
+            record["game_id"] = game_id
+            record["omniscient_state"] = {
+                "players": [
+                    {"player_id": "player:test:1", "score": int(step // 50)},
+                    {"player_id": "player:test:2", "score": int(step // 100)},
+                ]
+            }
+            output.append(record)
+            counter += 1
+    return output
 
 
 def test_build_training_manifest_counts_records_and_decision_types() -> None:
@@ -79,7 +113,7 @@ def test_validate_gate_profile_compliance_fails_when_canonical_thresholds_are_no
 
 
 def test_validate_gate_profile_compliance_passes_with_full_baseline_dataset() -> None:
-    records = [_record(f"d{idx}", "MOVE_UNIT") for idx in range(10000)]
+    records = _baseline_profile_records(games=20, records_per_game=500)
     manifest = build_training_manifest(records, source_tag="self_play", min_tier3_records=10000).to_dict()
     assert manifest["gate_requirements"]["meets_gate_profile"] is True
     assert validate_gate_profile_compliance(manifest) == []

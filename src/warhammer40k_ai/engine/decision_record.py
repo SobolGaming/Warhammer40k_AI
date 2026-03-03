@@ -413,6 +413,7 @@ class DecisionRecordStore:
                 "apply_ok": bool(ok),
                 "errors": list(errors or []),
                 "value": value,
+                "actor_player_id": str(getattr(request, "player_id", "") or ""),
             },
             "end_of_turn_return": 0.0,
         }

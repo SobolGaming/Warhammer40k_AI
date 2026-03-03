@@ -99,6 +99,36 @@ Notes:
 python3 -m warhammer40k_ai.UI.wahapedia_ui
 ```
 
+#### Headless Self-Play Data (Baseline)
+```bash
+# Generate headless self-play DecisionRecords (with reward labels)
+python scripts/run_headless_self_play.py \
+  --games 5 \
+  --player1-army army_lists/chaos_test.txt \
+  --player2-army army_lists/aeldari_test.txt \
+  --output data/headless_self_play_decision_records.json
+
+# Optional: re-annotate rewards on an existing DecisionRecord file
+python scripts/annotate_decision_rewards.py \
+  --input data/headless_self_play_decision_records.json \
+  --output data/headless_self_play_decision_records_rewarded.json \
+  --reward-profile dense_vp_delta_v1
+
+# Build and enforce the canonical pre-ML manifest gate
+python scripts/build_training_manifest.py \
+  --input data/headless_self_play_decision_records_rewarded.json \
+  --output data/training_manifest.json \
+  --source-tag self_play \
+  --enforce-gate-profile
+
+# Gate profile now checks dataset quality in addition to schema coverage:
+# - minimum games observed / game_id coverage
+# - tactical-decision density per game
+# - combat-or-scoring activity ratio
+# - no-progress game ratio
+# - nontrivial VP game ratio
+```
+
 ## Command Line Options
 
 ### Player Configuration
@@ -171,6 +201,7 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
   - [AI reintroduction plan](docs/AI_REINTRODUCTION_PLAN.md): HRL architecture, movement solver design, and training roadmap.
     - Roadmap status: PR1-PR15 completed (see Engineering Roadmap section in the plan).
   - [ML dependency boundary](docs/ML_DEPENDENCY_BOUNDARY.md): optional ML extras, runtime guards, and core/ML dependency-lane separation.
+  - [Training reward profiles](docs/TRAINING_REWARD_PROFILES.md): deterministic reward-label profiles and annotation pipeline.
   - [DecisionRecord schema](docs/DECISION_RECORD_SCHEMA.json): telemetry contract for human/AI decisions and replay.
   - [DecisionRecord telemetry](docs/DECISION_RECORD_TELEMETRY.md): runtime record guarantees and required fields.
   - [DecisionRecord replay](docs/DECISION_RECORD_REPLAY.md): strict replay guarantees and failure modes.

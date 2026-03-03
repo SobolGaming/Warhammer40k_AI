@@ -15,7 +15,7 @@ It is intended to complement `docs/NETWORK_GAMEPLAY.md` and the decision mapping
 - **Clients are thin views**: each client runs a local game state by applying server‑accepted commands/events.
 - **DecisionRequest → DecisionResult**: UI decisions are serialized as `REQUEST_DECISION` + `RESOLVE_DECISION` commands.
 - **Waiting**: “server waits” means it does not advance to the next step until required decisions are resolved.
-- **Headless auto-decisions**: optional server-side headless agent can auto-resolve **dice roll + dice reroll** decisions via `RESOLVE_DECISION` when `auto_resolve_dice_rolls` is enabled; otherwise no auto-decisions are performed.
+- **Headless auto-decisions**: by default, server-side headless auto-resolution handles **dice roll + dice reroll** only when `auto_resolve_dice_rolls` is enabled. Full masked policy auto-resolution is available through `HeadlessPolicyDecisionController` (`src/warhammer40k_ai/engine/headless_policy_controller.py`) when explicitly attached.
 - **Decision timeouts**: `DecisionRequest` supports `timeout_seconds` (payload field). Enforcement is a planned server feature; see “Decision Timeouts” below.
 - **Candidates + mask**: every DecisionRequest includes deterministic `candidates[]` and a `mask[]` (false = illegal).
 

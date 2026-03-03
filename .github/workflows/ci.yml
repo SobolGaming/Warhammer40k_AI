@@ -40,31 +40,50 @@ jobs:
               "rules_provenance_refs": ["rules_bundle:ci"],
           }
 
+          decision_types = [
+              "MOVE_UNIT",
+              "DECLARE_SHOTS",
+              "DECLARE_CHARGE",
+              "SELECT_FIGHTER",
+              "SELECT_FIGHT_TARGETS",
+          ]
+          games = 20
+          records_per_game = 500
           records = []
-          for idx in range(10000):
-              decision_id = f"ci_decision_{idx}"
-              records.append(
-                  {
-                      "decision_id": decision_id,
-                      "decision_type": "MOVE_UNIT",
-                      "rules_bundle_id": "rules_bundle:ci",
-                      "relabel_status": "updated_under_target_rules_bundle",
-                      "descriptor_ids": {
-                          "mission_descriptor_id": "mission_descriptor:ci",
-                          "objective_descriptor_ids": ["objective_descriptor:ci"],
-                          "terrain_descriptor_ids": ["terrain_descriptor:ci"],
-                          "deployment_descriptor_id": "deployment_descriptor:ci",
-                          "tool_descriptor_ids": ["tool_descriptor:ci"],
-                      },
-                      "candidates": [
-                          {
-                              "action_id": f"{decision_id}:a",
-                              "params": {},
-                              "metadata": dict(metadata),
-                          }
-                      ],
-                  }
-              )
+          for game_idx in range(games):
+              game_id = f"ci_game_{game_idx}"
+              for step in range(records_per_game):
+                  idx = (game_idx * records_per_game) + step
+                  decision_id = f"ci_decision_{idx}"
+                  records.append(
+                      {
+                          "decision_id": decision_id,
+                          "decision_type": decision_types[step % len(decision_types)],
+                          "game_id": game_id,
+                          "rules_bundle_id": "rules_bundle:ci",
+                          "relabel_status": "updated_under_target_rules_bundle",
+                          "omniscient_state": {
+                              "players": [
+                                  {"player_id": "ci_player_1", "score": int(step // 50)},
+                                  {"player_id": "ci_player_2", "score": int(step // 100)},
+                              ]
+                          },
+                          "descriptor_ids": {
+                              "mission_descriptor_id": "mission_descriptor:ci",
+                              "objective_descriptor_ids": ["objective_descriptor:ci"],
+                              "terrain_descriptor_ids": ["terrain_descriptor:ci"],
+                              "deployment_descriptor_id": "deployment_descriptor:ci",
+                              "tool_descriptor_ids": ["tool_descriptor:ci"],
+                          },
+                          "candidates": [
+                              {
+                                  "action_id": f"{decision_id}:a",
+                                  "params": {},
+                                  "metadata": dict(metadata),
+                              }
+                          ],
+                      }
+                  )
 
           output_path = Path("data/ci_decision_records_relabeled.json")
           output_path.parent.mkdir(parents=True, exist_ok=True)
