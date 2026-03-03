@@ -623,6 +623,7 @@ Files:
 - `manifest.json`: UX metadata (player stubs with id/control/agent_type, factions/detachments, battle round/phase, scores).
 - `snapshot.json`: single snapshot per session (event log is embedded in the snapshot).
 - `replay.sqlite3`: decision-indexed replay timeline (steps, event ranges, sparse keyframes) for step-by-step UI playback.
+  SQLite runs in `DELETE` journal mode for this store so `replay.sqlite3` is a self-contained portable artifact.
   Format details: `docs/REPLAY_STORAGE_FORMAT.md`.
 
 Cleanup:

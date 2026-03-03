@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import json
+from types import MethodType
 
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.game import Game
-from warhammer40k_ai.engine.replay_store import ReplayStoreReader, enable_decision_replay_recording
+from warhammer40k_ai.engine.replay_store import (
+    REPLAY_RECORDING_GROUP,
+    ReplayStoreReader,
+    enable_decision_replay_recording,
+)
 from warhammer40k_ai.roster.player import Player
 
 
@@ -106,3 +111,52 @@ def test_replay_store_reconstructs_state_at_decision_idx(tmp_path) -> None:
     replayed_snapshot = replayed_game.save_snapshot()
 
     assert _canonical_snapshot(replayed_snapshot) == _canonical_snapshot(expected_after_first)
+
+
+def test_replay_store_keyframe_is_captured_after_followups(tmp_path) -> None:
+    game, player = _build_game()
+    replay_path = tmp_path / "post_settled.replay.sqlite3"
+    starting_turn = int(game.turn)
+
+    def _apply_post_followup_side_effect(self, request, result) -> None:
+        self.turn = int(self.turn) + 1
+
+    game._maybe_apply_optional_ability_confirmation = MethodType(_apply_post_followup_side_effect, game)
+    enable_decision_replay_recording(
+        game,
+        replay_path=replay_path,
+        keyframe_interval=1,
+        session_id="session-3",
+        label="Post Settled Keyframe",
+    )
+    request = _queue_confirmation(game, player)
+    _resolve_option(game, request, option_index=0)
+    expected_snapshot = game.save_snapshot()
+
+    reader = ReplayStoreReader(replay_path)
+    replayed_game = reader.reconstruct_game_at_decision(1, strict=True)
+    replayed_snapshot = replayed_game.save_snapshot()
+
+    assert _canonical_snapshot(replayed_snapshot) == _canonical_snapshot(expected_snapshot)
+    assert int(replayed_game.turn) == starting_turn + 1
+
+
+def test_enable_decision_replay_recording_is_idempotent(tmp_path) -> None:
+    game, player = _build_game()
+    replay_path = tmp_path / "idempotent.replay.sqlite3"
+
+    enable_decision_replay_recording(game, replay_path=replay_path, session_id="session-4")
+    enable_decision_replay_recording(game, replay_path=replay_path, session_id="session-4")
+
+    listeners = [
+        group
+        for _callback, group in list(getattr(game.event_system, "subscribers", {}).get("decision_settled", []))
+        if str(group) == REPLAY_RECORDING_GROUP
+    ]
+    assert len(listeners) == 1
+
+    request = _queue_confirmation(game, player)
+    _resolve_option(game, request, option_index=0)
+
+    reader = ReplayStoreReader(replay_path)
+    assert reader.decision_count() == 1

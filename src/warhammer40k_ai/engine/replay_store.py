@@ -115,7 +115,7 @@ class ReplayStoreRecorder:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA journal_mode=DELETE")
         conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
@@ -705,14 +705,24 @@ def enable_decision_replay_recording(
     event_system = getattr(game, "event_system", None)
     if event_system is None:
         raise RuntimeError("Game missing event_system.")
+    event_system.unsubscribe_group(REPLAY_RECORDING_GROUP)
 
-    def _on_decision_resolved(*, request: DecisionRequest | None = None, result: DecisionResult | None = None, game: Game | None = None, **_kwargs: Any) -> None:
+    def _on_decision_settled(
+        *,
+        request: DecisionRequest | None = None,
+        result: DecisionResult | None = None,
+        game: Game | None = None,
+        accepted: bool | None = None,
+        **_kwargs: Any,
+    ) -> None:
         active_game = game if game is not None else getattr(request, "game", None)
         if active_game is None or request is None or result is None:
             return
+        if not bool(accepted):
+            return
         recorder.record_resolution(active_game, request, result)
 
-    event_system.subscribe_group(REPLAY_RECORDING_GROUP, "decision_resolved", _on_decision_resolved)
+    event_system.subscribe_group(REPLAY_RECORDING_GROUP, "decision_settled", _on_decision_settled)
     setattr(game, "_decision_replay_recorder", recorder)
     setattr(game, "_decision_replay_path", str(path))
     return path

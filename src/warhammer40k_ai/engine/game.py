@@ -9106,6 +9106,7 @@ class Game(
             errors=list(getattr(apply_result, "errors", ()) or ()),
             value=getattr(apply_result, "value", None),
         )
+        accepted = bool(getattr(apply_result, "ok", False))
         if apply_result.ok:
             self.decision_queue.pop(result.decision_id)
             self.event_system.publish("decision_resolved", result=result, request=request, game=self)
@@ -9129,7 +9130,15 @@ class Game(
                 logger.error(f"ERROR: Decision rejected ({dtype}) for player {pid}: {err_list}")
             except Exception:
                 logger.exception(f"ERROR: Unexpected Decision Failure for {request} with {apply_result}")
- 
+
+        self.event_system.publish(
+            "decision_settled",
+            result=result,
+            request=request,
+            game=self,
+            apply_result=apply_result,
+            accepted=accepted,
+        )
         return apply_result
 
     def get_current_player(self) -> Player:

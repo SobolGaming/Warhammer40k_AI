@@ -16,6 +16,7 @@ Canonical runtime module:
 - File extension: `.sqlite3` (default filename: `replay.sqlite3`)
 - Format id: `wh40k_replay_sqlite_v1`
 - Format version: `1`
+- SQLite journal mode: `DELETE` (single portable replay file; no WAL sidecar dependency)
 
 ## Tables
 
@@ -23,7 +24,7 @@ Canonical runtime module:
 - Key/value metadata (`format_id`, `format_version`, `created_at`, `updated_at`, `session_id`, `label`, `ruleset`, `keyframe_interval`, last offsets).
 
 ### `decision_steps`
-- One row per resolved decision in chronological order.
+- One row per accepted, settled decision in chronological order.
 - Includes:
   - `decision_idx` (1-based timeline index)
   - decision identity (`decision_id`, `decision_type`)
@@ -44,6 +45,8 @@ Canonical runtime module:
   - `event_id` watermark
   - compressed snapshot payload
   - snapshot hash
+- Keyframe capture boundary: post-settlement (`decision_settled`) after all
+  immediate follow-up handlers have completed for that decision.
 
 ## Compression
 
@@ -62,11 +65,17 @@ State reconstruction strategy:
 1. Load nearest keyframe at or before `N`.
 2. Replay DecisionRecords from `keyframe_idx+1..N` with strict mode and event tail.
 
+Reconstruction guarantee:
+- If a keyframe exists exactly at decision `N`, that snapshot already reflects
+  post-follow-up settled state for decision `N`.
+
 ## Session Integration
 
 Session store helpers:
 - `enable_session_replay_recording(...)`
 - `load_session_replay_reader(...)`
+- Replay enablement is idempotent for a game instance (re-enabling replaces the
+  recorder subscription group instead of stacking duplicate callbacks).
 
 Autosave integration:
 - `enable_phase_end_autosave(..., enable_replay=True)` enables replay capture by default.
