@@ -31,6 +31,8 @@ python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; print(det
 python scripts/run_headless_self_play.py \
   --games 200 \
   --workers 4 \
+  --reserve-policy forced_only \
+  --max-reserves-arrival-seconds 10 \
   --player1-army army_lists/chaos_test.txt \
   --player2-army army_lists/aeldari_test.txt \
   --max-phase-steps 80 \
@@ -46,6 +48,8 @@ By default, this script also applies reward annotation using `dense_vp_delta_v1`
 Throughput controls:
 - `--workers <N>` runs games in parallel processes.
 - `--seed-base <S>` makes per-game RNG deterministic (`S + game_index`) across runs.
+- `--reserve-policy forced_only` avoids optional reserve declarations (default; faster and more stable).
+- `--max-reserves-arrival-seconds <T>` hard-caps per-unit reserve-arrival brute force (default: `10` seconds, always <= 1 minute unless explicitly raised).
 
 ## 2) Relabel records for target rules bundle (recommended for cross-version data)
 

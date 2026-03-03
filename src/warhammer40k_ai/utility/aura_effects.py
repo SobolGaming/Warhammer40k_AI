@@ -101,6 +101,7 @@ def _clone_aura_parse_value(value):
     return value
 
 
+@lru_cache(maxsize=32768)
 def _normalize_cache_key_text(value: str) -> str:
     text = str(value or "").lower()
     text = (
@@ -157,6 +158,7 @@ def _cached_parse_aura_spec(parser_key: str, ability, parser):
 def clear_aura_parse_cache() -> None:
     with _AURA_PARSE_CACHE_LOCK:
         _AURA_PARSE_CACHE.clear()
+    _normalize_cache_key_text.cache_clear()
 
 def _normalize_desc(desc: str) -> str:
     text = str(desc or "")

@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
 class WahaHelper:
+    _DATA_CACHE: dict[str, dict] = {}
+
     def __init__(self, data_dir='wahapedia_data'):
         self.data_dir = data_dir
         self.datasheets = {}
@@ -25,7 +27,37 @@ class WahaHelper:
         self.factions = {}
         self.detachment_abilities = {}
         self.datasheets_leaders = {}
+        cache_key = os.path.abspath(str(self.data_dir or "wahapedia_data"))
+        cached = WahaHelper._DATA_CACHE.get(cache_key)
+        if isinstance(cached, dict):
+            self._apply_cached_payload(cached)
+            return
         self.load_data()
+        WahaHelper._DATA_CACHE[cache_key] = self._cache_payload()
+
+    def _cache_payload(self) -> dict:
+        return {
+            "datasheets": self.datasheets,
+            "abilities": self.abilities,
+            "stratagems": self.stratagems,
+            "enhancements": self.enhancements,
+            "datasheets_enhancements": self.datasheets_enhancements,
+            "sources": self.sources,
+            "factions": self.factions,
+            "detachment_abilities": self.detachment_abilities,
+            "datasheets_leaders": self.datasheets_leaders,
+        }
+
+    def _apply_cached_payload(self, payload: dict) -> None:
+        self.datasheets = dict(payload.get("datasheets", {}) or {})
+        self.abilities = dict(payload.get("abilities", {}) or {})
+        self.stratagems = dict(payload.get("stratagems", {}) or {})
+        self.enhancements = dict(payload.get("enhancements", {}) or {})
+        self.datasheets_enhancements = dict(payload.get("datasheets_enhancements", {}) or {})
+        self.sources = dict(payload.get("sources", {}) or {})
+        self.factions = dict(payload.get("factions", {}) or {})
+        self.detachment_abilities = dict(payload.get("detachment_abilities", {}) or {})
+        self.datasheets_leaders = dict(payload.get("datasheets_leaders", {}) or {})
 
     def clean_data(self, data):
         if isinstance(data, dict):

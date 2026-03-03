@@ -88,8 +88,8 @@ def _model_position(model: object) -> tuple[float, float, float]:
     )
 
 
-def _unit_centroid(unit: object) -> tuple[float, float, float]:
-    models = _alive_models(unit)
+def _unit_centroid(unit: object, *, alive_models: list[object] | None = None) -> tuple[float, float, float]:
+    models = list(alive_models) if alive_models is not None else _alive_models(unit)
     if not models:
         position = getattr(unit, "position", None)
         if isinstance(position, (list, tuple)) and len(position) >= 3:
@@ -115,6 +115,60 @@ def _distance_2d(a: tuple[float, float, float], b: tuple[float, float, float]) -
     return ((dx * dx) + (dy * dy)) ** 0.5
 
 
+def _fast_horizontal_edge_distance(base_a: object, base_b: object) -> float | None:
+    try:
+        circular_a = bool(getattr(base_a, "has_circular_base", False))
+        circular_b = bool(getattr(base_b, "has_circular_base", False))
+        if not (circular_a and circular_b):
+            return None
+        ax = _safe_float(getattr(base_a, "x", 0.0), 0.0)
+        ay = _safe_float(getattr(base_a, "y", 0.0), 0.0)
+        bx = _safe_float(getattr(base_b, "x", 0.0), 0.0)
+        by = _safe_float(getattr(base_b, "y", 0.0), 0.0)
+        ar = _safe_float(getattr(base_a, "get_radius", lambda: 0.0)(), 0.0)
+        br = _safe_float(getattr(base_b, "get_radius", lambda: 0.0)(), 0.0)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    center_distance = ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
+    return max(0.0, float(center_distance - (ar + br)))
+
+
+def _base_horizontal_radius(base: object) -> float:
+    try:
+        if bool(getattr(base, "has_circular_base", False)):
+            return max(0.0, _safe_float(getattr(base, "get_radius", lambda: 0.0)(), 0.0))
+        longest_radius_fn = getattr(base, "get_longest_radius", None)
+        if callable(longest_radius_fn):
+            return max(0.0, _safe_float(longest_radius_fn(), 0.0))
+    except (AttributeError, TypeError, ValueError):
+        return 0.0
+    return 0.0
+
+
+def _unit_outer_radius(
+    unit: object,
+    *,
+    centroid: tuple[float, float, float] | None = None,
+    alive_models: list[object] | None = None,
+) -> float:
+    models = list(alive_models) if alive_models is not None else _alive_models(unit)
+    if not models:
+        return 0.0
+    cx, cy, _cz = centroid if centroid is not None else _unit_centroid(unit)
+    outer = 0.0
+    for model in models:
+        base = getattr(model, "model_base", None)
+        if base is None:
+            continue
+        bx = _safe_float(getattr(base, "x", 0.0), 0.0)
+        by = _safe_float(getattr(base, "y", 0.0), 0.0)
+        radius = _base_horizontal_radius(base)
+        dist = (((bx - cx) ** 2) + ((by - cy) ** 2)) ** 0.5 + radius
+        if dist > outer:
+            outer = dist
+    return float(outer)
+
+
 def _max_movement(unit: object) -> float:
     models = _alive_models(unit)
     if not models:
@@ -128,20 +182,73 @@ def _max_movement(unit: object) -> float:
     return max_move
 
 
-def _is_unit_in_engagement_range(unit: object, enemy_units: list[object]) -> bool:
-    unit_models = _alive_models(unit)
+def _is_unit_in_engagement_range(
+    unit: object,
+    enemy_units: list[object],
+    *,
+    centroid_cache: dict[str, tuple[float, float, float]] | None = None,
+    outer_radius_cache: dict[str, float] | None = None,
+    alive_models_cache: dict[str, list[object]] | None = None,
+) -> bool:
+    unit_id = str(get_entity_id(unit))
+    if alive_models_cache is not None and unit_id in alive_models_cache:
+        unit_models = list(alive_models_cache[unit_id])
+    else:
+        unit_models = _alive_models(unit)
+        if alive_models_cache is not None:
+            alive_models_cache[unit_id] = list(unit_models)
     if not unit_models:
         return False
+
+    if centroid_cache is not None and unit_id in centroid_cache:
+        unit_centroid = tuple(centroid_cache[unit_id])
+    else:
+        unit_centroid = _unit_centroid(unit, alive_models=unit_models)
+        if centroid_cache is not None:
+            centroid_cache[unit_id] = unit_centroid
+    if outer_radius_cache is not None and unit_id in outer_radius_cache:
+        unit_outer_radius = _safe_float(outer_radius_cache[unit_id], 0.0)
+    else:
+        unit_outer_radius = _unit_outer_radius(unit, centroid=unit_centroid, alive_models=unit_models)
+        if outer_radius_cache is not None:
+            outer_radius_cache[unit_id] = float(unit_outer_radius)
+    max_engagement = float(ENGAGEMENT_RANGE_HORIZONTAL)
+
     for model in unit_models:
         base = getattr(model, "model_base", None)
         if base is None:
             continue
         for enemy in enemy_units:
-            for enemy_model in _alive_models(enemy):
+            enemy_id = str(get_entity_id(enemy))
+            if alive_models_cache is not None and enemy_id in alive_models_cache:
+                enemy_models = list(alive_models_cache[enemy_id])
+            else:
+                enemy_models = _alive_models(enemy)
+                if alive_models_cache is not None:
+                    alive_models_cache[enemy_id] = list(enemy_models)
+            if not enemy_models:
+                continue
+            if centroid_cache is not None and enemy_id in centroid_cache:
+                enemy_centroid = tuple(centroid_cache[enemy_id])
+            else:
+                enemy_centroid = _unit_centroid(enemy, alive_models=enemy_models)
+                if centroid_cache is not None:
+                    centroid_cache[enemy_id] = enemy_centroid
+            if outer_radius_cache is not None and enemy_id in outer_radius_cache:
+                enemy_outer_radius = _safe_float(outer_radius_cache[enemy_id], 0.0)
+            else:
+                enemy_outer_radius = _unit_outer_radius(enemy, centroid=enemy_centroid, alive_models=enemy_models)
+                if outer_radius_cache is not None:
+                    outer_radius_cache[enemy_id] = float(enemy_outer_radius)
+            if _distance_2d(unit_centroid, enemy_centroid) > (unit_outer_radius + enemy_outer_radius + max_engagement):
+                continue
+            for enemy_model in enemy_models:
                 enemy_base = getattr(enemy_model, "model_base", None)
                 if enemy_base is None:
                     continue
-                horizontal = _safe_float(base.edge_to_edge_distance(enemy_base), 9999.0)
+                horizontal = _fast_horizontal_edge_distance(base, enemy_base)
+                if horizontal is None:
+                    horizontal = _safe_float(base.edge_to_edge_distance(enemy_base), 9999.0)
                 vertical = abs(_safe_float(getattr(base, "z", 0.0)) - _safe_float(getattr(enemy_base, "z", 0.0)))
                 if horizontal <= float(ENGAGEMENT_RANGE_HORIZONTAL) and vertical <= float(ENGAGEMENT_RANGE_VERTICAL):
                     return True
@@ -321,25 +428,52 @@ def _player_entry(player: object, *, viewer_id: str | None, include_hidden: bool
 def _unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) -> list[dict[str, Any]]:
     objective_entries = _objective_entries(game)
     players = _sorted_players(game)
-    units: list[tuple[str, dict[str, Any]]] = []
+    objective_centroids = [tuple(objective["position"]) for objective in objective_entries]
+    player_units: dict[str, list[object]] = {}
+    all_units: list[object] = []
     for player in players:
         army = getattr(player, "army", None)
-        for unit in list(getattr(army, "units", []) or []):
+        units_for_player = list(getattr(army, "units", []) or [])
+        player_key = str(getattr(player, "id", "") or "")
+        player_units[player_key] = units_for_player
+        all_units.extend(units_for_player)
+
+    centroid_cache: dict[str, tuple[float, float, float]] = {}
+    outer_radius_cache: dict[str, float] = {}
+    alive_models_cache: dict[str, list[object]] = {}
+    for unit in all_units:
+        unit_id = str(get_entity_id(unit))
+        alive_models = _alive_models(unit)
+        alive_models_cache[unit_id] = list(alive_models)
+        centroid = _unit_centroid(unit, alive_models=alive_models)
+        centroid_cache[unit_id] = centroid
+        outer_radius_cache[unit_id] = _unit_outer_radius(unit, centroid=centroid, alive_models=alive_models)
+
+    enemy_units_by_player: dict[str, list[object]] = {}
+    for player in players:
+        player_key = str(getattr(player, "id", "") or "")
+        enemy_units: list[object] = []
+        for other_player in players:
+            if other_player is player:
+                continue
+            other_key = str(getattr(other_player, "id", "") or "")
+            enemy_units.extend(player_units.get(other_key, []))
+        enemy_units_by_player[player_key] = enemy_units
+
+    units: list[tuple[str, dict[str, Any]]] = []
+    for player in players:
+        player_key = str(getattr(player, "id", "") or "")
+        for unit in player_units.get(player_key, []):
             unit_id = str(get_entity_id(unit))
             models = list(getattr(unit, "models", []) or [])
-            alive_models = _alive_models(unit)
-            enemies: list[object] = []
-            for other_player in players:
-                if other_player is player:
-                    continue
-                other_army = getattr(other_player, "army", None)
-                enemies.extend(list(getattr(other_army, "units", []) or []))
-            centroid = _unit_centroid(unit)
-            enemy_centroids = [_unit_centroid(enemy) for enemy in enemies if enemy is not None]
-            objective_centroids = [tuple(objective["position"]) for objective in objective_entries]
+            alive_models = list(alive_models_cache.get(unit_id, _alive_models(unit)))
+            enemies = enemy_units_by_player.get(player_key, [])
+            centroid = tuple(centroid_cache.get(unit_id, _unit_centroid(unit)))
+            enemy_centroids = [tuple(centroid_cache.get(str(get_entity_id(enemy)), _unit_centroid(enemy))) for enemy in enemies if enemy is not None]
             max_move = _max_movement(unit)
             nearest_enemy = min((_distance_2d(centroid, enemy) for enemy in enemy_centroids), default=9999.0)
             nearest_objective = min((_distance_2d(centroid, objective) for objective in objective_centroids), default=9999.0)
+            objective_ids_in_range = _objective_ids_in_range(unit, objective_entries)
             threat_flags = {
                 "can_reach_enemy_engagement_this_turn": bool(nearest_enemy <= (max_move + 12.0 + float(ENGAGEMENT_RANGE_HORIZONTAL))),
                 "can_reach_score_source_this_turn": bool(nearest_objective <= max_move),
@@ -351,9 +485,17 @@ def _unit_entries(game: object, *, viewer_id: str | None, include_hidden: bool) 
                 "model_count": int(len(models)),
                 "alive_model_count": int(len(alive_models)),
                 "position": [float(centroid[0]), float(centroid[1]), float(centroid[2])],
-                "in_engagement_range": bool(_is_unit_in_engagement_range(unit, enemies)),
-                "control_region_ids_in_range": [f"region:objective:{oid}" for oid in _objective_ids_in_range(unit, objective_entries)],
-                "score_source_ids_in_range": [f"score_source:objective:{oid}" for oid in _objective_ids_in_range(unit, objective_entries)],
+                "in_engagement_range": bool(
+                    _is_unit_in_engagement_range(
+                        unit,
+                        enemies,
+                        centroid_cache=centroid_cache,
+                        outer_radius_cache=outer_radius_cache,
+                        alive_models_cache=alive_models_cache,
+                    )
+                ),
+                "control_region_ids_in_range": [f"region:objective:{oid}" for oid in objective_ids_in_range],
+                "score_source_ids_in_range": [f"score_source:objective:{oid}" for oid in objective_ids_in_range],
                 "threat_flags": threat_flags,
             }
             if include_hidden or str(getattr(player, "id", "") or "") == str(viewer_id or ""):

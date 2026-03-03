@@ -2637,6 +2637,8 @@ class ObjectivePoint:
         # Virulent Vectorium: Worldblight objective contagion source tracking
         self.worldblight_controller = None
         self.worldblight_source = None
+        self._objective_area_cache_key = None
+        self._objective_area_cache = None
 
     @property
     def id(self) -> str:
@@ -2655,8 +2657,53 @@ class ObjectivePoint:
         prev_worldblight_source = getattr(self, "worldblight_source", None)
         prev_removed = bool(getattr(self, "removed", False))
         player_oc = {player: 0 for player in game_state.players}  # Initialize all players with 0 OC
+        shared_model_oc_cache = getattr(game_state, "_objective_control_model_oc_cache", None)
+        if not isinstance(shared_model_oc_cache, dict):
+            shared_model_oc_cache = None
         
         from shapely.geometry import Point
+
+        def _objective_area_shape():
+            key = (round(float(self.x), 6), round(float(self.y), 6), round(float(self.control_radius), 6))
+            if self._objective_area_cache is None or self._objective_area_cache_key != key:
+                self._objective_area_cache_key = key
+                self._objective_area_cache = Point(self.x, self.y).buffer(self.control_radius)
+            return self._objective_area_cache
+
+        def _model_overlaps_objective(model, objective_area) -> bool:
+            model_base = getattr(model, "model_base", None)
+            if model_base is None:
+                return False
+            # Exact for circular bases, and much faster than shapely polygon intersections.
+            if bool(getattr(model_base, "has_circular_base", False)):
+                try:
+                    radius = float(getattr(model_base, "get_radius", lambda: 0.0)())
+                    dx = float(getattr(model_base, "x", 0.0)) - float(self.x)
+                    dy = float(getattr(model_base, "y", 0.0)) - float(self.y)
+                    return (dx * dx + dy * dy) ** 0.5 <= (float(self.control_radius) + radius)
+                except (TypeError, ValueError):
+                    return False
+            try:
+                model_base_shape = model_base.get_base_shape()
+                return bool(model_base_shape.intersects(objective_area))
+            except (AttributeError, TypeError, ValueError, GEOSException):
+                try:
+                    distance = get_dist(self.x - model_base.x, self.y - model_base.y)
+                    model_base_radius = getattr(model_base, 'get_radius', lambda: 1.0)()
+                    return distance <= (self.control_radius + model_base_radius)
+                except (AttributeError, TypeError, ValueError):
+                    return False
+
+        def _model_objective_control(model) -> int:
+            if shared_model_oc_cache is None:
+                return int(getattr(model, "objective_control", 0) or 0)
+            model_key = int(id(model))
+            if model_key in shared_model_oc_cache:
+                return int(shared_model_oc_cache[model_key])
+            value = int(getattr(model, "objective_control", 0) or 0)
+            shared_model_oc_cache[model_key] = int(value)
+            return int(value)
+
         # If removed, always uncontrolled
         if getattr(self, 'removed', False):
             self.controlling_player = None
@@ -2665,8 +2712,8 @@ class ObjectivePoint:
             self.worldblight_controller = None
             self.worldblight_source = None
             return
-        # Create objective area as a circle
-        objective_area = Point(self.x, self.y).buffer(self.control_radius)
+        # Create/cached objective area as a circle
+        objective_area = _objective_area_shape()
         
         for player in game_state.players:
             if not player.army:
@@ -2685,20 +2732,9 @@ class ObjectivePoint:
                 for model in models:
                     if not model.is_alive:
                         continue
-                    
-                    # Get model's base shape and check for overlap with objective area
-                    try:
-                        model_base_shape = model.model_base.get_base_shape()
-                        if model_base_shape.intersects(objective_area):
-                            player_oc[player] += model.objective_control
-                            logger.info(f"INFO: {model.name} (OC: {model.objective_control}) overlaps objective at ({self.x:.1f}, {self.y:.1f})")
-                    except (AttributeError, TypeError, ValueError, GEOSException):
-                        # Fallback to distance check if base shape fails
-                        distance = get_dist(self.x - model.model_base.x, self.y - model.model_base.y)
-                        model_base_radius = getattr(model.model_base, 'get_radius', lambda: 1.0)()
-                        if distance <= (self.control_radius + model_base_radius):
-                            player_oc[player] += model.objective_control
-                            logger.info(f"INFO: {model.name} (OC: {model.objective_control}) near objective (manual calculation)")
+                    if _model_overlaps_objective(model, objective_area):
+                        oc_value = _model_objective_control(model)
+                        player_oc[player] += oc_value
 
         # Determine controlling player based on OC values
         if any(oc > 0 for oc in player_oc.values()):

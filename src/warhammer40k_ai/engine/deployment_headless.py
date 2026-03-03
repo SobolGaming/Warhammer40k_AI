@@ -27,10 +27,12 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         *,
         lattice_step: float = 2.0,
         exhaustive_lattice_step: float = 1.0,
+        reserve_policy: str = "forced_only",
     ) -> None:
         self.game = game
         self.lattice_step = float(max(0.5, lattice_step))
         self.exhaustive_lattice_step = float(max(0.25, exhaustive_lattice_step))
+        self.reserve_policy = self._normalize_reserve_policy(reserve_policy)
 
     def choose_deployment_zone(self, available_zones: list[dict]) -> dict:
         zones = [dict(zone or {}) for zone in list(available_zones or [])]
@@ -55,6 +57,9 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             must_start_fn = getattr(unit, "must_start_in_reserves", None)
             must_start = bool(must_start_fn()) if callable(must_start_fn) else False
             decisions[unit_id] = "reserves" if must_start else "deploy"
+
+        if self.reserve_policy == "forced_only":
+            return self._finalize_reserves_decisions(army, decisions)
 
         limits_fn = getattr(army, "get_reserve_limits", None)
         validate_fn = getattr(army, "validate_reserves_decisions", None)
@@ -94,19 +99,29 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                 decisions = trial
                 if reserve_units >= target_units and reserve_points >= target_points:
                     break
+        return self._finalize_reserves_decisions(army, decisions)
 
-            validation = dict(validate_fn(decisions) or {})
-            if not bool(validation.get("valid", True)) and callable(enforce_fn):
-                enforced = dict(enforce_fn(decisions) or {})
-                if enforced:
-                    return enforced
-        elif callable(validate_fn):
-            validation = dict(validate_fn(decisions) or {})
-            if not bool(validation.get("valid", True)) and callable(enforce_fn):
-                enforced = dict(enforce_fn(decisions) or {})
-                if enforced:
-                    return enforced
-        return decisions
+    @staticmethod
+    def _normalize_reserve_policy(value: str) -> str:
+        policy = str(value or "").strip().lower()
+        if policy in {"forced_only", "balanced"}:
+            return policy
+        raise ValueError(f"Unknown reserve policy: {value!r}. Expected 'forced_only' or 'balanced'.")
+
+    @staticmethod
+    def _finalize_reserves_decisions(army: object, decisions: dict[str, str]) -> dict[str, str]:
+        validate_fn = getattr(army, "validate_reserves_decisions", None)
+        enforce_fn = getattr(army, "enforce_reserves_limits", None)
+        if not callable(validate_fn):
+            return dict(decisions)
+        validation = dict(validate_fn(decisions) or {})
+        if bool(validation.get("valid", True)):
+            return dict(decisions)
+        if callable(enforce_fn):
+            enforced = dict(enforce_fn(decisions) or {})
+            if enforced:
+                return enforced
+        return dict(decisions)
 
     def _preferred_reserve_status(self, army: object, unit: object) -> str:
         if bool(getattr(unit, "is_fortification", False)):

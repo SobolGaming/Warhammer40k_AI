@@ -319,13 +319,18 @@ class DecisionRecordStore:
     max_records: int = field(default_factory=_decision_record_limit)
     dropped_records: int = 0
     _validator: DecisionRecordSchemaValidator = field(default_factory=DecisionRecordSchemaValidator)
+    _cached_game_id: str = ""
 
     def _game_id(self) -> str:
+        if self._cached_game_id:
+            return str(self._cached_game_id)
         session_id = str(getattr(self.game, "session_id", "") or "")
         if session_id:
-            return session_id
-        sig = f"{id(self.game)}:{_safe_turn_id(self.game)}:{len(self.records)}"
-        return f"game:{_hash_as_u31(sig)}"
+            self._cached_game_id = str(session_id)
+            return str(self._cached_game_id)
+        sig = f"{id(self.game)}:{id(self)}"
+        self._cached_game_id = f"game:{_hash_as_u31(sig)}"
+        return str(self._cached_game_id)
 
     def _global_seed(self) -> int:
         random_source = getattr(self.game, "random_source", None)

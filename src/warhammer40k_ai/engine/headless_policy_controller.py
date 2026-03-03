@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -14,6 +16,8 @@ _DEFAULT_SKIPPED_DECISION_TYPES = {
     DECISION_REQUEST_DICE_ROLL,
     DECISION_SELECT_DICE_REROLL,
 }
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -48,7 +52,8 @@ class HeadlessPolicyDecisionController(DecisionController):
         semantic_score_weights: SemanticScoreWeights | None = None,
         exploration_epsilon: float = 0.0,
         tie_break_salt: str = "headless_policy_v1",
-        max_reserves_anchor_points: int = 1200,
+        max_reserves_anchor_points: int = 20000,
+        max_reserves_arrival_seconds: float = 10.0,
         auto_attach: bool = True,
     ) -> None:
         super().__init__(player_id=player_id)
@@ -63,6 +68,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         self._exploration_epsilon = float(max(0.0, min(1.0, exploration_epsilon)))
         self._tie_break_salt = str(tie_break_salt or "headless_policy_v1")
         self._max_reserves_anchor_points = int(max(64, int(max_reserves_anchor_points or 0)))
+        self._max_reserves_arrival_seconds = float(max(0.1, float(max_reserves_arrival_seconds or 0.1)))
         self._attached = False
         if auto_attach and self._game is not None:
             self.attach()
@@ -177,7 +183,14 @@ class HeadlessPolicyDecisionController(DecisionController):
         if unit is None:
             return False
 
+        started = time.perf_counter()
+        deadline = started + float(self._max_reserves_arrival_seconds)
+        attempted = 0
         for x, y in self._reserves_arrival_anchor_points(game, unit):
+            now = time.perf_counter()
+            if now >= deadline:
+                break
+            attempted += 1
             model_positions = self._build_model_positions_from_anchor(game, unit, x=float(x), y=float(y))
             if not model_positions:
                 continue
@@ -191,6 +204,15 @@ class HeadlessPolicyDecisionController(DecisionController):
             if bool(getattr(apply_result, "ok", False)):
                 return True
 
+        timed_out = bool(time.perf_counter() >= deadline)
+        if timed_out:
+            logger.warning(
+                "Headless reserves-arrival search timed out for unit %s after %.2fs (%d anchors attempted).",
+                unit_id,
+                float(time.perf_counter() - started),
+                int(attempted),
+            )
+
         allow_skip = bool(context.get("allow_skip", True))
         if allow_skip and skip_option_id:
             apply_result = resolve_decision_command(
@@ -201,6 +223,16 @@ class HeadlessPolicyDecisionController(DecisionController):
                 player_id=getattr(request, "player_id", None),
             )
             return bool(getattr(apply_result, "ok", False))
+        if timed_out and skip_option_id:
+            apply_result = resolve_decision_command(
+                game,
+                request,
+                skip_option_id,
+                result_payload={"skipped": True},
+                player_id=getattr(request, "player_id", None),
+            )
+            if bool(getattr(apply_result, "ok", False)):
+                return True
         return False
 
     def _resolve_unit_by_id(self, game: object, unit_id: str) -> object | None:
@@ -237,11 +269,10 @@ class HeadlessPolicyDecisionController(DecisionController):
         in_strategic_fn = getattr(unit, "is_in_strategic_reserves", None)
         in_strategic = bool(in_strategic_fn()) if callable(in_strategic_fn) else False
         if in_strategic:
-            for step in (2.0, 1.0):
+            for step in (1.0, 0.5, 0.25):
                 xs = self._axis_points(0.0, width, step=step, offset=0.0)
                 ys = self._axis_points(0.0, height, step=step, offset=0.0)
-                # Strategic-reserves edge constraint is within 6"; keep anchor generation inside legal band.
-                band = self._axis_points(0.0, min(6.0, max(width, height)), step=step, offset=0.0)
+                band = self._axis_points(0.0, min(8.0, max(width, height)), step=step, offset=0.0)
                 for x in xs:
                     for d in band:
                         _add(x, d)
@@ -251,7 +282,7 @@ class HeadlessPolicyDecisionController(DecisionController):
                         _add(d, y)
                         _add(max(0.0, width - d), y)
         else:
-            for step in (3.0, 2.0, 1.0):
+            for step in (2.0, 1.0, 0.5):
                 xs = self._axis_points(0.0, width, step=step, offset=0.0)
                 ys = self._axis_points(0.0, height, step=step, offset=0.0)
                 for y in ys:
@@ -260,6 +291,7 @@ class HeadlessPolicyDecisionController(DecisionController):
 
         center_x = width / 2.0
         center_y = height / 2.0
+        strategic_edge_preference = self._strategic_edge_offset_preference(unit)
 
         def _sort_key(point: tuple[float, float]) -> tuple[float, float, str]:
             x, y = point
@@ -267,7 +299,21 @@ class HeadlessPolicyDecisionController(DecisionController):
             center_dist_sq = (float(x) - center_x) ** 2 + (float(y) - center_y) ** 2
             tie = hashlib.sha256(f"{unit_id}:{x:.3f}:{y:.3f}".encode("utf-8")).hexdigest()
             if in_strategic:
-                return (edge_dist, center_dist_sq, tie)
+                edge_priority = abs(float(edge_dist) - float(strategic_edge_preference))
+                d_left = float(x)
+                d_right = float(max(0.0, width - x))
+                d_bottom = float(y)
+                d_top = float(max(0.0, height - y))
+                nearest = min(d_left, d_right, d_bottom, d_top)
+                if nearest == d_left or nearest == d_right:
+                    along = float(y)
+                    along_max = float(height)
+                else:
+                    along = float(x)
+                    along_max = float(width)
+                along_center = along_max / 2.0
+                along_priority = min(abs(along - along_center), along, max(0.0, along_max - along))
+                return (edge_priority, along_priority, abs(along - along_center), tie)
             return (center_dist_sq, edge_dist, tie)
 
         points.sort(key=_sort_key)
@@ -304,6 +350,31 @@ class HeadlessPolicyDecisionController(DecisionController):
         map_width = float(getattr(game_map, "width", 60.0) or 60.0)
         map_height = float(getattr(game_map, "height", 44.0) or 44.0)
         return (map_width, map_height)
+
+    @staticmethod
+    def _strategic_edge_offset_preference(unit: object) -> float:
+        largest_model_radius = 0.0
+        for model in list(getattr(unit, "models", []) or []):
+            base = getattr(model, "model_base", None)
+            if base is None:
+                continue
+            radius = 0.0
+            try:
+                if bool(getattr(base, "has_circular_base", False)):
+                    radius = float(getattr(base, "get_radius", lambda: 0.0)())
+                else:
+                    longest_radius_fn = getattr(base, "get_longest_radius", None)
+                    if callable(longest_radius_fn):
+                        radius = float(longest_radius_fn())
+                    else:
+                        radius = float(getattr(base, "get_radius", lambda: 0.0)())
+            except (AttributeError, TypeError, ValueError):
+                continue
+            largest_model_radius = max(float(largest_model_radius), float(max(0.0, radius)))
+        if largest_model_radius <= 0.0:
+            return 1.0
+        # Strategic reserves usually need a small but non-zero edge offset to satisfy wholly-on-board placement.
+        return float(max(0.5, min(4.0, largest_model_radius + 0.25)))
 
     def _build_model_positions_from_anchor(self, game: object, unit: object, *, x: float, y: float) -> list[dict]:
         game_map = getattr(game, "map", None)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT, DECISION_REQUEST_DICE_ROLL
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
@@ -239,3 +240,57 @@ def test_headless_policy_controller_bruteforces_reserves_arrival_when_solver_can
     assert len(pos) >= 2
     assert abs(float(pos[0]) - 0.0) < 1e-6
     assert abs(float(pos[1]) - 0.0) < 1e-6
+
+
+def test_headless_policy_controller_reserves_bruteforce_respects_timeout_budget() -> None:
+    class _Model:
+        def __init__(self, model_id: str) -> None:
+            self._id = model_id
+            self.id = model_id
+            self.model_base = object()
+
+    class _Unit:
+        def __init__(self, unit_id: str, model_id: str) -> None:
+            self._id = unit_id
+            self.id = unit_id
+            self.models = [_Model(model_id)]
+
+        def is_in_strategic_reserves(self) -> bool:
+            return True
+
+    class _ReservesGame:
+        def __init__(self, unit) -> None:
+            self.is_authoritative = True
+            self._unit = unit
+
+        def _resolve_unit_by_id(self, unit_id: str):
+            return self._unit if str(unit_id) == str(self._unit.id) else None
+
+    unit = _Unit("unit:timeout", "model:timeout")
+    game = _ReservesGame(unit)
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False, max_reserves_arrival_seconds=0.05)
+    options = [
+        DecisionOption(option_id="confirm", label="Confirm", payload={"action": "confirm", "action_id": "confirm"}),
+    ]
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Arrive from Reserves",
+        player_id="p1",
+        options=options,
+        context={"placement_kind": "reserves_arrival", "unit_id": "unit:timeout", "allow_skip": False},
+    )
+
+    controller._reserves_arrival_anchor_points = lambda _game, _unit: [(float(i), 0.0) for i in range(10_000)]  # type: ignore[method-assign]
+
+    def _slow_fail(_game, _unit, *, x, y):
+        time.sleep(0.01)
+        return []
+
+    controller._build_model_positions_from_anchor = _slow_fail  # type: ignore[method-assign]
+
+    started = time.perf_counter()
+    resolved = controller._try_resolve_reserves_arrival_bruteforce(game, request)
+    elapsed = time.perf_counter() - started
+
+    assert resolved is False
+    assert elapsed < 0.5

@@ -105,6 +105,8 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
 python scripts/run_headless_self_play.py \
   --games 5 \
   --workers 2 \
+  --reserve-policy forced_only \
+  --max-reserves-arrival-seconds 10 \
   --player1-army army_lists/chaos_test.txt \
   --player2-army army_lists/aeldari_test.txt \
   --output data/headless_self_play_decision_records.json
@@ -135,6 +137,7 @@ python scripts/build_training_manifest.py \
 # - nontrivial VP game ratio
 # Full workflow guidance: docs/HEADLESS_SELF_PLAY_RUNBOOK.md
 # Throughput tip: use --workers <N> for parallel game generation.
+# Stability defaults: forced-only reserves declaration + 10s per-unit reserves-arrival cap.
 ```
 
 ## Command Line Options

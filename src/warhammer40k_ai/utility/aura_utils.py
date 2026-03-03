@@ -30,6 +30,21 @@ def _base_shape(model) -> Optional[object]:
         return None
 
 
+def _circular_edge_distance_2d(base_a, base_b) -> Optional[float]:
+    try:
+        if not (bool(getattr(base_a, "has_circular_base", False)) and bool(getattr(base_b, "has_circular_base", False))):
+            return None
+        ax = float(getattr(base_a, "x", 0.0))
+        ay = float(getattr(base_a, "y", 0.0))
+        bx = float(getattr(base_b, "x", 0.0))
+        by = float(getattr(base_b, "y", 0.0))
+        ar = float(getattr(base_a, "get_radius", lambda: 0.0)())
+        br = float(getattr(base_b, "get_radius", lambda: 0.0)())
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return max(0.0, float(math.hypot(ax - bx, ay - by) - (ar + br)))
+
+
 def distance_between_models_bases_3d(model_a, model_b) -> float:
     """
     Core measurement primitive for "within X" checks (non-Engagement-Range):
@@ -40,6 +55,14 @@ def distance_between_models_bases_3d(model_a, model_b) -> float:
     b = getattr(model_b, "model_base", None)
     if a is None or b is None:
         return float("inf")
+
+    fast_2d = _circular_edge_distance_2d(a, b)
+    if fast_2d is not None:
+        try:
+            dz = abs(float(getattr(a, "z", 0.0)) - float(getattr(b, "z", 0.0)))
+        except (AttributeError, TypeError, ValueError):
+            dz = 0.0
+        return float(math.hypot(float(fast_2d), dz))
 
     try:
         shape_a = a.get_base_shape()
@@ -67,6 +90,13 @@ def distance_between_bases_3d(base_a, base_b) -> float:
     """Same as distance_between_models_bases_3d, but accepts Base objects directly."""
     if base_a is None or base_b is None:
         return float("inf")
+    fast_2d = _circular_edge_distance_2d(base_a, base_b)
+    if fast_2d is not None:
+        try:
+            dz = abs(float(getattr(base_a, "z", 0.0)) - float(getattr(base_b, "z", 0.0)))
+        except (AttributeError, TypeError, ValueError):
+            dz = 0.0
+        return float(math.hypot(float(fast_2d), dz))
     try:
         dxy = float(base_a.get_base_shape().distance(base_b.get_base_shape()))
     except Exception:
@@ -82,6 +112,9 @@ def horizontal_distance_between_bases_2d(base_a, base_b) -> float:
     """2D base-to-base edge distance (no vertical component)."""
     if base_a is None or base_b is None:
         return float("inf")
+    fast_2d = _circular_edge_distance_2d(base_a, base_b)
+    if fast_2d is not None:
+        return float(fast_2d)
     return float(base_a.get_base_shape().distance(base_b.get_base_shape()))
 
 

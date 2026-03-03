@@ -13289,13 +13289,25 @@ class GamePhaseHandlersMixin:
         if game_map is None:
             raise RuntimeError("Objective control snapshot requires a game map.")
         snapshot = {}
-        for obj in list(getattr(game_map, "objectives", []) or []):
-            loc = getattr(obj, "location", None)
-            if loc is None or getattr(loc, "removed", False):
-                continue
-            if hasattr(loc, "update_control"):
-                loc.update_control(self)
-            snapshot[loc] = getattr(loc, "controlling_player", None)
+        had_prev_cache = hasattr(self, "_objective_control_model_oc_cache")
+        prev_cache = getattr(self, "_objective_control_model_oc_cache", None) if had_prev_cache else None
+        self._objective_control_model_oc_cache = {}
+        try:
+            for obj in list(getattr(game_map, "objectives", []) or []):
+                loc = getattr(obj, "location", None)
+                if loc is None or getattr(loc, "removed", False):
+                    continue
+                if hasattr(loc, "update_control"):
+                    loc.update_control(self)
+                snapshot[loc] = getattr(loc, "controlling_player", None)
+        finally:
+            if had_prev_cache:
+                self._objective_control_model_oc_cache = prev_cache
+            else:
+                try:
+                    delattr(self, "_objective_control_model_oc_cache")
+                except AttributeError:
+                    pass
         self._objective_control_snapshot = snapshot
 
         # Phoenix Gem: resolve pending returns at end of the phase they were destroyed in.

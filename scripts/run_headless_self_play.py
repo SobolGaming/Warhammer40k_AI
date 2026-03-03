@@ -56,6 +56,21 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Optional deterministic base seed; each game uses seed_base + game_index.",
     )
+    parser.add_argument(
+        "--reserve-policy",
+        default="forced_only",
+        choices=("forced_only", "balanced"),
+        help=(
+            "Reserve declaration policy for deterministic deployment. "
+            "'forced_only' keeps optional units on the board for faster/stabler headless play."
+        ),
+    )
+    parser.add_argument(
+        "--max-reserves-arrival-seconds",
+        type=float,
+        default=10.0,
+        help="Hard wall-clock cap per reserves-arrival placement decision (default: 10.0).",
+    )
     parser.add_argument("--max-phase-steps", type=int, default=80)
     parser.add_argument(
         "--output",
@@ -112,6 +127,8 @@ def _run_single_game(
     player2_army_file: str,
     max_phase_steps: int,
     game_seed: int | None = None,
+    reserve_policy: str = "forced_only",
+    max_reserves_arrival_seconds: float = 10.0,
 ) -> dict[str, Any]:
     player1 = Player("Player 1", control=PlayerControl.REMOTE)
     player2 = Player("Player 2", control=PlayerControl.REMOTE)
@@ -121,11 +138,15 @@ def _run_single_game(
         seed_fn = getattr(random_source, "seed", None)
         if callable(seed_fn):
             seed_fn(int(game_seed))
-    HeadlessPolicyDecisionController(game=game, auto_attach=True)
+    HeadlessPolicyDecisionController(
+        game=game,
+        auto_attach=True,
+        max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
+    )
 
     deployment_decision_makers = {
-        player1.id: DeterministicDeploymentDecisionMaker(game),
-        player2.id: DeterministicDeploymentDecisionMaker(game),
+        player1.id: DeterministicDeploymentDecisionMaker(game, reserve_policy=str(reserve_policy or "forced_only")),
+        player2.id: DeterministicDeploymentDecisionMaker(game, reserve_policy=str(reserve_policy or "forced_only")),
     }
 
     while game.is_in_setup_phase():
@@ -166,6 +187,8 @@ def _run_single_game_job(
     player2_army_file: str,
     max_phase_steps: int,
     seed_base: int | None = None,
+    reserve_policy: str = "forced_only",
+    max_reserves_arrival_seconds: float = 10.0,
 ) -> dict[str, Any]:
     game_seed = None
     if seed_base is not None:
@@ -176,6 +199,8 @@ def _run_single_game_job(
         player2_army_file=player2_army_file,
         max_phase_steps=max_phase_steps,
         game_seed=game_seed,
+        reserve_policy=str(reserve_policy or "forced_only"),
+        max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
     )
     serialized_result = {
         "records": _json_safe(list(result.get("records", []) or [])),
@@ -212,6 +237,8 @@ def main() -> int:
                 player2_army_file=str(args.player2_army),
                 max_phase_steps=max_phase_steps,
                 seed_base=seed_base,
+                reserve_policy=str(args.reserve_policy),
+                max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
             )
             per_game_outputs.append(payload)
             result = dict(payload.get("result", {}) or {})
@@ -232,6 +259,8 @@ def main() -> int:
                     player2_army_file=str(args.player2_army),
                     max_phase_steps=max_phase_steps,
                     seed_base=seed_base,
+                    reserve_policy=str(args.reserve_policy),
+                    max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
                 )
                 for game_index in range(games)
             ]

@@ -188,3 +188,33 @@ def test_decision_record_store_prunes_old_records_when_limit_reached() -> None:
     assert game.decision_record_store.dropped_records == 1
     remaining_ids = [str(r.get("decision_id", "")) for r in game.decision_record_store.records]
     assert remaining_ids == decision_ids[-2:]
+
+
+def test_decision_record_game_id_is_stable_within_a_single_game() -> None:
+    game, player = _build_game()
+
+    for _ in range(2):
+        request = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            "Confirm action?",
+            player_id=player.id,
+            options=[
+                DecisionOption.create("Yes", payload={"choice": True}),
+                DecisionOption.create("No", payload={"choice": False}),
+            ],
+        )
+        game.request_decision(request)
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=player.id,
+            option_id=request.options[0].option_id,
+            payload={},
+        )
+        apply_result = game.resolve_decision(result)
+        assert apply_result.ok is True
+
+    records = list(game.decision_record_store.records or [])
+    assert len(records) == 2
+    game_ids = {str(record.get("game_id", "") or "") for record in records}
+    assert len(game_ids) == 1
+    assert all(str(game_id).startswith("game:") for game_id in game_ids)
