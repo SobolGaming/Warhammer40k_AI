@@ -2918,17 +2918,45 @@ class GameSetupDeploymentReservesMixin:
             logger.info("INFO: Local scout moves will be handled by UI")
             logger.info("INFO: Scout phase initialized - use UI to make scout moves")
         else:
-            # For games without local control, auto-skip scout moves for now
-            # In the future, this could integrate with controller decision making
+            # For games without local control, queue explicit Scout decisions so
+            # headless/network controllers resolve through DecisionRequest API.
+            from ..decision_kinds import DECISION_SCOUT_MOVE
+            from ..decision_requests import build_scout_move_request
+
+            pending_unit_ids: set[str] = set()
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if getattr(req, "decision_type", None) != DECISION_SCOUT_MOVE:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    unit_id = str(ctx.get("unit_id", "") or "")
+                    if unit_id:
+                        pending_unit_ids.add(unit_id)
+
+            queued_count = 0
             for player in players_in_order:
                 if player in scout_units_by_player:
                     logger.info(f"INFO: {player.name}'s Scout moves:")
                     for unit, scout_distance in scout_units_by_player[player]:
+                        unit_id = str(get_entity_id(unit) or "")
                         logger.info(f"  - {unit.name} (Scout {scout_distance}\")")
-                        logger.info(f"    Skipping scout move (auto-skip for remote-only)")
-                        unit.scout_move_made = True  # Mark as skipped
-            
-            logger.info("INFO: Scout moves processed (auto-skipped for remote-only)")
+                        if not unit_id:
+                            continue
+                        if unit_id in pending_unit_ids:
+                            logger.info("    Scout decision already pending")
+                            continue
+                        req = build_scout_move_request(self, unit)
+                        if req is None:
+                            continue
+                        pending_unit_ids.add(unit_id)
+                        queued_count += 1
+                        logger.info("    Queued SCOUT_MOVE decision")
+
+            if queued_count > 0:
+                logger.info(f"INFO: Queued {queued_count} Scout move decision(s) for remote-only game")
+            else:
+                logger.info("INFO: Scout decisions already queued for remote-only game")
 
     def _execute_current_setup_phase_impl(self, **kwargs) -> None:
         """Execute the current setup phase with any necessary parameters."""

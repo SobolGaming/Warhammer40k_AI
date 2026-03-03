@@ -125,7 +125,7 @@ driven by client decisions and explicit setup commands.
 ### 4.4) RESOLVE_PREBATTLE_RULES (Sequential, may include interrupts)
 
 1. Pre-battle rules (for example, Scout moves) are processed in turn order.
-2. Remote-only games currently auto-skip Scout moves in the engine.
+2. Scout moves are queued as `SCOUT_MOVE` DecisionRequests for the owning player.
 3. Any DecisionRequests are resolved by the owning player; the server waits for them.
 
 ---
