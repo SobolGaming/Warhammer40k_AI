@@ -35,6 +35,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ADRENAL SURGE",
     "AGGRESSIVE MOBILITY",
     "AGGRESSOR IMPERATIVE",
+    "ANGELIC DESCENT",
     "BALEFUL HALO",
     "BULWARK IMPERATIVE",
     "ARDENT AUTOMATA",
@@ -122,6 +123,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INEXORABLE ADVANCE",
     "MANOEUVRE AND FIRE",
     "MARTIAL PERFECTION",
+    "MIRAGE OF ECHOES",
     "MORDIAN MINUTE",
     "NEW ORDERS",
     "NO RETREAT!",
@@ -129,6 +131,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PURGING FIRE",
     "RAPID INGRESS",
     "RAPID MANIFESTATION",
+    "REDIRECTED STRIKE",
     "REFUSAL TO BE OUTDONE",
     "MEET FORCE WITH FORCE",
     "OVERSHADOWED BY NONE",
@@ -138,6 +141,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SMOKESCREEN",
     "SKULLS FOR THE SKULL THRONE!",
     "SUMMONED BY SLAUGHTER",
+    "WALL OF MIRRORS",
     "SWIFT AS THE EAGLE",
     "TACTICAL FOIL",
     "THUNDERSTOMP",
@@ -1504,7 +1508,7 @@ class StratagemManager(
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES", "A DEADLY SNARE", "SHADE PATH"}:
             add("charge_declared", self._on_charge_declared)
-        if names & {"FIRES OF COVENANT", "A CHALLENGE MET"}:
+        if names & {"FIRES OF COVENANT", "A CHALLENGE MET", "MIRAGE OF ECHOES"}:
             add("unit_set_up", self._on_unit_set_up)
 
         if names & {
@@ -1707,6 +1711,7 @@ class StratagemManager(
             add("fight_attacks_resolved", self._on_fight_attacks_resolved_armour_of_contempt_cleanup)
 
         phase_end_trigger_names = {
+            "ANGELIC DESCENT",
             "CRUEL RAIDERS",
             "COST OF VICTORY",
             "DARK APPARITIONS",
@@ -1721,6 +1726,7 @@ class StratagemManager(
             "MURDER-CALL",
             "NEW ORDERS",
             "RAPID INGRESS",
+            "REDIRECTED STRIKE",
             "SKYBORNE SANCTUARY",
             "OVERFLIGHT",
             "WITHDRAW AND REINFORCE",
@@ -1734,6 +1740,7 @@ class StratagemManager(
             "ONTO THE NEXT",
             "OUTFLANKING STRIKE",
             "RETURN TO THE SHADOWS",
+            "WALL OF MIRRORS",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -5866,6 +5873,7 @@ class StratagemManager(
             raise
         try:
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
+            self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
         except Exception:
             raise
@@ -5939,6 +5947,14 @@ class StratagemManager(
             raise
         try:
             self._queue_emperors_children_carnival_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_army_of_faith_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_tau_kauyon_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -7688,6 +7704,7 @@ class StratagemManager(
     def _on_unit_set_up(self, unit, **kwargs):
         self._track_a_challenge_met_set_up(unit)
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="set_up")
+        self._queue_augurium_unit_set_up_reactions(unit=unit, **kwargs)
 
     def _on_unit_shooting_resolved_fire_and_fade(self, attacker_unit=None, **kwargs):
         """

@@ -93,6 +93,11 @@ class AdeptaSororitasStratagemMixin:
         checker = getattr(mgr, "is_hallowed_martyrs", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_army_of_faith(self) -> bool:
+        mgr = self._get_adepta_sororitas_mgr()
+        checker = getattr(mgr, "is_army_of_faith", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_adepta_sororitas_unit(self, unit: Any) -> bool:
         root = self._as_root(unit)
         if root is None:
@@ -232,6 +237,109 @@ class AdeptaSororitasStratagemMixin:
             self._dequeue_reaction_by_name(stratagem.name)
         self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
 
+    def _as_place_unit_into_strategic_reserves(self, unit: Any, *, reason: str = "") -> bool:
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        place_fn = getattr(root, "enter_strategic_reserves_midgame", None)
+        if callable(place_fn):
+            return bool(place_fn(game=game, game_map=game_map, reason=reason))
+
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            set_status = getattr(member, "set_reserve_status", None)
+            if callable(set_status):
+                set_status("strategic_reserves")
+            else:
+                member.reserve_status = "strategic_reserves"
+            mark_midgame = getattr(member, "mark_entered_reserves_midgame", None)
+            if callable(mark_midgame):
+                mark_midgame(game=game)
+            if bool(getattr(member, "is_aircraft", False)) and not bool(getattr(member, "hover_mode", False)):
+                member._aircraft_return_turn = int(getattr(game, "turn", 0) or 0) + 1 if game is not None else 0
+            member.deployed = True
+            member.reserve_turn_deployed = None
+            member.arrived_from_reserves_this_turn = False
+            if game_map is not None and isinstance(getattr(game_map, "units", None), list) and member in game_map.units:
+                game_map.units.remove(member)
+        return True
+
+    def _as_has_enemy_within_engagement_range(self, unit: Any) -> bool:
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if game_map is None:
+            return False
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        is_within_engagement_range = getattr(game_map, "is_within_engagement_range", None)
+        if not callable(get_enemy_units) or not callable(is_within_engagement_range):
+            return False
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._as_root(enemy)
+            if enemy_root is None:
+                continue
+            if not self._as_on_battlefield(enemy_root):
+                continue
+            if bool(is_within_engagement_range(root, enemy_root)):
+                return True
+        return False
+
+    @classmethod
+    def _as_unit_in_candidates(cls, root: Any, candidates: list[Any]) -> bool:
+        if root is None:
+            return False
+        rid = cls._as_sort_key(root)
+        for candidate in list(candidates or []):
+            cand_root = cls._as_root(candidate)
+            if cand_root is None:
+                continue
+            if cand_root is root:
+                return True
+            if rid and rid == cls._as_sort_key(cand_root):
+                return True
+        return False
+
+    def _army_of_faith_angelic_descent_candidates(self) -> list[Any]:
+        if not self._is_army_of_faith():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._as_root(unit)
+            if root is None:
+                continue
+            uid = self._as_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._as_owned_by_player(root, self.player):
+                continue
+            if not self._as_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_adepta_sororitas_unit(root):
+                continue
+            if not self._as_has_keyword(root, "JUMP PACK"):
+                continue
+            if self._as_has_enemy_within_engagement_range(root):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._as_sort_key)
+
     def _as_battlefield_units(
         self,
         *,
@@ -338,6 +446,42 @@ class AdeptaSororitasStratagemMixin:
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
         return getattr(army, "acts_of_faith", None) if army is not None else None
+
+    def _queue_army_of_faith_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_army_of_faith():
+            return
+        if player is self.player:
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("ANGELIC DESCENT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._army_of_faith_angelic_descent_candidates()
+        if not candidates:
+            return
+        if self._hallowed_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
 
     def _queue_hallowed_martyrs_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_hallowed_martyrs():
@@ -930,6 +1074,8 @@ class AdeptaSororitasStratagemMixin:
 
     def _use_adepta_sororitas_hallowed_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "ANGELIC DESCENT":
+            return self._use_army_of_faith_angelic_descent(stratagem, **kwargs)
         if name_u == "RIGHTEOUS VENGEANCE":
             return self._use_hallowed_righteous_vengeance(stratagem, **kwargs)
         if name_u == "SUFFERING AND SACRIFICE":
@@ -943,6 +1089,60 @@ class AdeptaSororitasStratagemMixin:
         if name_u == "DIVINE INTERVENTION":
             return self._use_hallowed_divine_intervention(stratagem, **kwargs)
         return None
+
+    def _use_army_of_faith_angelic_descent(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_army_of_faith():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ANGELIC DESCENT: no target unit provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "fight phase":
+            logger.error("ERROR: ANGELIC DESCENT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: ANGELIC DESCENT: not opponent's Fight phase")
+            return False
+        eligible = candidates or self._army_of_faith_angelic_descent_candidates()
+        if eligible and not self._as_unit_in_candidates(root, eligible):
+            logger.error("ERROR: ANGELIC DESCENT: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: ANGELIC DESCENT: target unit is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: ANGELIC DESCENT: target cannot be selected")
+            return False
+        if not self._is_adepta_sororitas_unit(root):
+            logger.error("ERROR: ANGELIC DESCENT: target is not ADEPTA SORORITAS")
+            return False
+        if not self._as_has_keyword(root, "JUMP PACK"):
+            logger.error("ERROR: ANGELIC DESCENT: target must have JUMP PACK")
+            return False
+        if self._as_has_enemy_within_engagement_range(root):
+            logger.error("ERROR: ANGELIC DESCENT: target is within Engagement Range")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._as_place_unit_into_strategic_reserves(root, reason=str(getattr(stratagem, "name", "") or "")):
+            logger.error("ERROR: ANGELIC DESCENT: failed to place target into Strategic Reserves")
+            return False
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ANGELIC DESCENT: %s entered Strategic Reserves.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
 
     def _use_hallowed_righteous_vengeance(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_hallowed_martyrs():

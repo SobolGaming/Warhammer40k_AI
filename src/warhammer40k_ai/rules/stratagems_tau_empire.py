@@ -40,6 +40,11 @@ class TauEmpireStratagemMixin:
         checker = getattr(mgr, "is_montka", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_tau_kauyon_detachment(self) -> bool:
+        mgr = self._tau_detachment_mgr()
+        checker = getattr(mgr, "is_kauyon", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _tau_has_any_keyword(entity: Any, keyword: str) -> bool:
         if entity is None:
@@ -196,6 +201,73 @@ class TauEmpireStratagemMixin:
             if rid and self._tau_sort_key(cand_root) == rid:
                 return True
         return False
+
+    def _tau_has_enemy_within_engagement_range(self, unit: Any) -> bool:
+        root = self._tau_root(unit)
+        if root is None:
+            return False
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if game_map is None:
+            return False
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        is_within_engagement_range = getattr(game_map, "is_within_engagement_range", None)
+        if not callable(get_enemy_units) or not callable(is_within_engagement_range):
+            return False
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._tau_root(enemy)
+            if enemy_root is None:
+                continue
+            if not self._tau_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            if bool(is_within_engagement_range(root, enemy_root)):
+                return True
+        return False
+
+    def _tau_wall_of_mirrors_unit_eligible(self, unit: Any) -> bool:
+        root = self._tau_root(unit)
+        if root is None:
+            return False
+        if self._tau_has_any_keyword(root, "STEALTH"):
+            return True
+        if self._tau_has_any_keyword(root, "GHOSTKEEL"):
+            return True
+        if self._tau_has_any_keyword(root, "COMMANDER SHADOWSUN"):
+            return True
+        name_u = str(getattr(root, "name", "") or "").strip().upper()
+        if "STEALTH" in name_u:
+            return True
+        if "GHOSTKEEL" in name_u:
+            return True
+        return "SHADOWSUN" in name_u
+
+    def _tau_wall_of_mirrors_candidates(self) -> list[Any]:
+        if not self._is_tau_kauyon_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._tau_wall_of_mirrors_unit_eligible(root):
+                continue
+            if self._tau_has_enemy_within_engagement_range(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
 
     @staticmethod
     def _tau_selected_to_move_this_phase(unit: Any) -> bool:
@@ -1190,6 +1262,47 @@ class TauEmpireStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload)
 
+    def _queue_tau_kauyon_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_tau_kauyon_detachment():
+            return
+        if player is self.player:
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "FIGHT_PHASE":
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("WALL OF MIRRORS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tau_wall_of_mirrors_candidates()
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "phase_end":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() != "fight phase":
+                continue
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
     @staticmethod
     def _tau_parse_experimental_ammunition_mode(raw_mode: Any) -> Optional[str]:
         mode = raw_mode
@@ -1291,6 +1404,40 @@ class TauEmpireStratagemMixin:
             )
         )
 
+    def _tau_place_unit_into_strategic_reserves(self, unit: Any, *, reason: str = "") -> bool:
+        root = self._tau_root(unit)
+        if root is None:
+            return False
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        place_fn = getattr(root, "enter_strategic_reserves_midgame", None)
+        if callable(place_fn):
+            return bool(place_fn(game=game, game_map=game_map, reason=reason))
+
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            set_status = getattr(member, "set_reserve_status", None)
+            if callable(set_status):
+                set_status("strategic_reserves")
+            else:
+                member.reserve_status = "strategic_reserves"
+            mark_midgame = getattr(member, "mark_entered_reserves_midgame", None)
+            if callable(mark_midgame):
+                mark_midgame(game=game)
+            if bool(getattr(member, "is_aircraft", False)) and not bool(getattr(member, "hover_mode", False)):
+                member._aircraft_return_turn = int(getattr(game, "turn", 0) or 0) + 1 if game is not None else 0
+            member.deployed = True
+            member.reserve_turn_deployed = None
+            member.arrived_from_reserves_this_turn = False
+            if game_map is not None and isinstance(getattr(game_map, "units", None), list) and member in game_map.units:
+                game_map.units.remove(member)
+        return True
+
     def _tau_finalize_use(self, stratagem: Any, *, dequeue: bool = False) -> None:
         if dequeue and hasattr(self, "_dequeue_reaction_by_name"):
             self._dequeue_reaction_by_name(getattr(stratagem, "name", ""))
@@ -1304,7 +1451,10 @@ class TauEmpireStratagemMixin:
         result = self._use_tau_experimental_prototype_cadre_stratagem(stratagem, **kwargs)
         if result is not None:
             return result
-        return self._use_tau_montka_stratagem(stratagem, **kwargs)
+        result = self._use_tau_montka_stratagem(stratagem, **kwargs)
+        if result is not None:
+            return result
+        return self._use_tau_kauyon_stratagem(stratagem, **kwargs)
 
     def _use_tau_experimental_prototype_cadre_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
@@ -1345,6 +1495,79 @@ class TauEmpireStratagemMixin:
         if name_u == "PULSE ONSLAUGHT":
             return self._use_tau_pulse_onslaught(stratagem, **kwargs)
         return None
+
+    def _use_tau_kauyon_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_tau_kauyon_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "WALL OF MIRRORS":
+            return self._use_tau_wall_of_mirrors(stratagem, **kwargs)
+        return None
+
+    def _use_tau_wall_of_mirrors(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if (target_unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "WALL OF MIRRORS":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: WALL OF MIRRORS: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "fight phase":
+            logger.error("ERROR: WALL OF MIRRORS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: WALL OF MIRRORS: not opponent's Fight phase")
+            return False
+
+        eligible = candidates or self._tau_wall_of_mirrors_candidates()
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: WALL OF MIRRORS: target is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: WALL OF MIRRORS: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._tau_wall_of_mirrors_unit_eligible(root):
+            logger.error("ERROR: WALL OF MIRRORS: target must be a Stealth, Ghostkeel, or Commander Shadowsun unit")
+            return False
+        if self._tau_has_enemy_within_engagement_range(root):
+            logger.error("ERROR: WALL OF MIRRORS: target is within Engagement Range")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: WALL OF MIRRORS: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._tau_place_unit_into_strategic_reserves(root, reason=str(getattr(stratagem, "name", "") or "")):
+            logger.error("ERROR: WALL OF MIRRORS: failed to place target into Strategic Reserves")
+            return False
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: WALL OF MIRRORS: %s entered Strategic Reserves.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
 
     def _use_tau_aggressive_mobility(self, stratagem: Any, **kwargs) -> bool:
         target_unit = kwargs.get("unit") or kwargs.get("target_unit")

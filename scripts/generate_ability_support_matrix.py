@@ -12307,6 +12307,7 @@ def _stratagem_support(
         "THUNDERSTOMP": "Fight phase: selected IMPERIAL KNIGHTS model's Armoured/Titanic Feet melee weapons are set to 8/12 Attacks and improve AP by 1 until end of phase.",
         "TACTICAL FOIL": "Opponent Movement phase reaction after an enemy ends a Normal/Advance/Fall Back move: IMPERIAL KNIGHTS unit within 9\" can make a reactive Normal move of up to D6\".",
         "RIGHTEOUS VENGEANCE": "Fight phase: selected ADEPTA SORORITAS unit that has not fought re-rolls melee Hit rolls, and re-rolls melee Wound rolls against Below Half-strength targets, until end of phase.",
+        "ANGELIC DESCENT": "End of opponent Fight phase: selected ADEPTA SORORITAS JUMP PACK unit that is not in Engagement Range enters Strategic Reserves.",
         "SUFFERING AND SACRIFICE": "Fight phase start: selected ADEPTA SORORITAS INFANTRY/WALKER forces enemy units in Engagement Range to select it as a Fight target this phase when possible.",
         "SPIRIT OF THE MARTYR": "Opponent Fight phase reaction: targeted ADEPTA SORORITAS unit that has not fought gains fight-on-death sequencing after the attacker finishes its attacks this phase.",
         "PRAISE THE FALLEN": "Opponent Shooting phase reaction after enemy shooting resolves: ADEPTA SORORITAS unit that lost models to that attacker can make a reactive shooting attack into the attacking unit.",
@@ -12377,8 +12378,11 @@ def _stratagem_support(
         "FIRES OF COVENANT": "Opponent Movement phase: targeted GREY KNIGHTS INFANTRY rolls D6 each time an enemy is set up or ends a Normal/Advance/Fall Back move within 6\"; +2 to the roll while wholly within Hallowed Ground; on 4+ that enemy suffers D3 mortal wounds.",
         "FLAMES OF SANCTITY": "End of Fight phase: targeted PURIFIER SQUAD rolls against each enemy unit within 6\" and inflicts D3 mortal wounds on 4+ (adds 1 to each roll if including Castellan Crowe).",
         "HALLOWED BEACON": "Movement Reinforcements step: targeted GREY KNIGHTS INFANTRY (non-TERMINATOR) Deep Strike arrival can be set up more than 6\" horizontally away from enemies, and placement must be wholly within Hallowed Ground.",
+        "MIRAGE OF ECHOES": "Opponent Movement phase Reinforcements step after enemy setup: selected GREY KNIGHTS PSYKER unit within 12\" of that enemy, with Deep Strike and not in Engagement Range, enters Strategic Reserves.",
+        "REDIRECTED STRIKE": "End of your Command phase: selected GREY KNIGHTS PSYKER unit with Deep Strike and not in Engagement Range enters Strategic Reserves.",
         "REPELLING SPHERE": "Opponent Charge phase: targeted GREY KNIGHTS INFANTRY imposes -1 to enemy Charge rolls that include it as a target, or -2 while wholly within Hallowed Ground.",
         "SANCTIFIED KILL ZONE": "Shooting/Fight phase: targeted GREY KNIGHTS unit wholly within Hallowed Ground gains wound re-rolls (re-roll 1s, or full wound re-rolls for PURIFIER SQUAD) until end of phase.",
+        "WALL OF MIRRORS": "End of opponent Fight phase: selected T'AU EMPIRE Stealth/Ghostkeel/Commander Shadowsun unit not in Engagement Range enters Strategic Reserves.",
     }
 
     # Some stratagem names are reused across detachments and require detachment-specific notes.

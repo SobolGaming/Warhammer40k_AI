@@ -1137,6 +1137,22 @@ _HALLOWED_MARTYRS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ARMY_OF_FAITH_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009038007": StratagemToolDescriptor(
+        stratagem_id="000009038007",
+        name="Angelic Descent",
+        timing="end_of_opponent_fight_phase",
+        target="adepta_sororitas_jump_pack_unit_not_engaged",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+    ),
+}
+
+_ARMY_OF_FAITH_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ARMY_OF_FAITH_STRATAGEM_DESCRIPTORS.values()
+}
+
 _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009778002": StratagemToolDescriptor(
         stratagem_id="000009778002",
@@ -1210,6 +1226,34 @@ _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] =
 
 _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
+_AUGURIUM_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010365006": StratagemToolDescriptor(
+        stratagem_id="000010365006",
+        name="Redirected Strike",
+        timing="end_of_your_command_phase",
+        target="grey_knights_psyker_unit_not_engaged_with_deep_strike",
+        duration="immediate",
+        effect="enter_strategic_reserves_if_deep_strike",
+        cp_cost=1,
+        effect_params={"requires_deep_strike": True},
+    ),
+    "000010365007": StratagemToolDescriptor(
+        stratagem_id="000010365007",
+        name="Mirage of Echoes",
+        timing="opponent_movement_phase_reinforcements_step_after_enemy_setup",
+        target="grey_knights_psyker_unit_within_12_not_engaged_with_deep_strike",
+        duration="immediate",
+        effect="enter_strategic_reserves_if_deep_strike",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={"requires_deep_strike": True, "requires_enemy_setup_context": True},
+    ),
+}
+
+_AUGURIUM_TASK_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _AUGURIUM_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
 _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
@@ -2741,6 +2785,22 @@ _MONTKA_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _MONTKA_STRATAGEM_DESCRIPTORS.values()
 }
 
+_KAUYON_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008443007": StratagemToolDescriptor(
+        stratagem_id="000008443007",
+        name="Wall of Mirrors",
+        timing="end_of_opponent_fight_phase",
+        target="tau_stealth_or_ghostkeel_or_commander_shadowsun_unit_not_engaged",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+    ),
+}
+
+_KAUYON_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _KAUYON_STRATAGEM_DESCRIPTORS.values()
+}
+
 _INVASION_FLEET_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008349002": StratagemToolDescriptor(
         stratagem_id="000008349002",
@@ -3200,7 +3260,13 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ARMY_OF_FAITH_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
+        desc = _AUGURIUM_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
         desc = _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
@@ -3263,6 +3329,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _MONTKA_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _KAUYON_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _INVASION_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3297,7 +3366,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _GRIZZLED_COMPANY_STRATAGEM_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
+        or _ARMY_OF_FAITH_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _AUGURIUM_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
@@ -3318,6 +3389,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ELDRITCH_RAIDERS_STRATAGEM_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)
         or _MONTKA_STRATAGEM_BY_NAME.get(key)
+        or _KAUYON_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
