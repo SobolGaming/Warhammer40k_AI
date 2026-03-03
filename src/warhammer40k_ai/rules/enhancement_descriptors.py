@@ -6069,6 +6069,87 @@ _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GENESTEALER_CULTS_HOST_OF_ASCENSION_DESCRIPTORS.values()
 }
 
+_AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009130003": EnhancementToolDescriptor(
+        enhancement_id="000009130003",
+        name="Liber Heresius",
+        timing="after_deployment",
+        target="friendly_agents_of_the_imperium_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "allow_strategic_reserves": True,
+            "redeploy_filters": ("AGENTS OF THE IMPERIUM",),
+        },
+    ),
+}
+
+_AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc
+    for desc in _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS.values()
+}
+
+_TAU_KAUYON_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008442004": EnhancementToolDescriptor(
+        enhancement_id="000008442004",
+        name="Solid-image Projection Unit",
+        timing="after_deployment",
+        target="friendly_tau_empire_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "allow_strategic_reserves": True,
+            "redeploy_filters": ("T'AU EMPIRE",),
+        },
+    ),
+}
+
+_TAU_KAUYON_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _TAU_KAUYON_DESCRIPTORS.values()
+}
+
+_THOUSAND_SONS_CHANGEHOST_OF_DECEIT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010197004": EnhancementToolDescriptor(
+        enhancement_id="000010197004",
+        name="Duplicitous Malediction",
+        timing="after_deployment",
+        target="friendly_thousand_sons_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "allow_strategic_reserves": True,
+            "redeploy_filters": ("THOUSAND SONS",),
+        },
+    ),
+}
+
+_THOUSAND_SONS_CHANGEHOST_OF_DECEIT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_DESCRIPTORS.values()
+}
+
+_TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008417005": EnhancementToolDescriptor(
+        enhancement_id="000008417005",
+        name="Neuronode",
+        timing="after_deployment",
+        target="friendly_vanguard_invader_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "allow_strategic_reserves": True,
+            "redeploy_filters": ("VANGUARD INVADER",),
+        },
+    ),
+}
+
+_TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS.values()
+}
+
 
 def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "") -> Optional[EnhancementToolDescriptor]:
     if enhancement_id:
@@ -6408,6 +6489,18 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _GENESTEALER_CULTS_HOST_OF_ASCENSION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
+        desc = _TAU_KAUYON_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
+        desc = _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
+        desc = _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -6524,4 +6617,8 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME.get(key)
         or _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME.get(key)
+        or _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME.get(key)
+        or _TAU_KAUYON_BY_NAME.get(key)
+        or _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_BY_NAME.get(key)
+        or _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME.get(key)
     )

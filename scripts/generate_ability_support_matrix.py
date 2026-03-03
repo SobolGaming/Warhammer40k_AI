@@ -4989,6 +4989,10 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
             "Supported",
             "Army validation enforces Commander Farsight and ETHEREAL units as mutually exclusive.",
         ),
+        ("TAU", "Kroot Ambush", "000003702"): (
+            "Supported",
+            "After deployment, redeploy this unit and one other friendly KROOT unit; selected units can be placed into Strategic Reserves regardless of current limits.",
+        ),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
     for (fid, name, dsid), val in raw.items():
@@ -11755,6 +11759,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000008348003": "Perfectly Adapted: once per turn, bearer can re-roll one of Hit/Wound/Damage/Advance/Charge/Save (single shared use across those roll types).",
         "000008348004": "Synaptic Linchpin: while a friendly TYRANIDS unit is within 9\" of the bearer, it counts as within Synapse Range of your army.",
         "000008348005": "Adaptive Biology: bearer gains Feel No Pain 5+; at the start of any turn, if below starting wounds, upgrade to Feel No Pain 4+ for the rest of the battle.",
+        "000009130003": "Liber Heresius: after deployment, redeploy up to three friendly AGENTS OF THE IMPERIUM units; selected units may be placed into Strategic Reserves regardless of limits.",
+        "000008442004": "Solid-image Projection Unit: after deployment, redeploy up to three friendly T'AU EMPIRE units; selected units may be placed into Strategic Reserves regardless of limits.",
+        "000010197004": "Duplicitous Malediction: after deployment, redeploy up to three friendly THOUSAND SONS units; selected units may be placed into Strategic Reserves regardless of limits.",
+        "000008417005": "Neuronode: after deployment, redeploy up to three friendly VANGUARD INVADER units; selected units may be placed into Strategic Reserves regardless of limits.",
         "000010002002": "Faultless Opportunist: Heroic Intervention for 0CP even if another unit was targeted this phase.",
         "000010002005": "Rise to the Challenge: end of Fight phase (once per battle) fight one additional time and choose an Exquisite Swordsmanship ability.",
         "000010014002": "Pledge of Eternal Servitude: first time bearer is destroyed, takes a Leadership test at phase end; on pass, bearer returns with D6 wounds.",

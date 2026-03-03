@@ -2409,6 +2409,8 @@ class GameSetupDeploymentReservesMixin:
                 excluded_keywords = list(cache.get("redeploy_excluded_keywords") or [])
                 filter_any_groups = list(cache.get("redeploy_filter_any_groups") or [])
                 exclude_source_unit = bool(cache.get("redeploy_exclude_source_unit", False))
+                must_include_source_unit = bool(cache.get("redeploy_must_include_source_unit", False))
+                require_exact_count = bool(cache.get("redeploy_require_exact_count", False))
                 ability_name = str(cache.get("redeploy_ability_name") or "")
                 if not ability_name:
                     ability_name = str(getattr(getattr(u, "enhancement", None), "name", "") or "Redeploy")
@@ -2423,6 +2425,9 @@ class GameSetupDeploymentReservesMixin:
                         "excluded_keywords": list(excluded_keywords),
                         "filter_any_groups": [list(group) for group in filter_any_groups],
                         "used_unit_ids": used_unit_ids,
+                        "must_include_source_unit": bool(must_include_source_unit),
+                        "require_exact_count": bool(require_exact_count),
+                        "selections_made": 0,
                         "ability_name": ability_name,
                     }
                 )
@@ -2515,6 +2520,9 @@ class GameSetupDeploymentReservesMixin:
         excluded_keywords = [
             str(f or "").strip().upper() for f in list(token.get("excluded_keywords") or []) if str(f or "").strip()
         ]
+        source_unit_id = str(token.get("source_unit_id", "") or "")
+        must_include_source_unit = bool(token.get("must_include_source_unit", False))
+        selections_made = int(token.get("selections_made", 0) or 0)
         raw_any_groups = list(token.get("filter_any_groups") or [])
         filter_any_groups: list[list[str]] = []
         for raw_group in raw_any_groups:
@@ -2542,6 +2550,8 @@ class GameSetupDeploymentReservesMixin:
                 continue
             seen.add(rid)
             if rid in used:
+                continue
+            if must_include_source_unit and selections_made <= 0 and source_unit_id and rid != source_unit_id:
                 continue
             try:
                 if not bool(getattr(root, "deployed", False)):
@@ -2595,7 +2605,10 @@ class GameSetupDeploymentReservesMixin:
 
         from ..decisions import DecisionOption, DecisionRequest
 
-        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        allow_skip = True
+        if bool(token.get("require_exact_count", False)) and selections_made > 0:
+            allow_skip = False
+        options = [DecisionOption.create("None", payload={"action": "skip"})] if allow_skip else []
         for cand in sorted(candidates, key=_cand_sort_key):
             cid = get_entity_id(cand)
             label = str(getattr(cand, "name", "Unit") or "Unit")
@@ -2696,6 +2709,7 @@ class GameSetupDeploymentReservesMixin:
         elif isinstance(used, list):
             if root_id not in used:
                 used.append(root_id)
+        token["selections_made"] = int(token.get("selections_made", 0) or 0) + 1
         token["remaining"] = max(int(token.get("remaining", 0) or 0) - 1, 0)
         if token["remaining"] <= 0:
             tokens.pop(0)

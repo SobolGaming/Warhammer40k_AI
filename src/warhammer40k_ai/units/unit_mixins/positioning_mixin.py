@@ -8476,6 +8476,8 @@ class PositioningMixin:
         ability_name = ""
         requires_source_on_battlefield = False
         allow_embarked_transport_on_battlefield = False
+        must_include_source_unit = False
+        require_exact_count = False
 
         for name, desc in abilities_to_check:
             text = html.unescape(str(desc or ""))
@@ -8493,6 +8495,17 @@ class PositioningMixin:
                 if "transport it is embarked within is on the battlefield" in text:
                     requires_source_on_battlefield = True
                     allow_embarked_transport_on_battlefield = True
+                source_and_other_match = re.search(
+                    r"redeploy this model'?s unit and one other friendly ([a-z0-9' ]+?) unit",
+                    text,
+                )
+                if source_and_other_match:
+                    count = max(count, 2)
+                    other_filter = str(source_and_other_match.group(1) or "").strip().upper()
+                    if other_filter:
+                        redeploy_filters = [other_filter]
+                    must_include_source_unit = True
+                    require_exact_count = True
                 # Support numeric or dice expressions like D3, D6, D10 (optionally with +N)
                 m = re.search(
                     r"select\s+up\s+to\s+((?:\d+)|(?:d\d+(?:\s*\+\s*\d+)?)|one|two|three|four|five|six)",
@@ -8529,10 +8542,15 @@ class PositioningMixin:
                                 count = max(count, int(val))
                             except Exception:
                                 pass
-                else:
+                elif not source_and_other_match:
                     count = max(count, 3)  # default to 3 if unspecified
                 if "strategic reserves" in text:
                     can_place_in_reserves = True
+                if (
+                    "agents of the imperium units" in text
+                    or "agents of the imperium unit" in text
+                ):
+                    redeploy_filters = ["AGENTS OF THE IMPERIUM"]
                 if (
                     "emperor's children units" in text
                     or "emperors children units" in text
@@ -8548,8 +8566,19 @@ class PositioningMixin:
                     redeploy_filters = ["AELDARI"]
                 if "jakhals" in text and "goremongers" in text:
                     redeploy_filter_any_groups = [["JAKHALS"], ["GOREMONGERS"]]
+                if (
+                    "t'au empire units" in text
+                    or "tau empire units" in text
+                    or "t'au empire unit" in text
+                    or "tau empire unit" in text
+                ):
+                    redeploy_filters = ["T'AU EMPIRE"]
+                if "thousand sons units" in text or "thousand sons unit" in text:
+                    redeploy_filters = ["THOUSAND SONS"]
                 if "tyranids units" in text or "tyranids unit" in text:
                     redeploy_filters = ["TYRANIDS"]
+                if "vanguard invader units" in text or "vanguard invader unit" in text:
+                    redeploy_filters = ["VANGUARD INVADER"]
                 if (
                     "heretic astartes units" in text
                     or "heretic astartes unit" in text
@@ -8575,5 +8604,7 @@ class PositioningMixin:
         self._ability_cache['redeploy_allow_embarked_transport_on_battlefield'] = bool(
             allow_embarked_transport_on_battlefield
         )
+        self._ability_cache['redeploy_must_include_source_unit'] = bool(must_include_source_unit)
+        self._ability_cache['redeploy_require_exact_count'] = bool(require_exact_count)
         return result
     
