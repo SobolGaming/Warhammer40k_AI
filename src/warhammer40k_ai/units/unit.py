@@ -1749,24 +1749,30 @@ class Unit(
         base_val = None
         base_raw = None
 
+        def _base_stat(private_name: str, public_name: str) -> int:
+            # Avoid eager fallback evaluation that can recurse through model properties.
+            if hasattr(model, private_name):
+                return int(getattr(model, private_name, 0))
+            return int(getattr(model, public_name, 0))
+
         if c in ("movement", "move", "m"):
-            base_val = int(getattr(model, "_movement", getattr(model, "movement", 0)))
+            base_val = _base_stat("_movement", "movement")
             base_raw = getattr(model, "_movement_raw", None)
             ckey = "movement"
         elif c in ("toughness", "t"):
-            base_val = int(getattr(model, "_toughness", getattr(model, "toughness", 0)))
+            base_val = _base_stat("_toughness", "toughness")
             base_raw = getattr(model, "_toughness_raw", None)
             ckey = "toughness"
         elif c in ("save", "sv"):
-            base_val = int(getattr(model, "_save", getattr(model, "save", 0)))
+            base_val = _base_stat("_save", "save")
             base_raw = getattr(model, "_save_raw", None)
             ckey = "save"
         elif c in ("leadership", "ld"):
-            base_val = int(getattr(model, "_leadership", getattr(model, "leadership", 0)))
+            base_val = _base_stat("_leadership", "leadership")
             base_raw = getattr(model, "_leadership_raw", None)
             ckey = "leadership"
         elif c in ("objective_control", "oc"):
-            base_val = int(getattr(model, "_objective_control", getattr(model, "objective_control", 0)))
+            base_val = _base_stat("_objective_control", "objective_control")
             base_raw = getattr(model, "_objective_control_raw", None)
             ckey = "objective_control"
         else:

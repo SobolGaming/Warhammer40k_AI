@@ -1445,11 +1445,30 @@ class GameSetupDeploymentReservesMixin:
         player_name = getattr(player, "name", "Player")
         logger.info("INFO: %s has %d units that can arrive from reserves", player_name, len(units_that_can_arrive))
         if units_that_must_arrive:
-            logger.warning(
-                "WARN: %s has %d units that must arrive from reserves; no placement provider is configured.",
-                player_name,
-                len(units_that_must_arrive),
-            )
+            hub = getattr(self, "decision_controller_hub", None)
+            controllers = list(getattr(hub, "_controllers", []) or [])
+            player_id = str(getattr(player, "id", "") or "")
+            handled = [
+                controller
+                for controller in controllers
+                if bool(getattr(controller, "handles_player", lambda _player_id: False)(player_id))
+            ]
+            if handled:
+                logger.info(
+                    "INFO: %s has %d units that must arrive from reserves; placement decisions will be queued "
+                    "for %d controller(s).",
+                    player_name,
+                    len(units_that_must_arrive),
+                    len(handled),
+                )
+            else:
+                logger.warning(
+                    "WARN: %s has %d units that must arrive from reserves, but no decision controller is registered "
+                    "for player_id=%s.",
+                    player_name,
+                    len(units_that_must_arrive),
+                    player_id or "<unknown>",
+                )
 
         # Queue explicit placement decisions for each eligible unit.
         try:

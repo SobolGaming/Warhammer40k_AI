@@ -48,6 +48,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         semantic_score_weights: SemanticScoreWeights | None = None,
         exploration_epsilon: float = 0.0,
         tie_break_salt: str = "headless_policy_v1",
+        max_reserves_anchor_points: int = 1200,
         auto_attach: bool = True,
     ) -> None:
         super().__init__(player_id=player_id)
@@ -61,6 +62,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         self._weights = semantic_score_weights or SemanticScoreWeights()
         self._exploration_epsilon = float(max(0.0, min(1.0, exploration_epsilon)))
         self._tie_break_salt = str(tie_break_salt or "headless_policy_v1")
+        self._max_reserves_anchor_points = int(max(64, int(max_reserves_anchor_points or 0)))
         self._attached = False
         if auto_attach and self._game is not None:
             self.attach()
@@ -235,10 +237,11 @@ class HeadlessPolicyDecisionController(DecisionController):
         in_strategic_fn = getattr(unit, "is_in_strategic_reserves", None)
         in_strategic = bool(in_strategic_fn()) if callable(in_strategic_fn) else False
         if in_strategic:
-            for step in (1.0, 0.5, 0.25):
+            for step in (2.0, 1.0):
                 xs = self._axis_points(0.0, width, step=step, offset=0.0)
                 ys = self._axis_points(0.0, height, step=step, offset=0.0)
-                band = self._axis_points(0.0, min(8.0, max(width, height)), step=step, offset=0.0)
+                # Strategic-reserves edge constraint is within 6"; keep anchor generation inside legal band.
+                band = self._axis_points(0.0, min(6.0, max(width, height)), step=step, offset=0.0)
                 for x in xs:
                     for d in band:
                         _add(x, d)
@@ -248,7 +251,7 @@ class HeadlessPolicyDecisionController(DecisionController):
                         _add(d, y)
                         _add(max(0.0, width - d), y)
         else:
-            for step in (2.0, 1.0, 0.5):
+            for step in (3.0, 2.0, 1.0):
                 xs = self._axis_points(0.0, width, step=step, offset=0.0)
                 ys = self._axis_points(0.0, height, step=step, offset=0.0)
                 for y in ys:
@@ -268,6 +271,9 @@ class HeadlessPolicyDecisionController(DecisionController):
             return (center_dist_sq, edge_dist, tie)
 
         points.sort(key=_sort_key)
+        max_points = int(self._max_reserves_anchor_points)
+        if max_points > 0 and len(points) > max_points:
+            return points[:max_points]
         return points
 
     @staticmethod

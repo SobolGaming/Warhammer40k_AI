@@ -30,6 +30,7 @@ python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; print(det
 ```bash
 python scripts/run_headless_self_play.py \
   --games 200 \
+  --workers 4 \
   --player1-army army_lists/chaos_test.txt \
   --player2-army army_lists/aeldari_test.txt \
   --max-phase-steps 80 \
@@ -41,6 +42,10 @@ What `--max-phase-steps 80` means:
 - If a game appears stuck and reaches this cap, the script fails fast instead of running forever.
 
 By default, this script also applies reward annotation using `dense_vp_delta_v1`.
+
+Throughput controls:
+- `--workers <N>` runs games in parallel processes.
+- `--seed-base <S>` makes per-game RNG deterministic (`S + game_index`) across runs.
 
 ## 2) Relabel records for target rules bundle (recommended for cross-version data)
 

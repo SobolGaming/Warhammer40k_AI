@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import copy
 import json
 from pathlib import Path
+import time
 from typing import Any
 
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
@@ -42,6 +44,18 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--player1-army", default="army_lists/chaos_test.txt")
     parser.add_argument("--player2-army", default="army_lists/aeldari_test.txt")
     parser.add_argument("--games", type=int, default=1)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of worker processes for parallel self-play generation (default: 1).",
+    )
+    parser.add_argument(
+        "--seed-base",
+        type=int,
+        default=None,
+        help="Optional deterministic base seed; each game uses seed_base + game_index.",
+    )
     parser.add_argument("--max-phase-steps", type=int, default=80)
     parser.add_argument(
         "--output",
@@ -97,10 +111,16 @@ def _run_single_game(
     player1_army_file: str,
     player2_army_file: str,
     max_phase_steps: int,
+    game_seed: int | None = None,
 ) -> dict[str, Any]:
     player1 = Player("Player 1", control=PlayerControl.REMOTE)
     player2 = Player("Player 2", control=PlayerControl.REMOTE)
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player1, player2])
+    if game_seed is not None:
+        random_source = getattr(game, "random_source", None)
+        seed_fn = getattr(random_source, "seed", None)
+        if callable(seed_fn):
+            seed_fn(int(game_seed))
     HeadlessPolicyDecisionController(game=game, auto_attach=True)
 
     deployment_decision_makers = {
@@ -133,30 +153,104 @@ def _run_single_game(
     winner = game.get_winner()
     records = copy.deepcopy(list(getattr(game.decision_record_store, "records", []) or []))
     return {
-        "game": game,
         "records": records,
         "phase_steps": int(phase_steps),
         "winner_player_id": str(getattr(winner, "id", "") or ""),
     }
 
 
+def _run_single_game_job(
+    game_index: int,
+    *,
+    player1_army_file: str,
+    player2_army_file: str,
+    max_phase_steps: int,
+    seed_base: int | None = None,
+) -> dict[str, Any]:
+    game_seed = None
+    if seed_base is not None:
+        game_seed = int(seed_base) + int(game_index)
+    started_at = time.perf_counter()
+    result = _run_single_game(
+        player1_army_file=player1_army_file,
+        player2_army_file=player2_army_file,
+        max_phase_steps=max_phase_steps,
+        game_seed=game_seed,
+    )
+    serialized_result = {
+        "records": _json_safe(list(result.get("records", []) or [])),
+        "phase_steps": int(result.get("phase_steps", 0) or 0),
+        "winner_player_id": str(result.get("winner_player_id", "") or ""),
+    }
+    elapsed_s = float(time.perf_counter() - started_at)
+    return {
+        "game_index": int(game_index),
+        "elapsed_seconds": elapsed_s,
+        "result": serialized_result,
+    }
+
+
 def main() -> int:
     args = _parse_args()
     games = max(1, int(args.games or 1))
+    workers = max(1, int(args.workers or 1))
     max_phase_steps = max(1, int(args.max_phase_steps or 1))
 
     all_records: list[dict[str, Any]] = []
     total_phase_steps = 0
     winners: Counter[str] = Counter()
     decision_type_counts: Counter[str] = Counter()
+    per_game_outputs: list[dict[str, Any]] = []
 
-    for _index in range(games):
-        result = _run_single_game(
-            player1_army_file=str(args.player1_army),
-            player2_army_file=str(args.player2_army),
-            max_phase_steps=max_phase_steps,
-        )
-        records = list(result["records"] or [])
+    seed_base = int(args.seed_base) if args.seed_base is not None else None
+
+    if workers == 1 or games == 1:
+        for game_index in range(games):
+            payload = _run_single_game_job(
+                game_index,
+                player1_army_file=str(args.player1_army),
+                player2_army_file=str(args.player2_army),
+                max_phase_steps=max_phase_steps,
+                seed_base=seed_base,
+            )
+            per_game_outputs.append(payload)
+            result = dict(payload.get("result", {}) or {})
+            records = list(result.get("records", []) or [])
+            print(
+                f"Completed game {game_index + 1}/{games} in "
+                f"{float(payload.get('elapsed_seconds', 0.0) or 0.0):.2f}s "
+                f"(phase_steps={int(result.get('phase_steps', 0) or 0)}, records={len(records)})"
+            )
+    else:
+        max_workers = min(workers, games)
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(
+                    _run_single_game_job,
+                    game_index,
+                    player1_army_file=str(args.player1_army),
+                    player2_army_file=str(args.player2_army),
+                    max_phase_steps=max_phase_steps,
+                    seed_base=seed_base,
+                )
+                for game_index in range(games)
+            ]
+            for future in as_completed(futures):
+                payload = dict(future.result() or {})
+                per_game_outputs.append(payload)
+                game_index = int(payload.get("game_index", 0) or 0)
+                result = dict(payload.get("result", {}) or {})
+                records = list(result.get("records", []) or [])
+                print(
+                    f"Completed game {game_index + 1}/{games} in "
+                    f"{float(payload.get('elapsed_seconds', 0.0) or 0.0):.2f}s "
+                    f"(phase_steps={int(result.get('phase_steps', 0) or 0)}, records={len(records)})"
+                )
+
+    per_game_outputs.sort(key=lambda item: int(item.get("game_index", 0) or 0))
+    for payload in per_game_outputs:
+        result = dict(payload.get("result", {}) or {})
+        records = list(result.get("records", []) or [])
         all_records.extend(records)
         total_phase_steps += int(result.get("phase_steps", 0) or 0)
         winner_player_id = str(result.get("winner_player_id", "") or "")
@@ -180,6 +274,7 @@ def main() -> int:
     output_path.write_text(json.dumps(exported_records, indent=2, sort_keys=True), encoding="utf-8")
 
     print(f"Games: {games}")
+    print(f"Workers: {workers}")
     print(f"Phase steps: {total_phase_steps}")
     print(f"Decision records: {len(exported_records)}")
     if not bool(args.no_reward_annotation):

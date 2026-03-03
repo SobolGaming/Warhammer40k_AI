@@ -8889,30 +8889,35 @@ class Game(
             self.time_manager = time_manager
         ctx = time_manager.decorate_context(request.decision_type, ctx)
         if request.decision_type == DECISION_MOVE_UNIT:
-            if getattr(self, "path_witness_store", None) is None:
-                self.path_witness_store = PathWitnessStore()
-            intent = MovementIntent.from_context(ctx)
-            ctx["movement_intent"] = intent.to_dict()
-            request.context = ctx
-            move_candidates, move_mask, solver_ms, fallback_mode = generate_move_unit_candidates(self, request, intent)
-            if move_candidates:
-                normalized_candidates: list[CandidateAction] = []
-                for candidate in list(move_candidates or []):
-                    metadata = dict(candidate.metadata or {})
-                    metadata["solver_ms"] = int(max(0, solver_ms))
-                    metadata["fallback_mode"] = bool(fallback_mode or metadata.get("fallback_mode", False))
-                    normalized_candidates.append(
-                        CandidateAction(
-                            action_id=str(candidate.action_id),
-                            params=dict(candidate.params or {}),
-                            metadata=metadata,
+            placement_kind = str(ctx.get("placement_kind", "") or "").strip().lower()
+            # Placement-style move decisions are resolved via explicit model_positions payloads.
+            # Skip generic move candidate generation for these to avoid expensive unused solver work.
+            placement_style_kinds = {"deployment", "advance_redeploy_9h"}
+            if placement_kind not in placement_style_kinds:
+                if getattr(self, "path_witness_store", None) is None:
+                    self.path_witness_store = PathWitnessStore()
+                intent = MovementIntent.from_context(ctx)
+                ctx["movement_intent"] = intent.to_dict()
+                request.context = ctx
+                move_candidates, move_mask, solver_ms, fallback_mode = generate_move_unit_candidates(self, request, intent)
+                if move_candidates:
+                    normalized_candidates: list[CandidateAction] = []
+                    for candidate in list(move_candidates or []):
+                        metadata = dict(candidate.metadata or {})
+                        metadata["solver_ms"] = int(max(0, solver_ms))
+                        metadata["fallback_mode"] = bool(fallback_mode or metadata.get("fallback_mode", False))
+                        normalized_candidates.append(
+                            CandidateAction(
+                                action_id=str(candidate.action_id),
+                                params=dict(candidate.params or {}),
+                                metadata=metadata,
+                            )
                         )
-                    )
-                request.candidates = normalized_candidates
-                request.mask = [bool(value) for value in list(move_mask or [])]
-                if len(request.mask) != len(request.candidates):
-                    request.mask = [True] * len(request.candidates)
-                request.mask_reasons = [None if val else "masked_as_illegal" for val in request.mask]
+                    request.candidates = normalized_candidates
+                    request.mask = [bool(value) for value in list(move_mask or [])]
+                    if len(request.mask) != len(request.candidates):
+                        request.mask = [True] * len(request.candidates)
+                    request.mask_reasons = [None if val else "masked_as_illegal" for val in request.mask]
         semantic_rules_bundle_id = str(ctx.get("rules_bundle_id", "") or "")
         ensure_candidate_semantic_metadata(
             request,
