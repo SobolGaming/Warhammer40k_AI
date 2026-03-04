@@ -56,6 +56,11 @@ class TyranidsStratagemMixin:
         checker = getattr(mgr, "is_invasion_fleet", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_tyranids_vanguard_onslaught_detachment(self) -> bool:
+        mgr = self._tyr_detachment_mgr()
+        checker = getattr(mgr, "is_vanguard_onslaught", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_tyranids_unit(self, unit: Any) -> bool:
         root = self._tyr_root(unit)
         if root is None:
@@ -75,6 +80,18 @@ class TyranidsStratagemMixin:
         get_parent_army = getattr(unit, "get_parent_army", None)
         army = get_parent_army() if callable(get_parent_army) else getattr(unit, "parent_army", None)
         return getattr(army, "player", None) is player
+
+    def _tyr_is_infantry_unit(self, unit: Any) -> bool:
+        root = self._tyr_root(unit)
+        if root is None:
+            return False
+        return self._tyr_has_keyword(root, "INFANTRY")
+
+    def _tyr_is_vanguard_invader_unit(self, unit: Any) -> bool:
+        root = self._tyr_root(unit)
+        if root is None:
+            return False
+        return self._tyr_has_keyword(root, "VANGUARD INVADER")
 
     def _tyr_on_battlefield(self, unit: Any, *, require_targetable: bool = True) -> bool:
         root = self._tyr_root(unit)
@@ -470,6 +487,37 @@ class TyranidsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._tyr_sort_key)
 
+    def _tyr_invisible_hunter_candidates(self) -> list[Any]:
+        if not self._is_tyranids_vanguard_onslaught_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            is_vanguard = self._tyr_is_vanguard_invader_unit(root)
+            is_tyr_infantry = self._tyr_is_infantry_unit(root)
+            if not (is_vanguard or is_tyr_infantry):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
     def _tyr_spend_cp(self, stratagem: Any, *, target_unit: Any = None, enemy_unit: Any = None) -> bool:
         effective_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         apply_cost = getattr(self.player, "apply_stratagem_cp_cost", None)
@@ -483,6 +531,40 @@ class TyranidsStratagemMixin:
                 source="stratagem",
             )
         )
+
+    def _tyr_place_unit_into_strategic_reserves(self, unit: Any, *, reason: str = "") -> bool:
+        root = self._tyr_root(unit)
+        if root is None:
+            return False
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        place_fn = getattr(root, "enter_strategic_reserves_midgame", None)
+        if callable(place_fn):
+            return bool(place_fn(game=game, game_map=game_map, reason=reason))
+
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            set_status = getattr(member, "set_reserve_status", None)
+            if callable(set_status):
+                set_status("strategic_reserves")
+            else:
+                member.reserve_status = "strategic_reserves"
+            mark_midgame = getattr(member, "mark_entered_reserves_midgame", None)
+            if callable(mark_midgame):
+                mark_midgame(game=game)
+            if bool(getattr(member, "is_aircraft", False)) and not bool(getattr(member, "hover_mode", False)):
+                member._aircraft_return_turn = int(getattr(game, "turn", 0) or 0) + 1 if game is not None else 0
+            member.deployed = True
+            member.reserve_turn_deployed = None
+            member.arrived_from_reserves_this_turn = False
+            if game_map is not None and isinstance(getattr(game_map, "units", None), list) and member in game_map.units:
+                game_map.units.remove(member)
+        return True
 
     def _tyr_finalize_use(self, stratagem: Any, *, dequeue: bool = False) -> None:
         if dequeue and hasattr(self, "_dequeue_reaction_by_name"):
@@ -710,6 +792,60 @@ class TyranidsStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload)
 
+    def _queue_tyranids_vanguard_onslaught_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_tyranids_vanguard_onslaught_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(phase, "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        if player is self.player:
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("INVISIBLE HUNTER")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if not stratagem.can_use(self.player, self.game, phase_name="Fight phase"):
+            return
+
+        candidates = self._tyr_invisible_hunter_candidates()
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "").strip() != "phase_end":
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() != "fight phase":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() == name_u:
+                return
+
+        vanguard_candidates = [unit for unit in candidates if self._tyr_is_vanguard_invader_unit(unit)]
+        infantry_candidates = [unit for unit in candidates if self._tyr_is_infantry_unit(unit)]
+        max_units = 2 if len(vanguard_candidates) >= 2 else 1
+        payload: dict[str, Any] = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "vanguard_candidates": vanguard_candidates,
+            "infantry_candidates": infantry_candidates,
+            "max_units": int(max_units),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
     def _cleanup_tyranids_invasion_fleet_phase_start_effects(self, *, player: Any = None, phase: Any = None) -> None:
         if not self._is_tyranids_invasion_fleet_detachment():
             return
@@ -749,21 +885,23 @@ class TyranidsStratagemMixin:
     def _use_tyranids_invasion_fleet_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
-        if not self._is_tyranids_invasion_fleet_detachment():
-            return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
-        if name_u == "RAPID REGENERATION":
-            return self._use_tyranids_rapid_regeneration(stratagem, **kwargs)
-        if name_u == "PREDATORY IMPERATIVE":
-            return self._use_tyranids_predatory_imperative(stratagem, **kwargs)
-        if name_u == "ENDLESS SWARM":
-            return self._use_tyranids_endless_swarm(stratagem, **kwargs)
-        if name_u == "ADRENAL SURGE":
-            return self._use_tyranids_adrenal_surge(stratagem, **kwargs)
-        if name_u == "DEATH FRENZY":
-            return self._use_tyranids_death_frenzy(stratagem, **kwargs)
-        if name_u == "OVERRUN":
-            return self._use_tyranids_overrun(stratagem, **kwargs)
+        if self._is_tyranids_invasion_fleet_detachment():
+            if name_u == "RAPID REGENERATION":
+                return self._use_tyranids_rapid_regeneration(stratagem, **kwargs)
+            if name_u == "PREDATORY IMPERATIVE":
+                return self._use_tyranids_predatory_imperative(stratagem, **kwargs)
+            if name_u == "ENDLESS SWARM":
+                return self._use_tyranids_endless_swarm(stratagem, **kwargs)
+            if name_u == "ADRENAL SURGE":
+                return self._use_tyranids_adrenal_surge(stratagem, **kwargs)
+            if name_u == "DEATH FRENZY":
+                return self._use_tyranids_death_frenzy(stratagem, **kwargs)
+            if name_u == "OVERRUN":
+                return self._use_tyranids_overrun(stratagem, **kwargs)
+        if self._is_tyranids_vanguard_onslaught_detachment():
+            if name_u == "INVISIBLE HUNTER":
+                return self._use_tyranids_invisible_hunter(stratagem, **kwargs)
         return None
 
     def _use_tyranids_rapid_regeneration(self, stratagem: Any, **kwargs) -> bool:
@@ -1254,4 +1392,141 @@ class TyranidsStratagemMixin:
             getattr(root, "name", "Unit"),
             " and may make a 6\" Normal move instead" if normal_move_active else "",
         )
+        return True
+
+    def _use_tyranids_invisible_hunter(self, stratagem: Any, **kwargs) -> bool:
+        selected = (
+            kwargs.get("units")
+            or kwargs.get("target_units")
+            or kwargs.get("selected_units")
+            or kwargs.get("unit")
+            or kwargs.get("target_unit")
+        )
+        candidates = list(kwargs.get("candidates") or [])
+        vanguard_candidates = list(kwargs.get("vanguard_candidates") or [])
+        infantry_candidates = list(kwargs.get("infantry_candidates") or [])
+        max_units = int(kwargs.get("max_units", 2) or 2)
+        if selected is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if selected is None:
+                    selected = (
+                        reaction.get("units")
+                        or reaction.get("target_units")
+                        or reaction.get("selected_units")
+                        or reaction.get("unit")
+                        or reaction.get("target_unit")
+                    )
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not vanguard_candidates:
+                    vanguard_candidates = list(reaction.get("vanguard_candidates") or [])
+                if not infantry_candidates:
+                    infantry_candidates = list(reaction.get("infantry_candidates") or [])
+                if "max_units" not in kwargs:
+                    max_units = int(reaction.get("max_units", max_units) or max_units)
+                break
+
+        if selected is None and len(candidates) == 1:
+            selected = [candidates[0]]
+        selected_roots = self._tyr_resolve_units(selected)
+        if not selected_roots:
+            logger.error("ERROR: INVISIBLE HUNTER: no target units provided")
+            return False
+        if len(selected_roots) > max(1, int(max_units)):
+            logger.error("ERROR: INVISIBLE HUNTER: selected too many units")
+            return False
+        if len(selected_roots) > 2:
+            logger.error("ERROR: INVISIBLE HUNTER: cannot select more than two units")
+            return False
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "fight phase":
+            logger.error("ERROR: INVISIBLE HUNTER: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: INVISIBLE HUNTER: not opponent's Fight phase")
+            return False
+
+        eligible = candidates or self._tyr_invisible_hunter_candidates()
+        if not eligible:
+            logger.error("ERROR: INVISIBLE HUNTER: no eligible units")
+            return False
+        valid_vanguard = self._tyr_resolve_units(vanguard_candidates) or [
+            unit for unit in eligible if self._tyr_is_vanguard_invader_unit(unit)
+        ]
+        valid_infantry = self._tyr_resolve_units(infantry_candidates) or [
+            unit for unit in eligible if self._tyr_is_infantry_unit(unit)
+        ]
+        selected_vanguard = 0
+        selected_infantry_only = 0
+
+        for root in list(selected_roots):
+            if not self._tyr_unit_in_candidates(root, eligible):
+                logger.error("ERROR: INVISIBLE HUNTER: selected unit is not currently eligible")
+                return False
+            if not self._tyr_owned_by_player(root, self.player):
+                logger.error("ERROR: INVISIBLE HUNTER: selected unit is not yours")
+                return False
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                logger.error("ERROR: INVISIBLE HUNTER: selected unit must be on the battlefield and targetable")
+                return False
+            if not self._is_tyranids_unit(root):
+                logger.error("ERROR: INVISIBLE HUNTER: selected unit must be a TYRANIDS unit")
+                return False
+            is_vanguard = self._tyr_unit_in_candidates(root, valid_vanguard)
+            is_infantry = self._tyr_unit_in_candidates(root, valid_infantry)
+            if not (is_vanguard or is_infantry):
+                logger.error("ERROR: INVISIBLE HUNTER: selected unit must be VANGUARD INVADER or TYRANIDS INFANTRY")
+                return False
+            if is_vanguard:
+                selected_vanguard += 1
+            elif is_infantry:
+                selected_infantry_only += 1
+
+        if selected_infantry_only > 1:
+            logger.error("ERROR: INVISIBLE HUNTER: cannot select more than one non-VANGUARD TYRANIDS INFANTRY unit")
+            return False
+        if selected_infantry_only > 0 and len(selected_roots) > 1:
+            logger.error("ERROR: INVISIBLE HUNTER: selecting TYRANIDS INFANTRY that is not VANGUARD INVADER limits selection to one unit")
+            return False
+        if len(selected_roots) == 2 and selected_vanguard != 2:
+            logger.error("ERROR: INVISIBLE HUNTER: selecting two units requires both to be VANGUARD INVADER units")
+            return False
+
+        can_use = False
+        try:
+            can_use = bool(
+                stratagem.can_use(
+                    self.player,
+                    self.game,
+                    phase_name="Fight phase",
+                    unit=selected_roots[0],
+                    units=list(selected_roots),
+                )
+            )
+        except TypeError:
+            can_use = bool(stratagem.can_use(self.player, self.game, phase_name="Fight phase", unit=selected_roots[0]))
+        if not can_use:
+            logger.error("ERROR: INVISIBLE HUNTER: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=selected_roots[0]):
+            return False
+
+        for root in list(selected_roots):
+            if not self._tyr_place_unit_into_strategic_reserves(
+                root,
+                reason=str(getattr(stratagem, "name", "") or "INVISIBLE HUNTER"),
+            ):
+                logger.error(
+                    "ERROR: INVISIBLE HUNTER: failed to place %s into Strategic Reserves",
+                    getattr(root, "name", "Unit"),
+                )
+                return False
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        moved_units = ", ".join(str(getattr(root, "name", "Unit") or "Unit") for root in list(selected_roots))
+        logger.info("INFO: INVISIBLE HUNTER: %s entered Strategic Reserves.", moved_units)
         return True

@@ -822,6 +822,60 @@ class RulesParsingMixin:
                     "min_battlefield_edge_distance_horiz": 0,
                 }
 
+        if isinstance(sr, dict) and bool(sr.get("enhancement_veil_of_darkness")):
+            bearer_alive = False
+            bearer_id = str(
+                sr.get("enhancement_veil_of_darkness_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if bearer_id:
+                for model in list(getattr(self, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    alive_attr = getattr(model, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    break
+            else:
+                bearer = getattr(self, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is not None:
+                    alive_attr = getattr(bearer, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            requires_alive = bool(sr.get("enhancement_veil_of_darkness_requires_bearer_alive", True))
+            if bearer_alive or not requires_alive:
+                ability_name = str(sr.get("enhancement_veil_of_darkness_source", "") or "Veil of Darkness").strip()
+                if not ability_name:
+                    ability_name = "Veil of Darkness"
+                ability_key = str(
+                    sr.get("enhancement_veil_of_darkness_ability_key", "") or "veil_of_darkness"
+                ).strip().lower()
+                if not ability_key:
+                    ability_key = "veil_of_darkness"
+                trigger_phase = str(
+                    sr.get("enhancement_veil_of_darkness_trigger_phase", "") or "OPPONENT_TURN_END"
+                ).strip().upper()
+                if not trigger_phase:
+                    trigger_phase = "OPPONENT_TURN_END"
+                return_distance = 9.0
+                try:
+                    return_distance = float(sr.get("enhancement_veil_of_darkness_return_setup_min_enemy_distance_horiz", 9.0) or 9.0)
+                except Exception:
+                    return_distance = 9.0
+                return {
+                    "name": ability_name,
+                    "description": "",
+                    "once_per_battle": bool(sr.get("enhancement_veil_of_darkness_once_per_battle", True)),
+                    "ability_key": ability_key,
+                    "trigger_phase": trigger_phase,
+                    "min_enemy_distance_horiz": 0,
+                    "min_battlefield_edge_distance_horiz": 0,
+                    "return_as_deep_strike": bool(sr.get("enhancement_veil_of_darkness_return_as_deep_strike", True)),
+                    "return_setup_min_enemy_distance_horiz": float(max(0.0, return_distance)),
+                    "must_arrive_next_movement_phase": bool(
+                        sr.get("enhancement_veil_of_darkness_must_arrive_next_movement_phase", True)
+                    ),
+                }
+
         if isinstance(sr, dict) and bool(sr.get("enhancement_starflare_ignition_system")):
             bearer_alive = False
             bearer_id = str(

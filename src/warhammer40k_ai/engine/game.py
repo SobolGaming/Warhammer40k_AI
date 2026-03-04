@@ -2315,6 +2315,14 @@ class Game(
                     "ability_key": ability_key,
                     "trigger_phase": trigger_phase,
                     "once_per_battle": bool(ability.get("once_per_battle")),
+                    "return_as_deep_strike": bool(ability.get("return_as_deep_strike", False)),
+                    "return_setup_min_enemy_distance_horiz": float(
+                        ability.get("return_setup_min_enemy_distance_horiz", 0.0) or 0.0
+                    ),
+                    "must_arrive_next_movement_phase": bool(
+                        ability.get("must_arrive_next_movement_phase", False)
+                    ),
+                    "turn_ending_player_id": turn_ending_player_id,
                 }
                 message = (
                     f"{getattr(unit, 'name', 'Unit')} can enter Strategic Reserves at the end of the opponent's turn.\n\n"
@@ -2326,7 +2334,19 @@ class Game(
                     ability_name=ctx["ability_name"] or "Strategic Reserves",
                     message=message,
                     context=ctx,
-                    payload={"unit_id": unit_id, "ability_key": ability_key, "once_per_battle": bool(ability.get("once_per_battle"))},
+                    payload={
+                        "unit_id": unit_id,
+                        "ability_key": ability_key,
+                        "once_per_battle": bool(ability.get("once_per_battle")),
+                        "return_as_deep_strike": bool(ability.get("return_as_deep_strike", False)),
+                        "return_setup_min_enemy_distance_horiz": float(
+                            ability.get("return_setup_min_enemy_distance_horiz", 0.0) or 0.0
+                        ),
+                        "must_arrive_next_movement_phase": bool(
+                            ability.get("must_arrive_next_movement_phase", False)
+                        ),
+                        "turn_ending_player_id": turn_ending_player_id,
+                    },
                     instance_key=str(unit_id or ""),
                 )
 

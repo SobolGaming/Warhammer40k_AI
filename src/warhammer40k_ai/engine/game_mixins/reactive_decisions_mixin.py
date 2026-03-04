@@ -6940,6 +6940,10 @@ class GameReactiveDecisionsMixin:
                 return
             per_battle = bool(payload.get("once_per_battle")) or bool(ctx.get("once_per_battle"))
             per_battle_key = str(payload.get("ability_key") or ctx.get("ability_key") or "opponent_turn_strategic_reserves").strip().lower()
+            return_as_deep_strike = bool(payload.get("return_as_deep_strike")) or bool(ctx.get("return_as_deep_strike"))
+            must_arrive_next_movement_phase = bool(payload.get("must_arrive_next_movement_phase")) or bool(
+                ctx.get("must_arrive_next_movement_phase")
+            )
             used = unit.enter_strategic_reserves_midgame(
                 game=self,
                 game_map=getattr(self, "map", None),
@@ -6954,6 +6958,48 @@ class GameReactiveDecisionsMixin:
                         player,
                         f"{ability_name}: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves.",
                     )
+                if return_as_deep_strike:
+                    try:
+                        current_turn = int(getattr(self, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    owner_id = str(getattr(player, "id", "") or "")
+                    players = list(getattr(self, "players", []) or [])
+                    owner_index = -1
+                    for idx, maybe_player in enumerate(players):
+                        if str(getattr(maybe_player, "id", "") or "") == owner_id:
+                            owner_index = int(idx)
+                            break
+                    starting_index = getattr(self, "battle_round_starting_player_index", None)
+                    if starting_index is None and players:
+                        starting_index = 0
+                    try:
+                        starting_index = int(starting_index) if starting_index is not None else None
+                    except Exception:
+                        starting_index = None
+                    arrival_turn = int(current_turn or 0)
+                    if must_arrive_next_movement_phase and starting_index is not None and owner_index == starting_index:
+                        arrival_turn = int(current_turn + 1)
+
+                    try:
+                        members = list(unit.get_attached_unit_members() or [])
+                    except Exception:
+                        members = [unit]
+                    if not members:
+                        members = [unit]
+                    for member in members:
+                        if member is None:
+                            continue
+                        member_sr = getattr(member, "special_rules", None)
+                        if not isinstance(member_sr, dict):
+                            member_sr = {}
+                        member_sr["umbralefic_crystal_temp_deep_strike"] = True
+                        member_sr["umbralefic_crystal_must_arrive_turn_owner"] = owner_id
+                        member_sr["umbralefic_crystal_must_arrive_turn"] = int(arrival_turn)
+                        member.special_rules = member_sr
+                        member_cache = getattr(member, "_ability_cache", None)
+                        if isinstance(member_cache, dict):
+                            member_cache.pop("deep_strike", None)
                 if per_battle and per_battle_key:
                     unit.mark_unit_once_per_battle_used(per_battle_key, ability_name=ability_name)
             return

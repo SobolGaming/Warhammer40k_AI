@@ -6152,6 +6152,32 @@ _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_DESCRIPTORS.values()
 }
 
+_NECRONS_AWAKENED_DYNASTY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008372002": EnhancementToolDescriptor(
+        enhancement_id="000008372002",
+        name="Veil of Darkness",
+        timing="end_of_opponent_turn_once_per_battle",
+        target="bearer_unit_not_within_engagement_range",
+        duration="instant_and_next_movement_phase_return",
+        effect="once_per_battle_end_of_opponent_turn_enter_strategic_reserves_then_next_movement_phase_deep_strike_return",
+        once_per_battle=True,
+        effect_params={
+            "once_per_battle_key": "veil_of_darkness",
+            "trigger_phase": "OPPONENT_TURN_END",
+            "destination": "strategic_reserves",
+            "requires_not_engagement_range": True,
+            "requires_bearer_alive": True,
+            "return_as_deep_strike": True,
+            "must_arrive_next_movement_phase": True,
+            "return_setup_min_enemy_distance_horiz": 9.0,
+        },
+    ),
+}
+
+_NECRONS_AWAKENED_DYNASTY_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS.values()
+}
+
 _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008417005": EnhancementToolDescriptor(
         enhancement_id="000008417005",
@@ -6523,6 +6549,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6646,5 +6675,6 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME.get(key)
         or _TAU_KAUYON_BY_NAME.get(key)
         or _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_BY_NAME.get(key)
+        or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
         or _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME.get(key)
     )

@@ -2894,6 +2894,27 @@ _INVASION_FLEET_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _INVASION_FLEET_STRATAGEM_DESCRIPTORS.values()
 }
 
+_VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008418007": StratagemToolDescriptor(
+        stratagem_id="000008418007",
+        name="Invisible Hunter",
+        timing="end_of_opponent_fight_phase",
+        target="up_to_two_vanguard_invader_units_or_one_tyranids_infantry_unit",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "max_units": 2,
+            "two_units_require_keyword": "VANGUARD INVADER",
+            "single_unit_alternative_keywords": ["TYRANIDS", "INFANTRY"],
+        },
+    ),
+}
+
+_VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010198007": StratagemToolDescriptor(
         stratagem_id="000010198007",
@@ -3358,6 +3379,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _INVASION_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3417,6 +3441,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _MONTKA_STRATAGEM_BY_NAME.get(key)
         or _KAUYON_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
+        or _VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)

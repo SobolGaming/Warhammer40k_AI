@@ -339,6 +339,7 @@ class Enhancement:
         csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
         lov_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
         tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+        ne_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
         ec_mgr = getattr(army, "emperors_children_detachments", None) if army is not None else None
         if ec_mgr is None and army is not None:
             ec_mgr = getattr(army, "emperors_children", None)
@@ -669,6 +670,10 @@ class Enhancement:
         except Exception:
             is_retaliation_cadre = False
         try:
+            is_awakened_dynasty = bool(ne_mgr and ne_mgr.detachment_matches("Awakened Dynasty"))
+        except Exception:
+            is_awakened_dynasty = False
+        try:
             is_coterie_of_conceited = bool(ec_mgr and ec_mgr.is_coterie_of_conceited())
         except Exception:
             is_coterie_of_conceited = False
@@ -806,6 +811,53 @@ class Enhancement:
             bearer = get_bearer()
             if bearer is not None:
                 bearer_id = str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
+
+        if name == "veil of darkness" or enh_id == "000008372002":
+            if not is_awakened_dynasty:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            ability_key = str(params.get("once_per_battle_key", "veil_of_darkness") or "veil_of_darkness").strip().lower()
+            if not ability_key:
+                ability_key = "veil_of_darkness"
+            trigger_phase = str(params.get("trigger_phase", "OPPONENT_TURN_END") or "OPPONENT_TURN_END").strip().upper()
+            if not trigger_phase:
+                trigger_phase = "OPPONENT_TURN_END"
+            source_name = str(getattr(desc, "name", "") or "Veil of Darkness").strip() or "Veil of Darkness"
+            unit.special_rules["enhancement_veil_of_darkness"] = True
+            unit.special_rules["enhancement_veil_of_darkness_source"] = source_name
+            unit.special_rules["enhancement_veil_of_darkness_ability_key"] = ability_key
+            unit.special_rules["enhancement_veil_of_darkness_trigger_phase"] = trigger_phase
+            unit.special_rules["enhancement_veil_of_darkness_once_per_battle"] = bool(
+                params.get("once_per_battle", True)
+            )
+            unit.special_rules["enhancement_veil_of_darkness_requires_not_engagement_range"] = bool(
+                params.get("requires_not_engagement_range", True)
+            )
+            unit.special_rules["enhancement_veil_of_darkness_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_veil_of_darkness_return_as_deep_strike"] = bool(
+                params.get("return_as_deep_strike", True)
+            )
+            unit.special_rules["enhancement_veil_of_darkness_must_arrive_next_movement_phase"] = bool(
+                params.get("must_arrive_next_movement_phase", True)
+            )
+            unit.special_rules["enhancement_veil_of_darkness_return_setup_min_enemy_distance_horiz"] = float(
+                max(
+                    0.0,
+                    _coerce_float(
+                        params.get("return_setup_min_enemy_distance_horiz", 9.0),
+                        default=9.0,
+                    ),
+                )
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_veil_of_darkness_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("opponent_turn_strategic_reserves_ability", None)
 
         if name == "prowling agitant" or enh_id == "000009067002":
             if not is_host_of_ascension:

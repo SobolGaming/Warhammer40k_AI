@@ -143,6 +143,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SKULLS FOR THE SKULL THRONE!",
     "SUMMONED BY SLAUGHTER",
     "WALL OF MIRRORS",
+    "INVISIBLE HUNTER",
     "SWIFT AS THE EAGLE",
     "TACTICAL FOIL",
     "THUNDERSTOMP",
@@ -474,6 +475,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "UNRELENTING ADVANCE",
     "SWIFT AS THE EAGLE",
     "RETURN TO THE SHADOWS",
+    "INVISIBLE HUNTER",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
     "ENDLESS SERVITUDE",
@@ -1743,6 +1745,7 @@ class StratagemManager(
             "OUTFLANKING STRIKE",
             "RETURN TO THE SHADOWS",
             "WALL OF MIRRORS",
+            "INVISIBLE HUNTER",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -3645,6 +3648,16 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires end of opponent's Fight phase and one or more eligible SCINTILLATING LEGIONS units more than 6\" horizontally from all enemy units"
             return result
+        if name_u == "INVISIBLE HUNTER":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_invisible_hunter_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires end of opponent's Fight phase and eligible VANGUARD INVADER or TYRANIDS INFANTRY units on the battlefield"
+            return result
         if name_u == "ADRENAL SURGE":
             if self._tyr_adrenal_surge_candidates():
                 result["available"] = True
@@ -4090,6 +4103,7 @@ class StratagemManager(
             "COORDINATED TRAP": "Start of your Shooting/Fight phase: target two GENESTEALER CULTS units not yet selected to shoot/fight and one enemy unit; selected units can only target that enemy this phase and gain +1 to Wound rolls against it (Fight phase enemy must be in Engagement Range of both selected units)",
             "ARDENT AUTOMATA": "Target: your RUBRICAE unit that just Fell Back this phase; it can shoot and charge this turn",
             "GLIMMERSHIFT PORTAL": "End of opponent's Fight phase: target up to two SCINTILLATING LEGIONS non-MONSTER units, or one SCINTILLATING LEGIONS MONSTER unit, each more than 6\" horizontally from all enemy units; selected units enter Strategic Reserves",
+            "INVISIBLE HUNTER": "End of opponent's Fight phase: target up to two VANGUARD INVADER units, or one TYRANIDS INFANTRY unit; selected units enter Strategic Reserves",
             "IMPLACABLE GUARDIANS": "Target: your RUBRIC MARINES PSYKER unit selected as an enemy shooting target; subtract 1 from Damage allocated to non-PSYKER models this phase",
             "INFERNAL FUSILLADE": "Target: your THOUSAND SONS PSYKER unit not yet selected to shoot; inferno bolt weapons gain [PSYCHIC] and Strength 5 this phase",
             "ADRENAL SURGE": "Target: one TYRANIDS unit eligible to fight, or up to two TYRANIDS units eligible to fight if both are within Synapse Range",
@@ -5972,6 +5986,10 @@ class StratagemManager(
             raise
         try:
             self._queue_tau_kauyon_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_tyranids_vanguard_onslaught_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:

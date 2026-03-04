@@ -11759,6 +11759,7 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000008348003": "Perfectly Adapted: once per turn, bearer can re-roll one of Hit/Wound/Damage/Advance/Charge/Save (single shared use across those roll types).",
         "000008348004": "Synaptic Linchpin: while a friendly TYRANIDS unit is within 9\" of the bearer, it counts as within Synapse Range of your army.",
         "000008348005": "Adaptive Biology: bearer gains Feel No Pain 5+; at the start of any turn, if below starting wounds, upgrade to Feel No Pain 4+ for the rest of the battle.",
+        "000008372002": "Veil of Darkness: once per battle at the end of your opponent's turn, if the bearer's unit is not within Engagement Range, optional move into Strategic Reserves; that unit must return in your next Movement phase via Deep Strike placement (>9\" horizontally from enemy models).",
         "000009130003": "Liber Heresius: after deployment, redeploy up to three friendly AGENTS OF THE IMPERIUM units; selected units may be placed into Strategic Reserves regardless of limits.",
         "000008442004": "Solid-image Projection Unit: after deployment, redeploy up to three friendly T'AU EMPIRE units; selected units may be placed into Strategic Reserves regardless of limits.",
         "000010197004": "Duplicitous Malediction: after deployment, redeploy up to three friendly THOUSAND SONS units; selected units may be placed into Strategic Reserves regardless of limits.",
@@ -12385,6 +12386,7 @@ def _stratagem_support(
         "REPELLING SPHERE": "Opponent Charge phase: targeted GREY KNIGHTS INFANTRY imposes -1 to enemy Charge rolls that include it as a target, or -2 while wholly within Hallowed Ground.",
         "SANCTIFIED KILL ZONE": "Shooting/Fight phase: targeted GREY KNIGHTS unit wholly within Hallowed Ground gains wound re-rolls (re-roll 1s, or full wound re-rolls for PURIFIER SQUAD) until end of phase.",
         "WALL OF MIRRORS": "End of opponent Fight phase: selected T'AU EMPIRE Stealth/Ghostkeel/Commander Shadowsun unit not in Engagement Range enters Strategic Reserves.",
+        "INVISIBLE HUNTER": "End of opponent Fight phase: select up to two VANGUARD INVADER units, or one TYRANIDS INFANTRY unit; selected units enter Strategic Reserves.",
     }
 
     # Some stratagem names are reused across detachments and require detachment-specific notes.
