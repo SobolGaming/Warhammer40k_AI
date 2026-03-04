@@ -796,6 +796,14 @@ class Enhancement:
             is_veiled_blade_elimination_force = bool(ia_mgr and ia_mgr.is_veiled_blade_elimination_force())
         except Exception:
             is_veiled_blade_elimination_force = False
+        is_ordo_malleus_daemon_hunters_fn = (
+            getattr(ia_mgr, "is_ordo_malleus_daemon_hunters", None) if ia_mgr is not None else None
+        )
+        is_ordo_malleus_daemon_hunters = bool(
+            callable(is_ordo_malleus_daemon_hunters_fn) and is_ordo_malleus_daemon_hunters_fn()
+        )
+        is_imperialis_fleet_fn = getattr(ia_mgr, "is_imperialis_fleet", None) if ia_mgr is not None else None
+        is_imperialis_fleet = bool(callable(is_imperialis_fleet_fn) and is_imperialis_fleet_fn())
         dru_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
         try:
             is_spectacle_of_spite = bool(dru_mgr and dru_mgr.is_spectacle_of_spite())
@@ -1575,6 +1583,92 @@ class Enhancement:
             ).strip().lower()
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "gift of the prescient" or enh_id == "000009134004":
+            if not is_ordo_malleus_daemon_hunters:
+                return
+            unit.special_rules["enhancement_ordo_malleus_gift_of_the_prescient"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            usage_key = str(
+                params.get("once_per_battle_key", "gift_of_the_prescient_rapid_ingress")
+                or "gift_of_the_prescient_rapid_ingress"
+            ).strip().lower()
+            if not usage_key:
+                usage_key = "gift_of_the_prescient_rapid_ingress"
+            raw_stratagem_names = list(params.get("stratagem_names", ("RAPID INGRESS",)) or ())
+            stratagem_names: list[str] = []
+            for value in raw_stratagem_names:
+                key = str(value or "").strip().upper()
+                if not key or key in stratagem_names:
+                    continue
+                stratagem_names.append(key)
+            if not stratagem_names:
+                stratagem_names = ["RAPID INGRESS"]
+            raw_target_patterns = list(
+                params.get("required_target_unit_name_patterns", ("GREY KNIGHTS TERMINATOR SQUAD",))
+                or ()
+            )
+            target_patterns: list[str] = []
+            for value in raw_target_patterns:
+                pattern = str(value or "").strip().upper()
+                if not pattern or pattern in target_patterns:
+                    continue
+                target_patterns.append(pattern)
+            if not target_patterns:
+                target_patterns = ["GREY KNIGHTS TERMINATOR SQUAD"]
+            unit.special_rules["enhancement_ordo_malleus_gift_of_the_prescient_usage_key"] = usage_key
+            unit.special_rules["enhancement_ordo_malleus_gift_of_the_prescient_stratagem_names"] = list(stratagem_names)
+            unit.special_rules["enhancement_ordo_malleus_gift_of_the_prescient_required_target_unit_name_patterns"] = list(
+                target_patterns
+            )
+            unit.special_rules["enhancement_ordo_malleus_gift_of_the_prescient_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
+            unit.special_rules["enhancement_ordo_malleus_gift_of_the_prescient_deep_strike_min_distance"] = float(
+                max(0.0, _coerce_float(params.get("deep_strike_min_distance", 3.0), default=3.0))
+            )
+            expires_phase = str(params.get("expires_phase", "MOVEMENT_PHASE") or "MOVEMENT_PHASE").strip().upper()
+            if not expires_phase:
+                expires_phase = "MOVEMENT_PHASE"
+            unit.special_rules["enhancement_ordo_malleus_gift_of_the_prescient_expires_phase"] = expires_phase
+            unit.special_rules["enhancement_ordo_malleus_gift_of_the_prescient_source"] = "Gift of the Prescient"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_ordo_malleus_gift_of_the_prescient_bearer_model_id"] = bearer_id
+
+        if name == "fleetmaster" or enh_id == "000009138005":
+            if not is_imperialis_fleet:
+                return
+            unit.special_rules["enhancement_imperialis_fleet_fleetmaster"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            usage_key = str(
+                params.get("once_per_battle_round_key", "FLEETMASTER_FREE_STRATAGEM") or "FLEETMASTER_FREE_STRATAGEM"
+            ).strip().upper()
+            if not usage_key:
+                usage_key = "FLEETMASTER_FREE_STRATAGEM"
+            raw_stratagem_names = list(
+                params.get(
+                    "stratagem_names",
+                    ("VIOLENT ACQUISITION", "MASTERS OF THE VOID", "CLOSE-QUARTERS BARRAGE"),
+                )
+                or ()
+            )
+            stratagem_names: list[str] = []
+            for value in raw_stratagem_names:
+                key = str(value or "").strip().upper()
+                if not key or key in stratagem_names:
+                    continue
+                stratagem_names.append(key)
+            if not stratagem_names:
+                stratagem_names = ["VIOLENT ACQUISITION", "MASTERS OF THE VOID", "CLOSE-QUARTERS BARRAGE"]
+            unit.special_rules["enhancement_imperialis_fleet_fleetmaster_usage_key"] = usage_key
+            unit.special_rules["enhancement_imperialis_fleet_fleetmaster_stratagem_names"] = list(stratagem_names)
+            unit.special_rules["enhancement_imperialis_fleet_fleetmaster_source"] = "Fleetmaster"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_imperialis_fleet_fleetmaster_bearer_model_id"] = bearer_id
 
         if name == "micromelta rounds" or enh_id == "000009757005":
             if not is_veiled_blade_elimination_force:

@@ -1339,6 +1339,251 @@ class Player:
             return True
         return False
 
+    @staticmethod
+    def _normalize_stratagem_name_key(stratagem_name: str) -> str:
+        text = str(stratagem_name or "")
+        text = text.replace("\u2019", "'").replace("\u2018", "'")
+        text = text.replace("\u2010", "-").replace("\u2011", "-").replace("\u2012", "-")
+        text = text.replace("\u2013", "-").replace("\u2014", "-")
+        text = " ".join(text.strip().upper().split())
+        text = text.replace("-", " ")
+        return " ".join(text.split())
+
+    def _unit_is_on_battlefield(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not self._unit_is_alive_or_unknown(unit):
+            return False
+        if not bool(getattr(unit, "deployed", False)):
+            return False
+        if str(getattr(unit, "reserve_status", "deployed") or "deployed") != "deployed":
+            return False
+        if getattr(unit, "embarked_in", None) is not None:
+            return False
+        if bool(getattr(unit, "is_embarked", False)):
+            return False
+        return True
+
+    def _unit_is_grey_knights_terminator_squad_for_gift_of_the_prescient(self, unit) -> bool:
+        if unit is None:
+            return False
+        parent = self._target_unit_parent_army(unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        if root is None:
+            return False
+        name_key = self._normalize_stratagem_name_key(getattr(root, "name", "") or "")
+        if "GREY KNIGHTS TERMINATOR SQUAD" in name_key:
+            return True
+        if "GREY KNIGHTS TERMINATOR" in name_key and "SQUAD" in name_key:
+            return True
+        has_any_keyword = getattr(root, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            for keyword in (
+                "GREY KNIGHTS TERMINATOR SQUAD",
+                "GREY KNIGHTS TERMINATORS",
+                "GREY KNIGHTS TERMINATOR",
+            ):
+                if bool(has_any_keyword(keyword)):
+                    return True
+        keywords: list[str] = []
+        keywords.extend([self._normalize_stratagem_name_key(v) for v in list(getattr(root, "keywords", []) or [])])
+        keywords.extend(
+            [self._normalize_stratagem_name_key(v) for v in list(getattr(root, "faction_keywords", []) or [])]
+        )
+        for keyword in keywords:
+            if "GREY KNIGHTS TERMINATOR SQUAD" in keyword:
+                return True
+            if "GREY KNIGHTS TERMINATOR" in keyword and "SQUAD" in keyword:
+                return True
+        return False
+
+    def _gift_of_the_prescient_discount_context(self, target_unit, *, stratagem_name: str = "") -> dict | None:
+        if target_unit is None:
+            return None
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return None
+        stratagem_key = self._normalize_stratagem_name_key(stratagem_name)
+        if not stratagem_key:
+            return None
+        army = self.get_army()
+        ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+        is_ordo_malleus_fn = getattr(ia_mgr, "is_ordo_malleus_daemon_hunters", None) if ia_mgr is not None else None
+        if not bool(callable(is_ordo_malleus_fn) and is_ordo_malleus_fn()):
+            return None
+        get_target_root = getattr(target_unit, "get_attached_unit_root", None)
+        target_root = get_target_root() if callable(get_target_root) else target_unit
+        if target_root is None:
+            return None
+        target_name_key = self._normalize_stratagem_name_key(getattr(target_root, "name", "") or "")
+        roots: list[object] = []
+        seen_root_ids: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id in seen_root_ids:
+                continue
+            if root_id:
+                seen_root_ids.add(root_id)
+            roots.append(root)
+        roots.sort(key=lambda item: str(get_entity_id(item) or ""))
+
+        for root in roots:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_ordo_malleus_gift_of_the_prescient", False)):
+                continue
+            if not self._unit_is_alive_or_unknown(root):
+                continue
+            requires_bearer_on_battlefield = bool(
+                sr.get("enhancement_ordo_malleus_gift_of_the_prescient_requires_bearer_on_battlefield", True)
+            )
+            if requires_bearer_on_battlefield and not self._unit_is_on_battlefield(root):
+                continue
+            get_bearer = getattr(root, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                continue
+            alive_attr = getattr(bearer, "is_alive", True)
+            bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not bearer_alive:
+                continue
+            usage_key = str(
+                sr.get("enhancement_ordo_malleus_gift_of_the_prescient_usage_key", "")
+                or "gift_of_the_prescient_rapid_ingress"
+            ).strip().lower()
+            if not usage_key:
+                usage_key = "gift_of_the_prescient_rapid_ingress"
+            has_used = getattr(root, "has_used_unit_once_per_battle", None)
+            if callable(has_used) and bool(has_used(usage_key)):
+                continue
+            configured_names: set[str] = set()
+            for value in list(sr.get("enhancement_ordo_malleus_gift_of_the_prescient_stratagem_names", []) or []):
+                name_key = self._normalize_stratagem_name_key(value)
+                if name_key:
+                    configured_names.add(name_key)
+            if configured_names and stratagem_key not in configured_names:
+                continue
+
+            configured_patterns: list[str] = []
+            for value in list(
+                sr.get("enhancement_ordo_malleus_gift_of_the_prescient_required_target_unit_name_patterns", []) or []
+            ):
+                pattern_key = self._normalize_stratagem_name_key(value)
+                if pattern_key:
+                    configured_patterns.append(pattern_key)
+            target_matches = False
+            if configured_patterns:
+                for pattern in configured_patterns:
+                    if pattern in target_name_key or target_name_key in pattern:
+                        target_matches = True
+                        break
+                if not target_matches:
+                    target_matches = self._unit_is_grey_knights_terminator_squad_for_gift_of_the_prescient(target_root)
+            else:
+                target_matches = self._unit_is_grey_knights_terminator_squad_for_gift_of_the_prescient(target_root)
+            if not target_matches:
+                continue
+
+            try:
+                min_distance = float(
+                    sr.get("enhancement_ordo_malleus_gift_of_the_prescient_deep_strike_min_distance", 3.0) or 3.0
+                )
+            except (TypeError, ValueError):
+                min_distance = 3.0
+            if min_distance <= 0.0:
+                min_distance = 3.0
+            source = str(
+                sr.get("enhancement_ordo_malleus_gift_of_the_prescient_source", "") or "Gift of the Prescient"
+            ).strip() or "Gift of the Prescient"
+            expires_phase = str(
+                sr.get("enhancement_ordo_malleus_gift_of_the_prescient_expires_phase", "") or "MOVEMENT_PHASE"
+            ).strip().upper()
+            if not expires_phase:
+                expires_phase = "MOVEMENT_PHASE"
+            return {
+                "source_unit": root,
+                "usage_key": usage_key,
+                "source": source,
+                "deep_strike_min_distance": float(min_distance),
+                "expires_phase": expires_phase,
+            }
+        return None
+
+    def _preview_gift_of_the_prescient_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        stratagem_key = self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or "")
+        if stratagem_key != "RAPID INGRESS":
+            return 0
+        context = self._gift_of_the_prescient_discount_context(target_unit, stratagem_name=stratagem_key)
+        if context is None:
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _target_unit_can_use_fleetmaster_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        stratagem_key = self._normalize_stratagem_name_key(stratagem_name)
+        if not stratagem_key:
+            return False
+        battle_round = self._battle_round()
+        if battle_round <= 0:
+            return False
+        usage_key = "FLEETMASTER_FREE_STRATAGEM"
+        if int(self._ability_used_battle_round.get(usage_key, 0) or 0) == battle_round:
+            return False
+        army = self.get_army()
+        ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+        if ia_mgr is None or not bool(getattr(ia_mgr, "is_imperialis_fleet", lambda: False)()):
+            return False
+        members = self._attached_members(target_unit)
+        for u in members:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_imperialis_fleet_fleetmaster", False)):
+                continue
+            if not self._unit_is_alive_or_unknown(u):
+                continue
+            configured_usage_key = str(
+                sr.get("enhancement_imperialis_fleet_fleetmaster_usage_key", "") or ""
+            ).strip().upper()
+            if configured_usage_key:
+                usage_key = configured_usage_key
+                if int(self._ability_used_battle_round.get(usage_key, 0) or 0) == battle_round:
+                    continue
+            configured_names: set[str] = set()
+            for value in list(sr.get("enhancement_imperialis_fleet_fleetmaster_stratagem_names", []) or []):
+                configured_name = self._normalize_stratagem_name_key(value)
+                if configured_name:
+                    configured_names.add(configured_name)
+            if configured_names and stratagem_key not in configured_names:
+                continue
+            get_bearer = getattr(u, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                continue
+            alive_attr = getattr(bearer, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not is_alive:
+                continue
+            return True
+        return False
+
     def _target_unit_can_use_grimnars_mark_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
         if target_unit is None:
             return False
@@ -1590,6 +1835,17 @@ class Player:
         if name_u not in ("HEROIC INTERVENTION", "COUNTER-OFFENSIVE", "COUNTER OFFENSIVE"):
             return 0
         if not self._target_unit_can_use_intraneural_biotech_stratagem_discount(target_unit, stratagem_name=name_u):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_fleetmaster_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        stratagem_key = self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or "")
+        if stratagem_key not in ("VIOLENT ACQUISITION", "MASTERS OF THE VOID", "CLOSE QUARTERS BARRAGE"):
+            return 0
+        if not self._target_unit_can_use_fleetmaster_stratagem_discount(target_unit, stratagem_name=stratagem_key):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -2141,6 +2397,42 @@ class Player:
             stratagem=stratagem,
             target_unit=target_unit,
         )
+        fleetmaster = self._preview_fleetmaster_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if fleetmaster:
+            discount = base
+            ability_name = "Fleetmaster"
+            members = self._attached_members(target_unit)
+            for member in members:
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not bool(sr.get("enhancement_imperialis_fleet_fleetmaster", False)):
+                    continue
+                ability_name = str(
+                    sr.get("enhancement_imperialis_fleet_fleetmaster_source", "") or ability_name
+                ).strip() or ability_name
+                break
+            stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
+            reasons.append(f"{ability_name}: {stratagem_label} for 0CP.")
+            return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        gift_of_the_prescient = self._preview_gift_of_the_prescient_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if gift_of_the_prescient:
+            discount = base
+            context = self._gift_of_the_prescient_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            ability_name = str(context.get("source", "") or "Gift of the Prescient").strip() or "Gift of the Prescient"
+            reasons.append(f"{ability_name}: Rapid Ingress for 0CP.")
+            return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
         if grimnars_mark:
             discount = base
             name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
@@ -2953,6 +3245,125 @@ class Player:
                     }
             if counter_used:
                 return {"denied": True, "reason": "Counter-offensive already used this phase"}
+
+        fleetmaster = self._preview_fleetmaster_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if fleetmaster:
+            cost = 0
+            increase = 0
+            increase_reasons: list[str] = []
+            opponent = self._get_opponent_player()
+            if opponent is not None:
+                inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                    target_unit=target_unit,
+                    stratagem=stratagem,
+                    current_cost=cost,
+                )
+                increase = int(inc_info.get("increase", 0) or 0)
+                increase_reasons = list(inc_info.get("reasons", []) or [])
+                if increase:
+                    cost = max(0, cost + increase)
+            self._pending_stratagem_cp_increase = {
+                "increase": int(increase or 0),
+                "reasons": increase_reasons,
+                "stratagem_name": getattr(stratagem, "name", None) or "",
+            }
+            usage_key = "FLEETMASTER_FREE_STRATAGEM"
+            ability_name = "Fleetmaster"
+            members = self._attached_members(target_unit)
+            for member in members:
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not bool(sr.get("enhancement_imperialis_fleet_fleetmaster", False)):
+                    continue
+                configured_key = str(
+                    sr.get("enhancement_imperialis_fleet_fleetmaster_usage_key", "") or ""
+                ).strip().upper()
+                if configured_key:
+                    usage_key = configured_key
+                ability_name = str(
+                    sr.get("enhancement_imperialis_fleet_fleetmaster_source", "") or ability_name
+                ).strip() or ability_name
+                break
+            br = self._battle_round()
+            if br > 0:
+                self._ability_used_battle_round[usage_key] = br
+            stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
+            return {
+                "base": base,
+                "discount": base,
+                "cost": cost,
+                "reasons": [f"{ability_name}: {stratagem_label} for 0CP."],
+                "increase": increase,
+                "increase_reasons": increase_reasons,
+                "fleetmaster_use": True,
+                "fleetmaster_source": ability_name,
+            }
+
+        gift_of_the_prescient = self._preview_gift_of_the_prescient_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if gift_of_the_prescient:
+            context = self._gift_of_the_prescient_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            cost = 0
+            increase = 0
+            increase_reasons: list[str] = []
+            opponent = self._get_opponent_player()
+            if opponent is not None:
+                inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                    target_unit=target_unit,
+                    stratagem=stratagem,
+                    current_cost=cost,
+                )
+                increase = int(inc_info.get("increase", 0) or 0)
+                increase_reasons = list(inc_info.get("reasons", []) or [])
+                if increase:
+                    cost = max(0, cost + increase)
+            self._pending_stratagem_cp_increase = {
+                "increase": int(increase or 0),
+                "reasons": increase_reasons,
+                "stratagem_name": getattr(stratagem, "name", None) or "",
+            }
+            usage_key = str(
+                context.get("usage_key", "") or "gift_of_the_prescient_rapid_ingress"
+            ).strip().lower()
+            if not usage_key:
+                usage_key = "gift_of_the_prescient_rapid_ingress"
+            ability_name = str(context.get("source", "") or "Gift of the Prescient").strip() or "Gift of the Prescient"
+            source_unit = context.get("source_unit")
+            if source_unit is not None:
+                mark_used = getattr(source_unit, "mark_unit_once_per_battle_used", None)
+                if callable(mark_used):
+                    mark_used(usage_key, ability_name=ability_name)
+            try:
+                deep_strike_min_distance = float(context.get("deep_strike_min_distance", 3.0) or 3.0)
+            except (TypeError, ValueError):
+                deep_strike_min_distance = 3.0
+            if deep_strike_min_distance <= 0.0:
+                deep_strike_min_distance = 3.0
+            expires_phase = str(context.get("expires_phase", "") or "MOVEMENT_PHASE").strip().upper()
+            if not expires_phase:
+                expires_phase = "MOVEMENT_PHASE"
+            return {
+                "base": base,
+                "discount": base,
+                "cost": cost,
+                "reasons": [f"{ability_name}: Rapid Ingress for 0CP."],
+                "increase": increase,
+                "increase_reasons": increase_reasons,
+                "gift_of_the_prescient_use": True,
+                "gift_of_the_prescient_source": ability_name,
+                "gift_of_the_prescient_usage_key": usage_key,
+                "gift_of_the_prescient_deep_strike_min_distance": float(deep_strike_min_distance),
+                "gift_of_the_prescient_expires_phase": expires_phase,
+            }
 
         grimnars_mark = self._preview_grimnars_mark_discount(
             stratagem=stratagem,

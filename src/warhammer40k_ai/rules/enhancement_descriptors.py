@@ -6186,6 +6186,51 @@ _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME = {
     for desc in _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS.values()
 }
 
+_AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009134004": EnhancementToolDescriptor(
+        enhancement_id="000009134004",
+        name="Gift of the Prescient",
+        timing="when_targeting_grey_knights_terminator_squad_with_rapid_ingress",
+        target="friendly_grey_knights_terminator_squad_unit",
+        duration="instant_once_per_battle_for_cp_and_target_setup_until_resolution",
+        effect="rapid_ingress_zero_cp_once_per_battle_with_three_inch_setup_for_grey_knights_terminator_squad",
+        once_per_battle=True,
+        effect_params={
+            "stratagem_names": ("RAPID INGRESS",),
+            "once_per_battle_key": "GIFT_OF_THE_PRESCIENT_RAPID_INGRESS",
+            "required_target_unit_name_patterns": ("GREY KNIGHTS TERMINATOR SQUAD",),
+            "requires_bearer_on_battlefield": True,
+            "deep_strike_min_distance": 3.0,
+            "expires_phase": "MOVEMENT_PHASE",
+        },
+    ),
+}
+
+_AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_BY_NAME = {
+    _normalize_name(desc.name): desc
+    for desc in _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_DESCRIPTORS.values()
+}
+
+_AGENTS_OF_THE_IMPERIUM_IMPERIALIS_FLEET_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009138005": EnhancementToolDescriptor(
+        enhancement_id="000009138005",
+        name="Fleetmaster",
+        timing="when_targeting_bearer_unit_with_named_stratagem",
+        target="bearer_unit",
+        duration="instant_once_per_battle_round",
+        effect="stratagem_cp_cost_set_zero",
+        effect_params={
+            "stratagem_names": ("VIOLENT ACQUISITION", "MASTERS OF THE VOID", "CLOSE-QUARTERS BARRAGE"),
+            "once_per_battle_round_key": "FLEETMASTER_FREE_STRATAGEM",
+        },
+    ),
+}
+
+_AGENTS_OF_THE_IMPERIUM_IMPERIALIS_FLEET_BY_NAME = {
+    _normalize_name(desc.name): desc
+    for desc in _AGENTS_OF_THE_IMPERIUM_IMPERIALIS_FLEET_DESCRIPTORS.values()
+}
+
 _TAU_KAUYON_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008442004": EnhancementToolDescriptor(
         enhancement_id="000008442004",
@@ -6626,6 +6671,12 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
+        desc = _AGENTS_OF_THE_IMPERIUM_IMPERIALIS_FLEET_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _TAU_KAUYON_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6759,6 +6810,8 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME.get(key)
         or _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME.get(key)
+        or _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_BY_NAME.get(key)
+        or _AGENTS_OF_THE_IMPERIUM_IMPERIALIS_FLEET_BY_NAME.get(key)
         or _TAU_KAUYON_BY_NAME.get(key)
         or _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_BY_NAME.get(key)
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)

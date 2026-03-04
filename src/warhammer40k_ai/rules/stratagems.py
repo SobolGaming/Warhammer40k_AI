@@ -2684,6 +2684,51 @@ class StratagemManager(
         if uid:
             self._rapid_ingress_units_this_phase.add(uid)
 
+    def _set_gift_of_the_prescient_rapid_ingress_setup_override(
+        self,
+        unit,
+        *,
+        min_distance: float = 3.0,
+        source: str = "",
+        expires_phase: str = "MOVEMENT_PHASE",
+    ) -> None:
+        if unit is None:
+            return
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            resolved_min = float(min_distance or 3.0)
+        except (TypeError, ValueError):
+            resolved_min = 3.0
+        if resolved_min <= 0.0:
+            resolved_min = 3.0
+        source_name = str(source or "Gift of the Prescient").strip() or "Gift of the Prescient"
+        phase_name = str(expires_phase or "MOVEMENT_PHASE").strip().upper() or "MOVEMENT_PHASE"
+        sr["gift_of_the_prescient_deep_strike_min_distance"] = float(resolved_min)
+        sr["gift_of_the_prescient_expires_phase"] = phase_name
+        sr["gift_of_the_prescient_source"] = source_name
+        root.special_rules = sr
+
+    def _clear_gift_of_the_prescient_rapid_ingress_setup_override(self, unit) -> None:
+        if unit is None:
+            return
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        sr.pop("gift_of_the_prescient_deep_strike_min_distance", None)
+        sr.pop("gift_of_the_prescient_expires_phase", None)
+        sr.pop("gift_of_the_prescient_source", None)
+        root.special_rules = sr
+
     def _command_reroll_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
         can_use_fn = getattr(self.player, "_target_unit_can_use_mirror_of_fates_command_reroll", None)
         if not callable(can_use_fn):
@@ -13985,30 +14030,70 @@ class StratagemManager(
             if not getattr(target, "can_arrive_from_reserves", lambda _t: False)(getattr(self.game, "turn", 0)):
                 logger.error("ERROR: Rapid Ingress: target unit cannot arrive from reserves this battle round")
                 return False
+            gift_context: dict = {}
+            gift_context_fn = getattr(self.player, "_gift_of_the_prescient_discount_context", None)
+            if callable(gift_context_fn):
+                gift_context = dict(gift_context_fn(target, stratagem_name="RAPID INGRESS") or {})
+            gift_override_active = False
+            if gift_context:
+                self._set_gift_of_the_prescient_rapid_ingress_setup_override(
+                    target,
+                    min_distance=float(gift_context.get("deep_strike_min_distance", 3.0) or 3.0),
+                    source=str(gift_context.get("source", "") or "Gift of the Prescient"),
+                    expires_phase=str(gift_context.get("expires_phase", "") or "MOVEMENT_PHASE"),
+                )
+                gift_override_active = True
             # Determine placement
             position = kwargs.get("position")
             if position is None:
                 try:
                     position = self.game.find_valid_reserves_position(target) if hasattr(self.game, "find_valid_reserves_position") else None
                 except Exception:
+                    if gift_override_active:
+                        self._clear_gift_of_the_prescient_rapid_ingress_setup_override(target)
                     raise
             if not position:
+                if gift_override_active:
+                    self._clear_gift_of_the_prescient_rapid_ingress_setup_override(target)
                 logger.error("ERROR: Rapid Ingress: could not find a valid placement position")
                 return False
             eff_cost = s.cp_cost
+            apply_info = {}
             try:
                 if hasattr(self.player, "apply_stratagem_cp_cost"):
-                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=target).get("cost", s.cp_cost))
+                    apply_info = dict(self.player.apply_stratagem_cp_cost(s, target_unit=target) or {})
+                    eff_cost = int(apply_info.get("cost", s.cp_cost))
             except Exception:
+                if gift_override_active:
+                    self._clear_gift_of_the_prescient_rapid_ingress_setup_override(target)
                 raise
+            gift_used = bool(apply_info.get("gift_of_the_prescient_use", False))
+            if gift_used:
+                self._set_gift_of_the_prescient_rapid_ingress_setup_override(
+                    target,
+                    min_distance=float(apply_info.get("gift_of_the_prescient_deep_strike_min_distance", 3.0) or 3.0),
+                    source=str(apply_info.get("gift_of_the_prescient_source", "") or "Gift of the Prescient"),
+                    expires_phase=str(apply_info.get("gift_of_the_prescient_expires_phase", "") or "MOVEMENT_PHASE"),
+                )
+                gift_override_active = True
+            elif gift_override_active:
+                self._clear_gift_of_the_prescient_rapid_ingress_setup_override(target)
+                gift_override_active = False
             if int(getattr(self.player, "command_points", 0) or 0) < int(eff_cost or 0):
                 if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                    if gift_override_active:
+                        self._clear_gift_of_the_prescient_rapid_ingress_setup_override(target)
                     return False
             # Attempt arrival
             try:
                 ok = target.arrive_from_reserves(position, getattr(self.game, "turn", 0), getattr(self.game, "map", None))
             except Exception as e:
+                if gift_override_active:
+                    self._clear_gift_of_the_prescient_rapid_ingress_setup_override(target)
                 raise
+            if gift_override_active:
+                self._clear_gift_of_the_prescient_rapid_ingress_setup_override(target)
+                gift_override_active = False
             if not ok:
                 logger.error("ERROR: Rapid Ingress: arrival failed")
                 return False

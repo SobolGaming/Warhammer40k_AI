@@ -7461,6 +7461,35 @@ class PositioningMixin:
                 min_dist = hallowed_beacon_min if min_dist is None else min(min_dist, hallowed_beacon_min)
 
         try:
+            gift_of_the_prescient_min = float(sr.get("gift_of_the_prescient_deep_strike_min_distance", 0) or 0)
+        except (TypeError, ValueError):
+            gift_of_the_prescient_min = 0.0
+        if gift_of_the_prescient_min > 0:
+            try:
+                game = None
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+                if game is not None:
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    expires_phase = str(sr.get("gift_of_the_prescient_expires_phase", "") or "").strip().upper()
+                    if expires_phase and phase_name and expires_phase != phase_name:
+                        gift_of_the_prescient_min = 0.0
+            except Exception:
+                gift_of_the_prescient_min = 0.0
+            if gift_of_the_prescient_min > 0:
+                min_dist = (
+                    gift_of_the_prescient_min
+                    if min_dist is None
+                    else min(min_dist, gift_of_the_prescient_min)
+                )
+
+        try:
             dark_apparitions_min = float(sr.get("dark_apparitions_deep_strike_min_distance", 0) or 0)
         except Exception:
             dark_apparitions_min = 0.0

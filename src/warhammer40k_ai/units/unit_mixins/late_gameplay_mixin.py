@@ -2197,6 +2197,13 @@ class LateGameplayMixin:
                         "hallowed_beacon_source",
                     ):
                         sr.pop(key, None)
+                if "gift_of_the_prescient_deep_strike_min_distance" in sr or "gift_of_the_prescient_expires_phase" in sr:
+                    for key in (
+                        "gift_of_the_prescient_deep_strike_min_distance",
+                        "gift_of_the_prescient_expires_phase",
+                        "gift_of_the_prescient_source",
+                    ):
+                        sr.pop(key, None)
                 if (
                     sr.get("dark_apparitions_temp_deep_strike") is True
                     or "dark_apparitions_deep_strike_min_distance" in sr

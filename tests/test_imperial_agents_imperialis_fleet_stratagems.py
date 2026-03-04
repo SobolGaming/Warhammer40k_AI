@@ -5,6 +5,9 @@ from warhammer40k_ai.engine.decision_handlers.movement import _evaluate_reserves
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.enhancement import Enhancement
+from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
+from warhammer40k_ai.rules.stratagems import Stratagem
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.entity_ids import get_entity_id
@@ -108,7 +111,51 @@ def _model_positions_for(unit: Unit, position: tuple[float, float, float]) -> li
     ]
 
 
+def _apply_imperialis_fleet_enhancement(
+    unit: Unit,
+    *,
+    enhancement_id: str,
+    name: str,
+    description: str,
+) -> Enhancement:
+    enhancement = Enhancement(
+        id=str(enhancement_id),
+        name=str(name),
+        faction_id="AOI",
+        detachment="Imperialis Fleet",
+        detachment_id="000000895",
+        points=0,
+        description=str(description),
+    )
+    unit.enhancement = enhancement
+    enhancement.apply_to_unit(unit)
+    return enhancement
+
+
+def _fleetmaster_test_stratagem(name: str, *, cp_cost: int = 1) -> Stratagem:
+    return Stratagem(
+        id=f"test_{str(name).strip().lower().replace(' ', '_')}",
+        name=str(name),
+        type="Imperialis Fleet - Strategic Ploy Stratagem",
+        description="",
+        cp_cost=int(cp_cost),
+        turn="Your turn",
+        phase="Movement phase",
+        detachment="Imperialis Fleet",
+        faction_id="AOI",
+    )
+
+
 class TestImperialAgentsImperialisFleetStratagems(unittest.TestCase):
+    def test_fleetmaster_enhancement_descriptor_registered(self):
+        desc = get_enhancement_tool_descriptor(enhancement_id="000009138005")
+        self.assertIsNotNone(desc)
+        self.assertEqual(desc.name, "Fleetmaster")
+        self.assertEqual(
+            tuple(desc.effect_params.get("stratagem_names", ()) or ()),
+            ("VIOLENT ACQUISITION", "MASTERS OF THE VOID", "CLOSE-QUARTERS BARRAGE"),
+        )
+
     def test_masters_of_the_void_descriptor_registered(self):
         desc = get_stratagem_tool_descriptor(stratagem_id="000009139003")
         self.assertIsNotNone(desc)
@@ -210,6 +257,88 @@ class TestImperialAgentsImperialisFleetStratagems(unittest.TestCase):
             _model_positions_for(arriving, enemy_dz_position),
         )
         self.assertTrue(bool(list(evaluation_expired.get("errors") or [])))
+
+    def test_fleetmaster_applies_zero_cp_once_per_battle_round(self):
+        game, ia_player, _enemy_player, ia_army, _enemy_army = _build_game()
+        bearer = _make_unit(
+            "Rogue Trader",
+            keywords=["INFANTRY", "CHARACTER", "VOIDFARERS"],
+            faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+        )
+        ia_army.add_unit(bearer)
+        _place_unit(game, bearer, 8.0, 8.0)
+
+        _apply_imperialis_fleet_enhancement(
+            bearer,
+            enhancement_id="000009138005",
+            name="Fleetmaster",
+            description=(
+                "Once per battle round, you can target the bearer's unit with the Violent Acquisition, "
+                "Masters of the Void or Close-quarters Barrage Stratagems for 0CP."
+            ),
+        )
+
+        masters = _fleetmaster_test_stratagem("Masters of the Void", cp_cost=1)
+        preview = ia_player.preview_stratagem_cp_cost(masters, target_unit=bearer)
+        self.assertEqual(int(preview.get("cost", -1)), 0)
+        self.assertTrue(any("Fleetmaster" in str(r) for r in list(preview.get("reasons", []) or [])))
+
+        first = ia_player.apply_stratagem_cp_cost(masters, target_unit=bearer)
+        self.assertEqual(int(first.get("cost", -1)), 0)
+        self.assertTrue(bool(first.get("fleetmaster_use", False)))
+        self.assertEqual(int(ia_player._ability_used_battle_round.get("FLEETMASTER_FREE_STRATAGEM", 0) or 0), 2)
+
+        second = ia_player.apply_stratagem_cp_cost(masters, target_unit=bearer)
+        self.assertEqual(int(second.get("cost", -1)), 1)
+        self.assertFalse(bool(second.get("fleetmaster_use", False)))
+
+        game.turn = 3
+        third = ia_player.apply_stratagem_cp_cost(masters, target_unit=bearer)
+        self.assertEqual(int(third.get("cost", -1)), 0)
+        self.assertTrue(bool(third.get("fleetmaster_use", False)))
+        self.assertEqual(int(ia_player._ability_used_battle_round.get("FLEETMASTER_FREE_STRATAGEM", 0) or 0), 3)
+
+    def test_fleetmaster_accepts_all_configured_stratagem_names(self):
+        game, ia_player, _enemy_player, ia_army, _enemy_army = _build_game()
+        bearer = _make_unit(
+            "Navis Commander",
+            keywords=["INFANTRY", "CHARACTER", "VOIDFARERS"],
+            faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+        )
+        ia_army.add_unit(bearer)
+        _place_unit(game, bearer, 6.0, 6.0)
+
+        _apply_imperialis_fleet_enhancement(
+            bearer,
+            enhancement_id="000009138005",
+            name="Fleetmaster",
+            description=(
+                "Once per battle round, you can target the bearer's unit with the Violent Acquisition, "
+                "Masters of the Void or Close-quarters Barrage Stratagems for 0CP."
+            ),
+        )
+
+        test_names = [
+            "Violent Acquisition",
+            "Close-quarters Barrage",
+            "Close Quarters Barrage",
+        ]
+        for turn, stratagem_name in enumerate(test_names, start=2):
+            game.turn = int(turn)
+            result = ia_player.apply_stratagem_cp_cost(
+                _fleetmaster_test_stratagem(stratagem_name, cp_cost=2),
+                target_unit=bearer,
+            )
+            self.assertEqual(int(result.get("cost", -1)), 0)
+            self.assertTrue(bool(result.get("fleetmaster_use", False)))
+
+        game.turn = 5
+        non_matching = ia_player.apply_stratagem_cp_cost(
+            _fleetmaster_test_stratagem("Displacer Field", cp_cost=1),
+            target_unit=bearer,
+        )
+        self.assertEqual(int(non_matching.get("cost", -1)), 1)
+        self.assertFalse(bool(non_matching.get("fleetmaster_use", False)))
 
 
 if __name__ == "__main__":
