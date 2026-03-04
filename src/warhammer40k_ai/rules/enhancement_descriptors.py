@@ -1360,6 +1360,28 @@ _MONTKA_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _MONTKA_DESCRIPTORS.values()
 }
 
+_RETALIATION_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008815005": EnhancementToolDescriptor(
+        enhancement_id="000008815005",
+        name="Starflare Ignition System",
+        timing="end_of_opponent_turn",
+        target="bearer_unit",
+        duration="instant",
+        effect="end_of_opponent_turn_enter_strategic_reserves_if_not_engaged",
+        effect_params={
+            "requires_not_engagement_range": True,
+            "requires_bearer_alive": True,
+            "once_per_battle": False,
+            "ability_key": "starflare_ignition_system",
+            "trigger_phase": "OPPONENT_TURN_END",
+        },
+    ),
+}
+
+_RETALIATION_CADRE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RETALIATION_CADRE_DESCRIPTORS.values()
+}
+
 _RAD_ZONE_CORPS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008385002": EnhancementToolDescriptor(
         enhancement_id="000008385002",
@@ -6231,6 +6253,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _MONTKA_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _RETALIATION_CADRE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _RAD_ZONE_CORPS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6531,6 +6556,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _AELDARI_DEVOTED_OF_YNNEAD_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)
+        or _RETALIATION_CADRE_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_BY_NAME.get(key)
         or _SKITARII_HUNTER_COHORT_BY_NAME.get(key)
         or _COHORT_CYBERNETICA_BY_NAME.get(key)

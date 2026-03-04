@@ -665,6 +665,10 @@ class Enhancement:
         except Exception:
             is_montka = False
         try:
+            is_retaliation_cadre = bool(tau_mgr and tau_mgr.is_retaliation_cadre())
+        except Exception:
+            is_retaliation_cadre = False
+        try:
             is_coterie_of_conceited = bool(ec_mgr and ec_mgr.is_coterie_of_conceited())
         except Exception:
             is_coterie_of_conceited = False
@@ -973,6 +977,40 @@ class Enhancement:
             unit.special_rules["enhancement_strike_swiftly_selection_range"] = float(max(0.0, selection_range))
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "starflare ignition system" or enh_id == "000008815005":
+            if not is_retaliation_cadre:
+                return
+            unit.special_rules["enhancement_starflare_ignition_system"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(params.get("source_name", "") or str(getattr(self, "name", "") or "Starflare Ignition System")).strip()
+            if not source:
+                source = "Starflare Ignition System"
+            ability_key = str(params.get("ability_key", "starflare_ignition_system") or "starflare_ignition_system").strip().lower()
+            if not ability_key:
+                ability_key = "starflare_ignition_system"
+            trigger_phase = str(params.get("trigger_phase", "OPPONENT_TURN_END") or "OPPONENT_TURN_END").strip().upper()
+            if not trigger_phase:
+                trigger_phase = "OPPONENT_TURN_END"
+            unit.special_rules["enhancement_starflare_ignition_system_source"] = source
+            unit.special_rules["enhancement_starflare_ignition_system_ability_key"] = ability_key
+            unit.special_rules["enhancement_starflare_ignition_system_trigger_phase"] = trigger_phase
+            unit.special_rules["enhancement_starflare_ignition_system_requires_not_engagement_range"] = bool(
+                params.get("requires_not_engagement_range", True)
+            )
+            unit.special_rules["enhancement_starflare_ignition_system_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_starflare_ignition_system_once_per_battle"] = bool(
+                params.get("once_per_battle", False)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_starflare_ignition_system_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("opponent_turn_strategic_reserves_ability", None)
 
         if name == "radial suffusion" or enh_id == "000008385002":
             if not is_rad_zone_corps:

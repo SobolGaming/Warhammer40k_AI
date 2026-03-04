@@ -52,6 +52,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXPERIMENTAL WEAPONRY",
     "IMPLACABLE GUARDIANS",
     "INFERNAL FUSILLADE",
+    "GLIMMERSHIFT PORTAL",
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
     "PINPOINT COUNTER-OFFENSIVE",
@@ -398,6 +399,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FEIGNED WEAKNESS",
     "FEIGNED RETREAT",
     "IMPLACABLE GUARDIANS",
+    "GLIMMERSHIFT PORTAL",
     "KHAINE'S VENGEANCE",
     "KHAINE’S VENGEANCE",
     "COMMAND RE-ROLL",
@@ -3633,6 +3635,16 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires opponent Shooting phase trigger where an enemy unit destroyed one of your THOUSAND SONS PSYKER models and a friendly RUBRICAE unit is within 6\" of that destroyed model"
             return result
+        if name_u == "GLIMMERSHIFT PORTAL":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._ts_glimmershift_portal_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires end of opponent's Fight phase and one or more eligible SCINTILLATING LEGIONS units more than 6\" horizontally from all enemy units"
+            return result
         if name_u == "ADRENAL SURGE":
             if self._tyr_adrenal_surge_candidates():
                 result["available"] = True
@@ -4077,6 +4089,7 @@ class StratagemManager(
             "FOCUSED FIRE": "Target: two of your T'AU EMPIRE units not yet selected to shoot, and one enemy unit; selected friendly units can only target that enemy unit and improve AP by 1 this phase (not battle rounds 4-5)",
             "COORDINATED TRAP": "Start of your Shooting/Fight phase: target two GENESTEALER CULTS units not yet selected to shoot/fight and one enemy unit; selected units can only target that enemy this phase and gain +1 to Wound rolls against it (Fight phase enemy must be in Engagement Range of both selected units)",
             "ARDENT AUTOMATA": "Target: your RUBRICAE unit that just Fell Back this phase; it can shoot and charge this turn",
+            "GLIMMERSHIFT PORTAL": "End of opponent's Fight phase: target up to two SCINTILLATING LEGIONS non-MONSTER units, or one SCINTILLATING LEGIONS MONSTER unit, each more than 6\" horizontally from all enemy units; selected units enter Strategic Reserves",
             "IMPLACABLE GUARDIANS": "Target: your RUBRIC MARINES PSYKER unit selected as an enemy shooting target; subtract 1 from Damage allocated to non-PSYKER models this phase",
             "INFERNAL FUSILLADE": "Target: your THOUSAND SONS PSYKER unit not yet selected to shoot; inferno bolt weapons gain [PSYCHIC] and Strength 5 this phase",
             "ADRENAL SURGE": "Target: one TYRANIDS unit eligible to fight, or up to two TYRANIDS units eligible to fight if both are within Synapse Range",
@@ -5907,6 +5920,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_eldritch_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_thousand_sons_changehost_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:

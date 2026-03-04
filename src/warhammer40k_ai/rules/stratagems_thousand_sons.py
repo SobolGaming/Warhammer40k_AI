@@ -35,6 +35,11 @@ class ThousandSonsStratagemMixin:
         checker = getattr(mgr, "is_rubricae_phalanx", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_thousand_sons_changehost_of_deceit_detachment(self) -> bool:
+        mgr = self._ts_detachment_mgr()
+        checker = getattr(mgr, "is_changehost_of_deceit", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _ts_has_any_keyword(entity: Any, keyword: str) -> bool:
         if entity is None:
@@ -73,6 +78,26 @@ class ThousandSonsStratagemMixin:
         if self._ts_has_any_keyword(root, "RUBRICAE"):
             return True
         return "RUBRIC" in str(getattr(root, "name", "") or "").strip().upper()
+
+    def _is_scintillating_legions_unit(self, unit: Any) -> bool:
+        root = self._ts_root(unit)
+        if root is None:
+            return False
+        if self._ts_has_any_keyword(root, "SCINTILLATING LEGIONS"):
+            return True
+        faction_id = str(getattr(root, "faction_id", "") or "").strip().upper()
+        if faction_id in {"SL", "SCINTILLATING LEGIONS", "SCINTILLATING_LEGIONS"}:
+            return True
+        for keyword in list(getattr(root, "faction_keywords", []) or []):
+            if str(keyword or "").strip().upper() == "SCINTILLATING LEGIONS":
+                return True
+        return False
+
+    def _is_monster_unit(self, unit: Any) -> bool:
+        root = self._ts_root(unit)
+        if root is None:
+            return False
+        return self._ts_has_any_keyword(root, "MONSTER")
 
     def _is_rubric_marines_unit(self, unit: Any) -> bool:
         root = self._ts_root(unit)
@@ -214,6 +239,29 @@ class ThousandSonsStratagemMixin:
                 return None
         return None
 
+    def _ts_model_horizontal_distance_inches(self, source_model: Any, target_model: Any) -> Optional[float]:
+        if source_model is None or target_model is None:
+            return None
+        source_base = getattr(source_model, "model_base", None)
+        target_base = getattr(target_model, "model_base", None)
+        if source_base is not None and target_base is not None:
+            try:
+                from ..utility.aura_utils import horizontal_distance_between_bases_2d
+
+                return float(horizontal_distance_between_bases_2d(source_base, target_base))
+            except (AttributeError, TypeError, ValueError):
+                pass
+        get_source = getattr(source_model, "get_location", None)
+        get_target = getattr(target_model, "get_location", None)
+        if callable(get_source) and callable(get_target):
+            try:
+                sx, sy, _sz, *_rest_s = get_source()
+                tx, ty, _tz, *_rest_t = get_target()
+                return float(math.hypot(float(sx) - float(tx), float(sy) - float(ty)))
+            except (AttributeError, TypeError, ValueError):
+                return None
+        return None
+
     def _ts_unit_within_distance_of_model(self, unit: Any, model: Any, *, distance: float) -> bool:
         root = self._ts_root(unit)
         if root is None or model is None:
@@ -224,6 +272,54 @@ class ThousandSonsStratagemMixin:
                 continue
             dist = self._ts_model_distance_inches(model, candidate)
             if dist is not None and dist <= max_distance + 1e-6:
+                return True
+        return False
+
+    def _ts_unit_within_horizontal_distance_of_unit(
+        self,
+        unit: Any,
+        other_unit: Any,
+        *,
+        distance: float,
+    ) -> bool:
+        root = self._ts_root(unit)
+        other_root = self._ts_root(other_unit)
+        if root is None or other_root is None:
+            return False
+        max_distance = float(distance)
+        source_models = [m for m in list(getattr(root, "models", []) or []) if self._ts_model_is_alive(m)]
+        target_models = [m for m in list(getattr(other_root, "models", []) or []) if self._ts_model_is_alive(m)]
+        if not source_models or not target_models:
+            return False
+        for source_model in source_models:
+            for target_model in target_models:
+                dist = self._ts_model_horizontal_distance_inches(source_model, target_model)
+                if dist is not None and dist <= max_distance + 1e-6:
+                    return True
+        return False
+
+    def _ts_has_enemy_within_horizontal_distance(self, unit: Any, *, distance: float) -> bool:
+        root = self._ts_root(unit)
+        if root is None:
+            return False
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if game_map is None:
+            return False
+        enemies: list[Any] = []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if callable(get_enemy_units):
+            enemies = list(get_enemy_units(root) or [])
+        elif isinstance(getattr(game_map, "units", None), list):
+            enemies = list(getattr(game_map, "units", []) or [])
+        for enemy in enemies:
+            enemy_root = self._ts_root(enemy)
+            if enemy_root is None:
+                continue
+            if self._ts_owned_by_player(enemy_root, self.player):
+                continue
+            if not self._ts_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            if self._ts_unit_within_horizontal_distance_of_unit(root, enemy_root, distance=distance):
                 return True
         return False
 
@@ -431,6 +527,69 @@ class ThousandSonsStratagemMixin:
                 continue
             out.append(root)
         return sorted(out, key=self._ts_sort_key)
+
+    def _ts_glimmershift_portal_candidates(self) -> list[Any]:
+        if not self._is_thousand_sons_changehost_of_deceit_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ts_root(unit)
+            if root is None:
+                continue
+            uid = self._ts_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ts_owned_by_player(root, self.player):
+                continue
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_scintillating_legions_unit(root):
+                continue
+            if self._ts_has_enemy_within_horizontal_distance(root, distance=6.0):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
+    def _ts_place_unit_into_strategic_reserves(self, unit: Any, *, reason: str = "") -> bool:
+        root = self._ts_root(unit)
+        if root is None:
+            return False
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        place_fn = getattr(root, "enter_strategic_reserves_midgame", None)
+        if callable(place_fn):
+            return bool(place_fn(game=game, game_map=game_map, reason=reason))
+
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            set_status = getattr(member, "set_reserve_status", None)
+            if callable(set_status):
+                set_status("strategic_reserves")
+            else:
+                member.reserve_status = "strategic_reserves"
+            mark_midgame = getattr(member, "mark_entered_reserves_midgame", None)
+            if callable(mark_midgame):
+                mark_midgame(game=game)
+            if bool(getattr(member, "is_aircraft", False)) and not bool(getattr(member, "hover_mode", False)):
+                member._aircraft_return_turn = int(getattr(game, "turn", 0) or 0) + 1 if game is not None else 0
+            member.deployed = True
+            member.reserve_turn_deployed = None
+            member.arrived_from_reserves_this_turn = False
+            if game_map is not None and isinstance(getattr(game_map, "units", None), list) and member in game_map.units:
+                game_map.units.remove(member)
+        return True
 
     def _ts_spend_cp(self, stratagem: Any, *, target_unit: Any = None) -> bool:
         effective_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
@@ -849,24 +1008,75 @@ class ThousandSonsStratagemMixin:
         if queued:
             return
 
+    def _queue_thousand_sons_changehost_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        _ = player
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if not self._is_thousand_sons_changehost_of_deceit_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("GLIMMERSHIFT PORTAL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        candidates = self._ts_glimmershift_portal_candidates()
+        if not candidates:
+            return
+        if self._ts_reaction_exists("phase_end", stratagem.name):
+            return
+        if not stratagem.can_use(self.player, self.game, phase_name="Fight phase"):
+            return
+
+        non_monster_candidates = [unit for unit in candidates if not self._is_monster_unit(unit)]
+        max_units = 2 if non_monster_candidates else 1
+        payload: dict[str, Any] = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+            "max_units": int(max_units),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
     def _use_thousand_sons_rubricae_phalanx_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
-        if not self._is_thousand_sons_rubricae_phalanx_detachment():
-            return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
-        if name_u == "ARDENT AUTOMATA":
-            return self._use_thousand_sons_ardent_automata(stratagem, **kwargs)
-        if name_u == "INEXORABLE ADVANCE":
-            return self._use_thousand_sons_inexorable_advance(stratagem, **kwargs)
-        if name_u == "INFERNAL FUSILLADE":
-            return self._use_thousand_sons_infernal_fusillade(stratagem, **kwargs)
-        if name_u == "IMPLACABLE GUARDIANS":
-            return self._use_thousand_sons_implacable_guardians(stratagem, **kwargs)
-        if name_u == "UNWAVERING PHALANX":
-            return self._use_thousand_sons_unwavering_phalanx(stratagem, **kwargs)
-        if name_u == "REVENGE OF THE RUBRICAE":
-            return self._use_thousand_sons_revenge_of_the_rubricae(stratagem, **kwargs)
+        if self._is_thousand_sons_rubricae_phalanx_detachment():
+            if name_u == "ARDENT AUTOMATA":
+                return self._use_thousand_sons_ardent_automata(stratagem, **kwargs)
+            if name_u == "INEXORABLE ADVANCE":
+                return self._use_thousand_sons_inexorable_advance(stratagem, **kwargs)
+            if name_u == "INFERNAL FUSILLADE":
+                return self._use_thousand_sons_infernal_fusillade(stratagem, **kwargs)
+            if name_u == "IMPLACABLE GUARDIANS":
+                return self._use_thousand_sons_implacable_guardians(stratagem, **kwargs)
+            if name_u == "UNWAVERING PHALANX":
+                return self._use_thousand_sons_unwavering_phalanx(stratagem, **kwargs)
+            if name_u == "REVENGE OF THE RUBRICAE":
+                return self._use_thousand_sons_revenge_of_the_rubricae(stratagem, **kwargs)
+        if self._is_thousand_sons_changehost_of_deceit_detachment():
+            if name_u == "GLIMMERSHIFT PORTAL":
+                return self._use_thousand_sons_glimmershift_portal(stratagem, **kwargs)
         return None
 
     def _use_thousand_sons_ardent_automata(self, stratagem: Any, **kwargs) -> bool:
@@ -1355,4 +1565,134 @@ class ThousandSonsStratagemMixin:
             getattr(root, "name", "Unit"),
             getattr(enemy_root, "name", "Enemy"),
         )
+        return True
+
+    def _use_thousand_sons_glimmershift_portal(self, stratagem: Any, **kwargs) -> bool:
+        selected = (
+            kwargs.get("units")
+            or kwargs.get("target_units")
+            or kwargs.get("selected_units")
+            or kwargs.get("unit")
+            or kwargs.get("target_unit")
+        )
+        candidates = list(kwargs.get("candidates") or [])
+        max_units = int(kwargs.get("max_units", 2) or 2)
+        if selected is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if selected is None:
+                    selected = (
+                        reaction.get("units")
+                        or reaction.get("target_units")
+                        or reaction.get("selected_units")
+                        or reaction.get("unit")
+                        or reaction.get("target_unit")
+                    )
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if "max_units" not in kwargs:
+                    max_units = int(reaction.get("max_units", max_units) or max_units)
+                break
+
+        if selected is None and len(candidates) == 1:
+            selected = [candidates[0]]
+        if selected is None:
+            logger.error("ERROR: GLIMMERSHIFT PORTAL: no target units provided")
+            return False
+
+        selected_entries = list(selected) if isinstance(selected, (list, tuple)) else [selected]
+        resolved: list[Any] = []
+        seen_ids: set[str] = set()
+        resolve_by_id = getattr(self.game, "_resolve_unit_by_id", None) if self.game is not None else None
+        for entry in selected_entries:
+            if entry is None:
+                continue
+            unit = entry
+            if isinstance(entry, str):
+                unit = resolve_by_id(entry) if callable(resolve_by_id) else None
+            root = self._ts_root(unit)
+            if root is None:
+                continue
+            uid = self._ts_sort_key(root)
+            if uid and uid in seen_ids:
+                continue
+            if uid:
+                seen_ids.add(uid)
+            resolved.append(root)
+        if not resolved:
+            logger.error("ERROR: GLIMMERSHIFT PORTAL: no valid target units selected")
+            return False
+        if len(resolved) > max(1, int(max_units)):
+            logger.error("ERROR: GLIMMERSHIFT PORTAL: selected too many units")
+            return False
+        if len(resolved) > 2:
+            logger.error("ERROR: GLIMMERSHIFT PORTAL: cannot select more than two units")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "fight phase":
+            logger.error("ERROR: GLIMMERSHIFT PORTAL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: GLIMMERSHIFT PORTAL: not opponent's Fight phase")
+            return False
+
+        eligible = candidates or self._ts_glimmershift_portal_candidates()
+        if not eligible:
+            logger.error("ERROR: GLIMMERSHIFT PORTAL: no eligible units")
+            return False
+        for root in resolved:
+            if not self._ts_unit_in_candidates(root, eligible):
+                logger.error("ERROR: GLIMMERSHIFT PORTAL: selected unit is not currently eligible")
+                return False
+            if not self._ts_owned_by_player(root, self.player):
+                logger.error("ERROR: GLIMMERSHIFT PORTAL: selected unit is not yours")
+                return False
+            if not self._ts_on_battlefield(root, require_targetable=True):
+                logger.error("ERROR: GLIMMERSHIFT PORTAL: selected unit must be on the battlefield and targetable")
+                return False
+            if not self._is_scintillating_legions_unit(root):
+                logger.error("ERROR: GLIMMERSHIFT PORTAL: selected unit must be SCINTILLATING LEGIONS")
+                return False
+            if self._ts_has_enemy_within_horizontal_distance(root, distance=6.0):
+                logger.error("ERROR: GLIMMERSHIFT PORTAL: selected unit must be more than 6\" horizontally from all enemies")
+                return False
+
+        selected_monsters = [root for root in resolved if self._is_monster_unit(root)]
+        if selected_monsters and len(resolved) != 1:
+            logger.error("ERROR: GLIMMERSHIFT PORTAL: if selecting a MONSTER unit, exactly one unit must be selected")
+            return False
+
+        can_use = False
+        try:
+            can_use = bool(
+                stratagem.can_use(
+                    self.player,
+                    self.game,
+                    phase_name="Fight phase",
+                    unit=resolved[0],
+                    units=list(resolved),
+                )
+            )
+        except TypeError:
+            can_use = bool(stratagem.can_use(self.player, self.game, phase_name="Fight phase", unit=resolved[0]))
+        if not can_use:
+            logger.error("ERROR: GLIMMERSHIFT PORTAL: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=resolved[0]):
+            return False
+
+        for root in resolved:
+            if not self._ts_place_unit_into_strategic_reserves(
+                root,
+                reason=str(getattr(stratagem, "name", "GLIMMERSHIFT PORTAL") or "GLIMMERSHIFT PORTAL"),
+            ):
+                logger.error("ERROR: GLIMMERSHIFT PORTAL: failed to place %s into Strategic Reserves", getattr(root, "name", "Unit"))
+                return False
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        moved_units = ", ".join(getattr(root, "name", "Unit") for root in resolved)
+        logger.info("INFO: GLIMMERSHIFT PORTAL: %s entered Strategic Reserves.", moved_units)
         return True

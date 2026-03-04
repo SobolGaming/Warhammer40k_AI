@@ -2894,6 +2894,29 @@ _INVASION_FLEET_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _INVASION_FLEET_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010198007": StratagemToolDescriptor(
+        stratagem_id="000010198007",
+        name="Glimmershift Portal",
+        timing="end_of_opponent_fight_phase",
+        target="up_to_two_scintillating_legions_units_or_one_scintillating_legions_monster_more_than_6_horizontal_from_enemy",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "max_units": 2,
+            "monster_selection_limit": 1,
+            "non_monster_selection_limit": 2,
+            "min_enemy_horizontal_distance": 6.0,
+            "required_keyword": "SCINTILLATING LEGIONS",
+        },
+    ),
+}
+
+_CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _RUBRICAE_PHALANX_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010206002": StratagemToolDescriptor(
         stratagem_id="000010206002",
@@ -3335,6 +3358,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _INVASION_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _RUBRICAE_PHALANX_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3391,6 +3417,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _MONTKA_STRATAGEM_BY_NAME.get(key)
         or _KAUYON_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
+        or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)

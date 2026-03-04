@@ -18121,6 +18121,47 @@ class GameView:
                 )
             return
 
+        if name_u == "GLIMMERSHIFT PORTAL" and not (
+            "units" in context or "target_units" in context or "selected_units" in context
+        ):
+            if callable(getattr(self, "_request_realm_of_chaos_units", None)):
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_ts_glimmershift_portal_candidates"):
+                    try:
+                        candidates = list(manager._ts_glimmershift_portal_candidates() or [])
+                    except (AttributeError, TypeError, ValueError):
+                        candidates = []
+                max_units = int(context.get("max_units", 0) or 0)
+                if max_units <= 0:
+                    non_monsters = []
+                    for unit in list(candidates or []):
+                        has_any = getattr(unit, "has_any_keyword", None)
+                        has_kw = getattr(unit, "has_keyword", None)
+                        is_monster = False
+                        if callable(has_any) and has_any("MONSTER"):
+                            is_monster = True
+                        elif callable(has_kw) and has_kw("MONSTER"):
+                            is_monster = True
+                        if not is_monster:
+                            non_monsters.append(unit)
+                    max_units = 2 if non_monsters else 1
+                subtitle = f"Select up to {max_units} unit(s)"
+                instruction = (
+                    "Select up to two SCINTILLATING LEGIONS non-MONSTER units, or one SCINTILLATING LEGIONS MONSTER unit, "
+                    "and each selected unit must be more than 6\" horizontally from all enemy units."
+                )
+                self._request_realm_of_chaos_units(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda units: self._finalize_glimmershift_portal(player, name, context, units),
+                    max_units=max_units,
+                    title="Glimmershift Portal",
+                    subtitle=subtitle,
+                    instruction=instruction,
+                )
+            return
+
         if name_u == "WARP SURGE" and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
                 from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
@@ -19243,6 +19284,27 @@ class GameView:
         units = [u for u in units if u is not None]
         if not units:
             logger.info("Delirium Unmade: no units selected")
+            return
+        ctx = dict(context)
+        ctx["units"] = list(units)
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_glimmershift_portal(self, player, name: str, context: Dict[str, Any], units) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if units is None:
+            logger.info("Glimmershift Portal: no units selected")
+            return
+        if not isinstance(units, (list, tuple)):
+            units = [units]
+        units = [u for u in units if u is not None]
+        if not units:
+            logger.info("Glimmershift Portal: no units selected")
             return
         ctx = dict(context)
         ctx["units"] = list(units)
