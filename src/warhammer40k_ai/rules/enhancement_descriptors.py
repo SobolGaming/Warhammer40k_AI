@@ -6184,6 +6184,28 @@ _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GENESTEALER_CULTS_HOST_OF_ASCENSION_DESCRIPTORS.values()
 }
 
+_GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009084003": EnhancementToolDescriptor(
+        enhancement_id="000009084003",
+        name="Adaptive Reprisal",
+        timing="when_targeting_friendly_genestealer_cults_unit_with_heroic_intervention",
+        target="friendly_genestealer_cults_unit_within_range_of_bearer",
+        duration="instant_once_per_turn",
+        effect="heroic_intervention_zero_cp_once_per_turn_within_bearer_range",
+        effect_params={
+            "stratagem_names": ("HEROIC INTERVENTION",),
+            "once_per_turn_key": "ADAPTIVE_REPRISAL_HEROIC_INTERVENTION",
+            "range": 9.0,
+            "required_target_keywords": ("GENESTEALER CULTS",),
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+}
+
+_GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_DESCRIPTORS.values()
+}
+
 _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009130003": EnhancementToolDescriptor(
         enhancement_id="000009130003",
@@ -6334,6 +6356,29 @@ _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] =
 
 _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS.values()
+}
+
+_TYRANIDS_ASSIMILATION_SWARM_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008412003": EnhancementToolDescriptor(
+        enhancement_id="000008412003",
+        name="Instinctive Defence",
+        timing="passive_conditional_aura",
+        target="bearer_unit",
+        duration="constant_conditional",
+        effect="heroic_intervention_zero_cp_and_fights_first_while_bearer_within_friendly_harvester",
+        effect_params={
+            "stratagem_names": ("HEROIC INTERVENTION",),
+            "harvester_range": 6.0,
+            "required_friendly_keyword": "HARVESTER",
+            "required_target_scope": "bearer_unit_only",
+            "grants_fights_first": True,
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+}
+
+_TYRANIDS_ASSIMILATION_SWARM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _TYRANIDS_ASSIMILATION_SWARM_DESCRIPTORS.values()
 }
 
 
@@ -6690,6 +6735,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _GENESTEALER_CULTS_HOST_OF_ASCENSION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6709,6 +6757,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         if desc is not None:
             return desc
         desc = _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
+        desc = _TYRANIDS_ASSIMILATION_SWARM_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
     key = _normalize_name(name)
@@ -6832,6 +6883,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME.get(key)
         or _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME.get(key)
+        or _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_HERETICUS_PURGATION_FORCE_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_ORDO_MALLEUS_DAEMON_HUNTERS_BY_NAME.get(key)
         or _AGENTS_OF_THE_IMPERIUM_IMPERIALIS_FLEET_BY_NAME.get(key)
@@ -6839,4 +6891,5 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_BY_NAME.get(key)
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
         or _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME.get(key)
+        or _TYRANIDS_ASSIMILATION_SWARM_BY_NAME.get(key)
     )

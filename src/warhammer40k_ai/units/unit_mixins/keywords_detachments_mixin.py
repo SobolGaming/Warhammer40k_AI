@@ -376,6 +376,18 @@ class KeywordsDetachmentsMixin:
                 return True
         except Exception:
             pass
+        # Instinctive Defence (Assimilation Swarm): while bearer is within range of a friendly HARVESTER.
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        can_instinctive = getattr(root, "has_instinctive_defence_fight_first", None)
+        if callable(can_instinctive):
+            try:
+                if bool(can_instinctive()):
+                    return True
+            except Exception:
+                pass
         # Use cached result if available
         if 'fight_first' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['fight_first']
@@ -3905,6 +3917,391 @@ class KeywordsDetachmentsMixin:
         except Exception:
             pass
         return bool(root.get_snarling_protector_heroic_intervention_rule())
+
+    def _instinctive_defence_source_unit(self):
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None, None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_instinctive_defence", False)):
+                continue
+            bearer = None
+            get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+            if callable(get_bearer):
+                try:
+                    bearer = get_bearer()
+                except Exception:
+                    bearer = None
+            if bearer is None:
+                bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+                if bearer_id:
+                    for model in list(getattr(member, "models", []) or []):
+                        if str(get_entity_id(model) or "").strip() != bearer_id:
+                            continue
+                        bearer = model
+                        break
+            if bearer is None:
+                continue
+            alive_attr = getattr(bearer, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            return member, sr, bearer
+        return None, None, None
+
+    def _instinctive_defence_harvester_in_range(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        source_unit, source_sr, bearer = root._instinctive_defence_source_unit()
+        if source_unit is None or not isinstance(source_sr, dict) or bearer is None:
+            return False
+        requires_bearer_on_battlefield = bool(
+            source_sr.get("enhancement_instinctive_defence_requires_bearer_on_battlefield", True)
+        )
+        if requires_bearer_on_battlefield:
+            try:
+                if not source_unit.is_alive() or not bool(getattr(source_unit, "deployed", False)):
+                    return False
+            except Exception:
+                return False
+            try:
+                if source_unit.is_in_reserves():
+                    return False
+            except Exception:
+                pass
+            try:
+                if bool(getattr(source_unit, "is_embarked", False)) or bool(getattr(source_unit, "embarked_in", None)):
+                    return False
+            except Exception:
+                pass
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return False
+        try:
+            aura_range = float(source_sr.get("enhancement_instinctive_defence_harvester_range", 6.0) or 6.0)
+        except Exception:
+            aura_range = 6.0
+        if aura_range <= 0.0:
+            aura_range = 6.0
+        required_keyword = str(
+            source_sr.get("enhancement_instinctive_defence_required_keyword", "HARVESTER") or "HARVESTER"
+        ).strip().upper() or "HARVESTER"
+
+        from warhammer40k_ai.utility.aura_utils import model_within_range_of_unit
+
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                candidate_root = unit.get_attached_unit_root()
+            except Exception:
+                candidate_root = unit
+            if candidate_root is None:
+                continue
+            uid = str(get_entity_id(candidate_root) or "")
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            try:
+                if not candidate_root.is_alive() or not bool(getattr(candidate_root, "deployed", True)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if candidate_root.is_in_reserves():
+                    continue
+            except Exception:
+                pass
+            try:
+                if bool(getattr(candidate_root, "is_embarked", False)) or bool(getattr(candidate_root, "embarked_in", None)):
+                    continue
+            except Exception:
+                pass
+            has_required = False
+            has_any = getattr(candidate_root, "has_any_keyword", None)
+            if callable(has_any):
+                try:
+                    has_required = bool(has_any(required_keyword))
+                except Exception:
+                    has_required = False
+            if not has_required:
+                has_kw = getattr(candidate_root, "has_keyword", None)
+                if callable(has_kw):
+                    try:
+                        has_required = bool(has_kw(required_keyword))
+                    except Exception:
+                        has_required = False
+            if not has_required:
+                try:
+                    has_required = bool(
+                        root._unit_matches_keyword_phrase(candidate_root, required_keyword, use_effective=True)
+                    )
+                except Exception:
+                    has_required = False
+            if not has_required:
+                continue
+            try:
+                if model_within_range_of_unit(bearer, candidate_root, aura_range, use_attached_aggregate=True):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def get_instinctive_defence_heroic_intervention_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "instinctive_defence_heroic_intervention_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        source_unit, source_sr, _bearer = root._instinctive_defence_source_unit()
+        if source_unit is not None and isinstance(source_sr, dict):
+            source = str(source_sr.get("enhancement_instinctive_defence_source", "") or "Instinctive Defence").strip()
+            if not source:
+                source = "Instinctive Defence"
+            allowed = [
+                str(v or "").strip().upper()
+                for v in list(source_sr.get("enhancement_instinctive_defence_stratagems", ("HEROIC INTERVENTION",)) or ())
+                if str(v or "").strip()
+            ]
+            if not allowed:
+                allowed = ["HEROIC INTERVENTION"]
+            try:
+                aura_range = float(source_sr.get("enhancement_instinctive_defence_harvester_range", 6.0) or 6.0)
+            except Exception:
+                aura_range = 6.0
+            if aura_range <= 0.0:
+                aura_range = 6.0
+            required_keyword = str(
+                source_sr.get("enhancement_instinctive_defence_required_keyword", "HARVESTER") or "HARVESTER"
+            ).strip().upper() or "HARVESTER"
+            rule = {
+                "source": source,
+                "ability_key": "instinctive_defence_heroic_intervention",
+                "stratagems": tuple(allowed),
+                "required_friendly_keyword": required_keyword,
+                "harvester_range": float(aura_range),
+            }
+            try:
+                source_id = get_entity_id(source_unit)
+            except Exception:
+                source_id = None
+            if source_id:
+                rule["source_unit_id"] = str(source_id)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def has_instinctive_defence_fight_first(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not bool(getattr(root, "deployed", False)):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        _source_unit, source_sr, _bearer = root._instinctive_defence_source_unit()
+        if not isinstance(source_sr, dict):
+            return False
+        if not bool(source_sr.get("enhancement_instinctive_defence_grants_fights_first", True)):
+            return False
+        return bool(root._instinctive_defence_harvester_in_range(game=game))
+
+    def can_use_instinctive_defence_heroic_intervention(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not bool(getattr(root, "deployed", False)):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_instinctive_defence_heroic_intervention_rule()
+        if not rule:
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        return bool(root._instinctive_defence_harvester_in_range(game=game))
+
+    def get_pheromone_trail_rapid_ingress_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "pheromone_trail_rapid_ingress_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                name_key = str(name or "").strip().lower()
+                has_named_rule = "pheromone trail" in name_key
+                if "rapid ingress" not in normalized or "0cp" not in normalized:
+                    continue
+                if "once per battle round" not in normalized:
+                    continue
+                if not has_named_rule and "model with this ability" not in normalized:
+                    continue
+                source = str(name or "Pheromone Trail").strip() or "Pheromone Trail"
+                rule = {
+                    "source": source,
+                    "ability_key": "pheromone_trail_rapid_ingress",
+                    "stratagems": ("RAPID INGRESS",),
+                    "limit": "battle_round",
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _pheromone_trail_battle_round_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        return str(br)
+
+    def pheromone_trail_used_this_battle_round(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._pheromone_trail_battle_round_key(game)
+        if not key:
+            return False
+        return str(sr.get("pheromone_trail_used_battle_round", "") or "") == key
+
+    def mark_pheromone_trail_used(self, game=None, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["pheromone_trail_used_battle_round"] = self._pheromone_trail_battle_round_key(game)
+        if source:
+            sr["pheromone_trail_used_source"] = str(source or "").strip()
+        if stratagem_name:
+            sr["pheromone_trail_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+    def can_use_pheromone_trail_rapid_ingress(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive():
+                return False
+        except Exception:
+            return False
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_pheromone_trail_rapid_ingress_rule()
+        if not rule:
+            return False
+        if root.pheromone_trail_used_this_battle_round(game):
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        return True
 
     def get_destroyer_of_futures_overwatch_rule(self) -> Optional[dict]:
         """

@@ -8,6 +8,7 @@ from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army, ArmyValidationError
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
@@ -94,6 +95,34 @@ def _build_game(
     game.add_player(p1)
     game.add_player(p2)
     return game, gsc_army, enemy_army, p1, p2
+
+
+def _set_unit_position(unit: Unit, x: float, y: float) -> None:
+    unit.deployed = True
+    unit.reserve_status = "deployed"
+    unit.embarked_in = None
+    for idx, model in enumerate(list(getattr(unit, "models", []) or [])):
+        model.set_location(float(x) + (0.2 * idx), float(y), 0.0, 0.0)
+
+
+def _apply_brood_brother_auxilia_enhancement(
+    unit: Unit,
+    *,
+    enhancement_id: str,
+    name: str,
+    description: str,
+) -> Enhancement:
+    enhancement = Enhancement(
+        id=str(enhancement_id),
+        name=str(name),
+        faction_id="GC",
+        detachment="Brood Brother Auxilia",
+        points=0,
+        description=str(description),
+    )
+    unit.enhancement = enhancement
+    enhancement.apply_to_unit(unit)
+    return enhancement
 
 
 def _get_integrated_tactics_request(game: Game):
@@ -300,3 +329,61 @@ def test_brood_brothers_voice_of_command_loss_flags_units_and_disables_voice_che
     assert "voice_of_command_order_source" not in updated_sr
     assert removed_sources == ["voice_of_command:"]
     assert bool(voc._unit_has_voice(officer)) is False
+
+
+def test_adaptive_reprisal_allows_heroic_intervention_for_zero_cp_once_per_turn_within_range():
+    game, gsc_army, _enemy_army, gsc_player, _enemy_player = _build_game()
+    game.turn = 1
+
+    bearer = _make_unit(
+        "Patriarch",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    target = _make_unit(
+        "Acolyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    gsc_army.add_unit(bearer)
+    gsc_army.add_unit(target)
+    _set_unit_position(bearer, 10.0, 10.0)
+    _set_unit_position(target, 16.0, 10.0)
+
+    _apply_brood_brother_auxilia_enhancement(
+        bearer,
+        enhancement_id="000009084003",
+        name="Adaptive Reprisal",
+        description=(
+            "Once per turn, while the bearer is on the battlefield, you can target one friendly Genestealer Cults "
+            "unit within 9\" of the bearer with the Heroic Intervention Stratagem for 0CP."
+        ),
+    )
+
+    strat = SimpleNamespace(name="Heroic Intervention", cp_cost=1)
+    preview = gsc_player.preview_stratagem_cp_cost(
+        strat,
+        target_unit=target,
+        assume_optional_discounts=True,
+    )
+    assert int(preview.get("cost", -1)) == 0
+
+    gsc_player.set_next_optional_decision("ADAPTIVE_REPRISAL_HEROIC_INTERVENTION", True)
+    first = gsc_player.apply_stratagem_cp_cost(strat, target_unit=target)
+    assert int(first.get("cost", -1)) == 0
+    assert bool(first.get("adaptive_reprisal_heroic_intervention_use", False)) is True
+
+    gsc_player.set_next_optional_decision("ADAPTIVE_REPRISAL_HEROIC_INTERVENTION", True)
+    second = gsc_player.apply_stratagem_cp_cost(strat, target_unit=target)
+    assert int(second.get("cost", -1)) == 1
+    assert bool(second.get("adaptive_reprisal_heroic_intervention_use", False)) is False
+
+    game.turn = 2
+    preview_next_turn = gsc_player.preview_stratagem_cp_cost(
+        strat,
+        target_unit=target,
+        assume_optional_discounts=True,
+    )
+    assert int(preview_next_turn.get("cost", -1)) == 0

@@ -815,6 +815,7 @@ class Enhancement:
             is_spectacle_of_spite = False
         ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
         gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+        tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
         try:
             is_grand_coven = bool(ts_mgr and ts_mgr.is_grand_coven())
         except Exception:
@@ -827,6 +828,14 @@ class Enhancement:
             is_host_of_ascension = bool(gsc_mgr and gsc_mgr.is_host_of_ascension())
         except Exception:
             is_host_of_ascension = False
+        try:
+            is_brood_brother_auxilia = bool(gsc_mgr and gsc_mgr.is_brood_brother_auxilia())
+        except Exception:
+            is_brood_brother_auxilia = False
+        try:
+            is_assimilation_swarm = bool(tyr_mgr and tyr_mgr.is_assimilation_swarm())
+        except Exception:
+            is_assimilation_swarm = False
 
         bearer = None
         bearer_id = ""
@@ -917,6 +926,41 @@ class Enhancement:
             if not is_host_of_ascension:
                 return
             unit.special_rules["enhancement_assassination_edict"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "adaptive reprisal" or enh_id == "000009084003":
+            if not is_brood_brother_auxilia:
+                return
+            unit.special_rules["enhancement_adaptive_reprisal"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                aura_range = float(params.get("range", 9.0) or 9.0)
+            except Exception:
+                aura_range = 9.0
+            if aura_range <= 0.0:
+                aura_range = 9.0
+            usage_key = str(
+                params.get("once_per_turn_key", "ADAPTIVE_REPRISAL_HEROIC_INTERVENTION")
+                or "ADAPTIVE_REPRISAL_HEROIC_INTERVENTION"
+            ).strip().upper()
+            if not usage_key:
+                usage_key = "ADAPTIVE_REPRISAL_HEROIC_INTERVENTION"
+            unit.special_rules["enhancement_adaptive_reprisal_range"] = float(aura_range)
+            unit.special_rules["enhancement_adaptive_reprisal_usage_key"] = usage_key
+            unit.special_rules["enhancement_adaptive_reprisal_source"] = "Adaptive Reprisal"
+            unit.special_rules["enhancement_adaptive_reprisal_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
+            configured_stratagems = tuple(
+                str(v or "").strip().upper()
+                for v in tuple(params.get("stratagem_names", ("HEROIC INTERVENTION",)) or ("HEROIC INTERVENTION",))
+                if str(v or "").strip()
+            )
+            if not configured_stratagems:
+                configured_stratagems = ("HEROIC INTERVENTION",)
+            unit.special_rules["enhancement_adaptive_reprisal_stratagems"] = configured_stratagems
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
@@ -7952,6 +7996,41 @@ class Enhancement:
         if name == "synaptic linchpin" or enh_id == "000008348004":
             unit.special_rules["enhancement_synaptic_linchpin"] = True
             unit.special_rules["enhancement_synaptic_linchpin_range"] = 9.0
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "instinctive defence" or enh_id == "000008412003":
+            if not is_assimilation_swarm:
+                return
+            unit.special_rules["enhancement_instinctive_defence"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                harvester_range = float(params.get("harvester_range", 6.0) or 6.0)
+            except Exception:
+                harvester_range = 6.0
+            if harvester_range <= 0.0:
+                harvester_range = 6.0
+            source_name = str(getattr(desc, "name", "") or "Instinctive Defence").strip() or "Instinctive Defence"
+            configured_stratagems = tuple(
+                str(v or "").strip().upper()
+                for v in tuple(params.get("stratagem_names", ("HEROIC INTERVENTION",)) or ("HEROIC INTERVENTION",))
+                if str(v or "").strip()
+            )
+            if not configured_stratagems:
+                configured_stratagems = ("HEROIC INTERVENTION",)
+            unit.special_rules["enhancement_instinctive_defence_source"] = source_name
+            unit.special_rules["enhancement_instinctive_defence_harvester_range"] = float(harvester_range)
+            unit.special_rules["enhancement_instinctive_defence_required_keyword"] = str(
+                params.get("required_friendly_keyword", "HARVESTER") or "HARVESTER"
+            ).strip().upper() or "HARVESTER"
+            unit.special_rules["enhancement_instinctive_defence_stratagems"] = configured_stratagems
+            unit.special_rules["enhancement_instinctive_defence_grants_fights_first"] = bool(
+                params.get("grants_fights_first", True)
+            )
+            unit.special_rules["enhancement_instinctive_defence_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

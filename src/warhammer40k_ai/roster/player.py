@@ -1750,6 +1750,115 @@ class Player:
                 return True
         return False
 
+    def _target_unit_can_use_instinctive_defence_heroic_intervention(self, target_unit) -> bool:
+        if target_unit is None:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        fn = getattr(target_unit, "can_use_instinctive_defence_heroic_intervention", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name="HEROIC INTERVENTION"))
+        return False
+
+    def _adaptive_reprisal_discount_context(self, target_unit, *, stratagem_name: str = "") -> dict | None:
+        if target_unit is None:
+            return None
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return None
+        stratagem_key = self._normalize_stratagem_name_key(stratagem_name)
+        if stratagem_key != "HEROIC INTERVENTION":
+            return None
+        if not self._unit_has_keyword(target_unit, "GENESTEALER CULTS"):
+            return None
+        get_target_root = getattr(target_unit, "get_attached_unit_root", None)
+        target_root = get_target_root() if callable(get_target_root) else target_unit
+        if target_root is None:
+            return None
+        if not self._unit_is_alive_or_unknown(target_root):
+            return None
+        army = self.get_army()
+        if army is None:
+            return None
+
+        from warhammer40k_ai.utility.aura_utils import model_within_range_of_unit
+
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_adaptive_reprisal")):
+                continue
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            source_root = get_root() if callable(get_root) else unit
+            if source_root is None:
+                continue
+            if not self._unit_is_alive_or_unknown(source_root):
+                continue
+            requires_bearer_on_battlefield = bool(
+                sr.get("enhancement_adaptive_reprisal_requires_bearer_on_battlefield", True)
+            )
+            if requires_bearer_on_battlefield and not self._unit_is_on_battlefield(source_root):
+                continue
+            usage_key = str(
+                sr.get("enhancement_adaptive_reprisal_usage_key", "") or "ADAPTIVE_REPRISAL_HEROIC_INTERVENTION"
+            ).strip().upper()
+            if not usage_key:
+                usage_key = "ADAPTIVE_REPRISAL_HEROIC_INTERVENTION"
+            if self._ability_used_this_turn(usage_key):
+                continue
+            configured_names = {
+                self._normalize_stratagem_name_key(value)
+                for value in list(sr.get("enhancement_adaptive_reprisal_stratagems", ()) or ())
+                if self._normalize_stratagem_name_key(value)
+            }
+            if configured_names and stratagem_key not in configured_names:
+                continue
+            get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                get_bearer_root = getattr(source_root, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer_root() if callable(get_bearer_root) else None
+            if bearer is None:
+                continue
+            alive_attr = getattr(bearer, "is_alive", True)
+            bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not bearer_alive:
+                continue
+            try:
+                aura_range = float(sr.get("enhancement_adaptive_reprisal_range", 9.0) or 9.0)
+            except (TypeError, ValueError):
+                aura_range = 9.0
+            if aura_range <= 0.0:
+                aura_range = 9.0
+            if not model_within_range_of_unit(bearer, target_root, aura_range, use_attached_aggregate=True):
+                continue
+            source_name = str(sr.get("enhancement_adaptive_reprisal_source", "") or "Adaptive Reprisal").strip()
+            if not source_name:
+                source_name = "Adaptive Reprisal"
+            return {
+                "source_unit": source_root,
+                "source": source_name,
+                "usage_key": usage_key,
+                "range": float(aura_range),
+            }
+        return None
+
+    def _target_unit_can_use_adaptive_reprisal_heroic_intervention(self, target_unit, *, stratagem_name: str = "") -> bool:
+        return self._adaptive_reprisal_discount_context(target_unit, stratagem_name=stratagem_name) is not None
+
+    def _target_unit_can_use_pheromone_trail_rapid_ingress(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        fn = getattr(target_unit, "can_use_pheromone_trail_rapid_ingress", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
     def _preview_faultless_opportunist_discount(self, *, stratagem=None, target_unit=None) -> int:
         if stratagem is None or target_unit is None:
             return 0
@@ -1898,6 +2007,39 @@ class Player:
         if name != "heroic intervention":
             return 0
         if not self._target_unit_can_use_empyric_suffusion_heroic_intervention(target_unit):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_instinctive_defence_heroic_intervention_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u != "HEROIC INTERVENTION":
+            return 0
+        if not self._target_unit_can_use_instinctive_defence_heroic_intervention(target_unit):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_adaptive_reprisal_heroic_intervention_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        stratagem_key = self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or "")
+        if stratagem_key != "HEROIC INTERVENTION":
+            return 0
+        if self._adaptive_reprisal_discount_context(target_unit, stratagem_name=stratagem_key) is None:
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_pheromone_trail_rapid_ingress_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u != "RAPID INGRESS":
+            return 0
+        if not self._target_unit_can_use_pheromone_trail_rapid_ingress(target_unit, stratagem_name=name_u):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -2207,6 +2349,59 @@ class Player:
                 reasons.append("Empyric Suffusion: Heroic Intervention for 0CP.")
                 return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
+        instinctive = self._preview_instinctive_defence_heroic_intervention_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if instinctive:
+            ability_name = "Instinctive Defence"
+            try:
+                get_rule = getattr(target_unit, "get_instinctive_defence_heroic_intervention_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "INSTINCTIVE_DEFENCE_HEROIC_INTERVENTION",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Heroic Intervention for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        adaptive_reprisal = self._preview_adaptive_reprisal_heroic_intervention_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if adaptive_reprisal:
+            context = self._adaptive_reprisal_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            ability_name = str(context.get("source", "") or "Adaptive Reprisal").strip() or "Adaptive Reprisal"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "ADAPTIVE_REPRISAL_HEROIC_INTERVENTION",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Heroic Intervention for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
         prophetic = self._preview_prophetic_sentinels_discount(
             stratagem=stratagem,
             target_unit=target_unit,
@@ -2483,6 +2678,34 @@ class Player:
             ability_name = str(context.get("source", "") or "Gift of the Prescient").strip() or "Gift of the Prescient"
             reasons.append(f"{ability_name}: Rapid Ingress for 0CP.")
             return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        pheromone_trail = self._preview_pheromone_trail_rapid_ingress_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if pheromone_trail:
+            ability_name = "Pheromone Trail"
+            try:
+                get_rule = getattr(target_unit, "get_pheromone_trail_rapid_ingress_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "PHEROMONE_TRAIL_RAPID_INGRESS",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Rapid Ingress for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         if grimnars_mark:
             discount = base
@@ -2839,6 +3062,106 @@ class Player:
                     "reasons": ["Empyric Suffusion: Heroic Intervention for 0CP."],
                     "increase": increase,
                     "increase_reasons": increase_reasons,
+                }
+        instinctive = self._preview_instinctive_defence_heroic_intervention_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if instinctive and target_unit is not None:
+            ability_name = "Instinctive Defence"
+            try:
+                get_rule = getattr(target_unit, "get_instinctive_defence_heroic_intervention_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("INSTINCTIVE_DEFENCE_HEROIC_INTERVENTION", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Heroic Intervention for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "instinctive_defence_heroic_intervention_use": True,
+                    "instinctive_defence_heroic_intervention_source": ability_name,
+                }
+        adaptive_reprisal = self._preview_adaptive_reprisal_heroic_intervention_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if adaptive_reprisal and target_unit is not None:
+            context = self._adaptive_reprisal_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            ability_name = str(context.get("source", "") or "Adaptive Reprisal").strip() or "Adaptive Reprisal"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("ADAPTIVE_REPRISAL_HEROIC_INTERVENTION", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                usage_key = str(
+                    context.get("usage_key", "") or "ADAPTIVE_REPRISAL_HEROIC_INTERVENTION"
+                ).strip().upper()
+                if usage_key:
+                    self._mark_ability_used_turn(usage_key)
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Heroic Intervention for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "adaptive_reprisal_heroic_intervention_use": True,
+                    "adaptive_reprisal_heroic_intervention_source": ability_name,
                 }
         prophetic = self._preview_prophetic_sentinels_discount(
             stratagem=stratagem,
@@ -3540,6 +3863,66 @@ class Player:
                 "gift_of_the_prescient_deep_strike_min_distance": float(deep_strike_min_distance),
                 "gift_of_the_prescient_expires_phase": expires_phase,
             }
+
+        pheromone_trail = self._preview_pheromone_trail_rapid_ingress_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if pheromone_trail and target_unit is not None:
+            ability_name = "Pheromone Trail"
+            try:
+                get_rule = getattr(target_unit, "get_pheromone_trail_rapid_ingress_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("PHEROMONE_TRAIL_RAPID_INGRESS", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                try:
+                    mark_used = getattr(target_unit, "mark_pheromone_trail_used", None)
+                    if callable(mark_used):
+                        mark_used(
+                            self.game,
+                            source=ability_name,
+                            stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                        )
+                except Exception:
+                    pass
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Rapid Ingress for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "pheromone_trail_rapid_ingress_use": True,
+                    "pheromone_trail_rapid_ingress_source": ability_name,
+                }
 
         grimnars_mark = self._preview_grimnars_mark_discount(
             stratagem=stratagem,
