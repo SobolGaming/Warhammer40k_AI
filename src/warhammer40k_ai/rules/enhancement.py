@@ -670,6 +670,10 @@ class Enhancement:
         except Exception:
             is_retaliation_cadre = False
         try:
+            is_auxiliary_cadre = bool(tau_mgr and tau_mgr.is_auxiliary_cadre())
+        except Exception:
+            is_auxiliary_cadre = False
+        try:
             is_awakened_dynasty = bool(ne_mgr and ne_mgr.detachment_matches("Awakened Dynasty"))
         except Exception:
             is_awakened_dynasty = False
@@ -779,6 +783,10 @@ class Enhancement:
             is_warpbane_task_force = bool(gk_mgr and gk_mgr.is_warpbane_task_force())
         except Exception:
             is_warpbane_task_force = False
+        try:
+            is_augurium_task_force = bool(gk_mgr and gk_mgr.is_augurium_task_force())
+        except Exception:
+            is_augurium_task_force = False
         ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
         try:
             is_veiled_blade_elimination_force = bool(ia_mgr and ia_mgr.is_veiled_blade_elimination_force())
@@ -2081,6 +2089,41 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_priority_drop_beacon_bearer_model_id"] = bearer_id
+
+        if name == "transponder lock module" or enh_id == "000009839005":
+            if not is_auxiliary_cadre:
+                return
+            unit.special_rules["enhancement_transponder_lock_module"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            setup_round_bonus = _coerce_int(
+                params.get("strategic_reserves_setup_round_bonus", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_transponder_lock_module_round_bonus"] = int(
+                max(0, int(setup_round_bonus))
+            )
+            unit.special_rules["enhancement_transponder_lock_module_requires_deep_strike"] = bool(
+                params.get("requires_deep_strike", True)
+            )
+            spotter_range = _coerce_float(params.get("turn_one_spotter_range", 12.0) or 12.0, default=12.0)
+            unit.special_rules["enhancement_transponder_lock_module_turn_one_spotter_range"] = float(
+                max(0.0, float(spotter_range))
+            )
+            spotter_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("turn_one_spotter_keywords_any", ("KROOT", "VESPID STINGWINGS")) or ())
+                if str(v or "").strip()
+            ]
+            if not spotter_keywords:
+                spotter_keywords = ["KROOT", "VESPID STINGWINGS"]
+            unit.special_rules["enhancement_transponder_lock_module_turn_one_spotter_keywords_any"] = list(
+                dict.fromkeys(spotter_keywords)
+            )
+            unit.special_rules["enhancement_transponder_lock_module_source"] = "Transponder Lock Module"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_transponder_lock_module_bearer_model_id"] = bearer_id
 
         if name == "shroud projector" or enh_id == "000009801004":
             if not is_bridgehead_strike:
@@ -9545,6 +9588,28 @@ class Enhancement:
             unit.special_rules["enhancement_paragon_of_sanctity_once_key"] = "paragon_of_sanctity"
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "a foot in the future" or enh_id == "000010364004":
+            if not is_augurium_task_force:
+                return
+            unit.special_rules["enhancement_a_foot_in_the_future"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            move_roll = str(params.get("move_roll", "D6") or "D6").strip().upper()
+            if not move_roll:
+                move_roll = "D6"
+            unit.special_rules["enhancement_a_foot_in_the_future_move_roll"] = move_roll
+            unit.special_rules["enhancement_a_foot_in_the_future_no_charge_this_turn"] = bool(
+                params.get("no_charge_this_turn", True)
+            )
+            unit.special_rules["enhancement_a_foot_in_the_future_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_a_foot_in_the_future_optional"] = bool(params.get("optional", True))
+            unit.special_rules["enhancement_a_foot_in_the_future_source"] = "A Foot in the Future"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_a_foot_in_the_future_bearer_model_id"] = bearer_id
 
         invalidate_fn = getattr(unit, "_invalidate_ability_cache", None)
         if callable(invalidate_fn):

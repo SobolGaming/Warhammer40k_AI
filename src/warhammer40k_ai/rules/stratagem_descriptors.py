@@ -1256,6 +1256,23 @@ _AUGURIUM_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AUGURIUM_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_BROTHERHOOD_STRIKE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010349003": StratagemToolDescriptor(
+        stratagem_id="000010349003",
+        name="Combat Manifestation",
+        timing="movement_phase_reinforcements_step",
+        target="grey_knights_unit_arriving_from_deep_strike",
+        duration="this_turn_and_phase",
+        effect="deep_strike_min_distance_override_with_no_charge",
+        cp_cost=1,
+        effect_params={"min_distance": 6, "distance_type": "horizontal", "cannot_charge_this_turn": True},
+    ),
+}
+
+_BROTHERHOOD_STRIKE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _BROTHERHOOD_STRIKE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010152002": StratagemToolDescriptor(
         stratagem_id="000010152002",
@@ -3177,6 +3194,27 @@ _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_IMPERIALIS_FLEET_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009139003": StratagemToolDescriptor(
+        stratagem_id="000009139003",
+        name="Masters of the Void",
+        timing="movement_phase_reinforcements_step",
+        target="voidfarers_character_unit",
+        duration="until_end_of_phase",
+        effect="strategic_reserves_enemy_deployment_zone_override",
+        cp_cost=1,
+        effect_params={
+            "applies_to_keyword": "AGENTS OF THE IMPERIUM",
+            "applies_to_arrival_type": "strategic_reserves",
+            "allow_enemy_deployment_zone": True,
+        },
+    ),
+}
+
+_IMPERIALIS_FLEET_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _IMPERIALIS_FLEET_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009758002": StratagemToolDescriptor(
         stratagem_id="000009758002",
@@ -3313,6 +3351,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _AUGURIUM_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _BROTHERHOOD_STRIKE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3394,6 +3435,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _IMPERIALIS_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3419,6 +3463,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ARMY_OF_FAITH_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _AUGURIUM_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _BROTHERHOOD_STRIKE_STRATAGEM_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
@@ -3446,5 +3491,6 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
+        or _IMPERIALIS_FLEET_STRATAGEM_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME.get(key)
     )

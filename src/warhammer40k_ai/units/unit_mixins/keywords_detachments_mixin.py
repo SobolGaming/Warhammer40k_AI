@@ -4977,6 +4977,27 @@ class KeywordsDetachmentsMixin:
                         total_bonus += int(sr.get("enhancement_priority_drop_beacon_round_bonus", 1) or 0)
                     except Exception:
                         pass
+        if isinstance(sr, dict) and bool(sr.get("enhancement_transponder_lock_module")):
+            try:
+                started = bool(getattr(root, "_started_in_reserves", False))
+            except Exception:
+                started = False
+            try:
+                in_strategic = bool(getattr(root, "is_in_strategic_reserves", lambda: False)())
+            except Exception:
+                in_strategic = False
+            if started and in_strategic:
+                active = True
+                if bool(sr.get("enhancement_transponder_lock_module_requires_deep_strike", True)):
+                    try:
+                        active = bool(getattr(root, "has_deep_strike", lambda: False)())
+                    except Exception:
+                        active = False
+                if active:
+                    try:
+                        total_bonus += int(sr.get("enhancement_transponder_lock_module_round_bonus", 1) or 0)
+                    except Exception:
+                        pass
 
         try:
             rule = root.get_strategic_reserves_round_bonus_rule()

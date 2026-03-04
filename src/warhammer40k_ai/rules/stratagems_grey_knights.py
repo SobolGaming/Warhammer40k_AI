@@ -65,6 +65,11 @@ class GreyKnightsStratagemMixin:
         checker = getattr(mgr, "is_augurium_task_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_brotherhood_strike(self) -> bool:
+        mgr = self._get_gk_mgr()
+        checker = getattr(mgr, "is_brotherhood_strike", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_gk_unit(self, unit: Any) -> bool:
         root = self._gk_root(unit)
         if root is None:
@@ -351,6 +356,43 @@ class GreyKnightsStratagemMixin:
                 continue
             candidates.append(root)
         return sorted(candidates, key=self._gk_sort_key)
+
+    def _brotherhood_strike_combat_manifestation_candidates(self) -> list[Any]:
+        if not self._is_brotherhood_strike():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gk_owned_by_player(root, self.player):
+                continue
+            if not self._gk_is_alive(root):
+                continue
+            if not self._is_gk_unit(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            in_reserves = getattr(root, "is_in_reserves", None)
+            if not callable(in_reserves) or not bool(in_reserves()):
+                continue
+            reserve_status = str(getattr(root, "reserve_status", "") or "").strip().lower()
+            if reserve_status not in {"reserves", "strategic_reserves"}:
+                continue
+            if not self._gk_has_deep_strike(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gk_sort_key)
 
     def _warpbane_aegis_eternal_candidates(self, target_units: Any) -> list[Any]:
         candidates: list[Any] = []
@@ -845,8 +887,47 @@ class GreyKnightsStratagemMixin:
             if changed:
                 root.special_rules = sr
 
+    def _cleanup_brotherhood_strike_phase_end_effects(self, *, phase: Any) -> None:
+        if not self._is_brotherhood_strike():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gk_root(unit)
+            if root is None:
+                continue
+            uid = self._gk_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            for key in (
+                "combat_manifestation_deep_strike_min_distance",
+                "combat_manifestation_deep_strike_turn_owner",
+                "combat_manifestation_deep_strike_turn",
+                "combat_manifestation_deep_strike_expires_phase",
+                "combat_manifestation_source",
+            ):
+                if key in sr:
+                    sr.pop(key, None)
+                    changed = True
+            if changed:
+                root.special_rules = sr
+
     def _use_grey_knights_warpbane_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "COMBAT MANIFESTATION":
+            return self._use_brotherhood_strike_combat_manifestation(stratagem, **kwargs)
         if name_u == "MIRAGE OF ECHOES":
             return self._use_augurium_mirage_of_echoes(stratagem, **kwargs)
         if name_u == "REDIRECTED STRIKE":
@@ -999,6 +1080,76 @@ class GreyKnightsStratagemMixin:
         self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: MIRAGE OF ECHOES: %s entered Strategic Reserves.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_brotherhood_strike_combat_manifestation(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_brotherhood_strike():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: COMBAT MANIFESTATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: COMBAT MANIFESTATION: not your turn")
+            return False
+
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: COMBAT MANIFESTATION: no target unit provided")
+            return False
+        root = self._gk_root(unit)
+        if root is None:
+            return False
+
+        eligible = candidates or self._brotherhood_strike_combat_manifestation_candidates()
+        if eligible and root not in eligible:
+            logger.error("ERROR: COMBAT MANIFESTATION: target unit is not eligible")
+            return False
+        if not self._gk_owned_by_player(root, self.player):
+            logger.error("ERROR: COMBAT MANIFESTATION: target unit is not yours")
+            return False
+        if not self._gk_is_alive(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: COMBAT MANIFESTATION: target cannot be selected")
+            return False
+        if not self._is_gk_unit(root):
+            logger.error("ERROR: COMBAT MANIFESTATION: target must be GREY KNIGHTS")
+            return False
+        in_reserves = getattr(root, "is_in_reserves", None)
+        if not callable(in_reserves) or not bool(in_reserves()):
+            logger.error("ERROR: COMBAT MANIFESTATION: target is not in Reserves")
+            return False
+        reserve_status = str(getattr(root, "reserve_status", "") or "").strip().lower()
+        if reserve_status not in {"reserves", "strategic_reserves"}:
+            logger.error("ERROR: COMBAT MANIFESTATION: target is not arriving from Reserves")
+            return False
+        if not self._gk_has_deep_strike(root):
+            logger.error("ERROR: COMBAT MANIFESTATION: target lacks Deep Strike")
+            return False
+        if not self._warpbane_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["combat_manifestation_deep_strike_min_distance"] = 6.0
+        sr["combat_manifestation_deep_strike_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["combat_manifestation_deep_strike_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["combat_manifestation_deep_strike_expires_phase"] = "MOVEMENT_PHASE"
+        sr["combat_manifestation_no_charge_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["combat_manifestation_no_charge_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["combat_manifestation_source"] = str(getattr(stratagem, "name", "COMBAT MANIFESTATION") or "COMBAT MANIFESTATION")
+        root.special_rules = sr
+        self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: COMBAT MANIFESTATION: %s can be set up more than 6\" away and cannot charge this turn.",
             getattr(root, "name", "Unit"),
         )
         return True

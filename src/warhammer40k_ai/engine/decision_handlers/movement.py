@@ -73,6 +73,164 @@ def _parse_xy_point(value: object) -> tuple[float, float] | None:
         return None
 
 
+def _masters_of_the_void_enemy_dz_override_active(unit: object, game: object) -> bool:
+    if unit is None or game is None:
+        return False
+    get_root = getattr(unit, "get_attached_unit_root", None)
+    root = get_root() if callable(get_root) else unit
+    if root is None:
+        return False
+    sr = getattr(root, "special_rules", None)
+    if not isinstance(sr, dict):
+        return False
+    if not bool(sr.get("imperial_agents_masters_of_the_void_enemy_dz_override_active")):
+        return False
+
+    owner_id = str(sr.get("imperial_agents_masters_of_the_void_enemy_dz_override_turn_owner", "") or "")
+    turn_value = sr.get("imperial_agents_masters_of_the_void_enemy_dz_override_turn", 0)
+    try:
+        effect_turn = int(turn_value or 0)
+    except (TypeError, ValueError):
+        effect_turn = 0
+    try:
+        current_turn = int(getattr(game, "turn", 0) or 0)
+    except (TypeError, ValueError):
+        current_turn = 0
+    if effect_turn and current_turn and effect_turn != current_turn:
+        return False
+
+    current_player = getattr(game, "get_current_player", lambda: None)()
+    current_owner_id = str(getattr(current_player, "id", "") or "")
+    if owner_id and current_owner_id and owner_id != current_owner_id:
+        return False
+
+    expires_phase = str(
+        sr.get("imperial_agents_masters_of_the_void_enemy_dz_override_expires_phase", "") or ""
+    ).strip().upper()
+    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+    if expires_phase and phase_name and expires_phase != phase_name:
+        return False
+    return True
+
+
+def _transponder_lock_module_turn_one_spotter_requirement_satisfied(
+    unit: object,
+    prospective: list[tuple[float, float, float, float]],
+    *,
+    pending_deep_strike: bool,
+    game: object,
+) -> bool:
+    if unit is None or game is None or not bool(pending_deep_strike):
+        return True
+    get_root = getattr(unit, "get_attached_unit_root", None)
+    root = get_root() if callable(get_root) else unit
+    if root is None:
+        return True
+    sr = getattr(root, "special_rules", None)
+    if not isinstance(sr, dict) or not bool(sr.get("enhancement_transponder_lock_module")):
+        return True
+    try:
+        current_turn = int(getattr(game, "turn", 0) or 0)
+    except (TypeError, ValueError):
+        current_turn = 0
+    if current_turn != 1:
+        return True
+
+    try:
+        max_range = float(sr.get("enhancement_transponder_lock_module_turn_one_spotter_range", 12.0) or 12.0)
+    except (TypeError, ValueError):
+        max_range = 12.0
+    if max_range <= 0.0:
+        return False
+
+    required_keywords = [
+        str(v or "").strip().upper()
+        for v in list(
+            sr.get(
+                "enhancement_transponder_lock_module_turn_one_spotter_keywords_any",
+                ("KROOT", "VESPID STINGWINGS"),
+            )
+            or ()
+        )
+        if str(v or "").strip()
+    ]
+    if not required_keywords:
+        required_keywords = ["KROOT", "VESPID STINGWINGS"]
+
+    army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+    game_map = getattr(game, "map", None)
+    if army is None or game_map is None:
+        return False
+
+    from ...utility.aura_utils import distance_between_bases_3d
+
+    def _unit_has_required_keyword(candidate_unit: object) -> bool:
+        if candidate_unit is None:
+            return False
+        has_any_keyword = getattr(candidate_unit, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            for keyword in required_keywords:
+                if bool(has_any_keyword(keyword)):
+                    return True
+        pool: list[str] = []
+        pool.extend([str(v or "").strip().upper() for v in list(getattr(candidate_unit, "keywords", []) or [])])
+        pool.extend([str(v or "").strip().upper() for v in list(getattr(candidate_unit, "faction_keywords", []) or [])])
+        return any(keyword in pool for keyword in required_keywords)
+
+    friendly_units: list[object] = []
+    seen_ids: set[str] = set()
+    for candidate in list(getattr(game_map, "units", []) or []):
+        if candidate is None:
+            continue
+        get_candidate_root = getattr(candidate, "get_attached_unit_root", None)
+        candidate_root = get_candidate_root() if callable(get_candidate_root) else candidate
+        if candidate_root is None:
+            continue
+        candidate_id = str(get_entity_id(candidate_root) or "")
+        if candidate_id and candidate_id in seen_ids:
+            continue
+        if candidate_id:
+            seen_ids.add(candidate_id)
+        if candidate_root is root:
+            continue
+        candidate_army = candidate_root.get_parent_army() if hasattr(candidate_root, "get_parent_army") else None
+        if candidate_army is not army:
+            continue
+        is_alive_fn = getattr(candidate_root, "is_alive", None)
+        alive = bool(is_alive_fn()) if callable(is_alive_fn) else bool(getattr(candidate_root, "is_alive", True))
+        if not alive:
+            continue
+        if not bool(getattr(candidate_root, "deployed", False)):
+            continue
+        if str(getattr(candidate_root, "reserve_status", "deployed") or "deployed") != "deployed":
+            continue
+        if bool(getattr(candidate_root, "is_embarked", False)) or getattr(candidate_root, "embarked_in", None) is not None:
+            continue
+        if not _unit_has_required_keyword(candidate_root):
+            continue
+        friendly_units.append(candidate_root)
+
+    if not friendly_units:
+        return False
+
+    for idx, (x, y, z, facing) in enumerate(prospective):
+        if idx >= len(getattr(root, "models", []) or []):
+            break
+        try:
+            base = root._create_potential_base(x, y, z, facing, model=root.models[idx])
+        except Exception:
+            continue
+        for spotter in list(friendly_units or []):
+            for model in list(getattr(spotter, "models", []) or []):
+                model_alive_attr = getattr(model, "is_alive", True)
+                model_alive = bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr)
+                if not model_alive:
+                    continue
+                if float(distance_between_bases_3d(base, model.model_base)) <= float(max_range) + 1e-6:
+                    return True
+    return False
+
+
 def _fleet_commander_effect_roll(token: object) -> int:
     text = str(token or "D3").strip().upper() or "D3"
     if text == "D3":
@@ -1222,7 +1380,13 @@ def _evaluate_reserves_arrival_positions(
                         continue
                 except Exception:
                     pass
-            if effective_turn == 2 and player_id and hasattr(game, "is_position_in_enemy_deployment_zone"):
+            allow_enemy_dz_turn2 = _masters_of_the_void_enemy_dz_override_active(unit, game)
+            if (
+                effective_turn == 2
+                and player_id
+                and not allow_enemy_dz_turn2
+                and hasattr(game, "is_position_in_enemy_deployment_zone")
+            ):
                 any_in_enemy_dz = False
                 for (_mx, _my, _mz, _f) in prospective:
                     try:
@@ -1395,6 +1559,17 @@ def _evaluate_reserves_arrival_positions(
         pending_deep_strike = bool(deep_strike_ok and not strategic_ok and tunnel_marker is None)
     else:
         pending_deep_strike = bool(tunnel_marker is None)
+    if not _transponder_lock_module_turn_one_spotter_requirement_satisfied(
+        unit,
+        list(prospective),
+        pending_deep_strike=pending_deep_strike,
+        game=game,
+    ):
+        return {
+            "errors": [
+                "Transponder Lock Module: first-turn Deep Strike setup must be within 12\" of a friendly KROOT or VESPID STINGWINGS unit."
+            ]
+        }
 
     return {
         "errors": errors,

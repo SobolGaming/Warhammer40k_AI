@@ -267,6 +267,7 @@ Movement:
 - cloudstrider_deep_strike_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="cloudstrider"`, `unit_id`, `ability_name`)
 - malefic_surge_movement_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="movement"`)
 - decoy_targets_dialog: CHOOSE_QUARRY {target_model_id | skip} (context `ability="decoy_targets"`, `ability_name`, `phase="Movement phase"`, `source_unit_id`, `source_model_id`, `max_uses`, `per_battle_round_limit`, `optional=true`)
+- a_foot_in_the_future_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="a_foot_in_the_future"`, `ability_name="A Foot in the Future"`, `phase="Movement phase"`, `source_unit_id`, `target_unit_id`, `candidate_unit_ids[]`, `move_roll`, `no_charge_this_turn`, `turn_owner_id`, `turn`, `optional=true`)
 - vowed_target_dialog: CHOOSE_QUARRY {mode, objective_ids[1+], signature} (context `ability="vowed_target_selection"`, `ability_name="Vowed Target"`, `phase="Movement phase"`, `army_id`, `player_id`, `battle_round`, `candidate_signatures`)
 - movement_phase_wound_bonus_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="movement_phase_visible_wound_bonus"`, `unit_id`, `model_id`, `range`, `keyword`, `bonus`)
 - movement_phase_hit_bonus_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="movement_phase_visible_hit_bonus"`, `unit_id`, `model_id`, `range`, `keyword`, `bonus`)
@@ -317,6 +318,7 @@ Lethal Surge uses a `CONFIRM_YES_NO` step and queues `MOVE_UNIT` with
 Fire and Fade and Reactive Reposition queue `MOVE_UNIT` with `movement_type="reactive"` and
 `reactive_move_kind="fire_and_fade"` / `reactive_move_kind="reactive_reposition"`.
 Tactical Acumen queues `MOVE_UNIT` with `movement_type="reactive"` and `reactive_move_kind="tactical_acumen"`.
+A Foot in the Future queues `MOVE_UNIT` with `movement_type="reactive"` and `reactive_move_kind="a_foot_in_the_future"` (max distance from the recorded D6 roll).
 Gleaming Pinions uses `CONFIRM_YES_NO` then queues `MOVE_UNIT` with `movement_type="gleaming_pinions"` and `reactive_move_kind="gleaming_pinions"`.
 Martial Philosopher uses `CONFIRM_YES_NO` then queues `MOVE_UNIT` with `movement_type="martial_philosopher"` and `reactive_move_kind="martial_philosopher"`.
 Setup reactive shoot/charge uses `DECLARE_SHOTS` with `out_of_phase=true` and `force_target_unit_id`.

@@ -123,6 +123,11 @@ class ImperialAgentsStratagemMixin:
         checker = getattr(mgr, "is_veiled_blade_elimination_force", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_imperialis_fleet(self) -> bool:
+        mgr = self._ia_detachment_mgr()
+        checker = getattr(mgr, "is_imperialis_fleet", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _ia_is_agents_unit(self, unit: Any) -> bool:
         root = self._ia_root(unit)
         if root is None:
@@ -146,6 +151,14 @@ class ImperialAgentsStratagemMixin:
         if not self._ia_is_agents_unit(root):
             return False
         return self._ia_has_keyword(root, "CHARACTER")
+
+    def _ia_is_voidfarers_character_unit(self, unit: Any) -> bool:
+        root = self._ia_root(unit)
+        if root is None:
+            return False
+        if not self._ia_is_agents_character_unit(root):
+            return False
+        return self._ia_has_keyword(root, "VOIDFARERS")
 
     @staticmethod
     def _ia_selected_to_shoot_this_phase(unit: Any) -> bool:
@@ -434,6 +447,35 @@ class ImperialAgentsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._ia_sort_key)
 
+    def _ia_masters_of_the_void_candidates(self) -> list[Any]:
+        if not self._is_imperialis_fleet():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ia_root(unit)
+            if root is None:
+                continue
+            uid = self._ia_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ia_owned_by_player(root, self.player):
+                continue
+            if not self._ia_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._ia_is_voidfarers_character_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ia_sort_key)
+
     def _queue_imperial_agents_veiled_blade_targets_selected_reaction(
         self,
         *,
@@ -647,7 +689,7 @@ class ImperialAgentsStratagemMixin:
 
     def _cleanup_imperial_agents_veiled_blade_phase_end_effects(self, *, phase: Any) -> None:
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_key not in {"CHARGE_PHASE", "SHOOTING_PHASE", "FIGHT_PHASE"}:
+        if phase_key not in {"MOVEMENT_PHASE", "CHARGE_PHASE", "SHOOTING_PHASE", "FIGHT_PHASE"}:
             return
         game = getattr(self, "game", None)
         if game is None:
@@ -776,8 +818,30 @@ class ImperialAgentsStratagemMixin:
                         ):
                             sr.pop(key, None)
                         changed = True
+                if phase_key == "MOVEMENT_PHASE" and bool(sr.get("imperial_agents_masters_of_the_void_enemy_dz_override_active")):
+                    exp = str(sr.get("imperial_agents_masters_of_the_void_enemy_dz_override_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_key:
+                        for key in (
+                            "imperial_agents_masters_of_the_void_enemy_dz_override_active",
+                            "imperial_agents_masters_of_the_void_enemy_dz_override_turn_owner",
+                            "imperial_agents_masters_of_the_void_enemy_dz_override_turn",
+                            "imperial_agents_masters_of_the_void_enemy_dz_override_expires_phase",
+                            "imperial_agents_masters_of_the_void_enemy_dz_override_source",
+                        ):
+                            sr.pop(key, None)
+                        changed = True
                 if changed:
                     root.special_rules = sr
+
+    def _use_imperial_agents_imperialis_fleet_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_imperialis_fleet():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "MASTERS OF THE VOID":
+            return self._use_imperial_agents_masters_of_the_void(stratagem, **kwargs)
+        return None
 
     def _use_imperial_agents_veiled_blade_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
@@ -799,6 +863,68 @@ class ImperialAgentsStratagemMixin:
         if name_n == "WILL-SAPPING SALVO":
             return self._use_imperial_agents_will_sapping_salvo(stratagem, **kwargs)
         return None
+
+    def _use_imperial_agents_masters_of_the_void(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_imperialis_fleet():
+            return False
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: MASTERS OF THE VOID: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: MASTERS OF THE VOID: not your turn")
+            return False
+
+        candidates = self._ia_masters_of_the_void_candidates()
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: MASTERS OF THE VOID: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: MASTERS OF THE VOID: target must be an eligible VOIDFARERS CHARACTER unit")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return False
+        turn_now = int(getattr(game, "turn", 0) or 0)
+        owner_id = str(getattr(self.player, "id", "") or "")
+        source = str(getattr(stratagem, "name", "MASTERS OF THE VOID") or "MASTERS OF THE VOID")
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ia_root(unit)
+            if root is None:
+                continue
+            uid = self._ia_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ia_is_agents_unit(root):
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["imperial_agents_masters_of_the_void_enemy_dz_override_active"] = True
+            sr["imperial_agents_masters_of_the_void_enemy_dz_override_turn_owner"] = owner_id
+            sr["imperial_agents_masters_of_the_void_enemy_dz_override_turn"] = int(turn_now)
+            sr["imperial_agents_masters_of_the_void_enemy_dz_override_expires_phase"] = "MOVEMENT_PHASE"
+            sr["imperial_agents_masters_of_the_void_enemy_dz_override_source"] = source
+            root.special_rules = sr
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
 
     def _use_imperial_agents_blind_grenades(self, stratagem: Any, **kwargs) -> bool:
         context = self._ia_pending_context(stratagem.name, kwargs)

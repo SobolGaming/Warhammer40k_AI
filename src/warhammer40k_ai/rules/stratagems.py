@@ -44,6 +44,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "A DEADLY SNARE",
     "AUTOMATED REPAIR DRONES",
     "COORDINATED TRAP",
+    "COMBAT MANIFESTATION",
     "COMBAT DEBARKATION",
     "FOCUSED FIRE",
     "DEATH FRENZY",
@@ -124,6 +125,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INEXORABLE ADVANCE",
     "MANOEUVRE AND FIRE",
     "MARTIAL PERFECTION",
+    "MASTERS OF THE VOID",
     "MIRAGE OF ECHOES",
     "MORDIAN MINUTE",
     "NEW ORDERS",
@@ -4134,6 +4136,7 @@ class StratagemManager(
             "ANTI-GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "ANTI‑GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "BLIND GRENADES": "Target: AGENTS OF THE IMPERIUM GRENADES unit or VINDICARE ASSASSIN selected as a charge target and not in Engagement Range",
+            "COMBAT MANIFESTATION": "Target: your GREY KNIGHTS unit arriving using Deep Strike this phase; it can set up more than 6\" horizontally from enemies and cannot declare a charge this turn",
             "CLOUDSTRIKE": "Target: AELDARI VEHICLE FLY unit in Strategic Reserves",
             "DOOM INESCAPABLE": "Target: AVATAR OF KHAINE unit not yet selected to shoot",
             "KHAINE'S VENGEANCE": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range of an enemy selected to Fall Back",
@@ -4150,6 +4153,7 @@ class StratagemManager(
             "INTO THE BREACH": "Target: ANHRATHE unit that just destroyed one or more enemy units with its shooting attacks",
             "IMPEDING FIRE": "Target: your Rangers, Shroud Runners, or Starfangs unit; then select one visible non-TITANIC enemy unit within 36\" of it",
             "LETHAL RUSE": "Target: your AELDARI unit that just Fell Back this Movement phase (ANHRATHE also selects one enemy unit it was in Engagement Range of at phase start)",
+            "MASTERS OF THE VOID": "Target: your VOIDFARERS CHARACTER unit; AGENTS OF THE IMPERIUM units arriving from Strategic Reserves this turn can be set up in your opponent's deployment zone (other restrictions still apply)",
             "NO PREY TOO BIG": "Target: your ANHRATHE, Rangers, or Shroud Runners unit that has not been selected to shoot this phase",
             "PIRATES' DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
             "PIRATES’ DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
@@ -5902,6 +5906,7 @@ class StratagemManager(
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._queue_augurium_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
+            self._cleanup_brotherhood_strike_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -12260,6 +12265,9 @@ class StratagemManager(
         imperial_agents_result = self._use_imperial_agents_veiled_blade_stratagem(s, **kwargs)
         if imperial_agents_result is not None:
             return imperial_agents_result
+        imperial_agents_fleet_result = self._use_imperial_agents_imperialis_fleet_stratagem(s, **kwargs)
+        if imperial_agents_fleet_result is not None:
+            return imperial_agents_fleet_result
         chaos_daemons_plague_legion_result = self._use_chaos_daemons_plague_legion_stratagem(s, **kwargs)
         if chaos_daemons_plague_legion_result is not None:
             return chaos_daemons_plague_legion_result

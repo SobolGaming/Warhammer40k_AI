@@ -6155,6 +6155,88 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if source_army is not None and target_army is not None and source_army is target_army:
             return ("Void Mine target model must belong to an enemy unit.",)
         return ()
+    if ability == "a_foot_in_the_future":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("A Foot in the Future source unit was not found.",)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if target_unit is None:
+            return ("A Foot in the Future target unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if source_root is None or target_root is None:
+            return ("A Foot in the Future units were not found.",)
+        if source_root is not target_root:
+            return ("A Foot in the Future target unit must be the bearer's unit.",)
+        if not _resurrection_orb_unit_on_battlefield(target_root):
+            return ("A Foot in the Future target unit must be on the battlefield.",)
+
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_a_foot_in_the_future", False)):
+            return ("A Foot in the Future enhancement is not active on the source unit.",)
+        requires_bearer_alive = bool(
+            source_sr.get(
+                "enhancement_a_foot_in_the_future_requires_bearer_alive",
+                bool(ctx.get("requires_bearer_alive", True)),
+            )
+        )
+        if requires_bearer_alive:
+            bearer_model_id = str(
+                payload.get("bearer_model_id")
+                or ctx.get("bearer_model_id")
+                or source_sr.get("enhancement_a_foot_in_the_future_bearer_model_id")
+                or source_sr.get("enhancement_bearer_model_id")
+                or ""
+            ).strip()
+            if not bearer_model_id:
+                return ("A Foot in the Future requires bearer_model_id when bearer must be alive.",)
+            bearer_model = resolve_model(game, bearer_model_id)
+            if bearer_model is None:
+                return ("A Foot in the Future bearer model was not found.",)
+            model_alive_attr = getattr(bearer_model, "is_alive", False)
+            if not bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr):
+                return ("A Foot in the Future bearer model must be alive.",)
+            if getattr(bearer_model, "parent_unit", None) is not source_unit:
+                return ("A Foot in the Future bearer model does not belong to the source unit.",)
+
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or "")
+        if turn_owner_id:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            if current_owner_id != turn_owner_id:
+                return ("A Foot in the Future turn ownership context no longer matches.",)
+        try:
+            turn_ctx = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn_ctx = 0
+        if turn_ctx and int(getattr(game, "turn", 0) or 0) != turn_ctx:
+            return ("A Foot in the Future turn context no longer matches.",)
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return ("A Foot in the Future can only be resolved in the Movement phase.",)
+
+        if is_skip_choice(request, result):
+            return ()
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        if candidate_ids and target_id not in candidate_ids:
+            return ("A Foot in the Future selected unit is not an eligible candidate.",)
+        return ()
     if ability == "murdercall":
         payload = _option_payload(request, result)
         if is_skip_choice(request, result):
@@ -8705,6 +8787,138 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         return {
             "selected_unit_ids": [str(get_entity_id(unit) or "") for unit in list(selected_units or []) if str(get_entity_id(unit) or "")],
             "source": ability_name,
+        }
+    if ability == "a_foot_in_the_future":
+        payload = _option_payload(request, result)
+        player = _resolve_player(game, request, payload)
+        ability_name = str(ctx.get("ability_name", "") or "A Foot in the Future").strip() or "A Foot in the Future"
+
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if target_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if source_root is None or target_root is None or source_root is not target_root:
+            return None
+        if not _resurrection_orb_unit_on_battlefield(target_root):
+            return None
+
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_a_foot_in_the_future", False)):
+            return None
+        requires_bearer_alive = bool(
+            source_sr.get(
+                "enhancement_a_foot_in_the_future_requires_bearer_alive",
+                bool(ctx.get("requires_bearer_alive", True)),
+            )
+        )
+        if requires_bearer_alive:
+            bearer_model_id = str(
+                payload.get("bearer_model_id")
+                or ctx.get("bearer_model_id")
+                or source_sr.get("enhancement_a_foot_in_the_future_bearer_model_id")
+                or source_sr.get("enhancement_bearer_model_id")
+                or ""
+            ).strip()
+            if not bearer_model_id:
+                return None
+            bearer_model = resolve_model(game, bearer_model_id)
+            if bearer_model is None:
+                return None
+            model_alive_attr = getattr(bearer_model, "is_alive", False)
+            if not bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr):
+                return None
+            if getattr(bearer_model, "parent_unit", None) is not source_unit:
+                return None
+
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return None
+
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return None
+
+        try:
+            from ...utility.dice import get_roll
+        except Exception:
+            return None
+
+        move_roll = str(
+            ctx.get("move_roll")
+            or source_sr.get("enhancement_a_foot_in_the_future_move_roll")
+            or "D6"
+        ).strip().upper() or "D6"
+        try:
+            move_distance = int(get_roll(move_roll) or 0)
+        except Exception:
+            move_distance = 0
+        if move_distance <= 0:
+            return None
+
+        no_charge_this_turn = bool(
+            ctx.get("no_charge_this_turn", source_sr.get("enhancement_a_foot_in_the_future_no_charge_this_turn", True))
+        )
+        if no_charge_this_turn:
+            target_sr = getattr(target_root, "special_rules", None)
+            if not isinstance(target_sr, dict):
+                target_sr = {}
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            turn_owner_id = str(ctx.get("turn_owner_id", "") or getattr(current_player, "id", "") or "")
+            try:
+                turn_value = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn_value = int(getattr(game, "turn", 0) or 0)
+            target_sr["a_foot_in_the_future_no_charge_turn_owner"] = turn_owner_id
+            target_sr["a_foot_in_the_future_no_charge_turn"] = int(turn_value)
+            target_root.special_rules = target_sr
+
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if callable(queue_move):
+            queue_move(
+                player=player,
+                unit=target_root,
+                max_distance=int(move_distance),
+                kind="a_foot_in_the_future",
+                movement_type="reactive",
+                source=ability_name,
+                allow_skip=True,
+            )
+
+        from ...utility.event_bus import append_dice
+
+        append_dice(
+            player,
+            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} move roll {int(move_distance)}.",
+        )
+        no_charge_text = " and cannot declare a charge this turn" if no_charge_this_turn else ""
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} can make a Normal move of up to {int(move_distance)}\"{no_charge_text}.",
+        )
+        return {
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "move_distance": int(move_distance),
+            "no_charge_this_turn": bool(no_charge_this_turn),
         }
     if ability == "murdercall":
         payload = _option_payload(request, result)

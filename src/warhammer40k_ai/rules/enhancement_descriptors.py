@@ -1312,6 +1312,27 @@ _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS.values()
 }
 
+_TAU_AUXILIARY_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009839005": EnhancementToolDescriptor(
+        enhancement_id="000009839005",
+        name="Transponder Lock Module",
+        timing="movement_phase_reinforcements_step",
+        target="bearer_unit_in_reserves",
+        duration="turn_one_reinforcements_step",
+        effect="first_turn_deep_strike_arrival_with_auxiliary_spotter_requirement",
+        effect_params={
+            "strategic_reserves_setup_round_bonus": 1,
+            "requires_deep_strike": True,
+            "turn_one_spotter_range": 12.0,
+            "turn_one_spotter_keywords_any": ("KROOT", "VESPID STINGWINGS"),
+        },
+    ),
+}
+
+_TAU_AUXILIARY_CADRE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _TAU_AUXILIARY_CADRE_DESCRIPTORS.values()
+}
+
 _MONTKA_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008811002": EnhancementToolDescriptor(
         enhancement_id="000008811002",
@@ -5837,6 +5858,27 @@ _WARPBANE_TASK_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _WARPBANE_TASK_FORCE_DESCRIPTORS.values()
 }
 
+_GREY_KNIGHTS_AUGURIUM_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010364004": EnhancementToolDescriptor(
+        enhancement_id="000010364004",
+        name="A Foot in the Future",
+        timing="on_unit_set_up_as_reinforcements",
+        target="bearer_unit",
+        duration="immediate_then_until_end_of_turn",
+        effect="optional_reactive_normal_move_after_reinforcements_setup",
+        effect_params={
+            "move_roll": "D6",
+            "no_charge_this_turn": True,
+            "requires_bearer_alive": True,
+            "optional": True,
+        },
+    ),
+}
+
+_GREY_KNIGHTS_AUGURIUM_TASK_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_DESCRIPTORS.values()
+}
+
 _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010312002": EnhancementToolDescriptor(
         enhancement_id="000010312002",
@@ -6276,6 +6318,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _TAU_AUXILIARY_CADRE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _MONTKA_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6525,6 +6570,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _WARPBANE_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6584,6 +6632,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _AELDARI_SERPENTS_BROOD_BY_NAME.get(key)
         or _AELDARI_DEVOTED_OF_YNNEAD_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
+        or _TAU_AUXILIARY_CADRE_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)
         or _RETALIATION_CADRE_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_BY_NAME.get(key)
@@ -6667,6 +6716,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _GRAND_COVEN_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_BY_NAME.get(key)
+        or _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_TRAITORIS_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME.get(key)

@@ -6209,6 +6209,145 @@ class Game(
             except Exception:
                 continue
 
+    def _on_unit_set_up_a_foot_in_the_future(
+        self,
+        unit=None,
+        set_up_as_reinforcements: bool = False,
+        **_kwargs,
+    ) -> None:
+        if unit is None or not bool(set_up_as_reinforcements):
+            return
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        if root is None:
+            return
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", False)):
+            return
+        if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+            return
+        if bool(getattr(root, "is_in_reserves", lambda: False)()):
+            return
+
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        if army is None:
+            return
+        player = getattr(army, "player", None)
+        if player is None:
+            return
+        current_player = self.get_current_player()
+        if current_player is None or current_player is not player:
+            return
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return
+
+        root_id = str(get_entity_id(root) or "")
+        if not root_id:
+            return
+        owner_id = str(getattr(current_player, "id", "") or "")
+        turn = int(getattr(self, "turn", 0) or 0)
+
+        members = list(getattr(root, "get_attached_unit_members", lambda: [root])() or [root])
+        if not members:
+            members = [root]
+        enhancement_source = None
+        enhancement_sr = None
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_a_foot_in_the_future", False)):
+                continue
+            enhancement_source = member
+            enhancement_sr = sr
+            break
+        if enhancement_source is None or not isinstance(enhancement_sr, dict):
+            return
+
+        requires_bearer_alive = bool(enhancement_sr.get("enhancement_a_foot_in_the_future_requires_bearer_alive", True))
+        bearer_model_id = str(
+            enhancement_sr.get("enhancement_a_foot_in_the_future_bearer_model_id")
+            or enhancement_sr.get("enhancement_bearer_model_id")
+            or ""
+        ).strip()
+        if requires_bearer_alive:
+            bearer_alive = False
+            if bearer_model_id:
+                for model in list(getattr(enhancement_source, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_model_id:
+                        continue
+                    model_alive_attr = getattr(model, "is_alive", True)
+                    bearer_alive = bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr)
+                    break
+            else:
+                get_bearer = getattr(enhancement_source, "_get_enhancement_bearer_model", None)
+                bearer_model = get_bearer() if callable(get_bearer) else None
+                if bearer_model is not None:
+                    model_alive_attr = getattr(bearer_model, "is_alive", True)
+                    bearer_alive = bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr)
+                    resolved_id = str(get_entity_id(bearer_model) or "")
+                    if resolved_id:
+                        bearer_model_id = resolved_id
+            if not bearer_alive:
+                return
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if str(getattr(pending, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                pending_ctx = dict(getattr(pending, "context", {}) or {})
+                if str(pending_ctx.get("ability", "") or "") != "a_foot_in_the_future":
+                    continue
+                if str(pending_ctx.get("target_unit_id", "") or "") != root_id:
+                    continue
+                if str(pending_ctx.get("turn_owner_id", "") or "") != owner_id:
+                    continue
+                if int(pending_ctx.get("turn", 0) or 0) != int(turn):
+                    continue
+                return
+
+        source_unit_id = str(get_entity_id(enhancement_source) or root_id)
+        move_roll = str(enhancement_sr.get("enhancement_a_foot_in_the_future_move_roll", "D6") or "D6").strip().upper() or "D6"
+        no_charge_this_turn = bool(enhancement_sr.get("enhancement_a_foot_in_the_future_no_charge_this_turn", True))
+
+        options = [
+            DecisionOption.create(
+                "Use A Foot in the Future",
+                payload={"target_unit_id": root_id},
+            ),
+            DecisionOption.create(
+                "None",
+                payload={"skip": True},
+            ),
+        ]
+        self.request_decision(
+            DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"A Foot in the Future: choose whether {getattr(root, 'name', 'Unit')} makes a Normal move of up to {move_roll}\".",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "a_foot_in_the_future",
+                    "ability_name": "A Foot in the Future",
+                    "source_unit_id": source_unit_id,
+                    "target_unit_id": root_id,
+                    "unit_id": root_id,
+                    "candidate_unit_ids": [root_id],
+                    "move_roll": move_roll,
+                    "no_charge_this_turn": bool(no_charge_this_turn),
+                    "requires_bearer_alive": bool(requires_bearer_alive),
+                    "bearer_model_id": bearer_model_id,
+                    "optional": True,
+                    "phase": "Movement phase",
+                    "turn_owner_id": owner_id,
+                    "turn": int(turn),
+                },
+            )
+        )
+
     def _on_unit_set_up_genestealer_cults_detachments(
         self,
         unit=None,
