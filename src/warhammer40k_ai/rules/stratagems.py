@@ -1377,6 +1377,8 @@ class StratagemManager(
         self._rapid_ingress_units_this_phase: set[str] = set()
         # Track Command Re-roll targets per phase for named exceptions.
         self._command_reroll_units_this_phase: set[str] = set()
+        # Track Grenade stratagem targets per phase for Primed and Ready.
+        self._grenade_units_this_phase: set[str] = set()
         # CSM: Daemonforge allows one Counter-offensive repeat per Fight phase.
         self._daemonforge_used_phase_key: str = ""
         # Once-per-battle limits (e.g., INSANE BRAVERY once per battle)
@@ -2510,6 +2512,14 @@ class StratagemManager(
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
 
+    def _unit_can_use_primed_and_ready_grenade(self, unit, *, stratagem_name: str = "") -> bool:
+        if unit is None:
+            return False
+        can_use_fn = getattr(self.player, "_target_unit_can_use_primed_and_ready_grenade", None)
+        if callable(can_use_fn):
+            return bool(can_use_fn(unit, stratagem_name=stratagem_name))
+        return False
+
     def _unit_has_snarling_protector_heroic_intervention(self, unit) -> bool:
         if unit is None:
             return False
@@ -2786,6 +2796,31 @@ class StratagemManager(
         if uid:
             self._command_reroll_units_this_phase.add(uid)
 
+    def _grenade_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
+        if target_unit is not None:
+            if not self._unit_can_use_primed_and_ready_grenade(
+                target_unit,
+                stratagem_name="GRENADE",
+            ):
+                return False
+            uid = self._heroic_intervention_target_id(target_unit)
+            return bool(uid and uid not in self._grenade_units_this_phase)
+        for cand in list(candidates or []):
+            if not self._unit_can_use_primed_and_ready_grenade(
+                cand,
+                stratagem_name="GRENADE",
+            ):
+                continue
+            uid = self._heroic_intervention_target_id(cand)
+            if uid and uid not in self._grenade_units_this_phase:
+                return True
+        return False
+
+    def _record_grenade_use(self, unit) -> None:
+        uid = self._heroic_intervention_target_id(unit)
+        if uid:
+            self._grenade_units_this_phase.add(uid)
+
     def _grenade_mortal_wound_threshold(self, target_unit) -> int:
         threshold = 4
         if target_unit is None:
@@ -2872,6 +2907,15 @@ class StratagemManager(
                     return result
             elif name_u == "COUNTER-OFFENSIVE":
                 if self._counter_offensive_daemonforge_available(
+                    target_unit=context.get("target_unit") or context.get("unit"),
+                    candidates=context.get("candidates"),
+                ):
+                    pass
+                else:
+                    result["reason"] = "Already used this phase"
+                    return result
+            elif name_u == "GRENADE":
+                if self._grenade_repeat_allowed(
                     target_unit=context.get("target_unit") or context.get("unit"),
                     candidates=context.get("candidates"),
                 ):
@@ -4919,6 +4963,13 @@ class StratagemManager(
                 self._command_reroll_units_this_phase = set()
             else:
                 self._command_reroll_units_this_phase.clear()
+        except Exception:
+            raise
+        try:
+            if not hasattr(self, "_grenade_units_this_phase"):
+                self._grenade_units_this_phase = set()
+            else:
+                self._grenade_units_this_phase.clear()
         except Exception:
             raise
         # Chaos Daemons: CORRUPT REALSPACE (start of any Command phase)
@@ -12299,6 +12350,11 @@ class StratagemManager(
                         candidates=kwargs.get("candidates"),
                     ):
                         pass
+                    elif key == "GRENADE" and self._grenade_repeat_allowed(
+                        target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
+                        candidates=kwargs.get("candidates"),
+                    ):
+                        pass
                     else:
                         logger.error(f"ERROR: Cannot use {s.name} more than once in the same phase (core rules)")
                         return False
@@ -14295,7 +14351,24 @@ class StratagemManager(
             eff_cost = s.cp_cost
             try:
                 if hasattr(self.player, "apply_stratagem_cp_cost"):
-                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=enemy).get("cost", s.cp_cost))
+                    apply_info = dict(
+                        self.player.apply_stratagem_cp_cost(
+                            s,
+                            target_unit=unit,
+                            enemy_unit=enemy,
+                        )
+                        or {}
+                    )
+                    if bool(apply_info.get("denied", False)):
+                        logger.error(
+                            "ERROR: GRENADE denied: %s",
+                            str(apply_info.get("reason", "") or "stratagem already used this phase"),
+                        )
+                        return False
+                    resolved_cost = apply_info.get("cost", s.cp_cost)
+                    if resolved_cost is None:
+                        resolved_cost = s.cp_cost
+                    eff_cost = int(resolved_cost)
             except Exception:
                 raise
             if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
@@ -14319,6 +14392,14 @@ class StratagemManager(
                 self._dequeue_reaction_by_name(s.name)
             try:
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+                self._record_grenade_use(unit)
+                mark_targeted = getattr(unit, "mark_primed_and_ready_grenade_targeted", None)
+                if callable(mark_targeted):
+                    mark_targeted(
+                        self.game,
+                        source="Grenade",
+                        stratagem_name=str(getattr(s, "name", "") or "GRENADE"),
+                    )
             except Exception:
                 raise
             return True

@@ -4303,6 +4303,186 @@ class KeywordsDetachmentsMixin:
             return False
         return True
 
+    def get_primed_and_ready_grenade_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "primed_and_ready_grenade_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not normalized:
+                    continue
+                name_key = str(name or "").strip().lower()
+                has_named_rule = "primed and ready" in name_key
+                if not has_named_rule and "with this ability" not in normalized:
+                    continue
+                if "grenade stratagem" not in normalized or "0cp" not in normalized:
+                    continue
+                if "your shooting phase" not in normalized:
+                    continue
+                target_scope = "unit"
+                if "one model from your army with this ability" in normalized:
+                    target_scope = "model"
+                elif "one unit from your army with this ability" in normalized:
+                    target_scope = "unit"
+                source = str(name or "Primed and Ready").strip() or "Primed and Ready"
+                requires_target_not_previously_targeted = (
+                    "has not already been the target of that stratagem this phase" in normalized
+                    or "not already been the target of that stratagem this phase" in normalized
+                )
+                rule = {
+                    "source": source,
+                    "ability_key": "primed_and_ready_grenade",
+                    "stratagems": ("GRENADE",),
+                    "phase": "SHOOTING_PHASE",
+                    "target_scope": target_scope,
+                    "requires_target_not_previously_targeted": bool(requires_target_not_previously_targeted),
+                    # The datasheet wording explicitly allows or strongly implies a second Grenade use in the phase.
+                    "allows_repeat": True,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _primed_and_ready_grenade_phase_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is None:
+            return ""
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        phase_obj = getattr(game, "phase", None)
+        phase_name = str(getattr(phase_obj, "name", "") or phase_obj or "").strip().upper()
+        try:
+            player_idx = int(getattr(game, "current_player_index", -1) or -1)
+        except Exception:
+            player_idx = -1
+        return f"{turn}:{phase_name}:{player_idx}"
+
+    def primed_and_ready_grenade_targeted_this_phase(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        phase_key = root._primed_and_ready_grenade_phase_key(game)
+        if not phase_key:
+            return False
+        return str(sr.get("primed_and_ready_grenade_targeted_phase_key", "") or "") == phase_key
+
+    def mark_primed_and_ready_grenade_targeted(self, game=None, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        phase_key = root._primed_and_ready_grenade_phase_key(game)
+        if phase_key:
+            sr["primed_and_ready_grenade_targeted_phase_key"] = str(phase_key)
+        if source:
+            sr["primed_and_ready_grenade_targeted_source"] = str(source or "").strip()
+        if stratagem_name:
+            sr["primed_and_ready_grenade_targeted_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+    def can_use_primed_and_ready_grenade(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive():
+                return False
+        except Exception:
+            return False
+        try:
+            if not bool(getattr(root, "deployed", True)):
+                return False
+        except Exception:
+            pass
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_primed_and_ready_grenade_rule()
+        if not rule:
+            return False
+        if game is None:
+            try:
+                game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is not None:
+            phase_obj = getattr(game, "phase", None)
+            phase_name = str(getattr(phase_obj, "name", "") or phase_obj or "").strip().upper()
+            if phase_name and phase_name != "SHOOTING_PHASE":
+                return False
+            try:
+                owner = getattr(root.get_parent_army(), "player", None)
+            except Exception:
+                owner = None
+            get_current_player = getattr(game, "get_current_player", None)
+            if owner is not None and callable(get_current_player):
+                if get_current_player() is not owner:
+                    return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        if bool(rule.get("requires_target_not_previously_targeted", True)):
+            if root.primed_and_ready_grenade_targeted_this_phase(game):
+                return False
+        return True
+
     def get_destroyer_of_futures_overwatch_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:

@@ -6081,6 +6081,48 @@ _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CHAOS_KNIGHTS_LORDS_OF_DREAD_DESCRIPTORS.values()
 }
 
+_IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010497005": EnhancementToolDescriptor(
+        enhancement_id="000010497005",
+        name="Vengeful Tread",
+        timing="when_targeting_bearer_with_tank_shock",
+        target="bearer",
+        duration="instant_once_per_turn",
+        effect="tank_shock_zero_cp_once_per_turn_for_bearer",
+        effect_params={
+            "stratagem_names": ("TANK SHOCK",),
+            "once_per_turn_key": "VENGEFUL_TREAD_TANK_SHOCK",
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+}
+
+_IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_DESCRIPTORS.values()
+}
+
+_IMPERIAL_KNIGHTS_SPEARHEAD_AT_ARMS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010506005": EnhancementToolDescriptor(
+        enhancement_id="000010506005",
+        name="Martial Tuition",
+        timing="when_targeting_bondsman_armiger_with_counter_offensive",
+        target="friendly_armiger_under_bearers_bondsman",
+        duration="instant_once_per_turn",
+        effect="counter_offensive_zero_cp_once_per_turn_for_bondsman_armiger",
+        effect_params={
+            "stratagem_names": ("COUNTER-OFFENSIVE",),
+            "once_per_turn_key": "MARTIAL_TUITION_COUNTER_OFFENSIVE",
+            "required_target_keyword": "ARMIGER",
+            "required_min_bondsman_targets": 2,
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+}
+
+_IMPERIAL_KNIGHTS_SPEARHEAD_AT_ARMS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _IMPERIAL_KNIGHTS_SPEARHEAD_AT_ARMS_DESCRIPTORS.values()
+}
+
 _VEILED_BLADE_ELIMINATION_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009757002": EnhancementToolDescriptor(
         enhancement_id="000009757002",
@@ -6729,6 +6771,12 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _CHAOS_KNIGHTS_LORDS_OF_DREAD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
+        desc = _IMPERIAL_KNIGHTS_SPEARHEAD_AT_ARMS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _VEILED_BLADE_ELIMINATION_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6881,6 +6929,8 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_TRAITORIS_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME.get(key)
+        or _IMPERIAL_KNIGHTS_GATE_WARDEN_LANCE_BY_NAME.get(key)
+        or _IMPERIAL_KNIGHTS_SPEARHEAD_AT_ARMS_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME.get(key)
         or _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME.get(key)
         or _GENESTEALER_CULTS_BROOD_BROTHER_AUXILIA_BY_NAME.get(key)

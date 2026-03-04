@@ -1848,6 +1848,212 @@ class Player:
     def _target_unit_can_use_adaptive_reprisal_heroic_intervention(self, target_unit, *, stratagem_name: str = "") -> bool:
         return self._adaptive_reprisal_discount_context(target_unit, stratagem_name=stratagem_name) is not None
 
+    def _vengeful_tread_discount_context(self, target_unit, *, stratagem_name: str = "") -> dict | None:
+        if target_unit is None:
+            return None
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return None
+        stratagem_key = self._normalize_stratagem_name_key(stratagem_name)
+        if stratagem_key != "TANK SHOCK":
+            return None
+        get_target_root = getattr(target_unit, "get_attached_unit_root", None)
+        target_root = get_target_root() if callable(get_target_root) else target_unit
+        if target_root is None:
+            return None
+        if not self._unit_is_alive_or_unknown(target_root):
+            return None
+        army = self.get_army()
+        if army is None:
+            return None
+        target_root_id = str(get_entity_id(target_root) or "")
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_vengeful_tread")):
+                continue
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            source_root = get_root() if callable(get_root) else unit
+            if source_root is None:
+                continue
+            if not self._unit_is_alive_or_unknown(source_root):
+                continue
+            requires_bearer_on_battlefield = bool(
+                sr.get("enhancement_vengeful_tread_requires_bearer_on_battlefield", True)
+            )
+            if requires_bearer_on_battlefield and not self._unit_is_on_battlefield(source_root):
+                continue
+            source_root_id = str(get_entity_id(source_root) or "")
+            if source_root is not target_root and (not source_root_id or source_root_id != target_root_id):
+                continue
+            usage_key = str(sr.get("enhancement_vengeful_tread_usage_key", "") or "VENGEFUL_TREAD_TANK_SHOCK").strip().upper()
+            if not usage_key:
+                usage_key = "VENGEFUL_TREAD_TANK_SHOCK"
+            if self._ability_used_this_turn(usage_key):
+                continue
+            configured_names = {
+                self._normalize_stratagem_name_key(value)
+                for value in list(sr.get("enhancement_vengeful_tread_stratagems", ()) or ())
+                if self._normalize_stratagem_name_key(value)
+            }
+            if configured_names and stratagem_key not in configured_names:
+                continue
+            get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                get_bearer_root = getattr(source_root, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer_root() if callable(get_bearer_root) else None
+            if bearer is None:
+                continue
+            alive_attr = getattr(bearer, "is_alive", True)
+            bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not bearer_alive:
+                continue
+            source_name = str(sr.get("enhancement_vengeful_tread_source", "") or "Vengeful Tread").strip()
+            if not source_name:
+                source_name = "Vengeful Tread"
+            return {
+                "source_unit": source_root,
+                "source": source_name,
+                "usage_key": usage_key,
+            }
+        return None
+
+    def _martial_tuition_discount_context(self, target_unit, *, stratagem_name: str = "") -> dict | None:
+        if target_unit is None:
+            return None
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return None
+        stratagem_key = self._normalize_stratagem_name_key(stratagem_name)
+        if stratagem_key != "COUNTER OFFENSIVE":
+            return None
+        get_target_root = getattr(target_unit, "get_attached_unit_root", None)
+        target_root = get_target_root() if callable(get_target_root) else target_unit
+        if target_root is None:
+            return None
+        if not self._unit_is_alive_or_unknown(target_root):
+            return None
+        mgr = getattr(self, "stratagems", None)
+        used_this_phase = getattr(mgr, "_used_stratagems_this_phase", set()) if mgr is not None else set()
+        if isinstance(used_this_phase, set) and "COUNTER-OFFENSIVE" in used_this_phase:
+            return None
+        army = self.get_army()
+        if army is None:
+            return None
+        target_root_id = str(get_entity_id(target_root) or "")
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_martial_tuition")):
+                continue
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            source_root = get_root() if callable(get_root) else unit
+            if source_root is None:
+                continue
+            if not self._unit_is_alive_or_unknown(source_root):
+                continue
+            requires_bearer_on_battlefield = bool(
+                sr.get("enhancement_martial_tuition_requires_bearer_on_battlefield", True)
+            )
+            if requires_bearer_on_battlefield and not self._unit_is_on_battlefield(source_root):
+                continue
+            usage_key = str(
+                sr.get("enhancement_martial_tuition_usage_key", "") or "MARTIAL_TUITION_COUNTER_OFFENSIVE"
+            ).strip().upper()
+            if not usage_key:
+                usage_key = "MARTIAL_TUITION_COUNTER_OFFENSIVE"
+            if self._ability_used_this_turn(usage_key):
+                continue
+            configured_names = {
+                self._normalize_stratagem_name_key(value)
+                for value in list(sr.get("enhancement_martial_tuition_stratagems", ()) or ())
+                if self._normalize_stratagem_name_key(value)
+            }
+            if configured_names and stratagem_key not in configured_names:
+                continue
+            required_keyword = str(
+                sr.get("enhancement_martial_tuition_required_target_keyword", "") or "ARMIGER"
+            ).strip().upper()
+            if required_keyword and not self._unit_has_keyword(target_root, required_keyword):
+                continue
+            try:
+                min_targets = int(sr.get("enhancement_martial_tuition_required_min_bondsman_targets", 2) or 2)
+            except (TypeError, ValueError):
+                min_targets = 2
+            min_targets = max(1, min_targets)
+            get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                get_bearer_root = getattr(source_root, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer_root() if callable(get_bearer_root) else None
+            if bearer is None:
+                continue
+            alive_attr = getattr(bearer, "is_alive", True)
+            bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not bearer_alive:
+                continue
+            source_root_id = str(get_entity_id(source_root) or "")
+            if not source_root_id:
+                continue
+            bondsman_targets: list = []
+            seen_target_keys: set[str] = set()
+            for candidate in list(getattr(army, "units", []) or []):
+                if candidate is None:
+                    continue
+                get_candidate_root = getattr(candidate, "get_attached_unit_root", None)
+                candidate_root = get_candidate_root() if callable(get_candidate_root) else candidate
+                if candidate_root is None:
+                    continue
+                candidate_id = str(get_entity_id(candidate_root) or "")
+                dedupe_key = candidate_id or f"obj:{id(candidate_root)}"
+                if dedupe_key in seen_target_keys:
+                    continue
+                seen_target_keys.add(dedupe_key)
+                if not self._unit_is_alive_or_unknown(candidate_root):
+                    continue
+                candidate_sr = getattr(candidate_root, "special_rules", None)
+                if not isinstance(candidate_sr, dict) or not bool(candidate_sr.get("bondsman_active")):
+                    continue
+                bondsman_source_unit_id = str(candidate_sr.get("bondsman_source_unit_id", "") or "").strip()
+                if bondsman_source_unit_id != source_root_id:
+                    continue
+                if required_keyword and not self._unit_has_keyword(candidate_root, required_keyword):
+                    continue
+                bondsman_targets.append(candidate_root)
+            if len(bondsman_targets) < min_targets:
+                continue
+            target_is_valid = False
+            for candidate_root in bondsman_targets:
+                candidate_id = str(get_entity_id(candidate_root) or "")
+                if candidate_root is target_root:
+                    target_is_valid = True
+                    break
+                if target_root_id and candidate_id and target_root_id == candidate_id:
+                    target_is_valid = True
+                    break
+            if not target_is_valid:
+                continue
+            source_name = str(sr.get("enhancement_martial_tuition_source", "") or "Martial Tuition").strip()
+            if not source_name:
+                source_name = "Martial Tuition"
+            return {
+                "source_unit": source_root,
+                "source": source_name,
+                "usage_key": usage_key,
+                "required_keyword": required_keyword,
+                "min_targets": int(min_targets),
+            }
+        return None
+
+    def _target_unit_can_use_vengeful_tread_tank_shock(self, target_unit, *, stratagem_name: str = "") -> bool:
+        return self._vengeful_tread_discount_context(target_unit, stratagem_name=stratagem_name) is not None
+
+    def _target_unit_can_use_martial_tuition_counter_offensive(self, target_unit, *, stratagem_name: str = "") -> bool:
+        return self._martial_tuition_discount_context(target_unit, stratagem_name=stratagem_name) is not None
+
     def _target_unit_can_use_pheromone_trail_rapid_ingress(self, target_unit, *, stratagem_name: str = "") -> bool:
         if target_unit is None:
             return False
@@ -1858,6 +2064,34 @@ class Player:
         if callable(fn):
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
+
+    def _target_unit_can_use_primed_and_ready_grenade(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        # Datasheet wording allows selecting one model/unit with this ability in your Shooting phase.
+        # We treat this as one Primed and Ready usage per phase across the player's army.
+        if self._ability_used_this_phase("PRIMED_AND_READY_GRENADE"):
+            return False
+        fn = getattr(target_unit, "can_use_primed_and_ready_grenade", None)
+        if not callable(fn):
+            return False
+        if not bool(fn(self.game, stratagem_name=stratagem_name)):
+            return False
+        mgr = getattr(self, "stratagems", None)
+        used_targets = getattr(mgr, "_grenade_units_this_phase", set()) if mgr is not None else set()
+        if isinstance(used_targets, set):
+            try:
+                get_root = getattr(target_unit, "get_attached_unit_root", None)
+                target_root = get_root() if callable(get_root) else target_unit
+            except Exception:
+                target_root = target_unit
+            target_id = str(get_entity_id(target_root) or "")
+            if target_id and target_id in used_targets:
+                return False
+        return True
 
     def _preview_faultless_opportunist_discount(self, *, stratagem=None, target_unit=None) -> int:
         if stratagem is None or target_unit is None:
@@ -2033,6 +2267,28 @@ class Player:
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
 
+    def _preview_vengeful_tread_tank_shock_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        stratagem_key = self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or "")
+        if stratagem_key != "TANK SHOCK":
+            return 0
+        if self._vengeful_tread_discount_context(target_unit, stratagem_name=stratagem_key) is None:
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_martial_tuition_counter_offensive_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        stratagem_key = self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or "")
+        if stratagem_key != "COUNTER OFFENSIVE":
+            return 0
+        if self._martial_tuition_discount_context(target_unit, stratagem_name=stratagem_key) is None:
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
     def _preview_pheromone_trail_rapid_ingress_discount(self, *, stratagem=None, target_unit=None) -> int:
         if stratagem is None or target_unit is None:
             return 0
@@ -2040,6 +2296,17 @@ class Player:
         if name_u != "RAPID INGRESS":
             return 0
         if not self._target_unit_can_use_pheromone_trail_rapid_ingress(target_unit, stratagem_name=name_u):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_primed_and_ready_grenade_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or "")
+        if name_u != "GRENADE":
+            return 0
+        if not self._target_unit_can_use_primed_and_ready_grenade(target_unit, stratagem_name=name_u):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -2402,6 +2669,31 @@ class Player:
                 reasons.append(f"{ability_name}: Heroic Intervention for 0CP.")
                 return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
+        vengeful_tread = self._preview_vengeful_tread_tank_shock_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if vengeful_tread:
+            context = self._vengeful_tread_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            ability_name = str(context.get("source", "") or "Vengeful Tread").strip() or "Vengeful Tread"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "VENGEFUL_TREAD_TANK_SHOCK",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Tank Shock for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
         prophetic = self._preview_prophetic_sentinels_discount(
             stratagem=stratagem,
             target_unit=target_unit,
@@ -2639,6 +2931,31 @@ class Player:
                     reasons.append(f"{ability_name}: Counter-offensive for 0CP.")
                     return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
+        martial_tuition = self._preview_martial_tuition_counter_offensive_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if martial_tuition:
+            context = self._martial_tuition_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            ability_name = str(context.get("source", "") or "Martial Tuition").strip() or "Martial Tuition"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "MARTIAL_TUITION_COUNTER_OFFENSIVE",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Counter-offensive for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
         grimnars_mark = self._preview_grimnars_mark_discount(
             stratagem=stratagem,
             target_unit=target_unit,
@@ -2705,6 +3022,34 @@ class Player:
             ):
                 discount = base
                 reasons.append(f"{ability_name}: Rapid Ingress for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        primed_and_ready = self._preview_primed_and_ready_grenade_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if primed_and_ready:
+            ability_name = "Primed and Ready"
+            try:
+                get_rule = getattr(target_unit, "get_primed_and_ready_grenade_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "PRIMED_AND_READY_GRENADE",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Grenade for 0CP.")
                 return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         if grimnars_mark:
@@ -3162,6 +3507,55 @@ class Player:
                     "increase_reasons": increase_reasons,
                     "adaptive_reprisal_heroic_intervention_use": True,
                     "adaptive_reprisal_heroic_intervention_source": ability_name,
+                }
+        vengeful_tread = self._preview_vengeful_tread_tank_shock_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if vengeful_tread and target_unit is not None:
+            context = self._vengeful_tread_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            ability_name = str(context.get("source", "") or "Vengeful Tread").strip() or "Vengeful Tread"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("VENGEFUL_TREAD_TANK_SHOCK", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                usage_key = str(context.get("usage_key", "") or "VENGEFUL_TREAD_TANK_SHOCK").strip().upper()
+                if usage_key:
+                    self._mark_ability_used_turn(usage_key)
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Tank Shock for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "vengeful_tread_tank_shock_use": True,
+                    "vengeful_tread_tank_shock_source": ability_name,
                 }
         prophetic = self._preview_prophetic_sentinels_discount(
             stratagem=stratagem,
@@ -3745,6 +4139,70 @@ class Player:
             if counter_used:
                 return {"denied": True, "reason": "Counter-offensive already used this phase"}
 
+        grenade_used_this_phase = False
+        if name_u == "GRENADE" and target_unit is not None:
+            mgr = getattr(self, "stratagems", None)
+            used_this_phase = getattr(mgr, "_used_stratagems_this_phase", set()) if mgr is not None else set()
+            grenade_used_this_phase = "GRENADE" in used_this_phase if isinstance(used_this_phase, set) else False
+            can_primed_and_ready = self._target_unit_can_use_primed_and_ready_grenade(
+                target_unit,
+                stratagem_name="GRENADE",
+            )
+            if grenade_used_this_phase and not can_primed_and_ready:
+                return {"denied": True, "reason": "Grenade already used this phase"}
+
+        martial_tuition = self._preview_martial_tuition_counter_offensive_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if martial_tuition and target_unit is not None:
+            context = self._martial_tuition_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            ability_name = str(context.get("source", "") or "Martial Tuition").strip() or "Martial Tuition"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("MARTIAL_TUITION_COUNTER_OFFENSIVE", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                usage_key = str(
+                    context.get("usage_key", "") or "MARTIAL_TUITION_COUNTER_OFFENSIVE"
+                ).strip().upper()
+                if usage_key:
+                    self._mark_ability_used_turn(usage_key)
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Counter-offensive for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "martial_tuition_counter_offensive_use": True,
+                    "martial_tuition_counter_offensive_source": ability_name,
+                }
+
         fleetmaster = self._preview_fleetmaster_discount(
             stratagem=stratagem,
             target_unit=target_unit,
@@ -3923,6 +4381,73 @@ class Player:
                     "pheromone_trail_rapid_ingress_use": True,
                     "pheromone_trail_rapid_ingress_source": ability_name,
                 }
+
+        primed_and_ready = self._preview_primed_and_ready_grenade_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if primed_and_ready and target_unit is not None:
+            ability_name = "Primed and Ready"
+            try:
+                get_rule = getattr(target_unit, "get_primed_and_ready_grenade_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            use_primed_and_ready = self._should_use_optional_ability("PRIMED_AND_READY_GRENADE", ctx)
+            if grenade_used_this_phase and not use_primed_and_ready:
+                return {"denied": True, "reason": "Grenade already used this phase"}
+            if use_primed_and_ready:
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                self._mark_ability_used_phase("PRIMED_AND_READY_GRENADE")
+                try:
+                    mark_targeted = getattr(target_unit, "mark_primed_and_ready_grenade_targeted", None)
+                    if callable(mark_targeted):
+                        mark_targeted(
+                            self.game,
+                            source=ability_name,
+                            stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                        )
+                except Exception:
+                    pass
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Grenade for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "primed_and_ready_grenade_use": True,
+                    "primed_and_ready_grenade_source": ability_name,
+                }
+
+        if name_u == "GRENADE" and grenade_used_this_phase:
+            return {"denied": True, "reason": "Grenade already used this phase"}
 
         grimnars_mark = self._preview_grimnars_mark_discount(
             stratagem=stratagem,

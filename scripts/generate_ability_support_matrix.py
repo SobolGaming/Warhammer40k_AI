@@ -5379,6 +5379,7 @@ def _classify_ability_base(
     movement_phase_visible_wound_bonus_support = _movement_phase_end_visible_wound_bonus_support(description)
     movement_phase_visible_hit_bonus_support = _movement_phase_end_visible_hit_bonus_support(description)
     grenade_pack_flyover_support = _grenade_pack_flyover_support(description)
+    primed_and_ready_grenade_support = _primed_and_ready_grenade_support(description)
     battle_focus_token_refund_support = _battle_focus_agile_maneuver_token_refund_support(description)
     leading_leadership_reroll_support = _leading_leadership_reroll_support(description)
     dark_pacts_leadership_reroll_support = _dark_pacts_leadership_reroll_support(description)
@@ -5706,6 +5707,8 @@ def _classify_ability_base(
         return movement_phase_end_mortal_threshold_support
     if grenade_pack_flyover_support:
         return grenade_pack_flyover_support
+    if primed_and_ready_grenade_support:
+        return primed_and_ready_grenade_support
     if movement_phase_visible_wound_bonus_support:
         return movement_phase_visible_wound_bonus_support
     if movement_phase_visible_hit_bonus_support:
@@ -8166,6 +8169,26 @@ def _targeted_stratagem_cp_refund_support(description: str) -> Optional[Tuple[st
             f"When targeted by a Stratagem, roll D6{bonus_note} and gain {cp} CP on {roll}+ (CP gain guardrail respected).",
         )
     return None
+
+
+def _primed_and_ready_grenade_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "your shooting phase" not in norm:
+        return None
+    if "grenade stratagem" not in norm or "0cp" not in norm:
+        return None
+    if "with this ability" not in norm:
+        return None
+    if "has not already been the target of that stratagem this phase" not in norm:
+        return None
+    return (
+        "Supported",
+        "In your Shooting phase, one model/unit with this ability can be targeted with Grenade for 0CP; this can allow a second Grenade use that phase, but that target cannot already have been targeted by Grenade that phase.",
+    )
 
 
 def _targeted_stratagem_cp_increase_support(description: str) -> Optional[Tuple[str, str]]:
@@ -11971,6 +11994,8 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010493003": "Bearer of the Evanescent Ion: end of Movement phase select one other friendly IMPERIAL KNIGHTS unit within 12\" and visible; it gains Stealth until the start of your next Movement phase.",
         "000010493004": "Bearer of the Judicant's Helm: start of Shooting phase select one other friendly IMPERIAL KNIGHTS unit within 12\" and visible; its ranged weapons gain [IGNORES COVER] until end of phase.",
         "000010493005": "Bearer of the Lancer's Sigil: start of Charge phase select one other friendly IMPERIAL KNIGHTS unit within 12\" and visible; it can re-roll Charge rolls until end of phase.",
+        "000010497005": "Vengeful Tread: once per turn, while the bearer is on the battlefield, the bearer can be targeted with Tank Shock for 0CP.",
+        "000010506005": "Martial Tuition: while two or more friendly ARMIGER units are under the bearer's Bondsman effects, once per turn one of those ARMIGER units can be targeted with Counter-offensive for 0CP.",
         "000009777002": "Mandulian Reliquary: while the bearer's unit is not Battle-shocked, add 3 to the bearer's Objective Control.",
         "000009777003": "Radiant Champion: bearer melee weapons gain [PRECISION]; while bearer is wholly within Hallowed Ground, each successful wound inflicts 1 mortal wound in addition.",
         "000009777004": "Phial of the Abyss: models in the bearer's unit gain Stealth.",

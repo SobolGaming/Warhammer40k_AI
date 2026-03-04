@@ -778,6 +778,14 @@ class Enhancement:
             is_valourstrike_lance = bool(ik_mgr and ik_mgr.is_valourstrike_lance())
         except Exception:
             is_valourstrike_lance = False
+        try:
+            is_gate_warden_lance = bool(ik_mgr and ik_mgr.is_gate_warden_lance())
+        except Exception:
+            is_gate_warden_lance = False
+        try:
+            is_spearhead_at_arms = bool(ik_mgr and ik_mgr.is_spearhead_at_arms())
+        except Exception:
+            is_spearhead_at_arms = False
         gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
         try:
             is_brotherhood_strike = bool(gk_mgr and gk_mgr.is_brotherhood_strike())
@@ -9730,6 +9738,72 @@ class Enhancement:
                 for cache_key in list(cache.keys()):
                     if str(cache_key).startswith("model_allocated_damage_zero_specs:"):
                         cache.pop(cache_key, None)
+
+        if name == "vengeful tread" or enh_id == "000010497005":
+            if not is_gate_warden_lance:
+                return
+            unit.special_rules["enhancement_vengeful_tread"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            usage_key = str(
+                params.get("once_per_turn_key", "VENGEFUL_TREAD_TANK_SHOCK") or "VENGEFUL_TREAD_TANK_SHOCK"
+            ).strip().upper()
+            if not usage_key:
+                usage_key = "VENGEFUL_TREAD_TANK_SHOCK"
+            configured_stratagems = tuple(
+                str(v or "").strip().upper()
+                for v in tuple(params.get("stratagem_names", ("TANK SHOCK",)) or ("TANK SHOCK",))
+                if str(v or "").strip()
+            )
+            if not configured_stratagems:
+                configured_stratagems = ("TANK SHOCK",)
+            source_name = str(getattr(desc, "name", "") or "Vengeful Tread").strip() or "Vengeful Tread"
+            unit.special_rules["enhancement_vengeful_tread_usage_key"] = usage_key
+            unit.special_rules["enhancement_vengeful_tread_stratagems"] = configured_stratagems
+            unit.special_rules["enhancement_vengeful_tread_source"] = source_name
+            unit.special_rules["enhancement_vengeful_tread_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "martial tuition" or enh_id == "000010506005":
+            if not is_spearhead_at_arms:
+                return
+            unit.special_rules["enhancement_martial_tuition"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            usage_key = str(
+                params.get("once_per_turn_key", "MARTIAL_TUITION_COUNTER_OFFENSIVE")
+                or "MARTIAL_TUITION_COUNTER_OFFENSIVE"
+            ).strip().upper()
+            if not usage_key:
+                usage_key = "MARTIAL_TUITION_COUNTER_OFFENSIVE"
+            configured_stratagems = tuple(
+                str(v or "").strip().upper()
+                for v in tuple(
+                    params.get("stratagem_names", ("COUNTER-OFFENSIVE",))
+                    or ("COUNTER-OFFENSIVE",)
+                )
+                if str(v or "").strip()
+            )
+            if not configured_stratagems:
+                configured_stratagems = ("COUNTER-OFFENSIVE",)
+            required_keyword = str(params.get("required_target_keyword", "ARMIGER") or "ARMIGER").strip().upper()
+            if not required_keyword:
+                required_keyword = "ARMIGER"
+            min_targets = _coerce_int(params.get("required_min_bondsman_targets", 2) or 2, default=2)
+            source_name = str(getattr(desc, "name", "") or "Martial Tuition").strip() or "Martial Tuition"
+            unit.special_rules["enhancement_martial_tuition_usage_key"] = usage_key
+            unit.special_rules["enhancement_martial_tuition_stratagems"] = configured_stratagems
+            unit.special_rules["enhancement_martial_tuition_required_target_keyword"] = required_keyword
+            unit.special_rules["enhancement_martial_tuition_required_min_bondsman_targets"] = int(max(1, min_targets))
+            unit.special_rules["enhancement_martial_tuition_source"] = source_name
+            unit.special_rules["enhancement_martial_tuition_requires_bearer_on_battlefield"] = bool(
+                params.get("requires_bearer_on_battlefield", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "bearer of the iron chalice" or enh_id == "000010493002":
             if not is_valourstrike_lance:
