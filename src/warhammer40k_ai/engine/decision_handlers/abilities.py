@@ -5126,6 +5126,43 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if unit_id not in allowed_ids:
                 return ("Strike Swiftly selection includes an ineligible unit.",)
         return ()
+    if ability == "student_of_kauyon":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Student of Kauyon source unit was not found.",)
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "tau_empire_detachments", None) if source_army is not None else None
+        if mgr is None or not bool(getattr(mgr, "is_auxiliary_cadre", lambda: False)()):
+            return ("Student of Kauyon requires a T'au Empire Auxiliary Cadre army.",)
+        if is_skip_choice(request, result):
+            return ()
+
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+
+        selected_ids = [str(v or "").strip() for v in list(selected_vals or []) if str(v or "").strip()]
+        try:
+            max_selections = int(ctx.get("max_selections", 3) or 3)
+        except (TypeError, ValueError):
+            max_selections = 3
+        max_selections = max(0, int(max_selections))
+        if len(selected_ids) > max_selections:
+            return ("Student of Kauyon can select at most three units.",)
+        if len(selected_ids) != len(set(selected_ids)):
+            return ("Student of Kauyon selected_unit_ids must be unique.",)
+
+        selectable = list(getattr(mgr, "student_of_kauyon_selectable_units")(source_unit, game=game) or [])
+        allowed_ids = {str(get_entity_id(unit) or "") for unit in selectable}
+        for unit_id in selected_ids:
+            if unit_id not in allowed_ids:
+                return ("Student of Kauyon selection includes an ineligible unit.",)
+        return ()
     if ability == "desperate_for_redemption":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -11011,6 +11048,104 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 game,
                 player,
                 f"Strike Swiftly: {source_name} selected none.",
+            )
+        return selected_roots
+    if ability == "student_of_kauyon":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "tau_empire_detachments", None) if source_army is not None else None
+        if mgr is None:
+            return None
+
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        try:
+            max_selections = int(
+                source_sr.get(
+                    "enhancement_student_of_kauyon_max_units",
+                    ctx.get("max_selections", 3),
+                )
+                or 3
+            )
+        except Exception:
+            max_selections = 3
+        max_selections = max(0, int(max_selections))
+
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+        if is_skip_choice(request, result):
+            selected_vals = []
+
+        selectable_units = list(getattr(mgr, "student_of_kauyon_selectable_units")(source_unit, game=game) or [])
+        selectable_by_id = {str(get_entity_id(unit) or ""): unit for unit in selectable_units}
+
+        selected_roots = []
+        seen_ids: set[str] = set()
+        for unit_id in list(selected_vals or []):
+            unit_id_str = str(unit_id or "").strip()
+            if not unit_id_str or unit_id_str in seen_ids:
+                continue
+            root = selectable_by_id.get(unit_id_str)
+            if root is None:
+                continue
+            seen_ids.add(unit_id_str)
+            selected_roots.append(root)
+            if len(selected_roots) >= max_selections:
+                break
+
+        source_unit_id = str(get_entity_id(source_unit) or "")
+        selected_unit_ids = []
+        for root in selected_roots:
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = []
+            if not members:
+                members = [root]
+            for member in members:
+                member_sr = getattr(member, "special_rules", None)
+                if not isinstance(member_sr, dict):
+                    member_sr = {}
+                member_sr["bearer_unit_deep_strike"] = True
+                member_sr["enhancement_student_of_kauyon_source_unit_id"] = source_unit_id
+                member.special_rules = member_sr
+                invalidate_cache = getattr(member, "_invalidate_ability_cache", None)
+                if callable(invalidate_cache):
+                    invalidate_cache()
+            selected_unit_ids.append(str(get_entity_id(root) or ""))
+
+        source_sr["enhancement_student_of_kauyon"] = True
+        source_sr["enhancement_student_of_kauyon_resolved"] = True
+        source_sr["enhancement_student_of_kauyon_selected_unit_ids"] = sorted(
+            [uid for uid in selected_unit_ids if uid]
+        )
+        source_unit.special_rules = source_sr
+
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        source_name = str(getattr(source_unit, "name", "Unit") or "Unit")
+        if selected_roots:
+            names = ", ".join(str(getattr(unit_obj, "name", "Unit") or "Unit") for unit_obj in selected_roots)
+            _log_action_for_players(
+                game,
+                player,
+                f"Student of Kauyon: {source_name} selected {names}; selected units gain Deep Strike.",
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                f"Student of Kauyon: {source_name} selected none.",
             )
         return selected_roots
     if ability == "righteous_purpose":

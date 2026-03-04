@@ -1,5 +1,8 @@
 import unittest
 
+from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.decision_handlers.movement import _evaluate_reserves_arrival_positions
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
@@ -126,6 +129,231 @@ def _model_positions_for(unit: Unit, position: tuple[float, float, float]) -> li
 
 
 class TestTauAuxiliaryCadreEnhancements(unittest.TestCase):
+    def test_student_of_kauyon_descriptor_registered(self):
+        desc = get_enhancement_tool_descriptor(enhancement_id="000009839002")
+        self.assertIsNotNone(desc)
+        self.assertEqual(str(getattr(desc, "name", "") or ""), "Student of Kauyon")
+        self.assertEqual(
+            str(getattr(desc, "effect", "") or ""),
+            "grant_deep_strike_to_selected_units",
+        )
+
+    def test_student_of_kauyon_sets_expected_special_rules(self):
+        game, tau_army, _enemy_army = _build_game()
+        shaper = _make_unit(
+            "Kroot Shaper",
+            keywords=["INFANTRY", "CHARACTER", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        tau_army.add_unit(shaper)
+        game.rebuild_entity_registry()
+
+        _apply_enhancement(
+            shaper,
+            enhancement_id="000009839002",
+            enhancement_name="Student of Kauyon",
+        )
+        sr = dict(getattr(shaper, "special_rules", {}) or {})
+        self.assertTrue(bool(sr.get("enhancement_student_of_kauyon", False)))
+        self.assertEqual(int(sr.get("enhancement_student_of_kauyon_max_units", 0) or 0), 3)
+
+    def test_student_of_kauyon_queues_up_to_three_kroot_selection(self):
+        game, tau_army, _enemy_army = _build_game()
+        shaper = _make_unit(
+            "Kroot Shaper",
+            keywords=["INFANTRY", "CHARACTER", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        carnivores_a = _make_unit(
+            "Kroot Carnivores A",
+            keywords=["INFANTRY", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        carnivores_b = _make_unit(
+            "Kroot Carnivores B",
+            keywords=["INFANTRY", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        farstalkers = _make_unit(
+            "Kroot Farstalkers",
+            keywords=["INFANTRY", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        ineligible = _make_unit(
+            "Kroot Hounds",
+            keywords=["BEAST", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        for unit in (shaper, carnivores_a, carnivores_b, farstalkers, ineligible):
+            tau_army.add_unit(unit)
+        game.rebuild_entity_registry()
+
+        _apply_enhancement(
+            shaper,
+            enhancement_id="000009839002",
+            enhancement_name="Student of Kauyon",
+        )
+        tau_army.on_prebattle_rules_start(game=game)
+
+        pending = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+            and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "student_of_kauyon"
+        ]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(str((request.context or {}).get("source_unit_id", "") or ""), str(shaper.id))
+
+        options = list(getattr(request, "options", []) or [])
+        self.assertTrue(options)
+        first_payload = dict(getattr(options[0], "payload", {}) or {})
+        self.assertEqual(str(first_payload.get("action", "") or "").lower(), "skip")
+
+        carnivores_a_id = str(carnivores_a.id)
+        carnivores_b_id = str(carnivores_b.id)
+        farstalkers_id = str(farstalkers.id)
+        ineligible_id = str(ineligible.id)
+        selected_sets = {
+            frozenset(
+                str(v or "")
+                for v in list((dict(getattr(opt, "payload", {}) or {}).get("selected_unit_ids") or []))
+            )
+            for opt in options
+        }
+        self.assertIn(frozenset({carnivores_a_id}), selected_sets)
+        self.assertIn(frozenset({carnivores_b_id}), selected_sets)
+        self.assertIn(frozenset({farstalkers_id}), selected_sets)
+        self.assertIn(frozenset({carnivores_a_id, carnivores_b_id, farstalkers_id}), selected_sets)
+        self.assertNotIn(frozenset({ineligible_id}), selected_sets)
+
+    def test_student_of_kauyon_selected_units_gain_deep_strike(self):
+        game, tau_army, _enemy_army = _build_game()
+        shaper = _make_unit(
+            "Kroot Shaper",
+            keywords=["INFANTRY", "CHARACTER", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        carnivores = _make_unit(
+            "Kroot Carnivores",
+            keywords=["INFANTRY", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        farstalkers = _make_unit(
+            "Kroot Farstalkers",
+            keywords=["INFANTRY", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        ineligible = _make_unit(
+            "Vespid Stingwings",
+            keywords=["INFANTRY", "VESPID STINGWINGS"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        for unit in (shaper, carnivores, farstalkers, ineligible):
+            tau_army.add_unit(unit)
+        game.rebuild_entity_registry()
+
+        _apply_enhancement(
+            shaper,
+            enhancement_id="000009839002",
+            enhancement_name="Student of Kauyon",
+        )
+        tau_army.on_prebattle_rules_start(game=game)
+        request = next(
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "student_of_kauyon"
+        )
+
+        selected_ids = {str(carnivores.id), str(farstalkers.id)}
+        option_id = None
+        for opt in list(getattr(request, "options", []) or []):
+            payload = dict(getattr(opt, "payload", {}) or {})
+            ids = {str(v or "") for v in list(payload.get("selected_unit_ids") or []) if str(v or "")}
+            if ids == selected_ids:
+                option_id = str(getattr(opt, "option_id", "") or "")
+                break
+        self.assertIsNotNone(option_id)
+
+        self.assertFalse(carnivores.has_deep_strike())
+        self.assertFalse(farstalkers.has_deep_strike())
+        self.assertFalse(ineligible.has_deep_strike())
+
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=str(getattr(tau_army.player, "id", "") or ""),
+            option_id=str(option_id or ""),
+            payload={},
+        )
+        apply_result = dispatch_decision(game, request, result)
+        self.assertTrue(bool(getattr(apply_result, "ok", False)))
+
+        self.assertTrue(carnivores.has_deep_strike())
+        self.assertTrue(farstalkers.has_deep_strike())
+        self.assertFalse(ineligible.has_deep_strike())
+        source_sr = dict(getattr(shaper, "special_rules", {}) or {})
+        self.assertTrue(bool(source_sr.get("enhancement_student_of_kauyon_resolved", False)))
+        self.assertEqual(
+            sorted(str(v or "") for v in list(source_sr.get("enhancement_student_of_kauyon_selected_unit_ids", []) or [])),
+            sorted(selected_ids),
+        )
+
+    def test_student_of_kauyon_rejects_ineligible_selection(self):
+        game, tau_army, _enemy_army = _build_game()
+        shaper = _make_unit(
+            "Kroot Shaper",
+            keywords=["INFANTRY", "CHARACTER", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        carnivores = _make_unit(
+            "Kroot Carnivores",
+            keywords=["INFANTRY", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        ineligible = _make_unit(
+            "Kroot Hounds",
+            keywords=["BEAST", "KROOT"],
+            faction_keywords=["T'AU EMPIRE"],
+        )
+        for unit in (shaper, carnivores, ineligible):
+            tau_army.add_unit(unit)
+        game.rebuild_entity_registry()
+
+        _apply_enhancement(
+            shaper,
+            enhancement_id="000009839002",
+            enhancement_name="Student of Kauyon",
+        )
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Student of Kauyon: select up to three friendly Kroot Carnivores or Kroot Farstalkers units.",
+            player_id=str(getattr(tau_army.player, "id", "") or ""),
+            options=[
+                DecisionOption.create(
+                    "Invalid target",
+                    payload={"selected_unit_ids": [str(ineligible.id)]},
+                )
+            ],
+            context={
+                "ability": "student_of_kauyon",
+                "ability_name": "Student of Kauyon",
+                "source_unit_id": str(shaper.id),
+                "unit_id": str(shaper.id),
+                "optional": True,
+                "max_selections": 3,
+            },
+        )
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=str(getattr(tau_army.player, "id", "") or ""),
+            option_id=str(request.options[0].option_id),
+            payload={},
+        )
+        apply_result = dispatch_decision(game, request, result)
+        self.assertFalse(bool(getattr(apply_result, "ok", False)))
+        self.assertTrue(any("ineligible" in str(err).lower() for err in list(getattr(apply_result, "errors", []) or [])))
+
     def test_transponder_lock_module_descriptor_registered(self):
         desc = get_enhancement_tool_descriptor(enhancement_id="000009839005")
         self.assertIsNotNone(desc)

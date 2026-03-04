@@ -21,6 +21,12 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
     _STRIKE_SWIFTLY_SCOUT_DISTANCE_KEY = "enhancement_strike_swiftly_scouts_distance"
     _STRIKE_SWIFTLY_SELECTION_RANGE_KEY = "enhancement_strike_swiftly_selection_range"
     _STRIKE_SWIFTLY_RESOLVED_KEY = "enhancement_strike_swiftly_resolved"
+    _STUDENT_OF_KAUYON_FLAG = "enhancement_student_of_kauyon"
+    _STUDENT_OF_KAUYON_ID = "000009839002"
+    _STUDENT_OF_KAUYON_NAME = "student of kauyon"
+    _STUDENT_OF_KAUYON_SELECTED_UNIT_IDS_KEY = "enhancement_student_of_kauyon_selected_unit_ids"
+    _STUDENT_OF_KAUYON_MAX_UNITS_KEY = "enhancement_student_of_kauyon_max_units"
+    _STUDENT_OF_KAUYON_RESOLVED_KEY = "enhancement_student_of_kauyon_resolved"
 
     def is_experimental_prototype_cadre(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -90,6 +96,26 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             return False
         name = str(getattr(root, "name", "") or "").strip().lower()
         return "kroot carnivore" in name
+
+    def _unit_is_kroot_farstalkers(self, unit) -> bool:
+        if unit is None:
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return "kroot farstalker" in name
+
+    def _unit_is_student_of_kauyon_target(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        return bool(
+            self._unit_is_kroot_carnivores(root)
+            or self._unit_is_kroot_farstalkers(root)
+        )
 
     def _model_is_tau_empire(self, model) -> bool:
         if model is None:
@@ -619,6 +645,185 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             return str(value)
         return ""
 
+    def _unit_has_student_of_kauyon(self, unit) -> bool:
+        if unit is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get(self._STUDENT_OF_KAUYON_FLAG)):
+            return True
+        enhancement = getattr(unit, "enhancement", None)
+        if enhancement is None:
+            return False
+        enh_id = str(getattr(enhancement, "id", "") or "").strip()
+        enh_name = str(getattr(enhancement, "name", "") or "").strip().lower()
+        return bool(enh_id == self._STUDENT_OF_KAUYON_ID or enh_name == self._STUDENT_OF_KAUYON_NAME)
+
+    def _iter_student_of_kauyon_sources(self) -> list:
+        army = self.army
+        if army is None:
+            return []
+        unique_by_id = {}
+        for unit in list(getattr(army, "units", []) or []):
+            if not self._unit_has_student_of_kauyon(unit):
+                continue
+            unit_id = self._entity_id(unit)
+            if not unit_id:
+                continue
+            if unit_id in unique_by_id:
+                continue
+            unique_by_id[unit_id] = unit
+        return [unique_by_id[k] for k in sorted(unique_by_id.keys())]
+
+    def student_of_kauyon_selectable_units(self, source_unit, *, game=None) -> list:
+        if source_unit is None:
+            return []
+        source_root = self._attached_root(source_unit)
+        if source_root is None:
+            return []
+        if not self._unit_in_army(source_root):
+            return []
+        if not self._unit_has_student_of_kauyon(source_unit):
+            return []
+        if not self._enhancement_bearer_alive(source_unit):
+            return []
+
+        del game  # Selection only depends on army roster composition.
+        unique_roots = {}
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            root_id = self._entity_id(root)
+            if not root_id:
+                continue
+            if root_id in unique_roots:
+                continue
+            unique_roots[root_id] = root
+
+        selectable = []
+        for root_id in sorted(unique_roots.keys()):
+            root = unique_roots[root_id]
+            if not self._unit_is_student_of_kauyon_target(root):
+                continue
+            selectable.append(root)
+        return selectable
+
+    def _queue_student_of_kauyon_selection_requests(self, *, game=None) -> None:
+        if not self.is_auxiliary_cadre():
+            return
+        army = self.army
+        player = getattr(army, "player", None) if army is not None else None
+        if game is None:
+            game = getattr(player, "game", None)
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+
+        from itertools import combinations
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(game, "decision_queue", None)
+        request_fn = getattr(game, "request_decision", None)
+        for source_unit in self._iter_student_of_kauyon_sources():
+            sr = getattr(source_unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if bool(sr.get(self._STUDENT_OF_KAUYON_RESOLVED_KEY)):
+                continue
+            source_unit_id = self._entity_id(source_unit)
+            if not source_unit_id:
+                continue
+
+            duplicate = False
+            if queue is not None and hasattr(queue, "list"):
+                for pending in list(queue.list() or []):
+                    if str(getattr(pending, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    pending_ctx = dict(getattr(pending, "context", {}) or {})
+                    if str(pending_ctx.get("ability", "") or "") != "student_of_kauyon":
+                        continue
+                    if str(pending_ctx.get("source_unit_id", "") or "") != source_unit_id:
+                        continue
+                    duplicate = True
+                    break
+            if duplicate:
+                continue
+
+            selectable = self.student_of_kauyon_selectable_units(source_unit, game=game)
+            try:
+                max_units = int(sr.get(self._STUDENT_OF_KAUYON_MAX_UNITS_KEY, 3) or 3)
+            except Exception:
+                max_units = 3
+            max_units = max(0, int(max_units))
+
+            options = [
+                DecisionOption.create(
+                    "None",
+                    payload={
+                        "action": "skip",
+                        "selected_unit_ids": [],
+                        "selection_kind": "none",
+                    },
+                )
+            ]
+            for target in selectable:
+                target_id = self._entity_id(target)
+                if not target_id:
+                    continue
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(target, "name", "Unit") or "Unit"),
+                        payload={
+                            "selected_unit_ids": [target_id],
+                            "selection_kind": "one_unit",
+                        },
+                    )
+                )
+            for count in range(2, max_units + 1):
+                for selected in combinations(selectable, count):
+                    selected_ids = []
+                    selected_names = []
+                    for target in selected:
+                        target_id = self._entity_id(target)
+                        if not target_id:
+                            selected_ids = []
+                            break
+                        selected_ids.append(target_id)
+                        selected_names.append(str(getattr(target, "name", "Unit") or "Unit"))
+                    if not selected_ids:
+                        continue
+                    options.append(
+                        DecisionOption.create(
+                            " + ".join(selected_names),
+                            payload={
+                                "selected_unit_ids": selected_ids,
+                                "selection_kind": f"{count}_units",
+                            },
+                        )
+                    )
+
+            if len(options) <= 1:
+                sr[self._STUDENT_OF_KAUYON_SELECTED_UNIT_IDS_KEY] = []
+                sr[self._STUDENT_OF_KAUYON_RESOLVED_KEY] = True
+                source_unit.special_rules = sr
+                continue
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Student of Kauyon: select up to three friendly Kroot Carnivores or Kroot Farstalkers units.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "student_of_kauyon",
+                    "ability_name": "Student of Kauyon",
+                    "source_unit_id": source_unit_id,
+                    "unit_id": source_unit_id,
+                    "optional": True,
+                    "max_selections": int(max_units),
+                },
+            )
+            if callable(request_fn):
+                request_fn(request)
+
     def _unit_has_strike_swiftly(self, unit) -> bool:
         if unit is None:
             return False
@@ -1035,6 +1240,7 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
                 request_fn(request)
 
     def on_prebattle_rules_start(self, *, game=None) -> None:
+        self._queue_student_of_kauyon_selection_requests(game=game)
         self._queue_strike_swiftly_selection_requests(game=game)
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:

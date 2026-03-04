@@ -11,6 +11,9 @@ class GateOfInfinityManager:
     """
     Grey Knights army rule: Gate of Infinity.
     """
+    _TOME_OF_FORBIDDEN_WAYS_FLAG = "enhancement_tome_of_forbidden_ways"
+    _TOME_OF_FORBIDDEN_WAYS_ID = "000010348005"
+    _TOME_OF_FORBIDDEN_WAYS_NAME = "tome of forbidden ways"
 
     def __init__(self, army=None):
         self.army = army
@@ -76,6 +79,151 @@ class GateOfInfinityManager:
         if faction_id and faction_id != "GK":
             return False
         return army_has_ability_id(self.army, ABILITY_GATE_OF_INFINITY)
+
+    @staticmethod
+    def _attached_root(unit):
+        if unit is None:
+            return None
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            root = get_root()
+            if root is not None:
+                return root
+        return unit
+
+    @staticmethod
+    def _entity_id(entity) -> str:
+        if entity is None:
+            return ""
+        value = getattr(entity, "id", None)
+        if value:
+            return str(value)
+        value = getattr(entity, "_id", None)
+        if value:
+            return str(value)
+        return ""
+
+    def _unit_in_army(self, unit) -> bool:
+        if unit is None or self.army is None:
+            return False
+        get_parent_army = getattr(unit, "get_parent_army", None)
+        if not callable(get_parent_army):
+            return False
+        return get_parent_army() is self.army
+
+    @staticmethod
+    def _model_alive(model) -> bool:
+        if model is None:
+            return False
+        alive_attr = getattr(model, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def _enhancement_bearer_alive(self, unit) -> bool:
+        if unit is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "") if isinstance(sr, dict) else ""
+        if bearer_id:
+            for model in list(getattr(unit, "models", []) or []):
+                model_id = str(
+                    get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or ""
+                ).strip()
+                if model_id != bearer_id:
+                    continue
+                return self._model_alive(model)
+            return False
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if bearer is not None:
+                return self._model_alive(bearer)
+        for model in list(getattr(unit, "models", []) or []):
+            if self._model_alive(model):
+                return True
+        return False
+
+    def _unit_is_on_battlefield(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        alive_fn = getattr(root, "is_alive", None)
+        if callable(alive_fn) and not bool(alive_fn()):
+            return False
+        if not bool(getattr(root, "deployed", False)):
+            return False
+        if bool(getattr(root, "is_embarked", False)):
+            return False
+        if getattr(root, "embarked_in", None) is not None:
+            return False
+        if str(getattr(root, "reserve_status", "deployed") or "deployed") != "deployed":
+            return False
+        in_reserves = getattr(root, "is_in_reserves", None)
+        if callable(in_reserves) and bool(in_reserves()):
+            return False
+        return True
+
+    def _unit_is_in_strategic_reserves(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        alive_fn = getattr(root, "is_alive", None)
+        if callable(alive_fn) and not bool(alive_fn()):
+            return False
+        if bool(getattr(root, "is_embarked", False)):
+            return False
+        if getattr(root, "embarked_in", None) is not None:
+            return False
+        in_strategic = getattr(root, "is_in_strategic_reserves", None)
+        if callable(in_strategic):
+            return bool(in_strategic())
+        return str(getattr(root, "reserve_status", "") or "").strip().lower() == "strategic_reserves"
+
+    def _unit_has_tome_of_forbidden_ways(self, unit) -> bool:
+        if unit is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get(self._TOME_OF_FORBIDDEN_WAYS_FLAG)):
+            return True
+        enhancement = getattr(unit, "enhancement", None)
+        if enhancement is None:
+            return False
+        enh_id = str(getattr(enhancement, "id", "") or "").strip()
+        enh_name = str(getattr(enhancement, "name", "") or "").strip().lower()
+        return bool(
+            enh_id == self._TOME_OF_FORBIDDEN_WAYS_ID
+            or enh_name == self._TOME_OF_FORBIDDEN_WAYS_NAME
+        )
+
+    def _active_tome_of_forbidden_ways_bonus(self) -> int:
+        if self.army is None:
+            return 0
+        total_bonus = 0
+        seen_ids: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            if not self._unit_has_tome_of_forbidden_ways(unit):
+                continue
+            unit_id = self._entity_id(unit)
+            if not unit_id or unit_id in seen_ids:
+                continue
+            seen_ids.add(unit_id)
+            if not self._enhancement_bearer_alive(unit):
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            if bool(sr.get("enhancement_tome_of_forbidden_ways_requires_bearer_on_battlefield_or_strategic_reserves", True)):
+                if not (self._unit_is_on_battlefield(unit) or self._unit_is_in_strategic_reserves(unit)):
+                    continue
+            try:
+                additional = int(sr.get("enhancement_tome_of_forbidden_ways_additional_max_units", 1) or 1)
+            except (TypeError, ValueError):
+                additional = 1
+            total_bonus += max(0, int(additional))
+        return int(total_bonus)
 
     def _unit_has_gate(self, unit) -> bool:
         if unit is None:
@@ -177,6 +325,7 @@ class GateOfInfinityManager:
         return True
 
     def get_max_units_for_battlefield(self, game=None) -> int:
+        base = 0
         try:
             size = getattr(getattr(game, "battlefield", None), "size", None)
         except Exception:
@@ -189,12 +338,14 @@ class GateOfInfinityManager:
             BattlefieldSize = None
         if BattlefieldSize is not None:
             if size == BattlefieldSize.INCURSION:
-                return 2
+                base = 2
             if size == BattlefieldSize.STRIKE_FORCE:
-                return 3
+                base = 3
             if size == BattlefieldSize.ONSLAUGHT:
-                return 4
-        return 0
+                base = 4
+        if base <= 0:
+            return 0
+        return int(base + self._active_tome_of_forbidden_ways_bonus())
 
     def get_eligible_units(self, *, game=None, player=None) -> list:
         if not self._army_has_gate():

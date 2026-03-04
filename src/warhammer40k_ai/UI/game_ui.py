@@ -7077,6 +7077,7 @@ class GameView:
                 "unearthly_power",
                 "strategic_conqueror",
                 "strike_swiftly",
+                "student_of_kauyon",
                 "archons_will_objective",
                 "traitoris_tyrants_shadow_objective",
                 "traitoris_malevolent_heraldry",
@@ -15294,6 +15295,10 @@ class GameView:
         """At pre-battle rules start: prompt each human player to select Strike Swiftly target units."""
         self._queue_quarry_selection_prompts(game, ability_key="strike_swiftly")
 
+    def _queue_student_of_kauyon_prompts(self, game):
+        """At pre-battle rules start: prompt each human player to select Student of Kauyon target units."""
+        self._queue_quarry_selection_prompts(game, ability_key="student_of_kauyon")
+
     def _open_next_quarry_prompt(self):
         if not self._pending_quarry_queue:
             return
@@ -15382,6 +15387,10 @@ class GameView:
             title = ability_name or "Strike Swiftly"
             subtitle = "Select up to two friendly T'AU EMPIRE units within 6\" that do not have Scouts."
             header = f"{getattr(source_unit, 'name', 'Model')} selects units to gain Scouts 6\"."
+        elif str(ability_key) == "student_of_kauyon":
+            title = ability_name or "Student of Kauyon"
+            subtitle = "Select up to three friendly Kroot Carnivores or Kroot Farstalkers units."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects units to gain Deep Strike."
         elif str(ability_key) == "archons_will_objective":
             title = ability_name or "Archon's Will"
             subtitle = "Select one objective marker on the battlefield."

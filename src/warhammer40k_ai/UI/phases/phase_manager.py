@@ -5937,6 +5937,9 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         queue_prompts = getattr(self.game_view, "_queue_strike_swiftly_prompts", None)
         if callable(queue_prompts):
             queue_prompts(game)
+        queue_student_prompts = getattr(self.game_view, "_queue_student_of_kauyon_prompts", None)
+        if callable(queue_student_prompts):
+            queue_student_prompts(game)
         try:
             from ...engine.decision_kinds import DECISION_CHOOSE_QUARRY
         except Exception:
@@ -5948,9 +5951,9 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                     if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
                         continue
                     ctx = dict(getattr(req, "context", {}) or {})
-                    if str(ctx.get("ability", "") or "") != "strike_swiftly":
+                    if str(ctx.get("ability", "") or "") not in {"strike_swiftly", "student_of_kauyon"}:
                         continue
-                    logger.info("Waiting for Strike Swiftly selections before Scout moves.")
+                    logger.info("Waiting for pre-battle enhancement selections before Scout moves.")
                     return False
         
         # During setup phase, use first_turn_player_index instead of current_player_index

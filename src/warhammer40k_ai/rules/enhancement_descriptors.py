@@ -1313,6 +1313,19 @@ _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME = {
 }
 
 _TAU_AUXILIARY_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009839002": EnhancementToolDescriptor(
+        enhancement_id="000009839002",
+        name="Student of Kauyon",
+        timing="declare_battle_formations",
+        target="up_to_three_friendly_kroot_carnivores_or_kroot_farstalkers_units",
+        duration="until_end_of_battle",
+        effect="grant_deep_strike_to_selected_units",
+        effect_params={
+            "max_units": 3,
+            "target_unit_name_patterns": ("kroot carnivore", "kroot farstalker"),
+            "optional": True,
+        },
+    ),
     "000009839005": EnhancementToolDescriptor(
         enhancement_id="000009839005",
         name="Transponder Lock Module",
@@ -5858,6 +5871,25 @@ _WARPBANE_TASK_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _WARPBANE_TASK_FORCE_DESCRIPTORS.values()
 }
 
+_GREY_KNIGHTS_BROTHERHOOD_STRIKE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010348005": EnhancementToolDescriptor(
+        enhancement_id="000010348005",
+        name="Tome of Forbidden Ways",
+        timing="passive",
+        target="gate_of_infinity_army_rule",
+        duration="while_bearer_on_battlefield_or_in_strategic_reserves",
+        effect="increase_gate_of_infinity_max_units",
+        effect_params={
+            "additional_max_units": 1,
+            "requires_bearer_on_battlefield_or_strategic_reserves": True,
+        },
+    ),
+}
+
+_GREY_KNIGHTS_BROTHERHOOD_STRIKE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GREY_KNIGHTS_BROTHERHOOD_STRIKE_DESCRIPTORS.values()
+}
+
 _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010364004": EnhancementToolDescriptor(
         enhancement_id="000010364004",
@@ -6570,6 +6602,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _WARPBANE_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _GREY_KNIGHTS_BROTHERHOOD_STRIKE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6716,6 +6751,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _GRAND_COVEN_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_BY_NAME.get(key)
+        or _GREY_KNIGHTS_BROTHERHOOD_STRIKE_BY_NAME.get(key)
         or _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_TRAITORIS_LANCE_BY_NAME.get(key)

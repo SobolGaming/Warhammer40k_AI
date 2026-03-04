@@ -780,6 +780,10 @@ class Enhancement:
             is_valourstrike_lance = False
         gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
         try:
+            is_brotherhood_strike = bool(gk_mgr and gk_mgr.is_brotherhood_strike())
+        except Exception:
+            is_brotherhood_strike = False
+        try:
             is_warpbane_task_force = bool(gk_mgr and gk_mgr.is_warpbane_task_force())
         except Exception:
             is_warpbane_task_force = False
@@ -2089,6 +2093,29 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_priority_drop_beacon_bearer_model_id"] = bearer_id
+
+        if name == "student of kauyon" or enh_id == "000009839002":
+            if not is_auxiliary_cadre:
+                return
+            unit.special_rules["enhancement_student_of_kauyon"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            max_units = _coerce_int(params.get("max_units", 3) or 3, default=3)
+            unit.special_rules["enhancement_student_of_kauyon_max_units"] = int(max(0, max_units))
+            patterns = [
+                str(v or "").strip().lower()
+                for v in list(params.get("target_unit_name_patterns", ("kroot carnivore", "kroot farstalker")) or ())
+                if str(v or "").strip()
+            ]
+            if not patterns:
+                patterns = ["kroot carnivore", "kroot farstalker"]
+            unit.special_rules["enhancement_student_of_kauyon_target_unit_name_patterns"] = list(
+                dict.fromkeys(patterns)
+            )
+            unit.special_rules["enhancement_student_of_kauyon_source"] = "Student of Kauyon"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_student_of_kauyon_bearer_model_id"] = bearer_id
 
         if name == "transponder lock module" or enh_id == "000009839005":
             if not is_auxiliary_cadre:
@@ -9588,6 +9615,24 @@ class Enhancement:
             unit.special_rules["enhancement_paragon_of_sanctity_once_key"] = "paragon_of_sanctity"
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "tome of forbidden ways" or enh_id == "000010348005":
+            if not is_brotherhood_strike:
+                return
+            unit.special_rules["enhancement_tome_of_forbidden_ways"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            additional_max_units = _coerce_int(params.get("additional_max_units", 1) or 1, default=1)
+            unit.special_rules["enhancement_tome_of_forbidden_ways_additional_max_units"] = int(
+                max(0, additional_max_units)
+            )
+            unit.special_rules["enhancement_tome_of_forbidden_ways_requires_bearer_on_battlefield_or_strategic_reserves"] = bool(
+                params.get("requires_bearer_on_battlefield_or_strategic_reserves", True)
+            )
+            unit.special_rules["enhancement_tome_of_forbidden_ways_source"] = "Tome of Forbidden Ways"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_tome_of_forbidden_ways_bearer_model_id"] = bearer_id
 
         if name == "a foot in the future" or enh_id == "000010364004":
             if not is_augurium_task_force:
