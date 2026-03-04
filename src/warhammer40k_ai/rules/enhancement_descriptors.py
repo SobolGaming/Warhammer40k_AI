@@ -5911,6 +5911,25 @@ _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_DESCRIPTORS.values()
 }
 
+_GREY_KNIGHTS_HALLOWED_CONCLAVE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010352002": EnhancementToolDescriptor(
+        enhancement_id="000010352002",
+        name="Eye of the Augurium",
+        timing="when_targeted_with_fire_overwatch_or_heroic_intervention",
+        target="bearer_unit",
+        duration="instant",
+        effect="stratagem_cp_cost_set_zero_with_repeat_exception",
+        effect_params={
+            "stratagems": ("OVERWATCH", "FIRE OVERWATCH", "HEROIC INTERVENTION"),
+            "limit": "battle_round",
+        },
+    ),
+}
+
+_GREY_KNIGHTS_HALLOWED_CONCLAVE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GREY_KNIGHTS_HALLOWED_CONCLAVE_DESCRIPTORS.values()
+}
+
 _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010312002": EnhancementToolDescriptor(
         enhancement_id="000010312002",
@@ -6653,6 +6672,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _GREY_KNIGHTS_HALLOWED_CONCLAVE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6804,6 +6826,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _WARPBANE_TASK_FORCE_BY_NAME.get(key)
         or _GREY_KNIGHTS_BROTHERHOOD_STRIKE_BY_NAME.get(key)
         or _GREY_KNIGHTS_AUGURIUM_TASK_FORCE_BY_NAME.get(key)
+        or _GREY_KNIGHTS_HALLOWED_CONCLAVE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_TRAITORIS_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME.get(key)

@@ -2502,6 +2502,14 @@ class StratagemManager(
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
 
+    def _unit_can_use_eye_of_the_augurium_stratagem_discount(self, unit, *, stratagem_name: str = "") -> bool:
+        if unit is None:
+            return False
+        fn = getattr(unit, "can_use_eye_of_the_augurium_stratagem_discount", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
     def _unit_has_snarling_protector_heroic_intervention(self, unit) -> bool:
         if unit is None:
             return False
@@ -2546,9 +2554,19 @@ class StratagemManager(
 
     def _overwatch_brutal_example_available(self, *, target_unit=None, candidates=None) -> bool:
         if target_unit is not None:
-            return self._unit_can_use_traitor_enforcer_overwatch(target_unit)
+            return self._unit_can_use_traitor_enforcer_overwatch(
+                target_unit
+            ) or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
+                target_unit,
+                stratagem_name="OVERWATCH",
+            )
         for cand in list(candidates or []):
             if self._unit_can_use_traitor_enforcer_overwatch(cand):
+                return True
+            if self._unit_can_use_eye_of_the_augurium_stratagem_discount(
+                cand,
+                stratagem_name="OVERWATCH",
+            ):
                 return True
         return False
 
@@ -2568,6 +2586,10 @@ class StratagemManager(
                     target_unit,
                     stratagem_name="OVERWATCH",
                 )
+                or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
+                    target_unit,
+                    stratagem_name="OVERWATCH",
+                )
             )
         for cand in list(candidates or []):
             if self._unit_can_use_traitor_enforcer_overwatch(cand):
@@ -2583,6 +2605,11 @@ class StratagemManager(
             ):
                 return True
             if self._unit_can_use_shriekworm_familiar_overwatch(
+                cand,
+                stratagem_name="OVERWATCH",
+            ):
+                return True
+            if self._unit_can_use_eye_of_the_augurium_stratagem_discount(
                 cand,
                 stratagem_name="OVERWATCH",
             ):
@@ -2622,6 +2649,10 @@ class StratagemManager(
                     target_unit,
                     stratagem_name="HEROIC INTERVENTION",
                 )
+                or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
+                    target_unit,
+                    stratagem_name="HEROIC INTERVENTION",
+                )
                 or self._unit_can_use_grimnars_mark_stratagem_discount(
                     target_unit,
                     stratagem_name="HEROIC INTERVENTION",
@@ -2640,6 +2671,10 @@ class StratagemManager(
                 )
                 or self._unit_has_snarling_protector_heroic_intervention(cand)
                 or self._unit_can_use_intraneural_biotech_stratagem_discount(
+                    cand,
+                    stratagem_name="HEROIC INTERVENTION",
+                )
+                or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
                     cand,
                     stratagem_name="HEROIC INTERVENTION",
                 )
@@ -8652,6 +8687,10 @@ class StratagemManager(
                         stratagem_name="HEROIC INTERVENTION",
                     )
                     or self._unit_has_snarling_protector_heroic_intervention(unit)
+                    or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
+                        unit,
+                        stratagem_name="HEROIC INTERVENTION",
+                    )
                 )
                 if self.player.command_points < eff_cost and not can_free_heroic:
                     continue
@@ -10807,7 +10846,12 @@ class StratagemManager(
             candidates = [
                 u
                 for u in candidates
-                if self._unit_can_use_traitor_enforcer_overwatch(u)
+                if self._unit_can_use_traitor_enforcer_overwatch(
+                    u
+                ) or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
+                    u,
+                    stratagem_name="OVERWATCH",
+                )
             ]
             if not candidates:
                 return
@@ -13039,9 +13083,10 @@ class StratagemManager(
                 logger.error(f"ERROR: Overwatch: {apply_info.get('reason', 'not allowed')}")
                 return False
             traitor_overwatch = bool(apply_info.get("traitor_enforcer_overwatch_use", False))
+            eye_overwatch = bool(apply_info.get("eye_of_the_augurium_use", False))
             protector_overwatch = bool(apply_info.get("protector_of_paths_overwatch_use", False))
             shriekworm_overwatch = bool(apply_info.get("shriekworm_familiar_overwatch_use", False))
-            if self._used_this_turn.get("OVERWATCH", False) and not traitor_overwatch:
+            if self._used_this_turn.get("OVERWATCH", False) and not traitor_overwatch and not eye_overwatch:
                 logger.error("ERROR: Overwatch already used this turn")
                 return False
             if int(getattr(self.player, "command_points", 0) or 0) < int(eff_cost or 0):

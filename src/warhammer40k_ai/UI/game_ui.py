@@ -19438,21 +19438,35 @@ class GameView:
         enemy = ctx.get("enemy_unit")
         overwatch_used = bool(getattr(manager, "_used_this_turn", {}).get("OVERWATCH", False))
         can_traitor = False
+        can_eye = False
         try:
             can_traitor = bool(getattr(shooter_unit, "can_use_traitor_enforcer_overwatch", lambda _g=None: False)(self.game))
         except Exception:
             can_traitor = False
-        if overwatch_used and not can_traitor:
+        try:
+            can_eye = bool(
+                getattr(shooter_unit, "can_use_eye_of_the_augurium_stratagem_discount", lambda _g=None, stratagem_name="": False)(
+                    self.game,
+                    stratagem_name="OVERWATCH",
+                )
+            )
+        except Exception:
+            can_eye = False
+        if overwatch_used and not can_traitor and not can_eye:
             logger.info("Overwatch: already used this turn")
             return
 
-        def _continue_overwatch(use_traitor: bool):
+        def _continue_overwatch(use_traitor: bool, use_eye: bool = False):
             try:
                 player.set_next_optional_decision("BRUTAL_EXAMPLE_OVERWATCH", bool(use_traitor))
             except Exception:
                 pass
-            if overwatch_used and not use_traitor:
-                logger.info("Overwatch: Brutal Example declined; cannot use Overwatch again this turn")
+            try:
+                player.set_next_optional_decision("EYE_OF_THE_AUGURIUM_STRATAGEM_DISCOUNT", bool(use_eye))
+            except Exception:
+                pass
+            if overwatch_used and not use_traitor and not use_eye:
+                logger.info("Overwatch: repeat-use ability declined; cannot use Overwatch again this turn")
                 return
             if callable(getattr(self, "_request_overwatch_shooting", None)):
                 overwatch_threshold = 6
@@ -19494,7 +19508,7 @@ class GameView:
                                 logger.info(f"Overwatch: {apply_info.get('reason', 'not allowed')}")
                                 return
                             eff_cost = int(apply_info.get("cost", s.cp_cost))
-                        if overwatch_used and not apply_info.get("traitor_enforcer_overwatch_use", False):
+                        if overwatch_used and not apply_info.get("traitor_enforcer_overwatch_use", False) and not apply_info.get("eye_of_the_augurium_use", False):
                             logger.info("Overwatch: already used this turn")
                             return
                         if player.spend_command_points(
@@ -19620,7 +19634,64 @@ class GameView:
                 self._optional_flow_active = False
             return
 
-        _continue_overwatch(False)
+        if can_eye and overwatch_used:
+            if self._optional_flow_active:
+                return
+            self._optional_flow_active = True
+            from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+            from ..engine.decisions import DecisionOption, DecisionRequest
+
+            ability_name = "Eye of the Augurium"
+            try:
+                eye_rule = shooter_unit.get_eye_of_the_augurium_stratagem_rule() or {}
+                ability_name = str(eye_rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                ability_name = "Eye of the Augurium"
+            unit_id = get_entity_id(shooter_unit.get_attached_unit_root())
+            message = f"Use {ability_name} to target this unit with Fire Overwatch for 0CP?"
+            ctx_decision = {
+                "ability": "eye_of_the_augurium_stratagem_discount",
+                "ability_name": ability_name,
+                "message": message,
+                "stratagem": str(name),
+                "target_unit_id": unit_id,
+            }
+            options = [
+                DecisionOption.create("Use", payload={"choice": True}),
+                DecisionOption.create("Skip", payload={"choice": False}),
+            ]
+            req = DecisionRequest.create(
+                DECISION_CONFIRM_YES_NO,
+                ability_name or "Eye of the Augurium",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context=ctx_decision,
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+
+            def _on_eye_resolved(_req, _result):
+                chosen = False
+                selected = None
+                for opt in list(getattr(_req, "options", []) or []):
+                    if getattr(opt, "option_id", None) == getattr(_result, "option_id", None):
+                        selected = opt
+                        break
+                payload = dict(getattr(selected, "payload", {}) or {}) if selected is not None else {}
+                if "choice" in payload:
+                    chosen = bool(payload.get("choice"))
+                elif "choice" in getattr(_result, "payload", {}):
+                    chosen = bool(_result.payload.get("choice"))
+                self._optional_flow_active = False
+                _continue_overwatch(False, chosen)
+
+            if getattr(self, "phase_manager", None) is not None:
+                self.phase_manager._register_decision_callback(req, _on_eye_resolved)
+            else:
+                self._optional_flow_active = False
+            return
+
+        _continue_overwatch(False, False)
 
     def _finalize_heroic_intervention(self, player, name: str, context: Dict[str, Any], unit) -> None:
         if self._heroic_flow_active:

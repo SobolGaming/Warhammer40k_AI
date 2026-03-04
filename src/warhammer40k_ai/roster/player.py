@@ -1697,6 +1697,14 @@ class Player:
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
 
+    def _target_unit_can_use_eye_of_the_augurium_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        fn = getattr(target_unit, "can_use_eye_of_the_augurium_stratagem_discount", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
     def _target_unit_can_use_empyric_suffusion_heroic_intervention(self, target_unit) -> bool:
         if target_unit is None:
             return False
@@ -1835,6 +1843,17 @@ class Player:
         if name_u not in ("HEROIC INTERVENTION", "COUNTER-OFFENSIVE", "COUNTER OFFENSIVE"):
             return 0
         if not self._target_unit_can_use_intraneural_biotech_stratagem_discount(target_unit, stratagem_name=name_u):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_eye_of_the_augurium_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u not in ("OVERWATCH", "FIRE OVERWATCH", "HEROIC INTERVENTION"):
+            return 0
+        if not self._target_unit_can_use_eye_of_the_augurium_stratagem_discount(target_unit, stratagem_name=name_u):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -2342,6 +2361,38 @@ class Player:
                     reasons.append(f"{ability_name}: Heroic Intervention for 0CP.")
                 else:
                     reasons.append(f"{ability_name}: Counter-offensive for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        eye = self._preview_eye_of_the_augurium_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if eye:
+            ability_name = "Eye of the Augurium"
+            try:
+                get_rule = getattr(target_unit, "get_eye_of_the_augurium_stratagem_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ability_key = "EYE_OF_THE_AUGURIUM_STRATAGEM_DISCOUNT"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                ability_key,
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                if name_u in ("OVERWATCH", "FIRE OVERWATCH"):
+                    reasons.append(f"{ability_name}: Fire Overwatch for 0CP.")
+                else:
+                    reasons.append(f"{ability_name}: Heroic Intervention for 0CP.")
                 return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         if name_u in ("OVERWATCH", "FIRE OVERWATCH") and target_unit is not None:
@@ -2959,11 +3010,76 @@ class Player:
                     "intraneural_biotech_use": True,
                     "intraneural_biotech_source": ability_name,
                 }
+        eye = self._preview_eye_of_the_augurium_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if eye and target_unit is not None and name_u == "HEROIC INTERVENTION":
+            ability_name = "Eye of the Augurium"
+            try:
+                get_rule = getattr(target_unit, "get_eye_of_the_augurium_stratagem_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("EYE_OF_THE_AUGURIUM_STRATAGEM_DISCOUNT", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                try:
+                    mark_used = getattr(target_unit, "mark_eye_of_the_augurium_used", None)
+                    if callable(mark_used):
+                        mark_used(
+                            self.game,
+                            source=ability_name,
+                            stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                        )
+                except Exception:
+                    pass
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Heroic Intervention for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "eye_of_the_augurium_use": True,
+                    "eye_of_the_augurium_source": ability_name,
+                }
         if name_u in ("OVERWATCH", "FIRE OVERWATCH") and target_unit is not None:
             get_rule = getattr(target_unit, "get_traitor_enforcer_overwatch_rule", None)
             rule = get_rule() if callable(get_rule) else None
             can_traitor = bool(rule) and bool(
                 getattr(target_unit, "can_use_traitor_enforcer_overwatch", lambda _g=None: False)(self.game)
+            )
+            can_eye = bool(
+                self._target_unit_can_use_eye_of_the_augurium_stratagem_discount(
+                    target_unit,
+                    stratagem_name=name_u,
+                )
             )
             can_prophetic = bool(
                 self._target_unit_can_use_prophetic_sentinels_stratagem_discount(
@@ -2986,8 +3102,68 @@ class Player:
             mgr = getattr(self, "stratagems", None)
             used_this_turn = getattr(mgr, "_used_this_turn", {}) if mgr is not None else {}
             overwatch_used = bool(used_this_turn.get("OVERWATCH", False)) if isinstance(used_this_turn, dict) else False
-            if overwatch_used and not can_traitor:
+            if overwatch_used and not can_traitor and not can_eye:
                 return {"denied": True, "reason": "Overwatch already used this turn"}
+            if can_eye:
+                ability_name = "Eye of the Augurium"
+                try:
+                    get_eye_rule = getattr(target_unit, "get_eye_of_the_augurium_stratagem_rule", None)
+                    eye_rule = get_eye_rule() if callable(get_eye_rule) else None
+                    if isinstance(eye_rule, dict):
+                        ability_name = str(eye_rule.get("source", "") or ability_name).strip() or ability_name
+                except Exception:
+                    pass
+                ctx = {
+                    "ability_name": ability_name,
+                    "stratagem": getattr(stratagem, "name", None) or "",
+                    "target_unit": getattr(target_unit, "name", None) or "",
+                    "base_cp_cost": base,
+                }
+                use_eye = self._should_use_optional_ability("EYE_OF_THE_AUGURIUM_STRATAGEM_DISCOUNT", ctx)
+                if use_eye:
+                    applied_discount = base
+                    cost = max(0, base - applied_discount)
+                    increase = 0
+                    increase_reasons: list[str] = []
+                    opponent = self._get_opponent_player()
+                    if opponent is not None:
+                        inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                            target_unit=target_unit,
+                            stratagem=stratagem,
+                            current_cost=cost,
+                        )
+                        increase = int(inc_info.get("increase", 0) or 0)
+                        increase_reasons = list(inc_info.get("reasons", []) or [])
+                        if increase:
+                            cost = max(0, cost + increase)
+                    self._pending_stratagem_cp_increase = {
+                        "increase": int(increase or 0),
+                        "reasons": increase_reasons,
+                        "stratagem_name": getattr(stratagem, "name", None) or "",
+                    }
+                    try:
+                        mark_used = getattr(target_unit, "mark_eye_of_the_augurium_used", None)
+                        if callable(mark_used):
+                            mark_used(
+                                self.game,
+                                source=ability_name,
+                                stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                            )
+                    except Exception:
+                        pass
+                    return {
+                        "base": base,
+                        "discount": applied_discount,
+                        "available_discount": applied_discount,
+                        "cost": cost,
+                        "increase": increase,
+                        "increase_reasons": increase_reasons,
+                        "reasons": [f"{ability_name}: Fire Overwatch for 0CP (used)"],
+                        "eye_of_the_augurium_use": True,
+                        "eye_of_the_augurium_source": ability_name,
+                    }
+                if overwatch_used and not can_traitor:
+                    return {"denied": True, "reason": "Overwatch already used this turn"}
             if can_prophetic:
                 ability_name = "Prophetic Sentinels"
                 try:

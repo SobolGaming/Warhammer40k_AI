@@ -791,6 +791,10 @@ class Enhancement:
             is_augurium_task_force = bool(gk_mgr and gk_mgr.is_augurium_task_force())
         except Exception:
             is_augurium_task_force = False
+        try:
+            is_hallowed_conclave = bool(gk_mgr and gk_mgr.is_hallowed_conclave())
+        except Exception:
+            is_hallowed_conclave = False
         ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
         try:
             is_veiled_blade_elimination_force = bool(ia_mgr and ia_mgr.is_veiled_blade_elimination_force())
@@ -9749,6 +9753,29 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_a_foot_in_the_future_bearer_model_id"] = bearer_id
+
+        if name == "eye of the augurium" or enh_id == "000010352002":
+            if not is_hallowed_conclave:
+                return
+            unit.special_rules["enhancement_eye_of_the_augurium"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            stratagems = [
+                str(v or "").strip().upper()
+                for v in list(
+                    params.get("stratagems", ("OVERWATCH", "FIRE OVERWATCH", "HEROIC INTERVENTION")) or ()
+                )
+                if str(v or "").strip()
+            ]
+            if stratagems:
+                unit.special_rules["enhancement_eye_of_the_augurium_stratagems"] = stratagems
+            unit.special_rules["enhancement_eye_of_the_augurium_limit"] = str(
+                params.get("limit", "battle_round") or "battle_round"
+            ).strip().lower()
+            unit.special_rules["enhancement_eye_of_the_augurium_source"] = "Eye of the Augurium"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eye_of_the_augurium_bearer_model_id"] = bearer_id
 
         invalidate_fn = getattr(unit, "_invalidate_ability_cache", None)
         if callable(invalidate_fn):
