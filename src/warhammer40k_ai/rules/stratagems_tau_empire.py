@@ -40,6 +40,11 @@ class TauEmpireStratagemMixin:
         checker = getattr(mgr, "is_montka", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_tau_auxiliary_cadre_detachment(self) -> bool:
+        mgr = self._tau_detachment_mgr()
+        checker = getattr(mgr, "is_auxiliary_cadre", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_tau_kauyon_detachment(self) -> bool:
         mgr = self._tau_detachment_mgr()
         checker = getattr(mgr, "is_kauyon", None) if mgr is not None else None
@@ -265,6 +270,39 @@ class TauEmpireStratagemMixin:
             if not self._tau_wall_of_mirrors_unit_eligible(root):
                 continue
             if self._tau_has_enemy_within_engagement_range(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_auxiliary_cadre_interlocking_candidates(self) -> list[Any]:
+        if not self._is_tau_auxiliary_cadre_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_empire_unit(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            was_eligible = bool(getattr(round_state, "eligible_to_fight_this_phase", False))
+            if not was_eligible and bool(getattr(round_state, "fought_this_phase", False)):
+                was_eligible = True
+            if not was_eligible:
                 continue
             out.append(root)
         return sorted(out, key=self._tau_sort_key)
@@ -1303,6 +1341,46 @@ class TauEmpireStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload, use_timer=False)
 
+    def _queue_tau_auxiliary_cadre_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_tau_auxiliary_cadre_detachment():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "FIGHT_PHASE":
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("INTERLOCKING MANOUEVRES")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tau_auxiliary_cadre_interlocking_candidates()
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "phase_end":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() != "fight phase":
+                continue
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
     @staticmethod
     def _tau_parse_experimental_ammunition_mode(raw_mode: Any) -> Optional[str]:
         mode = raw_mode
@@ -1451,6 +1529,9 @@ class TauEmpireStratagemMixin:
         result = self._use_tau_experimental_prototype_cadre_stratagem(stratagem, **kwargs)
         if result is not None:
             return result
+        result = self._use_tau_auxiliary_cadre_stratagem(stratagem, **kwargs)
+        if result is not None:
+            return result
         result = self._use_tau_montka_stratagem(stratagem, **kwargs)
         if result is not None:
             return result
@@ -1474,6 +1555,16 @@ class TauEmpireStratagemMixin:
             return self._use_tau_experimental_ammunition(stratagem, **kwargs)
         if name_u == "THREAT ASSESSMENT ANALYSER":
             return self._use_tau_threat_assessment_analyser(stratagem, **kwargs)
+        return None
+
+    def _use_tau_auxiliary_cadre_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_tau_auxiliary_cadre_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "INTERLOCKING MANOUEVRES":
+            return self._use_tau_interlocking_manoeuvres(stratagem, **kwargs)
         return None
 
     def _use_tau_montka_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
@@ -1505,6 +1596,96 @@ class TauEmpireStratagemMixin:
         if name_u == "WALL OF MIRRORS":
             return self._use_tau_wall_of_mirrors(stratagem, **kwargs)
         return None
+
+    def _use_tau_interlocking_manoeuvres(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if (target_unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "INTERLOCKING MANOUEVRES":
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: INTERLOCKING MANOUEVRES: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "fight phase":
+            logger.error("ERROR: INTERLOCKING MANOUEVRES: wrong phase")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: INTERLOCKING MANOUEVRES: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(root):
+            logger.error("ERROR: INTERLOCKING MANOUEVRES: target must be a T'AU EMPIRE unit")
+            return False
+
+        eligible = candidates or self._tau_auxiliary_cadre_interlocking_candidates()
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: INTERLOCKING MANOUEVRES: target is not currently eligible")
+            return False
+        round_state = getattr(root, "round_state", None)
+        was_eligible = bool(getattr(round_state, "eligible_to_fight_this_phase", False))
+        if not was_eligible and bool(getattr(round_state, "fought_this_phase", False)):
+            was_eligible = True
+        if not was_eligible:
+            logger.error("ERROR: INTERLOCKING MANOUEVRES: target must have been eligible to fight this phase")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: INTERLOCKING MANOUEVRES: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        engaged = self._tau_has_enemy_within_engagement_range(root)
+        movement_type = "fall_back" if engaged else "move"
+        max_distance = int(getattr(root, "movement", 0) or 0) if engaged else 6
+        if max_distance <= 0:
+            max_distance = 1
+        extra_context = {}
+        if bool(getattr(round_state, "disembarked_this_round", False)):
+            extra_context["interlocking_manoeuvres_no_embark_after_move"] = True
+            extra_context["interlocking_manoeuvres_turn_owner"] = str(getattr(self.player, "id", "") or "")
+            extra_context["interlocking_manoeuvres_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_move):
+            logger.error("ERROR: INTERLOCKING MANOUEVRES: reactive move decision queue unavailable")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(max_distance),
+            kind="interlocking_manoeuvres",
+            movement_type=str(movement_type),
+            source=str(getattr(stratagem, "name", "INTERLOCKING MANOUEVRES") or "INTERLOCKING MANOUEVRES"),
+            allow_skip=True,
+            extra_context=extra_context,
+        )
+        if request is None:
+            logger.error("ERROR: INTERLOCKING MANOUEVRES: failed to queue move decision")
+            return False
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: INTERLOCKING MANOUEVRES: %s can make a %s move.",
+            getattr(root, "name", "Unit"),
+            "Fall Back" if engaged else "Normal",
+        )
+        return True
 
     def _use_tau_wall_of_mirrors(self, stratagem: Any, **kwargs) -> bool:
         target_unit = kwargs.get("unit") or kwargs.get("target_unit")

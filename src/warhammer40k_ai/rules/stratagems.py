@@ -18,6 +18,7 @@ from .stratagem_descriptors import get_stratagem_tool_descriptor
 from .stratagems_chaos_knights import ChaosKnightsStratagemMixin
 from .stratagems_necrons import NecronsStratagemMixin
 from .stratagems_orks import OrksStratagemMixin
+from .stratagems_drukhari import DrukhariStratagemMixin
 from .stratagems_genestealer_cults import GenestealerCultsStratagemMixin
 from .stratagems_tau_empire import TauEmpireStratagemMixin
 from .stratagems_thousand_sons import ThousandSonsStratagemMixin
@@ -37,6 +38,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "AGGRESSOR IMPERATIVE",
     "ANGELIC DESCENT",
     "BALEFUL HALO",
+    "BLAZING IRE",
     "BULWARK IMPERATIVE",
     "ARDENT AUTOMATA",
     "A CHALLENGE MET",
@@ -57,6 +59,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
     "PINPOINT COUNTER-OFFENSIVE",
+    "POUNCE ON THE PREY",
     "PULSE ONSLAUGHT",
     "PREDATORY IMPERATIVE",
     "RAPID REGENERATION",
@@ -81,6 +84,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BRAZEN CONTEMPT",
     "BERSERK FUGUE",
     "BEAUTIFUL DEATH",
+    "CARRY FORTH THE FAITHFUL",
     "CLOUDSTRIKE",
     "EMISSARIES OF YNNEAD",
     "MACABRE RESILIENCE",
@@ -160,6 +164,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNBRIDLED CARNAGE",
     "VETERAN SHARPSHOOTERS",
     "VOW OF RETRIBUTION",
+    "WRAITHLIKE RETREAT",
+    "INTERLOCKING MANOUEVRES",
     "BLOODY DANCE",
     "CLOAK AND SHADOW",
     "EXIT THE STAGE",
@@ -1310,6 +1316,7 @@ class StratagemManager(
     ChaosDaemonsStratagemMixin,
     NecronsStratagemMixin,
     AeldariStratagemMixin,
+    DrukhariStratagemMixin,
     VotannStratagemMixin,
     TauEmpireStratagemMixin,
     ThousandSonsStratagemMixin,
@@ -1484,8 +1491,18 @@ class StratagemManager(
         if names & {"EPIC CHALLENGE", "PEERLESS WARRIOR", "MARTIAL PERFECTION"}:
             add("fight_unit_selected", self._on_fight_unit_selected)
 
-        if names & {"OVERWATCH", "FIRE OVERWATCH", "APOPLECTIC FRENZY", "PUNISH THE CRAVEN", "KHAINE'S VENGEANCE", "KHAINE’S VENGEANCE"}:
+        if names & {
+            "OVERWATCH",
+            "FIRE OVERWATCH",
+            "APOPLECTIC FRENZY",
+            "PUNISH THE CRAVEN",
+            "KHAINE'S VENGEANCE",
+            "KHAINE’S VENGEANCE",
+            "CARRY FORTH THE FAITHFUL",
+        }:
             add("unit_move_started", self._on_unit_move_started)
+        if "POUNCE ON THE PREY" in names:
+            add("unit_disembarked", self._on_unit_disembarked)
 
         if names & {
             "OVERWATCH",
@@ -1578,6 +1595,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_thousand_sons_rubricae_revenge)
         if "PULSE ONSLAUGHT" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_tau_pulse_onslaught)
+        if "BLAZING IRE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_bringers_of_flame_blazing_ire)
         if names & {"VENGEFUL SORROW", "INTO THE BREACH"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_aeldari_corsair)
         if "VENOMOUS WRATH" in names:
@@ -1724,6 +1743,8 @@ class StratagemManager(
             "COST OF VICTORY",
             "DARK APPARITIONS",
             "DEATH ANSWERS DEATH",
+            "WRAITHLIKE RETREAT",
+            "INTERLOCKING MANOUEVRES",
             "BLOODY DANCE",
             "BINDING SHADOW",
             "DELIRIUM UNMADE",
@@ -6121,7 +6142,15 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_drukhari_skysplinter_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_tau_kauyon_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_tau_auxiliary_cadre_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -7827,8 +7856,15 @@ class StratagemManager(
     def _on_unit_move_started(self, unit, action: str, **kwargs):
         self._maybe_queue_overwatch(unit, action, when='start')
         self._maybe_queue_apoplectic_frenzy(unit, action)
+        self._queue_bringers_of_flame_move_started_reactions(unit=unit, action=action)
         self._queue_aeldari_aspect_host_move_start_reactions(unit=unit, action=action)
         self._queue_world_eaters_vessels_move_start_reactions(unit=unit, action=action)
+
+    def _on_unit_disembarked(self, unit, transport_unit=None, **_kwargs):
+        self._queue_drukhari_skysplinter_unit_disembarked_reactions(
+            unit=unit,
+            transport_unit=transport_unit,
+        )
 
     def _on_unit_move_ended(self, unit, action: str, **kwargs):
         self._track_a_challenge_met_move(unit, action)
@@ -8585,6 +8621,17 @@ class StratagemManager(
             )
         except Exception:
             raise
+
+    def _on_unit_shooting_resolved_bringers_of_flame_blazing_ire(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ):
+        self._queue_bringers_of_flame_shooting_resolved_reactions(
+            attacker_unit=attacker_unit,
+            hits_by_target=hits_by_target,
+        )
 
     def _on_unit_shooting_resolved_aeldari_corsair(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         try:
@@ -14803,6 +14850,9 @@ class StratagemManager(
         as_result = self._use_adepta_sororitas_hallowed_stratagem(s, **kwargs)
         if as_result is not None:
             return as_result
+        drukhari_result = self._use_drukhari_skysplinter_stratagem(s, **kwargs)
+        if drukhari_result is not None:
+            return drukhari_result
         aeldari_aspect_result = self._use_aeldari_aspect_host_stratagem(s, **kwargs)
         if aeldari_aspect_result is not None:
             return aeldari_aspect_result

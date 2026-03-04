@@ -689,7 +689,216 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         )
         if tactica_errors:
             return tactica_errors
+    wraithlike_errors = _validate_wraithlike_retreat_end_positions(
+        game,
+        unit,
+        model_positions,
+        ctx=ctx,
+    )
+    if wraithlike_errors:
+        return wraithlike_errors
     return ()
+
+
+def _wraithlike_retreat_transport_requirement(
+    game: object,
+    unit: object,
+    model_positions: object,
+    *,
+    ctx: dict | None = None,
+) -> dict:
+    context = dict(ctx or {})
+    if not bool(context.get("wraithlike_retreat_require_embark", False)):
+        return {"required": False, "valid": True, "transport": None}
+    if unit is None:
+        return {"required": True, "valid": False, "reason": "Move unit: Wraithlike Retreat requires a valid unit."}
+
+    transport_ids = []
+    for value in list(context.get("wraithlike_retreat_transport_ids", []) or []):
+        key = str(value or "").strip()
+        if key:
+            transport_ids.append(key)
+    if not transport_ids:
+        return {
+            "required": True,
+            "valid": False,
+            "reason": "Move unit: Wraithlike Retreat requires a friendly Drukhari Transport to embark.",
+        }
+
+    moving_army_getter = getattr(unit, "get_parent_army", None)
+    moving_army = moving_army_getter() if callable(moving_army_getter) else getattr(unit, "parent_army", None)
+    transports: list[object] = []
+    seen_transport_ids: set[str] = set()
+    for transport_id in sorted(transport_ids):
+        transport = get_unit(game, transport_id)
+        if transport is None:
+            continue
+        get_root = getattr(transport, "get_attached_unit_root", None)
+        transport_root = get_root() if callable(get_root) else transport
+        if transport_root is None:
+            continue
+        root_id = str(get_entity_id(transport_root) or "")
+        if root_id and root_id in seen_transport_ids:
+            continue
+        if root_id:
+            seen_transport_ids.add(root_id)
+        transport_army_getter = getattr(transport_root, "get_parent_army", None)
+        transport_army = (
+            transport_army_getter() if callable(transport_army_getter) else getattr(transport_root, "parent_army", None)
+        )
+        if moving_army is not None and transport_army is not moving_army:
+            continue
+        is_alive = getattr(transport_root, "is_alive", None)
+        if callable(is_alive):
+            if not bool(is_alive()):
+                continue
+        elif bool(getattr(transport_root, "is_alive", True)) is False:
+            continue
+        if not bool(getattr(transport_root, "deployed", True)):
+            continue
+        if bool(getattr(transport_root, "is_embarked", False)) or getattr(transport_root, "embarked_in", None) is not None:
+            continue
+        reserve_status = str(getattr(transport_root, "reserve_status", "deployed") or "deployed").strip().lower()
+        if reserve_status and reserve_status != "deployed":
+            continue
+        is_in_reserves = getattr(transport_root, "is_in_reserves", None)
+        if callable(is_in_reserves) and bool(is_in_reserves()):
+            continue
+        can_transport = getattr(transport_root, "can_transport", None)
+        if not callable(can_transport) or not bool(can_transport(unit)):
+            continue
+        transports.append(transport_root)
+    if not transports:
+        return {
+            "required": True,
+            "valid": False,
+            "reason": "Move unit: Wraithlike Retreat requires ending wholly within 3\" horizontal and 5\" vertical of a transport that can embark this unit.",
+        }
+
+    try:
+        from ...utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+    except ImportError:
+        return {
+            "required": True,
+            "valid": False,
+            "reason": "Move unit: Wraithlike Retreat transport-distance validation is unavailable.",
+        }
+
+    positions_by_id: dict[str, tuple[float, float, float, float]] = {}
+    for entry in list(model_positions or []):
+        model_id = str(entry.get("model_id", "") or "")
+        if not model_id:
+            continue
+        pos = entry.get("position") or []
+        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            continue
+        try:
+            x = float(pos[0])
+            y = float(pos[1])
+            z = float(pos[2]) if len(pos) > 2 else 0.0
+        except (TypeError, ValueError):
+            continue
+        facing_raw = entry.get("facing", 0.0)
+        try:
+            facing = float(facing_raw if facing_raw is not None else 0.0)
+        except (TypeError, ValueError):
+            facing = 0.0
+        positions_by_id[model_id] = (x, y, z, facing)
+
+    get_models = getattr(unit, "get_attached_unit_models", None)
+    moving_models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+    moving_bases: list[object] = []
+    create_base = getattr(unit, "_create_potential_base", None)
+    for model in list(moving_models or []):
+        if model is None:
+            continue
+        alive_value = getattr(model, "is_alive", True)
+        alive = bool(alive_value() if callable(alive_value) else alive_value)
+        if not alive:
+            continue
+        model_id = str(get_entity_id(model) or "")
+        base = None
+        if model_id in positions_by_id and callable(create_base):
+            x, y, z, facing = positions_by_id[model_id]
+            try:
+                base = create_base(x, y, z, facing, model=model)
+            except (AttributeError, TypeError, ValueError):
+                base = None
+        if base is None:
+            base = getattr(model, "model_base", None)
+        if base is None:
+            return {
+                "required": True,
+                "valid": False,
+                "reason": "Move unit: Wraithlike Retreat could not resolve model bases for embark validation.",
+            }
+        moving_bases.append(base)
+    if not moving_bases:
+        return {"required": True, "valid": False, "reason": "Move unit: Wraithlike Retreat requires alive models to move."}
+
+    for transport in sorted(transports, key=lambda item: str(get_entity_id(item) or "")):
+        transport_models_getter = getattr(transport, "get_attached_unit_models", None)
+        transport_models = (
+            list(transport_models_getter() or [])
+            if callable(transport_models_getter)
+            else list(getattr(transport, "models", []) or [])
+        )
+        transport_bases: list[object] = []
+        for model in list(transport_models or []):
+            if model is None:
+                continue
+            alive_value = getattr(model, "is_alive", True)
+            alive = bool(alive_value() if callable(alive_value) else alive_value)
+            if not alive:
+                continue
+            base = getattr(model, "model_base", None)
+            if base is not None:
+                transport_bases.append(base)
+        if not transport_bases:
+            continue
+        all_within = True
+        for moving_base in moving_bases:
+            model_within = False
+            for transport_base in transport_bases:
+                try:
+                    horizontal = float(horizontal_distance_between_bases_2d(moving_base, transport_base))
+                    vertical = float(vertical_distance_between_bases(moving_base, transport_base))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if horizontal <= 3.0 + 1e-6 and vertical <= 5.0 + 1e-6:
+                    model_within = True
+                    break
+            if not model_within:
+                all_within = False
+                break
+        if all_within:
+            return {"required": True, "valid": True, "transport": transport}
+
+    return {
+        "required": True,
+        "valid": False,
+        "reason": "Move unit: Wraithlike Retreat move must end wholly within 3\" horizontal and 5\" vertical of a friendly Drukhari Transport that can embark this unit.",
+    }
+
+
+def _validate_wraithlike_retreat_end_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+    *,
+    ctx: dict | None = None,
+) -> Sequence[str]:
+    check = _wraithlike_retreat_transport_requirement(
+        game,
+        unit,
+        model_positions,
+        ctx=ctx,
+    )
+    if not bool(check.get("required", False)):
+        return ()
+    if bool(check.get("valid", False)):
+        return ()
+    return (str(check.get("reason", "") or "Move unit: Wraithlike Retreat embark requirement failed."),)
 
 
 def _validate_placement_positions(
@@ -1733,6 +1942,25 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 mark_used_fn(unit, game=game)
             except Exception:
                 pass
+    wraithlike_check = _wraithlike_retreat_transport_requirement(
+        game,
+        unit,
+        model_positions,
+        ctx=ctx,
+    )
+    if bool(wraithlike_check.get("required", False)):
+        if not bool(wraithlike_check.get("valid", False)):
+            reason = str(wraithlike_check.get("reason", "") or "Wraithlike Retreat embark requirement failed.")
+            raise RuntimeError(reason)
+        transport = wraithlike_check.get("transport")
+        game_map = getattr(game, "map", None)
+        if transport is None or game_map is None:
+            raise RuntimeError("Wraithlike Retreat requires a transport and active game map.")
+        add_passenger = getattr(transport, "add_passenger", None)
+        if not callable(add_passenger):
+            raise RuntimeError("Wraithlike Retreat transport cannot embark units.")
+        if not bool(add_passenger(unit, game_map=game_map)):
+            raise RuntimeError("Wraithlike Retreat failed: transport could not embark unit at move end.")
     return None
 
 
@@ -2035,7 +2263,7 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
         game_map = getattr(game, "map", None)
         if game_map is None:
             raise RuntimeError("Disembark requires an active game map.")
-        return bool(
+        finalized = bool(
             unit.finalize_manual_disembark(
                 game_map=game_map,
                 transport_unit=transport,
@@ -2044,6 +2272,9 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
                 current_turn=getattr(game, "turn", 1),
             )
         )
+        if finalized:
+            _maybe_queue_post_reactive_disembark_shooting(game, request, unit)
+        return finalized
     override_keys = (
         "stratagem_disembark_override_active",
         "stratagem_disembark_override_transport_id",
@@ -2084,7 +2315,46 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
                 else:
                     sr.pop(key, None)
             unit.special_rules = sr
+    _maybe_queue_post_reactive_disembark_shooting(game, request, unit)
     return None
+
+
+def _maybe_queue_post_reactive_disembark_shooting(game: object, request: DecisionRequest, unit: object) -> None:
+    if game is None or request is None or unit is None:
+        return
+    ctx = dict(getattr(request, "context", {}) or {})
+    if not bool(ctx.get("reactive_disembark_then_shoot_enemy_only", False)):
+        return
+    if bool(getattr(unit, "is_embarked", False)) or getattr(unit, "embarked_in", None) is not None:
+        return
+    enemy_id = str(
+        ctx.get("reactive_disembark_shoot_enemy_id", "")
+        or ctx.get("reactive_disembark_enemy_unit_id", "")
+        or ""
+    )
+    if not enemy_id:
+        return
+    enemy_unit = get_unit(game, enemy_id)
+    if enemy_unit is None:
+        return
+    is_alive = getattr(enemy_unit, "is_alive", None)
+    if callable(is_alive) and not bool(is_alive()):
+        return
+    queue_shooting = getattr(game, "_queue_setup_reactive_shooting_decision", None)
+    if not callable(queue_shooting):
+        return
+    get_parent_army = getattr(unit, "get_parent_army", None)
+    parent_army = get_parent_army() if callable(get_parent_army) else getattr(unit, "parent_army", None)
+    player = getattr(parent_army, "player", None)
+    if player is None:
+        return
+    source = str(ctx.get("reactive_disembark_shoot_source", "") or "Reactive Disembark")
+    queue_shooting(
+        player=player,
+        unit=unit,
+        target_unit=enemy_unit,
+        source=source,
+    )
 
 
 def _validate_pick_point(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

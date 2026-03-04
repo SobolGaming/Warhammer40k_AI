@@ -3808,6 +3808,29 @@ class ShootingMixin:
             tsr = getattr(transport_unit, "special_rules", None)
         except Exception:
             tsr = None
+        if isinstance(tsr, dict) and tsr.get("carry_forth_the_faithful_active"):
+            carry_active = True
+            owner = str(tsr.get("carry_forth_the_faithful_turn_owner", "") or "")
+            turn = int(tsr.get("carry_forth_the_faithful_turn", 0) or 0)
+            if game is not None:
+                try:
+                    current_player = getattr(game, "get_current_player", lambda: None)()
+                except Exception:
+                    current_player = None
+                current_owner = str(getattr(current_player, "id", "") or "")
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                if owner and current_owner and owner != current_owner:
+                    carry_active = False
+                if turn and current_turn and turn != current_turn:
+                    carry_active = False
+            if carry_active:
+                if bool(tsr.get("carry_forth_the_faithful_disembark_allow_after_advance", True)):
+                    overrides["allow_after_advance"] = True
+                if bool(tsr.get("carry_forth_the_faithful_disembark_force_no_charge", True)):
+                    overrides["force_cannot_charge_this_turn"] = True
         mode_active_fn = getattr(transport_unit, "vanguard_of_dark_city_mode_active", None) if transport_unit is not None else None
         if callable(mode_active_fn) and bool(mode_active_fn("speed_of_the_kill")):
             if bool(getattr(self, "has_any_keyword", lambda *_k: False)("WYCHES")):

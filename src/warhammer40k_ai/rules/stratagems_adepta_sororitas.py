@@ -98,6 +98,11 @@ class AdeptaSororitasStratagemMixin:
         checker = getattr(mgr, "is_army_of_faith", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_bringers_of_flame(self) -> bool:
+        mgr = self._get_adepta_sororitas_mgr()
+        checker = getattr(mgr, "is_bringers_of_flame", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_adepta_sororitas_unit(self, unit: Any) -> bool:
         root = self._as_root(unit)
         if root is None:
@@ -122,11 +127,42 @@ class AdeptaSororitasStratagemMixin:
             return True
         return bool(getattr(root, "is_vehicle", False))
 
+    def _is_adepta_sororitas_transport(self, unit: Any) -> bool:
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        if not self._is_adepta_sororitas_vehicle(root):
+            return False
+        return bool(self._as_has_keyword(root, "TRANSPORT") or bool(getattr(root, "is_transport", False)))
+
     def _is_adepta_sororitas_character(self, unit: Any) -> bool:
         root = self._as_root(unit)
         if root is None or not self._is_adepta_sororitas_unit(root):
             return False
         return self._as_has_keyword(root, "CHARACTER")
+
+    def _as_resolve_friendly_transport_for_disembarked_unit(self, unit: Any) -> Any:
+        root = self._as_root(unit)
+        if root is None:
+            return None
+        round_state = getattr(root, "round_state", None)
+        transport_id = str(getattr(round_state, "disembarked_from_transport_id", "") or "")
+        if not transport_id:
+            return None
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return None
+        for unit_entry in list(getattr(army, "units", []) or []):
+            candidate = self._as_root(unit_entry)
+            if candidate is None:
+                continue
+            if self._as_sort_key(candidate) != transport_id:
+                continue
+            if not self._as_owned_by_player(candidate, self.player):
+                continue
+            return candidate
+        return None
 
     @staticmethod
     def _as_is_saint_celestine(unit: Any) -> bool:
@@ -698,6 +734,126 @@ class AdeptaSororitasStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload)
 
+    def _queue_bringers_of_flame_move_started_reactions(self, *, unit: Any, action: Any) -> None:
+        if unit is None or not self._is_bringers_of_flame():
+            return
+        if self._as_phase_name_lower(getattr(self, "_current_phase_name", "")) != "movement phase":
+            return
+        if str(action or "").strip().lower() != "advance":
+            return
+        get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
+        active_player = get_current_player() if callable(get_current_player) else None
+        if active_player is not self.player:
+            return
+        root = self._as_root(unit)
+        if root is None:
+            return
+        if not self._as_owned_by_player(root, self.player):
+            return
+        if not self._as_on_battlefield(root):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return
+        if not self._is_adepta_sororitas_transport(root):
+            return
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "moved_this_round", False)):
+            return
+        if bool(getattr(round_state, "advanced_this_round", False)):
+            return
+        if bool(getattr(round_state, "fell_back_this_round", False)):
+            return
+        stratagem = self.get_by_name("CARRY FORTH THE FAITHFUL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_move_started":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem.name or "").strip().upper():
+                continue
+            if reaction.get("unit") is root:
+                return
+        payload = {
+            "event": "unit_move_started",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "candidates": [root],
+            "action": "advance",
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_bringers_of_flame_shooting_resolved_reactions(self, *, attacker_unit: Any, hits_by_target: Any = None) -> None:
+        if attacker_unit is None or not self._is_bringers_of_flame():
+            return
+        if self._as_phase_name_lower(getattr(self, "_current_phase_name", "")) != "shooting phase":
+            return
+        if self._as_owned_by_player(attacker_unit, self.player):
+            return
+        get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
+        active_player = get_current_player() if callable(get_current_player) else None
+        if active_player is self.player:
+            return
+        stratagem = self.get_by_name("BLAZING IRE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target_unit in list((hits_by_target or {}).keys() if isinstance(hits_by_target, dict) else []):
+            root = self._as_root(target_unit)
+            if root is None:
+                continue
+            uid = self._as_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._as_on_battlefield(root):
+                continue
+            if not self._as_owned_by_player(root, self.player):
+                continue
+            if not self._is_adepta_sororitas_transport(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            embarked = list(getattr(root, "transport_passengers", []) or [])
+            if not embarked:
+                continue
+            candidates.append(root)
+        candidates = sorted(candidates, key=self._as_sort_key)
+        if not candidates:
+            return
+        if self._hallowed_reaction_already_queued(
+            event_name="unit_shooting_resolved",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            enemy_unit=attacker_unit,
+        ):
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_unit,
+            "attacking_unit": attacker_unit,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_hallowed_martyrs_model_destroyed_reactions(self, *, unit: Any, model: Any) -> None:
         if unit is None or model is None or not self._is_hallowed_martyrs():
             return
@@ -1074,6 +1230,10 @@ class AdeptaSororitasStratagemMixin:
 
     def _use_adepta_sororitas_hallowed_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "BLAZING IRE":
+            return self._use_bringers_of_flame_blazing_ire(stratagem, **kwargs)
+        if name_u == "CARRY FORTH THE FAITHFUL":
+            return self._use_bringers_of_flame_carry_forth_the_faithful(stratagem, **kwargs)
         if name_u == "ANGELIC DESCENT":
             return self._use_army_of_faith_angelic_descent(stratagem, **kwargs)
         if name_u == "RIGHTEOUS VENGEANCE":
@@ -1089,6 +1249,166 @@ class AdeptaSororitasStratagemMixin:
         if name_u == "DIVINE INTERVENTION":
             return self._use_hallowed_divine_intervention(stratagem, **kwargs)
         return None
+
+    def _use_bringers_of_flame_blazing_ire(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_bringers_of_flame():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("transport_unit") or kwargs.get("transport")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if (unit is None or attacking_unit is None or not candidates) and hasattr(self, "_pending_reactions"):
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "BLAZING IRE":
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: BLAZING IRE: no target transport provided")
+            return False
+        root = self._as_root(unit)
+        attacker_root = self._as_root(attacking_unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: BLAZING IRE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: BLAZING IRE: not opponent's Shooting phase")
+            return False
+        if candidates and not self._as_unit_in_candidates(root, candidates):
+            logger.error("ERROR: BLAZING IRE: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: BLAZING IRE: target transport is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: BLAZING IRE: target cannot be selected")
+            return False
+        if not self._is_adepta_sororitas_transport(root):
+            logger.error("ERROR: BLAZING IRE: target must be an ADEPTA SORORITAS TRANSPORT")
+            return False
+        if attacker_root is not None and self._as_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: BLAZING IRE: attacker is not enemy")
+            return False
+        embarked_units = list(getattr(root, "transport_passengers", []) or [])
+        if not embarked_units:
+            logger.error("ERROR: BLAZING IRE: no embarked units")
+            return False
+
+        queue_fn = getattr(self.game, "_queue_transport_reactive_disembark_decisions", None) if self.game is not None else None
+        if not callable(queue_fn):
+            logger.error("ERROR: BLAZING IRE: reactive disembark decision queue unavailable")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+        requests = list(
+            queue_fn(
+                player=self.player,
+                transport=root,
+                enemy_unit=attacker_root,
+                ability={"name": str(stratagem.name or "BLAZING IRE")},
+                trigger="unit_shooting_resolved",
+                max_units=1,
+            )
+            or []
+        )
+        if not requests:
+            logger.error("ERROR: BLAZING IRE: no disembark decision was queued")
+            return False
+        enemy_id = self._as_sort_key(attacker_root) if attacker_root is not None else ""
+        for req in requests:
+            req_ctx = dict(getattr(req, "context", {}) or {})
+            req_ctx["reactive_disembark_then_shoot_enemy_only"] = True
+            req_ctx["reactive_disembark_shoot_enemy_id"] = str(enemy_id or "")
+            req_ctx["reactive_disembark_shoot_source"] = str(stratagem.name or "BLAZING IRE")
+            req.context = req_ctx
+
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BLAZING IRE: queued disembark decision and follow-up reactive shooting into the attacking unit."
+        )
+        return True
+
+    def _use_bringers_of_flame_carry_forth_the_faithful(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_bringers_of_flame():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("transport_unit") or kwargs.get("transport")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CARRY FORTH THE FAITHFUL: no target transport provided")
+            return False
+        root = self._as_root(unit)
+        if root is None:
+            return False
+        phase_name = self._as_phase_name_lower(kwargs.get("phase_name") or self._current_phase_name or "")
+        if phase_name != "movement phase":
+            logger.error("ERROR: CARRY FORTH THE FAITHFUL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CARRY FORTH THE FAITHFUL: not your Movement phase")
+            return False
+        if candidates and not self._as_unit_in_candidates(root, candidates):
+            logger.error("ERROR: CARRY FORTH THE FAITHFUL: target is not currently eligible")
+            return False
+        if not self._as_owned_by_player(root, self.player):
+            logger.error("ERROR: CARRY FORTH THE FAITHFUL: target transport is not yours")
+            return False
+        if not self._as_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: CARRY FORTH THE FAITHFUL: target cannot be selected")
+            return False
+        if not self._is_adepta_sororitas_transport(root):
+            logger.error("ERROR: CARRY FORTH THE FAITHFUL: target must be an ADEPTA SORORITAS TRANSPORT")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "moved_this_round", False)) or bool(getattr(round_state, "advanced_this_round", False)):
+            logger.error("ERROR: CARRY FORTH THE FAITHFUL: target transport already moved")
+            return False
+        if bool(getattr(round_state, "fell_back_this_round", False)):
+            logger.error("ERROR: CARRY FORTH THE FAITHFUL: target transport already Fell Back")
+            return False
+        if not self._as_spend_cp(stratagem, target_unit=root):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["carry_forth_the_faithful_active"] = True
+        sr["carry_forth_the_faithful_turn_owner"] = owner_id
+        sr["carry_forth_the_faithful_turn"] = int(turn)
+        sr["carry_forth_the_faithful_source"] = str(stratagem.name or "CARRY FORTH THE FAITHFUL")
+        sr["carry_forth_the_faithful_disembark_allow_after_advance"] = True
+        sr["carry_forth_the_faithful_disembark_force_no_charge"] = True
+        sr["stratagem_carry_forth_the_faithful_reroll_advance"] = True
+        sr["stratagem_carry_forth_the_faithful_reroll_advance_owner"] = owner_id
+        sr["stratagem_carry_forth_the_faithful_reroll_advance_turn"] = int(turn)
+        root.special_rules = sr
+
+        self._as_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CARRY FORTH THE FAITHFUL: %s can re-roll Advance; disembarking after Advance is allowed but those units cannot charge this turn.",
+            getattr(root, "name", "Transport"),
+        )
+        return True
 
     def _use_army_of_faith_angelic_descent(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_army_of_faith():

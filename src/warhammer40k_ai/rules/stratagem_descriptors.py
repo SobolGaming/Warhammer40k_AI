@@ -1153,6 +1153,41 @@ _ARMY_OF_FAITH_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ARMY_OF_FAITH_STRATAGEM_DESCRIPTORS.values()
 }
 
+_BRINGERS_OF_FLAME_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009034007": StratagemToolDescriptor(
+        stratagem_id="000009034007",
+        name="Blazing Ire",
+        timing="opponent_shooting_phase_after_enemy_shoots",
+        target="adepta_sororitas_transport_targeted_by_enemy_attacker_with_embarked_units",
+        duration="immediate",
+        effect="reactive_disembark_then_reactive_shooting",
+        cp_cost=2,
+        effect_params={
+            "max_disembark_units": 1,
+            "target_restriction": "enemy_attacker_only",
+        },
+    ),
+    "000009034004": StratagemToolDescriptor(
+        stratagem_id="000009034004",
+        name="Carry Forth the Faithful",
+        timing="movement_phase_before_transport_advances",
+        target="adepta_sororitas_transport_not_yet_selected_to_move",
+        duration="until_end_of_turn",
+        effect="transport_advance_reroll_and_disembark_after_advance_no_charge",
+        cp_cost=1,
+        effect_params={
+            "allow_disembark_after_advance": True,
+            "disembark_counts_as_normal_move": True,
+            "disembarking_units_cannot_charge": True,
+            "reroll_advance_for_transport": True,
+        },
+    ),
+}
+
+_BRINGERS_OF_FLAME_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _BRINGERS_OF_FLAME_STRATAGEM_DESCRIPTORS.values()
+}
+
 _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009778002": StratagemToolDescriptor(
         stratagem_id="000009778002",
@@ -2628,6 +2663,41 @@ _ELDRITCH_RAIDERS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ELDRITCH_RAIDERS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SKYSPLINTER_ASSAULT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010577004": StratagemToolDescriptor(
+        stratagem_id="000010577004",
+        name="Pounce on the Prey",
+        timing="movement_phase_after_infantry_disembarks_from_transport_that_made_normal_move",
+        target="drukhari_infantry_unit_that_disembarked_from_friendly_transport_that_made_normal_move",
+        duration="until_end_of_turn",
+        effect="disembarked_unit_can_declare_charge",
+        cp_cost=1,
+        effect_params={
+            "remove_disembarked_charge_restriction": True,
+        },
+    ),
+    "000010577003": StratagemToolDescriptor(
+        stratagem_id="000010577003",
+        name="Wraithlike Retreat",
+        timing="end_of_fight_phase",
+        target="drukhari_infantry_unit_that_fought_this_phase",
+        duration="immediate",
+        effect="reactive_normal_or_fall_back_move_with_transport_embark_requirement_for_non_wyches",
+        cp_cost=1,
+        effect_params={
+            "normal_move_distance_when_not_engaged": 6,
+            "fallback_when_engaged": True,
+            "non_wyches_require_embark_after_move": True,
+            "embark_requirement_horizontal": 3.0,
+            "embark_requirement_vertical": 5.0,
+        },
+    ),
+}
+
+_SKYSPLINTER_ASSAULT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SKYSPLINTER_ASSAULT_STRATAGEM_DESCRIPTORS.values()
+}
+
 _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009984002": StratagemToolDescriptor(
         stratagem_id="000009984002",
@@ -2800,6 +2870,27 @@ _MONTKA_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
 
 _MONTKA_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _MONTKA_STRATAGEM_DESCRIPTORS.values()
+}
+
+_AUXILIARY_CADRE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009840004": StratagemToolDescriptor(
+        stratagem_id="000009840004",
+        name="Interlocking Manoeuvres",
+        timing="end_of_fight_phase",
+        target="tau_empire_unit_eligible_to_fight_this_phase",
+        duration="immediate",
+        effect="reactive_normal_or_fall_back_move_with_disembark_embark_restriction",
+        cp_cost=1,
+        effect_params={
+            "normal_move_distance_when_not_engaged": 6,
+            "fallback_when_engaged": True,
+            "disembarked_this_turn_cannot_embark_after_move": True,
+        },
+    ),
+}
+
+_AUXILIARY_CADRE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _AUXILIARY_CADRE_STRATAGEM_DESCRIPTORS.values()
 }
 
 _KAUYON_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
@@ -3345,6 +3436,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ARMY_OF_FAITH_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _BRINGERS_OF_FLAME_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3408,10 +3502,16 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ELDRITCH_RAIDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SKYSPLINTER_ASSAULT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
         desc = _MONTKA_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
+        desc = _AUXILIARY_CADRE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
         desc = _KAUYON_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
@@ -3461,6 +3561,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _RAD_ZONE_CORPS_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
         or _ARMY_OF_FAITH_STRATAGEM_BY_NAME.get(key)
+        or _BRINGERS_OF_FLAME_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _AUGURIUM_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _BROTHERHOOD_STRIKE_STRATAGEM_BY_NAME.get(key)
@@ -3482,8 +3583,10 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _GHOSTS_OF_THE_WEBWAY_STRATAGEM_BY_NAME.get(key)
         or _SERPENTS_BROOD_STRATAGEM_BY_NAME.get(key)
         or _ELDRITCH_RAIDERS_STRATAGEM_BY_NAME.get(key)
+        or _SKYSPLINTER_ASSAULT_STRATAGEM_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)
         or _MONTKA_STRATAGEM_BY_NAME.get(key)
+        or _AUXILIARY_CADRE_STRATAGEM_BY_NAME.get(key)
         or _KAUYON_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
         or _VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)

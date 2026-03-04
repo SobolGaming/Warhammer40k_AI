@@ -6220,6 +6220,19 @@ class ActionsMovementMixin:
                 return True
         except Exception:
             pass
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("stratagem_carry_forth_the_faithful_reroll_advance", False)):
+            owner = str(sr.get("stratagem_carry_forth_the_faithful_reroll_advance_owner", "") or "")
+            marked_turn = int(sr.get("stratagem_carry_forth_the_faithful_reroll_advance_turn", 0) or 0)
+            army = self.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            current_owner = str(getattr(current_player, "id", "") or "")
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            owner_ok = (not owner) or (not current_owner) or owner == current_owner
+            turn_ok = (marked_turn <= 0) or (current_turn <= 0) or marked_turn == current_turn
+            if owner_ok and turn_ok:
+                return True
         try:
             if self._aethersails_reroll_active():
                 return True
