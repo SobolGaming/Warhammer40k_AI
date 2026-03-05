@@ -6621,21 +6621,27 @@ class Game(
         root = get_root() if callable(get_root) else unit
         if root is None:
             return
-        get_parent_army = getattr(root, "get_parent_army", None)
-        army = get_parent_army() if callable(get_parent_army) else None
-        if army is None:
-            return
-        mgr = getattr(army, "tyranids_detachments", None)
-        if mgr is None:
-            return
-        on_unit_set_up = getattr(mgr, "on_unit_set_up", None)
-        if not callable(on_unit_set_up):
-            return
-        on_unit_set_up(
-            unit=root,
-            game=self,
-            set_up_as_reinforcements=bool(set_up_as_reinforcements),
-        )
+        managers = []
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else None
+            if army is None:
+                continue
+            mgr = getattr(army, "tyranids_detachments", None)
+            if mgr is None:
+                continue
+            on_unit_set_up = getattr(mgr, "on_unit_set_up", None)
+            if not callable(on_unit_set_up):
+                continue
+            managers.append(on_unit_set_up)
+        for on_unit_set_up in managers:
+            on_unit_set_up(
+                unit=root,
+                game=self,
+                set_up_as_reinforcements=bool(set_up_as_reinforcements),
+            )
 
     def _on_unit_set_up_orks_detachments(
         self,
@@ -6669,6 +6675,19 @@ class Game(
         if unit is None:
             return
         self._record_setup_reactive_shoot_or_charge_candidate(unit)
+
+    def _on_unit_set_up_hyperspace_hunters(
+        self,
+        unit=None,
+        set_up_as_reinforcements: bool = False,
+        **_kwargs,
+    ) -> None:
+        if unit is None:
+            return
+        self._record_hyperspace_hunters_candidate(
+            unit,
+            set_up_as_reinforcements=bool(set_up_as_reinforcements),
+        )
 
     def _on_unit_disembarked_setup_reactive_shoot_or_charge(self, unit=None, **_kwargs) -> None:
         if unit is None:

@@ -351,6 +351,9 @@ class GameReactiveDecisionsMixin:
         game_map: Map | None = None,
         radius_step: float = 0.5,
         angle_step: int = 15,
+        engagement_target_unit=None,
+        require_engagement_with_target: bool = False,
+        allow_engagement_with_other_enemies: bool = False,
     ) -> tuple | None:
         if unit is None or anchor_pos is None:
             return None
@@ -373,6 +376,15 @@ class GameReactiveDecisionsMixin:
             return None
         model = models[0]
         facing = float(getattr(getattr(model, "model_base", None), "facing", 0.0) or 0.0)
+        try:
+            target_root = (
+                engagement_target_unit.get_attached_unit_root()
+                if engagement_target_unit is not None and hasattr(engagement_target_unit, "get_attached_unit_root")
+                else engagement_target_unit
+            )
+        except Exception:
+            target_root = engagement_target_unit
+        target_root_id = str(get_entity_id(target_root) or "") if target_root is not None else ""
 
         collision_fn = getattr(game_map, "check_collision_with_obstacles", None)
         if not callable(collision_fn):
@@ -398,22 +410,36 @@ class GameReactiveDecisionsMixin:
             test_base = model.model_base
             if hasattr(unit, "_create_potential_base"):
                 test_base = unit._create_potential_base(x, y, z, facing, model=model)
+            in_target_engagement = False
             for enemy in list(getattr(game_map, "get_enemy_units", lambda _u: [])(unit) or []):
-                if hasattr(enemy, "is_alive") and callable(enemy.is_alive) and not enemy.is_alive():
+                try:
+                    enemy_root = enemy.get_attached_unit_root() if hasattr(enemy, "get_attached_unit_root") else enemy
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None:
                     continue
-                if not getattr(enemy, "deployed", True):
+                if hasattr(enemy_root, "is_alive") and callable(enemy_root.is_alive) and not enemy_root.is_alive():
+                    continue
+                if not getattr(enemy_root, "deployed", True):
                     continue
                 try:
-                    enemy_models = list(enemy.get_models_for_collision() or [])
+                    enemy_models = list(enemy_root.get_models_for_collision() or [])
                 except Exception:
-                    enemy_models = list(getattr(enemy, "models", []) or [])
+                    enemy_models = list(getattr(enemy_root, "models", []) or [])
+                enemy_id = str(get_entity_id(enemy_root) or "")
                 for em in enemy_models:
                     if not getattr(em, "is_alive", True):
                         continue
                     horiz = float(horizontal_distance_between_bases_2d(test_base, em.model_base))
                     vert = float(vertical_distance_between_bases(test_base, em.model_base))
                     if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
-                        return False
+                        if target_root_id and enemy_id == target_root_id:
+                            in_target_engagement = True
+                            continue
+                        if not bool(allow_engagement_with_other_enemies):
+                            return False
+            if bool(require_engagement_with_target) and not in_target_engagement:
+                return False
             return True
 
         max_radius = float(math.hypot(float(game_map.width), float(game_map.height)))
@@ -8467,3 +8493,55 @@ class GameReactiveDecisionsMixin:
                 ):
                     continue
                 root.record_setup_reactive_shoot_or_charge_candidate(enemy_unit, game=self)
+
+    def _record_hyperspace_hunters_candidate(
+        self,
+        enemy_unit,
+        *,
+        set_up_as_reinforcements: bool = False,
+    ) -> None:
+        if enemy_unit is None or not bool(set_up_as_reinforcements):
+            return
+        if not self.is_movement_phase():
+            return
+        enemy_army = enemy_unit.get_parent_army()
+        enemy_player = getattr(enemy_army, "player", None) if enemy_army is not None else None
+        if enemy_player is None:
+            return
+        if self.get_current_player() is not enemy_player:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Hyperspace Hunters requires players.")
+            if p is enemy_player:
+                continue
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Hyperspace Hunters requires an army for {p.name}.")
+            seen = set()
+            for candidate in list(army.units):
+                if candidate is None:
+                    continue
+                root = candidate.get_attached_unit_root()
+                if root is None:
+                    continue
+                rid = get_entity_id(root)
+                if rid in seen:
+                    continue
+                seen.add(rid)
+                rule = root.get_hyperspace_hunters_rule()
+                if not rule:
+                    continue
+                rng = int(rule.get("range", 18) or 18)
+                if not root.can_hyperspace_hunters(
+                    game=self,
+                    game_map=game_map,
+                    enemy_unit=enemy_unit,
+                    range_override=rng,
+                ):
+                    continue
+                root.record_hyperspace_hunters_candidate(enemy_unit, game=self)

@@ -4476,6 +4476,153 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if candidate_choices and choice not in candidate_choices:
             return ("Ferocious Strike choice is not an eligible candidate.",)
         return ()
+    if ability == "hyperspace_hunters":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Hyperspace Hunters source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Hyperspace Hunters source unit was not found.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if source_army is None:
+            return ("Hyperspace Hunters source army was not found.",)
+        get_rule = getattr(source_root, "get_hyperspace_hunters_rule", None)
+        rule = get_rule() if callable(get_rule) else None
+        if not isinstance(rule, dict):
+            return ("Hyperspace Hunters is not active for the selected unit.",)
+        can_react = getattr(source_root, "can_hyperspace_hunters", None)
+        if not callable(can_react) or not bool(
+            can_react(
+                game=game,
+                game_map=getattr(game, "map", None),
+            )
+        ):
+            return ("The selected unit is not eligible for Hyperspace Hunters.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Hyperspace Hunters target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Hyperspace Hunters target unit was not found.",)
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if target_army is source_army:
+            return ("Hyperspace Hunters target must be an enemy unit.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {str(v) for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v)}
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Hyperspace Hunters target is not an eligible candidate.",)
+        try:
+            rng = int(rule.get("range", 18) or 18)
+        except Exception:
+            rng = 18
+        if not bool(
+            can_react(
+                game=game,
+                game_map=getattr(game, "map", None),
+                enemy_unit=target_root,
+                range_override=rng,
+            )
+        ):
+            return ("Hyperspace Hunters target is not in range/visibility for the source unit.",)
+        can_shoot_fn = getattr(game, "_setup_reactive_can_shoot_target", None)
+        if callable(can_shoot_fn):
+            if not bool(can_shoot_fn(source_root, target_root)):
+                return ("Hyperspace Hunters target is not an eligible shooting target.")
+        return ()
+    if ability == "miraculous_saviour":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Miraculous Saviour source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Miraculous Saviour source unit was not found.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if source_army is None:
+            return ("Miraculous Saviour source army was not found.",)
+        get_rule = getattr(source_root, "get_miraculous_saviour_rule", None)
+        rule = get_rule() if callable(get_rule) else None
+        if not isinstance(rule, dict):
+            return ("Miraculous Saviour is not active for the selected unit.",)
+        can_trigger = getattr(source_root, "can_miraculous_saviour", None)
+        if not callable(can_trigger) or not bool(can_trigger(game=game)):
+            return ("The selected unit is not eligible for Miraculous Saviour.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Miraculous Saviour target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Miraculous Saviour target unit was not found.",)
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if target_army is source_army:
+            return ("Miraculous Saviour target must be an enemy unit.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {str(v) for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v)}
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Miraculous Saviour target is not an eligible candidate.",)
+        if not bool(can_trigger(game=game, target_unit=target_root)):
+            return ("Miraculous Saviour target has not made a Charge move this phase.",)
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return ("Miraculous Saviour requires a game map for setup resolution.",)
+        find_pos = getattr(game, "_find_closest_valid_reposition_position", None)
+        if not callable(find_pos):
+            return ("Miraculous Saviour setup resolver is unavailable.",)
+        anchor_pos = getattr(target_root, "position", None)
+        if not (isinstance(anchor_pos, (tuple, list)) and len(anchor_pos) >= 2):
+            anchor_model = None
+            for model in list(getattr(target_root, "models", []) or []):
+                if not getattr(model, "is_alive", True):
+                    continue
+                anchor_model = model
+                break
+            if anchor_model is not None:
+                anchor_base = getattr(anchor_model, "model_base", None)
+                anchor_pos = (
+                    float(getattr(anchor_base, "x", 0.0) or 0.0),
+                    float(getattr(anchor_base, "y", 0.0) or 0.0),
+                    float(getattr(anchor_base, "z", 0.0) or 0.0),
+                )
+        if not (isinstance(anchor_pos, (tuple, list)) and len(anchor_pos) >= 2):
+            return ("Miraculous Saviour target position could not be resolved.",)
+        placement = find_pos(
+            source_root,
+            anchor_pos,
+            game_map=game_map,
+            engagement_target_unit=target_root,
+            require_engagement_with_target=True,
+            allow_engagement_with_other_enemies=True,
+        )
+        if not placement:
+            return ("Miraculous Saviour cannot set up within Engagement Range of the selected unit.")
+        return ()
     if ability == "great_wolf_watches_charge":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
@@ -8627,6 +8774,267 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "choice": choice,
             "leadership_passed": bool(passed),
             "applied": bool(applied),
+            "source": ability_name,
+        }
+    if ability == "hyperspace_hunters":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        get_rule = getattr(source_root, "get_hyperspace_hunters_rule", None)
+        rule = get_rule() if callable(get_rule) else {}
+        ability_name = str(ctx.get("ability_name", "") or (rule or {}).get("source", "") or "Hyperspace Hunters").strip()
+        if not ability_name:
+            ability_name = "Hyperspace Hunters"
+        clear_candidates = getattr(source_root, "clear_hyperspace_hunters_candidates", None)
+        mark_used = getattr(source_root, "mark_hyperspace_hunters_used", None)
+        if is_skip_choice(request, result):
+            if callable(clear_candidates):
+                clear_candidates(game)
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected none.",
+            )
+            return {
+                "unit_id": str(get_entity_id(source_root) or ""),
+                "choice": "",
+                "skipped": True,
+                "source": ability_name,
+            }
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {str(v) for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v)}
+        if candidate_ids and target_id not in candidate_ids:
+            return None
+        can_react = getattr(source_root, "can_hyperspace_hunters", None)
+        if not callable(can_react):
+            return None
+        try:
+            rng = int((rule or {}).get("range", 18) or 18)
+        except Exception:
+            rng = 18
+        if not bool(
+            can_react(
+                game=game,
+                game_map=getattr(game, "map", None),
+                enemy_unit=target_root,
+                range_override=rng,
+            )
+        ):
+            return None
+        can_shoot_fn = getattr(game, "_setup_reactive_can_shoot_target", None)
+        if callable(can_shoot_fn) and not bool(can_shoot_fn(source_root, target_root)):
+            return None
+        if callable(mark_used):
+            mark_used(game)
+        if callable(clear_candidates):
+            clear_candidates(game)
+        queue_shooting = getattr(game, "_queue_setup_reactive_shooting_decision", None)
+        queued_request = None
+        if callable(queue_shooting):
+            queued_request = queue_shooting(
+                player=player,
+                unit=source_root,
+                target_unit=target_root,
+                source=ability_name,
+            )
+        if queued_request is None and player is not None:
+            options = [
+                DecisionOption.create(
+                    "Confirm",
+                    payload={"action": "confirm", "unit_id": str(get_entity_id(source_root) or "")},
+                ),
+                DecisionOption.create(
+                    "Skip",
+                    payload={"action": "skip", "unit_id": str(get_entity_id(source_root) or "")},
+                ),
+            ]
+            request_obj = DecisionRequest.create(
+                DECISION_DECLARE_SHOTS,
+                f"{ability_name}: Declare shots for {getattr(source_root, 'name', 'Unit')}",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "unit_id": str(get_entity_id(source_root) or ""),
+                    "out_of_phase": True,
+                    "force_target_unit_id": target_id,
+                    "setup_reactive_source": ability_name,
+                },
+            )
+            if hasattr(game, "request_decision"):
+                game.request_decision(request_obj)
+                queued_request = request_obj
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected "
+                f"{getattr(target_root, 'name', 'Unit')} as the reactive shooting target."
+            ),
+        )
+        return {
+            "unit_id": str(get_entity_id(source_root) or ""),
+            "target_unit_id": target_id,
+            "queued_shooting": bool(queued_request is not None),
+            "source": ability_name,
+        }
+    if ability == "miraculous_saviour":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        get_rule = getattr(source_root, "get_miraculous_saviour_rule", None)
+        rule = get_rule() if callable(get_rule) else {}
+        ability_name = str(ctx.get("ability_name", "") or (rule or {}).get("source", "") or "Miraculous Saviour").strip()
+        if not ability_name:
+            ability_name = "Miraculous Saviour"
+        if is_skip_choice(request, result):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected none.",
+            )
+            return {
+                "unit_id": str(get_entity_id(source_root) or ""),
+                "choice": "",
+                "skipped": True,
+                "source": ability_name,
+            }
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {str(v) for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v)}
+        if candidate_ids and target_id not in candidate_ids:
+            return None
+        can_trigger = getattr(source_root, "can_miraculous_saviour", None)
+        if not callable(can_trigger) or not bool(can_trigger(game=game, target_unit=target_root)):
+            return None
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return None
+        find_pos = getattr(game, "_find_closest_valid_reposition_position", None)
+        if not callable(find_pos):
+            return None
+        anchor_pos = getattr(target_root, "position", None)
+        if not (isinstance(anchor_pos, (tuple, list)) and len(anchor_pos) >= 2):
+            anchor_model = None
+            for model in list(getattr(target_root, "models", []) or []):
+                if not getattr(model, "is_alive", True):
+                    continue
+                anchor_model = model
+                break
+            if anchor_model is not None:
+                anchor_base = getattr(anchor_model, "model_base", None)
+                anchor_pos = (
+                    float(getattr(anchor_base, "x", 0.0) or 0.0),
+                    float(getattr(anchor_base, "y", 0.0) or 0.0),
+                    float(getattr(anchor_base, "z", 0.0) or 0.0),
+                )
+        if not (isinstance(anchor_pos, (tuple, list)) and len(anchor_pos) >= 2):
+            return None
+        placement = find_pos(
+            source_root,
+            anchor_pos,
+            game_map=game_map,
+            engagement_target_unit=target_root,
+            require_engagement_with_target=True,
+            allow_engagement_with_other_enemies=True,
+        )
+        if not placement:
+            return None
+        try:
+            alive_models = [m for m in list(source_root.get_attached_unit_models() or []) if getattr(m, "is_alive", True)]
+        except Exception:
+            alive_models = [m for m in list(getattr(source_root, "models", []) or []) if getattr(m, "is_alive", True)]
+        if len(alive_models) != 1:
+            return None
+        model = alive_models[0]
+        model.set_location(
+            float(placement[0]),
+            float(placement[1]),
+            float(placement[2]),
+            float(placement[3]),
+        )
+        source_root.position = (
+            float(placement[0]),
+            float(placement[1]),
+            float(placement[2]),
+        )
+        if hasattr(game_map, "units"):
+            try:
+                if source_root not in list(game_map.units or []):
+                    game_map.units.append(source_root)
+            except Exception:
+                pass
+        finalize = getattr(source_root, "_finalize_reserves_arrival", None)
+        if not callable(finalize):
+            return None
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        finalize(int(turn), game_map)
+        mark_used = getattr(source_root, "mark_miraculous_saviour_used", None)
+        if callable(mark_used):
+            mark_used()
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} was set up within Engagement Range of "
+                f"{getattr(target_root, 'name', 'Unit')}."
+            ),
+        )
+        return {
+            "unit_id": str(get_entity_id(source_root) or ""),
+            "target_unit_id": target_id,
+            "position": [float(placement[0]), float(placement[1]), float(placement[2])],
             "source": ability_name,
         }
     if ability == "great_wolf_watches_charge":

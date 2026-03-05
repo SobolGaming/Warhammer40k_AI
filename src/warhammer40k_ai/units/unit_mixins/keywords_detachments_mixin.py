@@ -3070,6 +3070,194 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_hyperspace_hunters_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Once per turn, in the Reinforcements step of your opponent's Movement phase, when an enemy unit is set up on
+        the battlefield from Reserves within 18\" of and visible to this unit, this unit can shoot as if it were your
+        Shooting phase, but must only target that enemy unit..."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "hyperspace_hunters_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text = u._normalize_rules_text(self._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = re.sub(r"\s+", " ", text.lower()).strip()
+                key = (str(name or "").strip().lower(), norm)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if "reinforcements step of your opponent" not in norm:
+                    continue
+                if "set up on the battlefield from reserves" not in norm:
+                    continue
+                if "shoot as if it were your shooting phase" not in norm:
+                    continue
+                if "must only target that enemy unit" not in norm:
+                    continue
+                m = re.search(
+                    r"within\s+(?P<range>\d+)\s*\"?\s+of\s+and\s+visible\s+to\s+this\s+unit",
+                    norm,
+                )
+                if not m:
+                    continue
+                try:
+                    rng = int(m.group("range") or 0)
+                except Exception:
+                    rng = 0
+                if rng <= 0:
+                    rng = 18
+                source = str(name or "Hyperspace Hunters").strip() or "Hyperspace Hunters"
+                rule = {
+                    "range": int(rng),
+                    "source": source,
+                    "requires_visibility": True,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def get_miraculous_saviour_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Once per battle, at the end of your opponent's Charge phase, if this model is still in Reserves, you can
+        select one enemy unit that made a Charge move this phase. Set this model up on the battlefield within
+        Engagement Range of that enemy unit."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "miraculous_saviour_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text = u._normalize_rules_text(self._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = re.sub(r"\s+", " ", text.lower()).strip()
+                key = (str(name or "").strip().lower(), norm)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if "end of your opponent" not in norm or "charge phase" not in norm:
+                    continue
+                if "if this model is still in reserves" not in norm:
+                    continue
+                if "made a charge move this phase" not in norm:
+                    continue
+                if "set this model up on the battlefield within engagement range of that enemy unit" not in norm:
+                    continue
+                source = str(name or "Miraculous Saviour").strip() or "Miraculous Saviour"
+                rule = {
+                    "source": source,
+                    "usage_key": "miraculous_saviour",
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def can_miraculous_saviour(self, game=None, *, target_unit=None) -> bool:
+        _ = game
+        rule = self.get_miraculous_saviour_rule()
+        if not rule:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        if not root.is_alive():
+            return False
+        try:
+            alive_models = [m for m in list(root.get_attached_unit_models() or []) if getattr(m, "is_alive", True)]
+        except Exception:
+            alive_models = [m for m in list(getattr(root, "models", []) or []) if getattr(m, "is_alive", True)]
+        if len(alive_models) != 1:
+            return False
+        try:
+            if not root.is_in_reserves():
+                return False
+        except Exception:
+            return False
+        usage_key = str(rule.get("usage_key", "") or "miraculous_saviour").strip().lower()
+        if usage_key and root.has_used_unit_once_per_battle(usage_key):
+            return False
+        if target_unit is None:
+            return True
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return False
+        if not target_root.is_alive():
+            return False
+        if not getattr(target_root, "deployed", True):
+            return False
+        if target_root.get_parent_army() is root.get_parent_army():
+            return False
+        if not bool(getattr(getattr(target_root, "round_state", None), "charged_this_round", False)):
+            return False
+        return True
+
+    def mark_miraculous_saviour_used(self) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_miraculous_saviour_rule() or {}
+        usage_key = str(rule.get("usage_key", "") or "miraculous_saviour").strip().lower()
+        source = str(rule.get("source", "") or "Miraculous Saviour").strip() or "Miraculous Saviour"
+        root.mark_unit_once_per_battle_used(usage_key, ability_name=source)
+
     def get_dark_ritual_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:
@@ -7009,6 +7197,184 @@ class KeywordsDetachmentsMixin:
                     return False
             except Exception:
                 return False
+        return True
+
+    def _hyperspace_hunters_turn_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        try:
+            owner = str(getattr(current_player, "id", "") or "")
+        except Exception:
+            owner = ""
+        return f"{br}:{owner}"
+
+    def hyperspace_hunters_used_this_turn(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._hyperspace_hunters_turn_key(game)
+        return str(sr.get("hyperspace_hunters_used_turn_key", "")) == key
+
+    def mark_hyperspace_hunters_used(self, game=None) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hyperspace_hunters_used_turn_key"] = self._hyperspace_hunters_turn_key(game)
+        root.special_rules = sr
+
+    def record_hyperspace_hunters_candidate(self, enemy_unit, game=None) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if enemy_unit is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        key = self._hyperspace_hunters_turn_key(game)
+        if str(sr.get("hyperspace_hunters_candidates_key", "")) != key:
+            sr["hyperspace_hunters_candidates"] = []
+        sr["hyperspace_hunters_candidates_key"] = key
+        try:
+            enemy_id = get_entity_id(enemy_unit)
+        except Exception:
+            enemy_id = None
+        if not enemy_id:
+            root.special_rules = sr
+            return
+        candidates = list(sr.get("hyperspace_hunters_candidates", []) or [])
+        if enemy_id not in candidates:
+            candidates.append(enemy_id)
+        sr["hyperspace_hunters_candidates"] = candidates
+        root.special_rules = sr
+
+    def get_hyperspace_hunters_candidates(self, game=None) -> list[str]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return []
+        key = self._hyperspace_hunters_turn_key(game)
+        if str(sr.get("hyperspace_hunters_candidates_key", "")) != key:
+            return []
+        return list(sr.get("hyperspace_hunters_candidates", []) or [])
+
+    def clear_hyperspace_hunters_candidates(self, game=None) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        key = self._hyperspace_hunters_turn_key(game)
+        if str(sr.get("hyperspace_hunters_candidates_key", "")) != key:
+            return
+        sr.pop("hyperspace_hunters_candidates", None)
+        sr.pop("hyperspace_hunters_candidates_key", None)
+        root.special_rules = sr
+
+    def can_hyperspace_hunters(
+        self,
+        game=None,
+        game_map=None,
+        *,
+        enemy_unit=None,
+        range_override: Optional[int] = None,
+    ) -> bool:
+        rule = self.get_hyperspace_hunters_rule()
+        if not rule:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        if not root.is_alive() or not getattr(root, "deployed", False):
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        if root.hyperspace_hunters_used_this_turn(game):
+            return False
+        if enemy_unit is None:
+            return True
+
+        try:
+            enemy_root = enemy_unit.get_attached_unit_root()
+        except Exception:
+            enemy_root = enemy_unit
+        if enemy_root is None:
+            return False
+        if not enemy_root.is_alive() or not getattr(enemy_root, "deployed", True):
+            return False
+        if enemy_root.get_parent_army() is root.get_parent_army():
+            return False
+        try:
+            if enemy_root.is_in_reserves() or bool(getattr(enemy_root, "is_embarked", False)):
+                return False
+        except Exception:
+            pass
+
+        if game_map is not None:
+            try:
+                rng = int(range_override or rule.get("range", 18) or 18)
+            except Exception:
+                rng = 18
+            try:
+                from ...utility.aura_utils import unit_within_range_of_unit
+
+                if not unit_within_range_of_unit(root, enemy_root, float(rng), use_attached_aggregate=True):
+                    return False
+            except Exception:
+                return False
+
+        if bool(rule.get("requires_visibility", False)):
+            can_see_fn = getattr(game, "_model_can_see_unit", None) if game is not None else None
+            if callable(can_see_fn):
+                try:
+                    source_models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    source_models = list(getattr(root, "models", []) or [])
+                visible = False
+                for model in source_models:
+                    if not getattr(model, "is_alive", True):
+                        continue
+                    if bool(can_see_fn(model, enemy_root, game_map=game_map)):
+                        visible = True
+                        break
+                if not visible:
+                    return False
         return True
 
     def loping_speed_used_this_turn(self, game=None) -> bool:

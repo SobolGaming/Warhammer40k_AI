@@ -3423,6 +3423,14 @@ def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
             "Supported",
             "After setup and passenger disembark completion, the transport is embark-locked for the remainder of the battle.",
         ),
+        "Hyperspace Hunters": (
+            "Supported",
+            "Opponent Reinforcements-step setup trigger records eligible enemy arrivals; at Movement phase end, optional target selection queues out-of-phase shooting that must target the selected eligible enemy and is limited to once per turn.",
+        ),
+        "Miraculous Saviour": (
+            "Supported",
+            "Once per battle at the end of your opponent's Charge phase, if still in Reserves, optional charged-enemy selection sets this single-model unit up within Engagement Range of the selected enemy via deterministic placement validation.",
+        ),
         "Reverberating Summons": (
             "Supported",
             "Weapon ability: when this weapon destroys a model, select a friendly Plaguebearers unit within 12\" to return 1 destroyed model.",
@@ -11763,6 +11771,7 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009037003": "Blade of Saint Ellynor: bearer melee weapons gain +1 Strength, +1 AP, and [PRECISION]; each time the bearer is selected to fight, the first enemy model destroyed by those melee attacks grants 1 Miracle die.",
         "000009037004": "Divine Aspect: start of your Movement phase, optional enemy unit within 12\" of bearer takes a Battle-shock test; failed test grants 1 Miracle die.",
         "000009037005": "Triptych of the Macharian Crusade: when bearer uses an Act of Faith to substitute a saving throw, that saving throw automatically succeeds.",
+        "000008417002": "Hunting Grounds: while bearer is on the battlefield, when an enemy unit is set up from Reserves, roll D6 and on 2+ that unit must take an immediate Battle-shock test.",
         "000009033002": "Righteous Rage: each time the bearer is selected to fight, optionally discard up to 3 Miracle dice; each discarded die adds +1 Attacks and +1 Strength to the bearer's melee weapons until end of phase.",
         "000009033003": "Manual of Saint Griselda: start of your Command phase, optionally discard up to 2 Miracle dice then add 1 Miracle die equal to their sum (maximum 6).",
         "000009033004": "Fire and Fury: while the bearer is leading, Torrent ranged weapons in the bearer's unit gain +1 Attacks and other ranged weapons in that unit gain [SUSTAINED HITS 1].",

@@ -1541,15 +1541,79 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
                 return marker
         return None
 
-    def on_unit_set_up(self, *, unit=None, game=None, set_up_as_reinforcements: bool = False) -> None:
-        if not self.is_subterranean_assault():
+    def _hunting_grounds_bearer_on_battlefield(self):
+        if not self.is_vanguard_onslaught():
+            return None
+        for candidate in list(self._iter_army_roots() or []):
+            candidate_root = self._unit_root(candidate)
+            if candidate_root is None:
+                continue
+            if not self._unit_on_battlefield(candidate_root):
+                continue
+            checker = getattr(candidate_root, "_attached_unit_has_active_enhancement", None)
+            if not callable(checker):
+                continue
+            if not bool(
+                checker(
+                    "enhancement_hunting_grounds",
+                    enhancement_id="000008417002",
+                    enhancement_name="Hunting Grounds",
+                )
+            ):
+                continue
+            return candidate_root
+        return None
+
+    def _maybe_apply_hunting_grounds(
+        self,
+        *,
+        unit=None,
+        game=None,
+        set_up_as_reinforcements: bool = False,
+    ) -> None:
+        if not bool(set_up_as_reinforcements):
             return
         if game is None or not bool(getattr(game, "is_authoritative", True)):
             return
-        if not bool(set_up_as_reinforcements):
+        enemy_root = self._unit_root(unit)
+        if enemy_root is None:
+            return
+        if self._unit_in_army(enemy_root):
+            return
+        if not self._unit_on_battlefield(enemy_root):
+            return
+        bearer_root = self._hunting_grounds_bearer_on_battlefield()
+        if bearer_root is None:
+            return
+        take_test = getattr(enemy_root, "take_battle_shock_test", None)
+        if not callable(take_test):
+            return
+        try:
+            roll = int(get_roll("D6") or 0)
+        except Exception:
+            roll = 0
+        if int(roll) < 2:
+            return
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        take_test(current_turn=max(1, int(current_turn)))
+
+    def on_unit_set_up(self, *, unit=None, game=None, set_up_as_reinforcements: bool = False) -> None:
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
             return
         root = self._unit_root(unit)
         if root is None:
+            return
+        self._maybe_apply_hunting_grounds(
+            unit=root,
+            game=game,
+            set_up_as_reinforcements=bool(set_up_as_reinforcements),
+        )
+        if not self.is_subterranean_assault():
+            return
+        if not bool(set_up_as_reinforcements):
             return
         if not self._unit_in_army(root):
             return

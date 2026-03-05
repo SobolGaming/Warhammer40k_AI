@@ -15991,3 +15991,315 @@ class GamePhaseHandlersMixin:
                         rule=rule,
                     )
                 root.clear_setup_reactive_shoot_or_charge_candidates(self)
+
+    def _on_phase_end_hyperspace_hunters(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        current_player = self.get_current_player()
+        if current_player is None:
+            return
+        if player is None or player is not current_player:
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            battle_round = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        trigger_player_id = str(getattr(current_player, "id", "") or "")
+        queue = getattr(self, "decision_queue", None)
+        can_shoot_fn = getattr(self, "_setup_reactive_can_shoot_target", None)
+
+        for reacting_player in list(self.players or []):
+            if reacting_player is None or reacting_player is current_player:
+                continue
+            reacting_army = self._get_player_army(reacting_player)
+            if reacting_army is None:
+                continue
+            seen = set()
+            for unit in list(reacting_army.units or []):
+                if unit is None:
+                    continue
+                root = unit.get_attached_unit_root()
+                if root is None:
+                    continue
+                rid = str(get_entity_id(root) or "")
+                if rid and rid in seen:
+                    continue
+                if rid:
+                    seen.add(rid)
+
+                rule = root.get_hyperspace_hunters_rule()
+                if not rule:
+                    continue
+                if root.hyperspace_hunters_used_this_turn(self):
+                    continue
+                if not root.can_hyperspace_hunters(game=self, game_map=game_map):
+                    root.clear_hyperspace_hunters_candidates(self)
+                    continue
+
+                candidate_ids = root.get_hyperspace_hunters_candidates(self)
+                if not candidate_ids:
+                    continue
+                try:
+                    rng = int(rule.get("range", 18) or 18)
+                except Exception:
+                    rng = 18
+                actionable = []
+                for cid in list(candidate_ids or []):
+                    enemy = self._resolve_unit_by_id(str(cid))
+                    if enemy is None:
+                        continue
+                    if not enemy.is_alive():
+                        continue
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    if enemy.get_parent_army() is root.get_parent_army():
+                        continue
+                    if not root.can_hyperspace_hunters(
+                        game=self,
+                        game_map=game_map,
+                        enemy_unit=enemy,
+                        range_override=rng,
+                    ):
+                        continue
+                    if callable(can_shoot_fn) and not bool(can_shoot_fn(root, enemy)):
+                        continue
+                    actionable.append(enemy)
+                if not actionable:
+                    root.clear_hyperspace_hunters_candidates(self)
+                    continue
+
+                reacting_unit_id = str(get_entity_id(root) or "")
+                if not reacting_unit_id:
+                    root.clear_hyperspace_hunters_candidates(self)
+                    continue
+
+                already_pending = False
+                if queue is not None and hasattr(queue, "list"):
+                    for req in list(queue.list() or []):
+                        if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                            continue
+                        ctx = dict(getattr(req, "context", {}) or {})
+                        if str(ctx.get("ability", "") or "") != "hyperspace_hunters":
+                            continue
+                        if str(ctx.get("unit_id", "") or "") != reacting_unit_id:
+                            continue
+                        if int(ctx.get("battle_round", battle_round) or battle_round) != battle_round:
+                            continue
+                        if str(ctx.get("trigger_player_id", "") or "") != trigger_player_id:
+                            continue
+                        already_pending = True
+                        break
+                if already_pending:
+                    root.clear_hyperspace_hunters_candidates(self)
+                    continue
+
+                req_options = [
+                    DecisionOption.create(
+                        "None",
+                        payload={
+                            "action": "skip",
+                            "unit_id": reacting_unit_id,
+                        },
+                    )
+                ]
+                candidate_unit_ids: list[str] = []
+                used_labels: set[str] = set()
+                for target_unit in sorted(
+                    list(actionable),
+                    key=lambda cand: str(get_entity_id(cand) or ""),
+                ):
+                    target_id = str(get_entity_id(target_unit) or "")
+                    if not target_id or target_id in candidate_unit_ids:
+                        continue
+                    candidate_unit_ids.append(target_id)
+                    label = str(getattr(target_unit, "name", "") or "Enemy unit")
+                    base = label
+                    idx = 2
+                    while label in used_labels:
+                        label = f"{base} ({idx})"
+                        idx += 1
+                    used_labels.add(label)
+                    req_options.append(
+                        DecisionOption.create(
+                            label,
+                            payload={
+                                "target_unit_id": target_id,
+                                "unit_id": reacting_unit_id,
+                            },
+                        )
+                    )
+                if len(req_options) <= 1:
+                    root.clear_hyperspace_hunters_candidates(self)
+                    continue
+
+                ability_name = str(rule.get("source", "") or "Hyperspace Hunters").strip() or "Hyperspace Hunters"
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{ability_name}: Select shooting target for {getattr(root, 'name', 'Unit')} (or None).",
+                    player_id=getattr(reacting_player, "id", None),
+                    options=req_options,
+                    context={
+                        "ability": "hyperspace_hunters",
+                        "ability_name": ability_name,
+                        "phase": "Movement phase - Reinforcements step",
+                        "unit_id": reacting_unit_id,
+                        "army_id": str(get_entity_id(reacting_army) or ""),
+                        "battle_round": int(battle_round or 0),
+                        "trigger_player_id": trigger_player_id,
+                        "candidate_unit_ids": list(candidate_unit_ids),
+                    },
+                )
+                self.request_decision(request)
+                root.clear_hyperspace_hunters_candidates(self)
+
+    def _on_phase_end_miraculous_saviour(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "CHARGE_PHASE":
+            return
+        current_player = self.get_current_player()
+        if current_player is None:
+            return
+        if player is None or player is not current_player:
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        try:
+            battle_round = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        trigger_player_id = str(getattr(current_player, "id", "") or "")
+        queue = getattr(self, "decision_queue", None)
+
+        for reacting_player in list(getattr(self, "players", []) or []):
+            if reacting_player is None or reacting_player is current_player:
+                continue
+            reacting_army = self._get_player_army(reacting_player)
+            if reacting_army is None:
+                continue
+            seen = set()
+            for unit in list(reacting_army.units or []):
+                if unit is None:
+                    continue
+                root = unit.get_attached_unit_root()
+                if root is None:
+                    continue
+                rid = str(get_entity_id(root) or "")
+                if rid and rid in seen:
+                    continue
+                if rid:
+                    seen.add(rid)
+                rule = root.get_miraculous_saviour_rule()
+                if not rule:
+                    continue
+                if not root.can_miraculous_saviour(game=self):
+                    continue
+
+                reacting_unit_id = str(get_entity_id(root) or "")
+                if not reacting_unit_id:
+                    continue
+
+                already_pending = False
+                if queue is not None and hasattr(queue, "list"):
+                    for req in list(queue.list() or []):
+                        if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                            continue
+                        ctx = dict(getattr(req, "context", {}) or {})
+                        if str(ctx.get("ability", "") or "") != "miraculous_saviour":
+                            continue
+                        if str(ctx.get("unit_id", "") or "") != reacting_unit_id:
+                            continue
+                        if int(ctx.get("battle_round", battle_round) or battle_round) != battle_round:
+                            continue
+                        if str(ctx.get("trigger_player_id", "") or "") != trigger_player_id:
+                            continue
+                        already_pending = True
+                        break
+                if already_pending:
+                    continue
+
+                candidate_units = []
+                enemy_army = self._get_player_army(current_player)
+                for enemy in list(getattr(enemy_army, "units", []) or []):
+                    if enemy is None:
+                        continue
+                    enemy_root = enemy.get_attached_unit_root()
+                    if enemy_root is None:
+                        continue
+                    if not enemy_root.is_alive():
+                        continue
+                    if not getattr(enemy_root, "deployed", True):
+                        continue
+                    if not bool(getattr(getattr(enemy_root, "round_state", None), "charged_this_round", False)):
+                        continue
+                    if enemy_root.get_parent_army() is root.get_parent_army():
+                        continue
+                    if not root.can_miraculous_saviour(game=self, target_unit=enemy_root):
+                        continue
+                    candidate_units.append(enemy_root)
+                if not candidate_units:
+                    continue
+
+                options = [
+                    DecisionOption.create(
+                        "None",
+                        payload={
+                            "action": "skip",
+                            "unit_id": reacting_unit_id,
+                        },
+                    )
+                ]
+                candidate_ids: list[str] = []
+                used_labels: set[str] = set()
+                for enemy_root in sorted(
+                    list(candidate_units),
+                    key=lambda cand: str(get_entity_id(cand) or ""),
+                ):
+                    target_id = str(get_entity_id(enemy_root) or "")
+                    if not target_id or target_id in candidate_ids:
+                        continue
+                    candidate_ids.append(target_id)
+                    label = str(getattr(enemy_root, "name", "") or "Enemy unit")
+                    base = label
+                    idx = 2
+                    while label in used_labels:
+                        label = f"{base} ({idx})"
+                        idx += 1
+                    used_labels.add(label)
+                    options.append(
+                        DecisionOption.create(
+                            label,
+                            payload={
+                                "target_unit_id": target_id,
+                                "unit_id": reacting_unit_id,
+                            },
+                        )
+                    )
+                if len(options) <= 1:
+                    continue
+
+                ability_name = str(rule.get("source", "") or "Miraculous Saviour").strip() or "Miraculous Saviour"
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{ability_name}: Select enemy charge unit for {getattr(root, 'name', 'Unit')} (or None).",
+                    player_id=getattr(reacting_player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "miraculous_saviour",
+                        "ability_name": ability_name,
+                        "phase": "Charge phase",
+                        "unit_id": reacting_unit_id,
+                        "army_id": str(get_entity_id(reacting_army) or ""),
+                        "battle_round": int(battle_round or 0),
+                        "trigger_player_id": trigger_player_id,
+                        "candidate_unit_ids": list(candidate_ids),
+                    },
+                )
+                self.request_decision(request)
