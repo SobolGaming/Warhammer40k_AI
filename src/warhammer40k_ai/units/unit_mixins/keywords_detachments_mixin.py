@@ -3218,6 +3218,210 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_datasheet_overwatch_stratagem_discount_rule(self) -> Optional[dict]:
+        """
+        Return rule info for datasheet abilities that grant Fire Overwatch for 0CP
+        with repeat-use bypass, such as:
+        - Inescapable Death
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "datasheet_overwatch_stratagem_discount_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "fire overwatch" not in normalized or "stratagem" not in normalized:
+                    continue
+                if "0cp" not in normalized:
+                    continue
+
+                if (
+                    "once per turn" in normalized
+                    and "one unit from your army with this ability can be targeted with the fire overwatch stratagem for 0cp" in normalized
+                    and (
+                        "already used that stratagem on a different unit this phase" in normalized
+                        or "already used that stratagem on a different unit this turn" in normalized
+                        or "already targeted a different unit with that stratagem this turn" in normalized
+                    )
+                ):
+                    source = str(name or "Inescapable Death").strip() or "Inescapable Death"
+                    rule = {
+                        "source": source,
+                        "ability_key": "datasheet_overwatch_stratagem_discount",
+                        "stratagems": ("OVERWATCH", "FIRE OVERWATCH"),
+                        "limit": "army_turn",
+                        "usage_key": "INESCAPABLE_DEATH_OVERWATCH",
+                        "repeat_bypass": True,
+                    }
+                    break
+
+                repeat_bypass_clause = (
+                    "can do so even if you have already targeted another unit with that stratagem this turn" in normalized
+                    or "can do so even if you have already targeted a different unit with that stratagem this turn" in normalized
+                )
+                unit_turn_clause = bool(
+                    re.search(
+                        r"this (?:model|unit|fortification) can only be targeted with that stratagem once per turn",
+                        normalized,
+                    )
+                )
+                if (
+                    "you can target this" in normalized
+                    and "with the fire overwatch stratagem for 0cp" in normalized
+                    and repeat_bypass_clause
+                    and unit_turn_clause
+                ):
+                    source = str(name or "Overwatch").strip() or "Overwatch"
+                    rule = {
+                        "source": source,
+                        "ability_key": "datasheet_overwatch_stratagem_discount",
+                        "stratagems": ("OVERWATCH", "FIRE OVERWATCH"),
+                        "limit": "unit_turn",
+                        "repeat_bypass": True,
+                    }
+                    break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _datasheet_overwatch_discount_turn_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        owner = str(getattr(current_player, "id", "") or "") or str(getattr(current_player, "name", "") or "")
+        return f"{br}:{owner}"
+
+    def datasheet_overwatch_discount_used_this_turn(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._datasheet_overwatch_discount_turn_key(game)
+        return str(sr.get("datasheet_overwatch_discount_used_turn_key", "")) == key
+
+    def mark_datasheet_overwatch_discount_used(self, game=None, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["datasheet_overwatch_discount_used_turn_key"] = self._datasheet_overwatch_discount_turn_key(game)
+        if source:
+            sr["datasheet_overwatch_discount_used_source"] = str(source or "").strip()
+        if stratagem_name:
+            sr["datasheet_overwatch_discount_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+        rule = root.get_datasheet_overwatch_stratagem_discount_rule()
+        if not isinstance(rule, dict):
+            return
+        if str(rule.get("limit", "") or "").strip().lower() != "army_turn":
+            return
+        usage_key = str(rule.get("usage_key", "") or "").strip().upper()
+        if not usage_key:
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        mark_fn = getattr(player, "_mark_ability_used_turn", None) if player is not None else None
+        if callable(mark_fn):
+            mark_fn(usage_key)
+
+    def can_use_datasheet_overwatch_stratagem_discount(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_datasheet_overwatch_stratagem_discount_rule()
+        if not rule:
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        limit = str(rule.get("limit", "") or "").strip().lower()
+        if limit == "unit_turn":
+            if root.datasheet_overwatch_discount_used_this_turn(game):
+                return False
+            return True
+        if limit == "army_turn":
+            usage_key = str(rule.get("usage_key", "") or "").strip().upper()
+            if not usage_key:
+                return False
+            try:
+                player = root.get_parent_army().player
+            except Exception:
+                player = None
+            used_fn = getattr(player, "_ability_used_this_turn", None) if player is not None else None
+            if callable(used_fn) and used_fn(usage_key):
+                return False
+            return True
+        return False
+
     def get_prophetic_sentinels_stratagem_discount_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:
@@ -4522,7 +4726,7 @@ class KeywordsDetachmentsMixin:
                 normalized = normalized.lower()
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
-                m = u._DESTROYER_OF_FUTURES_OVERWATCH_RE.fullmatch(normalized)
+                m = u._DESTROYER_OF_FUTURES_OVERWATCH_RE.search(normalized)
                 if m:
                     try:
                         base_threshold = int(m.group("base") or 0)
@@ -4547,7 +4751,7 @@ class KeywordsDetachmentsMixin:
                     }
                     break
 
-                m_fortify = u._FORTIFY_OVERWATCH_RE.fullmatch(normalized)
+                m_fortify = u._FORTIFY_OVERWATCH_RE.search(normalized)
                 if m_fortify:
                     try:
                         base_threshold = int(m_fortify.group("base") or 0)
@@ -4567,7 +4771,29 @@ class KeywordsDetachmentsMixin:
                     }
                     break
 
-                m_simple = u._OVERWATCH_HIT_THRESHOLD_RE.fullmatch(normalized)
+                m_objective = u._OBJECTIVE_OVERWATCH_RE.search(normalized)
+                if m_objective:
+                    try:
+                        base_threshold = int(m_objective.group("base") or 0)
+                    except Exception:
+                        base_threshold = 0
+                    try:
+                        objective_threshold = int(m_objective.group("objective") or 0)
+                    except Exception:
+                        objective_threshold = 0
+                    if base_threshold <= 0 or objective_threshold <= 0:
+                        continue
+                    source = str(name or "Overwatch").strip() or "Overwatch"
+                    rule = {
+                        "source": source,
+                        "base_threshold": int(base_threshold),
+                        "objective_threshold": int(objective_threshold),
+                    }
+                    break
+
+                m_simple = u._OVERWATCH_HIT_THRESHOLD_RE.search(normalized)
+                if not m_simple:
+                    m_simple = u._OVERWATCH_HIT_THRESHOLD_SELECT_RE.search(normalized)
                 if not m_simple:
                     continue
                 try:
@@ -4617,6 +4843,26 @@ class KeywordsDetachmentsMixin:
         except Exception:
             near_threshold = 0
         fortify_threshold = int(rule.get("fortify_takeover_threshold", 0) or 0)
+        try:
+            objective_threshold = int(rule.get("objective_threshold", 0) or 0)
+        except Exception:
+            objective_threshold = 0
+        if objective_threshold > 0:
+            game_map = None
+            try:
+                game_obj = game
+                if game_obj is None:
+                    game_obj = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+            except Exception:
+                game_map = None
+            within_objective = False
+            try:
+                within_objective = bool(root.is_within_any_objective_range(game_map))
+            except Exception:
+                within_objective = False
+            if within_objective:
+                return int(objective_threshold)
         if near_threshold <= 0:
             if fortify_threshold > 0:
                 try:

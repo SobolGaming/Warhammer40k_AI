@@ -3287,10 +3287,30 @@ class Unit(
         r")",
         re.IGNORECASE,
     )
+    _OVERWATCH_HIT_THRESHOLD_SELECT_RE = re.compile(
+        r"each time you select this (?:unit|model|fortification) for the fire overwatch stratagem "
+        r"(?:"
+        r"(?:while|when) resolving that stratagem "
+        r"hits are scored on unmodified hit rolls of (?P<threshold_pre>\d)(?:\+)?"
+        r"|"
+        r"hits are scored on unmodified hit rolls of (?P<threshold_post>\d)(?:\+)? "
+        r"(?:while|when) resolving that stratagem"
+        r")",
+        re.IGNORECASE,
+    )
     _FORTIFY_OVERWATCH_RE = re.compile(
         r"each time you target this unit with the fire overwatch stratagem hits are scored on unmodified hit rolls of (?P<base>\d)(?:\+)? "
         r"(?:when|while) resolving that stratagem if units from your army have fortify takeover hits are scored on unmodified hit rolls "
         r"of (?P<fortify>\d)(?:\+)? while resolving that stratagem instead",
+        re.IGNORECASE,
+    )
+    _OBJECTIVE_OVERWATCH_RE = re.compile(
+        r"each time you target this unit with the fire overwatch stratagem "
+        r"(?:while resolving that stratagem )?"
+        r"hits are scored on unmodified hit rolls of (?P<base>\d)(?:\+)?"
+        r"(?: when resolving that stratagem)? "
+        r"or unmodified hit rolls of (?P<objective>\d)(?:\+)? instead "
+        r"if this unit is within range of an objective marker",
         re.IGNORECASE,
     )
     _PROPHETIC_SENTINELS_STRATAGEM_RE = re.compile(

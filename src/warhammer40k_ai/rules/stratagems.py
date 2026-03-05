@@ -2547,6 +2547,14 @@ class StratagemManager(
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
 
+    def _unit_can_use_datasheet_overwatch_stratagem_discount(self, unit, *, stratagem_name: str = "") -> bool:
+        if unit is None:
+            return False
+        fn = getattr(unit, "can_use_datasheet_overwatch_stratagem_discount", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
     def _unit_can_use_primed_and_ready_grenade(self, unit, *, stratagem_name: str = "") -> bool:
         if unit is None:
             return False
@@ -2604,6 +2612,17 @@ class StratagemManager(
             ) or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
                 target_unit,
                 stratagem_name="OVERWATCH",
+            ) or (
+                self._unit_can_use_datasheet_overwatch_stratagem_discount(
+                    target_unit,
+                    stratagem_name="OVERWATCH",
+                )
+                and bool(
+                    (
+                        getattr(target_unit, "get_datasheet_overwatch_stratagem_discount_rule", lambda: None)()
+                        or {}
+                    ).get("repeat_bypass", False)
+                )
             )
         for cand in list(candidates or []):
             if self._unit_can_use_traitor_enforcer_overwatch(cand):
@@ -2613,6 +2632,13 @@ class StratagemManager(
                 stratagem_name="OVERWATCH",
             ):
                 return True
+            if self._unit_can_use_datasheet_overwatch_stratagem_discount(
+                cand,
+                stratagem_name="OVERWATCH",
+            ):
+                rule = getattr(cand, "get_datasheet_overwatch_stratagem_discount_rule", lambda: None)()
+                if isinstance(rule, dict) and bool(rule.get("repeat_bypass", False)):
+                    return True
         return False
 
     def _overwatch_zero_cp_available(self, *, target_unit=None, candidates=None) -> bool:
@@ -2632,6 +2658,10 @@ class StratagemManager(
                     stratagem_name="OVERWATCH",
                 )
                 or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
+                    target_unit,
+                    stratagem_name="OVERWATCH",
+                )
+                or self._unit_can_use_datasheet_overwatch_stratagem_discount(
                     target_unit,
                     stratagem_name="OVERWATCH",
                 )
@@ -2655,6 +2685,11 @@ class StratagemManager(
             ):
                 return True
             if self._unit_can_use_eye_of_the_augurium_stratagem_discount(
+                cand,
+                stratagem_name="OVERWATCH",
+            ):
+                return True
+            if self._unit_can_use_datasheet_overwatch_stratagem_discount(
                 cand,
                 stratagem_name="OVERWATCH",
             ):
@@ -11055,6 +11090,17 @@ class StratagemManager(
                 ) or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
                     u,
                     stratagem_name="OVERWATCH",
+                ) or (
+                    self._unit_can_use_datasheet_overwatch_stratagem_discount(
+                        u,
+                        stratagem_name="OVERWATCH",
+                    )
+                    and bool(
+                        (
+                            getattr(u, "get_datasheet_overwatch_stratagem_discount_rule", lambda: None)()
+                            or {}
+                        ).get("repeat_bypass", False)
+                    )
                 )
             ]
             if not candidates:
@@ -13305,7 +13351,8 @@ class StratagemManager(
             eye_overwatch = bool(apply_info.get("eye_of_the_augurium_use", False))
             protector_overwatch = bool(apply_info.get("protector_of_paths_overwatch_use", False))
             shriekworm_overwatch = bool(apply_info.get("shriekworm_familiar_overwatch_use", False))
-            if self._used_this_turn.get("OVERWATCH", False) and not traitor_overwatch and not eye_overwatch:
+            datasheet_overwatch = bool(apply_info.get("datasheet_overwatch_discount_use", False))
+            if self._used_this_turn.get("OVERWATCH", False) and not traitor_overwatch and not eye_overwatch and not datasheet_overwatch:
                 logger.error("ERROR: Overwatch already used this turn")
                 return False
             if int(getattr(self.player, "command_points", 0) or 0) < int(eff_cost or 0):
@@ -13420,6 +13467,15 @@ class StratagemManager(
                         shooter.mark_shriekworm_familiar_used(
                             self.game,
                             source=str(apply_info.get("shriekworm_familiar_overwatch_source", "") or ""),
+                            stratagem_name=str(getattr(s, "name", "") or ""),
+                        )
+                    except Exception:
+                        pass
+                if datasheet_overwatch:
+                    try:
+                        shooter.mark_datasheet_overwatch_discount_used(
+                            self.game,
+                            source=str(apply_info.get("datasheet_overwatch_discount_source", "") or ""),
                             stratagem_name=str(getattr(s, "name", "") or ""),
                         )
                     except Exception:

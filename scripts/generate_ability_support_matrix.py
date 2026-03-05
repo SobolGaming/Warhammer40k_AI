@@ -5430,6 +5430,7 @@ def _classify_ability_base(
     targeted_stratagem_refund_support = _targeted_stratagem_cp_refund_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     targeted_stratagem_increase_support = _targeted_stratagem_cp_increase_support(description)
+    datasheet_overwatch_discount_support = _datasheet_overwatch_discount_support(description)
     overwatch_hit_threshold_support = _overwatch_hit_threshold_support(description)
     brutal_example_overwatch_support = _brutal_example_overwatch_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
@@ -5796,6 +5797,8 @@ def _classify_ability_base(
         return targeted_stratagem_discount_support
     if targeted_stratagem_increase_support:
         return targeted_stratagem_increase_support
+    if datasheet_overwatch_discount_support:
+        return datasheet_overwatch_discount_support
     if overwatch_hit_threshold_support:
         return overwatch_hit_threshold_support
     if brutal_example_overwatch_support:
@@ -8228,7 +8231,24 @@ def _overwatch_hit_threshold_support(description: str) -> Optional[Tuple[str, st
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    m = re.fullmatch(
+    m_objective = re.search(
+        r"each time you target this unit with the fire overwatch stratagem "
+        r"(?:while|when) resolving that stratagem "
+        r"hits are scored on unmodified hit rolls of (?P<base>\d)\+? "
+        r"or unmodified hit rolls of (?P<objective>\d)\+? instead "
+        r"if this unit is within range of an objective marker",
+        norm,
+    )
+    if m_objective:
+        base = str(m_objective.group("base") or "").strip()
+        objective = str(m_objective.group("objective") or "").strip()
+        if base in {"2", "3", "4", "5", "6"} and objective in {"2", "3", "4", "5", "6"}:
+            return (
+                "Supported",
+                f"Fire Overwatch with this unit scores hits on unmodified {base}+, or {objective}+ while this unit is within objective range.",
+            )
+
+    target_pattern = (
         r"each time you target this unit with the fire overwatch stratagem "
         r"(?:"
         r"(?:while|when) resolving that stratagem "
@@ -8236,15 +8256,82 @@ def _overwatch_hit_threshold_support(description: str) -> Optional[Tuple[str, st
         r"|"
         r"hits are scored on unmodified hit rolls of (?P<threshold_post>\d)\+? "
         r"(?:while|when) resolving that stratagem"
-        r")",
-        norm,
+        r")"
     )
+    select_pattern = (
+        r"each time you select this (?:unit|model|fortification) for the fire overwatch stratagem "
+        r"(?:"
+        r"(?:while|when) resolving that stratagem "
+        r"hits are scored on unmodified hit rolls of (?P<threshold_pre>\d)\+?"
+        r"|"
+        r"hits are scored on unmodified hit rolls of (?P<threshold_post>\d)\+? "
+        r"(?:while|when) resolving that stratagem"
+        r")"
+    )
+    m = re.search(target_pattern, norm) or re.search(select_pattern, norm)
     if not m:
         return None
     threshold = str(m.group("threshold_pre") or m.group("threshold_post") or "").strip()
     if threshold not in {"2", "3", "4", "5", "6"}:
         return None
     return ("Supported", f"Fire Overwatch with this unit scores hits on unmodified {threshold}+ while resolving the Stratagem.")
+
+
+def _datasheet_overwatch_discount_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "fire overwatch" not in norm or "stratagem" not in norm or "0cp" not in norm:
+        return None
+
+    if (
+        "once per turn" in norm
+        and "one unit from your army with this ability can be targeted with the fire overwatch stratagem for 0cp" in norm
+        and (
+            "already used that stratagem on a different unit this phase" in norm
+            or "already used that stratagem on a different unit this turn" in norm
+            or "already targeted a different unit with that stratagem this turn" in norm
+        )
+    ):
+        threshold_match = re.search(
+            r"each time you target this unit with the fire overwatch stratagem "
+            r"(?:while|when) resolving that stratagem "
+            r"hits are scored on unmodified hit rolls of (?P<threshold>\d)\+?",
+            norm,
+        )
+        threshold = ""
+        if threshold_match:
+            threshold = str(threshold_match.group("threshold") or "").strip()
+        threshold_note = f" and Overwatch hits on unmodified {threshold}+" if threshold in {"2", "3", "4", "5", "6"} else ""
+        return (
+            "Supported",
+            "Once per turn, one unit with this ability can be targeted with Fire Overwatch for 0CP even if it was already used on a different unit"
+            + threshold_note
+            + ".",
+        )
+
+    repeat_bypass = (
+        "can do so even if you have already targeted another unit with that stratagem this turn" in norm
+        or "can do so even if you have already targeted a different unit with that stratagem this turn" in norm
+    )
+    unit_turn = re.search(
+        r"this (?P<subject>model|unit|fortification) can only be targeted with that stratagem once per turn",
+        norm,
+    )
+    if (
+        "you can target this" in norm
+        and "with the fire overwatch stratagem for 0cp" in norm
+        and repeat_bypass
+        and unit_turn
+    ):
+        subject = str(unit_turn.group("subject") or "unit").strip().lower()
+        return (
+            "Supported",
+            f"This {subject} can be targeted with Fire Overwatch for 0CP even if already used on another unit this turn; that benefit is limited to once per turn for this {subject}.",
+        )
+    return None
 
 
 def _brutal_example_overwatch_support(description: str) -> Optional[Tuple[str, str]]:
