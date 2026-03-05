@@ -238,6 +238,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "MERCILESS RECLAMATION",
     "DIMENSIONAL TUNNEL",
     "CHRONOSHIFT",
+    "COSMIC PRECISION",
     "ENDLESS SERVITUDE",
     "ENSNARING TRAP",
     "HYPERSTIMMS",
@@ -1820,6 +1821,7 @@ class StratagemManager(
             "MERCILESS RECLAMATION",
             "DIMENSIONAL TUNNEL",
             "CHRONOSHIFT",
+            "COSMIC PRECISION",
             "IN THE SHADOW OF BRASS IDOLS",
             "WARP VISION",
             "UNLEASH BALEFIRE",
@@ -2799,6 +2801,235 @@ class StratagemManager(
         if uid:
             self._rapid_ingress_units_this_phase.add(uid)
 
+    def _resolve_friendly_unit_root_by_id(self, unit_id: str):
+        token = str(unit_id or "").strip()
+        if not token:
+            return None
+        army = self.player.get_army() if self.player is not None else None
+        if army is None:
+            return None
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if root_id == token:
+                return root
+        return None
+
+    def _rapid_ingress_position_within_unit(
+        self,
+        target_unit,
+        position,
+        source_unit,
+        *,
+        max_distance: float,
+    ) -> bool:
+        if target_unit is None or source_unit is None:
+            return False
+        if not isinstance(position, (list, tuple)) or len(position) < 2:
+            return False
+        try:
+            x = float(position[0])
+            y = float(position[1])
+            z = float(position[2]) if len(position) > 2 else 0.0
+        except (TypeError, ValueError):
+            return False
+        try:
+            required = float(max_distance or 0.0)
+        except (TypeError, ValueError):
+            return False
+        if required <= 0.0:
+            return False
+        try:
+            from ..utility.aura_utils import horizontal_distance_between_bases_2d
+        except Exception:
+            return False
+
+        target_bases = []
+        target_models = list(getattr(target_unit, "models", []) or [])
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        boundary_repulsors = []
+        if game_map is not None:
+            try:
+                boundary_repulsors = list(game_map.get_battlefield_edge_repulsors() or [])
+            except Exception:
+                boundary_repulsors = []
+        try:
+            model_positions = target_unit.calculate_model_positions(
+                x,
+                y,
+                game_map,
+                boundary_repulsors=boundary_repulsors,
+                avoid_friendly_units=False,
+            )
+        except Exception:
+            model_positions = None
+
+        if isinstance(model_positions, list) and model_positions:
+            for model, pos in zip(target_models, model_positions):
+                if model is None or not bool(getattr(model, "is_alive", True)):
+                    continue
+                try:
+                    base = target_unit._create_potential_base(
+                        float(pos[0]),
+                        float(pos[1]),
+                        float(pos[2]),
+                        float(pos[3]),
+                        model=model,
+                    )
+                except Exception:
+                    base = None
+                if base is not None:
+                    target_bases.append(base)
+
+        if not target_bases:
+            for model in target_models:
+                if model is None or not bool(getattr(model, "is_alive", True)):
+                    continue
+                try:
+                    base = target_unit._create_potential_base(
+                        x,
+                        y,
+                        z,
+                        0.0,
+                        model=model,
+                    )
+                except Exception:
+                    base = None
+                if base is not None:
+                    target_bases.append(base)
+
+        source_models = []
+        get_source_models = getattr(source_unit, "get_attached_unit_models", None)
+        if callable(get_source_models):
+            source_models = list(get_source_models() or [])
+        if not source_models:
+            source_models = list(getattr(source_unit, "models", []) or [])
+        if not source_models or not target_bases:
+            return False
+
+        for target_base in target_bases:
+            for source_model in source_models:
+                if source_model is None or not bool(getattr(source_model, "is_alive", True)):
+                    continue
+                source_base = getattr(source_model, "model_base", None)
+                if source_base is None:
+                    continue
+                try:
+                    dist = float(horizontal_distance_between_bases_2d(target_base, source_base))
+                except Exception:
+                    continue
+                if dist <= float(required) + 1e-6:
+                    return True
+        return False
+
+    def _rapid_ingress_position_within_point(
+        self,
+        target_unit,
+        position,
+        anchor_point,
+        *,
+        max_distance: float,
+    ) -> bool:
+        if target_unit is None:
+            return False
+        if not isinstance(position, (list, tuple)) or len(position) < 2:
+            return False
+        if not isinstance(anchor_point, (list, tuple)) or len(anchor_point) < 2:
+            return False
+        try:
+            x = float(position[0])
+            y = float(position[1])
+            z = float(position[2]) if len(position) > 2 else 0.0
+            anchor_x = float(anchor_point[0])
+            anchor_y = float(anchor_point[1])
+        except (TypeError, ValueError):
+            return False
+        try:
+            required = float(max_distance or 0.0)
+        except (TypeError, ValueError):
+            return False
+        if required <= 0.0:
+            return False
+        try:
+            from ..utility.aura_utils import horizontal_distance_point_to_base_2d
+        except Exception:
+            return False
+
+        target_bases = []
+        target_models = list(getattr(target_unit, "models", []) or [])
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        boundary_repulsors = []
+        if game_map is not None:
+            try:
+                boundary_repulsors = list(game_map.get_battlefield_edge_repulsors() or [])
+            except Exception:
+                boundary_repulsors = []
+        try:
+            model_positions = target_unit.calculate_model_positions(
+                x,
+                y,
+                game_map,
+                boundary_repulsors=boundary_repulsors,
+                avoid_friendly_units=False,
+            )
+        except Exception:
+            model_positions = None
+
+        if isinstance(model_positions, list) and model_positions:
+            for model, pos in zip(target_models, model_positions):
+                if model is None or not bool(getattr(model, "is_alive", True)):
+                    continue
+                try:
+                    base = target_unit._create_potential_base(
+                        float(pos[0]),
+                        float(pos[1]),
+                        float(pos[2]),
+                        float(pos[3]),
+                        model=model,
+                    )
+                except Exception:
+                    base = None
+                if base is not None:
+                    target_bases.append(base)
+
+        if not target_bases:
+            for model in target_models:
+                if model is None or not bool(getattr(model, "is_alive", True)):
+                    continue
+                try:
+                    base = target_unit._create_potential_base(
+                        x,
+                        y,
+                        z,
+                        0.0,
+                        model=model,
+                    )
+                except Exception:
+                    base = None
+                if base is not None:
+                    target_bases.append(base)
+
+        if not target_bases:
+            return False
+        for target_base in target_bases:
+            try:
+                dist = float(horizontal_distance_point_to_base_2d(target_base, anchor_x, anchor_y))
+            except Exception:
+                continue
+            if dist <= float(required) + 1e-6:
+                return True
+        return False
+
     def _set_gift_of_the_prescient_rapid_ingress_setup_override(
         self,
         unit,
@@ -3413,6 +3644,13 @@ class StratagemManager(
                 result["available"] = True
                 result["reason"] = None
                 return result
+        if name_u == "COSMIC PRECISION":
+            if self._hypercrypt_cosmic_precision_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Hypercrypt Legion and a non-MONSTER NECRONS unit arriving via Deep Strike or Hyperphasing this phase"
+            return result
         if name_u == "SOULSEEKERS":
             if self._cabal_soulseekers_candidates():
                 result["available"] = True
@@ -6685,6 +6923,18 @@ class StratagemManager(
                         if sr.get("chronoshift_active") and (not exp or exp == "MOVEMENT_PHASE"):
                             sr.pop("chronoshift_active", None)
                             sr.pop("chronoshift_expires_phase", None)
+                        exp = str(sr.get("cosmic_precision_expires_phase", "") or "").strip().upper()
+                        if sr.get("cosmic_precision_active") and (not exp or exp == "MOVEMENT_PHASE"):
+                            for key in (
+                                "cosmic_precision_active",
+                                "cosmic_precision_expires_phase",
+                                "cosmic_precision_deep_strike_min_distance",
+                                "cosmic_precision_temp_deep_strike",
+                                "cosmic_precision_turn_owner",
+                                "cosmic_precision_turn",
+                                "cosmic_precision_source",
+                            ):
+                                sr.pop(key, None)
                         exp = str(sr.get("dimensional_tunnel_expires_phase", "") or "").strip().upper()
                         if sr.get("dimensional_tunnel_active") and (not exp or exp == "MOVEMENT_PHASE"):
                             added = set(sr.get("dimensional_tunnel_added_phase_move_types") or [])
@@ -13055,8 +13305,7 @@ class StratagemManager(
                     eff_cost = int(
                         self.player.apply_stratagem_cp_cost(
                             s,
-                            target_unit=unit,
-                            enemy_unit=enemy,
+                            target_unit=target,
                         ).get("cost", s.cp_cost)
                     )
             except Exception:
@@ -13081,7 +13330,6 @@ class StratagemManager(
                 self._dequeue_reaction_by_name(s.name)
             try:
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
-                self._record_rapid_ingress_use(target)
             except Exception:
                 raise
             return True
@@ -14399,6 +14647,69 @@ class StratagemManager(
             elif gift_override_active:
                 self._clear_gift_of_the_prescient_rapid_ingress_setup_override(target)
                 gift_override_active = False
+            if bool(apply_info.get("homing_beacon_rapid_ingress_use", False)):
+                source_unit_id = str(apply_info.get("homing_beacon_rapid_ingress_source_unit_id", "") or "")
+                source_unit = self._resolve_friendly_unit_root_by_id(source_unit_id)
+                if source_unit is None:
+                    if gift_override_active:
+                        self._clear_gift_of_the_prescient_rapid_ingress_setup_override(target)
+                    logger.error("ERROR: Rapid Ingress: Homing Beacon source unit is unavailable")
+                    return False
+                try:
+                    anchor_distance = float(apply_info.get("homing_beacon_rapid_ingress_anchor_distance", 3.0) or 3.0)
+                except (TypeError, ValueError):
+                    anchor_distance = 3.0
+                if anchor_distance <= 0.0:
+                    anchor_distance = 3.0
+                if not self._rapid_ingress_position_within_unit(
+                    target,
+                    position,
+                    source_unit,
+                    max_distance=float(anchor_distance),
+                ):
+                    if gift_override_active:
+                        self._clear_gift_of_the_prescient_rapid_ingress_setup_override(target)
+                    logger.error(
+                        "ERROR: Rapid Ingress: Homing Beacon requires setup within %.1f\" of the source unit",
+                        float(anchor_distance),
+                    )
+                    return False
+            if bool(apply_info.get("teleport_homer_rapid_ingress_use", False)):
+                source_unit_id = str(apply_info.get("teleport_homer_rapid_ingress_source_unit_id", "") or "")
+                source_unit = self._resolve_friendly_unit_root_by_id(source_unit_id)
+                if source_unit is None:
+                    if gift_override_active:
+                        self._clear_gift_of_the_prescient_rapid_ingress_setup_override(target)
+                    logger.error("ERROR: Rapid Ingress: Teleport Homer source unit is unavailable")
+                    return False
+                get_marker = getattr(source_unit, "get_teleport_homer_marker_point", None)
+                marker_point = get_marker() if callable(get_marker) else None
+                if not isinstance(marker_point, (list, tuple)) or len(marker_point) < 2:
+                    marker_point = apply_info.get("teleport_homer_rapid_ingress_anchor_point")
+                if not isinstance(marker_point, (list, tuple)) or len(marker_point) < 2:
+                    if gift_override_active:
+                        self._clear_gift_of_the_prescient_rapid_ingress_setup_override(target)
+                    logger.error("ERROR: Rapid Ingress: Teleport Homer token is unavailable")
+                    return False
+                try:
+                    anchor_distance = float(apply_info.get("teleport_homer_rapid_ingress_anchor_distance", 3.0) or 3.0)
+                except (TypeError, ValueError):
+                    anchor_distance = 3.0
+                if anchor_distance <= 0.0:
+                    anchor_distance = 3.0
+                if not self._rapid_ingress_position_within_point(
+                    target,
+                    position,
+                    marker_point,
+                    max_distance=float(anchor_distance),
+                ):
+                    if gift_override_active:
+                        self._clear_gift_of_the_prescient_rapid_ingress_setup_override(target)
+                    logger.error(
+                        "ERROR: Rapid Ingress: Teleport Homer requires setup within %.1f\" of the marker",
+                        float(anchor_distance),
+                    )
+                    return False
             if int(getattr(self.player, "command_points", 0) or 0) < int(eff_cost or 0):
                 if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                     if gift_override_active:
@@ -14427,11 +14738,22 @@ class StratagemManager(
             # Spend CP (after success to avoid consuming CP on placement failure)
             if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 logger.error("ERROR: Rapid Ingress succeeded but CP spend failed; adjusting CP manually")
+            if bool(apply_info.get("teleport_homer_rapid_ingress_use", False)):
+                source_unit_id = str(apply_info.get("teleport_homer_rapid_ingress_source_unit_id", "") or "")
+                source_unit = self._resolve_friendly_unit_root_by_id(source_unit_id)
+                if source_unit is not None:
+                    mark_used = getattr(source_unit, "mark_teleport_homer_rapid_ingress_used", None)
+                    if callable(mark_used):
+                        mark_used(
+                            source=str(apply_info.get("teleport_homer_rapid_ingress_source", "") or "Teleport Homer"),
+                            stratagem_name=str(getattr(s, "name", "") or "Rapid Ingress"),
+                        )
             logger.info(f"INFO: Rapid Ingress: {target.name} arrived from reserves")
             if kwargs.get('dequeue') is True:
                 self._dequeue_reaction_by_name(s.name)
             try:
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+                self._record_rapid_ingress_use(target)
             except Exception:
                 raise
             return True
@@ -18857,6 +19179,132 @@ class StratagemManager(
             except Exception:
                 raise
             logger.info(f"INFO: 'ARD AS NAILS: {getattr(root, 'name', 'Unit')} is harder to wound this phase.")
+            return True
+
+        # Necrons: COSMIC PRECISION (6" Deep Strike/Hyperphasing arrival, no charge).
+        if s.name.upper() == "COSMIC PRECISION":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None:
+                if candidates:
+                    unit = candidates[0] if len(candidates) == 1 else None
+                if unit is None:
+                    auto_candidates = list(self._hypercrypt_cosmic_precision_candidates() or [])
+                    if len(auto_candidates) == 1:
+                        unit = auto_candidates[0]
+            if unit is None:
+                logger.error("ERROR: COSMIC PRECISION: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_hypercrypt_legion():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                logger.error("ERROR: COSMIC PRECISION: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                logger.error("ERROR: COSMIC PRECISION: not your turn")
+                return False
+            try:
+                if root.get_parent_army().player is not self.player:
+                    logger.error("ERROR: COSMIC PRECISION: target unit is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    logger.error("ERROR: COSMIC PRECISION: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "is_in_reserves", lambda: False)():
+                    logger.error("ERROR: COSMIC PRECISION: target must be arriving from reserves")
+                    return False
+            except Exception:
+                raise
+            mgr = self._get_necrons_mgr()
+            if mgr is not None:
+                try:
+                    if not mgr.unit_is_necrons(root):
+                        logger.error("ERROR: COSMIC PRECISION: target is not NECRONS")
+                        return False
+                except Exception:
+                    raise
+            try:
+                has_any_keyword = getattr(root, "has_any_keyword", None)
+                if callable(has_any_keyword) and bool(has_any_keyword("MONSTER")):
+                    logger.error("ERROR: COSMIC PRECISION: target is a MONSTER")
+                    return False
+            except Exception:
+                raise
+            try:
+                current_turn = int(getattr(self.game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            try:
+                if not bool(getattr(root, "can_arrive_from_reserves", lambda _t: False)(current_turn)):
+                    logger.error("ERROR: COSMIC PRECISION: target cannot arrive from reserves this battle round")
+                    return False
+            except Exception:
+                raise
+            arrives_via_hyperphasing = self._unit_arrives_via_hyperphasing_this_phase(root)
+            has_deep_strike = bool(getattr(root, "has_deep_strike", lambda: False)())
+            if not arrives_via_hyperphasing and not has_deep_strike:
+                logger.error("ERROR: COSMIC PRECISION: target is not arriving via Deep Strike or Hyperphasing")
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        logger.error("ERROR: COSMIC PRECISION: target was not among selected candidates")
+                        return False
+                except Exception:
+                    raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["cosmic_precision_active"] = True
+                sr["cosmic_precision_expires_phase"] = "MOVEMENT_PHASE"
+                sr["cosmic_precision_deep_strike_min_distance"] = 6.0
+                sr["cosmic_precision_temp_deep_strike"] = bool(arrives_via_hyperphasing)
+                sr["cosmic_precision_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["cosmic_precision_turn"] = int(current_turn)
+                sr["cosmic_precision_no_charge_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["cosmic_precision_no_charge_turn"] = int(current_turn)
+                sr["cosmic_precision_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            logger.info(
+                "INFO: COSMIC PRECISION: %s can be set up more than 6\" away and cannot charge this turn.",
+                getattr(root, "name", "Unit"),
+            )
             return True
 
         # Necrons: MERCILESS RECLAMATION (+1 to wound vs targets near objectives).

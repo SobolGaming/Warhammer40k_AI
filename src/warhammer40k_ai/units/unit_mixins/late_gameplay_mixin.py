@@ -1972,6 +1972,13 @@ class LateGameplayMixin:
             sr = getattr(self, "special_rules", None)
             if not isinstance(sr, dict):
                 sr = {}
+            if bool(sr.get("hyperphasing_arrival_pending", False)):
+                for key in (
+                    "hyperphasing_arrival_pending",
+                    "hyperphasing_arrival_turn_owner",
+                    "hyperphasing_arrival_turn",
+                ):
+                    sr.pop(key, None)
             if pname:
                 sr["voice_of_command_set_up_phase"] = pname
                 try:

@@ -9401,7 +9401,7 @@ class Game(
                 try:
                     if bool(getattr(root, "must_start_in_reserves", lambda: False)()):
                         if decision != "reserves":
-                            logger.info(f"{root.name} must start in Reserves (AIRCRAFT)")
+                            logger.info(f"{root.name} must start in Reserves")
                         decision = "reserves"
                 except Exception:
                     pass

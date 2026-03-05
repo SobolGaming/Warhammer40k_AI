@@ -3515,6 +3515,28 @@ _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008555005": StratagemToolDescriptor(
+        stratagem_id="000008555005",
+        name="Cosmic Precision",
+        timing="movement_phase_reinforcements_step",
+        target="necrons_non_monster_unit_arriving_via_deep_strike_or_hyperphasing",
+        duration="this_turn_no_charge",
+        effect="deep_strike_min_distance_override_with_no_charge",
+        cp_cost=1,
+        effect_params={
+            "deep_strike_min_distance": 6,
+            "distance_type": "horizontal",
+            "no_charge_this_turn": True,
+            "allow_hyperphasing_arrivals": True,
+        },
+    ),
+}
+
+_HYPERCRYPT_LEGION_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -3686,6 +3708,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -3746,4 +3771,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
         or _IMPERIALIS_FLEET_STRATAGEM_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _HYPERCRYPT_LEGION_STRATAGEM_BY_NAME.get(key)
     )

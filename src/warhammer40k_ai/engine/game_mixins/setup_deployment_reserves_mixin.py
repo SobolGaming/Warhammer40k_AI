@@ -1689,13 +1689,25 @@ class GameSetupDeploymentReservesMixin:
             allow_skip = True
             if unit_id and unit_id in must_ids:
                 allow_skip = False
+            source = ""
+            deep_strike_min_distance = 6.0
             try:
-                if unit is not None and hasattr(unit, "get_cloudstrider_deep_strike_source"):
+                rule = None
+                if unit is not None and hasattr(unit, "get_cloudstrider_deep_strike_rule"):
+                    rule = unit.get_cloudstrider_deep_strike_rule()
+                if isinstance(rule, dict):
+                    source = str(rule.get("source", "") or "").strip()
+                    try:
+                        deep_strike_min_distance = float(rule.get("deep_strike_min_distance", 6.0) or 6.0)
+                    except (TypeError, ValueError):
+                        deep_strike_min_distance = 6.0
+                elif unit is not None and hasattr(unit, "get_cloudstrider_deep_strike_source"):
                     source = str(unit.get_cloudstrider_deep_strike_source() or "")
-                else:
-                    source = ""
             except Exception:
                 source = ""
+                deep_strike_min_distance = 6.0
+            if deep_strike_min_distance <= 0.0:
+                deep_strike_min_distance = 6.0
             try:
                 can_deep_strike = bool(getattr(unit, "has_deep_strike", lambda: False)())
             except Exception:
@@ -1717,10 +1729,12 @@ class GameSetupDeploymentReservesMixin:
                     ctx = {
                         "unit_id": unit_id,
                         "ability_name": source or "Cloudstrider",
+                        "deep_strike_min_distance": float(deep_strike_min_distance),
                         "phase": "Movement phase",
                     }
+                    distance_label = f"{float(deep_strike_min_distance):.1f}".rstrip("0").rstrip(".")
                     message = (
-                        f"{source or 'Cloudstrider'}: use 6\" Deep Strike placement "
+                        f"{source or 'Cloudstrider'}: use {distance_label}\" Deep Strike placement "
                         f"(no charge this turn)?"
                     )
                     self._queue_optional_ability_confirmation(
@@ -2302,6 +2316,98 @@ class GameSetupDeploymentReservesMixin:
             units = list(getattr(army, "units", []) or [])
             build_rapid_drop_deployment_requests(self, units, queue_requests=True)
 
+    def _apply_teleport_homer_declarations(self) -> None:
+        """Queue Teleport Homer marker placement decisions at the start of the battle."""
+        players = list(self.players or [])
+        if not players:
+            return
+
+        from ..decision_kinds import DECISION_PICK_POINT
+        from ..decisions import DecisionOption as _DecisionOption
+        from ..decisions import DecisionRequest as _DecisionRequest
+
+        pending_unit_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_PICK_POINT:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "").strip().lower() != "teleport_homer_marker_placement":
+                    continue
+                unit_id = str(ctx.get("unit_id", "") or "")
+                if unit_id:
+                    pending_unit_ids.add(unit_id)
+
+        for player in players:
+            if player is None:
+                raise RuntimeError("Teleport Homer declarations require players.")
+            army = player.get_army()
+            if army is None:
+                raise RuntimeError(f"Teleport Homer declarations require an army for {player.name}.")
+
+            opponent_player_id = ""
+            for candidate in list(self.players or []):
+                if candidate is None or candidate is player:
+                    continue
+                candidate_id = str(getattr(candidate, "id", "") or "")
+                if candidate_id:
+                    opponent_player_id = candidate_id
+                    break
+
+            seen_root_ids: set[str] = set()
+            units = sorted(
+                [u for u in list(getattr(army, "units", []) or []) if u is not None],
+                key=lambda u: str(maybe_entity_id(getattr(u, "get_attached_unit_root", lambda: u)() if callable(getattr(u, "get_attached_unit_root", None)) else u) or ""),
+            )
+            for unit in units:
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                unit_id = str(maybe_entity_id(root) or "")
+                if not unit_id:
+                    continue
+                if unit_id in seen_root_ids:
+                    continue
+                seen_root_ids.add(unit_id)
+                if unit_id in pending_unit_ids:
+                    continue
+                can_place = getattr(root, "can_place_teleport_homer_marker", None)
+                if not callable(can_place) or not bool(can_place(self)):
+                    continue
+                get_rule = getattr(root, "get_teleport_homer_rapid_ingress_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if not isinstance(rule, dict):
+                    continue
+                ability_name = str(rule.get("source", "") or "Teleport Homer").strip() or "Teleport Homer"
+                marker_name = str(rule.get("marker_name", "") or "Teleport Homer").strip() or "Teleport Homer"
+                request = _DecisionRequest.create(
+                    DECISION_PICK_POINT,
+                    f"{ability_name}: place {marker_name} token (or Skip).",
+                    player_id=getattr(player, "id", None),
+                    options=[
+                        _DecisionOption.create("Confirm", payload={"action": "confirm"}),
+                        _DecisionOption.create("Skip", payload={"action": "skip"}),
+                    ],
+                    context={
+                        "ability": "teleport_homer_marker_placement",
+                        "ability_name": ability_name,
+                        "marker_name": marker_name,
+                        "phase": "Start of battle",
+                        "unit": getattr(root, "name", "") or "Unit",
+                        "unit_id": unit_id,
+                        "source_unit_id": unit_id,
+                        "forbidden_deployment_zone_player_id": opponent_player_id,
+                        "optional": True,
+                        "instruction": "Select a Teleport Homer token point outside your opponent's deployment zone, or Skip.",
+                    },
+                )
+                self.request_decision(request)
+                pending_unit_ids.add(unit_id)
+
     def execute_declare_battle_formations_phase(self) -> None:
         """Phase 5: Declare Battle Formations - Attach leaders, embark in transports, allocate reserves."""
         logger.info("DECLARE BATTLE FORMATIONS: Validating formations...")
@@ -2314,6 +2420,7 @@ class GameSetupDeploymentReservesMixin:
         self._apply_patrol_squad_declarations()
         self._apply_shadow_assignment_declarations()
         self._apply_rapid_drop_deployment_declarations()
+        self._apply_teleport_homer_declarations()
 
         # Thousand Sons: Risen Rubricae selections are made at the start of this step.
         from ..decision_requests import build_risen_rubricae_requests

@@ -1538,11 +1538,11 @@ class StateAttachmentMixin:
 
     @property
     def is_dedicated_transport(self) -> bool:
-        return "Dedicated Transport" in self.keywords
+        return self.has_keyword("Dedicated Transport")
 
     @property
     def is_transport(self) -> bool:
-        return "Transport" in self.keywords
+        return self.has_keyword("Transport")
 
     @property
     def is_embarked(self) -> bool:
@@ -1885,6 +1885,9 @@ class StateAttachmentMixin:
             return False
         if not self.is_alive():
             return False
+        sr_transport = getattr(self, "special_rules", None)
+        if isinstance(sr_transport, dict) and bool(sr_transport.get("drop_pod_embark_locked", False)):
+            return False
         if passenger_unit.is_embarked:
             return False
         try:
@@ -1978,6 +1981,16 @@ class StateAttachmentMixin:
                 publish_fn("unit_state_changed", unit=leader, reason="disembarked", transport_unit=self)
         passenger_unit._publish_unit_event("unit_disembarked", unit=passenger_unit, transport_unit=self)
         passenger_unit._publish_unit_event("unit_state_changed", unit=passenger_unit, reason="disembarked", transport_unit=self)
+        transport_sr = getattr(self, "special_rules", None)
+        if isinstance(transport_sr, dict) and bool(transport_sr.get("drop_pod_embark_lock_pending", False)):
+            if not list(getattr(self, "transport_passengers", []) or []):
+                transport_sr["drop_pod_embark_locked"] = True
+                transport_sr["drop_pod_embark_lock_pending"] = False
+                if "drop_pod_embark_lock_source" not in transport_sr:
+                    source = str(transport_sr.get("drop_pod_assault_source", "") or "").strip()
+                    if source:
+                        transport_sr["drop_pod_embark_lock_source"] = source
+                self.special_rules = transport_sr
 
     @property
     def is_leader(self) -> bool:
@@ -3865,7 +3878,13 @@ class StateAttachmentMixin:
         """True if this unit must start the battle in Reserves (e.g., non-hover AIRCRAFT)."""
         if bool(getattr(self, "hover_mode", False)):
             return False
-        return bool(self.is_aircraft)
+        if bool(self.is_aircraft):
+            return True
+        get_rule = getattr(self, "get_drop_pod_assault_rule", None)
+        rule = get_rule() if callable(get_rule) else None
+        if isinstance(rule, dict) and bool(rule.get("requires_start_in_reserves", False)):
+            return True
+        return False
 
     def has_kill_team(self) -> bool:
         """Check if the unit has the Kill Team ability (Imperial Agents)."""

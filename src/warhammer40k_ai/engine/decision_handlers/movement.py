@@ -15,7 +15,7 @@ from ..decision_kinds import (
     DECISION_SELECT_FLOOR,
     DECISION_SELECT_MOVEMENT_ACTION,
 )
-from ..decisions import DecisionRequest, DecisionResult
+from ..decisions import DecisionOption, DecisionRequest, DecisionResult
 from ..path_witness import (
     current_model_positions,
     detect_normal_move_engagement_crossing,
@@ -1643,6 +1643,10 @@ def _evaluate_reserves_arrival_positions(
             deep_strike_ok = bool(getattr(unit, "has_deep_strike", lambda: False)())
         except Exception:
             deep_strike_ok = False
+        if not deep_strike_ok:
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("cosmic_precision_temp_deep_strike", False)):
+                deep_strike_ok = True
         if not strategic_ok and not deep_strike_ok and tunnel_marker is None:
             has_tunnel_rule = bool(tyr_mgr is not None and getattr(tyr_mgr, "is_subterranean_assault", lambda: False)())
             if has_tunnel_rule:
@@ -1813,6 +1817,15 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 "cloudstrider_choice_turn_owner",
                 "cloudstrider_no_charge_turn",
                 "cloudstrider_no_charge_turn_owner",
+                "cosmic_precision_active",
+                "cosmic_precision_expires_phase",
+                "cosmic_precision_deep_strike_min_distance",
+                "cosmic_precision_temp_deep_strike",
+                "cosmic_precision_turn_owner",
+                "cosmic_precision_turn",
+                "cosmic_precision_no_charge_turn_owner",
+                "cosmic_precision_no_charge_turn",
+                "cosmic_precision_source",
             ):
                 sr.pop(k, None)
             unit.special_rules = sr
@@ -2023,6 +2036,84 @@ def _finalize_deployment_move(game: object, unit: object, model_positions: list[
         game.advance_deployment_turn(unit)
 
 
+def _queue_drop_pod_assault_disembark_requests(
+    game: object,
+    transport: object,
+    *,
+    ability_name: str,
+    min_enemy_distance: float,
+) -> None:
+    if game is None or transport is None:
+        return
+    request_decision = getattr(game, "request_decision", None)
+    if not callable(request_decision):
+        return
+    transport_id = str(get_entity_id(transport) or "")
+    if not transport_id:
+        return
+    player_id = None
+    army = transport.get_parent_army() if hasattr(transport, "get_parent_army") else None
+    if army is not None:
+        player = getattr(army, "player", None)
+        player_id = getattr(player, "id", None) if player is not None else None
+
+    pending_unit_ids: set[str] = set()
+    queue = getattr(game, "decision_queue", None)
+    if queue is not None and hasattr(queue, "list"):
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_DISEMBARK:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "drop_pod_assault_disembark":
+                continue
+            if str(ctx.get("transport_id", "") or "") != transport_id:
+                continue
+            unit_id = str(ctx.get("unit_id", "") or "")
+            if unit_id:
+                pending_unit_ids.add(unit_id)
+
+    passengers = []
+    for passenger in list(getattr(transport, "transport_passengers", []) or []):
+        if passenger is None:
+            continue
+        if getattr(passenger, "embarked_in", None) is not transport:
+            continue
+        passenger_id = str(get_entity_id(passenger) or "")
+        if not passenger_id or passenger_id in pending_unit_ids:
+            continue
+        passengers.append(passenger)
+    passengers.sort(key=lambda item: str(get_entity_id(item) or ""))
+    if not passengers:
+        return
+
+    distance = float(max(0.0, min_enemy_distance))
+    for passenger in passengers:
+        passenger_id = str(get_entity_id(passenger) or "")
+        if not passenger_id:
+            continue
+        request = DecisionRequest.create(
+            DECISION_DISEMBARK,
+            f"{ability_name}: disembark {getattr(passenger, 'name', 'Unit')}.",
+            player_id=player_id,
+            options=[
+                DecisionOption.create(
+                    "Disembark",
+                    payload={"unit_id": passenger_id, "transport_id": transport_id},
+                ),
+            ],
+            context={
+                "ability": "drop_pod_assault_disembark",
+                "ability_name": str(ability_name or "Drop Pod Assault").strip() or "Drop Pod Assault",
+                "transport_id": transport_id,
+                "unit_id": passenger_id,
+                "mandatory_disembark": True,
+                "disembark_source": str(ability_name or "Drop Pod Assault").strip() or "Drop Pod Assault",
+                "disembark_min_enemy_horizontal_distance": float(distance),
+            },
+        )
+        request_decision(request)
+
+
 def _finalize_reserves_arrival_move(game: object, unit: object, model_positions: list[dict]) -> None:
     if unit is None:
         return
@@ -2030,6 +2121,7 @@ def _finalize_reserves_arrival_move(game: object, unit: object, model_positions:
     errors = list(evaluation.get("errors") or [])
     if errors:
         raise RuntimeError("; ".join(str(e) for e in errors if e))
+    apply_model_positions(game, list(model_positions or []))
 
     # Track special arrival flags (edge touch / deep strike) for downstream rules.
     try:
@@ -2087,6 +2179,69 @@ def _finalize_reserves_arrival_move(game: object, unit: object, model_positions:
         unit._finalize_reserves_arrival(turn, game_map)
     except Exception as exc:
         raise RuntimeError(f"Reserves arrival finalize failed: {exc}") from exc
+
+    get_drop_pod_rule = getattr(unit, "get_drop_pod_assault_rule", None)
+    drop_pod_rule = get_drop_pod_rule() if callable(get_drop_pod_rule) else None
+    if not isinstance(drop_pod_rule, dict):
+        return
+
+    ability_name = str(drop_pod_rule.get("source", "") or "Drop Pod Assault").strip() or "Drop Pod Assault"
+    try:
+        min_enemy_distance = float(drop_pod_rule.get("disembark_min_enemy_distance", 9.0) or 9.0)
+    except (TypeError, ValueError):
+        min_enemy_distance = 9.0
+    if min_enemy_distance <= 0.0:
+        min_enemy_distance = 9.0
+    immediate_disembark = bool(drop_pod_rule.get("immediate_disembark", False))
+    no_embark_after_setup = bool(drop_pod_rule.get("no_embark_after_setup", False))
+
+    get_deployment_complete_rule = getattr(unit, "get_deployment_complete_embark_lock_rule", None)
+    deployment_complete_rule = (
+        get_deployment_complete_rule() if callable(get_deployment_complete_rule) else None
+    )
+    deployment_complete_active = isinstance(deployment_complete_rule, dict)
+    deployment_complete_source = (
+        str(deployment_complete_rule.get("source", "") or "Deployment Complete").strip()
+        if deployment_complete_active
+        else ""
+    )
+    if not deployment_complete_source and deployment_complete_active:
+        deployment_complete_source = "Deployment Complete"
+
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    sr["drop_pod_assault_set_up"] = True
+    sr["drop_pod_assault_source"] = ability_name
+    if min_enemy_distance > 0.0:
+        sr["drop_pod_assault_disembark_min_enemy_distance"] = float(min_enemy_distance)
+
+    passengers = [
+        p
+        for p in list(getattr(unit, "transport_passengers", []) or [])
+        if p is not None and getattr(p, "embarked_in", None) is unit
+    ]
+    if no_embark_after_setup:
+        sr["drop_pod_embark_locked"] = True
+        sr["drop_pod_embark_lock_pending"] = False
+        sr["drop_pod_embark_lock_source"] = ability_name
+    elif deployment_complete_active:
+        if passengers:
+            sr["drop_pod_embark_lock_pending"] = True
+            sr["drop_pod_embark_lock_source"] = deployment_complete_source
+        else:
+            sr["drop_pod_embark_locked"] = True
+            sr["drop_pod_embark_lock_pending"] = False
+            sr["drop_pod_embark_lock_source"] = deployment_complete_source
+    unit.special_rules = sr
+
+    if immediate_disembark and passengers:
+        _queue_drop_pod_assault_disembark_requests(
+            game,
+            unit,
+            ability_name=ability_name,
+            min_enemy_distance=float(min_enemy_distance),
+        )
 
 
 def _validate_resolve_coherency(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -2181,7 +2336,10 @@ def _validate_disembark(game: object, request: DecisionRequest, result: Decision
     errors = list(validate_option_choice(request, result))
     if errors:
         return errors
+    ctx = dict(getattr(request, "context", {}) or {})
     if is_skip_choice(request, result):
+        if bool(ctx.get("mandatory_disembark", False)):
+            return ("This disembarkation is mandatory and cannot be skipped.",)
         return ()
     opt = find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
@@ -2193,19 +2351,32 @@ def _validate_disembark(game: object, request: DecisionRequest, result: Decision
     if unit is None:
         return ("Disembark unit not found.",)
     if transport_id is None:
+        if bool(ctx.get("mandatory_disembark", False)):
+            return ("Disembark transport is required for this mandatory disembarkation.",)
         return ()
     transport = get_unit(game, str(transport_id or ""))
     if transport is None:
         return ("Disembark transport not found.",)
     model_positions = result.payload.get("model_positions")
     if model_positions is not None:
-        ctx = dict(getattr(request, "context", {}) or {})
         try:
-            max_distance = float(ctx.get("reactive_disembark_range", 0) or 0)
-        except Exception:
+            max_distance = float(
+                ctx.get("reactive_disembark_range", ctx.get("disembark_max_distance", 0)) or 0
+            )
+        except (TypeError, ValueError):
             max_distance = 0.0
         if max_distance <= 0:
             max_distance = 3.0
+        min_enemy_horizontal_distance = None
+        if "disembark_min_enemy_horizontal_distance" in ctx:
+            try:
+                min_enemy_horizontal_distance = float(
+                    ctx.get("disembark_min_enemy_horizontal_distance", 0) or 0
+                )
+            except (TypeError, ValueError):
+                min_enemy_horizontal_distance = None
+            if min_enemy_horizontal_distance is not None and min_enemy_horizontal_distance <= 0:
+                min_enemy_horizontal_distance = None
         errors = validate_model_positions(game, unit, model_positions, context="Disembark")
         if errors:
             return errors
@@ -2231,6 +2402,7 @@ def _validate_disembark(game: object, request: DecisionRequest, result: Decision
                 game_map=game_map,
                 max_distance=float(max_distance),
                 require_not_in_engagement=True,
+                min_enemy_horizontal_distance=min_enemy_horizontal_distance,
             )
             if not bool(check.get("valid", False)):
                 reason = str(check.get("reason", "") or "Invalid disembark placement.")
@@ -2254,9 +2426,25 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
         raise RuntimeError("Disembark: transport missing.")
     ctx = dict(getattr(request, "context", {}) or {})
     try:
-        disembark_range = float(ctx.get("reactive_disembark_range", 0) or 0)
-    except Exception:
+        disembark_range = float(
+            ctx.get("reactive_disembark_range", ctx.get("disembark_max_distance", 0)) or 0
+        )
+    except (TypeError, ValueError):
         disembark_range = 0.0
+    disembark_source = str(
+        ctx.get("reactive_disembark_source", "")
+        or ctx.get("disembark_source", "")
+        or "Reactive Disembark"
+    ).strip() or "Reactive Disembark"
+    try:
+        disembark_min_enemy_horizontal_distance = float(
+            ctx.get("disembark_min_enemy_horizontal_distance", 0) or 0
+        )
+    except (TypeError, ValueError):
+        disembark_min_enemy_horizontal_distance = 0.0
+    require_not_in_engagement = True
+    if "disembark_require_not_in_engagement" in ctx:
+        require_not_in_engagement = bool(ctx.get("disembark_require_not_in_engagement", True))
     model_positions = result.payload.get("model_positions")
     if model_positions is not None:
         apply_model_positions(game, list(model_positions or []))
@@ -2280,11 +2468,12 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
         "stratagem_disembark_override_transport_id",
         "stratagem_disembark_override_max_distance",
         "stratagem_disembark_override_require_not_in_engagement",
+        "stratagem_disembark_override_min_enemy_horizontal_distance",
         "stratagem_disembark_override_source",
     )
     had_override = False
     prev_values: dict[str, object] = {}
-    if disembark_range > 0:
+    if disembark_range > 0 or disembark_min_enemy_horizontal_distance > 0:
         sr = getattr(unit, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
@@ -2293,9 +2482,18 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
                 prev_values[key] = sr.get(key)
         sr["stratagem_disembark_override_active"] = True
         sr["stratagem_disembark_override_transport_id"] = str(get_entity_id(transport) or "")
-        sr["stratagem_disembark_override_max_distance"] = float(disembark_range)
-        sr["stratagem_disembark_override_require_not_in_engagement"] = True
-        sr["stratagem_disembark_override_source"] = str(ctx.get("reactive_disembark_source", "") or "Reactive Disembark")
+        if disembark_range > 0:
+            sr["stratagem_disembark_override_max_distance"] = float(disembark_range)
+        else:
+            sr.pop("stratagem_disembark_override_max_distance", None)
+        sr["stratagem_disembark_override_require_not_in_engagement"] = bool(require_not_in_engagement)
+        if disembark_min_enemy_horizontal_distance > 0:
+            sr["stratagem_disembark_override_min_enemy_horizontal_distance"] = float(
+                disembark_min_enemy_horizontal_distance
+            )
+        else:
+            sr.pop("stratagem_disembark_override_min_enemy_horizontal_distance", None)
+        sr["stratagem_disembark_override_source"] = disembark_source
         unit.special_rules = sr
         had_override = True
     try:
@@ -2396,6 +2594,61 @@ def _validate_pick_point(game: object, request: DecisionRequest, result: Decisio
         dist = math.sqrt(dx * dx + dy * dy)
         if dist > float(max(0.0, marker_range)) + 1e-6:
             return (f"Fleet Commander second marker must be within {float(max(0.0, marker_range)):.1f}\" of the first marker.",)
+    if ability_key == "teleport_homer_marker_placement":
+        unit_id = str(ctx.get("unit_id", "") or "")
+        unit = get_unit(game, unit_id)
+        if unit is None:
+            return ("Teleport Homer token placement requires a valid unit.",)
+        can_place = getattr(unit, "can_place_teleport_homer_marker", None)
+        if not callable(can_place) or not bool(can_place(game)):
+            return ("Teleport Homer token cannot be placed by this unit right now.",)
+        try:
+            x = float(point[0])
+            y = float(point[1])
+        except (TypeError, ValueError):
+            return ("Point coordinates must be numeric.",)
+
+        width = None
+        height = None
+        battlefield = getattr(game, "battlefield", None)
+        if battlefield is not None:
+            try:
+                width = float(getattr(battlefield, "width", None))
+                height = float(getattr(battlefield, "height", None))
+            except (TypeError, ValueError):
+                width = None
+                height = None
+        if (width is None or height is None) and getattr(game, "map", None) is not None:
+            game_map = getattr(game, "map", None)
+            try:
+                width = float(getattr(game_map, "width", None))
+                height = float(getattr(game_map, "height", None))
+            except (TypeError, ValueError):
+                width = None
+                height = None
+        if width is not None and height is not None:
+            if x < 0.0 or y < 0.0 or x > float(width) or y > float(height):
+                return ("Teleport Homer token must be placed on the battlefield.",)
+
+        forbidden_player_id = str(
+            ctx.get("forbidden_deployment_zone_player_id", "")
+            or ctx.get("opponent_player_id", "")
+            or ""
+        )
+        if not forbidden_player_id:
+            army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+            owner = getattr(army, "player", None) if army is not None else None
+            for candidate in list(getattr(game, "players", []) or []):
+                if candidate is None or candidate is owner:
+                    continue
+                candidate_id = str(getattr(candidate, "id", "") or "")
+                if candidate_id:
+                    forbidden_player_id = candidate_id
+                    break
+        in_deployment_zone = getattr(game, "is_position_in_deployment_zone", None)
+        if forbidden_player_id and callable(in_deployment_zone):
+            if bool(in_deployment_zone(float(x), float(y), forbidden_player_id)):
+                return ("Teleport Homer token must be outside your opponent's deployment zone.",)
     if ability_key == "subterranean_assault_tunnel_marker_placement":
         unit_id = str(ctx.get("unit_id", "") or "")
         unit = get_unit(game, unit_id)
@@ -2425,6 +2678,12 @@ def _apply_pick_point(game: object, request: DecisionRequest, result: DecisionRe
                 sr.pop("enhancement_fleet_commander_first_marker_point", None)
                 sr.pop("enhancement_fleet_commander_pending_second_marker", None)
                 source_member.special_rules = sr
+        if ability_key == "teleport_homer_marker_placement":
+            source_unit = get_unit(game, str(ctx.get("source_unit_id", "") or ctx.get("unit_id", "") or ""))
+            if source_unit is not None:
+                mark_declined = getattr(source_unit, "mark_teleport_homer_marker_declined", None)
+                if callable(mark_declined):
+                    mark_declined()
         return None
     payload = dict(result.payload or {})
     point = payload.get("point") or []
@@ -2537,6 +2796,17 @@ def _apply_pick_point(game: object, request: DecisionRequest, result: DecisionRe
         if marker is None:
             return None
         return (float(getattr(marker, "x", x)), float(getattr(marker, "y", y)), float(getattr(marker, "z", 0.0)))
+    if ability_key == "teleport_homer_marker_placement":
+        source_unit = get_unit(game, str(ctx.get("source_unit_id", "") or ctx.get("unit_id", "") or ""))
+        if source_unit is None:
+            return None
+        source_name = str(ctx.get("ability_name", "") or "Teleport Homer").strip() or "Teleport Homer"
+        set_marker = getattr(source_unit, "set_teleport_homer_marker_point", None)
+        if not callable(set_marker):
+            return None
+        if not bool(set_marker((x, y, 0.0), source=source_name)):
+            return None
+        return (x, y, 0.0)
     if len(point) > 2:
         z = float(point[2])
         return (x, y, z)

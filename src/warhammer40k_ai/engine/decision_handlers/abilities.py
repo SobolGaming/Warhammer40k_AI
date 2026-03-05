@@ -1081,6 +1081,8 @@ def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, r
             ) if callable(candidates_fn) else []
             by_id = {str(get_entity_id(unit) or ""): unit for unit in list(candidates or []) if unit is not None}
             game_map = getattr(game, "map", None)
+            current_turn = int(getattr(game, "turn", 0) or 0)
+            owner_id = str(getattr(player, "id", "") or "")
             for uid in unit_ids:
                 unit = by_id.get(uid)
                 if unit is None:
@@ -1091,6 +1093,13 @@ def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, r
                     reason="Hyperphasing",
                 )
                 if moved:
+                    sr = getattr(unit, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    sr["hyperphasing_arrival_pending"] = True
+                    sr["hyperphasing_arrival_turn_owner"] = owner_id
+                    sr["hyperphasing_arrival_turn"] = int(current_turn)
+                    unit.special_rules = sr
                     moved_units.append(unit)
 
             if moved_units:

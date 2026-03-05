@@ -142,6 +142,11 @@ class TestNecronsHypercryptLegionDetachment(unittest.TestCase):
 
         self.assertTrue(eligible_a.is_in_strategic_reserves())
         self.assertFalse(eligible_b.is_in_strategic_reserves())
+        self.assertTrue(bool(eligible_a.special_rules.get("hyperphasing_arrival_pending", False)))
+        self.assertEqual(
+            str(eligible_a.special_rules.get("hyperphasing_arrival_turn_owner", "") or ""),
+            str(necron_player.id),
+        )
 
         game._maybe_prompt_end_of_opponent_turn_strategic_reserves(turn_ending_player=enemy_player)
         self.assertEqual(len(_hyperphasing_requests(game)), 0)
@@ -178,4 +183,3 @@ class TestNecronsHypercryptLegionDetachment(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

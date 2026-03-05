@@ -2672,16 +2672,43 @@ class PositioningMixin:
                 break
         return results
 
-    def get_cloudstrider_deep_strike_source(self) -> str:
+    def _extract_cloudstrider_deep_strike_rule(self, *, name: str = "", description: str = "") -> Optional[dict]:
+        text = self._normalize_rules_text(description or name or "")
+        if not text:
+            return None
+        normalized = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+        normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        if "deep strike" not in normalized:
+            return None
+        if "not eligible to declare a charge" not in normalized and "not eligible to charge" not in normalized:
+            return None
+        match = re.search(r"\bmore than\s+(?P<distance>\d+(?:\.\d+)?)\b", normalized)
+        if match is None:
+            return None
+        try:
+            min_distance = float(match.group("distance"))
+        except (TypeError, ValueError):
+            return None
+        if min_distance <= 0.0:
+            return None
+        source = str(name or "Cloudstrider").strip() or "Cloudstrider"
+        return {
+            "source": source,
+            "deep_strike_min_distance": float(min_distance),
+        }
+
+    def get_cloudstrider_deep_strike_rule(self) -> Optional[dict]:
         try:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
-        cache_key = "cloudstrider_deep_strike_source"
+        cache_key = "cloudstrider_deep_strike_rule"
         cache = getattr(root, "_ability_cache", None)
         if isinstance(cache, dict) and cache_key in cache:
-            return str(cache.get(cache_key) or "")
-        source = ""
+            cached = cache.get(cache_key)
+            return cached if isinstance(cached, dict) else None
+        rule = None
         for ab, _leader in root._iter_attached_leader_leading_abilities():
             try:
                 name = str(getattr(ab, "name", "") or "")
@@ -2689,32 +2716,47 @@ class PositioningMixin:
             except Exception:
                 name = ""
                 desc = ""
-            if name.strip().lower() == "cloudstrider":
-                source = name or "Cloudstrider"
+            rule = root._extract_cloudstrider_deep_strike_rule(name=name, description=desc)
+            if rule is not None:
                 break
-            text = root._normalize_rules_text(desc or "")
-            if not text:
-                continue
-            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
-            norm = re.sub(r"[^a-z0-9]+", " ", norm)
-            norm = re.sub(r"\s+", " ", norm).strip()
-            if "deep strike" in norm and "more than 6" in norm and "not eligible to declare a charge" in norm:
-                source = name or "Cloudstrider"
-                break
-        if not source:
+        if rule is None:
             for name, desc in root._iter_ability_entries_for_rules(model=None):
-                text = root._normalize_rules_text(desc or name or "")
-                if not text:
-                    continue
-                norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
-                norm = re.sub(r"[^a-z0-9]+", " ", norm)
-                norm = re.sub(r"\s+", " ", norm).strip()
-                if "deep strike" in norm and "more than 6" in norm and "not eligible to declare a charge" in norm:
-                    source = str(name or "Cloudstrider").strip() or "Cloudstrider"
+                rule = root._extract_cloudstrider_deep_strike_rule(
+                    name=str(name or ""),
+                    description=str(desc or name or ""),
+                )
+                if rule is not None:
                     break
+        if rule is None:
+            fallback = ""
+            for ab, _leader in root._iter_attached_leader_leading_abilities():
+                try:
+                    name = str(getattr(ab, "name", "") or "")
+                except Exception:
+                    name = ""
+                if name.strip().lower() == "cloudstrider":
+                    fallback = name or "Cloudstrider"
+                    break
+            if not fallback:
+                for name, _desc in root._iter_ability_entries_for_rules(model=None):
+                    if str(name or "").strip().lower() == "cloudstrider":
+                        fallback = str(name or "Cloudstrider").strip() or "Cloudstrider"
+                        break
+            if fallback:
+                rule = {
+                    "source": fallback,
+                    "deep_strike_min_distance": 6.0,
+                }
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
-        root._ability_cache[cache_key] = source
+        root._ability_cache[cache_key] = rule
+        return rule if isinstance(rule, dict) else None
+
+    def get_cloudstrider_deep_strike_source(self) -> str:
+        rule = self.get_cloudstrider_deep_strike_rule()
+        if not isinstance(rule, dict):
+            return ""
+        source = str(rule.get("source", "") or "").strip()
         return str(source or "")
 
     def get_opponent_turn_friendly_unit_destroyed_reposition_ability(self):
@@ -6394,6 +6436,18 @@ class PositioningMixin:
         except Exception:
             pass
 
+        # Cosmic Precision: cannot charge until end of turn after 6" Deep Strike option.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("cosmic_precision_no_charge_turn_owner"):
+                owner = str(sr.get("cosmic_precision_no_charge_turn_owner") or "")
+                turn = int(sr.get("cosmic_precision_no_charge_turn", 0) or 0)
+                if owner and game is not None:
+                    if game.get_current_player().id == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                        return False
+        except Exception:
+            pass
+
         # Rapid Manifestation: cannot charge until end of turn after 6" Deep Strike option.
         try:
             sr = getattr(self, "special_rules", None)
@@ -7253,6 +7307,40 @@ class PositioningMixin:
                 cloud_min = 0.0
             if cloud_min > 0:
                 min_dist = cloud_min if min_dist is None else min(min_dist, cloud_min)
+
+        try:
+            cosmic_min = float(sr.get("cosmic_precision_deep_strike_min_distance", 0) or 0)
+        except Exception:
+            cosmic_min = 0.0
+        if cosmic_min > 0:
+            try:
+                game = None
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+                owner_id = str(sr.get("cosmic_precision_turn_owner", "") or "")
+                turn = int(sr.get("cosmic_precision_turn", 0) or 0)
+                exp = str(sr.get("cosmic_precision_expires_phase", "") or "").strip().upper()
+                if game is not None:
+                    cur_turn = int(getattr(game, "turn", 0) or 0)
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if owner_id and cur_owner and owner_id != cur_owner:
+                        cosmic_min = 0.0
+                    elif turn and cur_turn and turn != cur_turn:
+                        cosmic_min = 0.0
+                    elif exp and pname and exp != pname:
+                        cosmic_min = 0.0
+            except Exception:
+                cosmic_min = 0.0
+            if cosmic_min > 0:
+                min_dist = cosmic_min if min_dist is None else min(min_dist, cosmic_min)
 
         try:
             cloudstrike_min = float(sr.get("cloudstrike_deep_strike_min_distance", 0) or 0)

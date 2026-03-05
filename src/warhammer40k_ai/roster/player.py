@@ -1519,6 +1519,132 @@ class Player:
             }
         return None
 
+    def _homing_beacon_rapid_ingress_discount_context(self, target_unit, *, stratagem_name: str = "") -> dict | None:
+        if target_unit is None:
+            return None
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return None
+        stratagem_key = self._normalize_stratagem_name_key(stratagem_name)
+        if stratagem_key != "RAPID INGRESS":
+            return None
+        army = self.get_army()
+        if army is None:
+            return None
+        roots: list[object] = []
+        seen_root_ids: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id in seen_root_ids:
+                continue
+            if root_id:
+                seen_root_ids.add(root_id)
+            roots.append(root)
+        roots.sort(key=lambda item: str(get_entity_id(item) or ""))
+
+        for root in roots:
+            can_use = getattr(root, "can_use_homing_beacon_rapid_ingress", None)
+            if not callable(can_use):
+                continue
+            if not bool(can_use(self.game, stratagem_name=stratagem_key)):
+                continue
+            get_rule = getattr(root, "get_homing_beacon_rapid_ingress_rule", None)
+            rule = get_rule() if callable(get_rule) else None
+            if not isinstance(rule, dict):
+                continue
+            source = str(rule.get("source", "") or "Homing Beacon").strip() or "Homing Beacon"
+            usage_key = str(rule.get("usage_key", "") or rule.get("ability_key", "") or "").strip().lower()
+            if not usage_key:
+                usage_key = "homing_beacon_rapid_ingress"
+            try:
+                anchor_distance = float(rule.get("anchor_distance", 3.0) or 3.0)
+            except (TypeError, ValueError):
+                anchor_distance = 3.0
+            if anchor_distance <= 0.0:
+                anchor_distance = 3.0
+            try:
+                min_enemy_distance = float(rule.get("deep_strike_min_distance", 9.0) or 9.0)
+            except (TypeError, ValueError):
+                min_enemy_distance = 9.0
+            if min_enemy_distance <= 0.0:
+                min_enemy_distance = 9.0
+            return {
+                "source_unit": root,
+                "source_unit_id": str(get_entity_id(root) or ""),
+                "source": source,
+                "usage_key": usage_key,
+                "anchor_mode": str(rule.get("anchor_mode", "") or "source_unit"),
+                "anchor_distance": float(anchor_distance),
+                "deep_strike_min_distance": float(min_enemy_distance),
+            }
+        return None
+
+    def _teleport_homer_rapid_ingress_discount_context(self, target_unit, *, stratagem_name: str = "") -> dict | None:
+        if target_unit is None:
+            return None
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return None
+        stratagem_key = self._normalize_stratagem_name_key(stratagem_name)
+        if stratagem_key != "RAPID INGRESS":
+            return None
+        get_root = getattr(target_unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else target_unit
+        if root is None:
+            return None
+        can_use = getattr(root, "can_use_teleport_homer_rapid_ingress", None)
+        if not callable(can_use) or not bool(can_use(self.game, stratagem_name=stratagem_key)):
+            return None
+        get_rule = getattr(root, "get_teleport_homer_rapid_ingress_rule", None)
+        rule = get_rule() if callable(get_rule) else None
+        if not isinstance(rule, dict):
+            return None
+        marker_point = None
+        get_marker = getattr(root, "get_teleport_homer_marker_point", None)
+        if callable(get_marker):
+            marker_point = get_marker()
+        if not isinstance(marker_point, (list, tuple)) or len(marker_point) < 2:
+            return None
+        try:
+            marker_x = float(marker_point[0])
+            marker_y = float(marker_point[1])
+            marker_z = float(marker_point[2]) if len(marker_point) > 2 else 0.0
+        except (TypeError, ValueError):
+            return None
+
+        source = str(rule.get("source", "") or "Teleport Homer").strip() or "Teleport Homer"
+        usage_key = str(rule.get("usage_key", "") or rule.get("ability_key", "") or "").strip().lower()
+        if not usage_key:
+            usage_key = "teleport_homer_rapid_ingress"
+        try:
+            anchor_distance = float(rule.get("anchor_distance", 3.0) or 3.0)
+        except (TypeError, ValueError):
+            anchor_distance = 3.0
+        if anchor_distance <= 0.0:
+            anchor_distance = 3.0
+        try:
+            min_enemy_distance = float(rule.get("deep_strike_min_distance", 9.0) or 9.0)
+        except (TypeError, ValueError):
+            min_enemy_distance = 9.0
+        if min_enemy_distance <= 0.0:
+            min_enemy_distance = 9.0
+        return {
+            "source_unit": root,
+            "source_unit_id": str(get_entity_id(root) or ""),
+            "source": source,
+            "usage_key": usage_key,
+            "anchor_mode": str(rule.get("anchor_mode", "") or "marker_point"),
+            "anchor_distance": float(anchor_distance),
+            "anchor_point": [float(marker_x), float(marker_y), float(marker_z)],
+            "deep_strike_min_distance": float(min_enemy_distance),
+        }
+
     def _preview_gift_of_the_prescient_discount(self, *, stratagem=None, target_unit=None) -> int:
         if stratagem is None or target_unit is None:
             return 0
@@ -2073,6 +2199,18 @@ class Player:
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
 
+    def _target_unit_can_use_homing_beacon_rapid_ingress(self, target_unit, *, stratagem_name: str = "") -> bool:
+        return self._homing_beacon_rapid_ingress_discount_context(
+            target_unit,
+            stratagem_name=stratagem_name,
+        ) is not None
+
+    def _target_unit_can_use_teleport_homer_rapid_ingress(self, target_unit, *, stratagem_name: str = "") -> bool:
+        return self._teleport_homer_rapid_ingress_discount_context(
+            target_unit,
+            stratagem_name=stratagem_name,
+        ) is not None
+
     def _target_unit_can_use_primed_and_ready_grenade(self, target_unit, *, stratagem_name: str = "") -> bool:
         if target_unit is None:
             return False
@@ -2315,6 +2453,34 @@ class Player:
         if name_u != "RAPID INGRESS":
             return 0
         if not self._target_unit_can_use_pheromone_trail_rapid_ingress(target_unit, stratagem_name=name_u):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_homing_beacon_rapid_ingress_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u != "RAPID INGRESS":
+            return 0
+        if self._homing_beacon_rapid_ingress_discount_context(
+            target_unit,
+            stratagem_name=name_u,
+        ) is None:
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_teleport_homer_rapid_ingress_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u != "RAPID INGRESS":
+            return 0
+        if self._teleport_homer_rapid_ingress_discount_context(
+            target_unit,
+            stratagem_name=name_u,
+        ) is None:
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -3042,6 +3208,56 @@ class Player:
             ability_name = str(context.get("source", "") or "Gift of the Prescient").strip() or "Gift of the Prescient"
             reasons.append(f"{ability_name}: Rapid Ingress for 0CP.")
             return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        teleport_homer = self._preview_teleport_homer_rapid_ingress_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if teleport_homer:
+            context = self._teleport_homer_rapid_ingress_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            ability_name = str(context.get("source", "") or "Teleport Homer").strip() or "Teleport Homer"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "TELEPORT_HOMER_RAPID_INGRESS",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Rapid Ingress for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        homing_beacon = self._preview_homing_beacon_rapid_ingress_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if homing_beacon:
+            context = self._homing_beacon_rapid_ingress_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            ability_name = str(context.get("source", "") or "Homing Beacon").strip() or "Homing Beacon"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "HOMING_BEACON_RAPID_INGRESS",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Rapid Ingress for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         pheromone_trail = self._preview_pheromone_trail_rapid_ingress_discount(
             stratagem=stratagem,
@@ -4425,6 +4641,158 @@ class Player:
                 "gift_of_the_prescient_deep_strike_min_distance": float(deep_strike_min_distance),
                 "gift_of_the_prescient_expires_phase": expires_phase,
             }
+
+        teleport_homer = self._preview_teleport_homer_rapid_ingress_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if teleport_homer and target_unit is not None:
+            context = self._teleport_homer_rapid_ingress_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            ability_name = str(context.get("source", "") or "Teleport Homer").strip() or "Teleport Homer"
+            source_unit_id = str(context.get("source_unit_id", "") or "")
+            usage_key = str(context.get("usage_key", "") or "teleport_homer_rapid_ingress").strip().lower()
+            try:
+                anchor_distance = float(context.get("anchor_distance", 3.0) or 3.0)
+            except (TypeError, ValueError):
+                anchor_distance = 3.0
+            if anchor_distance <= 0.0:
+                anchor_distance = 3.0
+            try:
+                min_enemy_distance = float(context.get("deep_strike_min_distance", 9.0) or 9.0)
+            except (TypeError, ValueError):
+                min_enemy_distance = 9.0
+            if min_enemy_distance <= 0.0:
+                min_enemy_distance = 9.0
+            anchor_point = [0.0, 0.0, 0.0]
+            raw_anchor_point = context.get("anchor_point")
+            if isinstance(raw_anchor_point, (list, tuple)) and len(raw_anchor_point) >= 2:
+                try:
+                    anchor_point = [
+                        float(raw_anchor_point[0]),
+                        float(raw_anchor_point[1]),
+                        float(raw_anchor_point[2]) if len(raw_anchor_point) > 2 else 0.0,
+                    ]
+                except (TypeError, ValueError):
+                    anchor_point = [0.0, 0.0, 0.0]
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("TELEPORT_HOMER_RAPID_INGRESS", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Rapid Ingress for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "teleport_homer_rapid_ingress_use": True,
+                    "teleport_homer_rapid_ingress_source": ability_name,
+                    "teleport_homer_rapid_ingress_usage_key": usage_key,
+                    "teleport_homer_rapid_ingress_source_unit_id": source_unit_id,
+                    "teleport_homer_rapid_ingress_anchor_mode": str(context.get("anchor_mode", "") or "marker_point"),
+                    "teleport_homer_rapid_ingress_anchor_distance": float(anchor_distance),
+                    "teleport_homer_rapid_ingress_anchor_point": list(anchor_point),
+                    "teleport_homer_rapid_ingress_deep_strike_min_distance": float(min_enemy_distance),
+                }
+
+        homing_beacon = self._preview_homing_beacon_rapid_ingress_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if homing_beacon and target_unit is not None:
+            context = self._homing_beacon_rapid_ingress_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            ability_name = str(context.get("source", "") or "Homing Beacon").strip() or "Homing Beacon"
+            source_unit = context.get("source_unit")
+            source_unit_id = str(context.get("source_unit_id", "") or "")
+            usage_key = str(context.get("usage_key", "") or "homing_beacon_rapid_ingress").strip().lower()
+            try:
+                anchor_distance = float(context.get("anchor_distance", 3.0) or 3.0)
+            except (TypeError, ValueError):
+                anchor_distance = 3.0
+            if anchor_distance <= 0.0:
+                anchor_distance = 3.0
+            try:
+                min_enemy_distance = float(context.get("deep_strike_min_distance", 9.0) or 9.0)
+            except (TypeError, ValueError):
+                min_enemy_distance = 9.0
+            if min_enemy_distance <= 0.0:
+                min_enemy_distance = 9.0
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("HOMING_BEACON_RAPID_INGRESS", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                if source_unit is not None:
+                    mark_used = getattr(source_unit, "mark_homing_beacon_rapid_ingress_used", None)
+                    if callable(mark_used):
+                        mark_used(
+                            source=ability_name,
+                            stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                        )
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Rapid Ingress for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "homing_beacon_rapid_ingress_use": True,
+                    "homing_beacon_rapid_ingress_source": ability_name,
+                    "homing_beacon_rapid_ingress_usage_key": usage_key,
+                    "homing_beacon_rapid_ingress_source_unit_id": source_unit_id,
+                    "homing_beacon_rapid_ingress_anchor_mode": str(context.get("anchor_mode", "") or "source_unit"),
+                    "homing_beacon_rapid_ingress_anchor_distance": float(anchor_distance),
+                    "homing_beacon_rapid_ingress_deep_strike_min_distance": float(min_enemy_distance),
+                }
 
         pheromone_trail = self._preview_pheromone_trail_rapid_ingress_discount(
             stratagem=stratagem,

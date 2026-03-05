@@ -13228,6 +13228,19 @@ class GamePhaseHandlersMixin:
                             "cloudstrider_source",
                         ):
                             sr.pop(k, None)
+                    if str(sr.get("cosmic_precision_no_charge_turn_owner", "") or "") == owner_id:
+                        for k in (
+                            "cosmic_precision_no_charge_turn_owner",
+                            "cosmic_precision_no_charge_turn",
+                            "cosmic_precision_active",
+                            "cosmic_precision_expires_phase",
+                            "cosmic_precision_deep_strike_min_distance",
+                            "cosmic_precision_temp_deep_strike",
+                            "cosmic_precision_turn_owner",
+                            "cosmic_precision_turn",
+                            "cosmic_precision_source",
+                        ):
+                            sr.pop(k, None)
                     if str(sr.get("aetherstride_sustained_hits_d3_owner", "") or "") == owner_id:
                         for k in (
                             "aetherstride_sustained_hits_d3_active",

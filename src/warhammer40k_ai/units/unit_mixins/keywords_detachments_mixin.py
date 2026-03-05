@@ -4381,6 +4381,357 @@ class KeywordsDetachmentsMixin:
             return False
         return bool(root._instinctive_defence_harvester_in_range(game=game))
 
+    def get_homing_beacon_rapid_ingress_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "homing_beacon_rapid_ingress_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "rapid ingress" not in normalized or "0cp" not in normalized:
+                    continue
+                if "once per battle" not in normalized:
+                    continue
+                name_key = str(name or "").strip().lower()
+                if "homing beacon" not in name_key and "homing beacon" not in normalized:
+                    continue
+                if "within 3" not in normalized:
+                    continue
+                if "bearer s unit" not in normalized and "bearers unit" not in normalized:
+                    continue
+                source = str(name or "Homing Beacon").strip() or "Homing Beacon"
+                rule = {
+                    "source": source,
+                    "ability_key": "homing_beacon_rapid_ingress",
+                    "usage_key": "homing_beacon_rapid_ingress",
+                    "stratagems": ("RAPID INGRESS",),
+                    "limit": "battle",
+                    "anchor_mode": "source_unit",
+                    "anchor_distance": 3.0,
+                    "deep_strike_min_distance": 9.0,
+                    "requires_source_unit_on_battlefield": True,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def can_use_homing_beacon_rapid_ingress(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not bool(getattr(root, "deployed", False)):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_homing_beacon_rapid_ingress_rule()
+        if not rule:
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        usage_key = str(rule.get("usage_key", "") or rule.get("ability_key", "") or "").strip().lower()
+        if usage_key and root.has_used_unit_once_per_battle(usage_key):
+            return False
+        return True
+
+    def mark_homing_beacon_rapid_ingress_used(self, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_homing_beacon_rapid_ingress_rule()
+        if not isinstance(rule, dict):
+            return
+        usage_key = str(rule.get("usage_key", "") or rule.get("ability_key", "") or "").strip().lower()
+        if not usage_key:
+            usage_key = "homing_beacon_rapid_ingress"
+        source_name = str(source or rule.get("source", "") or "Homing Beacon").strip() or "Homing Beacon"
+        root.mark_unit_once_per_battle_used(usage_key, ability_name=source_name)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["homing_beacon_rapid_ingress_used"] = True
+        if source_name:
+            sr["homing_beacon_rapid_ingress_used_source"] = source_name
+        if stratagem_name:
+            sr["homing_beacon_rapid_ingress_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+    def get_teleport_homer_rapid_ingress_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "teleport_homer_rapid_ingress_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "rapid ingress" not in normalized or "0cp" not in normalized:
+                    continue
+                if "once per battle" not in normalized:
+                    continue
+                if "teleport homer" not in normalized and "teleport homer" not in str(name or "").strip().lower():
+                    continue
+                if "token" not in normalized:
+                    continue
+                if "within 3" not in normalized:
+                    continue
+                if "not within 9" not in normalized and "more than 9" not in normalized:
+                    continue
+                source = str(name or "Teleport Homer").strip() or "Teleport Homer"
+                rule = {
+                    "source": source,
+                    "ability_key": "teleport_homer_rapid_ingress",
+                    "usage_key": "teleport_homer_rapid_ingress",
+                    "stratagems": ("RAPID INGRESS",),
+                    "limit": "battle",
+                    "anchor_mode": "marker_point",
+                    "anchor_distance": 3.0,
+                    "deep_strike_min_distance": 9.0,
+                    "requires_marker": True,
+                    "marker_name": "Teleport Homer",
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def get_teleport_homer_marker_point(self) -> Optional[tuple[float, float, float]]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        if not bool(sr.get("teleport_homer_marker_active", False)):
+            return None
+        point = sr.get("teleport_homer_marker_point")
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            return None
+        try:
+            x = float(point[0])
+            y = float(point[1])
+            z = float(point[2]) if len(point) > 2 else 0.0
+        except (TypeError, ValueError):
+            return None
+        return (x, y, z)
+
+    def can_place_teleport_homer_marker(self, game=None) -> bool:
+        del game
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive():
+                return False
+        except Exception:
+            return False
+        rule = root.get_teleport_homer_rapid_ingress_rule()
+        if not isinstance(rule, dict):
+            return False
+        usage_key = str(rule.get("usage_key", "") or rule.get("ability_key", "") or "").strip().lower()
+        if usage_key and root.has_used_unit_once_per_battle(usage_key):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict):
+            if bool(sr.get("teleport_homer_marker_active", False)):
+                return False
+            if bool(sr.get("teleport_homer_marker_declined", False)):
+                return False
+        return True
+
+    def mark_teleport_homer_marker_declined(self) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["teleport_homer_marker_declined"] = True
+        root.special_rules = sr
+
+    def set_teleport_homer_marker_point(self, point, *, source: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            return False
+        try:
+            x = float(point[0])
+            y = float(point[1])
+            z = float(point[2]) if len(point) > 2 else 0.0
+        except (TypeError, ValueError):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["teleport_homer_marker_active"] = True
+        sr["teleport_homer_marker_point"] = [x, y, z]
+        if source:
+            sr["teleport_homer_marker_source"] = str(source or "").strip()
+        sr.pop("teleport_homer_marker_declined", None)
+        root.special_rules = sr
+        return True
+
+    def clear_teleport_homer_marker(self, *, consumed: bool = False) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        for key in (
+            "teleport_homer_marker_active",
+            "teleport_homer_marker_point",
+            "teleport_homer_marker_source",
+        ):
+            sr.pop(key, None)
+        if consumed:
+            sr["teleport_homer_marker_consumed"] = True
+        root.special_rules = sr
+
+    def can_use_teleport_homer_rapid_ingress(self, game=None, *, stratagem_name: str = "") -> bool:
+        del game
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive():
+                return False
+        except Exception:
+            return False
+        try:
+            if not bool(getattr(root, "is_in_reserves", lambda: False)()):
+                return False
+        except Exception:
+            return False
+        rule = root.get_teleport_homer_rapid_ingress_rule()
+        if not isinstance(rule, dict):
+            return False
+        marker = root.get_teleport_homer_marker_point()
+        if marker is None:
+            return False
+        usage_key = str(rule.get("usage_key", "") or rule.get("ability_key", "") or "").strip().lower()
+        if usage_key and root.has_used_unit_once_per_battle(usage_key):
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        return True
+
+    def mark_teleport_homer_rapid_ingress_used(self, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_teleport_homer_rapid_ingress_rule()
+        if not isinstance(rule, dict):
+            return
+        usage_key = str(rule.get("usage_key", "") or rule.get("ability_key", "") or "").strip().lower()
+        if not usage_key:
+            usage_key = "teleport_homer_rapid_ingress"
+        source_name = str(source or rule.get("source", "") or "Teleport Homer").strip() or "Teleport Homer"
+        root.mark_unit_once_per_battle_used(usage_key, ability_name=source_name)
+        root.clear_teleport_homer_marker(consumed=True)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["teleport_homer_rapid_ingress_used"] = True
+        if source_name:
+            sr["teleport_homer_rapid_ingress_used_source"] = source_name
+        if stratagem_name:
+            sr["teleport_homer_rapid_ingress_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
     def get_pheromone_trail_rapid_ingress_rule(self) -> Optional[dict]:
         try:
             root = self.get_attached_unit_root()
@@ -5569,6 +5920,132 @@ class KeywordsDetachmentsMixin:
             except Exception:
                 continue
         return False
+
+    def get_drop_pod_assault_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "drop_pod_assault_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "drop pod assault" not in normalized and "drop pod assault" not in str(name or "").strip().lower():
+                    continue
+                if "reinforcements step" not in normalized:
+                    continue
+                if "first second or third" not in normalized or "movement phase" not in normalized:
+                    continue
+                requires_start_in_reserves = bool("must start the battle in reserves" in normalized)
+                immediate_disembark = bool(
+                    "must immediately disembark after it has been set up" in normalized
+                    or "must immediately disembark after this model has been set up" in normalized
+                )
+                no_embark_after_setup = bool(
+                    "after this model has been set up on the battlefield no units can embark within it" in normalized
+                )
+                counts_not_towards_reserves_limit = bool(
+                    "not counted towards any limits placed on the maximum number of reserves units" in normalized
+                    or "neither it nor any units embarked within it are counted towards any limits" in normalized
+                )
+                source = str(name or "Drop Pod Assault").strip() or "Drop Pod Assault"
+                rule = {
+                    "source": source,
+                    "ability_key": "drop_pod_assault",
+                    "requires_start_in_reserves": requires_start_in_reserves,
+                    "allows_turn_one_arrival": True,
+                    "immediate_disembark": immediate_disembark,
+                    "disembark_min_enemy_distance": 9.0,
+                    "counts_not_towards_reserves_limit": counts_not_towards_reserves_limit,
+                    "no_embark_after_setup": no_embark_after_setup,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def get_deployment_complete_embark_lock_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "deployment_complete_embark_lock_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                has_name = "deployment complete" in str(name or "").strip().lower()
+                has_embark_lock_text = "units cannot embark within this transport" in normalized
+                if not has_name and not has_embark_lock_text:
+                    continue
+                source = str(name or "Deployment Complete").strip() or "Deployment Complete"
+                rule = {
+                    "source": source,
+                    "ability_key": "deployment_complete",
+                    "locks_embark_after_set_up": True,
+                    "locks_embark_after_all_disembark": True,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
 
     def get_strategic_reserves_round_bonus_rule(self) -> Optional[dict]:
         """

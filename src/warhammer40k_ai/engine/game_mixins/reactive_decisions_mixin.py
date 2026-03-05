@@ -7126,7 +7126,19 @@ class GameReactiveDecisionsMixin:
                 except Exception:
                     owner_id = ""
             turn = int(getattr(self, "turn", 0) or 0)
-            sr["cloudstrider_deep_strike_min_distance"] = 6.0
+            try:
+                min_distance = float(
+                    ctx.get(
+                        "deep_strike_min_distance",
+                        payload.get("deep_strike_min_distance", 6.0),
+                    )
+                    or 6.0
+                )
+            except (TypeError, ValueError):
+                min_distance = 6.0
+            if min_distance <= 0.0:
+                min_distance = 6.0
+            sr["cloudstrider_deep_strike_min_distance"] = float(min_distance)
             sr["cloudstrider_choice_turn"] = int(turn)
             if owner_id:
                 sr["cloudstrider_choice_turn_owner"] = owner_id
@@ -7154,9 +7166,10 @@ class GameReactiveDecisionsMixin:
                 from ...utility.event_bus import append_action
                 player = getattr(root.get_parent_army(), "player", None)
                 if player is not None:
+                    distance_label = f"{float(min_distance):.1f}".rstrip("0").rstrip(".")
                     append_action(
                         player,
-                        f"{source}: {getattr(root, 'name', 'Unit')} may Deep Strike more than 6\" away (no charge).",
+                        f"{source}: {getattr(root, 'name', 'Unit')} may Deep Strike more than {distance_label}\" away (no charge).",
                     )
             except Exception:
                 pass

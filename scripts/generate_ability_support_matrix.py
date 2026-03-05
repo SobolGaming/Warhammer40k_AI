@@ -2526,6 +2526,30 @@ def _ability_id_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Templar Vows": ("Supported", "Vow selection with combat/objective effects."),
         "Leader": ("Supported", "Attach Leaders during battle formations; protect Characters until Bodyguard is gone."),
         "Deep Strike": ("Supported", "Reserves placement in Reinforcements step; enforces >9\" distance."),
+        "Etheric Emergence": (
+            "Supported",
+            "Optional Deep Strike arrival profile with >6\" enemy setup and turn-limited no-charge enforcement.",
+        ),
+        "Meteoric Descent": (
+            "Supported",
+            "Optional Deep Strike arrival profile with >6\" enemy setup and turn-limited no-charge enforcement.",
+        ),
+        "Homing Beacon": (
+            "Supported",
+            "Rapid Ingress discount workflow supported with anchor-range validation from the source unit.",
+        ),
+        "Teleport Homer": (
+            "Supported",
+            "Start-of-battle marker placement decision with opponent-zone exclusion, Rapid Ingress discount + marker-anchor validation, and one-use token consumption on success.",
+        ),
+        "Drop Pod Assault": (
+            "Supported",
+            "Must-start-in-Reserves and turn 1-3 Reinforcements arrival are enforced; immediate passenger disembark requests use >9\" enemy placement constraints.",
+        ),
+        "Deployment Complete": (
+            "Supported",
+            "After setup and passenger disembark completion, the transport is embark-locked for the remainder of the battle.",
+        ),
         "Feel No Pain": ("Supported", "Post-damage roll to ignore wounds, including mortals."),
         "Fights First": ("Supported", "Fight phase sequencing uses Fights First step."),
         "Fight on Death": ("Supported", "Destroyed units can fight after attacker resolves."),
@@ -3375,6 +3399,30 @@ def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
         "Collar of Khorne": ("Supported", "Feel No Pain 3+ against Psychic attacks."),
         "Flip Belt": ("Supported", "Ignore vertical distance for Move/Advance/Fall Back/Charge movement."),
         "Conversion": ("Supported", "Conversion keyword supported: 4+ successful hits become critical hits beyond the Conversion distance."),
+        "Etheric Emergence": (
+            "Supported",
+            "Optional Deep Strike arrival profile with >6\" enemy setup and turn-limited no-charge enforcement.",
+        ),
+        "Meteoric Descent": (
+            "Supported",
+            "Optional Deep Strike arrival profile with >6\" enemy setup and turn-limited no-charge enforcement.",
+        ),
+        "Homing Beacon": (
+            "Supported",
+            "Rapid Ingress discount workflow supported with anchor-range validation from the source unit.",
+        ),
+        "Teleport Homer": (
+            "Supported",
+            "Start-of-battle marker placement decision with opponent-zone exclusion, Rapid Ingress discount + marker-anchor validation, and one-use token consumption on success.",
+        ),
+        "Drop Pod Assault": (
+            "Supported",
+            "Must-start-in-Reserves and turn 1-3 Reinforcements arrival are enforced; immediate passenger disembark requests use >9\" enemy placement constraints.",
+        ),
+        "Deployment Complete": (
+            "Supported",
+            "After setup and passenger disembark completion, the transport is embark-locked for the remainder of the battle.",
+        ),
         "Reverberating Summons": (
             "Supported",
             "Weapon ability: when this weapon destroys a model, select a friendly Plaguebearers unit within 12\" to return 1 destroyed model.",
