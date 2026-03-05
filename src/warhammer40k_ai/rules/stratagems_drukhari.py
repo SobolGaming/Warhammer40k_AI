@@ -34,6 +34,11 @@ class DrukhariStratagemMixin:
         checker = getattr(mgr, "is_skysplinter_assault", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_drukhari_reapers_wager(self) -> bool:
+        mgr = self._drukhari_detachment_mgr()
+        checker = getattr(mgr, "is_reapers_wager", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _drukhari_has_keyword(unit: Any, keyword: str) -> bool:
         if unit is None:
@@ -54,6 +59,22 @@ class DrukhariStratagemMixin:
         if faction_id == "DRU":
             return True
         return self._drukhari_has_keyword(root, "DRUKHARI")
+
+    def _is_harlequins_unit(self, unit: Any) -> bool:
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        if self._drukhari_has_keyword(root, "HARLEQUINS"):
+            return True
+        try:
+            faction_data = getattr(getattr(root, "_datasheet", None), "faction_data", None)
+            faction_name = str(getattr(faction_data, "get", lambda *_args, **_kwargs: "")("name", "") or "").strip().upper()
+        except Exception:
+            faction_name = ""
+        return "HARLEQUIN" in faction_name
+
+    def _is_drukhari_or_harlequins_unit(self, unit: Any) -> bool:
+        return self._is_drukhari_unit(unit) or self._is_harlequins_unit(unit)
 
     def _is_drukhari_infantry(self, unit: Any) -> bool:
         root = self._drukhari_root(unit)
@@ -351,13 +372,174 @@ class DrukhariStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload, use_timer=False)
 
+    def _queue_drukhari_reapers_wager_scintillating_tempo_reactions(
+        self,
+        *,
+        unit: Any,
+        trigger: str,
+        action: str = "",
+    ) -> None:
+        if unit is None or not self._is_drukhari_reapers_wager():
+            return
+        phase_raw = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_raw not in {"movement phase", "charge phase"}:
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+
+        root = self._drukhari_root(unit)
+        if root is None:
+            return
+        if not self._drukhari_owned_by_player(root, self.player):
+            return
+        if not self._drukhari_on_battlefield(root):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return
+        if not self._is_drukhari_or_harlequins_unit(root):
+            return
+
+        action_norm = str(action or "").strip().lower()
+        if str(trigger or "").strip().lower() == "move_started":
+            if action_norm not in {"move", "normal", "normal_move", "advance", "fall_back", "fallback"}:
+                return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("SCINTILLATING TEMPO")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("scintillating_tempo_no_overwatch", False)):
+            owner = str(sr.get("scintillating_tempo_turn_owner", "") or "")
+            turn_mark = int(sr.get("scintillating_tempo_turn", 0) or 0)
+            current_owner = str(getattr(self.player, "id", "") or "")
+            current_turn = int(getattr(game, "turn", 0) or 0)
+            owner_match = not owner or owner == current_owner
+            turn_match = not turn_mark or turn_mark == current_turn
+            if owner_match and turn_match:
+                return
+
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "drukhari_reapers_wager_scintillating_tempo":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if self._drukhari_root(reaction.get("unit")) is root:
+                return
+
+        payload = {
+            "event": "drukhari_reapers_wager_scintillating_tempo",
+            "phase_name": "Movement phase" if phase_raw == "movement phase" else "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "trigger": str(trigger or "").strip().lower(),
+            "unit": root,
+            "target_unit": root,
+            "candidates": [root],
+        }
+        if action_norm:
+            payload["action"] = action_norm
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
     def _use_drukhari_skysplinter_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "SCINTILLATING TEMPO":
+            return self._use_drukhari_reapers_wager_scintillating_tempo(stratagem, **kwargs)
         if name_u == "POUNCE ON THE PREY":
             return self._use_drukhari_skysplinter_pounce_on_the_prey(stratagem, **kwargs)
         if name_u == "WRAITHLIKE RETREAT":
             return self._use_drukhari_skysplinter_wraithlike_retreat(stratagem, **kwargs)
         return None
+
+    def _use_drukhari_reapers_wager_scintillating_tempo(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_reapers_wager():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SCINTILLATING TEMPO":
+                    continue
+                unit = unit or reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None:
+            logger.error("ERROR: SCINTILLATING TEMPO: no target unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"movement phase", "charge phase"}:
+            logger.error("ERROR: SCINTILLATING TEMPO: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SCINTILLATING TEMPO: not your phase")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: SCINTILLATING TEMPO: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: SCINTILLATING TEMPO: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: SCINTILLATING TEMPO: target cannot be selected")
+            return False
+        if not self._is_drukhari_or_harlequins_unit(root):
+            logger.error("ERROR: SCINTILLATING TEMPO: target must be a Drukhari or Harlequins unit")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in list(members or []):
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["scintillating_tempo_no_overwatch"] = True
+            if owner:
+                sr["scintillating_tempo_turn_owner"] = owner
+            if turn:
+                sr["scintillating_tempo_turn"] = int(turn)
+            sr["scintillating_tempo_source"] = str(getattr(stratagem, "name", "SCINTILLATING TEMPO") or "SCINTILLATING TEMPO")
+            member.special_rules = sr
+
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: SCINTILLATING TEMPO: %s cannot be targeted by Fire Overwatch until end of turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
 
     def _use_drukhari_skysplinter_pounce_on_the_prey(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_drukhari_skysplinter_assault():

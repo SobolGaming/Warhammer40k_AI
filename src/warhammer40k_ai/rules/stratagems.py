@@ -147,10 +147,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PUNISH THE CRAVEN",
     "SKYBORNE SANCTUARY",
     "SHOCK CAVALRY",
+    "SCINTILLATING TEMPO",
     "PINNING FIRE",
     "TO THEIR FINAL BREATH",
     "SMOKESCREEN",
     "SKULLS FOR THE SKULL THRONE!",
+    "SUPPRESS AND OVERWHELM",
     "SUMMONED BY SLAUGHTER",
     "WALL OF MIRRORS",
     "INVISIBLE HUNTER",
@@ -1509,6 +1511,10 @@ class StratagemManager(
             add("unit_move_started", self._on_unit_move_started)
         if "POUNCE ON THE PREY" in names:
             add("unit_disembarked", self._on_unit_disembarked)
+        if "SCINTILLATING TEMPO" in names:
+            add("unit_move_started", self._on_unit_move_started)
+            add("charge_declared", self._on_charge_declared)
+            add("unit_set_up", self._on_unit_set_up)
 
         if names & {
             "OVERWATCH",
@@ -1607,6 +1613,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_aeldari_corsair)
         if "VENOMOUS WRATH" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_aeldari_serpents)
+        if "SUPPRESS AND OVERWHELM" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_genestealer_cults_brood_brother_auxilia)
         if names & {"DIABOLIC MAJESTY", "HEIGHTENED JEALOUSY"}:
             add("emperors_children_favoured_champions_updated", self._on_emperors_children_favoured_champions_updated)
 
@@ -2970,6 +2978,9 @@ class StratagemManager(
                 result["reason"] = "Target cannot be overwatched"
                 return result
             shooter_unit = context.get("shooter_unit") or context.get("target_unit") or context.get("unit")
+            if self._is_overwatch_shooter_blocked_this_turn(shooter_unit):
+                result["reason"] = "Unit cannot use Fire Overwatch this turn"
+                return result
             blocked_fn = getattr(enemy_unit, "is_overwatch_prevented_against", None)
             if callable(blocked_fn):
                 try:
@@ -7894,6 +7905,11 @@ class StratagemManager(
     def _on_unit_move_started(self, unit, action: str, **kwargs):
         self._maybe_queue_overwatch(unit, action, when='start')
         self._maybe_queue_apoplectic_frenzy(unit, action)
+        self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
+            unit=unit,
+            trigger="move_started",
+            action=action,
+        )
         self._queue_bringers_of_flame_move_started_reactions(unit=unit, action=action)
         self._queue_aeldari_aspect_host_move_start_reactions(unit=unit, action=action)
         self._queue_world_eaters_vessels_move_start_reactions(unit=unit, action=action)
@@ -7929,6 +7945,11 @@ class StratagemManager(
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
+        self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
+            unit=unit,
+            trigger="charge_declared",
+            action="charge",
+        )
         self._queue_shadow_legion_charge_declared_reactions(
             charging_unit=unit,
             target_units=list(target_units or []),
@@ -7948,6 +7969,11 @@ class StratagemManager(
 
     def _on_unit_set_up(self, unit, **kwargs):
         self._track_a_challenge_met_set_up(unit)
+        self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
+            unit=unit,
+            trigger="unit_set_up",
+            action="set_up",
+        )
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="set_up")
         self._queue_augurium_unit_set_up_reactions(unit=unit, **kwargs)
 
@@ -8683,6 +8709,20 @@ class StratagemManager(
     def _on_unit_shooting_resolved_aeldari_serpents(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         try:
             self._queue_aeldari_serpents_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
+    def _on_unit_shooting_resolved_genestealer_cults_brood_brother_auxilia(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ):
+        try:
+            self._queue_genestealer_cults_brood_brother_auxilia_shooting_resolved_reactions(
                 attacker_unit=attacker_unit,
                 hits_by_target=hits_by_target,
             )
@@ -10906,6 +10946,32 @@ class StratagemManager(
         self._clear_armour_of_contempt_for_attacker(unit)
         self._clear_defensive_effects_for_attacker(unit)
 
+    def _is_overwatch_shooter_blocked_this_turn(self, unit: Any) -> bool:
+        if unit is None or self.game is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("gsc_suppress_and_overwhelm_active", False)):
+            return False
+        owner = str(sr.get("gsc_suppress_and_overwhelm_turn_owner", "") or "")
+        if owner:
+            active_player = getattr(self.game, "get_current_player", lambda: None)()
+            active_owner = str(getattr(active_player, "id", "") or "")
+            if owner != active_owner:
+                return False
+        try:
+            marked_turn = int(sr.get("gsc_suppress_and_overwhelm_turn", 0) or 0)
+        except Exception:
+            marked_turn = 0
+        if marked_turn:
+            try:
+                if int(getattr(self.game, "turn", 0) or 0) != marked_turn:
+                    return False
+            except Exception:
+                return False
+        return True
+
     def _maybe_queue_overwatch(self, moving_unit, action: str, when: str) -> None:
         # Only offer to the opponent of the moving unit's owner
         try:
@@ -10959,6 +11025,8 @@ class StratagemManager(
                     continue
                 if getattr(unit, 'is_titanic', False):
                     continue  # Restriction: cannot select a TITANIC friendly unit
+                if self._is_overwatch_shooter_blocked_this_turn(unit):
+                    continue
                 # Core rule: Overwatch targets the shooter; battle-shocked units cannot be targeted.
                 if _unit_cannot_be_target_of_stratagem(unit):
                     continue
@@ -12387,6 +12455,11 @@ class StratagemManager(
         s = self.get_by_name(name)
         if not s:
             return False
+        name_u = (s.name or "").strip().upper()
+        if name_u in ("OVERWATCH", "FIRE OVERWATCH"):
+            shooter_unit = kwargs.get("shooter_unit") or kwargs.get("target_unit") or kwargs.get("unit")
+            if self._is_overwatch_shooter_blocked_this_turn(shooter_unit):
+                return False
         return s.can_use(self.player, self.game, **kwargs)
 
     def use(self, name: str, **kwargs) -> bool:
@@ -13189,6 +13262,8 @@ class StratagemManager(
                             continue
                         if getattr(unit, 'is_titanic', False):
                             continue
+                        if self._is_overwatch_shooter_blocked_this_turn(unit):
+                            continue
                         # Core rule: Overwatch targets the shooter; battle-shocked units cannot be targeted.
                         if _unit_cannot_be_target_of_stratagem(unit):
                             continue
@@ -13209,6 +13284,9 @@ class StratagemManager(
                 logger.error("ERROR: Overwatch: no eligible shooter in 24\"")
                 return False
             # Even if a shooter was explicitly provided, enforce battle-shock restriction.
+            if self._is_overwatch_shooter_blocked_this_turn(shooter):
+                logger.error("ERROR: Overwatch: selected unit cannot use Fire Overwatch this turn")
+                return False
             if _unit_cannot_be_target_of_stratagem(shooter):
                 logger.error("ERROR: Overwatch: cannot target a Battle-shocked unit")
                 return False
@@ -14939,7 +15017,7 @@ class StratagemManager(
         tyranids_result = self._use_tyranids_invasion_fleet_stratagem(s, **kwargs)
         if tyranids_result is not None:
             return tyranids_result
-        genestealer_cults_result = self._use_genestealer_cults_host_of_ascension_stratagem(s, **kwargs)
+        genestealer_cults_result = self._use_genestealer_cults_stratagem(s, **kwargs)
         if genestealer_cults_result is not None:
             return genestealer_cults_result
         imperial_knights_result = self._use_imperial_knights_valourstrike_stratagem(s, **kwargs)

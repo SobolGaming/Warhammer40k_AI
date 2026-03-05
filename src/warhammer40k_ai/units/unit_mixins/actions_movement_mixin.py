@@ -8050,6 +8050,70 @@ class ActionsMovementMixin:
                 deduped.append(root)
             target_units = deduped
 
+        if target_units:
+            is_gsc_unit = False
+            try:
+                source_army = self.get_parent_army()
+            except Exception:
+                source_army = None
+            gsc_mgr_for_target_check = (
+                getattr(source_army, "genestealer_cults_detachments", None) if source_army is not None else None
+            )
+            gsc_unit_checker = (
+                getattr(gsc_mgr_for_target_check, "_unit_is_genestealer_cults", None)
+                if gsc_mgr_for_target_check is not None
+                else None
+            )
+            if callable(gsc_unit_checker):
+                try:
+                    is_gsc_unit = bool(gsc_unit_checker(self))
+                except Exception:
+                    is_gsc_unit = False
+            if not is_gsc_unit:
+                try:
+                    is_gsc_unit = bool(self.has_any_keyword("GENESTEALER CULTS"))
+                except Exception:
+                    is_gsc_unit = False
+            if not is_gsc_unit:
+                try:
+                    is_gsc_unit = str(getattr(self, "faction_id", "") or "").strip().upper() == "GC"
+                except Exception:
+                    is_gsc_unit = False
+
+            if is_gsc_unit:
+                owner_id = ""
+                turn_no = 0
+                if game is not None:
+                    try:
+                        current_player = game.get_current_player()
+                    except Exception:
+                        current_player = None
+                    owner_id = str(getattr(current_player, "id", "") or "")
+                    if not owner_id and source_army is not None:
+                        owner_id = str(getattr(getattr(source_army, "player", None), "id", "") or "")
+                    try:
+                        turn_no = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        turn_no = 0
+                for target in list(target_units or []):
+                    sr = getattr(target, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    if not bool(sr.get("gsc_suppress_and_overwhelm_active", False)):
+                        continue
+                    if game is None:
+                        return True
+                    marked_owner = str(sr.get("gsc_suppress_and_overwhelm_turn_owner", "") or "")
+                    if marked_owner and owner_id and marked_owner != owner_id:
+                        continue
+                    try:
+                        marked_turn = int(sr.get("gsc_suppress_and_overwhelm_turn", 0) or 0)
+                    except Exception:
+                        marked_turn = 0
+                    if marked_turn and turn_no and marked_turn != turn_no:
+                        continue
+                    return True
+
         army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
         necrons_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
         annihilation_protocol_reroll_applies = (
@@ -8699,6 +8763,74 @@ class ActionsMovementMixin:
                 return False
         return True
 
+    def _nightmare_shroud_no_overwatch_active(self, *, game: Optional['Game'] = None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not sr.get("nightmare_shroud_no_overwatch"):
+            return False
+        if game is None:
+            try:
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is None:
+            return True
+        owner_id = str(sr.get("nightmare_shroud_turn_owner", "") or "")
+        if owner_id:
+            try:
+                current = game.get_current_player()
+            except Exception:
+                current = None
+            if current is None or str(getattr(current, "id", "") or "") != owner_id:
+                return False
+        try:
+            turn = int(sr.get("nightmare_shroud_turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if turn:
+            try:
+                if int(getattr(game, "turn", 0) or 0) != turn:
+                    return False
+            except Exception:
+                return False
+        return True
+
+    def _scintillating_tempo_no_overwatch_active(self, *, game: Optional['Game'] = None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not sr.get("scintillating_tempo_no_overwatch"):
+            return False
+        if game is None:
+            try:
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is None:
+            return True
+        owner_id = str(sr.get("scintillating_tempo_turn_owner", "") or "")
+        if owner_id:
+            try:
+                current = game.get_current_player()
+            except Exception:
+                current = None
+            if current is None or str(getattr(current, "id", "") or "") != owner_id:
+                return False
+        try:
+            turn = int(sr.get("scintillating_tempo_turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if turn:
+            try:
+                if int(getattr(game, "turn", 0) or 0) != turn:
+                    return False
+            except Exception:
+                return False
+        return True
+
     def _spearhead_striker_no_overwatch_active(self, *, game: Optional['Game'] = None) -> bool:
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
@@ -8898,6 +9030,10 @@ class ActionsMovementMixin:
         if self._post_shoot_no_overwatch_active(game=game):
             return True
         if self._murderous_onslaught_no_overwatch_active(game=game):
+            return True
+        if self._nightmare_shroud_no_overwatch_active(game=game):
+            return True
+        if self._scintillating_tempo_no_overwatch_active(game=game):
             return True
         if self._spearhead_striker_no_overwatch_active(game=game):
             return True

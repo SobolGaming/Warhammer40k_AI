@@ -9,6 +9,7 @@ from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, Battlefi
 from warhammer40k_ai.roster.army import Army, ArmyValidationError
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.enhancement import Enhancement
+from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
@@ -146,6 +147,14 @@ def _target_option_id(request, target_unit: Unit | None) -> str:
         if str(payload.get("target_unit_id", "") or "") == target_id:
             return str(getattr(opt, "option_id", "") or "")
     return ""
+
+
+def _pending_reaction_by_name(stratagems, name: str):
+    target = str(name or "").strip().upper()
+    for reaction in list(stratagems.get_pending_reactions() or []):
+        if str(reaction.get("stratagem", "") or "").strip().upper() == target:
+            return reaction
+    return None
 
 
 def test_integrated_tactics_queues_optional_choice_and_skip_clears_source_lock():
@@ -387,3 +396,81 @@ def test_adaptive_reprisal_allows_heroic_intervention_for_zero_cp_once_per_turn_
         assume_optional_discounts=True,
     )
     assert int(preview_next_turn.get("cost", -1)) == 0
+
+
+def test_suppress_and_overwhelm_descriptor_registered():
+    desc = get_stratagem_tool_descriptor(stratagem_id="000009085004")
+    assert desc is not None
+    assert str(getattr(desc, "name", "") or "") == "SUPPRESS AND OVERWHELM"
+    assert "overwatch" in str(getattr(desc, "effect", "") or "").lower()
+
+
+def test_suppress_and_overwhelm_marks_enemy_for_overwatch_block_and_gsc_charge_reroll():
+    game, gsc_army, enemy_army, gsc_player, enemy_player = _build_game(detachment="Brood Brother Auxilia")
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 2
+    game.current_player_index = 0
+    gsc_player.command_points = 5
+    enemy_player.command_points = 5
+
+    astra_shooter = _make_unit(
+        "Brood Brothers Infantry",
+        faction_name="Astra Militarum",
+        keywords=["ASTRA MILITARUM", "INFANTRY"],
+        faction_keywords=["ASTRA MILITARUM"],
+    )
+    gsc_charger = _make_unit(
+        "Acolyte Hybrids",
+        faction_name="Genestealer Cults",
+        keywords=["INFANTRY"],
+        faction_keywords=["GENESTEALER CULTS"],
+    )
+    enemy_target = _make_unit(
+        "Enemy Target",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    gsc_army.add_unit(astra_shooter)
+    gsc_army.add_unit(gsc_charger)
+    enemy_army.add_unit(enemy_target)
+    _set_unit_position(astra_shooter, 10.0, 10.0)
+    _set_unit_position(gsc_charger, 11.0, 10.0)
+    _set_unit_position(enemy_target, 18.0, 10.0)
+    gsc_army.configure_rule_managers(force=True)
+    gsc_player.stratagems.refresh_available()
+    enemy_player.stratagems.refresh_available()
+    game.event_system.publish("phase_start", player=gsc_player, phase=game.phase)
+
+    game.event_system.publish("unit_shooting_resolved", attacker_unit=astra_shooter, hits_by_target={enemy_target: 1})
+    pending = _pending_reaction_by_name(gsc_player.stratagems, "SUPPRESS AND OVERWHELM")
+    assert pending is not None
+
+    used = gsc_player.stratagems.use(
+        "SUPPRESS AND OVERWHELM",
+        unit=astra_shooter,
+        enemy_unit=enemy_target,
+        phase_name="Shooting phase",
+        dequeue=True,
+    )
+    assert bool(used) is True
+    assert int(gsc_player.command_points or 0) == 4
+
+    target_sr = dict(getattr(enemy_target, "special_rules", {}) or {})
+    assert bool(target_sr.get("gsc_suppress_and_overwhelm_active")) is True
+
+    assert bool(gsc_charger.can_reroll_charge_roll(target_unit=enemy_target, game=game, game_map=game.map)) is True
+    assert bool(astra_shooter.can_reroll_charge_roll(target_unit=enemy_target, game=game, game_map=game.map)) is False
+
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    can_use_overwatch = enemy_player.stratagems.can_use(
+        "FIRE OVERWATCH",
+        phase_name="Movement phase",
+        shooter_unit=enemy_target,
+        enemy_unit=gsc_charger,
+    )
+    assert bool(can_use_overwatch) is False
+    assert bool(enemy_player.stratagems._is_overwatch_shooter_blocked_this_turn(enemy_target)) is True
+
+    game.turn = 3
+    assert bool(gsc_charger.can_reroll_charge_roll(target_unit=enemy_target, game=game, game_map=game.map)) is False

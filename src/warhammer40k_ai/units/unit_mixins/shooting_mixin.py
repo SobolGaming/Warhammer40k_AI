@@ -3628,6 +3628,60 @@ class ShootingMixin:
                 sr["murderous_onslaught_turn"] = int(turn)
             unit.special_rules = sr
 
+    def _apply_nightmare_shroud_disembark_effect(self, *, game=None, current_turn: int = 0) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return
+        if not self._attached_unit_has_enhancement_flag(
+            "enhancement_nightmare_shroud",
+            enhancement_id="000010576005",
+            enhancement_name="nightmare shroud",
+        ):
+            return
+        if game is None:
+            try:
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        try:
+            owner = str(getattr(current_player, "id", "") or "")
+        except Exception:
+            owner = ""
+        if not owner:
+            try:
+                army = self.get_parent_army()
+                owner = str(getattr(getattr(army, "player", None), "id", "") or "")
+            except Exception:
+                owner = ""
+        try:
+            turn = int(getattr(game, "turn", current_turn) or current_turn)
+        except Exception:
+            turn = int(current_turn or 0)
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for unit in members:
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["nightmare_shroud_no_overwatch"] = True
+            if owner:
+                sr["nightmare_shroud_turn_owner"] = owner
+            if turn:
+                sr["nightmare_shroud_turn"] = int(turn)
+            unit.special_rules = sr
+
     def _apply_spearhead_striker_disembark_effect(self, *, game=None, current_turn: int = 0) -> None:
         try:
             root = self.get_attached_unit_root()
@@ -4167,6 +4221,7 @@ class ShootingMixin:
                 self.special_rules = sr
                 self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
                 self._apply_murderous_onslaught_disembark_effect(game=game, current_turn=current_turn)
+                self._apply_nightmare_shroud_disembark_effect(game=game, current_turn=current_turn)
                 self._apply_spearhead_striker_disembark_effect(game=game, current_turn=current_turn)
                 self._apply_rain_of_cruelty_disembark_effect(game=game, current_turn=current_turn)
 
@@ -4217,6 +4272,7 @@ class ShootingMixin:
         self.special_rules = sr
         self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
         self._apply_murderous_onslaught_disembark_effect(game=game, current_turn=current_turn)
+        self._apply_nightmare_shroud_disembark_effect(game=game, current_turn=current_turn)
         self._apply_spearhead_striker_disembark_effect(game=game, current_turn=current_turn)
         self._apply_rain_of_cruelty_disembark_effect(game=game, current_turn=current_turn)
 
@@ -4479,6 +4535,7 @@ class ShootingMixin:
         self.special_rules = sr
         self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
         self._apply_murderous_onslaught_disembark_effect(game=game, current_turn=current_turn)
+        self._apply_nightmare_shroud_disembark_effect(game=game, current_turn=current_turn)
         self._apply_spearhead_striker_disembark_effect(game=game, current_turn=current_turn)
         self._apply_rain_of_cruelty_disembark_effect(game=game, current_turn=current_turn)
 

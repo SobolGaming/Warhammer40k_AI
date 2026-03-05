@@ -770,6 +770,27 @@ _HOST_OF_ASCENSION_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HOST_OF_ASCENSION_STRATAGEM_DESCRIPTORS.values()
 }
 
+_BROOD_BROTHER_AUXILIA_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009085004": StratagemToolDescriptor(
+        stratagem_id="000009085004",
+        name="SUPPRESS AND OVERWHELM",
+        timing="shooting_phase_after_friendly_astra_militarum_unit_shoots",
+        target="friendly_astra_militarum_unit_that_has_shot_and_enemy_hit_by_it",
+        duration="until_end_of_turn",
+        effect="mark_enemy_unit_no_overwatch_and_gsc_charge_reroll_against_it",
+        cp_cost=1,
+        effect_params={
+            "requires_hit_enemy_target": True,
+            "blocks_fire_overwatch_for_marked_enemy": True,
+            "gsc_charge_reroll_against_marked_enemy": True,
+        },
+    ),
+}
+
+_BROOD_BROTHER_AUXILIA_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _BROOD_BROTHER_AUXILIA_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009848002": StratagemToolDescriptor(
         stratagem_id="000009848002",
@@ -2663,6 +2684,26 @@ _ELDRITCH_RAIDERS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ELDRITCH_RAIDERS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_REAPERS_WAGER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009782006": StratagemToolDescriptor(
+        stratagem_id="000009782006",
+        name="SCINTILLATING TEMPO",
+        timing="movement_or_charge_phase_after_friendly_unit_selected_to_move_set_up_or_charge",
+        target="drukhari_or_harlequins_unit_selected_to_move_set_up_or_charge",
+        duration="until_end_of_turn",
+        effect="prevent_overwatch_against_target_unit",
+        cp_cost=1,
+        effect_params={
+            "prevents_stratagem": "FIRE OVERWATCH",
+            "triggers": ["normal_move", "advance", "fall_back", "set_up", "declare_charge"],
+        },
+    ),
+}
+
+_REAPERS_WAGER_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _REAPERS_WAGER_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SKYSPLINTER_ASSAULT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010577004": StratagemToolDescriptor(
         stratagem_id="000010577004",
@@ -3507,6 +3548,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HOST_OF_ASCENSION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _BROOD_BROTHER_AUXILIA_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3591,6 +3635,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ELDRITCH_RAIDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _REAPERS_WAGER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SKYSPLINTER_ASSAULT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3653,6 +3700,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME.get(key)
         or _HOST_OF_ASCENSION_STRATAGEM_BY_NAME.get(key)
+        or _BROOD_BROTHER_AUXILIA_STRATAGEM_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
         or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)
         or _GRIZZLED_COMPANY_STRATAGEM_BY_NAME.get(key)
@@ -3681,6 +3729,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _GHOSTS_OF_THE_WEBWAY_STRATAGEM_BY_NAME.get(key)
         or _SERPENTS_BROOD_STRATAGEM_BY_NAME.get(key)
         or _ELDRITCH_RAIDERS_STRATAGEM_BY_NAME.get(key)
+        or _REAPERS_WAGER_STRATAGEM_BY_NAME.get(key)
         or _SKYSPLINTER_ASSAULT_STRATAGEM_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)
         or _MONTKA_STRATAGEM_BY_NAME.get(key)

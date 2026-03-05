@@ -818,6 +818,10 @@ class Enhancement:
         is_imperialis_fleet = bool(callable(is_imperialis_fleet_fn) and is_imperialis_fleet_fn())
         dru_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
         try:
+            is_skysplinter_assault = bool(dru_mgr and dru_mgr.is_skysplinter_assault())
+        except Exception:
+            is_skysplinter_assault = False
+        try:
             is_spectacle_of_spite = bool(dru_mgr and dru_mgr.is_spectacle_of_spite())
         except Exception:
             is_spectacle_of_spite = False
@@ -5942,6 +5946,13 @@ class Enhancement:
             if not is_rubricae_phalanx:
                 return
             unit.special_rules["enhancement_the_stave_abominus"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "nightmare shroud" or enh_id == "000010576005":
+            if not is_skysplinter_assault:
+                return
+            unit.special_rules["enhancement_nightmare_shroud"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

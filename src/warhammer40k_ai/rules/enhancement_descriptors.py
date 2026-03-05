@@ -2847,6 +2847,25 @@ _SPECTACLE_OF_SPITE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPECTACLE_OF_SPITE_DESCRIPTORS.values()
 }
 
+_SKYSPLINTER_ASSAULT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010576005": EnhancementToolDescriptor(
+        enhancement_id="000010576005",
+        name="Nightmare Shroud",
+        timing="on_bearer_unit_disembark",
+        target="enemy_units_targeting_bearer_unit",
+        duration="until_end_of_turn",
+        effect="prevent_overwatch_against_bearer_unit_after_disembark",
+        effect_params={
+            "trigger": "disembark",
+            "prevents_stratagem": "FIRE OVERWATCH",
+        },
+    ),
+}
+
+_SKYSPLINTER_ASSAULT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SKYSPLINTER_ASSAULT_DESCRIPTORS.values()
+}
+
 _COURT_OF_THE_PHOENICIAN_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010654002": EnhancementToolDescriptor(
         enhancement_id="000010654002",
@@ -6588,6 +6607,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPECTACLE_OF_SPITE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SKYSPLINTER_ASSAULT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _COURT_OF_THE_PHOENICIAN_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6868,6 +6890,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SOULFORGED_WARPACK_BY_NAME.get(key)
         or _VETERANS_OF_THE_LONG_WAR_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
+        or _SKYSPLINTER_ASSAULT_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_BY_NAME.get(key)
         or _COTERIE_OF_CONCEITED_BY_NAME.get(key)

@@ -95,6 +95,18 @@ class GenestealerCultsStratagemMixin:
         detachment = str(getattr(army, "detachment_type", "") or "").strip().lower()
         return faction_id == "GC" and detachment == "host of ascension"
 
+    def _is_brood_brother_auxilia_detachment(self) -> bool:
+        mgr = self._gsc_detachment_mgr()
+        checker = getattr(mgr, "is_brood_brother_auxilia", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker())
+        army = self._gsc_army()
+        if army is None:
+            return False
+        faction_id = str(getattr(army, "faction_id", "") or "").strip().upper()
+        detachment = str(getattr(army, "detachment_type", "") or "").strip().lower()
+        return faction_id == "GC" and detachment == "brood brother auxilia"
+
     @staticmethod
     def _gsc_is_alive(unit: Any) -> bool:
         if unit is None:
@@ -135,6 +147,26 @@ class GenestealerCultsStratagemMixin:
             except (AttributeError, TypeError, ValueError):
                 pass
         return str(getattr(root, "faction_id", "") or "").strip().upper() == "GC"
+
+    def _gsc_is_astra_militarum_unit(self, unit: Any) -> bool:
+        root = self._gsc_root(unit)
+        if root is None:
+            return False
+        mgr = self._gsc_detachment_mgr()
+        checker = getattr(mgr, "_unit_is_astra_militarum", None) if mgr is not None else None
+        if callable(checker):
+            try:
+                return bool(checker(root))
+            except (AttributeError, TypeError, ValueError):
+                return False
+        has_any = getattr(root, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                if bool(has_any("ASTRA MILITARUM")):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        return False
 
     def _gsc_is_battleline(self, unit: Any) -> bool:
         root = self._gsc_root(unit)
@@ -777,6 +809,180 @@ class GenestealerCultsStratagemMixin:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
+
+    @staticmethod
+    def _gsc_positive_hits(value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, (list, tuple, set, dict)):
+            return bool(len(value))
+        try:
+            return int(value or 0) > 0
+        except (TypeError, ValueError):
+            return False
+
+    def _queue_genestealer_cults_brood_brother_auxilia_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: Any,
+    ) -> None:
+        if not self._is_brood_brother_auxilia_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        game = getattr(self, "game", None)
+        if game is None or attacker_unit is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+
+        attacker_root = self._gsc_root(attacker_unit)
+        if attacker_root is None:
+            return
+        if not self._gsc_owned_by_player(attacker_root, self.player):
+            return
+        if not self._gsc_is_astra_militarum_unit(attacker_root):
+            return
+        if not self._gsc_on_battlefield(attacker_root, require_targetable=True):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(attacker_root)):
+            return
+
+        stratagem = self.get_by_name("SUPPRESS AND OVERWHELM")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        if isinstance(hits_by_target, dict):
+            for target, hits in list(hits_by_target.items()):
+                if not self._gsc_positive_hits(hits):
+                    continue
+                target_root = self._gsc_root(target)
+                if target_root is None:
+                    continue
+                target_id = self._gsc_sort_key(target_root)
+                if target_id and target_id in seen:
+                    continue
+                if target_id:
+                    seen.add(target_id)
+                if self._gsc_owned_by_player(target_root, self.player):
+                    continue
+                if not self._gsc_on_battlefield(target_root, require_targetable=True):
+                    continue
+                candidates.append(target_root)
+        candidates = sorted(candidates, key=self._gsc_sort_key)
+        if not candidates:
+            return
+        if self._gsc_reaction_exists("unit_shooting_resolved", stratagem.name, unit=attacker_root):
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": attacker_root,
+            "target_unit": attacker_root,
+            "attacker_unit": attacker_root,
+            "enemy_candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["enemy_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _use_genestealer_cults_brood_brother_auxilia_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None or not self._is_brood_brother_auxilia_detachment():
+            return None
+        name_u = self._gsc_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "SUPPRESS AND OVERWHELM":
+            return self._use_genestealer_cults_suppress_and_overwhelm(stratagem, **kwargs)
+        return None
+
+    def _use_genestealer_cults_suppress_and_overwhelm(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: SUPPRESS AND OVERWHELM: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: SUPPRESS AND OVERWHELM: not your phase")
+            return False
+
+        attacker_unit = context.get("unit") or context.get("target_unit") or context.get("attacker_unit")
+        attacker_root = self._gsc_root(attacker_unit) if attacker_unit is not None else None
+        if attacker_root is None:
+            logger.error("ERROR: SUPPRESS AND OVERWHELM: missing source Astra Militarum unit")
+            return False
+        if not self._gsc_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: SUPPRESS AND OVERWHELM: source unit is not yours")
+            return False
+        if not self._gsc_is_astra_militarum_unit(attacker_root):
+            logger.error("ERROR: SUPPRESS AND OVERWHELM: source must be an Astra Militarum unit")
+            return False
+        if not self._gsc_on_battlefield(attacker_root, require_targetable=True):
+            return False
+
+        enemy_candidates = self._gsc_resolve_unit_list(context.get("enemy_candidates"))
+        enemy_unit = context.get("enemy_unit") or context.get("target_enemy_unit")
+        enemy_root = self._gsc_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            if len(enemy_candidates) == 1:
+                enemy_root = enemy_candidates[0]
+            else:
+                logger.error("ERROR: SUPPRESS AND OVERWHELM: missing enemy unit hit by the source unit")
+                return False
+        if self._gsc_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: SUPPRESS AND OVERWHELM: selected enemy unit is not valid")
+            return False
+        if not self._gsc_on_battlefield(enemy_root, require_targetable=True):
+            logger.error("ERROR: SUPPRESS AND OVERWHELM: selected enemy unit must be on the battlefield")
+            return False
+        if enemy_candidates and not self._gsc_unit_in_candidates(enemy_root, enemy_candidates):
+            logger.error("ERROR: SUPPRESS AND OVERWHELM: selected enemy unit was not hit by the source unit")
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=attacker_root):
+            return False
+
+        sr = getattr(enemy_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["gsc_suppress_and_overwhelm_active"] = True
+        sr["gsc_suppress_and_overwhelm_source"] = str(
+            getattr(stratagem, "name", "SUPPRESS AND OVERWHELM") or "SUPPRESS AND OVERWHELM"
+        )
+        sr["gsc_suppress_and_overwhelm_source_unit_id"] = str(self._gsc_sort_key(attacker_root) or "")
+        if owner:
+            sr["gsc_suppress_and_overwhelm_turn_owner"] = owner
+        if turn:
+            sr["gsc_suppress_and_overwhelm_turn"] = turn
+        enemy_root.special_rules = sr
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: SUPPRESS AND OVERWHELM: %s cannot fire Overwatch this turn and GENESTEALER CULTS units can re-roll charge rolls against it.",
+            getattr(enemy_root, "name", "Enemy unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        host_result = self._use_genestealer_cults_host_of_ascension_stratagem(stratagem, **kwargs)
+        if host_result is not None:
+            return host_result
+        return self._use_genestealer_cults_brood_brother_auxilia_stratagem(stratagem, **kwargs)
 
     def _use_genestealer_cults_host_of_ascension_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None or not self._is_host_of_ascension_detachment():
