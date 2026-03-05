@@ -5289,6 +5289,8 @@ def _classify_ability_base(
     defensive_charge_roll_penalty_support = _defensive_charge_roll_penalty_support(description)
     phase_move_support = _leading_unit_phase_move_support(description)
     phase_terrain_support = _leading_unit_move_and_phase_terrain_support(description)
+    generic_phase_terrain_support = _phase_terrain_move_support(description)
+    move_over_models_titanic_low_terrain_support = _move_over_models_excluding_titanic_and_low_terrain_support(description)
     move_over_friendly_support = _move_over_friendly_monster_vehicle_support(description)
     move_over_low_terrain_support = _move_over_low_terrain_support(description)
     titanic_move_through_support = _titanic_move_through_support(description)
@@ -5444,6 +5446,8 @@ def _classify_ability_base(
         return conditional_lone_operative_support
     if battle_protocols_support:
         return battle_protocols_support
+    if move_over_models_titanic_low_terrain_support:
+        return move_over_models_titanic_low_terrain_support
     if move_over_friendly_support:
         return move_over_friendly_support
     if move_over_low_terrain_support:
@@ -5532,6 +5536,8 @@ def _classify_ability_base(
         return phase_move_support
     if phase_terrain_support:
         return phase_terrain_support
+    if generic_phase_terrain_support:
+        return generic_phase_terrain_support
     if half_range_attack_keyword_support:
         return half_range_attack_keyword_support
     if target_keyword_attack_keyword_support:
@@ -11064,6 +11070,71 @@ def _leading_unit_move_and_phase_terrain_support(description: str) -> Optional[T
     )
 
 
+def _phase_terrain_move_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time a model in (?:the bearer s|that|this|this model s|this models) unit makes a (?P<moves>.+?) move "
+        r"it can move horizontally through terrain features"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    moves_text = (m.group("moves") or "").strip()
+    tokens = [t for t in moves_text.split() if t]
+    allowed = {"normal", "advance", "fall", "back", "fallback", "charge", "or", "and"}
+    if not tokens or any(t not in allowed for t in tokens):
+        return None
+    if "normal" not in tokens:
+        return None
+    move_types = ["Normal"]
+    if "advance" in tokens:
+        move_types.append("Advance")
+    if "fallback" in tokens or "fall back" in moves_text:
+        move_types.append("Fall Back")
+    if "charge" in tokens:
+        move_types.append("Charge")
+    if not move_types:
+        return None
+    return ("Supported", f"{'/'.join(move_types)}: move horizontally through terrain features.")
+
+
+def _move_over_models_excluding_titanic_and_low_terrain_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time (?:this model|this unit) makes a (?P<moves>.+?) move "
+        r"it can move (?:over|through) models? excluding titanic models? and "
+        r"(?:sections of )?terrain features that are (?P<height>\d+) or less in height"
+        r"(?: as if they were not there)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    moves_text = (m.group("moves") or "").strip()
+    tokens = [t for t in moves_text.split() if t]
+    allowed = {"normal", "advance", "fall", "back", "fallback", "or", "and"}
+    if not tokens or any(t not in allowed for t in tokens):
+        return None
+    if "normal" not in tokens:
+        return None
+    move_types = ["Normal"]
+    if "advance" in tokens:
+        move_types.append("Advance")
+    if "fallback" in tokens or "fall back" in moves_text:
+        move_types.append("Fall Back")
+    if not move_types:
+        return None
+    height = m.group("height") or "4"
+    return ("Supported", f"{'/'.join(move_types)}: move through models (excluding TITANIC) and terrain <= {height}\".")
+
+
 def _move_over_friendly_monster_vehicle_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -12345,6 +12416,7 @@ def _stratagem_support(
         "PRE-CALIBRATED PURGE SOLUTION": "Shooting phase: selected ADEPTUS MECHANICUS unit not yet selected to shoot re-rolls ranged Hit rolls against enemy units in the opponent deployment zone this phase; if selected unit has BATTLELINE, optionally select one friendly SKITARII unit (excluding BATTLELINE) within 6\" to gain the same effect.",
         "PURGING FIRE": "Shooting phase: ordered ASTRA MILITARUM unit within objective range (not yet shot) gains Lethal Hits on ranged attacks this phase.",
         "SNAP TO IT": "Any phase: ASTRA MILITARUM OFFICER issues one Voice of Command order immediately (local prompt or explicit remote officer/order/target payload).",
+        "UNTRAMMELLED FEROCITY": "Movement phase: targeted TYRANIDS MONSTER unit can move through models (excluding TITANIC) and terrain <=4\"; can move within Engagement Range but cannot end there; crossing >4\" terrain risks Battle-shock on 1.",
         "VETERAN SHARPSHOOTERS": "Shooting phase: ASTRA MILITARUM unit that has not yet shot gains Ignores Cover on ranged attacks this phase.",
         "VOW OF RETRIBUTION": "Shooting phase: IMPERIAL KNIGHTS unit that has not yet shot gains Lethal Hits on ranged attacks until end of phase.",
         "FULL TILT": "Movement phase: IMPERIAL KNIGHTS unit that has not been selected to move gains +2\" Move and +2 to Advance rolls until end of phase.",
@@ -12371,6 +12443,7 @@ def _stratagem_support(
         "SWIFT AS THE EAGLE": "Opponent Shooting phase: targeted ADEPTUS CUSTODES unit makes a Normal move up to 6\" and can move within Engagement Range.",
         "UNLEASH THE LIONS": "Command phase: split Allarus/Aquilon unit on battlefield into 1-model units (leaders split too); Starting Strength 1.",
         "VECTORED ENGINES": "Your Movement phase reaction after a friendly AELDARI VEHICLE FLY Falls Back: that unit can shoot this turn despite falling back.",
+        "SHOCK CAVALRY": "Movement/Charge phase: targeted THUNDERWOLF CAVALRY unit can move through models (excluding TITANIC) and terrain <=4\"; move/advance/fall back can pass within Engagement Range but cannot end there.",
         "ANCESTRAL SENTENCE": "Your Shooting phase: selected LEAGUES OF VOTANN unit not yet selected to shoot gains [SUSTAINED HITS 1] on ranged weapons until end of phase; can optionally spend 3 YP to use [SUSTAINED HITS 2] instead.",
         "HONOUR OF THE HOLD": "Fight phase: selected LEAGUES OF VOTANN unit not yet selected to fight picks one enemy in Engagement Range; until end of phase, melee attacks targeting that enemy gain +1 AP (or +2 AP if 3 YP were spent when using the stratagem).",
         "HUNTR'S MARK": "Your Shooting phase: selected LEAGUES OF VOTANN unit not yet selected to shoot re-rolls Hit rolls of 1 and Wound rolls of 1 on ranged attacks until end of phase.",

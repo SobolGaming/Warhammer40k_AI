@@ -283,6 +283,10 @@ Several abilities encode movement exceptions as `special_rules` flags and are fo
 into validation or distance logic:
 - `move_over_low_terrain_height_*` raises the freely climbable threshold for specific
   move types (e.g., Normal/Advance/Fall Back) so terrain <= X" is treated as "move over".
+- `bearer_unit_phase_move_terrain_only_types` enables phase-gated terrain pass-through
+  (for example, Normal/Advance/Fall Back/Charge move-through-terrain abilities).
+- `bearer_unit_phase_move_models_only_*` enables model pass-through (optionally with
+  TITANIC blocking) without automatically granting full terrain pass-through.
 - `has_flip_belt` ignores vertical distance for allowed move types.
 - `has_super_heavy_walker` extends the freely climbable height.
 - `move_over_friendly_monster_vehicle_*` permits moving through friendly MONSTER/VEHICLE.

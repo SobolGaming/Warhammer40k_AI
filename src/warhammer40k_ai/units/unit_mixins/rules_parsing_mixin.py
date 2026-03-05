@@ -4033,10 +4033,18 @@ class RulesParsingMixin:
             "move_over_friendly_monster_vehicle_types",
             "move_over_low_terrain_height_types",
             "move_over_low_terrain_height_value",
+            "bearer_unit_phase_move_models_only_types",
+            "bearer_unit_phase_move_models_only_block_titanic_types",
         ):
             if key in sr:
                 del sr[key]
 
+        models_only_block_titanic_pattern = (
+            r"each time (?:this model|this unit) makes a (?P<moves>.+?) move "
+            r"it can move (?:over|through) models? excluding titanic models? and "
+            r"(?:sections of )?terrain features that are (?P<height>\d+) or less in height"
+            r"(?: as if they were not there)?"
+        )
         pattern = (
             r"each time (?:this model|this unit) makes a (?P<moves>.+?) move "
             r"it can move (?:over|through) friendly monster (?:and|or) vehicle models? and "
@@ -4067,6 +4075,8 @@ class RulesParsingMixin:
                 parsed.add("fall_back")
             return parsed
 
+        model_move_types: set[str] = set()
+        model_block_titanic_move_types: set[str] = set()
         for name, desc in self._iter_ability_entries_for_rules(model=None):
             text = str(desc or name or "")
             text = self._strip_eligibility_prefix(text)
@@ -4080,6 +4090,23 @@ class RulesParsingMixin:
             if not norm or norm in seen:
                 continue
             seen.add(norm)
+            m = re.fullmatch(models_only_block_titanic_pattern, norm)
+            if m:
+                moves_text = (m.group("moves") or "").strip()
+                move_types = _parse_move_types(moves_text or "")
+                if move_types is None:
+                    continue
+                model_move_types.update(move_types)
+                model_block_titanic_move_types.update(move_types)
+                low_terrain_move_types.update(move_types)
+                try:
+                    height = int(m.group("height"))
+                except Exception:
+                    height = None
+                if height is not None:
+                    if height_value is None or height > height_value:
+                        height_value = height
+                continue
             m = re.fullmatch(pattern, norm)
             if m:
                 moves_text = (m.group("moves") or "").strip()
@@ -4114,6 +4141,10 @@ class RulesParsingMixin:
 
         if friendly_move_types:
             sr["move_over_friendly_monster_vehicle_types"] = sorted(friendly_move_types)
+        if model_move_types:
+            sr["bearer_unit_phase_move_models_only_types"] = sorted(model_move_types)
+        if model_block_titanic_move_types:
+            sr["bearer_unit_phase_move_models_only_block_titanic_types"] = sorted(model_block_titanic_move_types)
         if height_value is not None:
             sr["move_over_low_terrain_height_value"] = float(height_value)
             sr["move_over_low_terrain_height_types"] = sorted(low_terrain_move_types or {"move", "advance"})

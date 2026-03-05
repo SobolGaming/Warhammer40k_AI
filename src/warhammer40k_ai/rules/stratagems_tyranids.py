@@ -61,6 +61,11 @@ class TyranidsStratagemMixin:
         checker = getattr(mgr, "is_vanguard_onslaught", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_tyranids_crusher_stampede_detachment(self) -> bool:
+        mgr = self._tyr_detachment_mgr()
+        checker = getattr(mgr, "is_crusher_stampede", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_tyranids_unit(self, unit: Any) -> bool:
         root = self._tyr_root(unit)
         if root is None:
@@ -518,6 +523,38 @@ class TyranidsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._tyr_sort_key)
 
+    def _tyr_untrammelled_ferocity_candidates(self) -> list[Any]:
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            is_monster = bool(getattr(root, "is_monster", False)) or self._tyr_has_keyword(root, "MONSTER")
+            if not is_monster:
+                continue
+            if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
     def _tyr_spend_cp(self, stratagem: Any, *, target_unit: Any = None, enemy_unit: Any = None) -> bool:
         effective_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         apply_cost = getattr(self.player, "apply_stratagem_cp_cost", None)
@@ -882,6 +919,86 @@ class TyranidsStratagemMixin:
                 sr.pop(key, None)
             root.special_rules = sr
 
+    def _cleanup_tyranids_crusher_stampede_phase_end_effects(self, *, phase: Any = None) -> None:
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return
+        if str(getattr(phase, "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            exp = str(sr.get("tyranids_untrammelled_ferocity_expires_phase", "") or "").strip().upper()
+            if sr.get("tyranids_untrammelled_ferocity_active") is not True:
+                continue
+            if exp and exp != "MOVEMENT_PHASE":
+                continue
+
+            for key, added_key in (
+                ("bearer_unit_phase_move_types", "tyranids_untrammelled_ferocity_added_phase_move_types"),
+                (
+                    "bearer_unit_phase_move_block_titanic_types",
+                    "tyranids_untrammelled_ferocity_added_phase_move_block_titanic_types",
+                ),
+                (
+                    "bearer_unit_phase_move_engagement_types",
+                    "tyranids_untrammelled_ferocity_added_phase_move_engagement_types",
+                ),
+            ):
+                added = set(sr.get(added_key) or [])
+                if not added:
+                    continue
+                current = list(sr.get(key) or [])
+                kept = [item for item in current if item not in added]
+                if kept:
+                    sr[key] = kept
+                else:
+                    sr.pop(key, None)
+
+            if bool(sr.get("tyranids_untrammelled_ferocity_prev_stride_height_present", False)):
+                sr["titanic_stride_tall_terrain_height"] = float(
+                    sr.get("tyranids_untrammelled_ferocity_prev_stride_height_value", 4.0) or 4.0
+                )
+            else:
+                sr.pop("titanic_stride_tall_terrain_height", None)
+
+            if bool(sr.get("tyranids_untrammelled_ferocity_prev_stride_source_present", False)):
+                sr["titanic_stride_source"] = str(
+                    sr.get("tyranids_untrammelled_ferocity_prev_stride_source_value", "") or ""
+                )
+            else:
+                sr.pop("titanic_stride_source", None)
+
+            for key in (
+                "tyranids_untrammelled_ferocity_active",
+                "tyranids_untrammelled_ferocity_expires_phase",
+                "tyranids_untrammelled_ferocity_turn_owner",
+                "tyranids_untrammelled_ferocity_turn",
+                "tyranids_untrammelled_ferocity_source",
+                "tyranids_untrammelled_ferocity_added_phase_move_types",
+                "tyranids_untrammelled_ferocity_added_phase_move_block_titanic_types",
+                "tyranids_untrammelled_ferocity_added_phase_move_engagement_types",
+                "tyranids_untrammelled_ferocity_prev_stride_height_present",
+                "tyranids_untrammelled_ferocity_prev_stride_height_value",
+                "tyranids_untrammelled_ferocity_prev_stride_source_present",
+                "tyranids_untrammelled_ferocity_prev_stride_source_value",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
     def _use_tyranids_invasion_fleet_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -902,6 +1019,9 @@ class TyranidsStratagemMixin:
         if self._is_tyranids_vanguard_onslaught_detachment():
             if name_u == "INVISIBLE HUNTER":
                 return self._use_tyranids_invisible_hunter(stratagem, **kwargs)
+        if self._is_tyranids_crusher_stampede_detachment():
+            if name_u == "UNTRAMMELLED FEROCITY":
+                return self._use_tyranids_untrammelled_ferocity(stratagem, **kwargs)
         return None
 
     def _use_tyranids_rapid_regeneration(self, stratagem: Any, **kwargs) -> bool:
@@ -1529,4 +1649,114 @@ class TyranidsStratagemMixin:
         self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         moved_units = ", ".join(str(getattr(root, "name", "Unit") or "Unit") for root in list(selected_roots))
         logger.info("INFO: INVISIBLE HUNTER: %s entered Strategic Reserves.", moved_units)
+        return True
+
+    def _use_tyranids_untrammelled_ferocity(self, stratagem: Any, **kwargs) -> bool:
+        selected = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if selected is None and len(candidates) == 1:
+            selected = candidates[0]
+        if selected is None:
+            logger.error("ERROR: UNTRAMMELLED FEROCITY: no target unit provided")
+            return False
+
+        root = self._tyr_root(selected)
+        if root is None:
+            return False
+        if not self._is_tyranids_crusher_stampede_detachment():
+            return False
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "movement phase":
+            logger.error("ERROR: UNTRAMMELLED FEROCITY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: UNTRAMMELLED FEROCITY: not your turn")
+            return False
+
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: UNTRAMMELLED FEROCITY: target unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: UNTRAMMELLED FEROCITY: target must be on the battlefield and targetable")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: UNTRAMMELLED FEROCITY: target must be a TYRANIDS unit")
+            return False
+        is_monster = bool(getattr(root, "is_monster", False)) or self._tyr_has_keyword(root, "MONSTER")
+        if not is_monster:
+            logger.error("ERROR: UNTRAMMELLED FEROCITY: target must be a MONSTER unit")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
+            logger.error("ERROR: UNTRAMMELLED FEROCITY: target already moved this phase")
+            return False
+
+        eligible = candidates or self._tyr_untrammelled_ferocity_candidates()
+        if eligible and not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: UNTRAMMELLED FEROCITY: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: UNTRAMMELLED FEROCITY: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+
+        move_types = {"move", "advance", "fall_back"}
+
+        def _merge_move_types(rule_key: str, added_key: str) -> None:
+            current = set(sr.get(rule_key) or [])
+            added = sorted([move_type for move_type in move_types if move_type not in current])
+            merged = sorted(current.union(move_types))
+            if merged:
+                sr[rule_key] = merged
+            if added:
+                sr[added_key] = added
+            else:
+                sr.pop(added_key, None)
+
+        _merge_move_types("bearer_unit_phase_move_types", "tyranids_untrammelled_ferocity_added_phase_move_types")
+        _merge_move_types(
+            "bearer_unit_phase_move_block_titanic_types",
+            "tyranids_untrammelled_ferocity_added_phase_move_block_titanic_types",
+        )
+        _merge_move_types(
+            "bearer_unit_phase_move_engagement_types",
+            "tyranids_untrammelled_ferocity_added_phase_move_engagement_types",
+        )
+
+        stride_height_present = "titanic_stride_tall_terrain_height" in sr
+        stride_source_present = "titanic_stride_source" in sr
+        sr["tyranids_untrammelled_ferocity_prev_stride_height_present"] = bool(stride_height_present)
+        sr["tyranids_untrammelled_ferocity_prev_stride_source_present"] = bool(stride_source_present)
+        if stride_height_present:
+            sr["tyranids_untrammelled_ferocity_prev_stride_height_value"] = float(
+                sr.get("titanic_stride_tall_terrain_height", 4.0) or 4.0
+            )
+        if stride_source_present:
+            sr["tyranids_untrammelled_ferocity_prev_stride_source_value"] = str(sr.get("titanic_stride_source", "") or "")
+
+        sr["titanic_stride_tall_terrain_height"] = 4.0
+        sr["titanic_stride_source"] = str(getattr(stratagem, "name", "") or "UNTRAMMELLED FEROCITY")
+        sr["tyranids_untrammelled_ferocity_active"] = True
+        sr["tyranids_untrammelled_ferocity_expires_phase"] = "MOVEMENT_PHASE"
+        sr["tyranids_untrammelled_ferocity_source"] = str(getattr(stratagem, "name", "") or "UNTRAMMELLED FEROCITY")
+
+        owner_id = str(getattr(self.player, "id", "") or "")
+        if owner_id:
+            sr["tyranids_untrammelled_ferocity_turn_owner"] = owner_id
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        if turn:
+            sr["tyranids_untrammelled_ferocity_turn"] = turn
+
+        root.special_rules = sr
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNTRAMMELLED FEROCITY: %s can move through models (excluding TITANIC) and terrain this phase.",
+            getattr(root, "name", "Unit"),
+        )
         return True

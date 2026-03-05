@@ -23,6 +23,7 @@ from .stratagems_genestealer_cults import GenestealerCultsStratagemMixin
 from .stratagems_tau_empire import TauEmpireStratagemMixin
 from .stratagems_thousand_sons import ThousandSonsStratagemMixin
 from .stratagems_tyranids import TyranidsStratagemMixin
+from .stratagems_space_marines import SpaceMarinesStratagemMixin
 from .stratagems_votann import VotannStratagemMixin
 from .stratagems_world_eaters import WorldEatersStratagemMixin
 from .stratagems_grey_knights import GreyKnightsStratagemMixin
@@ -144,6 +145,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OVERSHADOWED BY NONE",
     "PUNISH THE CRAVEN",
     "SKYBORNE SANCTUARY",
+    "SHOCK CAVALRY",
     "TO THEIR FINAL BREATH",
     "SMOKESCREEN",
     "SKULLS FOR THE SKULL THRONE!",
@@ -161,6 +163,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SNAP TO IT",
     "UNBOUND ARROGANCE",
     "UNLEASH THE LIONS",
+    "UNTRAMMELLED FEROCITY",
     "UNBRIDLED CARNAGE",
     "VETERAN SHARPSHOOTERS",
     "VOW OF RETRIBUTION",
@@ -1317,6 +1320,7 @@ class StratagemManager(
     NecronsStratagemMixin,
     AeldariStratagemMixin,
     DrukhariStratagemMixin,
+    SpaceMarinesStratagemMixin,
     VotannStratagemMixin,
     TauEmpireStratagemMixin,
     ThousandSonsStratagemMixin,
@@ -4267,6 +4271,7 @@ class StratagemManager(
             "REVENGE OF THE RUBRICAE": "Target: your RUBRICAE unit within 6\" of a destroyed THOUSAND SONS PSYKER model; after the enemy unit shoots, it can shoot reactively into that attacker",
             "UNWAVERING PHALANX": "Target: your RUBRIC MARINES unit within Engagement Range of an enemy unit that just ended a Charge move; attacks targeting it suffer -1 to wound until end of turn",
             "THREAT ASSESSMENT ANALYSER": "Target: T'AU EMPIRE unit not yet selected to shoot; choose Sustained Hits 1 or Lethal Hits, or gain both plus [HAZARDOUS] (cannot also target with EXPERIMENTAL AMMUNITION this phase)",
+            "UNTRAMMELLED FEROCITY": "Target: TYRANIDS MONSTER unit that has not been selected to move this phase; until end of phase it can move through models (excluding TITANIC) and terrain, can move within Engagement Range but cannot end there, and crossing terrain over 4\" risks Battle-shock on a 1",
             "AGGRESSOR IMPERATIVE": "Target: SKITARII unit not yet selected to move; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\" that has not been selected to move",
             "BALEFUL HALO": "Target: non-VEHICLE ADEPTUS MECHANICUS unit selected as a target of the attacking enemy unit; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
             "BULWARK IMPERATIVE": "Target: SKITARII unit selected as a target of the attacking enemy unit; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
@@ -4278,6 +4283,7 @@ class StratagemManager(
             "INSENSATE RAMPAGE": "Target: DEATH COMPANY unit",
             "LIMB FROM LIMB": "Target: BLOOD ANGELS unit (charged)",
             "RED WRATH": "Target: BLOOD ANGELS unit (advanced)",
+            "SHOCK CAVALRY": "Target: THUNDERWOLF CAVALRY unit that has not been selected to move or declared a charge this phase; move through models (excluding TITANIC) and terrain <=4\" this phase, with move/advance/fall back able to pass within Engagement Range but not end there",
             "ANTI-GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "ANTI‑GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "BLIND GRENADES": "Target: AGENTS OF THE IMPERIUM GRENADES unit or VINDICARE ASSASSIN selected as a charge target and not in Engagement Range",
@@ -6155,6 +6161,14 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_vanguard_onslaught_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_tyranids_crusher_stampede_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_space_marines_saga_of_the_beastslayer_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -14820,6 +14834,9 @@ class StratagemManager(
         cult_result = self._use_world_eaters_cult_stratagem(s, **kwargs)
         if cult_result is not None:
             return cult_result
+        saga_beastslayer_result = self._use_space_marines_saga_of_the_beastslayer_stratagem(s, **kwargs)
+        if saga_beastslayer_result is not None:
+            return saga_beastslayer_result
         cabal_result = self._use_chaos_space_marines_cabal_stratagem(s, **kwargs)
         if cabal_result is not None:
             return cabal_result

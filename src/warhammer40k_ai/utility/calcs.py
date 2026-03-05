@@ -1576,6 +1576,8 @@ def get_validation_rules(
                     loathsome_dexterity_auto_pass_desperate_escape = True
 
     phase_move_types: set[str] = set()
+    phase_move_models_only_types: set[str] = set()
+    phase_move_models_only_block_titanic_types: set[str] = set()
     phase_move_terrain_only_types: set[str] = set()
     phase_engagement_types: set[str] = set()
     phase_move_block_titanic_types: set[str] = set()
@@ -1605,6 +1607,10 @@ def get_validation_rules(
             sr_sources.append(msr)
     for sr in sr_sources:
         phase_move_types.update(_coerce_move_types(sr.get("bearer_unit_phase_move_types")))
+        phase_move_models_only_types.update(_coerce_move_types(sr.get("bearer_unit_phase_move_models_only_types")))
+        phase_move_models_only_block_titanic_types.update(
+            _coerce_move_types(sr.get("bearer_unit_phase_move_models_only_block_titanic_types"))
+        )
         phase_move_terrain_only_types.update(_coerce_move_types(sr.get("bearer_unit_phase_move_terrain_only_types")))
         phase_engagement_types.update(_coerce_move_types(sr.get("bearer_unit_phase_move_engagement_types")))
         phase_move_block_titanic_types.update(_coerce_move_types(sr.get("bearer_unit_phase_move_block_titanic_types")))
@@ -1626,6 +1632,15 @@ def get_validation_rules(
             and move_tag == "fall_back"
         ):
             base_rules['check_desperate_escape'] = False
+
+    if move_tag and move_tag in phase_move_models_only_types:
+        base_rules['can_move_through_enemy_models'] = True
+        base_rules['can_move_through_friendly_models'] = True
+        base_rules['ignore_enemy_models_blocking'] = True
+        if move_tag in phase_move_models_only_block_titanic_types:
+            base_rules['block_titanic_models'] = True
+        elif base_rules.get('block_titanic_models', False):
+            base_rules['block_titanic_models'] = False
 
     if move_tag and move_tag in phase_move_types:
         base_rules['can_move_through_enemy_models'] = True

@@ -3023,6 +3023,60 @@ _VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CRUSHER_STAMPEDE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008422005": StratagemToolDescriptor(
+        stratagem_id="000008422005",
+        name="Untrammelled Ferocity",
+        timing="movement_phase_on_select_to_move",
+        target="tyranids_monster_unit_not_yet_moved",
+        duration="until_end_of_phase",
+        effect="move_through_models_terrain_with_titanic_block_and_tall_terrain_battleshock_risk",
+        cp_cost=1,
+        effect_params={
+            "move_types": ["move", "advance", "fall_back"],
+            "move_through_models": True,
+            "block_enemy_keywords": ["TITANIC"],
+            "move_through_terrain": True,
+            "allow_move_within_engagement_range": True,
+            "cannot_end_in_engagement_range": True,
+            "tall_terrain_battleshock_roll": "D6",
+            "tall_terrain_battleshock_on": 1,
+            "tall_terrain_threshold": 4.0,
+        },
+    ),
+}
+
+_CRUSHER_STAMPEDE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CRUSHER_STAMPEDE_STRATAGEM_DESCRIPTORS.values()
+}
+
+_SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010270003": StratagemToolDescriptor(
+        stratagem_id="000010270003",
+        name="Shock Cavalry",
+        timing="movement_or_charge_phase_on_select",
+        target="thunderwolf_cavalry_unit_not_selected_to_move_or_charge_this_phase",
+        duration="until_end_of_phase",
+        effect="move_through_models_with_titanic_block_and_low_terrain",
+        cp_cost=1,
+        effect_params={
+            "phase_move_types": {
+                "movement": ["move", "advance", "fall_back"],
+                "charge": ["charge"],
+            },
+            "move_through_models": True,
+            "block_enemy_keywords": ["TITANIC"],
+            "low_terrain_threshold": 4.0,
+            "movement_phase_allow_move_within_engagement_range": True,
+            "movement_phase_cannot_end_in_engagement_range": True,
+        },
+    ),
+}
+
+_SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS.values()
+}
+
 _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010198007": StratagemToolDescriptor(
         stratagem_id="000010198007",
@@ -3523,6 +3577,12 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CRUSHER_STAMPEDE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
+        desc = _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3590,6 +3650,8 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _KAUYON_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
         or _VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
+        or _CRUSHER_STAMPEDE_STRATAGEM_BY_NAME.get(key)
+        or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
