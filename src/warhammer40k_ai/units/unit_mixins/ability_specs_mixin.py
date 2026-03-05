@@ -5511,6 +5511,69 @@ class AbilitySpecsMixin:
                     }
                 )
 
+        # Temporary unit-scoped pinned spec injection used by Saga of the Beastslayer -> Pinning Fire.
+        root_sr = getattr(root, "special_rules", None)
+        if isinstance(root_sr, dict) and bool(root_sr.get("space_marines_pinning_fire_active", False)):
+            effect_active = True
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if game is not None:
+                owner_id = str(root_sr.get("space_marines_pinning_fire_turn_owner", "") or "")
+                current_player = getattr(game, "get_current_player", lambda: None)()
+                current_owner = str(getattr(current_player, "id", "") or "")
+                if owner_id and current_owner and owner_id != current_owner:
+                    effect_active = False
+                if effect_active:
+                    try:
+                        effect_turn = int(root_sr.get("space_marines_pinning_fire_turn", 0) or 0)
+                    except Exception:
+                        effect_turn = 0
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    if effect_turn and current_turn and effect_turn != current_turn:
+                        effect_active = False
+            if effect_active:
+                source = str(root_sr.get("space_marines_pinning_fire_source", "") or "PINNING FIRE").strip() or "PINNING FIRE"
+                try:
+                    move_penalty = int(root_sr.get("space_marines_pinning_fire_move_penalty", -2) or -2)
+                except Exception:
+                    move_penalty = -2
+                try:
+                    charge_penalty = int(root_sr.get("space_marines_pinning_fire_charge_penalty", -2) or -2)
+                except Exception:
+                    charge_penalty = -2
+                include_keywords_any = [
+                    str(kw or "").strip().upper()
+                    for kw in list(root_sr.get("space_marines_pinning_fire_target_keywords_any", []) or [])
+                    if str(kw or "").strip()
+                ]
+                expires_phase = str(root_sr.get("space_marines_pinning_fire_pinned_expires_phase", "") or "SHOOTING_PHASE").strip().upper() or "SHOOTING_PHASE"
+                key = (
+                    source.lower(),
+                    int(move_penalty),
+                    int(charge_penalty),
+                    False,
+                    tuple(include_keywords_any),
+                    expires_phase,
+                )
+                if key not in seen:
+                    seen.add(key)
+                    specs.append(
+                        {
+                            "source": source,
+                            "move_penalty": int(move_penalty),
+                            "charge_penalty": int(charge_penalty),
+                            "exclude_monster_vehicle": False,
+                            "include_keywords_any": list(include_keywords_any),
+                            "expires_phase": expires_phase,
+                        }
+                    )
+
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = list(specs)
@@ -7611,6 +7674,97 @@ class AbilitySpecsMixin:
                         "fly_bonus": int(fly_bonus or 0),
                         "dice_per_model": True,
                         "once_per_battle": bool(once_per_battle),
+                        "ability_key": ability_key,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_stasis_bomb_specs(self) -> List[dict]:
+        """
+        Unit-level rule: after ending a Normal move, one model can select a moved-over enemy
+        (excluding AIRCRAFT), inflict D3 mortal wounds, then apply a movement lock in the
+        opponent's next Movement phase.
+
+        Returns specs with keys:
+            - source: ability name
+            - move_types: list[str]
+            - exclude_aircraft: bool
+            - mortal_wounds_die: str
+            - restriction_roll_die: str
+            - once_per_turn_army: bool
+            - once_per_battle_per_model: bool
+            - ability_key: str
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_stasis_bomb_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(unit._strip_eligibility_prefix(text_src))
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9+]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                name_low = str(name or "").strip().lower()
+                if "stasis bomb" not in name_low and "stasis bomb" not in normalized:
+                    continue
+                required_phrases = (
+                    "ends a normal move",
+                    "moved over",
+                    "suffers d3 mortal wounds",
+                    "roll one d6",
+                    "cannot advance or fall back",
+                    "must remain stationary",
+                    "once per turn",
+                    "once per battle",
+                )
+                if any(phrase not in normalized for phrase in required_phrases):
+                    continue
+                source = str(name or "Stasis Bomb").strip() or "Stasis Bomb"
+                ability_key_seed = self._normalize_keyword_phrase(source) or "stasis_bomb"
+                ability_key = f"stasis_bomb:{ability_key_seed}"
+                key = (source.lower(), ability_key)
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "move_types": ["move"],
+                        "exclude_aircraft": True,
+                        "mortal_wounds_die": "D3",
+                        "restriction_roll_die": "D6",
+                        "restriction_low_max": 3,
+                        "restriction_on_low": "no_advance_fall_back",
+                        "restriction_on_high": "remain_stationary",
+                        "once_per_turn_army": True,
+                        "once_per_battle_per_model": True,
                         "ability_key": ability_key,
                     }
                 )

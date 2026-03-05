@@ -116,6 +116,18 @@ class SpaceMarinesStratagemMixin:
         return bool(getattr(getattr(unit, "round_state", None), "attempted_charge_this_round", False))
 
     @staticmethod
+    def _sm_selected_to_shoot_this_phase(unit: Any) -> bool:
+        return bool(getattr(getattr(unit, "round_state", None), "shot_this_round", False))
+
+    @staticmethod
+    def _sm_clear_ability_cache(root: Any, *keys: str) -> None:
+        cache = getattr(root, "_ability_cache", None)
+        if not isinstance(cache, dict):
+            return
+        for key in list(keys or []):
+            cache.pop(str(key), None)
+
+    @staticmethod
     def _sm_spend_cp(player: Any, stratagem: Any, *, target_unit: Any = None) -> bool:
         cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         apply_fn = getattr(player, "apply_stratagem_cp_cost", None)
@@ -173,11 +185,40 @@ class SpaceMarinesStratagemMixin:
             out.append(root)
         return sorted(out, key=self._sm_sort_key)
 
+    def _space_marines_pinning_fire_candidates(self) -> list[Any]:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if self._sm_selected_to_shoot_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
     def _cleanup_space_marines_saga_of_the_beastslayer_phase_end_effects(self, *, phase: Any = None) -> None:
         if not self._is_saga_of_the_beastslayer_detachment():
             return
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_name not in ("MOVEMENT_PHASE", "CHARGE_PHASE"):
+        if phase_name not in ("MOVEMENT_PHASE", "CHARGE_PHASE", "SHOOTING_PHASE"):
             return
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
@@ -197,67 +238,83 @@ class SpaceMarinesStratagemMixin:
             sr = getattr(root, "special_rules", None)
             if not isinstance(sr, dict):
                 continue
-            exp = str(sr.get("space_marines_shock_cavalry_expires_phase", "") or "").strip().upper()
-            if sr.get("space_marines_shock_cavalry_active") is not True:
-                continue
-            if exp and exp != phase_name:
-                continue
+            if phase_name in ("MOVEMENT_PHASE", "CHARGE_PHASE"):
+                exp = str(sr.get("space_marines_shock_cavalry_expires_phase", "") or "").strip().upper()
+                if sr.get("space_marines_shock_cavalry_active") is True and (not exp or exp == phase_name):
+                    for key, added_key in (
+                        (
+                            "bearer_unit_phase_move_models_only_types",
+                            "space_marines_shock_cavalry_added_phase_move_models_only_types",
+                        ),
+                        (
+                            "bearer_unit_phase_move_models_only_block_titanic_types",
+                            "space_marines_shock_cavalry_added_phase_move_models_only_block_titanic_types",
+                        ),
+                        (
+                            "move_over_low_terrain_height_types",
+                            "space_marines_shock_cavalry_added_low_terrain_types",
+                        ),
+                        (
+                            "bearer_unit_phase_move_engagement_types",
+                            "space_marines_shock_cavalry_added_phase_move_engagement_types",
+                        ),
+                    ):
+                        added = set(sr.get(added_key) or [])
+                        if not added:
+                            continue
+                        current = list(sr.get(key) or [])
+                        kept = [item for item in current if item not in added]
+                        if kept:
+                            sr[key] = kept
+                        else:
+                            sr.pop(key, None)
 
-            for key, added_key in (
-                (
-                    "bearer_unit_phase_move_models_only_types",
-                    "space_marines_shock_cavalry_added_phase_move_models_only_types",
-                ),
-                (
-                    "bearer_unit_phase_move_models_only_block_titanic_types",
-                    "space_marines_shock_cavalry_added_phase_move_models_only_block_titanic_types",
-                ),
-                (
-                    "move_over_low_terrain_height_types",
-                    "space_marines_shock_cavalry_added_low_terrain_types",
-                ),
-                (
-                    "bearer_unit_phase_move_engagement_types",
-                    "space_marines_shock_cavalry_added_phase_move_engagement_types",
-                ),
-            ):
-                added = set(sr.get(added_key) or [])
-                if not added:
-                    continue
-                current = list(sr.get(key) or [])
-                kept = [item for item in current if item not in added]
-                if kept:
-                    sr[key] = kept
-                else:
-                    sr.pop(key, None)
+                    if bool(sr.get("space_marines_shock_cavalry_prev_low_terrain_height_present", False)):
+                        sr["move_over_low_terrain_height_value"] = float(
+                            sr.get("space_marines_shock_cavalry_prev_low_terrain_height_value", 4.0) or 4.0
+                        )
+                    else:
+                        sr.pop("move_over_low_terrain_height_value", None)
 
-            if bool(sr.get("space_marines_shock_cavalry_prev_low_terrain_height_present", False)):
-                sr["move_over_low_terrain_height_value"] = float(
-                    sr.get("space_marines_shock_cavalry_prev_low_terrain_height_value", 4.0) or 4.0
-                )
-            else:
-                sr.pop("move_over_low_terrain_height_value", None)
+                    for key in (
+                        "space_marines_shock_cavalry_active",
+                        "space_marines_shock_cavalry_expires_phase",
+                        "space_marines_shock_cavalry_turn_owner",
+                        "space_marines_shock_cavalry_turn",
+                        "space_marines_shock_cavalry_source",
+                        "space_marines_shock_cavalry_added_phase_move_models_only_types",
+                        "space_marines_shock_cavalry_added_phase_move_models_only_block_titanic_types",
+                        "space_marines_shock_cavalry_added_low_terrain_types",
+                        "space_marines_shock_cavalry_added_phase_move_engagement_types",
+                        "space_marines_shock_cavalry_prev_low_terrain_height_present",
+                        "space_marines_shock_cavalry_prev_low_terrain_height_value",
+                    ):
+                        sr.pop(key, None)
 
-            for key in (
-                "space_marines_shock_cavalry_active",
-                "space_marines_shock_cavalry_expires_phase",
-                "space_marines_shock_cavalry_turn_owner",
-                "space_marines_shock_cavalry_turn",
-                "space_marines_shock_cavalry_source",
-                "space_marines_shock_cavalry_added_phase_move_models_only_types",
-                "space_marines_shock_cavalry_added_phase_move_models_only_block_titanic_types",
-                "space_marines_shock_cavalry_added_low_terrain_types",
-                "space_marines_shock_cavalry_added_phase_move_engagement_types",
-                "space_marines_shock_cavalry_prev_low_terrain_height_present",
-                "space_marines_shock_cavalry_prev_low_terrain_height_value",
-            ):
-                sr.pop(key, None)
+            if phase_name == "SHOOTING_PHASE":
+                exp = str(sr.get("space_marines_pinning_fire_expires_phase", "") or "").strip().upper()
+                if sr.get("space_marines_pinning_fire_active") is True and (not exp or exp == phase_name):
+                    for key in (
+                        "space_marines_pinning_fire_active",
+                        "space_marines_pinning_fire_source",
+                        "space_marines_pinning_fire_move_penalty",
+                        "space_marines_pinning_fire_charge_penalty",
+                        "space_marines_pinning_fire_target_keywords_any",
+                        "space_marines_pinning_fire_pinned_expires_phase",
+                        "space_marines_pinning_fire_expires_phase",
+                        "space_marines_pinning_fire_turn_owner",
+                        "space_marines_pinning_fire_turn",
+                    ):
+                        sr.pop(key, None)
+                    self._sm_clear_ability_cache(root, "unit_post_shoot_pinned_specs")
             root.special_rules = sr
 
     def _use_space_marines_saga_of_the_beastslayer_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "SHOCK CAVALRY":
             return self._use_space_marines_shock_cavalry(stratagem, **kwargs)
+        if name_u == "PINNING FIRE":
+            return self._use_space_marines_pinning_fire(stratagem, **kwargs)
         return None
 
     def _use_space_marines_shock_cavalry(self, stratagem: Any, **kwargs) -> bool:
@@ -382,6 +439,82 @@ class SpaceMarinesStratagemMixin:
         self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: SHOCK CAVALRY: %s gains move-through models/low-terrain movement for this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_space_marines_pinning_fire(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: PINNING FIRE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: PINNING FIRE: not your turn")
+            return False
+
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PINNING FIRE: no target unit provided")
+            return False
+
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: PINNING FIRE: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: PINNING FIRE: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: PINNING FIRE: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if self._sm_selected_to_shoot_this_phase(root):
+            logger.error("ERROR: PINNING FIRE: target has already been selected to shoot this phase")
+            return False
+
+        eligible = candidates or self._space_marines_pinning_fire_candidates()
+        if eligible:
+            eid = self._sm_sort_key(root)
+            if all(self._sm_sort_key(candidate) != eid for candidate in eligible):
+                logger.error("ERROR: PINNING FIRE: selected unit is not currently eligible")
+                return False
+
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: PINNING FIRE: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_pinning_fire_active"] = True
+        sr["space_marines_pinning_fire_source"] = str(getattr(stratagem, "name", "") or "PINNING FIRE")
+        sr["space_marines_pinning_fire_move_penalty"] = -2
+        sr["space_marines_pinning_fire_charge_penalty"] = -2
+        sr["space_marines_pinning_fire_target_keywords_any"] = ["CHARACTER", "MONSTER", "VEHICLE"]
+        sr["space_marines_pinning_fire_pinned_expires_phase"] = "SHOOTING_PHASE"
+        sr["space_marines_pinning_fire_expires_phase"] = "SHOOTING_PHASE"
+        owner_id = str(getattr(self.player, "id", "") or "")
+        if owner_id:
+            sr["space_marines_pinning_fire_turn_owner"] = owner_id
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        if turn:
+            sr["space_marines_pinning_fire_turn"] = turn
+        root.special_rules = sr
+        self._sm_clear_ability_cache(root, "unit_post_shoot_pinned_specs")
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PINNING FIRE: %s can pin a hit enemy CHARACTER/MONSTER/VEHICLE after it shoots this phase.",
             getattr(root, "name", "Unit"),
         )
         return True

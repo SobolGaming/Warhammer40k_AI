@@ -16656,6 +16656,28 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 target_root = chosen.get_attached_unit_root()
             except Exception:
                 target_root = chosen
+            include_keywords_any = [
+                str(kw or "").strip().upper()
+                for kw in list(ctx.get("include_keywords_any", []) or [])
+                if str(kw or "").strip()
+            ]
+            if include_keywords_any:
+                has_required_keyword = False
+                for kw in include_keywords_any:
+                    try:
+                        if bool(target_root.has_keyword(kw)):
+                            has_required_keyword = True
+                            break
+                    except Exception:
+                        pass
+                    try:
+                        if bool(target_root.has_any_keyword(kw)):
+                            has_required_keyword = True
+                            break
+                    except Exception:
+                        pass
+                if not has_required_keyword:
+                    return
             attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
             try:
                 player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
@@ -16675,6 +16697,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 charge_penalty = int(ctx.get("charge_penalty", -2) or -2)
             except Exception:
                 charge_penalty = -2
+            expires_phase = str(ctx.get("expires_phase", "") or "COMMAND_PHASE").strip().upper() or "COMMAND_PHASE"
             apply_fn = getattr(target_root, "apply_pinned", None)
             if callable(apply_fn):
                 apply_fn(
@@ -16683,6 +16706,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     source=source,
                     move_penalty=int(move_penalty),
                     charge_penalty=int(charge_penalty),
+                    expires_phase=expires_phase,
                 )
             else:
                 sr = getattr(target_root, "special_rules", None)
@@ -16694,6 +16718,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 sr["pinned_source"] = source
                 sr["pinned_move_penalty"] = int(move_penalty)
                 sr["pinned_charge_penalty"] = int(charge_penalty)
+                sr["pinned_expires_phase"] = expires_phase
                 target_root.special_rules = sr
             try:
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")

@@ -240,6 +240,136 @@ def handle_move_over_mortal_wounds(game: object, state: DiceRollState):
     return int(total_mw)
 
 
+def handle_stasis_bomb_mortal_wounds(game: object, state: DiceRollState):
+    spec = dict(getattr(state, "spec", {}) or {})
+    unit = _get_unit(game, spec.get("unit_id"))
+    target_unit = _get_unit(game, spec.get("target_unit_id") or spec.get("target_unit") or spec.get("target_id"))
+    if unit is None or target_unit is None:
+        return None
+    ability_name = str(spec.get("ability_name", "") or "Stasis Bomb").strip() or "Stasis Bomb"
+    damage = int(state.total or 0)
+    if damage > 0:
+        try:
+            if hasattr(unit, "_apply_mortal_wounds_to_unit"):
+                unit._apply_mortal_wounds_to_unit(target_unit, int(damage), game_map=getattr(game, "map", None))
+        except Exception:
+            pass
+    try:
+        from ..utility.event_bus import append_action, append_dice
+
+        player = unit.get_parent_army().player if hasattr(unit, "get_parent_army") else None
+        if player is not None:
+            append_dice(
+                player,
+                f"{ability_name}: rolled {int(damage)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
+            )
+            append_action(
+                player,
+                f"{ability_name}: {getattr(target_unit, 'name', 'Target')} suffers {int(damage)} mortal wounds.",
+            )
+    except Exception:
+        pass
+    if not bool(getattr(game, "is_authoritative", True)):
+        return int(damage)
+    try:
+        player = unit.get_parent_army().player if hasattr(unit, "get_parent_army") else None
+    except Exception:
+        player = None
+    if player is None:
+        return int(damage)
+    restriction_roll_die = str(spec.get("restriction_roll_die", "") or "D6").strip().upper() or "D6"
+    roll_spec = {
+        "dice_count": 1,
+        "faces": 6,
+        "reason": f"{ability_name}: restriction roll for {getattr(target_unit, 'name', 'Target')}",
+        "roll_type": "stasis_bomb_restriction",
+        "handler_key": "stasis_bomb_restriction",
+        "ability_name": ability_name,
+        "ability_key": str(spec.get("ability_key", "") or "stasis_bomb"),
+        "unit_id": spec.get("unit_id"),
+        "model_id": spec.get("model_id"),
+        "target_unit_id": spec.get("target_unit_id"),
+        "restriction_roll_die": restriction_roll_die,
+        "restriction_low_max": int(spec.get("restriction_low_max", 3) or 3),
+        "restriction_on_low": str(spec.get("restriction_on_low", "") or "no_advance_fall_back"),
+        "restriction_on_high": str(spec.get("restriction_on_high", "") or "remain_stationary"),
+    }
+    if bool(getattr(game, "auto_resolve_dice_rolls", False)):
+        try:
+            from ..utility.dice import get_roll
+            roll_spec["fixed_dice"] = [int(get_roll(restriction_roll_die) or 0)]
+        except Exception:
+            pass
+    try:
+        if hasattr(game, "request_dice_roll"):
+            game.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
+    except Exception:
+        pass
+    return int(damage)
+
+
+def handle_stasis_bomb_restriction(game: object, state: DiceRollState):
+    spec = dict(getattr(state, "spec", {}) or {})
+    target_unit = _get_unit(game, spec.get("target_unit_id") or spec.get("target_unit") or spec.get("target_id"))
+    if target_unit is None:
+        return None
+    roll_val = int(state.total or 0)
+    ability_name = str(spec.get("ability_name", "") or "Stasis Bomb").strip() or "Stasis Bomb"
+    try:
+        low_max = int(spec.get("restriction_low_max", 3) or 3)
+    except Exception:
+        low_max = 3
+    mode = str(spec.get("restriction_on_high", "") or "remain_stationary").strip().lower()
+    if int(roll_val) <= int(low_max):
+        mode = str(spec.get("restriction_on_low", "") or "no_advance_fall_back").strip().lower()
+    if mode not in ("no_advance_fall_back", "remain_stationary"):
+        mode = "remain_stationary"
+    try:
+        target_owner = target_unit.get_parent_army().player if hasattr(target_unit, "get_parent_army") else None
+    except Exception:
+        target_owner = None
+    sr = getattr(target_unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    sr["stasis_bomb_active"] = True
+    sr["stasis_bomb_mode"] = mode
+    sr["stasis_bomb_source"] = ability_name
+    sr["stasis_bomb_expires_phase"] = "MOVEMENT_PHASE"
+    owner_id = str(getattr(target_owner, "id", "") or "")
+    if owner_id:
+        sr["stasis_bomb_owner"] = owner_id
+    try:
+        turn = int(getattr(game, "turn", 0) or 0)
+    except Exception:
+        turn = 0
+    if turn:
+        sr["stasis_bomb_turn"] = int(turn)
+    target_unit.special_rules = sr
+    try:
+        source_unit = _get_unit(game, spec.get("unit_id"))
+        source_player = source_unit.get_parent_army().player if source_unit is not None else None
+    except Exception:
+        source_player = None
+    try:
+        from ..utility.event_bus import append_action, append_dice
+        if source_player is not None:
+            if mode == "no_advance_fall_back":
+                effect_text = "cannot Advance or Fall Back in its next Movement phase"
+            else:
+                effect_text = "must Remain Stationary in its next Movement phase"
+            append_dice(
+                source_player,
+                f"{ability_name}: restriction roll {int(roll_val)} applied to {getattr(target_unit, 'name', 'Target')}.",
+            )
+            append_action(
+                source_player,
+                f"{ability_name}: {getattr(target_unit, 'name', 'Target')} {effect_text}.",
+            )
+    except Exception:
+        pass
+    return int(roll_val)
+
+
 def handle_grenade_pack_flyover(game: object, state: DiceRollState):
     spec = dict(getattr(state, "spec", {}) or {})
     unit_id = spec.get("unit_id")
@@ -863,6 +993,8 @@ register_roll_handler("attack_hazardous", handle_attack_roll)
 register_roll_handler("daemonic_poisons", handle_daemonic_poisons_roll)
 register_roll_handler("daemonic_poisons_damage", handle_daemonic_poisons_damage_roll)
 register_roll_handler("move_over_mortal_wounds", handle_move_over_mortal_wounds)
+register_roll_handler("stasis_bomb_mortal_wounds", handle_stasis_bomb_mortal_wounds)
+register_roll_handler("stasis_bomb_restriction", handle_stasis_bomb_restriction)
 register_roll_handler("grenade_pack_flyover", handle_grenade_pack_flyover)
 register_roll_handler("malign_sacrifice", handle_malign_sacrifice_roll)
 register_roll_handler("battle_focus_reactive_move", handle_battle_focus_reactive_move)

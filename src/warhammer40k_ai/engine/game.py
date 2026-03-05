@@ -4945,6 +4945,164 @@ class Game(
                         f"{source}: {getattr(enemy_root, 'name', 'Unit')} takes a Battle-shock test.",
                     )
 
+    def _stasis_bomb_model_used_once_per_battle(self, model, *, ability_key: str) -> bool:
+        if model is None:
+            return True
+        key = str(ability_key or "stasis_bomb").strip().lower() or "stasis_bomb"
+        has_used = getattr(model, "has_used_once_per_battle", None)
+        if callable(has_used):
+            return bool(has_used(key))
+        sr = getattr(model, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        return bool(sr.get(f"{key}_used_once_per_battle", False))
+
+    def _mark_stasis_bomb_model_used_once_per_battle(self, model, *, ability_key: str, ability_name: str) -> None:
+        if model is None:
+            return
+        key = str(ability_key or "stasis_bomb").strip().lower() or "stasis_bomb"
+        mark_used = getattr(model, "mark_used_once_per_battle", None)
+        if callable(mark_used):
+            mark_used(key, ability_name=ability_name, source="datasheet")
+            return
+        sr = getattr(model, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr[f"{key}_used_once_per_battle"] = True
+        model.special_rules = sr
+
+    def _stasis_bomb_army_used_this_turn(self, player) -> bool:
+        if player is None:
+            return False
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        army = player.get_army() if callable(getattr(player, "get_army", None)) else getattr(player, "army", None)
+        if army is None:
+            return False
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("stasis_bomb_army_used_this_turn", False)):
+                continue
+            sr_owner = str(sr.get("stasis_bomb_army_used_turn_owner", "") or "")
+            if owner_id and sr_owner and owner_id != sr_owner:
+                continue
+            try:
+                sr_turn = int(sr.get("stasis_bomb_army_used_turn", 0) or 0)
+            except Exception:
+                sr_turn = 0
+            if turn and sr_turn and turn != sr_turn:
+                continue
+            return True
+        return False
+
+    def _mark_stasis_bomb_army_used_this_turn(self, player, *, source_unit=None, source: str = "Stasis Bomb") -> None:
+        if player is None:
+            return
+        root = None
+        if source_unit is not None:
+            try:
+                root = source_unit.get_attached_unit_root()
+            except Exception:
+                root = source_unit
+        if root is None:
+            army = player.get_army() if callable(getattr(player, "get_army", None)) else getattr(player, "army", None)
+            if army is not None:
+                units = list(getattr(army, "units", []) or [])
+                if units:
+                    try:
+                        root = units[0].get_attached_unit_root()
+                    except Exception:
+                        root = units[0]
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["stasis_bomb_army_used_this_turn"] = True
+        sr["stasis_bomb_army_used_source"] = str(source or "Stasis Bomb").strip() or "Stasis Bomb"
+        owner_id = str(getattr(player, "id", "") or "")
+        if owner_id:
+            sr["stasis_bomb_army_used_turn_owner"] = owner_id
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if turn:
+            sr["stasis_bomb_army_used_turn"] = int(turn)
+        root.special_rules = sr
+
+    def resolve_stasis_bomb(self, unit, model, target_unit, spec) -> None:
+        if unit is None or model is None or target_unit is None or not isinstance(spec, dict):
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        ability_name = str(spec.get("source", "") or "Stasis Bomb").strip() or "Stasis Bomb"
+        ability_key = str(spec.get("ability_key", "") or "stasis_bomb").strip().lower() or "stasis_bomb"
+        if bool(spec.get("once_per_battle_per_model", False)):
+            if self._stasis_bomb_model_used_once_per_battle(model, ability_key=ability_key):
+                return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None:
+            return
+        if bool(spec.get("once_per_turn_army", False)) and self._stasis_bomb_army_used_this_turn(player):
+            return
+
+        unit_id = str(get_entity_id(root) or "")
+        model_id = str(get_entity_id(model) or "")
+        target_id = str(get_entity_id(target_unit) or "")
+        if not unit_id or not model_id or not target_id:
+            return
+
+        self._mark_stasis_bomb_army_used_this_turn(player, source_unit=root, source=ability_name)
+        if bool(spec.get("once_per_battle_per_model", False)):
+            self._mark_stasis_bomb_model_used_once_per_battle(model, ability_key=ability_key, ability_name=ability_name)
+
+        mortal_die = str(spec.get("mortal_wounds_die", "") or "D3").strip().upper() or "D3"
+        roll_spec = {
+            "dice_count": 1,
+            "faces": 3 if mortal_die == "D3" else 6,
+            "reason": f"{ability_name}: {getattr(root, 'name', 'Unit')} -> {getattr(target_unit, 'name', 'Target')} mortal wounds",
+            "roll_type": "stasis_bomb_mortal_wounds",
+            "handler_key": "stasis_bomb_mortal_wounds",
+            "ability_name": ability_name,
+            "ability_key": ability_key,
+            "unit_id": unit_id,
+            "model_id": model_id,
+            "target_unit_id": target_id,
+            "restriction_roll_die": str(spec.get("restriction_roll_die", "") or "D6").strip().upper() or "D6",
+            "restriction_low_max": int(spec.get("restriction_low_max", 3) or 3),
+            "restriction_on_low": str(spec.get("restriction_on_low", "") or "no_advance_fall_back"),
+            "restriction_on_high": str(spec.get("restriction_on_high", "") or "remain_stationary"),
+        }
+        if bool(getattr(self, "auto_resolve_dice_rolls", False)):
+            try:
+                from ..utility.dice import get_roll
+                roll_spec["fixed_dice"] = [int(get_roll(mortal_die) or 0)]
+            except Exception:
+                pass
+        try:
+            self.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
+        except Exception:
+            pass
+
     def resolve_move_over_mortal_wounds(self, unit, model, target_unit, spec) -> None:
         if unit is None or target_unit is None or not isinstance(spec, dict):
             return
@@ -5629,6 +5787,81 @@ class Game(
                                     },
                                 )
                                 self.request_decision(request)
+
+        # Stasis Bomb: after a Normal move, one model from your army can use this ability each turn;
+        # each model can do so only once per battle.
+        if action_key == "move":
+            try:
+                stasis_specs = list(root.unit_stasis_bomb_specs() or [])
+            except Exception:
+                stasis_specs = []
+            if stasis_specs:
+                try:
+                    player = root.get_parent_army().player
+                except Exception:
+                    player = None
+                if player is not None and not self._stasis_bomb_army_used_this_turn(player):
+                    root_id = str(get_entity_id(root) or "")
+                    pending = False
+                    queue = getattr(self, "decision_queue", None)
+                    if queue is not None and hasattr(queue, "list"):
+                        for req in list(queue.list() or []):
+                            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                                continue
+                            ctx = dict(getattr(req, "context", {}) or {})
+                            if str(ctx.get("mortal_wounds_kind", "") or "").strip().lower() != "stasis_bomb":
+                                continue
+                            if str(ctx.get("unit_id", "") or "") == root_id:
+                                pending = True
+                                break
+                    if not pending:
+                        for spec in list(stasis_specs or []):
+                            if not bool(spec.get("once_per_turn_army", False)):
+                                continue
+                            target_to_model_ids: dict[str, list[str]] = {}
+                            target_by_id: dict[str, Any] = {}
+                            for model in list(models or []):
+                                if not getattr(model, "is_alive", False):
+                                    continue
+                                ability_key = str(spec.get("ability_key", "") or "stasis_bomb").strip().lower()
+                                if ability_key and self._stasis_bomb_model_used_once_per_battle(model, ability_key=ability_key):
+                                    continue
+                                path = getattr(model, "last_move_path", None)
+                                moved_over = get_enemy_units_moved_over(model, path, game_map, require_vertical_overlap=True)
+                                for cand in list(moved_over or []):
+                                    if cand is None:
+                                        continue
+                                    if bool(spec.get("exclude_aircraft", False)):
+                                        try:
+                                            if bool(cand.has_keyword("AIRCRAFT") or cand.has_any_keyword("AIRCRAFT")):
+                                                continue
+                                        except Exception:
+                                            continue
+                                    cid = str(get_entity_id(cand) or "")
+                                    mid = str(get_entity_id(model) or "")
+                                    if not cid or not mid:
+                                        continue
+                                    target_by_id[cid] = cand
+                                    target_to_model_ids.setdefault(cid, [])
+                                    if mid not in target_to_model_ids[cid]:
+                                        target_to_model_ids[cid].append(mid)
+                            if not target_by_id:
+                                continue
+                            candidates = [target_by_id[k] for k in sorted(target_by_id.keys())]
+                            queued_spec = dict(spec or {})
+                            queued_spec["source_model_ids_by_target"] = {
+                                str(k): sorted(list(v or [])) for k, v in dict(target_to_model_ids or {}).items()
+                            }
+                            self._queue_mortal_wounds_target_decision(
+                                player=player,
+                                unit=root,
+                                candidates=list(candidates),
+                                spec=queued_spec,
+                                kind="stasis_bomb",
+                                allow_skip=True,
+                                phase="Movement phase",
+                            )
+                            break
 
         for model in models:
             if not getattr(model, "is_alive", False):

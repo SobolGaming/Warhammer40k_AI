@@ -212,8 +212,59 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             return True
         return self._attached_unit_has_keyword(root, "VANGUARD INVADER")
 
+    def override_instincts_shoot_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
+        if not self.is_synaptic_nexus():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_tyranids(root):
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("tyranids_override_instincts_active")):
+            return False
+
+        gm = game
+        if gm is None:
+            army = getattr(self, "army", None)
+            gm = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if gm is None:
+            return True
+
+        owner_id = str(sr.get("tyranids_override_instincts_turn_owner", "") or "")
+        try:
+            effect_turn = int(sr.get("tyranids_override_instincts_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        try:
+            current_player = gm.get_current_player()
+        except Exception:
+            current_player = None
+        current_owner = str(getattr(current_player, "id", "") or "")
+        try:
+            current_turn = int(getattr(gm, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if owner_id and current_owner and owner_id != current_owner:
+            return False
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
+    def can_shoot_after_fall_back(self, unit, *, profile=None, game=None) -> bool:
+        _ = profile
+        return self.override_instincts_shoot_charge_after_fall_back_applies(unit, game=game)
+
     def can_charge_after_fall_back(self, unit, *, game=None) -> bool:
-        return self.questing_tendrils_charge_after_fall_back_applies(unit, game=game)
+        if self.questing_tendrils_charge_after_fall_back_applies(unit, game=game):
+            return True
+        return self.override_instincts_shoot_charge_after_fall_back_applies(unit, game=game)
 
     def can_charge_after_advance(self, unit, *, game=None) -> bool:
         return self.questing_tendrils_charge_after_advance_applies(unit, game=game)

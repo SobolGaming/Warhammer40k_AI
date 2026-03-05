@@ -2086,6 +2086,25 @@ class GameShootingFightHandlersMixin:
             except Exception:
                 return False
 
+        def _has_any_keyword(unit, keywords: list[str]) -> bool:
+            if unit is None:
+                return False
+            for kw in list(keywords or []):
+                key = str(kw or "").strip().upper()
+                if not key:
+                    continue
+                try:
+                    if bool(unit.has_keyword(key)):
+                        return True
+                except Exception:
+                    pass
+                try:
+                    if bool(unit.has_any_keyword(key)):
+                        return True
+                except Exception:
+                    pass
+            return False
+
         unit_specs = attacker_unit.unit_post_shoot_pinned_specs() or []
         if not unit_specs:
             return
@@ -2094,6 +2113,12 @@ class GameShootingFightHandlersMixin:
 
         for spec in unit_specs:
             exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
+            include_keywords_any = [
+                str(kw or "").strip().upper()
+                for kw in list(spec.get("include_keywords_any", []) or [])
+                if str(kw or "").strip()
+            ]
+            expires_phase = str(spec.get("expires_phase", "") or "COMMAND_PHASE").strip().upper() or "COMMAND_PHASE"
             try:
                 move_penalty = int(spec.get("move_penalty", -2) or -2)
             except Exception:
@@ -2111,6 +2136,8 @@ class GameShootingFightHandlersMixin:
                 if not _is_enemy_unit(target_unit):
                     continue
                 if exclude_mv and _is_monster_or_vehicle(target_unit):
+                    continue
+                if include_keywords_any and not _has_any_keyword(target_unit, include_keywords_any):
                     continue
                 candidates.append(target_unit)
             if not candidates:
@@ -2141,6 +2168,8 @@ class GameShootingFightHandlersMixin:
                     "ability_name": ability_name,
                     "move_penalty": int(move_penalty),
                     "charge_penalty": int(charge_penalty),
+                    "expires_phase": expires_phase,
+                    "include_keywords_any": list(include_keywords_any),
                 },
             )
             self.request_decision(request)

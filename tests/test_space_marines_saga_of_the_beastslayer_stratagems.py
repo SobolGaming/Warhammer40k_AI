@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.calcs import MovementType, get_validation_rules
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 class _MockDatasheet:
@@ -90,6 +93,15 @@ def _set_phase(game: Game, player: Player, phase_name: str, current_player_index
     game.phase = SimpleNamespace(name=phase_name)
     game.current_player_index = int(current_player_index)
     game.event_system.publish("phase_start", player=player, phase=game.phase)
+
+
+def _target_option_id(request, target: Unit) -> str | None:
+    target_id = str(get_entity_id(target) or "")
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if str(payload.get("target_unit_id", "") or "") == target_id:
+            return str(getattr(option, "option_id", "") or "")
+    return None
 
 
 def test_shock_cavalry_movement_phase_applies_and_cleans_up():
@@ -175,6 +187,81 @@ def test_shock_cavalry_rejects_non_thunderwolf_targets():
     assert int(sm_player.command_points or 0) == 10
 
 
+def test_pinning_fire_post_shoot_filters_and_applies_pinned():
+    game, sm_player, _enemy_player, sm_army, enemy_army = _build_game()
+    shooter = _make_unit(
+        "Intercessors",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    character_target = _make_unit("Enemy Character", keywords=["CHARACTER"], faction_keywords=["ENEMY"])
+    infantry_target = _make_unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    sm_army.add_unit(shooter)
+    enemy_army.add_unit(character_target)
+    enemy_army.add_unit(infantry_target)
+    _deploy_unit(game, shooter, 10.0, 10.0)
+    _deploy_unit(game, character_target, 16.0, 10.0)
+    _deploy_unit(game, infantry_target, 24.0, 10.0)
+
+    _set_phase(game, sm_player, "SHOOTING_PHASE", 0)
+    ok = sm_player.stratagems.use("PINNING FIRE", unit=shooter, phase_name="Shooting phase")
+    assert ok
+    assert int(sm_player.command_points or 0) == 9
+
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game._on_unit_shooting_resolved_post_shoot_pinned(
+        attacker_unit=shooter,
+        hits_by_target={character_target: 1, infantry_target: 1},
+    )
+
+    pending = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+    ]
+    assert len(pending) == 1
+    request = pending[0]
+    payloads = [dict(getattr(opt, "payload", {}) or {}) for opt in list(getattr(request, "options", []) or [])]
+    target_ids = {str(payload.get("target_unit_id", "") or "") for payload in payloads}
+    assert str(get_entity_id(character_target) or "") in target_ids
+    assert str(get_entity_id(infantry_target) or "") not in target_ids
+
+    option_id = _target_option_id(request, character_target)
+    assert option_id
+    resolve_decision_command(game, request, option_id, player_id=sm_player.id)
+
+    sr = dict(getattr(character_target, "special_rules", {}) or {})
+    assert bool(sr.get("pinned_active", False)) is True
+    assert int(sr.get("pinned_move_penalty", 0) or 0) == -2
+    assert int(sr.get("pinned_charge_penalty", 0) or 0) == -2
+    assert str(sr.get("pinned_expires_phase", "") or "") == "SHOOTING_PHASE"
+
+
+def test_pinning_fire_source_flags_cleaned_at_shooting_phase_end():
+    game, sm_player, _enemy_player, sm_army, _enemy_army = _build_game()
+    shooter = _make_unit(
+        "Intercessors",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    sm_army.add_unit(shooter)
+    _deploy_unit(game, shooter, 10.0, 10.0)
+
+    _set_phase(game, sm_player, "SHOOTING_PHASE", 0)
+    ok = sm_player.stratagems.use("PINNING FIRE", unit=shooter, phase_name="Shooting phase")
+    assert ok
+
+    sr_before = dict(getattr(shooter, "special_rules", {}) or {})
+    assert bool(sr_before.get("space_marines_pinning_fire_active", False)) is True
+
+    game.event_system.publish("phase_end", player=sm_player, phase=game.phase)
+
+    sr_after = dict(getattr(shooter, "special_rules", {}) or {})
+    assert bool(sr_after.get("space_marines_pinning_fire_active", False)) is False
+    assert "space_marines_pinning_fire_source" not in sr_after
+    assert "space_marines_pinning_fire_move_penalty" not in sr_after
+
+
 def test_saga_beastslayer_descriptor_registered():
     descriptor = get_stratagem_tool_descriptor(stratagem_id="000010270003")
     assert descriptor is not None
@@ -183,3 +270,17 @@ def test_saga_beastslayer_descriptor_registered():
     phase_map = dict(descriptor.effect_params.get("phase_move_types", {}) or {})
     assert list(phase_map.get("movement", []) or []) == ["move", "advance", "fall_back"]
     assert list(phase_map.get("charge", []) or []) == ["charge"]
+
+
+def test_saga_beastslayer_pinning_fire_descriptor_registered():
+    descriptor = get_stratagem_tool_descriptor(stratagem_id="000010270004")
+    assert descriptor is not None
+    assert descriptor.name == "Pinning Fire"
+    assert descriptor.effect == "post_shoot_select_hit_character_monster_vehicle_to_pin"
+    assert list(descriptor.effect_params.get("target_enemy_keywords_any", []) or []) == [
+        "CHARACTER",
+        "MONSTER",
+        "VEHICLE",
+    ]
+    assert int(descriptor.effect_params.get("pinned_move_penalty", 0) or 0) == -2
+    assert int(descriptor.effect_params.get("pinned_charge_penalty", 0) or 0) == -2

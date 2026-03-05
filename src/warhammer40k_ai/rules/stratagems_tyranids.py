@@ -61,6 +61,11 @@ class TyranidsStratagemMixin:
         checker = getattr(mgr, "is_vanguard_onslaught", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_tyranids_synaptic_nexus_detachment(self) -> bool:
+        mgr = self._tyr_detachment_mgr()
+        checker = getattr(mgr, "is_synaptic_nexus", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_tyranids_crusher_stampede_detachment(self) -> bool:
         mgr = self._tyr_detachment_mgr()
         checker = getattr(mgr, "is_crusher_stampede", None) if mgr is not None else None
@@ -555,6 +560,37 @@ class TyranidsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._tyr_sort_key)
 
+    def _tyr_override_instincts_candidates(self) -> list[Any]:
+        if not self._is_tyranids_synaptic_nexus_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tyr_root(unit)
+            if root is None:
+                continue
+            uid = self._tyr_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tyr_owned_by_player(root, self.player):
+                continue
+            if not self._tyr_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tyranids_unit(root):
+                continue
+            if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+                continue
+            if not self._tyr_unit_in_synapse_range(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tyr_sort_key)
+
     def _tyr_spend_cp(self, stratagem: Any, *, target_unit: Any = None, enemy_unit: Any = None) -> bool:
         effective_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         apply_cost = getattr(self.player, "apply_stratagem_cp_cost", None)
@@ -1019,6 +1055,9 @@ class TyranidsStratagemMixin:
         if self._is_tyranids_vanguard_onslaught_detachment():
             if name_u == "INVISIBLE HUNTER":
                 return self._use_tyranids_invisible_hunter(stratagem, **kwargs)
+        if self._is_tyranids_synaptic_nexus_detachment():
+            if name_u == "OVERRIDE INSTINCTS":
+                return self._use_tyranids_override_instincts(stratagem, **kwargs)
         if self._is_tyranids_crusher_stampede_detachment():
             if name_u == "UNTRAMMELLED FEROCITY":
                 return self._use_tyranids_untrammelled_ferocity(stratagem, **kwargs)
@@ -1649,6 +1688,77 @@ class TyranidsStratagemMixin:
         self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         moved_units = ", ".join(str(getattr(root, "name", "Unit") or "Unit") for root in list(selected_roots))
         logger.info("INFO: INVISIBLE HUNTER: %s entered Strategic Reserves.", moved_units)
+        return True
+
+    def _use_tyranids_override_instincts(self, stratagem: Any, **kwargs) -> bool:
+        target = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target is None and len(candidates) == 1:
+            target = candidates[0]
+        if target is None:
+            logger.error("ERROR: OVERRIDE INSTINCTS: no target unit provided")
+            return False
+
+        root = self._tyr_root(target)
+        if root is None:
+            return False
+        if not self._is_tyranids_synaptic_nexus_detachment():
+            return False
+
+        phase_name = self._tyr_phase_name(kwargs.get("phase_name") or getattr(self, "_current_phase_name", ""))
+        if phase_name != "movement phase":
+            logger.error("ERROR: OVERRIDE INSTINCTS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: OVERRIDE INSTINCTS: not your turn")
+            return False
+
+        if not self._tyr_owned_by_player(root, self.player):
+            logger.error("ERROR: OVERRIDE INSTINCTS: target unit is not yours")
+            return False
+        if not self._tyr_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: OVERRIDE INSTINCTS: target must be on the battlefield and targetable")
+            return False
+        if not self._is_tyranids_unit(root):
+            logger.error("ERROR: OVERRIDE INSTINCTS: target must be a TYRANIDS unit")
+            return False
+        if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: OVERRIDE INSTINCTS: target must have Fallen Back this phase")
+            return False
+        if not self._tyr_unit_in_synapse_range(root):
+            logger.error("ERROR: OVERRIDE INSTINCTS: target must be within Synapse Range")
+            return False
+
+        eligible = candidates or self._tyr_override_instincts_candidates()
+        if eligible and not self._tyr_unit_in_candidates(root, eligible):
+            logger.error("ERROR: OVERRIDE INSTINCTS: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: OVERRIDE INSTINCTS: cannot be used in current state")
+            return False
+        if not self._tyr_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tyranids_override_instincts_active"] = True
+        sr["tyranids_override_instincts_expires_phase"] = "CHARGE_PHASE"
+        sr["tyranids_override_instincts_source"] = str(getattr(stratagem, "name", "") or "OVERRIDE INSTINCTS")
+        owner_id = str(getattr(self.player, "id", "") or "")
+        if owner_id:
+            sr["tyranids_override_instincts_turn_owner"] = owner_id
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        if turn:
+            sr["tyranids_override_instincts_turn"] = int(turn)
+        root.special_rules = sr
+
+        self._tyr_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: OVERRIDE INSTINCTS: %s can shoot and charge this turn after Falling Back.",
+            getattr(root, "name", "Unit"),
+        )
         return True
 
     def _use_tyranids_untrammelled_ferocity(self, stratagem: Any, **kwargs) -> bool:

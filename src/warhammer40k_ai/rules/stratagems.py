@@ -59,6 +59,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "GLIMMERSHIFT PORTAL",
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
+    "OVERRIDE INSTINCTS",
     "PINPOINT COUNTER-OFFENSIVE",
     "POUNCE ON THE PREY",
     "PULSE ONSLAUGHT",
@@ -146,6 +147,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PUNISH THE CRAVEN",
     "SKYBORNE SANCTUARY",
     "SHOCK CAVALRY",
+    "PINNING FIRE",
     "TO THEIR FINAL BREATH",
     "SMOKESCREEN",
     "SKULLS FOR THE SKULL THRONE!",
@@ -3809,6 +3811,26 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires end of opponent's Fight phase and eligible VANGUARD INVADER or TYRANIDS INFANTRY units on the battlefield"
             return result
+        if name_u == "OVERRIDE INSTINCTS":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_override_instincts_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase and a TYRANIDS unit within Synapse Range that Fell Back this phase"
+            return result
+        if name_u == "PINNING FIRE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._space_marines_pinning_fire_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and an ADEPTUS ASTARTES unit that has not been selected to shoot this phase"
+            return result
         if name_u == "ADRENAL SURGE":
             if self._tyr_adrenal_surge_candidates():
                 result["available"] = True
@@ -4255,6 +4277,7 @@ class StratagemManager(
             "ARDENT AUTOMATA": "Target: your RUBRICAE unit that just Fell Back this phase; it can shoot and charge this turn",
             "GLIMMERSHIFT PORTAL": "End of opponent's Fight phase: target up to two SCINTILLATING LEGIONS non-MONSTER units, or one SCINTILLATING LEGIONS MONSTER unit, each more than 6\" horizontally from all enemy units; selected units enter Strategic Reserves",
             "INVISIBLE HUNTER": "End of opponent's Fight phase: target up to two VANGUARD INVADER units, or one TYRANIDS INFANTRY unit; selected units enter Strategic Reserves",
+            "OVERRIDE INSTINCTS": "Movement phase, just after one of your TYRANIDS units within Synapse Range Falls Back: selected unit can shoot and declare a charge this turn",
             "IMPLACABLE GUARDIANS": "Target: your RUBRIC MARINES PSYKER unit selected as an enemy shooting target; subtract 1 from Damage allocated to non-PSYKER models this phase",
             "INFERNAL FUSILLADE": "Target: your THOUSAND SONS PSYKER unit not yet selected to shoot; inferno bolt weapons gain [PSYCHIC] and Strength 5 this phase",
             "ADRENAL SURGE": "Target: one TYRANIDS unit eligible to fight, or up to two TYRANIDS units eligible to fight if both are within Synapse Range",
@@ -4284,6 +4307,7 @@ class StratagemManager(
             "LIMB FROM LIMB": "Target: BLOOD ANGELS unit (charged)",
             "RED WRATH": "Target: BLOOD ANGELS unit (advanced)",
             "SHOCK CAVALRY": "Target: THUNDERWOLF CAVALRY unit that has not been selected to move or declared a charge this phase; move through models (excluding TITANIC) and terrain <=4\" this phase, with move/advance/fall back able to pass within Engagement Range but not end there",
+            "PINNING FIRE": "Target: ADEPTUS ASTARTES unit that has not been selected to shoot this phase; after it shoots, select one hit enemy CHARACTER, MONSTER, or VEHICLE unit to be pinned (Move -2, Charge -2) until the start of your next Shooting phase",
             "ANTI-GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "ANTI‑GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "BLIND GRENADES": "Target: AGENTS OF THE IMPERIUM GRENADES unit or VINDICARE ASSASSIN selected as a charge target and not in Engagement Range",

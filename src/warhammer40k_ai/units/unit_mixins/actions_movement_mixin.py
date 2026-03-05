@@ -82,14 +82,59 @@ class ActionsMovementMixin:
         engaged_only_by_aircraft = bool(getattr(self, "_engaged_only_by_aircraft", False))
         if state_enum == MovementState.IN_ENGAGEMENT_RANGE:
             if engaged_only_by_aircraft:
-                return [
+                actions = [
                     MovementAction.REMAIN_STATIONARY.value,
                     MovementAction.MOVE.value,
                     MovementAction.ADVANCE.value,
                     MovementAction.FALL_BACK.value,
                 ]
-            return [MovementAction.REMAIN_STATIONARY.value, MovementAction.FALL_BACK.value]
-        return [MovementAction.REMAIN_STATIONARY.value, MovementAction.MOVE.value, MovementAction.ADVANCE.value]
+            else:
+                actions = [MovementAction.REMAIN_STATIONARY.value, MovementAction.FALL_BACK.value]
+        else:
+            actions = [MovementAction.REMAIN_STATIONARY.value, MovementAction.MOVE.value, MovementAction.ADVANCE.value]
+
+        stasis_mode = self._stasis_bomb_movement_lock_mode()
+        if stasis_mode == "remain_stationary":
+            return [MovementAction.REMAIN_STATIONARY.value]
+        if stasis_mode == "no_advance_fall_back":
+            actions = [
+                action for action in list(actions or [])
+                if action not in (MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value)
+            ]
+        return list(actions or [])
+
+    def _stasis_bomb_movement_lock_mode(self) -> str:
+        """Return active Stasis Bomb movement lock mode during the affected player's Movement phase."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        if not bool(sr.get("stasis_bomb_active", False)):
+            return ""
+        mode = str(sr.get("stasis_bomb_mode", "") or "").strip().lower()
+        if mode not in ("no_advance_fall_back", "remain_stationary"):
+            return ""
+        expected_phase = str(sr.get("stasis_bomb_expires_phase", "") or "MOVEMENT_PHASE").strip().upper() or "MOVEMENT_PHASE"
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if game is not None:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if expected_phase and phase_name and phase_name != expected_phase:
+                return ""
+            owner_id = str(sr.get("stasis_bomb_owner", "") or "")
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if owner_id and current_owner and owner_id != current_owner:
+                return ""
+        return mode
 
     def _execute_action(self, action: int, destination: Tuple[float, float, float], game_map: 'Map', advance_roll: int = None) -> bool:
         """Execute a movement action for the unit."""
@@ -10240,6 +10285,17 @@ class ActionsMovementMixin:
         if bool(getattr(self, "is_aircraft", False)):
             logger.info(f"{self.name} cannot Advance (AIRCRAFT)")
             return False
+        stasis_mode = self._stasis_bomb_movement_lock_mode()
+        if stasis_mode in ("no_advance_fall_back", "remain_stationary"):
+            if stasis_mode == "remain_stationary":
+                logger.info(f"{self.name} cannot Advance - must remain stationary (Stasis Bomb)")
+                try:
+                    self.round_state.remained_stationary_this_round = True
+                except Exception:
+                    pass
+            else:
+                logger.info(f"{self.name} cannot Advance (Stasis Bomb)")
+            return False
         # Check if unit can advance after arriving from reserves
         if self.arrived_from_reserves_this_turn and not self.can_advance_after_arriving_from_reserves():
             logger.info(f"{self.name} cannot advance - arrived from reserves this turn")
@@ -10552,6 +10608,14 @@ class ActionsMovementMixin:
         """
         if bool(getattr(self, "is_aircraft", False)):
             return self._aircraft_normal_move(destination, game_map, pivot_degrees=aircraft_pivot_degrees)
+        stasis_mode = self._stasis_bomb_movement_lock_mode()
+        if stasis_mode == "remain_stationary":
+            logger.info(f"{self.name} cannot move - must remain stationary (Stasis Bomb)")
+            try:
+                self.round_state.remained_stationary_this_round = True
+            except Exception:
+                pass
+            return False
         if not self.models:
             logger.error(f"Cannot move unit {self.name}: no models in unit")
             return False
@@ -11759,6 +11823,17 @@ class ActionsMovementMixin:
         if bool(getattr(self, "is_aircraft", False)):
             logger.info(f"{self.name} cannot Fall Back (AIRCRAFT)")
             return False
+        stasis_mode = self._stasis_bomb_movement_lock_mode()
+        if stasis_mode in ("no_advance_fall_back", "remain_stationary"):
+            if stasis_mode == "remain_stationary":
+                logger.info(f"{self.name} cannot Fall Back - must remain stationary (Stasis Bomb)")
+                try:
+                    self.round_state.remained_stationary_this_round = True
+                except Exception:
+                    pass
+            else:
+                logger.info(f"{self.name} cannot Fall Back (Stasis Bomb)")
+            return False
         logger.info(f"{self.name} falls back from combat")
 
         sources = []
@@ -11780,6 +11855,65 @@ class ActionsMovementMixin:
             if eh_sources:
                 sources.extend(eh_sources)
                 source_labels.append(ENTHRALLING_HYPNOSIS_NAME)
+        except Exception:
+            pass
+        try:
+            if game_map is not None:
+                try:
+                    enemy_units = list(game_map.get_enemy_units(self) or [])
+                except Exception:
+                    enemy_units = []
+                no_escape_sources = []
+                seen_no_escape_roots: set[str] = set()
+                for enemy in list(enemy_units or []):
+                    if enemy is None:
+                        continue
+                    try:
+                        enemy_root = enemy.get_attached_unit_root()
+                    except Exception:
+                        enemy_root = enemy
+                    if enemy_root is None:
+                        continue
+                    try:
+                        enemy_root_id = str(get_entity_id(enemy_root) or "")
+                    except Exception:
+                        enemy_root_id = ""
+                    if enemy_root_id and enemy_root_id in seen_no_escape_roots:
+                        continue
+                    if enemy_root_id:
+                        seen_no_escape_roots.add(enemy_root_id)
+                    checker = getattr(enemy_root, "_attached_unit_has_active_enhancement", None)
+                    has_no_escape = False
+                    if callable(checker):
+                        has_no_escape = bool(
+                            checker(
+                                "enhancement_no_escape_aura",
+                                enhancement_id="000009130004",
+                                enhancement_name="No Escape (Aura)",
+                                require_bearer_alive=True,
+                            )
+                        )
+                    if not has_no_escape:
+                        continue
+                    within_range = False
+                    dist_fn = getattr(game_map, "get_distance_between_units", None)
+                    if callable(dist_fn):
+                        try:
+                            within_range = float(dist_fn(self, enemy_root)) <= (6.0 + 1e-6)
+                        except Exception:
+                            within_range = False
+                    if not within_range:
+                        try:
+                            from ...utility.aura_utils import min_distance_between_units_3d
+                            within_range = float(min_distance_between_units_3d(self, enemy_root)) <= (6.0 + 1e-6)
+                        except Exception:
+                            within_range = False
+                    if not within_range:
+                        continue
+                    no_escape_sources.append(enemy_root)
+                if no_escape_sources:
+                    sources.extend(no_escape_sources)
+                    source_labels.append("No Escape (Aura)")
         except Exception:
             pass
         if sources:
@@ -11808,6 +11942,7 @@ class ActionsMovementMixin:
         fallback_desperate = False
         fallback_bs_penalty = 0
         fallback_any_penalty = 0
+        fallback_stationary_roll_locks: list[dict] = []
         if game_map is not None:
             try:
                 enemy_units = list(game_map.get_enemy_units(self) or [])
@@ -11855,6 +11990,66 @@ class ActionsMovementMixin:
                     members = [enemy_root]
                 if not members:
                     members = [enemy_root]
+
+                soulless_reaper_active = False
+                try:
+                    checker = getattr(enemy_root, "_attached_unit_has_active_enhancement", None)
+                    if callable(checker):
+                        soulless_reaper_active = bool(
+                            checker(
+                                "enhancement_soulless_reaper",
+                                enhancement_id="000008543004",
+                                enhancement_name="Soulless Reaper",
+                                require_bearer_alive=True,
+                            )
+                        )
+                except Exception:
+                    soulless_reaper_active = False
+                if soulless_reaper_active:
+                    fallback_stationary_roll_locks.append(
+                        {
+                            "source": "Soulless Reaper",
+                            "threshold": 3,
+                            "optional": False,
+                        }
+                    )
+
+                grasping_tendrils_active = False
+                try:
+                    target_is_titanic = bool(self.has_any_keyword("TITANIC"))
+                except Exception:
+                    target_is_titanic = False
+                if not target_is_titanic:
+                    for source_unit in members:
+                        iter_entries = getattr(source_unit, "_iter_ability_entries_for_rules", None)
+                        if not callable(iter_entries):
+                            continue
+                        for ability_name, ability_desc in list(iter_entries(model=None) or []):
+                            name_low = str(ability_name or "").strip().lower()
+                            text_low = self._normalize_rules_text(
+                                f"{ability_name or ''} {ability_desc or ''}".strip()
+                            ).lower()
+                            if name_low == "grasping tendrils":
+                                grasping_tendrils_active = True
+                                break
+                            if (
+                                "selected to fall back" in text_low
+                                and "remain stationary" in text_low
+                                and "excluding titanic" in text_low
+                            ):
+                                grasping_tendrils_active = True
+                                break
+                        if grasping_tendrils_active:
+                            break
+                if grasping_tendrils_active:
+                    fallback_stationary_roll_locks.append(
+                        {
+                            "source": "Grasping Tendrils",
+                            "threshold": 3,
+                            "optional": True,
+                        }
+                    )
+
                 for source_unit in members:
                     source_sr = getattr(source_unit, "special_rules", None)
                     if not isinstance(source_sr, dict):
@@ -12037,6 +12232,35 @@ class ActionsMovementMixin:
                     fallback_bs_penalty = max(fallback_bs_penalty, int(source_bs_penalty or 0))
                 except Exception:
                     pass
+
+        for lock_spec in list(fallback_stationary_roll_locks or []):
+            try:
+                threshold = int(lock_spec.get("threshold", 0) or 0)
+            except Exception:
+                threshold = 0
+            if threshold <= 0:
+                continue
+            source = str(lock_spec.get("source", "") or "Fallback lock").strip() or "Fallback lock"
+            try:
+                roll = int(get_roll("D6") or 0)
+            except Exception:
+                roll = 0
+            if int(roll) < int(threshold):
+                continue
+            try:
+                self.round_state.remained_stationary_this_round = True
+            except Exception:
+                pass
+            try:
+                from ...utility.event_bus import append_action
+                pn = self.get_parent_army().player
+                append_action(
+                    pn,
+                    f"{self.name} cannot Fall Back and remains stationary ({source}: rolled {int(roll)}+).",
+                )
+            except Exception:
+                pass
+            return False
 
         is_battleshocked = self.is_battle_shocked()
         fortification_escape_exempt = False
@@ -13074,6 +13298,16 @@ class ActionsMovementMixin:
                     if turn and cur_turn and turn != cur_turn:
                         active = False
                 if active:
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+            apply_fn = getattr(mgr, "can_shoot_after_fall_back", None) if mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, profile=profile, game=game)):
                     return True
         except Exception:
             pass

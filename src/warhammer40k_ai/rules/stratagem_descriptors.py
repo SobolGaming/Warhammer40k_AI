@@ -3023,6 +3023,26 @@ _VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SYNAPTIC_NEXUS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008556007": StratagemToolDescriptor(
+        stratagem_id="000008556007",
+        name="Override Instincts",
+        timing="movement_phase_after_fall_back",
+        target="tyranids_unit_within_synapse_that_fell_back",
+        duration="until_end_of_turn",
+        effect="eligible_to_shoot_and_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={
+            "requires_synapse_range": True,
+            "requires_fell_back_this_phase": True,
+        },
+    ),
+}
+
+_SYNAPTIC_NEXUS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SYNAPTIC_NEXUS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _CRUSHER_STAMPEDE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008422005": StratagemToolDescriptor(
         stratagem_id="000008422005",
@@ -3069,6 +3089,21 @@ _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescripto
             "low_terrain_threshold": 4.0,
             "movement_phase_allow_move_within_engagement_range": True,
             "movement_phase_cannot_end_in_engagement_range": True,
+        },
+    ),
+    "000010270004": StratagemToolDescriptor(
+        stratagem_id="000010270004",
+        name="Pinning Fire",
+        timing="shooting_phase_on_select_to_shoot",
+        target="adeptus_astartes_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_shooting_phase_source_then_until_start_of_owners_next_shooting_phase_target",
+        effect="post_shoot_select_hit_character_monster_vehicle_to_pin",
+        cp_cost=1,
+        effect_params={
+            "target_enemy_keywords_any": ["CHARACTER", "MONSTER", "VEHICLE"],
+            "pinned_move_penalty": -2,
+            "pinned_charge_penalty": -2,
+            "pinned_expires_phase": "SHOOTING_PHASE",
         },
     ),
 }
@@ -3577,6 +3612,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _VANGUARD_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SYNAPTIC_NEXUS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _CRUSHER_STAMPEDE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3650,6 +3688,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _KAUYON_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
         or _VANGUARD_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
+        or _SYNAPTIC_NEXUS_STRATAGEM_BY_NAME.get(key)
         or _CRUSHER_STAMPEDE_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)

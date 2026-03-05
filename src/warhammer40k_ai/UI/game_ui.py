@@ -5205,7 +5205,7 @@ class GameView:
         if decision_type == DECISION_CHOOSE_QUARRY:
             ctx = dict(getattr(request, "context", {}) or {})
             kind = str(ctx.get("mortal_wounds_kind", "") or "").strip().lower()
-            if kind in ("charge_end", "move_over", "fight_phase_end"):
+            if kind in ("charge_end", "move_over", "fight_phase_end", "stasis_bomb"):
                 from ..utility.decision_utils import resolve_decision_command
                 from .decision_ui_utils import option_id_for_action, first_option_id
 

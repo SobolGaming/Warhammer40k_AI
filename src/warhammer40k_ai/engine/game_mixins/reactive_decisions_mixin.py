@@ -2700,7 +2700,15 @@ class GameReactiveDecisionsMixin:
         if not candidates:
             return None
         kind_key = str(kind or "").strip().lower()
-        if kind_key not in ("charge_end", "move_over", "fight_phase_end", "bomb_squigs", "plunder", "floating_death"):
+        if kind_key not in (
+            "charge_end",
+            "move_over",
+            "fight_phase_end",
+            "bomb_squigs",
+            "plunder",
+            "floating_death",
+            "stasis_bomb",
+        ):
             return None
         unit_id = maybe_entity_id(unit)
         if not unit_id:
@@ -7821,7 +7829,15 @@ class GameReactiveDecisionsMixin:
         if not bool(ctx.get("engine_flow", False)):
             return
         kind = str(ctx.get("mortal_wounds_kind", "") or "").strip().lower()
-        if kind not in ("charge_end", "move_over", "fight_phase_end", "bomb_squigs", "plunder", "floating_death"):
+        if kind not in (
+            "charge_end",
+            "move_over",
+            "fight_phase_end",
+            "bomb_squigs",
+            "plunder",
+            "floating_death",
+            "stasis_bomb",
+        ):
             return
         if self._decision_is_skip(request, result):
             return
@@ -7898,6 +7914,24 @@ class GameReactiveDecisionsMixin:
         if kind == "floating_death":
             self.resolve_floating_death_mortal_wounds(unit, model, target_unit, spec)
             self._continue_floating_death_pending(unit)
+            return
+        if kind == "stasis_bomb":
+            source_model = model
+            model_map = dict(spec.get("source_model_ids_by_target") or {})
+            if source_model is None and model_map:
+                try:
+                    target_id = str(get_entity_id(target_unit) or "")
+                except Exception:
+                    target_id = ""
+                source_model_ids = list(model_map.get(target_id, []) or [])
+                for candidate_model_id in sorted(source_model_ids):
+                    candidate_model = self._resolve_model_by_id(str(candidate_model_id or ""))
+                    if candidate_model is not None:
+                        source_model = candidate_model
+                        break
+            if source_model is None:
+                return
+            self.resolve_stasis_bomb(unit, source_model, target_unit, spec)
             return
         if model is None:
             return

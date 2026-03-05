@@ -296,6 +296,7 @@ Movement:
 - fleet_commander_second_marker_dialog: PICK_POINT {point} (context `ability="fleet_commander_marker_2"`, `ability_name="Fleet Commander"`, `unit_id`, `source_member_unit_id`, `first_marker_point`, `marker_range`, `roll_min`, `mortal_wounds_roll`, `optional=false`)
 - hazard_objective_select_dialog: PICK_OBJECTIVE {objective_id}
 - move_over_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="move_over"`, `unit_id`, `model_id` optional, `ability_name`, `spec`)
+- stasis_bomb_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="stasis_bomb"`, `unit_id`, `ability_name`, `spec.source_model_ids_by_target`, `spec.once_per_turn_army`, `spec.once_per_battle_per_model`)
 - bomb_squigs_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="bomb_squigs"`, `unit_id`, `ability_name`, `spec.max_uses`, `spec.remaining_uses`)
 - plunder_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="plunder"`, `unit_id`, `ability_name`, `spec`)
 - cult_ambush_reinforcements_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="cult_ambush_reinforcements"`, `marker_id`, `remaining_marker_ids`, `available_unit_ids`)

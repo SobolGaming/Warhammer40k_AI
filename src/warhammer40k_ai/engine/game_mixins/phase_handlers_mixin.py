@@ -12451,6 +12451,18 @@ class GamePhaseHandlersMixin:
                 sr = getattr(u, "special_rules", None)
                 if not isinstance(sr, dict):
                     continue
+                if pname == "MOVEMENT_PHASE" and bool(sr.get("stasis_bomb_active", False)):
+                    effect_owner = str(sr.get("stasis_bomb_owner", "") or "")
+                    if (not effect_owner) or (not active_name) or effect_owner == active_name:
+                        for k in (
+                            "stasis_bomb_active",
+                            "stasis_bomb_mode",
+                            "stasis_bomb_owner",
+                            "stasis_bomb_turn",
+                            "stasis_bomb_source",
+                            "stasis_bomb_expires_phase",
+                        ):
+                            sr.pop(k, None)
                 exp = str(sr.get("relentless_rage_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (
