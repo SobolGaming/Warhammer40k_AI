@@ -3787,8 +3787,12 @@ class Unit(
         re.IGNORECASE,
     )
     _FIGHT_PHASE_MELEE_ATTACKS_STRENGTH_RE = re.compile(
-        r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
-        r"add (?P<attacks>\d+) to the attacks and strength characteristics of melee weapons equipped by this model",
+        r"once per battle (?:at the start of|in) the fight phase this model can use this ability if it does until the end of the phase "
+        r"(?:"
+        r"add (?P<add_val>\d+) to the (?:attacks and strength|strength and attacks) characteristics of melee weapons equipped by this model"
+        r"|"
+        r"improve the (?:strength and attacks|attacks and strength) characteristics of melee weapons equipped by this model by (?P<improve_val>\d+)"
+        r")",
         re.IGNORECASE,
     )
     _FIGHT_PHASE_MELEE_ATTACKS_SET_INVULN_RE = re.compile(

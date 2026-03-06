@@ -1421,7 +1421,7 @@ class AbilitySpecsMixin:
                 continue
             try:
                 bonus = int(m.group("bonus") or 0)
-            except Exception:
+            except (TypeError, ValueError):
                 bonus = 0
             if mw_raw in ("d3", "d6"):
                 mw_value: str | int = mw_raw
@@ -3679,7 +3679,7 @@ class AbilitySpecsMixin:
             if not m:
                 continue
             try:
-                bonus = int(m.group("attacks") or 0)
+                bonus = int(m.group("add_val") or m.group("improve_val") or 0)
             except Exception:
                 bonus = 0
             if bonus <= 0:

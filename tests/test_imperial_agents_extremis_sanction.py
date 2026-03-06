@@ -1068,6 +1068,47 @@ def test_tome_skull_queues_choice_and_resolves_clear_or_enemy_test_with_token_li
     assert _pending_quarry_for_ability(game, ability="imperial_agents_tome_skull") is None
 
 
+def test_zealot_optional_activation_grants_melee_attacks_and_strength_bonus():
+    game, ia_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+    game.turn = 1
+
+    zealot = Ability(
+        "Zealot",
+        "AOI",
+        (
+            "Once per battle, in the Fight phase, this model can use this ability. If it does, until the end of the phase, "
+            "improve the Strength and Attacks characteristics of melee weapons equipped by this model by 3."
+        ),
+        "Datasheet",
+        "",
+    )
+    priest = _make_unit(
+        "Ministorum Priest",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[zealot],
+    )
+    ia_player.army.add_unit(priest)
+    game.map.units = [priest]
+    game.rebuild_entity_registry()
+
+    game._on_phase_start_optional_abilities(player=ia_player, phase=BattleRoundPhases.FIGHT_PHASE)
+    requests = list(game.decision_queue.list() or [])
+    assert requests
+
+    request = requests[0]
+    assert str(getattr(request, "decision_type", "") or "") == DECISION_CONFIRM_YES_NO
+    result = _resolve_yes(game, request, ia_player)
+    assert bool(getattr(result, "ok", False))
+
+    model = priest.models[0]
+    assert int(model.get_temporary_melee_attacks_bonus() or 0) == 3
+    strength_bonus, _strength_reasons = model.get_temporary_melee_strength_bonus()
+    assert int(strength_bonus or 0) == 3
+
+
 def test_acrobatic_escape_parses_redeploy_for_next_reinforcements_step():
     acrobatic_escape = Ability(
         "Acrobatic Escape",

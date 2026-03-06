@@ -5464,6 +5464,7 @@ def _classify_ability_base(
     fight_phase_below_starting_strength_fight_first_support = _fight_phase_below_starting_strength_fight_first_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
     fight_phase_melee_ap_boost_support = _fight_phase_once_melee_attacks_ap_support(description)
+    fight_phase_melee_strength_boost_support = _fight_phase_once_melee_attacks_strength_support(description)
     start_any_phase_damage_set_one_support = _start_any_phase_damage_set_one_support(description)
     start_any_phase_unit_invuln_support = _start_any_phase_unit_invuln_support(description)
     start_any_phase_unit_fnp_support = _start_any_phase_unit_fnp_support(description)
@@ -5807,6 +5808,8 @@ def _classify_ability_base(
         return fight_phase_end_mortal_support
     if fight_phase_melee_ap_boost_support:
         return fight_phase_melee_ap_boost_support
+    if fight_phase_melee_strength_boost_support:
+        return fight_phase_melee_strength_boost_support
     if start_any_phase_damage_set_one_support:
         return start_any_phase_damage_set_one_support
     if start_any_phase_unit_invuln_support:
@@ -10768,6 +10771,35 @@ def _fight_phase_once_melee_attacks_ap_support(description: str) -> Optional[Tup
     if not re.fullmatch(pattern, norm):
         return None
     return ("Supported", "Once per battle (start of Fight phase): +3 Attacks and +1 AP for bearer melee weapons.")
+
+
+def _fight_phase_once_melee_attacks_strength_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle (?:at the start of|in) the fight phase this model can use this ability if it does until the end of the phase "
+        r"(?:"
+        r"add (?P<add_val>\d+) to the (?:attacks and strength|strength and attacks) characteristics of melee weapons equipped by this model"
+        r"|"
+        r"improve the (?:strength and attacks|attacks and strength) characteristics of melee weapons equipped by this model by (?P<improve_val>\d+)"
+        r")"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        bonus = int(m.group("add_val") or m.group("improve_val") or 0)
+    except (TypeError, ValueError):
+        bonus = 0
+    if bonus <= 0:
+        return None
+    return (
+        "Supported",
+        f"Once per battle in the Fight phase: bearer melee weapons gain +{bonus} Attacks and +{bonus} Strength until phase end.",
+    )
 
 
 def _start_any_phase_damage_set_one_support(description: str) -> Optional[Tuple[str, str]]:
