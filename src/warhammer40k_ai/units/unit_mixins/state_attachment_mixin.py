@@ -43,6 +43,11 @@ _BODYGUARD_NO_DUPLICATE_LEADERS_RE = re.compile(
     r"\bnot\s+duplicates?\b",
     re.IGNORECASE,
 )
+_BODYGUARD_TRANSPORT_EMBARK_OVERRIDE_RE = re.compile(
+    r"while this (?:model|unit) is (?:leading|joined to) a unit "
+    r"it can embark within any transport that (?:its bodyguard unit|that unit) can embark within",
+    re.IGNORECASE,
+)
 
 _MASTERS_OF_THE_MAELSTROM_TARGET_UNIT_NAMES = {
     "chosen",
@@ -1875,10 +1880,106 @@ class StateAttachmentMixin:
     def transport_slots_remaining(self) -> int:
         return max(0, int(self.transport_capacity or 0) - int(self.transport_slots_used or 0))
 
+    def _transport_keyword_check_members(self) -> list["Unit"]:
+        root = self.get_attached_unit_root()
+        members: list["Unit"] = [root]
+        for support in list(getattr(root, "attached_support_units", []) or []):
+            if support is not None:
+                members.append(support)
+        for leader in list(getattr(root, "attached_leaders", []) or []):
+            if leader is not None:
+                members.append(leader)
+
+        ordered: list["Unit"] = []
+        seen: set[int] = set()
+        for member in members:
+            key = id(member)
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(member)
+        return ordered
+
+    @staticmethod
+    def _transport_member_has_local_keyword(member: "Unit", keyword: str) -> bool:
+        if member is None:
+            return False
+        has_local = getattr(member, "has_any_keyword_local", None)
+        if callable(has_local):
+            return bool(has_local(keyword))
+        has_any = getattr(member, "has_any_keyword", None)
+        if callable(has_any):
+            return bool(has_any(keyword))
+        return False
+
+    def _attached_leaders_with_bodyguard_transport_embark_override(self) -> set[str]:
+        root = self.get_attached_unit_root()
+        if root is not self:
+            return root._attached_leaders_with_bodyguard_transport_embark_override()
+
+        cache_key = "bodyguard_transport_embark_override_leader_ids"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return set(str(v) for v in list(cache.get(cache_key) or []))
+
+        matched_ids: set[str] = set()
+        for ability, leader in root._iter_attached_leader_leading_abilities():
+            if isinstance(ability, str):
+                name = str(ability or "")
+                desc = str(ability or "")
+            else:
+                name = str(getattr(ability, "name", "") or "")
+                desc = str(getattr(ability, "description", "") or "") or name
+            text_src = leader._strip_eligibility_prefix(desc or name or "")
+            normalized = str(leader._normalize_rules_text(text_src) or "")
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not normalized:
+                continue
+            if _BODYGUARD_TRANSPORT_EMBARK_OVERRIDE_RE.search(normalized) is None:
+                continue
+            leader_id = str(get_entity_id(leader) or "").strip()
+            if leader_id:
+                matched_ids.add(leader_id)
+            else:
+                matched_ids.add(f"obj:{id(leader)}")
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = sorted(matched_ids)
+        root._ability_cache = cache
+        return set(matched_ids)
+
+    def _transport_member_inherits_bodyguard_embark_eligibility(self, member: "Unit") -> bool:
+        root = self.get_attached_unit_root()
+        if member is None or member is root:
+            return False
+
+        if getattr(member, "support_joined_to", None) is root:
+            allows_embark = getattr(member, "joined_support_allows_embark_while_joined", None)
+            if callable(allows_embark) and bool(allows_embark()):
+                return True
+
+        if not bool(getattr(member, "is_attached_leader", False)):
+            return False
+
+        override_ids = root._attached_leaders_with_bodyguard_transport_embark_override()
+        member_id = str(get_entity_id(member) or "").strip()
+        if member_id and member_id in override_ids:
+            return True
+        return f"obj:{id(member)}" in override_ids
+
     def can_transport(self, passenger_unit: 'Unit') -> bool:
         """Core eligibility + capacity check (datasheet-specific restrictions are best-effort)."""
         if passenger_unit is None:
             return False
+        get_root = getattr(passenger_unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            passenger_root = get_root()
+            if passenger_root is not None:
+                passenger_unit = passenger_root
         if passenger_unit == self:
             return False
         if not self.is_transport:
@@ -1911,18 +2012,28 @@ class StateAttachmentMixin:
         # Datasheet-specific restrictions (from Wahapedia `datasheet.transport` field when present)
         req = getattr(self, "transport_required_keywords", set()) or set()
         excl = getattr(self, "transport_excluded_keywords", set()) or set()
+        keyword_members = passenger_unit._transport_keyword_check_members()
         if req:
-            for kw in req:
-                if not passenger_unit.has_any_keyword(str(kw)):
-                    return False
+            for member in keyword_members:
+                if passenger_unit._transport_member_inherits_bodyguard_embark_eligibility(member):
+                    continue
+                for kw in req:
+                    if not passenger_unit._transport_member_has_local_keyword(member, str(kw)):
+                        return False
         else:
-            # Default core restriction: transports carry Infantry (unless specified otherwise)
-            if not passenger_unit.is_infantry:
-                return False
-        if excl:
-            for kw in excl:
-                if passenger_unit.has_any_keyword(str(kw)):
+            # Default core restriction: transports carry Infantry (unless specified otherwise).
+            for member in keyword_members:
+                if passenger_unit._transport_member_inherits_bodyguard_embark_eligibility(member):
+                    continue
+                if not passenger_unit._transport_member_has_local_keyword(member, "Infantry"):
                     return False
+        if excl:
+            for member in keyword_members:
+                if passenger_unit._transport_member_inherits_bodyguard_embark_eligibility(member):
+                    continue
+                for kw in excl:
+                    if passenger_unit._transport_member_has_local_keyword(member, str(kw)):
+                        return False
         # Capacity
         needed = passenger_unit.get_transport_slots_required()
         if needed <= 0:

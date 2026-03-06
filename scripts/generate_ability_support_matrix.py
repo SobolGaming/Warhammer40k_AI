@@ -5385,6 +5385,7 @@ def _classify_ability_base(
     attached_possessed_support = _attached_possessed_formation_bonus_support(description)
     attached_battleline_infiltrators_support = _attached_battleline_infiltrators_scouts_support(description)
     transport_support = _transport_disembark_support(description)
+    leading_bodyguard_embark_support = _leading_bodyguard_transport_embark_support(description)
     transport_reactive_disembark_support = _transport_reactive_disembark_support(description)
     embarking_firing_deck_weight_support = _embarking_firing_deck_weight_support(description)
     end_of_fight_embark_support = _end_of_fight_embark_support(description)
@@ -5665,6 +5666,8 @@ def _classify_ability_base(
         return attached_battleline_infiltrators_support
     if end_of_fight_embark_support:
         return end_of_fight_embark_support
+    if leading_bodyguard_embark_support:
+        return leading_bodyguard_embark_support
     if transport_support:
         return transport_support
     if transport_reactive_disembark_support:
@@ -9006,6 +9009,29 @@ def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:
         notes.append("Disembark after Advance; counts as Normal move; cannot charge.")
     if notes:
         return ("Supported", " ".join(notes))
+    return None
+
+
+def _leading_bodyguard_transport_embark_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    leading_pattern = (
+        r"while this (?:model|unit) is leading a unit "
+        r"it can embark within any transport that its bodyguard unit can embark within"
+    )
+    joined_pattern = (
+        r"while this (?:model|unit) is joined to a unit "
+        r"it can embark within any transport that unit can embark within"
+        r"(?: and takes up the space of \d+ models)?"
+    )
+    if re.fullmatch(leading_pattern, norm) or re.fullmatch(joined_pattern, norm):
+        return (
+            "Supported",
+            "Attached leader/joined model can embark in any TRANSPORT its bodyguard host can embark in (host eligibility still required).",
+        )
     return None
 
 
