@@ -313,6 +313,23 @@ class PowerFromPainManager:
             members = [root]
         return list(members or [root])
 
+    def _unit_has_dark_vitality(self, unit) -> bool:
+        for member in self._iter_unit_members(unit):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_dark_vitality", False)):
+                continue
+            bearer_fn = getattr(member, "_get_enhancement_bearer_model", None)
+            bearer = bearer_fn() if callable(bearer_fn) else None
+            if bearer is None:
+                if self._unit_is_alive(member):
+                    return True
+                continue
+            alive_attr = getattr(bearer, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if is_alive:
+                return True
+        return False
+
     def _unit_has_ability_named(self, unit, ability_name: str) -> bool:
         want = _norm_ability_name(ability_name)
         if unit is None or not want:
@@ -1485,6 +1502,7 @@ class PowerFromPainManager:
         specs = self._applicable_pain_specs(root, trigger=trigger, game=game)
         if not specs:
             return False
+        has_dark_vitality = self._unit_has_dark_vitality(root)
         allow_offboard = any(spec.key == "SWOOPING_DESCENT" for spec in specs)
         if not self._unit_on_battlefield(root) and not allow_offboard:
             return False
@@ -1505,11 +1523,14 @@ class PowerFromPainManager:
 
         if required_choices:
             if pending is None:
-                if int(self.tokens or 0) <= 0:
-                    return False
-                if not self.spend_tokens(1, reason=f"Empower ({trigger})"):
-                    return False
-                self._apply_pain_engine_refund_on_empower(root, game=game)
+                tokens_spent = False
+                if not has_dark_vitality:
+                    if int(self.tokens or 0) <= 0:
+                        return False
+                    if not self.spend_tokens(1, reason=f"Empower ({trigger})"):
+                        return False
+                    self._apply_pain_engine_refund_on_empower(root, game=game)
+                    tokens_spent = True
                 pending = {
                     "unit_id": unit_id,
                     "trigger": str(trigger or ""),
@@ -1518,7 +1539,7 @@ class PowerFromPainManager:
                     "ability_names": [spec.name for spec in specs],
                     "required_choices": list(required_choices),
                     "choices": {},
-                    "tokens_spent": True,
+                    "tokens_spent": bool(tokens_spent),
                 }
                 self._pending_empowerments[pending_key] = pending
             else:
@@ -1542,11 +1563,12 @@ class PowerFromPainManager:
             applied = self._finalize_pending_empowerment(pending_key, game=game)
             return bool(applied)
 
-        if int(self.tokens or 0) <= 0:
-            return False
-        if not self.spend_tokens(1, reason=f"Empower ({trigger})"):
-            return False
-        self._apply_pain_engine_refund_on_empower(root, game=game)
+        if not has_dark_vitality:
+            if int(self.tokens or 0) <= 0:
+                return False
+            if not self.spend_tokens(1, reason=f"Empower ({trigger})"):
+                return False
+            self._apply_pain_engine_refund_on_empower(root, game=game)
         applied = self._apply_empowerment_effects(
             root,
             spec_keys=[spec.key for spec in specs],
@@ -1565,6 +1587,8 @@ class PowerFromPainManager:
         applicable = self._applicable_pain_specs(unit, trigger=trigger, game=game)
         if not applicable:
             return False
+        if self._unit_has_dark_vitality(unit):
+            return bool(self.empower_unit_for_trigger(unit, trigger=trigger, game=game))
         if int(self.tokens or 0) <= 0:
             return False
         player = self._unit_owner(unit)

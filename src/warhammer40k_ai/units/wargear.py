@@ -2829,6 +2829,16 @@ class WargearProfile:
             bearer_bonus = int(sr.get("enhancement_bearer_melee_ap_bonus", 0) or 0)
             if bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
                 ap_val -= bearer_bonus
+            temporary_bearer_bonus = int(sr.get("enhancement_bearer_melee_ap_bonus_temporary", 0) or 0)
+            if temporary_bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                if self._enhancement_bonus_window_active(
+                    attacker,
+                    sr,
+                    expires_phase_key="enhancement_bearer_melee_ap_bonus_temporary_expires_phase",
+                    turn_key="enhancement_bearer_melee_ap_bonus_temporary_turn",
+                    owner_key="enhancement_bearer_melee_ap_bonus_temporary_owner",
+                ):
+                    ap_val -= int(temporary_bearer_bonus)
             blades_of_valour_bonus = self._blades_of_valour_ap_bonus(attacker)
             if blades_of_valour_bonus:
                 ap_val -= int(blades_of_valour_bonus)
@@ -4378,6 +4388,25 @@ class WargearProfile:
                         Modifier(ModifierOp.ADD, int(bearer_bonus), source="enhancement:bearer_melee_attacks_add")
                     )
                     attack_result.attacks_special_modifiers.append(f"Enhancement bearer +{bearer_bonus}A (melee)")
+            temporary_bearer_bonus = int(sr.get("enhancement_bearer_melee_attacks_bonus_temporary", 0) or 0)
+            if temporary_bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                if self._enhancement_bonus_window_active(
+                    attacker,
+                    sr,
+                    expires_phase_key="enhancement_bearer_melee_attacks_bonus_temporary_expires_phase",
+                    turn_key="enhancement_bearer_melee_attacks_bonus_temporary_turn",
+                    owner_key="enhancement_bearer_melee_attacks_bonus_temporary_owner",
+                ):
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(temporary_bearer_bonus),
+                            source="enhancement:bearer_melee_attacks_temporary_add",
+                        )
+                    )
+                    attack_result.attacks_special_modifiers.append(
+                        f"Enhancement bearer +{temporary_bearer_bonus}A (temporary melee)"
+                    )
             righteous_rage_bonus = int(sr.get("enhancement_righteous_rage_bonus", 0) or 0)
             if righteous_rage_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
                 if self._enhancement_bonus_window_active(

@@ -833,6 +833,8 @@ class Enhancement:
             is_kabalite_cartel = bool(dru_mgr and dru_mgr.is_kabalite_cartel())
         except Exception:
             is_kabalite_cartel = False
+        is_realspace_raiders_fn = getattr(dru_mgr, "is_realspace_raiders", None) if dru_mgr is not None else None
+        is_realspace_raiders = bool(callable(is_realspace_raiders_fn) and is_realspace_raiders_fn())
         ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
         gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
         tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
@@ -6067,6 +6069,91 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_master_repugnomancer_bearer_model_id"] = bearer_id
+
+        if name == "dark vitality" or enh_id == "000010574002":
+            if not is_realspace_raiders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source = str(getattr(desc, "name", "") or "Dark Vitality").strip() or "Dark Vitality"
+            unit.special_rules["enhancement_dark_vitality"] = True
+            unit.special_rules["enhancement_dark_vitality_source"] = source
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_dark_vitality_bearer_model_id"] = bearer_id
+
+        if name == "labyrinthine cunning" or enh_id == "000010574003":
+            if not is_realspace_raiders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Labyrinthine Cunning").strip() or "Labyrinthine Cunning"
+            unit.special_rules["enhancement_labyrinthine_cunning"] = True
+            unit.special_rules["enhancement_labyrinthine_cunning_source"] = source
+            unit.special_rules["enhancement_labyrinthine_cunning_ability_key"] = "labyrinthine_cunning"
+            unit.special_rules["enhancement_labyrinthine_cunning_pain_token_cost"] = int(
+                max(1, _coerce_int(params.get("pain_token_cost", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_labyrinthine_cunning_cp_gain"] = int(
+                max(0, _coerce_int(params.get("cp_gain", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_labyrinthine_cunning_success_on"] = int(
+                min(6, max(2, _coerce_int(params.get("success_on", 4) or 4, default=4)))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_labyrinthine_cunning_bearer_model_id"] = bearer_id
+
+        if name == "eye of spite" or enh_id == "000010574004":
+            if not is_realspace_raiders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Eye of Spite").strip() or "Eye of Spite"
+            base_attacks_bonus = int(max(0, _coerce_int(params.get("base_attacks_bonus", 1) or 1, default=1)))
+            base_ap_bonus = int(max(0, _coerce_int(params.get("base_ap_bonus", 1) or 1, default=1)))
+            pain_token_cost = int(max(1, _coerce_int(params.get("pain_token_cost", 1) or 1, default=1)))
+            unit.special_rules["enhancement_eye_of_spite"] = True
+            unit.special_rules["enhancement_eye_of_spite_source"] = source
+            unit.special_rules["enhancement_eye_of_spite_pain_token_cost"] = int(pain_token_cost)
+            unit.special_rules["enhancement_eye_of_spite_base_attacks_bonus"] = int(base_attacks_bonus)
+            unit.special_rules["enhancement_eye_of_spite_base_ap_bonus"] = int(base_ap_bonus)
+            if base_attacks_bonus:
+                unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                    unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+                ) + int(base_attacks_bonus)
+            if base_ap_bonus:
+                unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(
+                    unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0) or 0
+                ) + int(base_ap_bonus)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eye_of_spite_bearer_model_id"] = bearer_id
+
+        if name == "crucible of malediction" or enh_id == "000010574005":
+            if not is_realspace_raiders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Crucible of Malediction").strip() or "Crucible of Malediction"
+            unit.special_rules["enhancement_crucible_of_malediction"] = True
+            unit.special_rules["enhancement_crucible_of_malediction_source"] = source
+            unit.special_rules["enhancement_crucible_of_malediction_ability_key"] = "crucible_of_malediction"
+            unit.special_rules["enhancement_crucible_of_malediction_once_key"] = "crucible_of_malediction"
+            unit.special_rules["enhancement_crucible_of_malediction_range"] = float(
+                max(0.0, _coerce_float(params.get("range", 12.0) or 12.0, default=12.0))
+            )
+            unit.special_rules["enhancement_crucible_of_malediction_pain_token_cost"] = int(
+                max(1, _coerce_int(params.get("pain_token_cost", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_crucible_of_malediction_battleshock_modifier_if_spent"] = int(
+                _coerce_int(params.get("battle_shock_test_modifier_if_spent", -1) or -1, default=-1)
+            )
+            unit.special_rules["enhancement_crucible_of_malediction_psyker_fail_mortal_wounds"] = int(
+                max(0, _coerce_int(params.get("psyker_fail_mortal_wounds", 3) or 3, default=3))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_crucible_of_malediction_bearer_model_id"] = bearer_id
 
         if name == "leechbite plate" or enh_id == "000010588002":
             if not is_kabalite_cartel:

@@ -344,6 +344,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_ironstorm_spearhead_enhancements(player=player, phase=phase)
         self._on_phase_start_godhammer_assault_force_enhancements(player=player, phase=phase)
         self._on_phase_start_drukhari_enhancements(player=player, phase=phase)
+        self._on_phase_start_drukhari_realspace_shooting_enhancements(player=player, phase=phase)
         self._on_phase_start_lords_of_dread_enhancements(player=player, phase=phase)
         self._on_phase_start_adepta_sororitas_enhancements(player=player, phase=phase)
         self._on_phase_start_astra_militarum_enhancements(player=player, phase=phase)
@@ -2469,6 +2470,346 @@ class GamePhaseHandlersMixin:
                     },
                     instance_key=f"{unit_id}:{ability_key}:{int(current_turn)}:{current_turn_owner_id}",
                 )
+
+        if current_player is None:
+            return
+        owner = current_player
+        army = self._get_player_army(owner)
+        if army is None:
+            return
+        dru_mgr = getattr(army, "drukhari_detachments", None)
+        is_realspace_fn = getattr(dru_mgr, "is_realspace_raiders", None) if dru_mgr is not None else None
+        if not bool(callable(is_realspace_fn) and is_realspace_fn()):
+            return
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(self, "decision_queue", None)
+        owner_id = str(getattr(owner, "id", "") or "")
+        if not owner_id:
+            return
+        pending_source_ids: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                req_ctx = dict(getattr(req, "context", {}) or {})
+                if str(req_ctx.get("ability", "") or "") != "labyrinthine_cunning":
+                    continue
+                if str(req_ctx.get("turn_owner", "") or "") != owner_id:
+                    continue
+                try:
+                    req_turn = int(req_ctx.get("turn", 0) or 0)
+                except (TypeError, ValueError):
+                    req_turn = 0
+                if req_turn != int(current_turn or 0):
+                    continue
+                source_id = str(req_ctx.get("source_unit_id", "") or "")
+                if source_id:
+                    pending_source_ids.add(source_id)
+
+        seen_roots: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            if root is None or not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            rid = str(maybe_entity_id(root) or "")
+            if rid in seen_roots:
+                continue
+            seen_roots.add(rid)
+            if not self._unit_on_battlefield_for_reposition(root):
+                continue
+            members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else []
+            if not members:
+                members = [root]
+            members = sorted(members, key=lambda m: str(maybe_entity_id(m) or ""))
+            source_member = None
+            source_sr = None
+            for member in members:
+                sr = getattr(member, "special_rules", None)
+                if isinstance(sr, dict) and bool(sr.get("enhancement_labyrinthine_cunning", False)):
+                    source_member = member
+                    source_sr = sr
+                    break
+            if source_member is None or not isinstance(source_sr, dict):
+                continue
+            get_bearer = getattr(source_member, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                continue
+            bearer_alive_attr = getattr(bearer, "is_alive", True)
+            if not bool(bearer_alive_attr() if callable(bearer_alive_attr) else bearer_alive_attr):
+                continue
+            source_unit_id = str(maybe_entity_id(source_member) or "")
+            if not source_unit_id or source_unit_id in pending_source_ids:
+                continue
+            source_name = str(
+                source_sr.get("enhancement_labyrinthine_cunning_source", "") or "Labyrinthine Cunning"
+            ).strip() or "Labyrinthine Cunning"
+            try:
+                pain_token_cost = int(source_sr.get("enhancement_labyrinthine_cunning_pain_token_cost", 1) or 1)
+            except (TypeError, ValueError):
+                pain_token_cost = 1
+            pain_token_cost = max(1, int(pain_token_cost))
+            try:
+                cp_gain = int(source_sr.get("enhancement_labyrinthine_cunning_cp_gain", 1) or 1)
+            except (TypeError, ValueError):
+                cp_gain = 1
+            cp_gain = max(0, int(cp_gain))
+            try:
+                success_on = int(source_sr.get("enhancement_labyrinthine_cunning_success_on", 4) or 4)
+            except (TypeError, ValueError):
+                success_on = 4
+            success_on = min(6, max(2, int(success_on)))
+            pfp = getattr(army, "power_from_pain", None)
+            available_pain = int(getattr(pfp, "tokens", 0) or 0) if pfp is not None else 0
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            if available_pain >= pain_token_cost:
+                options.append(
+                    DecisionOption.create(
+                        f"Spend {pain_token_cost} Pain token (+{cp_gain}CP)",
+                        payload={
+                            "action": "spend_pain_token_gain_cp",
+                            "pain_token_cost": int(pain_token_cost),
+                            "cp_gain": int(cp_gain),
+                        },
+                    )
+                )
+            options.append(
+                DecisionOption.create(
+                    f"Roll D6 ({success_on}+ for +{cp_gain}CP)",
+                    payload={
+                        "action": "roll_d6_gain_cp",
+                        "success_on": int(success_on),
+                        "cp_gain": int(cp_gain),
+                    },
+                )
+            )
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{source_name}: choose one option for {getattr(bearer, 'name', 'bearer')}.",
+                player_id=getattr(owner, "id", None),
+                options=options,
+                context={
+                    "ability": "labyrinthine_cunning",
+                    "ability_name": source_name,
+                    "phase": "Command phase",
+                    "optional": True,
+                    "source_unit_id": source_unit_id,
+                    "unit_id": source_unit_id,
+                    "model_id": maybe_entity_id(bearer),
+                    "turn_owner": owner_id,
+                    "turn": int(current_turn or 0),
+                    "pain_token_cost": int(pain_token_cost),
+                    "cp_gain": int(cp_gain),
+                    "success_on": int(success_on),
+                },
+            )
+            self.request_decision(request)
+            pending_source_ids.add(source_unit_id)
+
+    def _on_phase_start_drukhari_realspace_shooting_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        current_player = getattr(self, "get_current_player", lambda: None)()
+        if player is None or current_player is None or player is not current_player:
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        dru_mgr = getattr(army, "drukhari_detachments", None)
+        is_realspace_fn = getattr(dru_mgr, "is_realspace_raiders", None) if dru_mgr is not None else None
+        if not bool(callable(is_realspace_fn) and is_realspace_fn()):
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        from ...utility.aura_utils import model_within_range_of_unit
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        owner_id = str(getattr(player, "id", "") or "")
+        if turn <= 0 or not owner_id:
+            return
+        queue = getattr(self, "decision_queue", None)
+        pending_source_ids: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                req_ctx = dict(getattr(req, "context", {}) or {})
+                if str(req_ctx.get("ability", "") or "") != "crucible_of_malediction":
+                    continue
+                if str(req_ctx.get("turn_owner", "") or "") != owner_id:
+                    continue
+                try:
+                    req_turn = int(req_ctx.get("turn", 0) or 0)
+                except (TypeError, ValueError):
+                    req_turn = 0
+                if req_turn != int(turn or 0):
+                    continue
+                source_id = str(req_ctx.get("source_unit_id", "") or "")
+                if source_id:
+                    pending_source_ids.add(source_id)
+
+        seen_roots: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            if root is None or not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            rid = str(maybe_entity_id(root) or "")
+            if rid in seen_roots:
+                continue
+            seen_roots.add(rid)
+            if not self._unit_on_battlefield_for_reposition(root):
+                continue
+            members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else []
+            if not members:
+                members = [root]
+            members = sorted(members, key=lambda m: str(maybe_entity_id(m) or ""))
+            source_member = None
+            source_sr = None
+            for member in members:
+                sr = getattr(member, "special_rules", None)
+                if isinstance(sr, dict) and bool(sr.get("enhancement_crucible_of_malediction", False)):
+                    source_member = member
+                    source_sr = sr
+                    break
+            if source_member is None or not isinstance(source_sr, dict):
+                continue
+            once_key = str(
+                source_sr.get("enhancement_crucible_of_malediction_once_key", "") or "crucible_of_malediction"
+            ).strip().lower() or "crucible_of_malediction"
+            used_once = getattr(source_member, "has_used_unit_once_per_battle", None)
+            if callable(used_once) and bool(used_once(once_key)):
+                continue
+            get_bearer = getattr(source_member, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                continue
+            bearer_alive_attr = getattr(bearer, "is_alive", True)
+            if not bool(bearer_alive_attr() if callable(bearer_alive_attr) else bearer_alive_attr):
+                continue
+            source_unit_id = str(maybe_entity_id(source_member) or "")
+            if not source_unit_id or source_unit_id in pending_source_ids:
+                continue
+            try:
+                range_in = float(source_sr.get("enhancement_crucible_of_malediction_range", 12.0) or 12.0)
+            except (TypeError, ValueError):
+                range_in = 12.0
+            range_in = max(0.0, float(range_in))
+            if range_in <= 0.0:
+                continue
+            candidate_units: list[object] = []
+            seen_enemy_ids: set[str] = set()
+            for enemy in list(game_map.get_enemy_units(root) or []):
+                if enemy is None:
+                    continue
+                enemy_root = enemy.get_attached_unit_root() if hasattr(enemy, "get_attached_unit_root") else enemy
+                if enemy_root is None:
+                    continue
+                enemy_id = str(maybe_entity_id(enemy_root) or "")
+                if not enemy_id or enemy_id in seen_enemy_ids:
+                    continue
+                seen_enemy_ids.add(enemy_id)
+                if not bool(getattr(enemy_root, "is_alive", lambda: False)()):
+                    continue
+                if not bool(getattr(enemy_root, "deployed", True)):
+                    continue
+                in_reserves_fn = getattr(enemy_root, "is_in_reserves", None)
+                in_reserves = bool(in_reserves_fn()) if callable(in_reserves_fn) else (
+                    str(getattr(enemy_root, "reserve_status", "deployed") or "deployed").strip().lower()
+                    in {"reserves", "strategic_reserves"}
+                )
+                if in_reserves or bool(getattr(enemy_root, "is_embarked", False)):
+                    continue
+                if getattr(enemy_root, "embarked_in", None) is not None:
+                    continue
+                if not bool(model_within_range_of_unit(bearer, enemy_root, float(range_in), use_attached_aggregate=True)):
+                    continue
+                candidate_units.append(enemy_root)
+            if not candidate_units:
+                continue
+            candidate_units = sorted(candidate_units, key=lambda u: str(maybe_entity_id(u) or ""))
+            candidate_unit_ids = [str(maybe_entity_id(u) or "") for u in candidate_units if str(maybe_entity_id(u) or "")]
+            if not candidate_unit_ids:
+                continue
+            source_name = str(
+                source_sr.get("enhancement_crucible_of_malediction_source", "") or "Crucible of Malediction"
+            ).strip() or "Crucible of Malediction"
+            try:
+                pain_token_cost = int(source_sr.get("enhancement_crucible_of_malediction_pain_token_cost", 1) or 1)
+            except (TypeError, ValueError):
+                pain_token_cost = 1
+            pain_token_cost = max(1, int(pain_token_cost))
+            try:
+                modifier_if_spent = int(
+                    source_sr.get("enhancement_crucible_of_malediction_battleshock_modifier_if_spent", -1) or -1
+                )
+            except (TypeError, ValueError):
+                modifier_if_spent = -1
+            try:
+                mortal_wounds = int(
+                    source_sr.get("enhancement_crucible_of_malediction_psyker_fail_mortal_wounds", 3) or 3
+                )
+            except (TypeError, ValueError):
+                mortal_wounds = 3
+            mortal_wounds = max(0, int(mortal_wounds))
+            pfp = getattr(army, "power_from_pain", None)
+            available_pain = int(getattr(pfp, "tokens", 0) or 0) if pfp is not None else 0
+            options = [
+                DecisionOption.create("None", payload={"action": "skip"}),
+                DecisionOption.create("Use Crucible", payload={"action": "use"}),
+            ]
+            if available_pain >= pain_token_cost:
+                options.append(
+                    DecisionOption.create(
+                        f"Use + spend {pain_token_cost} Pain token",
+                        payload={
+                            "action": "use_and_spend_pain_token",
+                            "pain_token_cost": int(pain_token_cost),
+                        },
+                    )
+                )
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                (
+                    f"{source_name}: each enemy unit within {int(range_in)}\" of {getattr(bearer, 'name', 'the bearer')} "
+                    "must take a Battle-shock test."
+                ),
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "crucible_of_malediction",
+                    "ability_name": source_name,
+                    "phase": "Shooting phase",
+                    "optional": True,
+                    "source_unit_id": source_unit_id,
+                    "unit_id": source_unit_id,
+                    "model_id": maybe_entity_id(bearer),
+                    "turn_owner": owner_id,
+                    "turn": int(turn or 0),
+                    "range": float(range_in),
+                    "pain_token_cost": int(pain_token_cost),
+                    "battle_shock_test_modifier_if_spent": int(modifier_if_spent),
+                    "psyker_fail_mortal_wounds": int(mortal_wounds),
+                    "candidate_unit_ids": list(candidate_unit_ids),
+                    "once_key": once_key,
+                },
+            )
+            self.request_decision(request)
+            pending_source_ids.add(source_unit_id)
 
     def _on_phase_start_post_shoot_leadership_debuff_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear post-shoot Leadership/Battle-shock debuffs at the start of the owner's Shooting phase."""

@@ -84,6 +84,7 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
     MURDEROUS_AGENDA_SOURCE = "Murderous Agenda"
     INFORMANT_NETWORK_SOURCE = "Informant Network"
     INFORMANT_NETWORK_SELECTION_ABILITY = "informant_network_selection"
+    _CRUCIBLE_OF_MALEDICTION_PENDING_KEY = "enhancement_crucible_of_malediction_pending"
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -608,14 +609,106 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
                 gained_total += gained
         return int(gained_total)
 
-    def on_battle_shock_test_resolved(self, unit, *, passed: bool, game=None) -> int:
-        del game
+    def _resolve_crucible_source_unit(self, pending: dict, *, game=None):
+        if not isinstance(pending, dict):
+            return None
+        source_root_id = str(pending.get("source_root_unit_id", "") or "").strip()
+        source_member_id = str(pending.get("source_unit_id", "") or "").strip()
+        for candidate_id in (source_root_id, source_member_id):
+            if not candidate_id:
+                continue
+            unit = self._resolve_unit_by_id(candidate_id, game=game)
+            root = self._unit_root(unit)
+            if root is not None:
+                return root
+        return None
+
+    def _resolve_crucible_pending(self, target_unit, *, passed: bool, game=None) -> dict | None:
+        if not self.is_realspace_raiders() or target_unit is None:
+            return None
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return None
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        pending_key = self._CRUCIBLE_OF_MALEDICTION_PENDING_KEY
+        pending_list = list(sr.get(pending_key, []) or [])
+        if not pending_list:
+            return None
+
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        source_army_id = str(get_entity_id(self.army) or "")
+        consumed = None
+        remaining: list[dict] = []
+        for pending in pending_list:
+            if not isinstance(pending, dict):
+                continue
+            if consumed is not None:
+                remaining.append(pending)
+                continue
+            pending_owner = str(pending.get("owner_player_id", "") or "")
+            pending_army = str(pending.get("source_army_id", "") or "")
+            if owner_id and pending_owner and pending_owner != owner_id:
+                remaining.append(pending)
+                continue
+            if source_army_id and pending_army and pending_army != source_army_id:
+                remaining.append(pending)
+                continue
+            consumed = pending
+        if consumed is None:
+            return None
+
+        if remaining:
+            sr[pending_key] = remaining
+        else:
+            sr.pop(pending_key, None)
+        target_root.special_rules = sr
+
+        result = {
+            "ability_name": str(consumed.get("ability_name", "") or "Crucible of Malediction"),
+            "target_unit_id": str(consumed.get("target_unit_id", "") or str(get_entity_id(target_root) or "")),
+            "source_unit_id": str(consumed.get("source_unit_id", "") or ""),
+            "passed": bool(passed),
+            "applied": False,
+            "mortal_wounds": 0,
+        }
         if bool(passed):
-            return 0
-        return self._master_repugnomancer_gain_tokens_for_friendly_event(
-            unit,
-            reason="Battle-shock failed",
-        )
+            return result
+        if bool(consumed.get("requires_psyker", True)) and not self._unit_has_keyword(target_root, "PSYKER"):
+            return result
+
+        try:
+            mortal_wounds = int(consumed.get("mortal_wounds_on_fail", 3) or 3)
+        except (TypeError, ValueError):
+            mortal_wounds = 3
+        mortal_wounds = max(0, int(mortal_wounds))
+        if mortal_wounds <= 0:
+            return result
+
+        source_root = self._resolve_crucible_source_unit(consumed, game=game)
+        if source_root is None:
+            source_root = target_root
+        apply_mortal = getattr(source_root, "_apply_mortal_wounds_to_unit", None)
+        if not callable(apply_mortal):
+            apply_mortal = getattr(target_root, "_apply_mortal_wounds_to_unit", None)
+        if not callable(apply_mortal):
+            return result
+        game_map = getattr(game, "map", None) if game is not None else None
+        apply_mortal(target_root, int(mortal_wounds), game_map=game_map)
+        result["applied"] = True
+        result["mortal_wounds"] = int(mortal_wounds)
+        return result
+
+    def on_battle_shock_test_resolved(self, unit, *, passed: bool, game=None) -> int:
+        gained = 0
+        if not bool(passed):
+            gained = self._master_repugnomancer_gain_tokens_for_friendly_event(
+                unit,
+                reason="Battle-shock failed",
+            )
+        self._resolve_crucible_pending(unit, passed=bool(passed), game=game)
+        return int(gained)
 
     def on_friendly_unit_destroyed(self, unit, *, last_model=None, game=None) -> int:
         del game

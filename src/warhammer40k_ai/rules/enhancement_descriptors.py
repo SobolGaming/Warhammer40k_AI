@@ -2857,6 +2857,72 @@ _COVENITE_COTERIE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COVENITE_COTERIE_DESCRIPTORS.values()
 }
 
+_REALSPACE_RAIDERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010574002": EnhancementToolDescriptor(
+        enhancement_id="000010574002",
+        name="Dark Vitality",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_always_empowered_no_pain_token_cost",
+        effect_params={
+            "always_empowered": True,
+            "pain_token_cost": 0,
+        },
+    ),
+    "000010574003": EnhancementToolDescriptor(
+        enhancement_id="000010574003",
+        name="Labyrinthine Cunning",
+        timing="start_of_friendly_command_phase",
+        target="bearer",
+        duration="instant_optional",
+        effect="command_phase_choice_spend_pain_token_for_cp_or_roll_for_cp",
+        effect_params={
+            "pain_token_cost": 1,
+            "cp_gain": 1,
+            "roll": "D6",
+            "success_on": 4,
+            "optional": True,
+        },
+    ),
+    "000010574004": EnhancementToolDescriptor(
+        enhancement_id="000010574004",
+        name="Eye of Spite",
+        timing="passive_and_fight_unit_selected",
+        target="bearer_melee_weapons",
+        duration="constant_and_until_end_of_phase",
+        effect="improve_bearer_melee_attacks_and_ap_by_1_and_optional_plus_2_instead_with_pain_token",
+        effect_params={
+            "base_attacks_bonus": 1,
+            "base_ap_bonus": 1,
+            "empowered_attacks_bonus": 2,
+            "empowered_ap_bonus": 2,
+            "pain_token_cost": 1,
+            "optional": True,
+        },
+    ),
+    "000010574005": EnhancementToolDescriptor(
+        enhancement_id="000010574005",
+        name="Crucible of Malediction",
+        timing="friendly_shooting_phase_once_per_battle",
+        target="enemy_units_within_12_of_bearer",
+        duration="instant",
+        effect="enemy_units_within_12_take_battleshock_optional_pain_token_modifier_and_psyker_fail_mortal_wounds",
+        once_per_battle=True,
+        effect_params={
+            "range": 12.0,
+            "pain_token_cost": 1,
+            "battle_shock_test_modifier_if_spent": -1,
+            "psyker_fail_mortal_wounds": 3,
+            "optional": True,
+        },
+    ),
+}
+
+_REALSPACE_RAIDERS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _REALSPACE_RAIDERS_DESCRIPTORS.values()
+}
+
 _KABALITE_CARTEL_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010588002": EnhancementToolDescriptor(
         enhancement_id="000010588002",
@@ -6714,6 +6780,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _VETERANS_OF_THE_LONG_WAR_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _REALSPACE_RAIDERS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _COVENITE_COTERIE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -7005,6 +7074,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _RENEGADE_WARBAND_BY_NAME.get(key)
         or _SOULFORGED_WARPACK_BY_NAME.get(key)
         or _VETERANS_OF_THE_LONG_WAR_BY_NAME.get(key)
+        or _REALSPACE_RAIDERS_BY_NAME.get(key)
         or _COVENITE_COTERIE_BY_NAME.get(key)
         or _KABALITE_CARTEL_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)

@@ -7884,6 +7884,131 @@ class GameShootingFightHandlersMixin:
             instance_key=f"{model_id}:furys_cage:{int(turn or 0)}:{owner_id}",
         )
 
+    def _on_fight_unit_selected_eye_of_spite(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if not self.is_fight_phase():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        owner = getattr(army, "player", None)
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        drukhari_mgr = getattr(army, "drukhari_detachments", None)
+        is_realspace_fn = getattr(drukhari_mgr, "is_realspace_raiders", None) if drukhari_mgr is not None else None
+        if not bool(callable(is_realspace_fn) and is_realspace_fn()):
+            return
+
+        _root, source_member, source_sr = self._attached_member_with_enhancement_flag(
+            root,
+            "enhancement_eye_of_spite",
+        )
+        if source_member is None:
+            return
+        bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+            return
+        source_unit_id = str(get_entity_id(source_member) or "")
+        model_id = str(get_entity_id(bearer) or "")
+        if not source_unit_id or not model_id:
+            return
+        owner_id = str(getattr(owner, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() or "FIGHT_PHASE"
+
+        if bool(source_sr.get("enhancement_eye_of_spite_temporary_active", False)):
+            active_owner = str(source_sr.get("enhancement_eye_of_spite_temporary_owner", "") or "")
+            try:
+                active_turn = int(source_sr.get("enhancement_eye_of_spite_temporary_turn", 0) or 0)
+            except Exception:
+                active_turn = 0
+            active_phase = str(source_sr.get("enhancement_eye_of_spite_temporary_expires_phase", "") or "").strip().upper()
+            if (
+                (not active_owner or active_owner == owner_id)
+                and (not active_turn or active_turn == turn)
+                and (not active_phase or active_phase == phase_name)
+            ):
+                return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "eye_of_spite":
+                    continue
+                if str(ctx.get("source_unit_id", "") or "") != source_unit_id:
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != owner_id:
+                    continue
+                if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                    continue
+                return
+
+        try:
+            pain_token_cost = int(source_sr.get("enhancement_eye_of_spite_pain_token_cost", 1) or 1)
+        except Exception:
+            pain_token_cost = 1
+        pain_token_cost = max(1, int(pain_token_cost))
+        pfp = getattr(army, "power_from_pain", None)
+        available_pain = int(getattr(pfp, "tokens", 0) or 0) if pfp is not None else 0
+        if available_pain < pain_token_cost:
+            return
+        ability_name = str(source_sr.get("enhancement_eye_of_spite_source", "") or "Eye of Spite").strip() or "Eye of Spite"
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: spend {int(pain_token_cost)} Pain token to improve bearer melee Attacks and AP by 2 instead until end of phase?",
+            player_id=getattr(owner, "id", None),
+            options=[
+                DecisionOption.create("None", payload={"action": "skip"}),
+                DecisionOption.create(
+                    f"Spend {int(pain_token_cost)} Pain token",
+                    payload={"action": "spend_pain_token", "pain_token_cost": int(pain_token_cost)},
+                ),
+            ],
+            context={
+                "ability": "eye_of_spite",
+                "ability_name": ability_name,
+                "phase": "Fight phase",
+                "optional": True,
+                "source_unit_id": source_unit_id,
+                "unit_id": source_unit_id,
+                "model_id": model_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+                "pain_token_cost": int(pain_token_cost),
+            },
+        )
+        self.request_decision(request)
+
     def _on_unit_shooting_resolved_quake_multigenerator(
         self,
         attacker_unit=None,

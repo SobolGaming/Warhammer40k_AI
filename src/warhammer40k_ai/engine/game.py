@@ -8789,7 +8789,7 @@ class Game(
 
     def _on_battle_shock_test_resolved_power_from_pain(self, unit=None, passed: bool = False, **_kwargs) -> None:
         del _kwargs
-        if unit is None or bool(passed):
+        if unit is None:
             return
         for p in list(self.players or []):
             if p is None:
@@ -8798,14 +8798,14 @@ class Game(
             if army is None:
                 raise RuntimeError(f"Power from Pain requires an army for {p.name}.")
             mgr = getattr(army, "power_from_pain", None)
-            if mgr is not None:
+            if mgr is not None and not bool(passed):
                 mgr.on_enemy_battle_shock_failed(unit)
             detachment_mgr = getattr(army, "drukhari_detachments", None)
             if detachment_mgr is None:
                 continue
             on_resolved = getattr(detachment_mgr, "on_battle_shock_test_resolved", None)
             if callable(on_resolved):
-                on_resolved(unit, passed=False, game=self)
+                on_resolved(unit, passed=bool(passed), game=self)
 
     def _on_unit_destroyed_martial_leverage(self, unit=None, **_kwargs) -> None:
         if unit is None:

@@ -3339,6 +3339,149 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if mode_key not in {"creeping_barrage", "incendiary_bombardment", "smoke_shells"}:
             return ("Artillery Support mode must be Creeping Barrage, Incendiary Bombardment, or Smoke Shells.",)
         return ()
+    if ability == "labyrinthine_cunning":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Labyrinthine Cunning army not found.",)
+        mgr = getattr(army, "drukhari_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_realspace_raiders", lambda: False)()):
+            return ("Labyrinthine Cunning requires Realspace Raiders.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Labyrinthine Cunning source unit was not found.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_labyrinthine_cunning", False)):
+            return ("Labyrinthine Cunning source unit is not eligible.",)
+        if is_skip_choice(request, result):
+            return ()
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action not in {"spend_pain_token_gain_cp", "roll_d6_gain_cp"}:
+            return ("Labyrinthine Cunning choice is invalid.",)
+        if action == "spend_pain_token_gain_cp":
+            try:
+                pain_token_cost = int(
+                    payload.get(
+                        "pain_token_cost",
+                        ctx.get(
+                            "pain_token_cost",
+                            source_sr.get("enhancement_labyrinthine_cunning_pain_token_cost", 1),
+                        ),
+                    )
+                    or 1
+                )
+            except (TypeError, ValueError):
+                pain_token_cost = 1
+            pain_token_cost = max(1, int(pain_token_cost))
+            pfp = getattr(army, "power_from_pain", None)
+            if pfp is None or int(getattr(pfp, "tokens", 0) or 0) < pain_token_cost:
+                return ("Labyrinthine Cunning requires sufficient Pain tokens.",)
+        return ()
+    if ability == "eye_of_spite":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Eye of Spite army not found.",)
+        mgr = getattr(army, "drukhari_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_realspace_raiders", lambda: False)()):
+            return ("Eye of Spite requires Realspace Raiders.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Eye of Spite source unit was not found.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_eye_of_spite", False)):
+            return ("Eye of Spite source unit is not eligible.",)
+        if is_skip_choice(request, result):
+            return ()
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action != "spend_pain_token":
+            return ("Eye of Spite choice is invalid.",)
+        try:
+            pain_token_cost = int(
+                payload.get(
+                    "pain_token_cost",
+                    ctx.get("pain_token_cost", source_sr.get("enhancement_eye_of_spite_pain_token_cost", 1)),
+                )
+                or 1
+            )
+        except (TypeError, ValueError):
+            pain_token_cost = 1
+        pain_token_cost = max(1, int(pain_token_cost))
+        pfp = getattr(army, "power_from_pain", None)
+        if pfp is None or int(getattr(pfp, "tokens", 0) or 0) < pain_token_cost:
+            return ("Eye of Spite requires sufficient Pain tokens.",)
+        return ()
+    if ability == "crucible_of_malediction":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Crucible of Malediction army not found.",)
+        mgr = getattr(army, "drukhari_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_realspace_raiders", lambda: False)()):
+            return ("Crucible of Malediction requires Realspace Raiders.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Crucible of Malediction source unit was not found.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_crucible_of_malediction", False)):
+            return ("Crucible of Malediction source unit is not eligible.",)
+        once_key = str(
+            ctx.get("once_key")
+            or source_sr.get("enhancement_crucible_of_malediction_once_key", "")
+            or "crucible_of_malediction"
+        ).strip().lower() or "crucible_of_malediction"
+        used_once = getattr(source_unit, "has_used_unit_once_per_battle", None)
+        if callable(used_once) and bool(used_once(once_key)):
+            return ("Crucible of Malediction has already been used this battle.",)
+        if is_skip_choice(request, result):
+            return ()
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action not in {"use", "use_and_spend_pain_token"}:
+            return ("Crucible of Malediction choice is invalid.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if not candidate_ids:
+            return ("Crucible of Malediction has no valid enemy units in range.",)
+        if action == "use_and_spend_pain_token":
+            try:
+                pain_token_cost = int(
+                    payload.get(
+                        "pain_token_cost",
+                        ctx.get(
+                            "pain_token_cost",
+                            source_sr.get("enhancement_crucible_of_malediction_pain_token_cost", 1),
+                        ),
+                    )
+                    or 1
+                )
+            except (TypeError, ValueError):
+                pain_token_cost = 1
+            pain_token_cost = max(1, int(pain_token_cost))
+            pfp = getattr(army, "power_from_pain", None)
+            if pfp is None or int(getattr(pfp, "tokens", 0) or 0) < pain_token_cost:
+                return ("Crucible of Malediction requires sufficient Pain tokens.",)
+        return ()
     if ability == "worthy_foes":
         if is_skip_choice(request, result):
             return ("Worthy Foes target selection cannot be skipped.",)
@@ -7386,6 +7529,414 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         mode_label = str(label_map.get(mode_key, mode_key) or mode_key)
         _log_action_for_players(game, player, f"Artillery Support: selected {mode_label}.")
         return outcome
+    if ability == "labyrinthine_cunning":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_labyrinthine_cunning", False)):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(
+            ctx.get("ability_name", "")
+            or source_sr.get("enhancement_labyrinthine_cunning_source", "")
+            or "Labyrinthine Cunning"
+        ).strip() or "Labyrinthine Cunning"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {"action": "skip", "gained_cp": 0, "spent_pain_tokens": 0}
+
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action not in {"spend_pain_token_gain_cp", "roll_d6_gain_cp"}:
+            return None
+        try:
+            cp_gain = int(
+                payload.get(
+                    "cp_gain",
+                    ctx.get("cp_gain", source_sr.get("enhancement_labyrinthine_cunning_cp_gain", 1)),
+                )
+                or 1
+            )
+        except (TypeError, ValueError):
+            cp_gain = 1
+        cp_gain = max(0, int(cp_gain))
+        gain_cp = getattr(player, "gain_command_points", None) if player is not None else None
+
+        if action == "spend_pain_token_gain_cp":
+            try:
+                pain_token_cost = int(
+                    payload.get(
+                        "pain_token_cost",
+                        ctx.get(
+                            "pain_token_cost",
+                            source_sr.get("enhancement_labyrinthine_cunning_pain_token_cost", 1),
+                        ),
+                    )
+                    or 1
+                )
+            except (TypeError, ValueError):
+                pain_token_cost = 1
+            pain_token_cost = max(1, int(pain_token_cost))
+            pfp = getattr(army, "power_from_pain", None)
+            spend_tokens = getattr(pfp, "spend_tokens", None) if pfp is not None else None
+            if not callable(spend_tokens):
+                return None
+            if not bool(spend_tokens(pain_token_cost, reason=ability_name)):
+                return None
+            gained_cp = int(gain_cp(cp_gain, reason=ability_name) or 0) if callable(gain_cp) else 0
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: spent {int(pain_token_cost)} Pain token(s), gained {int(gained_cp)}CP.",
+            )
+            return {
+                "action": action,
+                "gained_cp": int(gained_cp),
+                "spent_pain_tokens": int(pain_token_cost),
+            }
+
+        try:
+            success_on = int(
+                payload.get(
+                    "success_on",
+                    ctx.get("success_on", source_sr.get("enhancement_labyrinthine_cunning_success_on", 4)),
+                )
+                or 4
+            )
+        except (TypeError, ValueError):
+            success_on = 4
+        success_on = min(6, max(2, int(success_on)))
+        from ...utility.dice import get_roll
+
+        roll = int(get_roll("D6") or 0)
+        try:
+            from ...utility.event_bus import append_dice
+        except ImportError:
+            append_dice = None
+        if callable(append_dice) and player is not None:
+            append_dice(player, f"{ability_name} roll: {int(roll)}")
+        gained_cp = 0
+        if int(roll) >= int(success_on):
+            gained_cp = int(gain_cp(cp_gain, reason=ability_name) or 0) if callable(gain_cp) else 0
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: rolled {int(roll)} (needed {int(success_on)}+), gained {int(gained_cp)}CP.",
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: rolled {int(roll)} (needed {int(success_on)}+), no CP gained.",
+            )
+        return {
+            "action": action,
+            "roll": int(roll),
+            "success_on": int(success_on),
+            "gained_cp": int(gained_cp),
+            "spent_pain_tokens": 0,
+        }
+    if ability == "eye_of_spite":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_eye_of_spite", False)):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(
+            ctx.get("ability_name", "")
+            or source_sr.get("enhancement_eye_of_spite_source", "")
+            or "Eye of Spite"
+        ).strip() or "Eye of Spite"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {"action": "skip", "spent_pain_tokens": 0}
+
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action != "spend_pain_token":
+            return None
+        try:
+            pain_token_cost = int(
+                payload.get(
+                    "pain_token_cost",
+                    ctx.get("pain_token_cost", source_sr.get("enhancement_eye_of_spite_pain_token_cost", 1)),
+                )
+                or 1
+            )
+        except (TypeError, ValueError):
+            pain_token_cost = 1
+        pain_token_cost = max(1, int(pain_token_cost))
+        pfp = getattr(army, "power_from_pain", None)
+        spend_tokens = getattr(pfp, "spend_tokens", None) if pfp is not None else None
+        if not callable(spend_tokens):
+            return None
+        if not bool(spend_tokens(pain_token_cost, reason=ability_name)):
+            return None
+
+        owner_id = str(ctx.get("turn_owner", "") or getattr(player, "id", "") or "")
+        try:
+            turn = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = int(getattr(game, "turn", 0) or 0)
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() or "FIGHT_PHASE"
+        try:
+            base_attacks_bonus = int(source_sr.get("enhancement_eye_of_spite_base_attacks_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            base_attacks_bonus = 1
+        try:
+            base_ap_bonus = int(source_sr.get("enhancement_eye_of_spite_base_ap_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            base_ap_bonus = 1
+        temp_attacks_bonus = max(0, int(2 - int(base_attacks_bonus)))
+        temp_ap_bonus = max(0, int(2 - int(base_ap_bonus)))
+        updated_sr = dict(source_sr)
+        updated_sr["enhancement_eye_of_spite_temporary_active"] = True
+        updated_sr["enhancement_eye_of_spite_temporary_owner"] = owner_id
+        updated_sr["enhancement_eye_of_spite_temporary_turn"] = int(turn or 0)
+        updated_sr["enhancement_eye_of_spite_temporary_expires_phase"] = phase_name
+        updated_sr["enhancement_bearer_melee_attacks_bonus_temporary"] = int(temp_attacks_bonus)
+        updated_sr["enhancement_bearer_melee_attacks_bonus_temporary_owner"] = owner_id
+        updated_sr["enhancement_bearer_melee_attacks_bonus_temporary_turn"] = int(turn or 0)
+        updated_sr["enhancement_bearer_melee_attacks_bonus_temporary_expires_phase"] = phase_name
+        updated_sr["enhancement_bearer_melee_ap_bonus_temporary"] = int(temp_ap_bonus)
+        updated_sr["enhancement_bearer_melee_ap_bonus_temporary_owner"] = owner_id
+        updated_sr["enhancement_bearer_melee_ap_bonus_temporary_turn"] = int(turn or 0)
+        updated_sr["enhancement_bearer_melee_ap_bonus_temporary_expires_phase"] = phase_name
+        source_unit.special_rules = updated_sr
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: spent {int(pain_token_cost)} Pain token(s) (bearer melee Attacks/AP now +2 until end of phase).",
+        )
+        return {
+            "action": action,
+            "spent_pain_tokens": int(pain_token_cost),
+            "temporary_attacks_bonus": int(temp_attacks_bonus),
+            "temporary_ap_bonus": int(temp_ap_bonus),
+        }
+    if ability == "crucible_of_malediction":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_crucible_of_malediction", False)):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(
+            ctx.get("ability_name", "")
+            or source_sr.get("enhancement_crucible_of_malediction_source", "")
+            or "Crucible of Malediction"
+        ).strip() or "Crucible of Malediction"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {
+                "action": "skip",
+                "triggered": False,
+                "tested_unit_ids": [],
+                "spent_pain_tokens": 0,
+            }
+
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action not in {"use", "use_and_spend_pain_token"}:
+            return None
+        try:
+            current_turn = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        source_army = source_root.get_parent_army() if source_root is not None and hasattr(source_root, "get_parent_army") else None
+        source_army_id = str(get_entity_id(source_army) or "")
+        source_member_id = str(get_entity_id(source_unit) or "")
+        source_root_id = str(get_entity_id(source_root) or "")
+        once_key = str(
+            ctx.get("once_key")
+            or source_sr.get("enhancement_crucible_of_malediction_once_key", "")
+            or "crucible_of_malediction"
+        ).strip().lower() or "crucible_of_malediction"
+        spent_pain_tokens = 0
+        test_modifier = 0
+        if action == "use_and_spend_pain_token":
+            try:
+                pain_token_cost = int(
+                    payload.get(
+                        "pain_token_cost",
+                        ctx.get(
+                            "pain_token_cost",
+                            source_sr.get("enhancement_crucible_of_malediction_pain_token_cost", 1),
+                        ),
+                    )
+                    or 1
+                )
+            except (TypeError, ValueError):
+                pain_token_cost = 1
+            pain_token_cost = max(1, int(pain_token_cost))
+            pfp = getattr(army, "power_from_pain", None)
+            spend_tokens = getattr(pfp, "spend_tokens", None) if pfp is not None else None
+            if not callable(spend_tokens):
+                return None
+            if not bool(spend_tokens(pain_token_cost, reason=ability_name)):
+                return None
+            spent_pain_tokens = int(pain_token_cost)
+            try:
+                test_modifier = int(
+                    payload.get(
+                        "battle_shock_test_modifier_if_spent",
+                        ctx.get(
+                            "battle_shock_test_modifier_if_spent",
+                            source_sr.get("enhancement_crucible_of_malediction_battleshock_modifier_if_spent", -1),
+                        ),
+                    )
+                    or 0
+                )
+            except (TypeError, ValueError):
+                test_modifier = 0
+        try:
+            mortal_wounds_on_fail = int(
+                payload.get(
+                    "psyker_fail_mortal_wounds",
+                    ctx.get(
+                        "psyker_fail_mortal_wounds",
+                        source_sr.get("enhancement_crucible_of_malediction_psyker_fail_mortal_wounds", 3),
+                    ),
+                )
+                or 3
+            )
+        except (TypeError, ValueError):
+            mortal_wounds_on_fail = 3
+        mortal_wounds_on_fail = max(0, int(mortal_wounds_on_fail))
+
+        mark_used = getattr(source_unit, "mark_unit_once_per_battle_used", None)
+        if callable(mark_used):
+            mark_used(once_key, ability_name=ability_name)
+
+        candidate_unit_ids = [
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(value or "").strip()
+        ]
+        tested_ids: list[str] = []
+        tested_names: list[str] = []
+        owner_player_id = str(getattr(player, "id", "") or "")
+        for candidate_id in list(candidate_unit_ids or []):
+            target_unit = resolve_unit(game, candidate_id)
+            if target_unit is None:
+                continue
+            target_root = (
+                target_unit.get_attached_unit_root()
+                if hasattr(target_unit, "get_attached_unit_root")
+                else target_unit
+            )
+            if target_root is None:
+                continue
+            target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+            if source_army is not None and target_army is source_army:
+                continue
+            target_alive_attr = getattr(target_root, "is_alive", True)
+            if not bool(target_alive_attr() if callable(target_alive_attr) else target_alive_attr):
+                continue
+            if not bool(getattr(target_root, "deployed", True)):
+                continue
+            if bool(getattr(target_root, "is_embarked", False)):
+                continue
+            if getattr(target_root, "embarked_in", None) is not None:
+                continue
+            in_reserves_fn = getattr(target_root, "is_in_reserves", None)
+            in_reserves = bool(in_reserves_fn()) if callable(in_reserves_fn) else (
+                str(getattr(target_root, "reserve_status", "deployed") or "deployed").strip().lower()
+                in {"reserves", "strategic_reserves"}
+            )
+            if in_reserves:
+                continue
+
+            target_sr = getattr(target_root, "special_rules", None)
+            if not isinstance(target_sr, dict):
+                target_sr = {}
+            if int(test_modifier or 0):
+                current_modifier = int(target_sr.get("battle_shock_test_modifier", 0) or 0)
+                target_sr["battle_shock_test_modifier"] = int(current_modifier + int(test_modifier))
+                modifier_reasons = list(target_sr.get("battle_shock_test_modifier_reasons", []) or [])
+                modifier_reasons.append(f"{ability_name}: {int(test_modifier):+d}")
+                target_sr["battle_shock_test_modifier_reasons"] = modifier_reasons
+
+            pending_entry = {
+                "owner_player_id": owner_player_id,
+                "source_army_id": source_army_id,
+                "source_unit_id": source_member_id,
+                "source_root_unit_id": source_root_id,
+                "target_unit_id": str(get_entity_id(target_root) or ""),
+                "ability_name": ability_name,
+                "mortal_wounds_on_fail": int(mortal_wounds_on_fail),
+                "requires_psyker": True,
+                "turn": int(current_turn or 0),
+            }
+            pending_list = list(target_sr.get("enhancement_crucible_of_malediction_pending", []) or [])
+            pending_list.append(pending_entry)
+            target_sr["enhancement_crucible_of_malediction_pending"] = pending_list
+            target_root.special_rules = target_sr
+
+            take_test = getattr(target_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(int(current_turn or 1))
+            tested_id = str(get_entity_id(target_root) or "")
+            tested_ids.append(tested_id)
+            tested_names.append(str(getattr(target_root, "name", "Unit") or "Unit"))
+
+        if tested_names:
+            _log_action_for_players(
+                game,
+                player,
+                (
+                    f"{ability_name}: {'; '.join(tested_names)} took Battle-shock tests."
+                    f"{' (spent Pain token for modifier).' if int(spent_pain_tokens or 0) > 0 else ''}"
+                ),
+            )
+        else:
+            _log_action_for_players(game, player, f"{ability_name}: no valid enemy units were tested.")
+        return {
+            "action": action,
+            "triggered": bool(tested_ids),
+            "tested_unit_ids": list(tested_ids),
+            "spent_pain_tokens": int(spent_pain_tokens),
+            "battle_shock_test_modifier": int(test_modifier),
+            "mortal_wounds_on_fail": int(mortal_wounds_on_fail),
+        }
     if ability == "experimental_augmentations_choice":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

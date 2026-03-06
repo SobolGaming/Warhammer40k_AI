@@ -199,6 +199,7 @@ Command phase:
 - zealous_litanies_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="zealous_litanies"`, `ability_name="Zealous Litanies"`, `army_id`, `player_id`, `battle_round`, `allowed_choice_keys`, `optional=true`)
 - grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_key | skip} (context `army_id`, `battle_round`)
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_key} (context `army_id`, `battle_round`)
+- labyrinthine_cunning_dialog: CHOOSE_QUARRY {action="spend_pain_token_gain_cp" | action="roll_d6_gain_cp" | skip} (context `ability="labyrinthine_cunning"`, `ability_name="Labyrinthine Cunning"`, `phase="Command phase"`, `source_unit_id`, `model_id`, `turn_owner`, `turn`, `pain_token_cost`, `cp_gain`, `success_on`, `optional=true`)
 - experimental_augmentations_dialog: CHOOSE_QUARRY {mode="manual"+choice_key | mode="random"+choice_key="ROLL"} (context `ability="experimental_augmentations_choice"`, `ability_name="Experimental Augmentations"`, `army_id`, `battle_round`, `available_choice_keys[]`, `optional=false`)
 - experimental_augmentations_reroll_dialog: CHOOSE_QUARRY {reroll_mode} (context `ability="experimental_augmentations_reroll"`, `ability_name="Experimental Augmentations"`, `army_id`, `battle_round`, `initial_rolls[]`, `available_reroll_modes[]`, `optional=false`)
 - deceptors_falsehood_declare_dialog: CHOOSE_QUARRY {choice_key} (context `ability="deceptors_falsehood_declare_reserves"`, `ability_name="Falsehood"`, `phase="Declare Battle Formations step"`, `army_id`, `source_unit_id`, `source_model_id`, `allowed_choice_keys[]`, `optional=false`)
@@ -351,6 +352,7 @@ Shooting:
 - malefic_surge_unnatural_fortitude_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="targeted_shooting"`)
 - warpmeld_sacrifice_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="warpmeld_sacrifice"`, `unit_id`, `ability_mode`, `trigger_action`, `source_unit_id`, `turn`, `turn_owner_id`)
 - maggot_maws_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="maggot_maws"`, `source_unit_id`, `model_id`, `range`)
+- crucible_of_malediction_dialog: CHOOSE_QUARRY {action="use" | action="use_and_spend_pain_token" | skip} (context `ability="crucible_of_malediction"`, `ability_name="Crucible of Malediction"`, `phase="Shooting phase"`, `source_unit_id`, `model_id`, `turn_owner`, `turn`, `range`, `candidate_unit_ids[]`, `pain_token_cost`, `battle_shock_test_modifier_if_spent`, `psyker_fail_mortal_wounds`, `once_key`, `optional=true`)
 - aeldari_guiding_presence_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="aeldari_guiding_presence"`, `source_unit_id`, `model_id`, `range`, `bonus`)
 - unleash_hell_vehicle_dialog: SELECT_UNLEASH_HELL_VEHICLE {unit_id | skip} (context `ability="unleash_hell"`, `source_unit_id`, `bearer_model_id`, `range`, `allowed_unit_ids`, `exclude_monster_vehicle`)
 - iron_ambassador_dialog: CHOOSE_QUARRY {spend_yp | skip} (context `ability="iron_ambassador"`, `unit_id`, `source_unit_id`, `model_id`, `turn_owner`, `turn`, `optional=true`)
@@ -391,6 +393,7 @@ Fight:
 - fight_unit_selection_dialog: SELECT_FIGHTER {unit_id}
 - fight_target_selection_dialog: SELECT_FIGHT_TARGETS {unit_id, target_unit_ids}
 - fight_target_selection_dialog: SELECT_EXPLODING_HORRORS_TARGET {target_unit_id | skip} (context `unit_id`)
+- eye_of_spite_dialog: CHOOSE_QUARRY {action="spend_pain_token" | skip} (context `ability="eye_of_spite"`, `ability_name="Eye of Spite"`, `phase="Fight phase"`, `source_unit_id`, `model_id`, `turn_owner`, `turn`, `pain_token_cost`, `optional=true`)
 - fight_phase_end_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="fight_phase_end"`, `unit_id`, `model_id`, `ability_name`, `spec`)
 - curse_of_walking_pox_dialog: CHOOSE_QUARRY {returns | skip} (context `ability="curse_of_walking_pox"`, `ability_name`, `source_unit_id`, `unit_id`, `max_returns`, `turn_owner`, `turn`, `phase`, `optional=true`)
 - end_of_fight_embark_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="end_of_fight_embark"`, `transport_id`, `range`, `max_models`, `keyword`)
