@@ -667,10 +667,12 @@ class WargearProfile:
         rules = {
             "hit_bonus": [],
             "wound_reroll_full": [],
+            "wound_reroll_values": [],
             "searing_conflagration": [],
         }
         seen_hit: set[tuple[str, str, tuple[str, ...], int]] = set()
         seen_wound: set[tuple[str, str, tuple[str, ...]]] = set()
+        seen_wound_values: set[tuple[str, str, tuple[str, ...], tuple[str, ...], int]] = set()
         seen_searing: set[tuple[str, str, int]] = set()
 
         try:
@@ -733,6 +735,31 @@ class WargearProfile:
                             "battleline_range": 6,
                         }
                     )
+                elif low_name == "optimised for slaughter":
+                    wound_value_rules = (
+                        ("enmitic exterminator", (), ("MONSTER", "VEHICLE"), 1),
+                        ("gauss destructor", ("MONSTER", "VEHICLE"), (), 1),
+                    )
+                    for weapon_name, target_keywords_any, target_exclude_keywords_any, value in wound_value_rules:
+                        key = (
+                            source.lower(),
+                            weapon_name,
+                            tuple(target_keywords_any),
+                            tuple(target_exclude_keywords_any),
+                            int(value),
+                        )
+                        if key in seen_wound_values:
+                            continue
+                        seen_wound_values.add(key)
+                        rules["wound_reroll_values"].append(
+                            {
+                                "source": source,
+                                "weapon_name": weapon_name,
+                                "target_keywords_any": tuple(target_keywords_any),
+                                "target_exclude_keywords_any": tuple(target_exclude_keywords_any),
+                                "value": int(value),
+                            }
+                        )
 
         if not isinstance(cache, dict):
             cache = {}
@@ -15854,6 +15881,41 @@ class WargearProfile:
                 source_name = str(rule.get("source", "") or "Unit ability").strip() or "Unit ability"
                 target_label = "/".join(target_keywords) if target_keywords else "target"
                 reroll_full_reasons.append(f"{source_name}: re-roll Wound roll ({weapon_name} vs {target_label})")
+            for rule in list(admech_rules.get("wound_reroll_values", []) or []):
+                if not isinstance(rule, dict):
+                    continue
+                weapon_name = str(rule.get("weapon_name", "") or "").strip()
+                if weapon_name and not self._weapon_name_matches_for_attacker(attacker, weapon_name):
+                    continue
+                target_keywords = tuple(
+                    str(v or "").strip().upper() for v in list(rule.get("target_keywords_any", ()) or ()) if str(v or "").strip()
+                )
+                if target_keywords and not self._target_has_any_keyword(target, target_keywords):
+                    continue
+                target_exclude_keywords = tuple(
+                    str(v or "").strip().upper()
+                    for v in list(rule.get("target_exclude_keywords_any", ()) or ())
+                    if str(v or "").strip()
+                )
+                if target_exclude_keywords and self._target_has_any_keyword(target, target_exclude_keywords):
+                    continue
+                try:
+                    value = int(rule.get("value", 0) or 0)
+                except Exception:
+                    value = 0
+                if value <= 0:
+                    continue
+                source_name = str(rule.get("source", "") or "Unit ability").strip() or "Unit ability"
+                reroll_wound_values.add(int(value))
+                if target_keywords:
+                    target_label = "/".join(target_keywords)
+                elif target_exclude_keywords:
+                    target_label = f"excluding {'/'.join(target_exclude_keywords)}"
+                else:
+                    target_label = "target"
+                reroll_value_reasons.append(
+                    f"{source_name}: re-roll Wound roll of {int(value)} ({weapon_name} vs {target_label})"
+                )
             for rule in list(admech_rules.get("searing_conflagration", []) or []):
                 if not isinstance(rule, dict):
                     continue

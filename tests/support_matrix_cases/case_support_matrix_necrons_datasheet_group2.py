@@ -57,6 +57,14 @@ import pytest
             "Nebuloscope",
             "Ranged weapons equipped by the bearer have the [IGNORES COVER] ability.",
         ),
+        (
+            "Optimised for Slaughter",
+            (
+                "Each time a model in this unit makes an attack with an enmitic exterminator that targets a unit "
+                "(excluding MONSTERS and VEHICLES), re-roll a Wound roll of 1. Each time a model in this unit makes an "
+                "attack with a gauss destructor that targets a MONSTER or VEHICLE, re-roll a Wound roll of 1."
+            ),
+        ),
     ],
 )
 def test_support_matrix_necrons_group2_datasheet_abilities_supported(name, description):

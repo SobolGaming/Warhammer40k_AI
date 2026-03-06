@@ -232,6 +232,96 @@ class TestNecronsDatasheetGroup2Abilities(unittest.TestCase):
         self.assertTrue(bool(bonuses.get("ignores_cover", False)))
         self.assertIn("Nebuloscope", " ".join(list(bonuses.get("sources", []))))
 
+    def test_optimised_for_slaughter_enmitic_rerolls_wound_ones_vs_non_monster_vehicle(self):
+        from warhammer40k_ai.units import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Optimised for Slaughter",
+            "description": (
+                "Each time a model in this unit makes an attack with an enmitic exterminator that targets a unit "
+                "(excluding MONSTERS and VEHICLES), re-roll a Wound roll of 1. Each time a model in this unit makes an "
+                "attack with a gauss destructor that targets a MONSTER or VEHICLE, re-roll a Wound roll of 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        attacker = _make_unit("Lokhust Heavy Destroyers", abilities=[ability])
+        infantry = _make_unit("Enemy Infantry")
+        infantry.keywords = ["INFANTRY"]
+        monster = _make_unit("Enemy Monster")
+        monster.keywords = ["MONSTER"]
+
+        parent = SimpleNamespace(name="Enmitic Exterminator", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={"range": "36", "A": "1", "BS_WS": "3+", "S": "6", "AP": "0", "D": "1", "description": ""},
+            parent_wargear=parent,
+        )
+
+        rolls = iter([4, 1, 4, 1, 1, 1])
+        original_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _d: next(rolls, 6)
+        try:
+            result = profile.attack(infantry, attacker.models[0], game_map=None)
+        finally:
+            wargear_mod.get_roll = original_roll
+        self.assertIsNotNone(result.wound_results[0].get("reroll"))
+
+        rolls = iter([4, 1, 1, 1, 1, 1])
+        original_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _d: next(rolls, 6)
+        try:
+            result = profile.attack(monster, attacker.models[0], game_map=None)
+        finally:
+            wargear_mod.get_roll = original_roll
+        self.assertIsNone(result.wound_results[0].get("reroll"))
+
+    def test_optimised_for_slaughter_gauss_rerolls_wound_ones_vs_monster_vehicle(self):
+        from warhammer40k_ai.units import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Optimised for Slaughter",
+            "description": (
+                "Each time a model in this unit makes an attack with an enmitic exterminator that targets a unit "
+                "(excluding MONSTERS and VEHICLES), re-roll a Wound roll of 1. Each time a model in this unit makes an "
+                "attack with a gauss destructor that targets a MONSTER or VEHICLE, re-roll a Wound roll of 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        attacker = _make_unit("Lokhust Heavy Destroyers", abilities=[ability])
+        monster = _make_unit("Enemy Monster")
+        monster.keywords = ["MONSTER"]
+        infantry = _make_unit("Enemy Infantry")
+        infantry.keywords = ["INFANTRY"]
+
+        parent = SimpleNamespace(name="Gauss Destructor", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={"range": "36", "A": "1", "BS_WS": "3+", "S": "14", "AP": "-4", "D": "D6", "description": ""},
+            parent_wargear=parent,
+        )
+
+        rolls = iter([4, 1, 4, 1, 1, 1])
+        original_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _d: next(rolls, 6)
+        try:
+            result = profile.attack(monster, attacker.models[0], game_map=None)
+        finally:
+            wargear_mod.get_roll = original_roll
+        self.assertIsNotNone(result.wound_results[0].get("reroll"))
+
+        rolls = iter([4, 1, 1, 1, 1, 1])
+        original_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _d: next(rolls, 6)
+        try:
+            result = profile.attack(infantry, attacker.models[0], game_map=None)
+        finally:
+            wargear_mod.get_roll = original_roll
+        self.assertIsNone(result.wound_results[0].get("reroll"))
+
 
 if __name__ == "__main__":
     unittest.main()

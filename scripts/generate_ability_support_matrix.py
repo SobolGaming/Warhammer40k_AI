@@ -5428,6 +5428,17 @@ def _necrons_named_datasheet_support(name: str, description: str, *, faction_id:
                 "Supported",
                 "End of Fight phase: if this model destroyed one or more models this phase, its Mechanical Augmentation aura range increases by 3\" (to a maximum of 12\") for the rest of the battle.",
             )
+    if name_norm == "optimised for slaughter":
+        if (
+            "each time a model in this unit makes an attack with an enmitic exterminator" in norm
+            and "targets a unit excluding monsters and vehicles reroll a wound roll of 1" in norm
+            and "each time a model in this unit makes an attack with a gauss destructor" in norm
+            and "targets a monster or vehicle reroll a wound roll of 1" in norm
+        ):
+            return (
+                "Supported",
+                "Weapon-specific wound re-roll support: enmitic exterminator re-rolls Wound rolls of 1 vs non-MONSTER/VEHICLE targets, and gauss destructor re-rolls Wound rolls of 1 vs MONSTER/VEHICLE targets.",
+            )
     return None
 
 
