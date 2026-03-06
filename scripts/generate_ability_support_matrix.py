@@ -4704,6 +4704,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Aura: enemy units within 3\" (excluding MONSTER/VEHICLE) suffer -1 to hit when making attacks.",
         ),
+        ("NEC", "Chittering swarm"): (
+            "Supported",
+            "Enemy units within Engagement Range suffer Objective Control -1 (minimum 1), and this unit's Objective Control is set to 1 while within 6\" of a friendly CRYPTEK model.",
+        ),
         ("AM", "DEPLOYMENT"): (
             "Supported",
             "Aegis Defence Line deployment enforces section composition limits and connectivity, including the broken-shield 1/2\" middle-pair exception, while treating all sections as one model.",
@@ -6730,18 +6734,47 @@ def _enemy_aura_objective_control_penalty_support(description: str) -> Optional[
         r"(?: to a minimum of (?P<ocmin>\d+))?",
         norm,
     )
-    if not m:
-        return None
-    rng = m.group("rng")
-    amt = m.group("amt")
-    src = m.group("src")
-    exclude = (m.group("exclude") or "").strip()
-    oc_min = (m.group("ocmin") or "").strip()
-    bits = [f"Enemy units within {rng}\" of {src} suffer Objective Control -{amt}."]
+    range_note = ""
+    if m:
+        rng = m.group("rng")
+        amt = m.group("amt")
+        src = m.group("src")
+        exclude = (m.group("exclude") or "").strip()
+        oc_min = (m.group("ocmin") or "").strip()
+        range_note = f"Enemy units within {rng}\" of {src} suffer Objective Control -{amt}."
+        self_rng = ""
+        self_kw = ""
+        self_oc = ""
+    else:
+        m = re.fullmatch(
+            r"while an enemy unit(?: excluding (?P<exclude>.+?))? is within engagement range of "
+            r"(?P<src>this model|this unit|the bearer|one or more units with this ability) "
+            r"subtract (?P<amt>\d+) from the objective control characteristic of models in that (?:enemy unit|unit)"
+            r"(?: to a minimum of (?P<ocmin>\d+))?"
+            r"(?: while this unit is within (?P<self_rng>\d+) of one or more friendly (?P<self_kw>[a-z0-9 '\-]+?) models "
+            r"the objective control characteristic of models in this unit is (?P<self_oc>\d+))?",
+            norm,
+        )
+        if not m:
+            return None
+        amt = m.group("amt")
+        src = m.group("src")
+        exclude = (m.group("exclude") or "").strip()
+        oc_min = (m.group("ocmin") or "").strip()
+        self_rng = (m.group("self_rng") or "").strip()
+        self_kw = (m.group("self_kw") or "").strip()
+        self_oc = (m.group("self_oc") or "").strip()
+        range_note = f"Enemy units within Engagement Range of {src} suffer Objective Control -{amt}."
+
+    bits = [range_note]
     if exclude:
         bits.append(f"Exclusions respected: {exclude}.")
     if oc_min:
         bits.append(f"Minimum Objective Control floor {oc_min} enforced.")
+    if self_rng and self_kw and self_oc:
+        bits.append(
+            f"While this unit is within {self_rng}\" of friendly {self_kw} models, its models' Objective Control is set to {self_oc}."
+        )
     return ("Supported", " ".join(bits))
 
 

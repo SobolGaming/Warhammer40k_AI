@@ -1237,6 +1237,34 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
         }
 
     m = re.search(
+        r"While an enemy unit(?: \(excluding [^)]+\))? is within Engagement Range "
+        r"of (?:(?:this model|this unit|the bearer)|one or more units with this ability), "
+        r"subtract (?P<oc>\d+) from the Objective Control characteristic of models in that (?:enemy unit|unit)",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        try:
+            oc = int(m.group("oc"))
+        except Exception:
+            return None
+        if oc <= 0:
+            return None
+        m_min = re.search(r"to a minimum of (?P<min>\d+)", desc, flags=re.IGNORECASE)
+        try:
+            oc_minimum = int(m_min.group("min")) if m_min else 0
+        except Exception:
+            oc_minimum = 0
+        return {
+            "range": 0.0,
+            "requires_engagement_range": True,
+            "move": 0,
+            "oc": -abs(int(oc)),
+            "oc_minimum": int(max(0, oc_minimum)),
+            "excluded_keywords": _parse_excluded_keywords(desc),
+        }
+
+    m = re.search(
         r'While an enemy unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" '
         r"of (?:(?:this model|this unit|the bearer)|one or more units with this ability), "
         r"subtract (?P<oc>\d+) from the Objective Control characteristic of models in that (?:enemy unit|unit)",
@@ -2232,8 +2260,18 @@ def _collect_enemy_aura_move_oc_penalty_state(unit, *, game_map=None) -> tuple[i
                 applied_aura_names.add(aura_key)
             if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
                 continue
-            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
-                continue
+            if bool(spec.get("requires_engagement_range")):
+                check_engagement = getattr(game_map, "is_within_engagement_range", None)
+                if not callable(check_engagement):
+                    continue
+                try:
+                    if not bool(check_engagement(source, unit)):
+                        continue
+                except Exception:
+                    continue
+            else:
+                if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
+                    continue
             move_penalty += int(spec["move"])
             oc_penalty += int(spec["oc"])
             try:

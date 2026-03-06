@@ -1158,6 +1158,88 @@ class Unit(
                     objective_control_floor = max(objective_control_floor, int(aura_oc_floor))
             except Exception:
                 pass
+            # Conditional self OC set while near friendly keyword models
+            # (e.g. Chittering swarm: near friendly CRYPTEK models, OC becomes 1).
+            try:
+                if game_map is None:
+                    army = self.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None)
+                    game_map = getattr(game, "map", None) if game is not None else None
+            except Exception:
+                game_map = None
+            try:
+                if game_map is not None and not self.is_battle_shocked():
+                    from ..utility.aura_utils import unit_within_range_of_unit
+                    get_friendly_units = getattr(game_map, "get_friendly_units", None)
+                    if callable(get_friendly_units):
+                        try:
+                            root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+                        except Exception:
+                            root = self
+                        iter_active = getattr(root, "_iter_active_possible_abilities", None)
+                        if callable(iter_active):
+                            abilities = list(iter_active() or [])
+                        else:
+                            abilities = list(getattr(root, "possible_abilities", []) or [])
+
+                        set_specs = []
+                        for ab in abilities:
+                            try:
+                                desc = str(getattr(ab, "description", "") or "").replace("\u2019", "'")
+                                name = str(getattr(ab, "name", "") or "").strip() or "Within friendly keyword models"
+                            except Exception:
+                                continue
+                            if not desc:
+                                continue
+                            match = self._UNIT_WITHIN_FRIENDLY_MODELS_OC_SET_RE.search(desc)
+                            if not match:
+                                continue
+                            try:
+                                range_inches = float(match.group("range"))
+                                set_value = int(match.group("value"))
+                            except Exception:
+                                continue
+                            keyword = str(match.group("keyword") or "").strip()
+                            if range_inches <= 0 or set_value < 0 or not keyword:
+                                continue
+                            set_specs.append((float(range_inches), keyword, int(set_value), name))
+
+                        for range_inches, keyword, set_value, source_name in set_specs:
+                            applies = False
+                            for friendly in list(get_friendly_units(root) or []):
+                                if friendly is None:
+                                    continue
+                                try:
+                                    friendly_root = (
+                                        friendly.get_attached_unit_root()
+                                        if hasattr(friendly, "get_attached_unit_root")
+                                        else friendly
+                                    )
+                                except Exception:
+                                    friendly_root = friendly
+                                if friendly_root is None or friendly_root is root:
+                                    continue
+                                has_kw = getattr(friendly_root, "has_any_keyword", None)
+                                if not callable(has_kw):
+                                    continue
+                                try:
+                                    if not bool(has_kw(keyword)):
+                                        continue
+                                except Exception:
+                                    continue
+                                if unit_within_range_of_unit(root, friendly_root, float(range_inches), use_attached_aggregate=True):
+                                    applies = True
+                                    break
+                            if applies:
+                                mods.append(
+                                    Modifier(
+                                        ModifierOp.SET,
+                                        int(set_value),
+                                        source=f"ability:within_friendly_keyword_models_oc_set:{source_name}",
+                                    )
+                                )
+            except Exception:
+                pass
 
             # Mantle of Gloom (Shadow Legion): enemy units in Engagement Range of the
             # bearer's unit suffer -1 Objective Control.
@@ -2783,6 +2865,12 @@ class Unit(
     )
     _UNIT_CONTAINS_ONE_OR_MORE_MODELS_RE = re.compile(
         r"while\s+this\s+unit\s+contains\s+one\s+or\s+more\s+(?P<model>[a-z0-9][a-z0-9 '\-]*)\s+models?",
+        re.IGNORECASE,
+    )
+    _UNIT_WITHIN_FRIENDLY_MODELS_OC_SET_RE = re.compile(
+        r"while\s+this\s+unit\s+is\s+within\s+(?P<range>\d+)\s*(?:\"|inches)?\s+of\s+one\s+or\s+more\s+friendly\s+"
+        r"(?P<keyword>[a-z0-9][a-z0-9 '\-]*)\s+models,\s*(?:the\s+)?objective\s+control\s+characteristic\s+"
+        r"of\s+models\s+in\s+this\s+unit\s+is\s+(?P<value>\d+)",
         re.IGNORECASE,
     )
     _ACTION_AFTER_ADVANCE_ELIGIBILITY_RE = re.compile(

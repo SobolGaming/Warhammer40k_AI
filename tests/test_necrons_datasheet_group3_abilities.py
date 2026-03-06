@@ -3,7 +3,15 @@ from unittest.mock import patch
 
 
 class _MockDatasheet:
-    def __init__(self, name, *, abilities=None, keywords=None, faction_keywords=None):
+    def __init__(
+        self,
+        name,
+        *,
+        abilities=None,
+        keywords=None,
+        faction_keywords=None,
+        objective_control=1,
+    ):
         self.name = name
         self.faction_data = {"name": "Necrons"}
         self.keywords = list(keywords or [])
@@ -17,7 +25,7 @@ class _MockDatasheet:
                 "Sv": "3",
                 "W": "2",
                 "Ld": "7",
-                "OC": "1",
+                "OC": str(int(objective_control)),
                 "base_size": "32mm",
                 "inv_sv": "7",
                 "inv_sv_descr": "none",
@@ -30,10 +38,16 @@ class _MockDatasheet:
         self.transport = ""
 
 
-def _make_unit(name, *, abilities=None):
+def _make_unit(name, *, abilities=None, keywords=None, faction_keywords=None, objective_control=1):
     from warhammer40k_ai.units.unit import Unit
 
-    datasheet = _MockDatasheet(name, abilities=abilities)
+    datasheet = _MockDatasheet(
+        name,
+        abilities=abilities,
+        keywords=keywords,
+        faction_keywords=faction_keywords,
+        objective_control=objective_control,
+    )
     return Unit(datasheet)
 
 
@@ -72,6 +86,105 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
         self.assertEqual(int(specs[0].get("roll_bonus_vs_vehicle", 0)), 1)
         self.assertEqual(str(specs[0].get("roll_low_mortal", "")), "d3")
         self.assertEqual(str(specs[0].get("roll_high_mortal", "")), "3")
+
+    def test_chittering_swarm_reduces_enemy_oc_in_engagement_range_with_minimum_one(self):
+        ability = {
+            "name": "Chittering swarm",
+            "description": (
+                "While an enemy unit is within Engagement Range of this unit, subtract 1 from the Objective Control "
+                "characteristic of models in that enemy unit (to a minimum of 1). While this unit is within 6\" of one "
+                "or more friendly CRYPTEK models, the Objective Control characteristic of models in this unit is 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        scarabs = _make_unit("Canoptek Scarab Swarms", abilities=[ability])
+        enemy_high_oc = _make_unit("Enemy High OC", objective_control=2)
+        enemy_low_oc = _make_unit("Enemy Low OC", objective_control=1)
+
+        class _Map:
+            def get_enemy_units(self, unit):
+                if unit is enemy_high_oc or unit is enemy_low_oc:
+                    return [scarabs]
+                return []
+
+            def get_friendly_units(self, unit):
+                if unit is scarabs:
+                    return [scarabs]
+                if unit is enemy_high_oc:
+                    return [enemy_high_oc]
+                if unit is enemy_low_oc:
+                    return [enemy_low_oc]
+                return []
+
+            def is_within_engagement_range(self, unit_a, unit_b):
+                return (unit_a is scarabs and (unit_b is enemy_high_oc or unit_b is enemy_low_oc)) or (
+                    unit_b is scarabs and (unit_a is enemy_high_oc or unit_a is enemy_low_oc)
+                )
+
+        game_map = _Map()
+        reduced_high = int(enemy_high_oc.get_effective_model_characteristic(enemy_high_oc.models[0], "objective_control", game_map=game_map))
+        reduced_low = int(enemy_low_oc.get_effective_model_characteristic(enemy_low_oc.models[0], "objective_control", game_map=game_map))
+        self.assertEqual(reduced_high, 1)
+        self.assertEqual(reduced_low, 1)
+
+    def test_chittering_swarm_sets_self_oc_when_near_friendly_cryptek(self):
+        ability = {
+            "name": "Chittering swarm",
+            "description": (
+                "While an enemy unit is within Engagement Range of this unit, subtract 1 from the Objective Control "
+                "characteristic of models in that enemy unit (to a minimum of 1). While this unit is within 6\" of one "
+                "or more friendly CRYPTEK models, the Objective Control characteristic of models in this unit is 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        scarabs = _make_unit("Canoptek Scarab Swarms", abilities=[ability], objective_control=2)
+        cryptek = _make_unit("Chronomancer", keywords=["CRYPTEK"])
+
+        class _MapNoCryptek:
+            def get_enemy_units(self, unit):
+                return []
+
+            def get_friendly_units(self, unit):
+                if unit is scarabs:
+                    return [scarabs]
+                return []
+
+            def is_within_engagement_range(self, _unit_a, _unit_b):
+                return False
+
+        class _MapWithCryptek:
+            def get_enemy_units(self, unit):
+                return []
+
+            def get_friendly_units(self, unit):
+                if unit is scarabs:
+                    return [scarabs, cryptek]
+                return []
+
+            def is_within_engagement_range(self, _unit_a, _unit_b):
+                return False
+
+        with patch("warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit", return_value=False):
+            baseline_oc = int(
+                scarabs.get_effective_model_characteristic(
+                    scarabs.models[0],
+                    "objective_control",
+                    game_map=_MapNoCryptek(),
+                )
+            )
+        with patch("warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit", return_value=True):
+            boosted_oc = int(
+                scarabs.get_effective_model_characteristic(
+                    scarabs.models[0],
+                    "objective_control",
+                    game_map=_MapWithCryptek(),
+                )
+            )
+
+        self.assertEqual(baseline_oc, 2)
+        self.assertEqual(boosted_oc, 1)
 
     def test_living_lightning_parses_dice_pool_mortals(self):
         ability = {

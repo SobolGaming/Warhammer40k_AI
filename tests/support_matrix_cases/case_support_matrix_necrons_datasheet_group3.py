@@ -56,6 +56,14 @@ import pytest
             ),
         ),
         (
+            "Chittering swarm",
+            (
+                "While an enemy unit is within Engagement Range of this unit, subtract 1 from the Objective Control "
+                "characteristic of models in that enemy unit (to a minimum of 1). While this unit is within 6\" of one or "
+                "more friendly CRYPTEK models, the Objective Control characteristic of models in this unit is 1."
+            ),
+        ),
+        (
             "Living Lightning",
             (
                 "In your Shooting phase, select one enemy unit within 18\" of and visible to this model (excluding units with the "
