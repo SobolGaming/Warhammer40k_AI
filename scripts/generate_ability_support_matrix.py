@@ -10317,9 +10317,9 @@ def _post_shoot_no_cover_support(description: str) -> Optional[Tuple[str, str]]:
     if not norm:
         return None
     pattern = (
-        r"in your shooting phase (?:(?:each time )?this (?P<sel_subject>model|unit) is selected to shoot )?"
-        r"after (?:this (?P<subject>model|unit) has shot|resolving (?:its|those) attacks) select one enemy unit "
-        r"(?:that was )?hit by one or more of those attacks "
+        r"(?:(?:in your shooting phase (?:(?:each time )?this (?:model|unit) is selected to shoot )?)?"
+        r"(?:after (?:this (?:model|unit) has shot|resolving (?:its|those) attacks)|each time this (?:model|unit) has shot)) "
+        r"select one enemy unit (?:that was )?hit by one or more of those attacks "
         r"(?:made with (?:a|an|the|its) (?P<weapon>[a-z0-9 ]+) )?"
         r"until the (?P<duration>end of the phase|start of your next shooting phase) "
         r"that (?:enemy )?unit cannot have the benefit of cover"

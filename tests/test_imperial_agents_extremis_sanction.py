@@ -494,6 +494,91 @@ def test_glovodan_psyber_eagle_selects_target_and_blocks_cover_until_next_comman
     assert not bool(getattr(enemy_target, "special_rules", {}).get("post_shoot_no_cover_active"))
 
 
+def test_sisters_of_battle_immolator_purge_and_cleanse_marks_target_no_cover():
+    game, ia_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.turn = 1
+
+    purge_and_cleanse = Ability(
+        "Purge and Cleanse",
+        "AOI",
+        (
+            "Each time this model has shot, select one enemy unit hit by one or more of those attacks. "
+            "Until the end of the phase, that enemy unit cannot have the Benefit of Cover."
+        ),
+        "Datasheet",
+        "",
+    )
+    immolator = _make_unit(
+        "Sisters of Battle Immolator",
+        keywords=["VEHICLE", "TRANSPORT"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[purge_and_cleanse],
+    )
+    enemy_target = _make_unit(
+        "Enemy Target",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["IMPERIUM"],
+    )
+
+    ia_player.army.add_unit(immolator)
+    enemy_player.army.add_unit(enemy_target)
+    _deploy_unit(game, immolator, 0.0, 0.0)
+    _deploy_unit(game, enemy_target, 10.0, 0.0)
+    game.rebuild_entity_registry()
+
+    game._on_unit_shooting_resolved_post_shoot_no_cover(
+        attacker_unit=immolator,
+        hits_by_target={enemy_target: 1},
+        hit_models_by_target_weapon={},
+    )
+    request = _pending_quarry_for_ability(game, ability="post_shoot_no_cover")
+    assert request is not None
+
+    target_option_id = None
+    target_unit_id = str(get_entity_id(enemy_target) or "")
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if str(payload.get("target_unit_id", "") or "") == target_unit_id:
+            target_option_id = option.option_id
+            break
+    assert target_option_id is not None
+
+    result = resolve_decision_command(game, request, target_option_id, player_id=ia_player.id)
+    assert bool(getattr(result, "ok", False))
+
+    target_sr = dict(getattr(enemy_target, "special_rules", {}) or {})
+    assert bool(target_sr.get("post_shoot_no_cover_active"))
+    assert str(target_sr.get("post_shoot_no_cover_expires_phase", "") or "") == "SHOOTING_PHASE"
+
+    attacker = immolator.models[0]
+    attack_profile = WargearProfile(
+        "Immolation Flamer",
+        {
+            "range": "18",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "5",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=SimpleNamespace(name="Immolation Flamer", is_melee=lambda: False, is_ranged=lambda: True),
+    )
+    attack_instance = {}
+    attack_profile._hit_target_with_tracking(
+        enemy_target,
+        attacker,
+        attack_instance,
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(attack_instance.get("ignores_cover"))
+
+
 def test_malefic_wardings_grants_four_plus_invulnerable_vs_psychic_and_daemon_attacks():
     game, ia_player, enemy_player = _build_game()
     game.phase = BattleRoundPhases.SHOOTING_PHASE

@@ -3573,14 +3573,16 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_NO_COVER_WEAPON_RE = re.compile(
-        r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks made with "
-        r"(?:a|an|the) (?P<weapon>[a-z0-9 ]+) until the (?P<duration>end of the phase|start of your next shooting phase) "
-        r"that enemy unit cannot have the benefit of cover",
+        r"(?:(?:in your shooting phase (?:(?:each time )?this (?:model|unit) is selected to shoot )?)?"
+        r"(?:after this (?:model|unit) has shot|each time this (?:model|unit) has shot)) "
+        r"select one enemy unit hit by one or more of those attacks made with "
+        r"(?:a|an|the|its) (?P<weapon>[a-z0-9 ]+) until the (?P<duration>end of the phase|start of your next shooting phase) "
+        r"that (?:enemy )?unit cannot have the benefit of cover",
         re.IGNORECASE,
     )
     _POST_SHOOT_NO_COVER_RE = re.compile(
-        r"in your shooting phase (?:(?:each time )?this (?:model|unit) is selected to shoot )?"
-        r"after (?:this (?:model|unit) has shot|resolving (?:its|those) attacks) "
+        r"(?:(?:in your shooting phase (?:(?:each time )?this (?:model|unit) is selected to shoot )?)?"
+        r"(?:after (?:this (?:model|unit) has shot|resolving (?:its|those) attacks)|each time this (?:model|unit) has shot)) "
         r"select one enemy unit (?:that was )?hit by one or more of those attacks "
         r"until the (?P<duration>end of the phase|start of your next shooting phase) that (?:enemy )?unit cannot have the benefit of cover",
         re.IGNORECASE,
