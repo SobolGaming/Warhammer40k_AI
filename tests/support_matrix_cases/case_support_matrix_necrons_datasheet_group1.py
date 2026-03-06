@@ -79,6 +79,15 @@ import pytest
                 "the Hit roll and you can re-roll the Wound roll."
             ),
         ),
+        (
+            "Multi-threat Eliminator",
+            (
+                "Once per turn, in your opponent's Shooting phase, when an enemy unit makes a ranged attack that targets a "
+                "friendly NECRONS unit within 3\" of a model with this ability, after that enemy unit has shot, one model "
+                "with this ability that is within 3\" of that target can shoot as if it were your Shooting phase, but it must "
+                "target only that enemy unit when doing so, and can only do so if that enemy unit is an eligible target."
+            ),
+        ),
     ],
 )
 def test_support_matrix_necrons_group1_datasheet_abilities_supported(name, description):

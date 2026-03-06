@@ -2307,6 +2307,86 @@ class KeywordsDetachmentsMixin:
         self._ability_cache["guns_blazing"] = bool(found)
         return bool(found)
 
+    def get_guns_blazing_rule(self) -> Optional[dict]:
+        """
+        Return rule info for reactive out-of-phase shooting abilities like:
+        - Guns Blazing
+        - Multi-threat Eliminator
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "guns_blazing_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text = unit._normalize_rules_text(self._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+                norm = re.sub(r"\s+", " ", norm)
+                key = (str(name or "").strip().lower(), norm)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if "once per turn in your opponent s shooting phase" not in norm:
+                    continue
+                if "when an enemy unit makes a ranged attack that targets a friendly " not in norm:
+                    continue
+                if "after that enemy unit has shot" not in norm:
+                    continue
+                if "shoot as if it were your shooting phase" not in norm:
+                    continue
+                if "must target only that enemy unit" not in norm:
+                    continue
+                if "can only do so if that enemy unit is an eligible target" not in norm:
+                    continue
+                m = re.search(
+                    r"targets a friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of (?:this model|a model with this ability)",
+                    norm,
+                )
+                if not m:
+                    continue
+                keyword = str(m.group("keyword") or "").strip().upper()
+                if not keyword:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    range_value = 3
+                source = str(name or "Guns Blazing").strip() or "Guns Blazing"
+                rule = {
+                    "source": source,
+                    "friendly_keyword": keyword,
+                    "range": int(range_value),
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def has_lord_of_the_death_guard(self) -> bool:
         """Check if the unit has the Lord of the Death Guard datasheet ability."""
         if "lord_of_the_death_guard" in getattr(self, "_ability_cache", {}):
@@ -9496,7 +9576,9 @@ class KeywordsDetachmentsMixin:
         return True
 
     def can_use_guns_blazing(self, game=None, game_map=None, *, enemy_unit=None) -> bool:
-        if not self.has_guns_blazing():
+        rule_fn = getattr(self, "get_guns_blazing_rule", None)
+        rule = rule_fn() if callable(rule_fn) else None
+        if not isinstance(rule, dict):
             return False
         if not self.is_alive() or not getattr(self, "deployed", False):
             return False

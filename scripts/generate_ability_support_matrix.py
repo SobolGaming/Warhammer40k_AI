@@ -5396,6 +5396,18 @@ def _necrons_named_datasheet_support(name: str, description: str, *, faction_id:
                 "Supported",
                 "While this model is within range of an objective marker you control, enemy units arriving from Reserves cannot be set up within 12\" of this model.",
             )
+    if name_norm == "multi threat eliminator":
+        if (
+            "once per turn in your opponents shooting phase" in norm
+            and "when an enemy unit makes a ranged attack that targets a friendly necrons unit within 3 of a model with this ability" in norm
+            and "after that enemy unit has shot" in norm
+            and "shoot as if it were your shooting phase" in norm
+            and "must target only that enemy unit" in norm
+        ):
+            return (
+                "Supported",
+                "Once per turn in your opponent's Shooting phase, when an enemy unit targets a nearby friendly NECRONS unit, this model can make a reactive shooting attack against that enemy unit (if eligible).",
+            )
     return None
 
 

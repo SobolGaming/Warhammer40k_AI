@@ -11128,10 +11128,19 @@ class GameShootingFightHandlersMixin:
                 root = roots[rid]
                 if rid in seen_ids:
                     continue
-                if not bool(getattr(root, "has_guns_blazing", lambda: False)()):
+                rule_fn = getattr(root, "get_guns_blazing_rule", None)
+                reactive_rule = rule_fn() if callable(rule_fn) else None
+                if not isinstance(reactive_rule, dict):
                     continue
                 if not bool(getattr(root, "can_use_guns_blazing", lambda **_k: False)(game=self, game_map=game_map)):
                     continue
+                required_keyword = str(reactive_rule.get("friendly_keyword", "") or "").strip()
+                try:
+                    range_value = float(reactive_rule.get("range", 3.0) or 3.0)
+                except Exception:
+                    range_value = 3.0
+                if range_value <= 0.0:
+                    range_value = 3.0
                 eligible = False
                 for target in list(target_units or []):
                     if target is None:
@@ -11144,12 +11153,24 @@ class GameShootingFightHandlersMixin:
                         continue
                     if target_root.get_parent_army() is not army:
                         continue
-                    try:
-                        if not target_root.has_any_keyword("HERETIC ASTARTES"):
+                    if required_keyword:
+                        matches_keyword = False
+                        matches_phrase_fn = getattr(root, "_unit_matches_keyword_phrase", None)
+                        if callable(matches_phrase_fn):
+                            try:
+                                matches_keyword = bool(matches_phrase_fn(target_root, required_keyword, use_effective=True))
+                            except Exception:
+                                matches_keyword = False
+                        if not matches_keyword:
+                            has_kw = getattr(target_root, "has_any_keyword", None)
+                            if callable(has_kw):
+                                try:
+                                    matches_keyword = bool(has_kw(required_keyword))
+                                except Exception:
+                                    matches_keyword = False
+                        if not matches_keyword:
                             continue
-                    except Exception:
-                        continue
-                    if unit_within_range_of_unit(root, target_root, 3.0, use_attached_aggregate=True):
+                    if unit_within_range_of_unit(root, target_root, float(range_value), use_attached_aggregate=True):
                         eligible = True
                         break
                 if not eligible:
@@ -11224,6 +11245,11 @@ class GameShootingFightHandlersMixin:
                 continue
             if not self._setup_reactive_can_shoot_target(root, attacker_root):
                 continue
+            source_name = "Guns Blazing"
+            rule_fn = getattr(root, "get_guns_blazing_rule", None)
+            reactive_rule = rule_fn() if callable(rule_fn) else None
+            if isinstance(reactive_rule, dict):
+                source_name = str(reactive_rule.get("source", "") or source_name).strip() or source_name
             player = getattr(root.get_parent_army(), "player", None)
             if player is None:
                 continue
@@ -11231,12 +11257,12 @@ class GameShootingFightHandlersMixin:
                 player=player,
                 unit=root,
                 target_unit=attacker_root,
-                source="Guns Blazing",
+                source=source_name,
             )
             if request is None:
                 continue
             request.context["guns_blazing_flow"] = True
-            request.context["guns_blazing_source"] = "Guns Blazing"
+            request.context["guns_blazing_source"] = source_name
             request.context["guns_blazing_enemy_unit_id"] = str(get_entity_id(attacker_root) or "")
             request.context["guns_blazing_unit_id"] = source_id
             pending_for_source.add(source_id)

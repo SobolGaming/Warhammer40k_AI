@@ -35,10 +35,15 @@ class _MockDatasheet:
         self.transport = ""
 
 
-def _make_unit(name, *, abilities=None):
+def _make_unit(name, *, abilities=None, keywords=None, faction_keywords=None):
     from warhammer40k_ai.units.unit import Unit
 
-    datasheet = _MockDatasheet(name, abilities=abilities)
+    datasheet = _MockDatasheet(
+        name,
+        abilities=abilities,
+        keywords=keywords,
+        faction_keywords=faction_keywords,
+    )
     return Unit(datasheet)
 
 
@@ -533,6 +538,95 @@ class TestNecronsDatasheetGroup1Abilities(unittest.TestCase):
         finally:
             wargear_mod.get_roll = original_roll
         self.assertEqual(int(attack_after_cleanup.hit_results[0].get("final_needed", 0) or 0), 4)
+
+    def test_multi_threat_eliminator_parses_reactive_shoot_rule(self):
+        ability = {
+            "name": "Multi-threat Eliminator",
+            "description": (
+                "Once per turn, in your opponent's Shooting phase, when an enemy unit makes a ranged attack that targets a "
+                "friendly NECRONS unit within 3\" of a model with this ability, after that enemy unit has shot, one model "
+                "with this ability that is within 3\" of that target can shoot as if it were your Shooting phase, but it must "
+                "target only that enemy unit when doing so, and can only do so if that enemy unit is an eligible target."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit(
+            "Hexmark Destroyer",
+            abilities=[ability],
+            keywords=["NECRONS", "INFANTRY", "CHARACTER"],
+            faction_keywords=["NECRONS"],
+        )
+        rule = unit.get_guns_blazing_rule()
+        self.assertIsNotNone(rule)
+        self.assertEqual(str((rule or {}).get("source", "") or ""), "Multi-threat Eliminator")
+        self.assertEqual(str((rule or {}).get("friendly_keyword", "") or ""), "NECRONS")
+        self.assertEqual(int((rule or {}).get("range", 0) or 0), 3)
+
+    def test_multi_threat_eliminator_queues_reactive_shooting_decision(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_DECLARE_SHOTS
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        ability = {
+            "name": "Multi-threat Eliminator",
+            "description": (
+                "Once per turn, in your opponent's Shooting phase, when an enemy unit makes a ranged attack that targets a "
+                "friendly NECRONS unit within 3\" of a model with this ability, after that enemy unit has shot, one model "
+                "with this ability that is within 3\" of that target can shoot as if it were your Shooting phase, but it must "
+                "target only that enemy unit when doing so, and can only do so if that enemy unit is an eligible target."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, p1, _p2 = _build_game()
+        enemy_attacker = _make_unit("Enemy Shooters", keywords=["INFANTRY"])
+        friendly_target = _make_unit(
+            "Necron Warriors",
+            keywords=["NECRONS", "INFANTRY"],
+            faction_keywords=["NECRONS"],
+        )
+        hexmark = _make_unit(
+            "Hexmark Destroyer",
+            abilities=[ability],
+            keywords=["NECRONS", "INFANTRY", "CHARACTER"],
+            faction_keywords=["NECRONS"],
+        )
+        army2.add_unit(enemy_attacker)
+        army1.add_unit(friendly_target)
+        army1.add_unit(hexmark)
+        enemy_attacker.deployed = True
+        friendly_target.deployed = True
+        hexmark.deployed = True
+        enemy_attacker.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        friendly_target.models[0].set_location(5.0, 0.0, 0.0, 0.0)
+        hexmark.models[0].set_location(7.0, 0.0, 0.0, 0.0)
+        game.map.units = [enemy_attacker, friendly_target, hexmark]
+        game.current_player_index = 1
+        game.rebuild_entity_registry()
+        game._setup_reactive_can_shoot_target = lambda _unit, _target: True
+
+        game.event_system.publish(
+            "shooting_targets_selected",
+            attacking_unit=enemy_attacker,
+            target_units=[friendly_target],
+        )
+        game.event_system.publish(
+            "unit_shooting_resolved",
+            attacker_unit=enemy_attacker,
+            hits_by_target={friendly_target: 1},
+        )
+
+        pending = list(game.decision_queue.list() or [])
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_DECLARE_SHOTS)
+        self.assertTrue(bool((request.context or {}).get("guns_blazing_flow", False)))
+        self.assertEqual(str((request.context or {}).get("guns_blazing_source", "") or ""), "Multi-threat Eliminator")
+        self.assertEqual(request.player_id, p1.id)
+        self.assertEqual(
+            str((request.context or {}).get("force_target_unit_id", "") or ""),
+            str(get_entity_id(enemy_attacker) or ""),
+        )
 
 
 if __name__ == "__main__":
