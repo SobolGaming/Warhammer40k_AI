@@ -144,6 +144,20 @@ def _option_by_action(request, action: str):
 
 
 class TestDrukhariSkysplinterAssaultStratagems(unittest.TestCase):
+    def test_swooping_mockery_descriptor_registered(self):
+        desc = get_stratagem_tool_descriptor(stratagem_id="000010577006")
+        self.assertIsNotNone(desc)
+        self.assertEqual(str(getattr(desc, "name", "") or ""), "Swooping Mockery")
+        self.assertEqual(str(getattr(desc, "effect", "") or ""), "reactive_normal_move")
+        self.assertEqual(int((getattr(desc, "effect_params", {}) or {}).get("distance", 0) or 0), 6)
+
+    def test_vicious_blades_descriptor_registered(self):
+        desc = get_stratagem_tool_descriptor(stratagem_id="000010577002")
+        self.assertIsNotNone(desc)
+        self.assertEqual(str(getattr(desc, "name", "") or ""), "Vicious Blades")
+        self.assertEqual(str(getattr(desc, "effect", "") or ""), "post_fight_embarked_model_mortal_wounds")
+        self.assertEqual(int((getattr(desc, "effect_params", {}) or {}).get("max_mortal_wounds", 0) or 0), 6)
+
     def test_pounce_on_the_prey_descriptor_registered(self):
         desc = get_stratagem_tool_descriptor(stratagem_id="000010577004")
         self.assertIsNotNone(desc)
@@ -368,6 +382,115 @@ class TestDrukhariSkysplinterAssaultStratagems(unittest.TestCase):
         sr = dict(getattr(wracks, "special_rules", {}) or {})
         self.assertEqual(int(sr.get("drukhari_skyborne_annihilation_sustained_hits_value", 0) or 0), 1)
         self.assertEqual(int(sr.get("bearer_unit_sustained_hits_value_ranged", 0) or 0), 1)
+
+    def test_swooping_mockery_queues_on_enemy_move_end_and_creates_reactive_move_decision(self):
+        game, p1, p2, drukhari_army, enemy_army = _build_game()
+        transport = _make_unit(
+            "Raider",
+            keywords=["Vehicle", "Transport", "Drukhari"],
+            faction_keywords=["DRUKHARI"],
+            transport="Transport Capacity 10",
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        drukhari_army.add_unit(transport)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, transport, 10.0, 10.0)
+        _place_unit(game, enemy, 17.0, 10.0)
+        transport.transport_capacity = 10
+        game.rebuild_entity_registry()
+
+        _set_phase(game, p2, "MOVEMENT_PHASE", 1)
+        game.event_system.publish("unit_move_ended", unit=enemy, action="move")
+        pending = _pending_by_name(p1.stratagems, "SWOOPING MOCKERY")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use("SWOOPING MOCKERY", phase_name="Movement phase", dequeue=True)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        move_request = _first_move_request(game)
+        self.assertIsNotNone(move_request)
+        ctx = dict(getattr(move_request, "context", {}) or {})
+        self.assertEqual(int(ctx.get("max_distance", 0) or 0), 6)
+        self.assertEqual(str(ctx.get("movement_type", "") or ""), "move")
+        self.assertEqual(str(ctx.get("reactive_move_kind", "") or ""), "swooping_mockery")
+
+    def test_vicious_blades_resolves_post_fight_embarked_model_rolls(self):
+        from warhammer40k_ai.utility import dice as dice_module
+
+        game, p1, _p2, drukhari_army, enemy_army = _build_game()
+        transport = _make_unit(
+            "Raider",
+            keywords=["Vehicle", "Transport", "Drukhari"],
+            faction_keywords=["DRUKHARI"],
+            transport="Transport Capacity 10",
+        )
+        wracks = _make_unit(
+            "Wracks",
+            keywords=["INFANTRY", "DRUKHARI", "WRACKS", "HAEMONCULUS COVENS"],
+            faction_keywords=["DRUKHARI"],
+        )
+        kabalites = _make_unit(
+            "Kabalite Warriors",
+            keywords=["INFANTRY", "DRUKHARI", "KABALITE WARRIORS"],
+            faction_keywords=["DRUKHARI"],
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+            wounds=6,
+        )
+
+        drukhari_army.add_unit(transport)
+        drukhari_army.add_unit(wracks)
+        drukhari_army.add_unit(kabalites)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, transport, 10.0, 10.0)
+        _place_unit(game, wracks, 12.0, 10.0)
+        _place_unit(game, kabalites, 12.0, 12.0)
+        _place_unit(game, enemy, 16.0, 10.0)
+        transport.transport_capacity = 10
+        game.rebuild_entity_registry()
+
+        self.assertTrue(transport.add_passenger(wracks, game_map=game.map))
+        self.assertTrue(transport.add_passenger(kabalites, game_map=game.map))
+
+        _set_phase(game, p1, "FIGHT_PHASE", 0)
+        game.event_system.publish("fight_targets_selected", attacking_unit=transport, target_units=[enemy])
+        pending = _pending_by_name(p1.stratagems, "VICIOUS BLADES")
+        self.assertIsNotNone(pending)
+
+        applied: list[tuple[Unit, int]] = []
+        transport._apply_mortal_wounds_to_unit = lambda target, amount, **_kw: applied.append((target, int(amount or 0)))
+
+        original_roll = dice_module.get_roll
+        rolls = iter([4, 4])
+        dice_module.get_roll = lambda _d: next(rolls)
+        try:
+            ok = p1.stratagems.use(
+                "VICIOUS BLADES",
+                unit=transport,
+                enemy_unit=enemy,
+                phase_name="Fight phase",
+                dequeue=True,
+            )
+            self.assertTrue(ok)
+            self.assertEqual(int(p1.command_points or 0), 9)
+
+            game.event_system.publish("fight_sequence_complete", unit=transport, player=p1, stage="fight")
+        finally:
+            dice_module.get_roll = original_roll
+
+        self.assertEqual(len(applied), 1)
+        self.assertIs(applied[0][0], enemy)
+        self.assertEqual(int(applied[0][1]), 1)
 
 
 if __name__ == "__main__":

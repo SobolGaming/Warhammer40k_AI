@@ -64,6 +64,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "POUNCE ON THE PREY",
     "PULSE ONSLAUGHT",
     "SKYBORNE ANNIHILATION",
+    "SWOOPING MOCKERY",
+    "VICIOUS BLADES",
     "PREDATORY IMPERATIVE",
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
@@ -1495,7 +1497,7 @@ class StratagemManager(
         if "BERZERKER'S WRATH" in names:
             add("blood_surge_triggered", self._on_blood_surge_triggered)
 
-        if "COUNTER-OFFENSIVE" in names:
+        if names & {"COUNTER-OFFENSIVE", "VICIOUS BLADES"}:
             add("fight_sequence_complete", self._on_fight_sequence_complete)
 
         if names & {"EPIC CHALLENGE", "PEERLESS WARRIOR", "MARTIAL PERFECTION"}:
@@ -1538,6 +1540,7 @@ class StratagemManager(
             "ORDERED RETREAT",
             "LETHAL RUSE",
             "MOCKING FLIGHT",
+            "SWOOPING MOCKERY",
             "ISHA'S FURY",
             "ISHA\u2019S FURY",
             "WEAVING STRIDE",
@@ -1684,6 +1687,7 @@ class StratagemManager(
             "BALEFUL HALO",
             "BERSERK FUGUE",
             "BEAUTIFUL DEATH",
+            "VICIOUS BLADES",
             "COMBAT STIMMS",
             "CONTEMPTUOUS DISREGARD",
             "DEATH FRENZY",
@@ -4676,6 +4680,8 @@ class StratagemManager(
             "A CHALLENGE MET": "Target: WYCH CULT unit; enemy within 9\" that moved or was set up this phase",
             "A DEADLY SNARE": "Target: your GENESTEALER CULTS INFANTRY unit selected as a target of a just-declared enemy charge; roll D6 to deal mortal wounds to the charging unit (2-4: D3, 5+: 3)",
             "SKYBORNE ANNIHILATION": "Target: your DRUKHARI unit that disembarked from a TRANSPORT this turn and has not been selected to shoot this phase",
+            "SWOOPING MOCKERY": "Target: DRUKHARI TRANSPORT within 9\" of enemy unit that just ended a Normal/Advance/Fall Back move",
+            "VICIOUS BLADES": "Target: your DRUKHARI TRANSPORT that just selected fight targets; choose one of those enemy targets for post-fight mortal wounds",
             "ENSNARING TRAP": "Target: AGENTS OF THE IMPERIUM INFANTRY unit within 6\" of enemy units it can charge",
             "HYPERSTIMMS": "Target: AGENTS OF THE IMPERIUM CHARACTER unit selected as a target of the attacking enemy unit's attacks",
             "ORBITAL OVERSIGHT": "Target: AGENTS OF THE IMPERIUM INFANTRY unit selected as a target of an enemy shooter's attacks",
@@ -8219,6 +8225,7 @@ class StratagemManager(
     def _on_unit_move_ended(self, unit, action: str, **kwargs):
         self._track_a_challenge_met_move(unit, action)
         self._maybe_queue_overwatch(unit, action, when='end')
+        self._queue_drukhari_skysplinter_move_end_reactions(unit=unit, action=action)
         self._maybe_queue_tank_shock(unit, action)
         self._maybe_queue_heroic_intervention(unit, action)
         self._queue_thousand_sons_rubricae_phalanx_fall_back_reactions(unit=unit, action=action)
@@ -10141,6 +10148,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_drukhari_skysplinter_vicious_blades_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
         if owner_player is None or owner_player is self.player:
             return
         try:
@@ -10996,6 +11010,7 @@ class StratagemManager(
                 return
             if (self._current_phase_name or "").strip().lower() != "fight phase":
                 return
+            self._resolve_drukhari_skysplinter_vicious_blades_after_fight(unit=unit)
             # Offer only to the opponent of the unit that just fought
             owner_player = None
             try:

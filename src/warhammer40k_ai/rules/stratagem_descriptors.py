@@ -2705,6 +2705,35 @@ _REAPERS_WAGER_STRATAGEM_BY_NAME = {
 }
 
 _SKYSPLINTER_ASSAULT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010577006": StratagemToolDescriptor(
+        stratagem_id="000010577006",
+        name="Swooping Mockery",
+        timing="opponent_movement_phase_after_enemy_unit_ends_normal_advance_or_fall_back_move",
+        target="drukhari_transport_within_9_of_enemy_that_ended_move",
+        duration="immediate",
+        effect="reactive_normal_move",
+        cp_cost=1,
+        effect_params={
+            "distance": 6,
+            "trigger_enemy_actions": ["normal_move", "advance", "fall_back"],
+            "range_inches": 9,
+        },
+    ),
+    "000010577002": StratagemToolDescriptor(
+        stratagem_id="000010577002",
+        name="Vicious Blades",
+        timing="fight_phase_after_friendly_transport_selects_targets",
+        target="drukhari_transport_selected_to_fight",
+        duration="after_transport_fights",
+        effect="post_fight_embarked_model_mortal_wounds",
+        cp_cost=1,
+        effect_params={
+            "roll_per_embarked_model": True,
+            "success_threshold": 5,
+            "wracks_roll_bonus": 1,
+            "max_mortal_wounds": 6,
+        },
+    ),
     "000010577004": StratagemToolDescriptor(
         stratagem_id="000010577004",
         name="Pounce on the Prey",
