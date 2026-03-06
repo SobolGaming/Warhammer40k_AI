@@ -2473,6 +2473,7 @@ class RulesParsingMixin:
         charge_mods: list[tuple[int, str]] = []
         advance_mods: list[tuple[int, str]] = []
         leadership_sets: list[tuple[int, str]] = []
+        leadership_bonus_mods: list[tuple[int, str]] = []
         leadership_controlled_objective_mods: list[tuple[int, str]] = []
         movement_sets: list[tuple[int, str]] = []
         movement_bonus_mods: list[tuple[int, str]] = []
@@ -2703,6 +2704,23 @@ class RulesParsingMixin:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                             # Lower Leadership characteristic is better in 10e.
                             leadership_controlled_objective_mods.append((-int(val), source))
+
+                    m = re.search(
+                        r"^(?:while\s+(?:this\s+model|this\s+unit|(?:the\s+)?bearer)\s+is\s+leading\s+a\s+unit,\s*)?"
+                        r"improve\s+the\s+leadership\s+characteristic\s+of\s+(?:models\s+in\s+)?"
+                        r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit|this\s+model'?s\s+unit)\s+by\s+(\d+)\s*$",
+                        sentence,
+                        flags=re.IGNORECASE,
+                    )
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            # Lower Leadership characteristic is better in 10e.
+                            leadership_bonus_mods.append((-int(val), source))
 
                     m = self._BEARER_UNIT_MOVEMENT_SET_RE.search(sentence)
                     if m:
@@ -3056,6 +3074,16 @@ class RulesParsingMixin:
                     u.add_characteristic_modifier(
                         "leadership",
                         Modifier(ModifierOp.SET, int(val), source=f"ability:bearer_unit_leadership:{source}"),
+                    )
+
+        if leadership_bonus_mods:
+            from ...utility.modifiers import Modifier, ModifierOp
+
+            for u in members:
+                for val, source in leadership_bonus_mods:
+                    u.add_characteristic_modifier(
+                        "leadership",
+                        Modifier(ModifierOp.ADD, int(val), source=f"ability:bearer_unit_leadership:{source}"),
                     )
 
         if leadership_controlled_objective_mods:

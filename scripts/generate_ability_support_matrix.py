@@ -6132,6 +6132,22 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         notes.append(f"Bearer's unit Leadership set to {m.group(1)}+.")
 
     m = re.search(
+        r"(?:^|[.;]\s*)(?:while\s+(?:this\s+model|this\s+unit|(?:the\s+)?bearer)\s+is\s+leading\s+a\s+unit,\s*)?"
+        r"improve\s+the\s+leadership\s+characteristic\s+of\s+models\s+in\s+"
+        r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+by\s+(\d+)(?:\s*[.;]|$)",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        match_text = m.group(0)
+        if leading_prefix:
+            notes.append(f"{leading_prefix}Leadership characteristic improves by {m.group(1)}.")
+        elif "bearer" in match_text:
+            notes.append(f"Bearer's unit Leadership characteristic improves by {m.group(1)}.")
+        else:
+            notes.append(f"Unit Leadership characteristic improves by {m.group(1)}.")
+
+    m = re.search(
         r"models\s+in\s+(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+have\s+a\s+move\s+characteristic\s+of\s+(\d+)",
         low,
         flags=re.IGNORECASE,
@@ -6398,6 +6414,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}bearers unit declares a charge .* objective marker .* reroll the charge roll",
         rf"{lead_prefix}reroll charge rolls .* set up on the battlefield",
         rf"{lead_prefix}models in {unit_ref} have a leadership characteristic of \d+",
+        rf"{lead_prefix}improve the leadership characteristic of models in {unit_ref} by \d+",
         rf"{lead_prefix}models in {unit_ref} have a move characteristic of \d+",
         rf"{lead_prefix}add \d+ to the objective control characteristic of (?:models in )?{unit_ref}",
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? feel no pain [1-6](?: ability)?",

@@ -1011,6 +1011,19 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertEqual(unit.leadership, 6)
 
+    def test_bearer_unit_leadership_improve_applies(self):
+        ability = {
+            "name": "Mark of Dread",
+            "description": "Improve the Leadership characteristic of models in the bearer's unit by 1.",
+            "type": "Wargear",
+            "parameter": "",
+        }
+        unit = _make_unit("Daemon", abilities=[ability], leadership="7")
+        unit.models[0].optional_wargear.append("Mark of Dread")
+        unit._refresh_bearer_unit_common_modifiers()
+
+        self.assertEqual(unit.leadership, 6)
+
     def test_attached_leader_bearer_unit_leadership_applies_to_bodyguard(self):
         from warhammer40k_ai.roster.army import Army
 
@@ -1023,6 +1036,32 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         bodyguard = _make_unit("Bodyguard", ds_id="BG1", abilities=[], leadership="5")
         leader = _make_unit("Leader", ds_id="LD1", abilities=[ability], attached_to=["BG1"], leadership="7")
         leader.models[0].optional_wargear.append("Daemonic Icon")
+
+        army = Army("Chaos Daemons", "Detachment")
+        army.faction_id = "CD"
+        army.add_unit(bodyguard)
+        army.add_unit(leader)
+
+        leader.attach_to_unit(bodyguard)
+
+        self.assertEqual(bodyguard.leadership, 6)
+
+    def test_attached_leader_leadership_improve_requires_leading(self):
+        from warhammer40k_ai.roster.army import Army
+
+        ability = {
+            "name": "Mark of Dread",
+            "description": "While this model is leading a unit, improve the Leadership characteristic of models in that unit by 1.",
+            "type": "Wargear",
+            "parameter": "",
+        }
+        bodyguard = _make_unit("Bodyguard", ds_id="BG4", abilities=[], leadership="7")
+        leader = _make_unit("Leader", ds_id="LD4", abilities=[ability], attached_to=["BG4"], leadership="7")
+        leader.models[0].optional_wargear.append("Mark of Dread")
+
+        # Not leading yet.
+        leader._refresh_bearer_unit_common_modifiers()
+        self.assertEqual(leader.leadership, 7)
 
         army = Army("Chaos Daemons", "Detachment")
         army.faction_id = "CD"
