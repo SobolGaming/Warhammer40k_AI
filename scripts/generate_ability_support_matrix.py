@@ -9502,13 +9502,15 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
     if "objective marker" in norm and "instead" in norm:
         return None
     amount_token = r"(one|a|\d+|(?:\d+)?d\d+(?:\+\d+)?)"
+    target_unit_re = r"(?:this unit|the bearer s unit|the bearers unit|that unit)"
     pattern = (
         r"(?:in your command phase|(?:at the )?(?:start|end) of your command phase)"
         r"(?: if (?P<condition>[^,]+))? "
         r"you can return(?: (?P<up_to>up to))? (?P<amt>"
         + amount_token
         + r") destroyed (?P<returned>.+?) "
-        r"to (?:this unit|the bearer s unit|that unit)"
+        r"to "
+        + target_unit_re
     )
     m = re.fullmatch(pattern, norm)
     if not m:
@@ -9530,7 +9532,7 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
     note = f"{timing_label}: return {up_to_prefix}{amount_label} destroyed model(s) to this/bearer's unit."
     if "excluding character" in returned_phrase or "excluding character" in norm:
         note = f"{note} Excludes CHARACTER models."
-    returned_clean = re.sub(r"\s+excluding\s+character\s+models?", "", returned_phrase).strip()
+    returned_clean = re.sub(r"\s+excluding\s+characters?(?:\s+models?)?", "", returned_phrase).strip()
     named_return = re.sub(r"\s+models?$", "", returned_clean).strip()
     if named_return and named_return not in {"model", "models"}:
         note = f"{note} Restricted to destroyed {named_return.upper()}."

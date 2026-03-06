@@ -553,7 +553,8 @@ class RulesParsingMixin:
             if "select one friendly" in low:
                 continue
             plain = re.sub(r"[^a-z0-9+]+", " ", low).strip()
-            if ("to the bearer s unit" not in plain and "to this unit" not in plain):
+            target_unit_re = r"(?:the\s+bearer(?:\s+s|s)?\s+unit|this\s+unit|that\s+unit)"
+            if not re.search(r"to\s+" + target_unit_re + r"\b", plain):
                 continue
             amount_token_re = r"(one|a|\d+|(?:\d+)?d\d+(?:\+\d+)?)"
             amount_match = re.search(
@@ -577,7 +578,9 @@ class RulesParsingMixin:
             named_to_unit_match = re.search(
                 r"return(?:\s+up\s+to)?\s+"
                 + amount_token_re
-                + r"\s+destroyed\s+(?P<name>[a-z0-9' -]+?)\s+to\s+(?:that\s+unit|the\s+bearer\s+s\s+unit|this\s+unit)\b",
+                + r"\s+destroyed\s+(?P<name>[a-z0-9' -]+?)\s+to\s+"
+                + target_unit_re
+                + r"\b",
                 plain,
             )
             named_phrase = ""
@@ -603,11 +606,13 @@ class RulesParsingMixin:
             objective_amount = 0
             objective_amount_roll = ""
             objective_match = re.search(
-                r"if\s+the\s+bearer\s+s\s+unit\s+is\s+within\s+range\s+of\s+"
+                r"if\s+the\s+bearer(?:\s+s|s)?\s+unit\s+is\s+within\s+range\s+of\s+"
                 r"(?:an|one\s+or\s+more)\s+objective\s+markers?\s+you\s+control\s+"
                 r"you\s+can\s+return(?:\s+up\s+to)?\s+"
                 + amount_token_re
-                + r"\s+destroyed\s+models?\s+to\s+(?:that\s+unit|the\s+bearer\s+s\s+unit|this\s+unit)\s+instead",
+                + r"\s+destroyed\s+models?\s+to\s+"
+                + target_unit_re
+                + r"\s+instead",
                 plain,
             )
             if objective_match:
@@ -630,7 +635,7 @@ class RulesParsingMixin:
                 ),
                 "requires_bearer_unit_below_starting_strength": bool(
                     re.search(
-                        r"if\s+the\s+bearer\s+s\s+unit\s+is\s+below\s+(?:its\s+)?starting\s+strength",
+                        r"if\s+the\s+bearer(?:\s+s|s)?\s+unit\s+is\s+below\s+(?:its\s+)?starting\s+strength",
                         plain,
                     )
                     or re.search(r"if\s+this\s+unit\s+is\s+below\s+(?:its\s+)?starting\s+strength", plain)

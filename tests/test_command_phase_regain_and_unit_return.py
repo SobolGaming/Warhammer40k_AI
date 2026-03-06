@@ -259,3 +259,64 @@ def test_command_phase_unit_return_filters_to_named_models():
         if (opt.payload or {}).get("model_id") not in (None, "")
     ]
     assert option_model_ids == [exaction_model_id]
+
+
+def test_command_phase_unit_return_parses_bearers_unit_excluding_characters_variant():
+    ability = {
+        "name": "Narthecium",
+        "description": (
+            "In your Command phase, you can return 1 destroyed model (excluding CHARACTERS ) "
+            "to the bearer\u2019s unit."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    unit = _make_unit(name="Grey Knights Terminator Squad", datasheet_id="gk_term_narthecium", model_count=5, abilities=[ability])
+
+    spec = unit.get_command_phase_unit_return_ability()
+    assert spec is not None
+    assert int(spec.get("amount", 0) or 0) == 1
+    assert str(spec.get("amount_roll", "") or "") == ""
+    assert bool(spec.get("exclude_character", False))
+    assert not bool(spec.get("requires_bearer_unit_below_starting_strength", False))
+
+
+def test_command_phase_unit_return_bearers_unit_below_starting_strength_queues_d3_return():
+    from warhammer40k_ai.engine.game import BattleRoundPhases
+    from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+    from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+    ability = {
+        "name": "Healing Serum",
+        "description": (
+            "At the start of your Command phase, if the bearer\u2019s unit is below its Starting Strength, "
+            "you can return up to D3 destroyed models (excluding CHARACTERS) to the bearer\u2019s unit."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    unit = _make_unit(name="Rogue Trader Entourage", datasheet_id="rt_serum_1", model_count=3, abilities=[ability])
+    removed = unit.models[0]
+    removed_id = str(get_entity_id(removed) or "")
+    unit.remove_model(removed)
+
+    game, player = _build_game_with_player(unit)
+
+    with patch("warhammer40k_ai.utility.dice.get_roll", return_value=2):
+        game.event_system.publish("phase_start", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    pending = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_ALLOCATE_DAMAGE
+        and str((req.context or {}).get("selection_kind", "") or "") == "bodyguard_return"
+    ]
+    assert len(pending) == 1
+    req = pending[0]
+    assert int((req.context or {}).get("remaining", 0) or 0) == 2
+    option_model_ids = [
+        str((opt.payload or {}).get("model_id", "") or "")
+        for opt in list(req.options or [])
+        if (opt.payload or {}).get("model_id") not in (None, "")
+    ]
+    assert option_model_ids == [removed_id]
