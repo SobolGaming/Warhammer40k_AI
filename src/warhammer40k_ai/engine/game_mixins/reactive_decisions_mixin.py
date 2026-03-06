@@ -1237,12 +1237,19 @@ class GameReactiveDecisionsMixin:
             leadership_test_modifier_if_battle_shocked = int(
                 spec.get("leadership_test_modifier_if_battle_shocked", 0) or 0
             )
-        except Exception:
+        except (TypeError, ValueError):
             leadership_test_modifier_if_battle_shocked = 0
         try:
+            leadership_test_modifier_if_infantry = int(
+                spec.get("leadership_test_modifier_if_infantry", 0) or 0
+            )
+        except (TypeError, ValueError):
+            leadership_test_modifier_if_infantry = 0
+        try:
             fail_mortal_wounds = int(spec.get("fail_mortal_wounds", 0) or 0)
-        except Exception:
+        except (TypeError, ValueError):
             fail_mortal_wounds = 0
+        leadership_test_counts_as_battle_shock = bool(spec.get("leadership_test_counts_as_battle_shock", False))
         ctx = {
             "ability": "start_shooting_phase_visible_battleshock",
             "ability_name": ability_name,
@@ -1256,7 +1263,9 @@ class GameReactiveDecisionsMixin:
             "range": int(range_value),
             "use_leadership_test": bool(use_leadership_test),
             "leadership_test_modifier_if_battle_shocked": int(leadership_test_modifier_if_battle_shocked),
+            "leadership_test_modifier_if_infantry": int(leadership_test_modifier_if_infantry),
             "fail_mortal_wounds": int(fail_mortal_wounds),
+            "leadership_test_counts_as_battle_shock": bool(leadership_test_counts_as_battle_shock),
         }
         test_label = "Leadership test" if use_leadership_test else "Battle-shock test"
         request = DecisionRequest.create(

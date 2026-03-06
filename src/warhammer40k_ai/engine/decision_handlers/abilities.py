@@ -18936,26 +18936,63 @@ def _apply_start_shooting_battleshock_target(game: object, request: DecisionRequ
     use_leadership_test = bool(ctx.get("use_leadership_test", payload.get("use_leadership_test", False)))
     leadership_test_passed = None
     mortal_applied = 0
+
+    def _target_has_keyword(target, keyword: str) -> bool:
+        has_any = getattr(target, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                return bool(has_any(keyword))
+            except (TypeError, ValueError):
+                return False
+        keywords = list(getattr(target, "keywords", []) or [])
+        faction_keywords = list(getattr(target, "faction_keywords", []) or [])
+        all_keywords = keywords + faction_keywords
+        wanted = str(keyword or "").strip().upper()
+        return any(str(item or "").strip().upper() == wanted for item in all_keywords)
+
     if use_leadership_test:
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id") or payload.get("source_unit_id"))
         try:
             fail_mortal_wounds = int(ctx.get("fail_mortal_wounds", payload.get("fail_mortal_wounds", 0)) or 0)
-        except Exception:
+        except (TypeError, ValueError):
             fail_mortal_wounds = 0
         try:
-            test_modifier = int(
+            test_modifier_if_battle_shocked = int(
                 ctx.get(
                     "leadership_test_modifier_if_battle_shocked",
                     payload.get("leadership_test_modifier_if_battle_shocked", 0),
                 )
                 or 0
             )
-        except Exception:
-            test_modifier = 0
+        except (TypeError, ValueError):
+            test_modifier_if_battle_shocked = 0
+        try:
+            test_modifier_if_infantry = int(
+                ctx.get(
+                    "leadership_test_modifier_if_infantry",
+                    payload.get("leadership_test_modifier_if_infantry", 0),
+                )
+                or 0
+            )
+        except (TypeError, ValueError):
+            test_modifier_if_infantry = 0
+        counts_as_battle_shock_test = bool(
+            ctx.get(
+                "leadership_test_counts_as_battle_shock",
+                payload.get("leadership_test_counts_as_battle_shock", False),
+            )
+        )
         try:
             target_is_battle_shocked = bool(target_unit.is_battle_shocked())
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
             target_is_battle_shocked = False
+        target_is_infantry = _target_has_keyword(target_unit, "INFANTRY")
+
+        effective_test_modifier = 0
+        if target_is_battle_shocked:
+            effective_test_modifier += int(test_modifier_if_battle_shocked or 0)
+        if target_is_infantry:
+            effective_test_modifier += int(test_modifier_if_infantry or 0)
 
         temp_keys = (
             "post_shoot_leadership_debuff_active",
@@ -18968,7 +19005,7 @@ def _apply_start_shooting_battleshock_target(game: object, request: DecisionRequ
         sr = getattr(target_unit, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
-        inject_temp_modifier = bool(target_is_battle_shocked and test_modifier)
+        inject_temp_modifier = bool(effective_test_modifier)
         if inject_temp_modifier:
             for key in temp_keys:
                 if key in sr:
@@ -18976,7 +19013,7 @@ def _apply_start_shooting_battleshock_target(game: object, request: DecisionRequ
             sr["post_shoot_leadership_debuff_active"] = True
             sr["post_shoot_leadership_debuff_owner"] = ""
             sr["post_shoot_leadership_debuff_turn"] = int(turn or 0)
-            sr["post_shoot_leadership_debuff_value"] = int(test_modifier)
+            sr["post_shoot_leadership_debuff_value"] = int(effective_test_modifier)
             sr["post_shoot_leadership_debuff_source"] = ability_name
             target_unit.special_rules = sr
 
@@ -18989,7 +19026,7 @@ def _apply_start_shooting_battleshock_target(game: object, request: DecisionRequ
 
                 roll = int(get_roll("2D6") or 0)
                 leadership = int(getattr(target_unit, "leadership", 0) or 0)
-                modified_roll = int(roll + (int(test_modifier) if target_is_battle_shocked else 0))
+                modified_roll = int(roll + int(effective_test_modifier))
                 leadership_test_passed = bool(modified_roll <= leadership)
         finally:
             if inject_temp_modifier:
@@ -19002,6 +19039,33 @@ def _apply_start_shooting_battleshock_target(game: object, request: DecisionRequ
                     else:
                         sr_restore.pop(key, None)
                 target_unit.special_rules = sr_restore
+
+        if counts_as_battle_shock_test and leadership_test_passed is not None:
+            event_system = getattr(game, "event_system", None)
+            if event_system is not None:
+                publish = getattr(event_system, "publish", None)
+                if callable(publish):
+                    try:
+                        publish("battle_shock_test_started", unit=target_unit)
+                    except (AttributeError, TypeError, ValueError):
+                        pass
+            shadow_ctx = None
+            try:
+                from ...rules.shadow_of_chaos import ShadowOfChaosManager
+
+                shadow_ctx = ShadowOfChaosManager.battle_shock_context(target_unit, game=game)
+            except (ImportError, AttributeError, TypeError, ValueError, RuntimeError):
+                shadow_ctx = None
+            apply_outcome = getattr(target_unit, "_apply_battle_shock_outcome", None)
+            if callable(apply_outcome):
+                apply_outcome(
+                    passed=bool(leadership_test_passed),
+                    current_turn=int(turn or 1),
+                    was_battle_shocked=bool(target_is_battle_shocked),
+                    shadow_ctx=shadow_ctx,
+                    game=game,
+                    event_system=event_system,
+                )
 
         if leadership_test_passed is False and int(fail_mortal_wounds or 0) > 0:
             if source_unit is not None:

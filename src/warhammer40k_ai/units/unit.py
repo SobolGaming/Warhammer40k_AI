@@ -3256,7 +3256,9 @@ class Unit(
     )
     _START_SHOOTING_PHASE_VISIBLE_BATTLESHOCK_RE = re.compile(
         r"at the start of your shooting phase select one enemy unit within (?P<range>\d+) (?:of )?and visible to this model "
-        r"that enemy unit must take a battle shock test",
+        r"that (?:enemy )?unit must take a battle shock test"
+        r"(?: subtracting (?P<infantry_penalty>\d+) from the result if it is an infantry unit)?"
+        r"(?: if the test is failed that (?:enemy )?unit suffers (?P<fail_mw>d3|d6|\d+) mortal wounds?)?",
         re.IGNORECASE,
     )
     _START_SHOOTING_PHASE_VISIBLE_HIT_BONUS_RE = re.compile(

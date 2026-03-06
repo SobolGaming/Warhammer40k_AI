@@ -5409,6 +5409,10 @@ class AbilitySpecsMixin:
         Returns a list of specs with keys:
             - source: ability name
             - range: int (selection range)
+            - use_leadership_test: bool
+            - leadership_test_modifier_if_infantry: int
+            - fail_mortal_wounds: int
+            - leadership_test_counts_as_battle_shock: bool
         """
         if model is None:
             return []
@@ -5417,7 +5421,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int]] = set()
+        seen: set[tuple[str, int, int, int, bool]] = set()
 
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
@@ -5434,16 +5438,45 @@ class AbilitySpecsMixin:
                 continue
             try:
                 range_value = int(m.group("range") or 0)
-            except Exception:
+            except (TypeError, ValueError):
                 range_value = 0
             if range_value <= 0:
                 continue
+            try:
+                infantry_penalty = int(m.group("infantry_penalty") or 0)
+            except (TypeError, ValueError):
+                infantry_penalty = 0
+            if infantry_penalty > 0:
+                infantry_penalty = -int(infantry_penalty)
+            fail_mw_token = str(m.group("fail_mw") or "").strip().lower()
+            fail_mortal_wounds = 0
+            if fail_mw_token.isdigit():
+                try:
+                    fail_mortal_wounds = int(fail_mw_token or 0)
+                except (TypeError, ValueError):
+                    fail_mortal_wounds = 0
+            use_leadership_test = bool(infantry_penalty != 0 or fail_mortal_wounds > 0)
             source = str(name or "Start of Shooting phase Battle-shock").strip() or "Start of Shooting phase Battle-shock"
-            key = (source.lower(), int(range_value))
+            key = (
+                source.lower(),
+                int(range_value),
+                int(infantry_penalty),
+                int(fail_mortal_wounds),
+                bool(use_leadership_test),
+            )
             if key in seen:
                 continue
             seen.add(key)
-            specs.append({"source": source, "range": int(range_value)})
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "use_leadership_test": bool(use_leadership_test),
+                    "leadership_test_modifier_if_infantry": int(infantry_penalty),
+                    "fail_mortal_wounds": int(fail_mortal_wounds),
+                    "leadership_test_counts_as_battle_shock": bool(use_leadership_test),
+                }
+            )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

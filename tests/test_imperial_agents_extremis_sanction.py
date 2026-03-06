@@ -1,7 +1,12 @@
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CHOOSE_QUARRY,
+    DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET,
+    DECISION_CONFIRM_YES_NO,
+    DECISION_MOVE_UNIT,
+)
 from warhammer40k_ai.engine.game import BattleRoundPhases, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -1107,6 +1112,79 @@ def test_zealot_optional_activation_grants_melee_attacks_and_strength_bonus():
     assert int(model.get_temporary_melee_attacks_bonus() or 0) == 3
     strength_bonus, _strength_reasons = model.get_temporary_melee_strength_bonus()
     assert int(strength_bonus or 0) == 3
+
+
+def test_third_eye_psychic_applies_infantry_modifier_and_fail_mortals():
+    game, ia_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.turn = 2
+
+    third_eye = Ability(
+        "Third Eye (Psychic)",
+        "AOI",
+        (
+            "At the start of your Shooting phase, select one enemy unit within 12\" of and visible to this model. "
+            "That unit must take a Battle-shock test, subtracting 2 from the result if it is an INFANTRY unit. "
+            "If the test is failed, that enemy unit suffers 3 mortal wounds."
+        ),
+        "Datasheet",
+        "",
+    )
+    navigator = _make_unit(
+        "Navigator",
+        keywords=["INFANTRY", "CHARACTER", "PSYKER"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[third_eye],
+    )
+    enemy = _make_unit(
+        "Enemy Infantry",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["IMPERIUM"],
+    )
+
+    ia_player.army.add_unit(navigator)
+    enemy_player.army.add_unit(enemy)
+    _deploy_unit(game, navigator, 0.0, 0.0)
+    _deploy_unit(game, enemy, 6.0, 0.0)
+    navigator._has_line_of_sight_to_target = lambda _m, _t, _map: True
+    game.rebuild_entity_registry()
+
+    captured = {}
+
+    def _pass_check():
+        captured["modifier"] = int(enemy.special_rules.get("post_shoot_leadership_debuff_value", 0) or 0)
+        return False
+
+    enemy.pass_leadership_check = _pass_check
+    before_wounds = int(enemy.models[0].wounds or 0)
+
+    game._on_phase_start_shooting_phase_visible_battleshock(player=ia_player, phase=game.phase)
+
+    request = None
+    for pending in list(game.decision_queue.list() or []):
+        if str(getattr(pending, "decision_type", "") or "") != DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET:
+            continue
+        pending_ctx = dict(getattr(pending, "context", {}) or {})
+        if str(pending_ctx.get("ability_name", "") or "") == "Third Eye (Psychic)":
+            request = pending
+            break
+
+    assert request is not None
+    ctx = dict(getattr(request, "context", {}) or {})
+    assert bool(ctx.get("use_leadership_test", False))
+    assert int(ctx.get("leadership_test_modifier_if_infantry", 0) or 0) == -2
+    assert int(ctx.get("fail_mortal_wounds", 0) or 0) == 3
+    assert bool(ctx.get("leadership_test_counts_as_battle_shock", False))
+
+    result = resolve_decision_command(game, request, request.options[0].option_id, player_id=ia_player.id)
+    assert bool(getattr(result, "ok", False))
+
+    assert int(captured.get("modifier", 0) or 0) == -2
+    assert int(enemy.models[0].wounds or 0) == before_wounds - 3
+    assert bool(enemy.is_battle_shocked())
+    assert not bool(enemy.special_rules.get("post_shoot_leadership_debuff_active", False))
 
 
 def test_acrobatic_escape_parses_redeploy_for_next_reinforcements_step():

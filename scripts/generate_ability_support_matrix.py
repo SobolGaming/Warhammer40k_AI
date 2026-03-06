@@ -9918,14 +9918,30 @@ def _start_shooting_phase_visible_battleshock_support(description: str) -> Optio
         return None
     pattern = (
         r"at the start of your shooting phase select one enemy unit within (?P<range>\d+) (?:of )?and visible to this model "
-        r"that enemy unit must take a battle shock test"
+        r"that (?:enemy )?unit must take a battle shock test"
+        r"(?: subtracting (?P<infantry_penalty>\d+) from the result if it is an infantry unit)?"
+        r"(?: if the test is failed that (?:enemy )?unit suffers (?P<fail_mw>d3|d6|\d+) mortal wounds?)?"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
+    range_value = str(m.group("range") or "").strip()
+    try:
+        infantry_penalty = int(m.group("infantry_penalty") or 0)
+    except (TypeError, ValueError):
+        infantry_penalty = 0
+    fail_mw_token = str(m.group("fail_mw") or "").strip().lower()
+    details = [f"Start of Shooting phase: select a visible enemy unit within {range_value}\" to take a Battle-shock test."]
+    if infantry_penalty > 0:
+        details.append(f"INFANTRY targets take the test at -{int(infantry_penalty)}.")
+    if fail_mw_token:
+        if fail_mw_token.isdigit():
+            details.append(f"On a failed test, that unit suffers {int(fail_mw_token)} mortal wounds.")
+        else:
+            details.append(f"On a failed test, that unit suffers {str(fail_mw_token).upper()} mortal wounds.")
     return (
         "Supported",
-        f"Start of Shooting phase: select a visible enemy unit within {m.group('range')}\" to take a Battle-shock test.",
+        " ".join(details),
     )
 
 
