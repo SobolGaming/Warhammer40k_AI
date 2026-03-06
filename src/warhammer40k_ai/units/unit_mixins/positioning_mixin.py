@@ -8047,6 +8047,16 @@ class PositioningMixin:
             except (AttributeError, TypeError, ValueError):
                 pass
         if not found:
+            try:
+                if self._attached_unit_has_active_enhancement(
+                    "enhancement_reapers_cowl_infiltrators",
+                    enhancement_id="000009781004",
+                    enhancement_name="reaper's cowl",
+                ):
+                    found = True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        if not found:
             found, _ = self._find_ability_with_patterns(["infiltrators", "infiltrate"])
         
         # Cache the result
@@ -8086,6 +8096,13 @@ class PositioningMixin:
             return True
         # Enhancement: Phial of the Abyss grants Stealth to models in the bearer's unit.
         if isinstance(sr, dict) and sr.get("enhancement_phial_of_the_abyss"):
+            return True
+        # Reaper's Wager: Reaper's Cowl grants Stealth to models in the bearer's unit.
+        if self._attached_unit_has_active_enhancement(
+            "enhancement_reapers_cowl_stealth",
+            enhancement_id="000009781004",
+            enhancement_name="reaper's cowl",
+        ):
             return True
         # Wrathful Procession: Pyrebrand grants Stealth to models in the bearer's unit.
         if self._attached_unit_has_active_enhancement(

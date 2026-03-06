@@ -3383,6 +3383,62 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if pfp is None or int(getattr(pfp, "tokens", 0) or 0) < pain_token_cost:
                 return ("Labyrinthine Cunning requires sufficient Pain tokens.",)
         return ()
+    if ability == "conductor_of_torment":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Conductor of Torment army not found.",)
+        mgr = getattr(army, "drukhari_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_reapers_wager", lambda: False)()):
+            return ("Conductor of Torment requires Reaper's Wager.",)
+        if not bool(getattr(mgr, "callous_competition_initialized", False)):
+            return ("Conductor of Torment requires Callous Competition to be active.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Conductor of Torment source unit was not found.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_conductor_of_torment", False)):
+            return ("Conductor of Torment source unit is not eligible.",)
+        if is_skip_choice(request, result):
+            return ()
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action not in {"gain_pain_token_and_switch_to_drukhari", "spend_pain_token_and_switch_to_harlequins"}:
+            return ("Conductor of Torment choice is invalid.",)
+        winning_side_fn = getattr(mgr, "callous_competition_current_winning_side", None)
+        winning_side = (
+            str(winning_side_fn() or "").strip().upper()
+            if callable(winning_side_fn)
+            else str(getattr(mgr, "callous_competition_winning_side", "") or "").strip().upper()
+        )
+        drukhari_side = str(getattr(mgr, "CALLOUS_COMPETITION_SIDE_DRUKHARI", "DRUKHARI") or "").strip().upper()
+        harlequins_side = str(getattr(mgr, "CALLOUS_COMPETITION_SIDE_HARLEQUINS", "HARLEQUINS") or "").strip().upper()
+        if action == "gain_pain_token_and_switch_to_drukhari":
+            if winning_side != harlequins_side:
+                return ("Conductor of Torment gain path requires DRUKHARI to be losing the wager.",)
+            return ()
+        if winning_side != drukhari_side:
+            return ("Conductor of Torment spend path requires DRUKHARI to be winning the wager.",)
+        try:
+            pain_token_cost = int(
+                payload.get(
+                    "pain_token_cost",
+                    ctx.get("pain_token_cost", source_sr.get("enhancement_conductor_of_torment_spend_pain_token_cost", 1)),
+                )
+                or 1
+            )
+        except (TypeError, ValueError):
+            pain_token_cost = 1
+        pain_token_cost = max(1, int(pain_token_cost))
+        pfp = getattr(army, "power_from_pain", None)
+        if pfp is None or int(getattr(pfp, "tokens", 0) or 0) < pain_token_cost:
+            return ("Conductor of Torment requires sufficient Pain tokens.",)
+        return ()
     if ability == "eye_of_spite":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -7647,6 +7703,123 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "success_on": int(success_on),
             "gained_cp": int(gained_cp),
             "spent_pain_tokens": 0,
+        }
+    if ability == "conductor_of_torment":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "drukhari_detachments", None)
+        if mgr is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_conductor_of_torment", False)):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(
+            ctx.get("ability_name", "")
+            or source_sr.get("enhancement_conductor_of_torment_source", "")
+            or "Conductor of Torment"
+        ).strip() or "Conductor of Torment"
+        winning_side_fn = getattr(mgr, "callous_competition_current_winning_side", None)
+        previous_winning_side = (
+            str(winning_side_fn() or "").strip().upper()
+            if callable(winning_side_fn)
+            else str(getattr(mgr, "callous_competition_winning_side", "") or "").strip().upper()
+        )
+        drukhari_side = str(getattr(mgr, "CALLOUS_COMPETITION_SIDE_DRUKHARI", "DRUKHARI") or "").strip().upper()
+        harlequins_side = str(getattr(mgr, "CALLOUS_COMPETITION_SIDE_HARLEQUINS", "HARLEQUINS") or "").strip().upper()
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {
+                "action": "skip",
+                "spent_pain_tokens": 0,
+                "gained_pain_tokens": 0,
+                "previous_winning_side": previous_winning_side,
+                "new_winning_side": previous_winning_side,
+            }
+
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action not in {"gain_pain_token_and_switch_to_drukhari", "spend_pain_token_and_switch_to_harlequins"}:
+            return None
+        set_side_fn = getattr(mgr, "set_callous_competition_winning_side", None)
+        pfp = getattr(army, "power_from_pain", None)
+        if action == "gain_pain_token_and_switch_to_drukhari":
+            try:
+                gain_tokens = int(
+                    payload.get(
+                        "pain_tokens_gained",
+                        ctx.get("pain_tokens_gained", source_sr.get("enhancement_conductor_of_torment_gain_pain_tokens", 1)),
+                    )
+                    or 1
+                )
+            except (TypeError, ValueError):
+                gain_tokens = 1
+            gain_tokens = max(0, int(gain_tokens))
+            gain_tokens_fn = getattr(pfp, "gain_tokens", None) if pfp is not None else None
+            if gain_tokens > 0 and callable(gain_tokens_fn):
+                gain_tokens_fn(gain_tokens, reason=ability_name)
+            if callable(set_side_fn):
+                if not bool(set_side_fn(drukhari_side)):
+                    return None
+            else:
+                mgr.callous_competition_winning_side = drukhari_side
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: gained {int(gain_tokens)} Pain token(s); DRUKHARI are now winning the wager.",
+            )
+            return {
+                "action": action,
+                "spent_pain_tokens": 0,
+                "gained_pain_tokens": int(gain_tokens),
+                "previous_winning_side": previous_winning_side,
+                "new_winning_side": drukhari_side,
+            }
+
+        try:
+            pain_token_cost = int(
+                payload.get(
+                    "pain_token_cost",
+                    ctx.get("pain_token_cost", source_sr.get("enhancement_conductor_of_torment_spend_pain_token_cost", 1)),
+                )
+                or 1
+            )
+        except (TypeError, ValueError):
+            pain_token_cost = 1
+        pain_token_cost = max(1, int(pain_token_cost))
+        spend_tokens = getattr(pfp, "spend_tokens", None) if pfp is not None else None
+        if not callable(spend_tokens):
+            return None
+        if not bool(spend_tokens(pain_token_cost, reason=ability_name)):
+            return None
+        if callable(set_side_fn):
+            if not bool(set_side_fn(harlequins_side)):
+                return None
+        else:
+            mgr.callous_competition_winning_side = harlequins_side
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: spent {int(pain_token_cost)} Pain token(s); HARLEQUINS are now winning the wager.",
+        )
+        return {
+            "action": action,
+            "spent_pain_tokens": int(pain_token_cost),
+            "gained_pain_tokens": 0,
+            "previous_winning_side": previous_winning_side,
+            "new_winning_side": harlequins_side,
         }
     if ability == "eye_of_spite":
         payload = _option_payload(request, result)

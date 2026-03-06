@@ -3995,7 +3995,12 @@ class ShootingMixin:
             enhancement_id="000010400005",
             enhancement_name="herald of sacred slaughter",
         )
-        if not (has_aggressive_deployment or has_herald_of_sacred_slaughter):
+        has_reapers_wager_archraider = self._attached_unit_has_enhancement_flag(
+            "enhancement_reapers_wager_archraider",
+            enhancement_id="000009781002",
+            enhancement_name="archraider",
+        )
+        if not (has_aggressive_deployment or has_herald_of_sacred_slaughter or has_reapers_wager_archraider):
             return
         try:
             root = self.get_attached_unit_root()
@@ -4020,6 +4025,10 @@ class ShootingMixin:
                 val = max(val, float(sr.get("enhancement_herald_of_sacred_slaughter_scouts_distance", 0) or 0))
             except Exception:
                 pass
+            try:
+                val = max(val, float(sr.get("enhancement_reapers_wager_archraider_scouts_distance", 0) or 0))
+            except Exception:
+                pass
             if val > scouts_distance:
                 scouts_distance = val
         if scouts_distance <= 0:
@@ -4036,6 +4045,9 @@ class ShootingMixin:
         if has_herald_of_sacred_slaughter:
             sr["enhancement_herald_of_sacred_slaughter_active"] = True
             sr["enhancement_herald_of_sacred_slaughter_distance"] = scouts_distance
+        if has_reapers_wager_archraider:
+            sr["enhancement_reapers_wager_archraider_active"] = True
+            sr["enhancement_reapers_wager_archraider_distance"] = scouts_distance
         transport_unit.special_rules = sr
 
     def disembark(

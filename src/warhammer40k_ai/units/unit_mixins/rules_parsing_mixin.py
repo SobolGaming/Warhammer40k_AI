@@ -3389,6 +3389,7 @@ class RulesParsingMixin:
                         or sr.get("enhancement_orb_of_the_emperors_aegis")
                         or sr.get("enhancement_webway_awl")
                         or sr.get("enhancement_webway_pathstone")
+                        or sr.get("enhancement_webway_walker")
                     ):
                         grant_deep_strike = True
                         break

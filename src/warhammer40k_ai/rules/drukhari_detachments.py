@@ -85,6 +85,9 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
     INFORMANT_NETWORK_SOURCE = "Informant Network"
     INFORMANT_NETWORK_SELECTION_ABILITY = "informant_network_selection"
     _CRUCIBLE_OF_MALEDICTION_PENDING_KEY = "enhancement_crucible_of_malediction_pending"
+    _WEBWAY_WALKER_CHARGE_REROLL_ACTIVE_KEY = "enhancement_webway_walker_charge_reroll_active"
+    _WEBWAY_WALKER_CHARGE_REROLL_TURN_KEY = "enhancement_webway_walker_charge_reroll_turn"
+    _WEBWAY_WALKER_CHARGE_REROLL_OWNER_KEY = "enhancement_webway_walker_charge_reroll_turn_owner"
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -235,6 +238,41 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
             return False
         return side_norm == winning
 
+    def callous_competition_current_winning_side(self) -> str:
+        winning = str(self.callous_competition_winning_side or "").strip().upper()
+        if winning in {
+            self.CALLOUS_COMPETITION_SIDE_DRUKHARI,
+            self.CALLOUS_COMPETITION_SIDE_HARLEQUINS,
+        }:
+            return winning
+        return ""
+
+    def callous_competition_side_is_losing(self, side: str) -> bool:
+        side_norm = str(side or "").strip().upper()
+        if side_norm not in {
+            self.CALLOUS_COMPETITION_SIDE_DRUKHARI,
+            self.CALLOUS_COMPETITION_SIDE_HARLEQUINS,
+        }:
+            return False
+        winning = self.callous_competition_current_winning_side()
+        if not winning:
+            return False
+        return side_norm != winning
+
+    def set_callous_competition_winning_side(self, side: str) -> bool:
+        if not self.is_reapers_wager():
+            return False
+        side_norm = str(side or "").strip().upper()
+        if side_norm not in {
+            self.CALLOUS_COMPETITION_SIDE_DRUKHARI,
+            self.CALLOUS_COMPETITION_SIDE_HARLEQUINS,
+        }:
+            return False
+        if not self.callous_competition_initialized:
+            return False
+        self.callous_competition_winning_side = side_norm
+        return True
+
     def initialize_callous_competition(self, *, battle_round: int, player=None) -> bool:
         if not self.is_reapers_wager():
             return False
@@ -315,6 +353,102 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         if self._callous_competition_side_is_winning(side):
             return False, ""
         return True, self.CALLOUS_COMPETITION_SOURCE
+
+    def _reapers_webway_walker_source_for_unit(self, unit):
+        if not self.is_reapers_wager():
+            return None, None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None, None
+        members = self._unit_attached_members(root)
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_webway_walker", False)):
+                continue
+            bearer_model = self._resolve_member_bearer_model(
+                member,
+                bearer_keys=("enhancement_webway_walker_bearer_model_id",),
+            )
+            if bearer_model is None:
+                continue
+            return root, member, sr, bearer_model
+        return None, None, None, None
+
+    def on_unit_set_up(
+        self,
+        *,
+        unit=None,
+        game=None,
+        set_up_as_reinforcements: bool = False,
+        used_deep_strike: bool = False,
+    ) -> None:
+        if not self.is_reapers_wager() or self.army is None:
+            return
+        root, _member, _sr, _bearer_model = self._reapers_webway_walker_source_for_unit(unit)
+        if root is None:
+            return
+        used_deep_strike_setup = bool(used_deep_strike)
+        if not used_deep_strike_setup and bool(set_up_as_reinforcements):
+            has_deep_strike = getattr(root, "has_deep_strike", None)
+            if callable(has_deep_strike):
+                used_deep_strike_setup = bool(has_deep_strike())
+        if not used_deep_strike_setup:
+            return
+
+        if game is None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        owner = getattr(self.army, "player", None)
+        owner_id = str(getattr(owner, "id", "") or "")
+        if game is not None:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            if current_owner_id:
+                owner_id = current_owner_id
+
+        side = self._unit_side_for_callous_competition(root)
+        losing_now = bool(self.callous_competition_initialized and self.callous_competition_side_is_losing(side))
+        sr_root = getattr(root, "special_rules", None)
+        if not isinstance(sr_root, dict):
+            sr_root = {}
+        sr_root[self._WEBWAY_WALKER_CHARGE_REROLL_ACTIVE_KEY] = bool(losing_now)
+        sr_root[self._WEBWAY_WALKER_CHARGE_REROLL_TURN_KEY] = int(turn)
+        if owner_id:
+            sr_root[self._WEBWAY_WALKER_CHARGE_REROLL_OWNER_KEY] = owner_id
+        root.special_rules = sr_root
+
+    def webway_walker_charge_reroll_applies(self, unit, *, game=None) -> bool:
+        if not self.is_reapers_wager():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._WEBWAY_WALKER_CHARGE_REROLL_ACTIVE_KEY, False)):
+            return False
+        if game is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(owner, "game", None) if owner is not None else None
+        if game is None:
+            return True
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        try:
+            marked_turn = int(sr.get(self._WEBWAY_WALKER_CHARGE_REROLL_TURN_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            marked_turn = 0
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return False
+        owner_id = str(sr.get(self._WEBWAY_WALKER_CHARGE_REROLL_OWNER_KEY, "") or "")
+        if owner_id:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            if current_owner_id and current_owner_id != owner_id:
+                return False
+        return True
 
     def _unit_on_battlefield(self, unit) -> bool:
         root = self._unit_root(unit)

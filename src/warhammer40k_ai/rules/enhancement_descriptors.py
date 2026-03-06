@@ -2923,6 +2923,62 @@ _REALSPACE_RAIDERS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _REALSPACE_RAIDERS_DESCRIPTORS.values()
 }
 
+_REAPERS_WAGER_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009781002": EnhancementToolDescriptor(
+        enhancement_id="000009781002",
+        name="Archraider",
+        timing="declare_battle_formations",
+        target="dedicated_transport_with_bearer_embarked",
+        duration="scout_step",
+        effect="grant_scouts_if_bearer_starts_embarked",
+        effect_params={"scouts_distance": 9.0},
+    ),
+    "000009781003": EnhancementToolDescriptor(
+        enhancement_id="000009781003",
+        name="Webway Walker",
+        timing="passive_and_on_unit_set_up_via_deep_strike",
+        target="bearer_unit",
+        duration="constant_and_until_end_of_turn_on_trigger",
+        effect="grant_deep_strike_and_charge_reroll_if_losing_wager_on_deep_strike_setup",
+        effect_params={
+            "grants_deep_strike": True,
+            "requires_losing_wager_at_setup": True,
+            "charge_reroll_duration": "until_end_of_turn",
+        },
+    ),
+    "000009781004": EnhancementToolDescriptor(
+        enhancement_id="000009781004",
+        name="Reaper's Cowl",
+        timing="passive",
+        target="bearer_unit_models",
+        duration="constant",
+        effect="grant_stealth_and_infiltrators_to_bearer_unit_models",
+        effect_params={
+            "grants_stealth": True,
+            "grants_infiltrators": True,
+        },
+    ),
+    "000009781005": EnhancementToolDescriptor(
+        enhancement_id="000009781005",
+        name="Conductor of Torment",
+        timing="friendly_command_phase",
+        target="army_wager_state",
+        duration="instant_optional",
+        effect="optional_switch_wager_winner_with_pain_token_exchange",
+        effect_params={
+            "gain_pain_tokens_if_drukhari_losing": 1,
+            "switch_to_drukhari_when_losing": True,
+            "spend_pain_token_cost_if_drukhari_winning": 1,
+            "switch_to_harlequins_when_winning": True,
+            "optional": True,
+        },
+    ),
+}
+
+_REAPERS_WAGER_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _REAPERS_WAGER_DESCRIPTORS.values()
+}
+
 _KABALITE_CARTEL_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010588002": EnhancementToolDescriptor(
         enhancement_id="000010588002",
@@ -6786,6 +6842,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _COVENITE_COTERIE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _REAPERS_WAGER_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _KABALITE_CARTEL_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -7076,6 +7135,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _VETERANS_OF_THE_LONG_WAR_BY_NAME.get(key)
         or _REALSPACE_RAIDERS_BY_NAME.get(key)
         or _COVENITE_COTERIE_BY_NAME.get(key)
+        or _REAPERS_WAGER_BY_NAME.get(key)
         or _KABALITE_CARTEL_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
         or _SKYSPLINTER_ASSAULT_BY_NAME.get(key)

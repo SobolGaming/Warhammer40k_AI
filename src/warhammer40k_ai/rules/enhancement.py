@@ -833,6 +833,10 @@ class Enhancement:
             is_kabalite_cartel = bool(dru_mgr and dru_mgr.is_kabalite_cartel())
         except Exception:
             is_kabalite_cartel = False
+        try:
+            is_reapers_wager = bool(dru_mgr and dru_mgr.is_reapers_wager())
+        except Exception:
+            is_reapers_wager = False
         is_realspace_raiders_fn = getattr(dru_mgr, "is_realspace_raiders", None) if dru_mgr is not None else None
         is_realspace_raiders = bool(callable(is_realspace_raiders_fn) and is_realspace_raiders_fn())
         ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
@@ -5844,7 +5848,7 @@ class Enhancement:
                 cache.pop("deep_strike", None)
                 cache.pop("opponent_turn_strategic_reserves_ability", None)
 
-        if name == "archraider" or enh_id == "000010704004":
+        if enh_id == "000010704004" or (name == "archraider" and is_corsair_veterans):
             if not is_corsair_veterans:
                 return
             unit.special_rules["enhancement_archraider"] = True
@@ -6154,6 +6158,74 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_crucible_of_malediction_bearer_model_id"] = bearer_id
+
+        if enh_id == "000009781002" or (name == "archraider" and is_reapers_wager):
+            if not is_reapers_wager:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Archraider").strip() or "Archraider"
+            unit.special_rules["enhancement_reapers_wager_archraider"] = True
+            unit.special_rules["enhancement_reapers_wager_archraider_source"] = source
+            unit.special_rules["enhancement_reapers_wager_archraider_scouts_distance"] = float(
+                max(0.0, _coerce_float(params.get("scouts_distance", 9.0) or 9.0, default=9.0))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_reapers_wager_archraider_bearer_model_id"] = bearer_id
+
+        if name == "webway walker" or enh_id == "000009781003":
+            if not is_reapers_wager:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Webway Walker").strip() or "Webway Walker"
+            unit.special_rules["enhancement_webway_walker"] = True
+            unit.special_rules["enhancement_webway_walker_source"] = source
+            unit.special_rules["enhancement_webway_walker_ability_key"] = "webway_walker"
+            unit.special_rules["bearer_unit_deep_strike"] = bool(params.get("grants_deep_strike", True))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_webway_walker_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("deep_strike", None)
+
+        if name in {"reaper's cowl", "reapers cowl"} or enh_id == "000009781004":
+            if not is_reapers_wager:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source = str(getattr(desc, "name", "") or "Reaper's Cowl").strip() or "Reaper's Cowl"
+            unit.special_rules["enhancement_reapers_cowl"] = True
+            unit.special_rules["enhancement_reapers_cowl_source"] = source
+            unit.special_rules["enhancement_reapers_cowl_stealth"] = True
+            unit.special_rules["enhancement_reapers_cowl_infiltrators"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_reapers_cowl_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("infiltrate", None)
+                cache.pop("stealth", None)
+
+        if name == "conductor of torment" or enh_id == "000009781005":
+            if not is_reapers_wager:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Conductor of Torment").strip() or "Conductor of Torment"
+            unit.special_rules["enhancement_conductor_of_torment"] = True
+            unit.special_rules["enhancement_conductor_of_torment_source"] = source
+            unit.special_rules["enhancement_conductor_of_torment_ability_key"] = "conductor_of_torment"
+            unit.special_rules["enhancement_conductor_of_torment_gain_pain_tokens"] = int(
+                max(0, _coerce_int(params.get("gain_pain_tokens_if_drukhari_losing", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_conductor_of_torment_spend_pain_token_cost"] = int(
+                max(1, _coerce_int(params.get("spend_pain_token_cost_if_drukhari_winning", 1) or 1, default=1))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_conductor_of_torment_bearer_model_id"] = bearer_id
 
         if name == "leechbite plate" or enh_id == "000010588002":
             if not is_kabalite_cartel:

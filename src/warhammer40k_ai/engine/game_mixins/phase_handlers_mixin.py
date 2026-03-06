@@ -2478,11 +2478,153 @@ class GamePhaseHandlersMixin:
         if army is None:
             return
         dru_mgr = getattr(army, "drukhari_detachments", None)
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        is_reapers_fn = getattr(dru_mgr, "is_reapers_wager", None) if dru_mgr is not None else None
+        if bool(callable(is_reapers_fn) and is_reapers_fn()):
+            queue = getattr(self, "decision_queue", None)
+            owner_id = str(getattr(owner, "id", "") or "")
+            pending_source_ids: set[str] = set()
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                        continue
+                    req_ctx = dict(getattr(req, "context", {}) or {})
+                    if str(req_ctx.get("ability", "") or "") != "conductor_of_torment":
+                        continue
+                    if str(req_ctx.get("turn_owner", "") or "") != owner_id:
+                        continue
+                    try:
+                        req_turn = int(req_ctx.get("turn", 0) or 0)
+                    except (TypeError, ValueError):
+                        req_turn = 0
+                    if req_turn != int(current_turn or 0):
+                        continue
+                    source_id = str(req_ctx.get("source_unit_id", "") or "")
+                    if source_id:
+                        pending_source_ids.add(source_id)
+
+            seen_roots: set[str] = set()
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                if root is None or not bool(getattr(root, "is_alive", lambda: False)()):
+                    continue
+                rid = str(maybe_entity_id(root) or "")
+                if rid in seen_roots:
+                    continue
+                seen_roots.add(rid)
+                if not self._unit_on_battlefield_for_reposition(root):
+                    continue
+
+                members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else []
+                if not members:
+                    members = [root]
+                members = sorted(members, key=lambda m: str(maybe_entity_id(m) or ""))
+                source_member = None
+                source_sr = None
+                for member in members:
+                    sr = getattr(member, "special_rules", None)
+                    if isinstance(sr, dict) and bool(sr.get("enhancement_conductor_of_torment", False)):
+                        source_member = member
+                        source_sr = sr
+                        break
+                if source_member is None or not isinstance(source_sr, dict):
+                    continue
+
+                get_bearer = getattr(source_member, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+                if bearer is None:
+                    continue
+                bearer_alive_attr = getattr(bearer, "is_alive", True)
+                if not bool(bearer_alive_attr() if callable(bearer_alive_attr) else bearer_alive_attr):
+                    continue
+
+                source_unit_id = str(maybe_entity_id(source_member) or "")
+                if not source_unit_id or source_unit_id in pending_source_ids:
+                    continue
+
+                source_name = str(
+                    source_sr.get("enhancement_conductor_of_torment_source", "") or "Conductor of Torment"
+                ).strip() or "Conductor of Torment"
+                try:
+                    gain_tokens = int(source_sr.get("enhancement_conductor_of_torment_gain_pain_tokens", 1) or 1)
+                except (TypeError, ValueError):
+                    gain_tokens = 1
+                gain_tokens = max(0, int(gain_tokens))
+                try:
+                    spend_token_cost = int(source_sr.get("enhancement_conductor_of_torment_spend_pain_token_cost", 1) or 1)
+                except (TypeError, ValueError):
+                    spend_token_cost = 1
+                spend_token_cost = max(1, int(spend_token_cost))
+
+                current_winning_side_fn = getattr(dru_mgr, "callous_competition_current_winning_side", None)
+                if callable(current_winning_side_fn):
+                    current_winning_side = str(current_winning_side_fn() or "").strip().upper()
+                else:
+                    current_winning_side = str(getattr(dru_mgr, "callous_competition_winning_side", "") or "").strip().upper()
+                harlequins_side = str(
+                    getattr(dru_mgr, "CALLOUS_COMPETITION_SIDE_HARLEQUINS", "HARLEQUINS")
+                ).strip().upper()
+                drukhari_side = str(
+                    getattr(dru_mgr, "CALLOUS_COMPETITION_SIDE_DRUKHARI", "DRUKHARI")
+                ).strip().upper()
+
+                pfp = getattr(army, "power_from_pain", None)
+                available_pain = int(getattr(pfp, "tokens", 0) or 0) if pfp is not None else 0
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                if current_winning_side == harlequins_side and gain_tokens > 0:
+                    options.append(
+                        DecisionOption.create(
+                            f"Gain {gain_tokens} Pain token(s); DRUKHARI now winning",
+                            payload={
+                                "action": "gain_pain_token_and_switch_to_drukhari",
+                                "pain_tokens_gained": int(gain_tokens),
+                                "new_winning_side": drukhari_side,
+                            },
+                        )
+                    )
+                if current_winning_side == drukhari_side and available_pain >= spend_token_cost:
+                    options.append(
+                        DecisionOption.create(
+                            f"Spend {spend_token_cost} Pain token(s); HARLEQUINS now winning",
+                            payload={
+                                "action": "spend_pain_token_and_switch_to_harlequins",
+                                "pain_token_cost": int(spend_token_cost),
+                                "new_winning_side": harlequins_side,
+                            },
+                        )
+                    )
+                if len(options) <= 1:
+                    continue
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{source_name}: choose one option for {getattr(bearer, 'name', 'bearer')}.",
+                    player_id=getattr(owner, "id", None),
+                    options=options,
+                    context={
+                        "ability": "conductor_of_torment",
+                        "ability_name": source_name,
+                        "phase": "Command phase",
+                        "optional": True,
+                        "source_unit_id": source_unit_id,
+                        "unit_id": source_unit_id,
+                        "model_id": maybe_entity_id(bearer),
+                        "turn_owner": owner_id,
+                        "turn": int(current_turn or 0),
+                        "pain_tokens_gained": int(gain_tokens),
+                        "pain_token_cost": int(spend_token_cost),
+                        "current_winning_side": current_winning_side,
+                    },
+                )
+                self.request_decision(request)
+                pending_source_ids.add(source_unit_id)
+
         is_realspace_fn = getattr(dru_mgr, "is_realspace_raiders", None) if dru_mgr is not None else None
         if not bool(callable(is_realspace_fn) and is_realspace_fn()):
             return
-        from ..decision_kinds import DECISION_CHOOSE_QUARRY
-        from ..decisions import DecisionOption, DecisionRequest
 
         queue = getattr(self, "decision_queue", None)
         owner_id = str(getattr(owner, "id", "") or "")

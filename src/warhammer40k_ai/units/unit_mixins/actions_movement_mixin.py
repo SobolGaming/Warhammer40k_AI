@@ -8006,6 +8006,15 @@ class ActionsMovementMixin:
         if callable(cultist_brand_charge):
             if bool(cultist_brand_charge(self, game=game)):
                 return True
+        dru_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+        webway_walker_charge = (
+            getattr(dru_mgr, "webway_walker_charge_reroll_applies", None)
+            if dru_mgr is not None
+            else None
+        )
+        if callable(webway_walker_charge):
+            if bool(webway_walker_charge(self, game=game)):
+                return True
         try:
             if self._spearhead_striker_charge_reroll_active(game=game):
                 return True
