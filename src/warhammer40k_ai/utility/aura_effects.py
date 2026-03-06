@@ -1266,6 +1266,41 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
     }
 
 
+def _parse_enemy_attack_hit_penalty_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_enemy_attack_hit_penalty_aura")
+    """
+    Strict parser for enemy attack-hit auras like:
+      "While an enemy unit (excluding MONSTERS and VEHICLES) is within 3\" of this unit,
+       each time a model in that unit makes an attack, subtract 1 from the Hit roll."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        r'While an enemy unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" '
+        r"of (?:(?:this model|this unit|the bearer)|one or more units with this ability), "
+        r"each time a model in that unit makes an attack, subtract (?P<hit>\d+) from the Hit roll",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    try:
+        rng = float(m.group("rng"))
+        hit_penalty = int(m.group("hit"))
+    except Exception:
+        return None
+    if rng <= 0 or hit_penalty <= 0:
+        return None
+    return {
+        "range": float(rng),
+        "hit": -abs(int(hit_penalty)),
+        "excluded_keywords": _parse_excluded_keywords(desc),
+    }
+
+
 def _parse_enemy_psychic_hazardous_aura(ability) -> Optional[dict]:
     _count_regex_hotspot("_parse_enemy_psychic_hazardous_aura")
     """
@@ -1659,6 +1694,64 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                         reroll_hit_full_reasons=(reason,),
                     )
                 )
+
+    # Enemy attack-hit penalty auras (e.g. Harassment Swarm).
+    enemy_units: list = []
+    try:
+        enemy_fn = getattr(game_map, "get_enemy_units", None)
+        if callable(enemy_fn):
+            enemy_units = list(enemy_fn(attacker_unit) or [])
+    except Exception:
+        enemy_units = []
+    applied_enemy_aura_names: set[str] = set()
+    for source in list(enemy_units or []):
+        if source is None:
+            continue
+        try:
+            if hasattr(source, "is_alive") and callable(source.is_alive) and not source.is_alive():
+                continue
+        except Exception:
+            pass
+        try:
+            if hasattr(source, "deployed") and not bool(getattr(source, "deployed", True)):
+                continue
+        except Exception:
+            pass
+        for ab in _iter_possible_abilities(source):
+            if not _is_aura_ability(ab):
+                continue
+            hit_penalty = _cached_parse_aura_spec(
+                "_parse_enemy_attack_hit_penalty_aura",
+                ab,
+                _parse_enemy_attack_hit_penalty_aura,
+            )
+            if not hit_penalty:
+                continue
+            aura_key = _norm_name(str(getattr(ab, "name", "") or ""))
+            if aura_key and aura_key in applied_enemy_aura_names:
+                continue
+            if not _unit_within_aura_range(source, attacker_unit, float(hit_penalty["range"]), ability=ab):
+                continue
+            if hit_penalty.get("excluded_keywords") and _excluded_by_unit_keywords(
+                attacker_unit,
+                hit_penalty.get("excluded_keywords", ()),
+            ):
+                continue
+            try:
+                hit_value = int(hit_penalty.get("hit", 0) or 0)
+            except Exception:
+                hit_value = 0
+            if not hit_value:
+                continue
+            source_name = str(getattr(ab, "name", "") or "Enemy Aura").strip() or "Enemy Aura"
+            out = out.merge(
+                AuraAttackModifiers(
+                    hit=int(hit_value),
+                    hit_reasons=(f"{int(hit_value)} to hit from {source_name}",),
+                )
+            )
+            if aura_key:
+                applied_enemy_aura_names.add(aura_key)
 
     # World Eaters: Idols of Khorne (Idol of Infinite Rage).
     army = getattr(attacker_unit, "get_parent_army", lambda: None)()

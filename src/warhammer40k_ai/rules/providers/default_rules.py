@@ -176,6 +176,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_fight_phase_target_attack_bonus"),
                 ("phase_start", "_on_phase_start_inflamed_infections"),
                 ("phase_start", "_on_phase_start_data_spike"),
+                ("phase_start", "_on_phase_start_accelerator_mandible"),
                 ("phase_start", "_on_phase_start_malign_sacrifice"),
                 ("phase_start", "_on_phase_start_malice_made_manifest"),
                 ("phase_start", "_on_phase_start_to_slay_the_warmaster"),

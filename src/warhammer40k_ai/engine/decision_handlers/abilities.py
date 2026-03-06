@@ -6169,6 +6169,64 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         ):
             return ("Lucid Eye selection is not a legal Fate die adjustment.",)
         return ()
+    if ability == "accelerator_mandible":
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("attacker_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Accelerator Mandible source unit was not found.",)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Accelerator Mandible target unit was not found.",)
+
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if source_root is None or target_root is None:
+            return ("Accelerator Mandible source/target unit root was not found.",)
+        if not bool(getattr(target_root, "is_alive", lambda: False)()):
+            return ("Accelerator Mandible target must be alive.",)
+        if not bool(getattr(target_root, "deployed", True)):
+            return ("Accelerator Mandible target must be on the battlefield.",)
+        try:
+            if target_root.is_in_reserves() or target_root.is_embarked:
+                return ("Accelerator Mandible target must be on the battlefield.",)
+        except Exception:
+            pass
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is not target_army:
+            return ("Accelerator Mandible target must be a friendly CANOPTEK unit.",)
+
+        keyword = str(ctx.get("keyword", "canoptek") or "canoptek").strip()
+        has_keyword = False
+        try:
+            has_keyword = bool(target_root.has_any_keyword(keyword))
+        except Exception:
+            has_keyword = False
+        if not has_keyword:
+            try:
+                has_keyword = bool(target_root.has_keyword(keyword))
+            except Exception:
+                has_keyword = False
+        if not has_keyword:
+            return ("Accelerator Mandible target must have the CANOPTEK keyword.",)
+
+        try:
+            range_inches = float(ctx.get("range", 3) or 3)
+        except (TypeError, ValueError):
+            range_inches = 3.0
+        in_range = False
+        game_map = getattr(game, "map", None)
+        if game_map is not None and hasattr(game_map, "get_distance_between_units"):
+            try:
+                in_range = bool(float(game_map.get_distance_between_units(source_root, target_root)) <= float(range_inches))
+            except Exception:
+                in_range = False
+        if not in_range:
+            return ("Accelerator Mandible target must be within range of the source unit.",)
+        return ()
     if ability == "data_spike":
         if is_skip_choice(request, result):
             return ()
@@ -18207,6 +18265,54 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 )
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "accelerator_mandible":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("attacker_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+            target_root = chosen.get_attached_unit_root() if hasattr(chosen, "get_attached_unit_root") else chosen
+            if source_root is None or target_root is None:
+                return None
+            player = _resolve_player(game, request, _option_payload(request, result))
+            if player is None:
+                try:
+                    player = source_root.get_parent_army().player
+                except Exception:
+                    player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Accelerator Mandible").strip() or "Accelerator Mandible"
+            try:
+                ws_bonus = int(ctx.get("ws_bonus", 1) or 1)
+            except Exception:
+                ws_bonus = 1
+            ws_bonus = max(1, int(ws_bonus))
+
+            tsr = getattr(target_root, "special_rules", None)
+            if not isinstance(tsr, dict):
+                tsr = {}
+            try:
+                existing_bonus = int(tsr.get("accelerator_mandible_ws_bonus", 0) or 0)
+            except Exception:
+                existing_bonus = 0
+            tsr["accelerator_mandible_ws_bonus_active"] = True
+            tsr["accelerator_mandible_ws_bonus"] = int(existing_bonus + ws_bonus)
+            tsr["accelerator_mandible_ws_bonus_owner"] = owner_id
+            tsr["accelerator_mandible_ws_bonus_turn"] = int(turn or 0)
+            tsr["accelerator_mandible_ws_bonus_source"] = ability_name
+            tsr["accelerator_mandible_ws_bonus_expires_phase"] = "FIGHT_PHASE"
+            target_root.special_rules = tsr
+            try:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {getattr(target_root, 'name', 'Unit')} melee Weapon Skill is improved by {int(ws_bonus)} this phase.",
+                )
+            except Exception:
+                pass
+            return target_root
     if str(ctx.get("ability", "") or "") == "data_spike":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("attacker_unit_id") or ctx.get("unit_id"))
         if source_unit is not None and chosen is not None:

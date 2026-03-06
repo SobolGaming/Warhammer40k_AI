@@ -3861,6 +3861,12 @@ class Unit(
         r"and until the end of the phase the weapon skill characteristic of melee weapons equipped by that enemy unit is worsened by (?P<pen>\d+)",
         re.IGNORECASE,
     )
+    _FIGHT_PHASE_FRIENDLY_MELEE_WS_BONUS_RE = re.compile(
+        r"at the start of the fight phase select one friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+)\s*\"?\s*of "
+        r"(?:the bearer s unit|this model s unit|this models unit|this unit) until the end of the phase improve the weapon skill "
+        r"characteristic of weapons equipped by models in that unit by (?P<bonus>\d+)",
+        re.IGNORECASE,
+    )
     _HARBINGER_OF_DEATH_RE = re.compile(
         r"each time this model is selected to fight select one of the following abilities until the end of the phase this model s "
         r"hellforged weapons have that ability",

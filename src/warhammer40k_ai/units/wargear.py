@@ -8323,6 +8323,52 @@ class WargearProfile:
             pass
         try:
             unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+            if is_melee and isinstance(sr, dict) and bool(sr.get("accelerator_mandible_ws_bonus_active")):
+                applies = True
+                expires_phase = str(sr.get("accelerator_mandible_ws_bonus_expires_phase", "") or "").strip().upper()
+                current_phase = ""
+                player_id = ""
+                current_turn = 0
+                if unit is not None:
+                    try:
+                        army = unit.get_parent_army()
+                    except Exception:
+                        army = None
+                    player = getattr(army, "player", None) if army is not None else None
+                    if player is not None:
+                        player_id = str(get_entity_id(player) or getattr(player, "id", "") or "")
+                    game = getattr(player, "game", None) if player is not None else None
+                    if game is not None:
+                        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        try:
+                            current_turn = int(getattr(game, "turn", 0) or 0)
+                        except Exception:
+                            current_turn = 0
+                if expires_phase and current_phase and expires_phase != current_phase:
+                    applies = False
+                owner_id = str(sr.get("accelerator_mandible_ws_bonus_owner", "") or "")
+                if applies and owner_id and player_id and owner_id != player_id:
+                    applies = False
+                try:
+                    effect_turn = int(sr.get("accelerator_mandible_ws_bonus_turn", 0) or 0)
+                except Exception:
+                    effect_turn = 0
+                if applies and effect_turn and current_turn and effect_turn != current_turn:
+                    applies = False
+                if applies:
+                    try:
+                        bonus = int(sr.get("accelerator_mandible_ws_bonus", 0) or 0)
+                    except Exception:
+                        bonus = 0
+                    if bonus > 0:
+                        source = str(sr.get("accelerator_mandible_ws_bonus_source", "") or "Accelerator Mandible").strip() or "Accelerator Mandible"
+                        _add_skill_mod(int(bonus), f"{source}: +{int(bonus)} WS")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
             mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
             bonus_fn = getattr(mgr, "righteous_purpose_skill_bonus", None) if mgr is not None else None

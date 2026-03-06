@@ -4696,6 +4696,14 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "If attached to a CANOPTEK MACROCYTES unit during Declare Battle Formations, the model gains Scouts 8\"; otherwise no Scouts bonus.",
         ),
+        ("NEC", "Accelerator Mandible"): (
+            "Supported",
+            "Start of Fight phase: optional selection of a friendly CANOPTEK unit within 3\" of the bearer’s unit; selected unit improves melee Weapon Skill by 1 until end of phase.",
+        ),
+        ("NEC", "Harassment Swarm (Aura)"): (
+            "Supported",
+            "Aura: enemy units within 3\" (excluding MONSTER/VEHICLE) suffer -1 to hit when making attacks.",
+        ),
         ("AM", "DEPLOYMENT"): (
             "Supported",
             "Aegis Defence Line deployment enforces section composition limits and connectivity, including the broken-shield 1/2\" middle-pair exception, while treating all sections as one model.",
