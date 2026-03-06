@@ -1339,6 +1339,42 @@ class Player:
             return True
         return False
 
+    def _webway_awl_rapid_ingress_discount_context(self, target_unit, *, stratagem_name: str = "") -> dict | None:
+        if target_unit is None:
+            return None
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return None
+        stratagem_key = self._normalize_stratagem_name_key(stratagem_name)
+        if stratagem_key != "RAPID INGRESS":
+            return None
+        members = self._attached_members(target_unit)
+        for u in members:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_webway_awl_rapid_ingress_discount", False)):
+                continue
+            if not self._unit_is_alive_or_unknown(u):
+                continue
+            configured_name = self._normalize_stratagem_name_key(
+                str(sr.get("enhancement_webway_awl_stratagem_name", "") or "RAPID INGRESS")
+            )
+            if configured_name and configured_name != stratagem_key:
+                continue
+            get_bearer = getattr(u, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                continue
+            alive_attr = getattr(bearer, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            return {
+                "source_unit": u,
+                "source": str(sr.get("enhancement_webway_awl_source", "") or "Webway Awl").strip() or "Webway Awl",
+            }
+        return None
+
     @staticmethod
     def _normalize_stratagem_name_key(stratagem_name: str) -> str:
         text = str(stratagem_name or "")
@@ -2380,6 +2416,20 @@ class Player:
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
 
+    def _preview_webway_awl_rapid_ingress_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        stratagem_key = self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or "")
+        if stratagem_key != "RAPID INGRESS":
+            return 0
+        if self._webway_awl_rapid_ingress_discount_context(
+            target_unit,
+            stratagem_name=stratagem_key,
+        ) is None:
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
     def _preview_grimnars_mark_discount(self, *, stratagem=None, target_unit=None) -> int:
         if stratagem is None or target_unit is None:
             return 0
@@ -3206,6 +3256,20 @@ class Player:
                 stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
             ) or {}
             ability_name = str(context.get("source", "") or "Gift of the Prescient").strip() or "Gift of the Prescient"
+            reasons.append(f"{ability_name}: Rapid Ingress for 0CP.")
+            return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        webway_awl = self._preview_webway_awl_rapid_ingress_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if webway_awl:
+            discount = base
+            context = self._webway_awl_rapid_ingress_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            ability_name = str(context.get("source", "") or "Webway Awl").strip() or "Webway Awl"
             reasons.append(f"{ability_name}: Rapid Ingress for 0CP.")
             return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
@@ -4972,6 +5036,46 @@ class Player:
                 "reasons": [reason],
                 "increase": increase,
                 "increase_reasons": increase_reasons,
+            }
+
+        webway_awl = self._preview_webway_awl_rapid_ingress_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if webway_awl:
+            context = self._webway_awl_rapid_ingress_discount_context(
+                target_unit,
+                stratagem_name=self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or ""),
+            ) or {}
+            ability_name = str(context.get("source", "") or "Webway Awl").strip() or "Webway Awl"
+            cost = 0
+            increase = 0
+            increase_reasons: list[str] = []
+            opponent = self._get_opponent_player()
+            if opponent is not None:
+                inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                    target_unit=target_unit,
+                    stratagem=stratagem,
+                    current_cost=cost,
+                )
+                increase = int(inc_info.get("increase", 0) or 0)
+                increase_reasons = list(inc_info.get("reasons", []) or [])
+                if increase:
+                    cost = max(0, cost + increase)
+            self._pending_stratagem_cp_increase = {
+                "increase": int(increase or 0),
+                "reasons": increase_reasons,
+                "stratagem_name": getattr(stratagem, "name", None) or "",
+            }
+            return {
+                "base": base,
+                "discount": base,
+                "cost": cost,
+                "reasons": [f"{ability_name}: Rapid Ingress for 0CP."],
+                "increase": increase,
+                "increase_reasons": increase_reasons,
+                "webway_awl_rapid_ingress_use": True,
+                "webway_awl_rapid_ingress_source": ability_name,
             }
 
         beacon = self._preview_beacon_angelis_rapid_ingress_discount(

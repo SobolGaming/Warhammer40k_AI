@@ -221,6 +221,7 @@ Command phase:
 - vessels_of_wrath_models_dialog: SELECT_VESSEL_OF_WRATH_MODELS {model_ids | skip} (context `army_id`, `battle_round`, `max_models`)
 - wrath_of_khorne_blessing_dialog: CHOOSE_VESSEL_OF_WRATH_BLESSING {blessing_key} (context `army_id`, `battle_round`)
 - realm_of_chaos_units_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `allowed_unit_ids`, `outside_shadow_unit_ids`, `max_units`) (used for The Realm of Chaos, Delirium Unmade, and Glimmershift Portal)
+- informant_network_selection_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="informant_network_selection"`, `ability_name="Informant Network"`, `phase="Declare Battle Formations step"`, `army_id`, `allowed_unit_ids[]`, `max_units=3`, `optional=true`)
 - oath_of_moment_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="oath_of_moment"`, `army_id`)
 - bondsman_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="bondsman"`, `source_unit_id`)
 - gate_warden_foundation_dialog: CHOOSE_QUARRY {objective_id} (context `ability="gate_warden_dauntless_defenders_foundation"`, `ability_name="Dauntless Defenders"`, `army_id`, `battle_round`, `slot_index`, `existing_foundation_ids[]`, `candidate_objective_ids[]`, `optional=false`)
@@ -436,6 +437,7 @@ Optional ability confirmations (yes/no):
 - advance_redeploy_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="advance_redeploy"`, `unit_id`, `min_enemy_distance_horiz`)
 - opponent_turn_strategic_reserves_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="opponent_turn_strategic_reserves"`, `unit_id`)
 - putrid_carapace_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="putrid_carapace"`, `unit_id`)
+- leechbite_plate_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="leechbite_plate"`, `unit_id`, `model_id`, `pain_token_cost`)
 - fight_phase_destroyed_strategic_reserves_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="fight_phase_destroyed_strategic_reserves"`, `unit_id`)
 - opponent_turn_destroyed_reposition_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="opponent_turn_destroyed_reposition"`, `unit_id`, `destroyed_unit_id`, `destroyed_position`, `placement_position`, `turn_owner_id`, `turn`)
 - seductive_gambit_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="seductive_gambit"`, `unit_id`)
@@ -510,6 +512,7 @@ Faction / Detachment / Ability choices:
 - realm_of_chaos_units_dialog (Houndpack Lance CHARACTER selection): SELECT_REALM_OF_CHAOS_UNITS {unit_ids} (context `ability="houndpack_lance_character_selection"`, `ability_name="Marked Prey"`, `phase="Muster Armies step"`, `army_id`, `allowed_unit_ids[]`, `max_units=3`, `required_units=3`)
 - realm_of_chaos_units_dialog (Iconoclast Pave the Way selection): SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="iconoclast_pave_the_way_selection"`, `ability_name="Pave the Way"`, `phase="Declare Battle Formations step"`, `army_id`, `allowed_unit_ids[]`, `max_units=3`, `optional=true`)
 - realm_of_chaos_units_dialog (Masters of Misdirection selection): SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="deceptors_masters_of_misdirection_selection"`, `ability_name="Masters of Misdirection"`, `phase="Declare Battle Formations step"`, `army_id`, `allowed_unit_ids[]`, `max_units`, `max_units_per_type`)
+- realm_of_chaos_units_dialog (Informant Network selection): SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="informant_network_selection"`, `ability_name="Informant Network"`, `phase="Declare Battle Formations step"`, `army_id`, `allowed_unit_ids[]`, `max_units=3`, `optional=true`)
 - realm_of_chaos_units_dialog (Miasmic Bombardment selection): SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="miasmic_bombardment"`, `ability_name="Miasmic Bombardment"`, `army_id`, `battle_round`, `allowed_unit_ids[]`, `max_units`)
 - realm_of_chaos_units_dialog (Glimmershift Portal): SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `max_units`, `allowed_unit_ids[]`) used at end of opponent Fight phase to choose up to two SCINTILLATING LEGIONS non-MONSTER units, or one SCINTILLATING LEGIONS MONSTER unit, that are each more than 6" horizontally from enemies
 - quarry_selection_dialog (Iconoclast Dark Sacrifice): CHOOSE_QUARRY {damned_unit_id + sacrifice_mode | skip} (context `ability="iconoclast_dark_sacrifice"`, `ability_name="Dark Sacrifice"`, `source_unit_id`, `trigger="shooting"|"fight"`, `candidate_damned_unit_ids[]`, `allowed_modes[]`, `optional=true`)

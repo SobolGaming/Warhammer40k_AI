@@ -82,6 +82,8 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
     MURDEROUS_AGENDA_CONTRACT_SOW_FEAR_AND_TERROR = "SOW_FEAR_AND_TERROR"
     MURDEROUS_AGENDA_CONTRACT_SHOW_OF_STRENGTH = "SHOW_OF_STRENGTH"
     MURDEROUS_AGENDA_SOURCE = "Murderous Agenda"
+    INFORMANT_NETWORK_SOURCE = "Informant Network"
+    INFORMANT_NETWORK_SELECTION_ABILITY = "informant_network_selection"
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -92,6 +94,8 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         self.murderous_agenda_contract_target_unit_id: str = ""
         self.murderous_agenda_contract_completed: bool = False
         self.murderous_agenda_reward_paid: bool = False
+        self._informant_network_selection_resolved: bool = False
+        self.informant_network_selected_unit_ids: set[str] = set()
         self.alliance_of_agony_applied: bool = False
         self.alliance_of_agony_tokens_awarded: int = 0
         self.callous_competition_initialized: bool = False
@@ -158,6 +162,24 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         if root is None:
             return ""
         return str(get_entity_id(root) or "")
+
+    @staticmethod
+    def _clear_unit_ability_cache(unit) -> None:
+        if unit is None:
+            return
+        root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            maybe_root = get_root()
+            if maybe_root is not None:
+                root = maybe_root
+        invalidate = getattr(root, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+            return
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.clear()
 
     def _unit_name_matches(self, unit, unit_name: str) -> bool:
         if unit is None:
@@ -791,6 +813,225 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
                 }
             )
         return out
+
+    def _informant_network_sources(self) -> list:
+        if self.army is None:
+            return []
+        sources = []
+        seen: set[str] = set()
+        for root in self._iter_unique_army_attached_members():
+            if root is None or not self._unit_in_army(root):
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_informant_network", False)):
+                continue
+            if not self._unit_is_alive(root):
+                continue
+            get_bearer = getattr(root, "_get_enhancement_bearer_model", None)
+            if callable(get_bearer) and get_bearer() is None:
+                continue
+            root_id = self._unit_root_id(root)
+            if not root_id:
+                continue
+            if root_id in seen:
+                continue
+            seen.add(root_id)
+            sources.append(root)
+        sources.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return sources
+
+    def _informant_network_max_units(self) -> int:
+        max_units = 3
+        for source in list(self._informant_network_sources() or []):
+            sr = getattr(source, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            try:
+                configured = int(sr.get("enhancement_informant_network_max_units", 3) or 3)
+            except (TypeError, ValueError):
+                configured = 3
+            if configured > max_units:
+                max_units = int(configured)
+        return int(max(0, max_units))
+
+    def _informant_network_candidates(self) -> list:
+        if not self.is_kabalite_cartel():
+            return []
+        if not list(self._informant_network_sources() or []):
+            return []
+        candidates = []
+        seen: set[str] = set()
+        for root in self._iter_unique_army_attached_members():
+            if root is None or not self._unit_in_army(root):
+                continue
+            if not (
+                self._unit_name_matches(root, "Kabalite Warriors")
+                or self._unit_name_matches(root, "Hand of the Archon")
+                or self._unit_has_keyword(root, "KABALITE WARRIORS")
+                or self._unit_has_keyword(root, "HAND OF THE ARCHON")
+            ):
+                continue
+            root_id = self._unit_root_id(root)
+            if not root_id or root_id in seen:
+                continue
+            seen.add(root_id)
+            candidates.append(root)
+        candidates.sort(key=lambda unit: (self._norm(getattr(unit, "name", "")), str(get_entity_id(unit) or "")))
+        return candidates
+
+    def _pending_informant_network_request(self, game, *, army_id: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+
+        target_army_id = str(army_id or "")
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self.INFORMANT_NETWORK_SELECTION_ABILITY:
+                continue
+            if target_army_id and str(ctx.get("army_id", "") or "") != target_army_id:
+                continue
+            return True
+        return False
+
+    def queue_informant_network_selection_request(self, *, game=None, player=None) -> None:
+        if not self.is_kabalite_cartel():
+            return
+        if self.army is None:
+            return
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        if self._informant_network_selection_resolved:
+            return
+        if not list(self._informant_network_sources() or []):
+            return
+        candidates = list(self._informant_network_candidates() or [])
+        if not candidates:
+            self._informant_network_selection_resolved = True
+            self.informant_network_selected_unit_ids = set()
+            return
+        max_units = int(self._informant_network_max_units() or 0)
+        if max_units <= 0:
+            self._informant_network_selection_resolved = True
+            self.informant_network_selected_unit_ids = set()
+            return
+        army_id = str(get_entity_id(self.army) or "")
+        if self._pending_informant_network_request(game, army_id=army_id):
+            return
+        candidate_ids = [str(get_entity_id(unit) or "") for unit in candidates if str(get_entity_id(unit) or "")]
+        if not candidate_ids:
+            self._informant_network_selection_resolved = True
+            self.informant_network_selected_unit_ids = set()
+            return
+
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        request = DecisionRequest.create(
+            DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+            "Informant Network: select up to three eligible units to gain Infiltrators.",
+            player_id=getattr(owner, "id", None),
+            options=[
+                DecisionOption.create("Confirm", payload={"action": "confirm"}),
+                DecisionOption.create("None", payload={"action": "skip"}),
+            ],
+            context={
+                "army_id": army_id,
+                "ability": self.INFORMANT_NETWORK_SELECTION_ABILITY,
+                "ability_name": self.INFORMANT_NETWORK_SOURCE,
+                "phase": "Declare Battle Formations step",
+                "max_units": int(max_units),
+                "allowed_unit_ids": list(candidate_ids),
+                "title": self.INFORMANT_NETWORK_SOURCE,
+                "subtitle": f"Select up to {int(max_units)} Kabalite Warriors and/or Hand of the Archon units.",
+                "instruction": "Selected units gain Infiltrators for this battle.",
+                "skip_label": "None (do not select units)",
+                "optional": True,
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+
+    def informant_network_selection_is_valid(self, unit_ids, *, game=None, player=None) -> tuple[bool, str]:
+        del game
+        if not self.is_kabalite_cartel():
+            return False, "Informant Network requires the Kabalite Cartel detachment."
+        if player is not None and getattr(self.army, "player", None) is not player:
+            return False, "Informant Network can only be selected by the controlling player."
+        if not list(self._informant_network_sources() or []):
+            return False, "Informant Network is unavailable without an eligible bearer."
+        if not isinstance(unit_ids, list):
+            return False, "Informant Network selection requires unit_ids."
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        max_units = int(self._informant_network_max_units() or 0)
+        if max_units <= 0:
+            return False, "Informant Network selection limits are unavailable."
+        if len(selected) > max_units:
+            return False, f"Informant Network can select up to {max_units} units."
+        candidates_by_id = {
+            str(get_entity_id(unit) or ""): unit
+            for unit in list(self._informant_network_candidates() or [])
+            if str(get_entity_id(unit) or "")
+        }
+        for unit_id in selected:
+            if unit_id not in candidates_by_id:
+                return False, "Informant Network selection contains an ineligible unit."
+        return True, ""
+
+    def apply_informant_network_selection(self, unit_ids, *, game=None, player=None) -> list[str]:
+        del game
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        valid, _reason = self.informant_network_selection_is_valid(selected, player=player)
+        if not valid:
+            return []
+        selected_ids = set(selected)
+        for root in list(self._iter_unique_army_attached_members()):
+            if root is None:
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            updated = dict(sr)
+            updated.pop("informant_network_infiltrators", None)
+            updated.pop("informant_network_source", None)
+            if updated != sr:
+                root.special_rules = updated
+                self._clear_unit_ability_cache(root)
+
+        candidates_by_id = {
+            str(get_entity_id(unit) or ""): unit
+            for unit in list(self._informant_network_candidates() or [])
+            if str(get_entity_id(unit) or "")
+        }
+        applied_ids: list[str] = []
+        for unit_id in sorted(selected_ids):
+            root = candidates_by_id.get(unit_id)
+            if root is None:
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            updated = dict(sr)
+            updated["informant_network_infiltrators"] = True
+            updated["informant_network_source"] = self.INFORMANT_NETWORK_SOURCE
+            root.special_rules = updated
+            self._clear_unit_ability_cache(root)
+            applied_ids.append(unit_id)
+        self.informant_network_selected_unit_ids = set(applied_ids)
+        self._informant_network_selection_resolved = True
+        if self.army is not None:
+            setattr(self.army, "informant_network_selected_unit_ids", list(applied_ids))
+        return list(applied_ids)
 
     @classmethod
     def _murderous_agenda_contract_name(cls, contract_key: str) -> str:

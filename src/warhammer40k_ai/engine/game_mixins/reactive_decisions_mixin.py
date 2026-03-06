@@ -4313,6 +4313,7 @@ class GameReactiveDecisionsMixin:
             "troubling_visions",
             "student_of_the_codex",
             "putrid_carapace",
+            "leechbite_plate",
             "enhancement_charge_after_advance_once",
         ):
             return
@@ -6144,6 +6145,61 @@ class GameReactiveDecisionsMixin:
                         append_action(
                             player_obj,
                             f"{ability_name}: {bearer_name} regains {int(healed)} wounds.",
+                        )
+                    else:
+                        append_action(
+                            player_obj,
+                            f"{ability_name}: no wounds regained.",
+                        )
+            except Exception:
+                pass
+            return
+
+        if ability_key == "leechbite_plate":
+            if choice is False:
+                return
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            try:
+                if not getattr(root, "deployed", True):
+                    return
+                if root.is_in_reserves() or root.is_embarked:
+                    return
+            except Exception:
+                pass
+            can_use = getattr(root, "can_use_enhancement_leechbite_plate", None)
+            if not callable(can_use) or not bool(can_use()):
+                return
+            activate = getattr(root, "activate_enhancement_leechbite_plate", None)
+            if not callable(activate):
+                return
+            healed = int(activate() or 0)
+            ability_name = str(ctx.get("ability_name", "") or "Leechbite Plate").strip() or "Leechbite Plate"
+            bearer_name = str(ctx.get("model", "") or "Bearer").strip() or "Bearer"
+            try:
+                token_cost = int(payload.get("pain_token_cost") or ctx.get("pain_token_cost") or 1)
+            except Exception:
+                token_cost = 1
+            token_cost = max(1, int(token_cost))
+            player_obj = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            try:
+                from ...utility.event_bus import append_action
+
+                if player_obj is not None:
+                    if healed > 0:
+                        append_action(
+                            player_obj,
+                            f"{ability_name}: spent {int(token_cost)} Pain token(s); {bearer_name} regains {int(healed)} wounds.",
                         )
                     else:
                         append_action(

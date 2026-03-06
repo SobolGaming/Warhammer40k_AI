@@ -343,6 +343,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_saga_of_the_hunter_enhancements(player=player, phase=phase)
         self._on_phase_start_ironstorm_spearhead_enhancements(player=player, phase=phase)
         self._on_phase_start_godhammer_assault_force_enhancements(player=player, phase=phase)
+        self._on_phase_start_drukhari_enhancements(player=player, phase=phase)
         self._on_phase_start_lords_of_dread_enhancements(player=player, phase=phase)
         self._on_phase_start_adepta_sororitas_enhancements(player=player, phase=phase)
         self._on_phase_start_astra_militarum_enhancements(player=player, phase=phase)
@@ -2355,6 +2356,118 @@ class GamePhaseHandlersMixin:
                         "max_heal": int(lost),
                     },
                     instance_key=f"{unit_id}:{ability_key}",
+                )
+
+    def _on_phase_start_drukhari_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        current_player = getattr(self, "get_current_player", lambda: None)()
+        current_turn_owner_id = str(getattr(current_player, "id", "") or "")
+
+        players = sorted(
+            list(getattr(self, "players", []) or []),
+            key=lambda p: str(getattr(p, "id", "") or ""),
+        )
+        for owner in players:
+            if owner is None:
+                continue
+            army = self._get_player_army(owner)
+            if army is None:
+                continue
+            dru_mgr = getattr(army, "drukhari_detachments", None)
+            if dru_mgr is None or not bool(getattr(dru_mgr, "is_kabalite_cartel", lambda: False)()):
+                continue
+
+            seen: set[str] = set()
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not root.is_alive():
+                    continue
+                rid = str(maybe_entity_id(root) or "")
+                if rid in seen:
+                    continue
+                seen.add(rid)
+                if not self._unit_on_battlefield_for_reposition(root):
+                    continue
+
+                can_use = getattr(root, "can_use_enhancement_leechbite_plate", None)
+                if not callable(can_use) or not bool(can_use()):
+                    continue
+                bearer_fn = getattr(root, "_leechbite_plate_bearer_model", None)
+                bearer = bearer_fn() if callable(bearer_fn) else None
+                if bearer is None:
+                    continue
+                try:
+                    base = int(getattr(bearer, "_base_wounds", getattr(bearer, "wounds", 0)) or 0)
+                except Exception:
+                    base = 0
+                try:
+                    current = int(getattr(bearer, "wounds", 0) or 0)
+                except Exception:
+                    current = 0
+                lost = max(0, int(base - current))
+                if lost <= 0:
+                    continue
+
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                ability_name = str(
+                    sr.get("enhancement_leechbite_plate_source", "")
+                    or "Leechbite Plate"
+                ).strip() or "Leechbite Plate"
+                ability_key = str(
+                    sr.get("enhancement_leechbite_plate_ability_key", "")
+                    or "leechbite_plate"
+                ).strip().lower() or "leechbite_plate"
+                try:
+                    token_cost = int(sr.get("enhancement_leechbite_plate_pain_token_cost", 1) or 1)
+                except (TypeError, ValueError):
+                    token_cost = 1
+                token_cost = max(1, int(token_cost))
+                unit_id = maybe_entity_id(root)
+                model_id = maybe_entity_id(bearer)
+                ctx = {
+                    "ability_name": ability_name,
+                    "phase": "Command phase",
+                    "unit": getattr(root, "name", ""),
+                    "model": getattr(bearer, "name", ""),
+                    "unit_id": unit_id,
+                    "model_id": model_id,
+                    "ability_key": ability_key,
+                    "pain_token_cost": int(token_cost),
+                    "heal_to_full": True,
+                }
+                message = (
+                    f"Use {ability_name} for {getattr(bearer, 'name', 'Model')} "
+                    f"({getattr(root, 'name', 'Unit')})?\n"
+                    f"Spend {int(token_cost)} Pain token(s): the bearer regains all lost wounds."
+                )
+                self._queue_optional_ability_confirmation(
+                    player=owner,
+                    ability_key="leechbite_plate",
+                    ability_name=ability_name,
+                    message=message,
+                    context=ctx,
+                    payload={
+                        "unit_id": unit_id,
+                        "model_id": model_id,
+                        "ability_key": ability_key,
+                        "pain_token_cost": int(token_cost),
+                    },
+                    instance_key=f"{unit_id}:{ability_key}:{int(current_turn)}:{current_turn_owner_id}",
                 )
 
     def _on_phase_start_post_shoot_leadership_debuff_cleanup(self, player=None, phase=None, **_kwargs) -> None:

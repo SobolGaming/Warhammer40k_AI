@@ -955,6 +955,92 @@ class KeywordsDetachmentsMixin:
         self.mark_unit_once_per_battle_used(self._putrid_carapace_once_key(), ability_name=source)
         return int(healed)
 
+    def _leechbite_plate_bearer_model(self):
+        sr = getattr(self, "special_rules", None)
+        bearer_id = ""
+        if isinstance(sr, dict):
+            bearer_id = str(
+                sr.get("enhancement_leechbite_plate_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+        if bearer_id:
+            for model in list(getattr(self, "models", []) or []):
+                if str(get_entity_id(model) or "") != bearer_id:
+                    continue
+                return model
+        return self._get_enhancement_bearer_model()
+
+    def can_use_enhancement_leechbite_plate(self) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_leechbite_plate", False)):
+            return False
+        bearer = self._leechbite_plate_bearer_model()
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+            return False
+        base = int(getattr(bearer, "_base_wounds", getattr(bearer, "wounds", 0)) or 0)
+        current = int(getattr(bearer, "wounds", 0) or 0)
+        if int(base) <= int(current):
+            return False
+        try:
+            token_cost = int(sr.get("enhancement_leechbite_plate_pain_token_cost", 1) or 1)
+        except Exception:
+            token_cost = 1
+        token_cost = max(1, int(token_cost))
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        pfp = getattr(army, "power_from_pain", None) if army is not None else None
+        if pfp is None:
+            return False
+        return int(getattr(pfp, "tokens", 0) or 0) >= int(token_cost)
+
+    def activate_enhancement_leechbite_plate(self) -> int:
+        """Spend 1 Pain token (or configured cost) and heal the Leechbite Plate bearer to full wounds."""
+        if not self.can_use_enhancement_leechbite_plate():
+            return 0
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            token_cost = int(sr.get("enhancement_leechbite_plate_pain_token_cost", 1) or 1)
+        except Exception:
+            token_cost = 1
+        token_cost = max(1, int(token_cost))
+        source = str(sr.get("enhancement_leechbite_plate_source", "") or "Leechbite Plate").strip() or "Leechbite Plate"
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        pfp = getattr(army, "power_from_pain", None) if army is not None else None
+        spend_tokens = getattr(pfp, "spend_tokens", None) if pfp is not None else None
+        if not callable(spend_tokens):
+            return 0
+        if not bool(spend_tokens(int(token_cost), reason=source)):
+            return 0
+
+        bearer = self._leechbite_plate_bearer_model()
+        if bearer is None:
+            return 0
+        base = int(getattr(bearer, "_base_wounds", getattr(bearer, "wounds", 0)) or 0)
+        current = int(getattr(bearer, "wounds", 0) or 0)
+        lost = max(0, int(base - current))
+        if lost <= 0:
+            return 0
+        heal_fn = getattr(bearer, "heal", None)
+        if callable(heal_fn):
+            heal_fn(int(lost))
+            return int(lost)
+        try:
+            bearer.wounds = min(int(base), int(current + lost))
+        except Exception:
+            return 0
+        return int(lost)
+
     def _seductive_gambit_active(self) -> bool:
         try:
             army = self.get_parent_army()

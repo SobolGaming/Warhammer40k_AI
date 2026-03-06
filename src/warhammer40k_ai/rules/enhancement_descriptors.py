@@ -2857,6 +2857,64 @@ _COVENITE_COTERIE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COVENITE_COTERIE_DESCRIPTORS.values()
 }
 
+_KABALITE_CARTEL_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010588002": EnhancementToolDescriptor(
+        enhancement_id="000010588002",
+        name="Leechbite Plate",
+        timing="start_of_either_command_phase",
+        target="bearer",
+        duration="constant_and_optional_instant",
+        effect="set_bearer_save_to_3_plus_and_optional_full_heal_spend_pain_token",
+        effect_params={
+            "save_characteristic": 3,
+            "pain_token_cost": 1,
+            "heal_lost_wounds": "all",
+            "requires_wounded_bearer": True,
+        },
+    ),
+    "000010588003": EnhancementToolDescriptor(
+        enhancement_id="000010588003",
+        name="Webway Awl",
+        timing="passive_and_stratagem_targeting",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_deep_strike_and_rapid_ingress_zero_cp",
+        effect_params={
+            "grants_deep_strike": True,
+            "stratagem_name": "RAPID INGRESS",
+            "cp_reduction": "to_zero",
+        },
+    ),
+    "000010588004": EnhancementToolDescriptor(
+        enhancement_id="000010588004",
+        name="Informant Network",
+        timing="declare_battle_formations_start",
+        target="up_to_three_friendly_kabalite_warriors_or_hand_of_the_archon_units",
+        duration="battle",
+        effect="select_up_to_three_units_gain_infiltrators",
+        effect_params={
+            "max_units": 3,
+            "eligible_unit_name_patterns": ("KABALITE WARRIORS", "HAND OF THE ARCHON"),
+        },
+    ),
+    "000010588005": EnhancementToolDescriptor(
+        enhancement_id="000010588005",
+        name="Towering Arrogance",
+        timing="passive_while_bearer_leading",
+        target="models_in_bearer_unit",
+        duration="while_bearer_is_leading",
+        effect="leadership_and_objective_control_improve_by_1",
+        effect_params={
+            "leadership_improvement": 1,
+            "objective_control_bonus": 1,
+        },
+    ),
+}
+
+_KABALITE_CARTEL_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _KABALITE_CARTEL_DESCRIPTORS.values()
+}
+
 _SPECTACLE_OF_SPITE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010580002": EnhancementToolDescriptor(
         enhancement_id="000010580002",
@@ -6659,6 +6717,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _COVENITE_COTERIE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _KABALITE_CARTEL_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPECTACLE_OF_SPITE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6945,6 +7006,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SOULFORGED_WARPACK_BY_NAME.get(key)
         or _VETERANS_OF_THE_LONG_WAR_BY_NAME.get(key)
         or _COVENITE_COTERIE_BY_NAME.get(key)
+        or _KABALITE_CARTEL_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
         or _SKYSPLINTER_ASSAULT_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_BY_NAME.get(key)

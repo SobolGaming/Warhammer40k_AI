@@ -1248,6 +1248,11 @@ class Unit(
                     mods.append(Modifier(ModifierOp.ADD, 1, source="enhancement:pledge_of_dark_glory"))
             except Exception:
                 pass
+            try:
+                if _enhancement_bearer_is_leading("enhancement_towering_arrogance"):
+                    mods.append(Modifier(ModifierOp.ADD, 1, source="enhancement:towering_arrogance"))
+            except Exception:
+                pass
 
             # Proud and Vainglorious (Slaanesh's Chosen): while the bearer's unit is
             # Favoured Champions, add to Objective Control.
@@ -1493,6 +1498,12 @@ class Unit(
                 if _enhancement_bearer_is_leading("enhancement_pledge_of_dark_glory"):
                     # Leadership is better at lower values, so +1 improvement is a -1 modifier.
                     mods.append(Modifier(ModifierOp.ADD, -1, source="enhancement:pledge_of_dark_glory"))
+            except Exception:
+                pass
+            try:
+                if _enhancement_bearer_is_leading("enhancement_towering_arrogance"):
+                    # Leadership is better at lower values, so +1 improvement is a -1 modifier.
+                    mods.append(Modifier(ModifierOp.ADD, -1, source="enhancement:towering_arrogance"))
             except Exception:
                 pass
             try:

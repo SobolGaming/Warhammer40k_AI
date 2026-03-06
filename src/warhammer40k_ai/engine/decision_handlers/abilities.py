@@ -468,6 +468,23 @@ def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest
         if not bool(valid):
             return (str(reason or "Pave the Way selection is invalid."),)
         return ()
+    if ability_key == "informant_network_selection":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            return ("Informant Network requires a player.",)
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return ("Informant Network requires an army.",)
+        mgr = getattr(army, "drukhari_detachments", None)
+        if mgr is None or not getattr(mgr, "is_kabalite_cartel", lambda: False)():
+            return ("Informant Network requires the Kabalite Cartel detachment.",)
+        validate_fn = getattr(mgr, "informant_network_selection_is_valid", None)
+        if not callable(validate_fn):
+            return ("Informant Network validation is unavailable.",)
+        valid, reason = validate_fn(list(seen), game=game, player=player)
+        if not bool(valid):
+            return (str(reason or "Informant Network selection is invalid."),)
+        return ()
     if ability_key == "miasmic_bombardment":
         player = resolve_player(game, request.player_id)
         if player is None:
@@ -868,6 +885,40 @@ def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, r
             )
         else:
             _log_action_for_players(game, player, "Pave the Way: no units selected.")
+        return units
+    if ability_key == "informant_network_selection":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            raise RuntimeError("Informant Network player not found.")
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            raise RuntimeError("Informant Network army not found.")
+        mgr = getattr(army, "drukhari_detachments", None)
+        if mgr is None:
+            raise RuntimeError("Informant Network detachment manager not found.")
+        unit_ids = []
+        if not is_skip_choice(request, result):
+            unit_ids = sorted({str(uid or "").strip() for uid in list(result.payload.get("unit_ids") or []) if str(uid or "").strip()})
+        apply_fn = getattr(mgr, "apply_informant_network_selection", None)
+        if not callable(apply_fn):
+            raise RuntimeError("Informant Network apply function is unavailable.")
+        applied_ids = list(apply_fn(unit_ids, game=game, player=player) or [])
+        labels = []
+        units = []
+        for uid in list(applied_ids or []):
+            unit = resolve_unit(game, str(uid))
+            if unit is None:
+                continue
+            labels.append(str(getattr(unit, "name", "Unit") or "Unit"))
+            units.append(unit)
+        if labels:
+            _log_action_for_players(
+                game,
+                player,
+                "Informant Network: " + ", ".join(labels) + " gain Infiltrators for this battle.",
+            )
+        else:
+            _log_action_for_players(game, player, "Informant Network: no units selected.")
         return units
     if ability_key == "miasmic_bombardment":
         player = resolve_player(game, request.player_id)

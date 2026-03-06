@@ -2461,6 +2461,18 @@ class GameSetupDeploymentReservesMixin:
             if callable(queue_fn):
                 queue_fn(game=self, player=p)
 
+        # Drukhari Kabalite Cartel: Informant Network enhancement unit selection.
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Missing player during Declare Battle Formations.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Missing army for {p.name} during Declare Battle Formations.")
+            mgr = getattr(army, "drukhari_detachments", None)
+            queue_fn = getattr(mgr, "queue_informant_network_selection_request", None) if mgr is not None else None
+            if callable(queue_fn):
+                queue_fn(game=self, player=p)
+
         # Validate leader attachment limits per army
         for p in list(self.players or []):
             if p is None:

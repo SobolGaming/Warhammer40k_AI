@@ -829,6 +829,10 @@ class Enhancement:
             is_spectacle_of_spite = bool(dru_mgr and dru_mgr.is_spectacle_of_spite())
         except Exception:
             is_spectacle_of_spite = False
+        try:
+            is_kabalite_cartel = bool(dru_mgr and dru_mgr.is_kabalite_cartel())
+        except Exception:
+            is_kabalite_cartel = False
         ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
         gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
         tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
@@ -6063,6 +6067,86 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_master_repugnomancer_bearer_model_id"] = bearer_id
+
+        if name == "leechbite plate" or enh_id == "000010588002":
+            if not is_kabalite_cartel:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Leechbite Plate").strip() or "Leechbite Plate"
+            unit.special_rules["enhancement_leechbite_plate"] = True
+            unit.special_rules["enhancement_leechbite_plate_source"] = source
+            unit.special_rules["enhancement_leechbite_plate_ability_key"] = "leechbite_plate"
+            unit.special_rules["enhancement_leechbite_plate_save_characteristic"] = int(
+                min(6, max(2, _coerce_int(params.get("save_characteristic", 3) or 3, default=3)))
+            )
+            unit.special_rules["enhancement_leechbite_plate_pain_token_cost"] = int(
+                max(1, _coerce_int(params.get("pain_token_cost", 1) or 1, default=1))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_leechbite_plate_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("save", None)
+                cache.pop("model_save_characteristic", None)
+                if bearer_id:
+                    cache.pop(f"model_save_characteristic:{bearer_id}", None)
+
+        if name == "webway awl" or enh_id == "000010588003":
+            if not is_kabalite_cartel:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Webway Awl").strip() or "Webway Awl"
+            unit.special_rules["enhancement_webway_awl"] = True
+            unit.special_rules["enhancement_webway_awl_source"] = source
+            unit.special_rules["enhancement_webway_awl_rapid_ingress_discount"] = True
+            unit.special_rules["enhancement_webway_awl_stratagem_name"] = str(
+                params.get("stratagem_name", "RAPID INGRESS") or "RAPID INGRESS"
+            ).strip().upper()
+            unit.special_rules["bearer_unit_deep_strike"] = bool(params.get("grants_deep_strike", True))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_webway_awl_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("deep_strike", None)
+                cache.pop("opponent_turn_strategic_reserves_ability", None)
+
+        if name == "informant network" or enh_id == "000010588004":
+            if not is_kabalite_cartel:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Informant Network").strip() or "Informant Network"
+            unit.special_rules["enhancement_informant_network"] = True
+            unit.special_rules["enhancement_informant_network_source"] = source
+            unit.special_rules["enhancement_informant_network_selection_ability"] = "informant_network_selection"
+            unit.special_rules["enhancement_informant_network_max_units"] = int(
+                max(0, _coerce_int(params.get("max_units", 3) or 3, default=3))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_informant_network_bearer_model_id"] = bearer_id
+
+        if name == "towering arrogance" or enh_id == "000010588005":
+            if not is_kabalite_cartel:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Towering Arrogance").strip() or "Towering Arrogance"
+            unit.special_rules["enhancement_towering_arrogance"] = True
+            unit.special_rules["enhancement_towering_arrogance_source"] = source
+            unit.special_rules["enhancement_towering_arrogance_leadership_improvement"] = int(
+                max(1, _coerce_int(params.get("leadership_improvement", 1) or 1, default=1))
+            )
+            unit.special_rules["enhancement_towering_arrogance_objective_control_bonus"] = int(
+                max(1, _coerce_int(params.get("objective_control_bonus", 1) or 1, default=1))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_towering_arrogance_bearer_model_id"] = bearer_id
 
         if name == "nightmare shroud" or enh_id == "000010576005":
             if not is_skysplinter_assault:
