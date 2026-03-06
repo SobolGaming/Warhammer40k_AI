@@ -543,6 +543,8 @@ class ActionsMovementMixin:
                 return False
         except Exception:
             pass
+        if self._ability_attached_unit_bodyguard_leader_deep_strike(ability) is not None:
+            return False
         try:
             from ...rules.wrathful_presence import ability_name_to_key, unit_has_active_wrathful_presence
             name = ability if isinstance(ability, str) else getattr(ability, "name", "")
@@ -823,6 +825,70 @@ class ActionsMovementMixin:
             return None
         return {"leader_keywords": tuple(), "scout_distance": int(distance)}
 
+    def _ability_attached_unit_bodyguard_leader_deep_strike(self, ability) -> Optional[dict]:
+        """
+        Return rule info for bodyguard clauses like:
+        "If one or more INQUISITOR units are attached to this unit during the
+        Declare Battle Formations step, models in those units have the Deep Strike ability."
+        """
+        desc = ""
+        name = ""
+        try:
+            if isinstance(ability, str):
+                desc = ability
+            else:
+                name = str(getattr(ability, "name", "") or "")
+                desc = str(getattr(ability, "description", "") or "")
+        except Exception:
+            desc = ""
+        text = self._normalize_rules_text(f"{name} {desc}")
+        if not text:
+            return None
+        low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+        if "declare battle formations" not in low or "deep strike" not in low:
+            return None
+
+        m = re.search(
+            r"\bif (?:(?:one or more|a|an)\s+)?(?P<keywords>[^.;]+?)\s+"
+            r"(?:(?:model|models|unit|units)\s+)?(?:from your army\s+)?(?:is|are)\s+"
+            r"attached to this unit during the declare battle formations step,?\s*"
+            r"models in those units have(?: the)? deep strike ability",
+            low,
+            flags=re.IGNORECASE,
+        )
+        if not m:
+            m = re.search(
+                r"\bif (?:(?:one or more|a|an)\s+)?(?P<keywords>[^.;]+?)\s+"
+                r"(?:(?:model|models|unit|units)\s+)?(?:from your army\s+)?(?:is|are)\s+"
+                r"attached to this unit during the declare battle formations step,?\s*"
+                r"that (?:model|unit) gains(?: the)? deep strike ability",
+                low,
+                flags=re.IGNORECASE,
+            )
+        if m:
+            kw_clause = str(m.group("keywords") or "").strip()
+            kw_clause = re.sub(r"\bwith the leader ability\b", " ", kw_clause, flags=re.IGNORECASE)
+            kw_clause = re.sub(r"\bone or more\b", " ", kw_clause, flags=re.IGNORECASE)
+            kw_clause = re.sub(r"\b(?:a|an)\b", " ", kw_clause, flags=re.IGNORECASE)
+            leader_keywords = [
+                token.strip().upper()
+                for token in re.split(r"\bor\b|\band\b|,", kw_clause, flags=re.IGNORECASE)
+                if token.strip()
+            ]
+            if not leader_keywords:
+                return None
+            return {"leader_keywords": tuple(leader_keywords)}
+
+        m = re.search(
+            r"\bif this unit has a leader unit attached to it during the declare battle formations step,?\s*"
+            r"that leader unit gains(?: the)? deep strike ability",
+            low,
+            flags=re.IGNORECASE,
+        )
+        if m:
+            return {"leader_keywords": tuple()}
+        return None
+
     def _clear_attached_unit_bodyguard_leader_scouts(self) -> None:
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
@@ -841,6 +907,14 @@ class ActionsMovementMixin:
             del sr["enhancement_warped_foresight_scout_distance"]
             removed = True
         if removed:
+            self.special_rules = sr
+
+    def _clear_attached_unit_bodyguard_leader_deep_strike(self) -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        if "attached_unit_bodyguard_leader_deep_strike" in sr:
+            del sr["attached_unit_bodyguard_leader_deep_strike"]
             self.special_rules = sr
 
     @staticmethod
@@ -965,6 +1039,29 @@ class ActionsMovementMixin:
             sr["attached_unit_bodyguard_leader_scout_distance"] = int(max_distance)
             self.special_rules = sr
         self._refresh_warped_foresight_attached_scouts(bodyguard)
+
+    def _apply_attached_unit_bodyguard_leader_deep_strike(self, bodyguard: 'Unit') -> None:
+        """Apply bodyguard clauses that grant Deep Strike to matching attached Leader units."""
+        self._clear_attached_unit_bodyguard_leader_deep_strike()
+        if bodyguard is None:
+            return
+        grant_deep_strike = False
+        for ab in (getattr(bodyguard, "possible_abilities", []) or []):
+            rule = self._ability_attached_unit_bodyguard_leader_deep_strike(ab)
+            if rule is None:
+                continue
+            rule_keywords = list(rule.get("leader_keywords") or ())
+            if rule_keywords and not any(self.has_any_keyword(k) for k in rule_keywords):
+                continue
+            grant_deep_strike = True
+            break
+        if not grant_deep_strike:
+            return
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["attached_unit_bodyguard_leader_deep_strike"] = True
+        self.special_rules = sr
 
     def _get_aspect_shrine_root(self) -> 'Unit':
         try:

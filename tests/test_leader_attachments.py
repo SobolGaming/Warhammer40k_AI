@@ -447,6 +447,120 @@ class TestLeaderAttachments(unittest.TestCase):
         self.assertEqual(leader.has_scout(), (True, 7.0))
         self.assertEqual(bodyguard.has_scout(), (False, 0.0))
 
+    def test_rites_of_teleportation_grants_deep_strike_to_matching_inquisitor(self):
+        leader_ds = _DummyDatasheet(
+            "Inquisitor",
+            "L1",
+            attached_to=["GKT"],
+            keywords=["INQUISITOR", "CHARACTER"],
+        )
+        bodyguard_ds = _DummyDatasheet("Grey Knights Terminator Squad", "GKT")
+        leader = _TestUnit(leader_ds)
+        bodyguard = _TestUnit(bodyguard_ds)
+
+        bodyguard.possible_abilities = [
+            Ability("Deep Strike", "", "Deep Strike", ""),
+            Ability(
+                "Rites of Teleportation",
+                "",
+                (
+                    "If one or more INQUISITOR units are attached to this unit during the "
+                    "Declare Battle formations step, models in those units have the Deep Strike ability."
+                ),
+                "",
+            ),
+        ]
+
+        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army.player = _DummyPlayer()
+        army.units = [leader, bodyguard]
+        for u in army.units:
+            u.parent_army = army
+
+        self.assertFalse(leader.has_deep_strike())
+        self.assertTrue(bodyguard.has_deep_strike())
+
+        leader.attach_to_unit(bodyguard)
+
+        self.assertTrue(leader.has_deep_strike())
+        self.assertTrue(bodyguard.has_deep_strike())
+
+    def test_rites_of_teleportation_requires_inquisitor_keyword(self):
+        leader_ds = _DummyDatasheet(
+            "Leader",
+            "L1",
+            attached_to=["GKT"],
+            keywords=["MINISTORUM PRIEST", "CHARACTER"],
+        )
+        bodyguard_ds = _DummyDatasheet("Grey Knights Terminator Squad", "GKT")
+        leader = _TestUnit(leader_ds)
+        bodyguard = _TestUnit(bodyguard_ds)
+
+        bodyguard.possible_abilities = [
+            Ability("Deep Strike", "", "Deep Strike", ""),
+            Ability(
+                "Rites of Teleportation",
+                "",
+                (
+                    "If one or more INQUISITOR units are attached to this unit during the "
+                    "Declare Battle formations step, models in those units have the Deep Strike ability."
+                ),
+                "",
+            ),
+        ]
+
+        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army.player = _DummyPlayer()
+        army.units = [leader, bodyguard]
+        for u in army.units:
+            u.parent_army = army
+
+        self.assertFalse(leader.has_deep_strike())
+        self.assertTrue(bodyguard.has_deep_strike())
+
+        leader.attach_to_unit(bodyguard)
+
+        self.assertFalse(leader.has_deep_strike())
+        self.assertFalse(bodyguard.has_deep_strike())
+
+    def test_rites_of_teleportation_deep_strike_clears_after_reattach(self):
+        leader_ds = _DummyDatasheet(
+            "Inquisitor",
+            "L1",
+            attached_to=["GKT", "BG2"],
+            keywords=["INQUISITOR", "CHARACTER"],
+        )
+        bodyguard_one_ds = _DummyDatasheet("Grey Knights Terminator Squad", "GKT")
+        bodyguard_two_ds = _DummyDatasheet("Bodyguard Two", "BG2")
+        leader = _TestUnit(leader_ds)
+        bodyguard_one = _TestUnit(bodyguard_one_ds)
+        bodyguard_two = _TestUnit(bodyguard_two_ds)
+
+        bodyguard_one.possible_abilities = [
+            Ability("Deep Strike", "", "Deep Strike", ""),
+            Ability(
+                "Rites of Teleportation",
+                "",
+                (
+                    "If one or more INQUISITOR units are attached to this unit during the "
+                    "Declare Battle formations step, models in those units have the Deep Strike ability."
+                ),
+                "",
+            ),
+        ]
+
+        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army.player = _DummyPlayer()
+        army.units = [leader, bodyguard_one, bodyguard_two]
+        for u in army.units:
+            u.parent_army = army
+
+        leader.attach_to_unit(bodyguard_one)
+        self.assertTrue(leader.has_deep_strike())
+
+        leader.attach_to_unit(bodyguard_two)
+        self.assertFalse(leader.has_deep_strike())
+
 
 if __name__ == "__main__":
     unittest.main()

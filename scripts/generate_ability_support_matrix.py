@@ -3994,7 +3994,13 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "During Declare Battle Formations, eligible OFFICIO ASSASSINORUM models can be replaced via SHADOW_ASSIGNMENT decisions with points cap and duplicate-assassin validation.",
         ),
-        ("AOI", "Rites of Teleportation"): ("Partial", "Deep Strike granted without Inquisitor attachment restriction."),
+        (
+            "AOI",
+            "Rites of Teleportation",
+        ): (
+            "Supported",
+            "Declare Battle Formations: matching attached INQUISITOR units gain Deep Strike; non-matching attached Leaders do not.",
+        ),
         ("AOI", "Unsubtle Crusader"): ("Partial", "Scouts 6\" applied without formation selection/target-unit restriction."),
         ("AE", "ASPECT TRAINING"): (
             "Supported",

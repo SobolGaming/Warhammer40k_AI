@@ -7115,6 +7115,10 @@ class PositioningMixin:
             if isinstance(sr, dict):
                 if sr.get("bearer_unit_deep_strike") or sr.get("realm_of_chaos_temp_deep_strike"):
                     found = True
+                elif sr.get("attached_unit_bodyguard_leader_deep_strike") and bool(
+                    getattr(self, "is_attached_leader", False)
+                ):
+                    found = True
                 elif sr.get("enhancement_warp_borne_stalker"):
                     bearer_id = str(
                         sr.get("enhancement_warp_borne_stalker_bearer_model_id", "")
