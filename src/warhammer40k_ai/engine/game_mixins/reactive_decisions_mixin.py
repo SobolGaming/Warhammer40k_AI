@@ -1097,6 +1097,96 @@ class GameReactiveDecisionsMixin:
         self.request_decision(request)
         return request
 
+    def _queue_movement_phase_end_pinned(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "post_shoot_pinned":
+                    continue
+                if str(ctx.get("model_id", "")) == str(model_id):
+                    return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = [
+            DecisionOption.create(
+                str(getattr(cand, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(cand)},
+            )
+            for cand in sorted(list(candidates), key=_cand_sort_key)
+        ]
+        options.append(DecisionOption.create("None", payload={"action": "skip"}))
+        if not options:
+            return None
+
+        ability_name = str(spec.get("source", "") or "Pinned").strip() or "Pinned"
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        try:
+            move_penalty = int(spec.get("move_penalty", -2) or -2)
+        except Exception:
+            move_penalty = -2
+        try:
+            charge_penalty = int(spec.get("charge_penalty", -2) or -2)
+        except Exception:
+            charge_penalty = -2
+        expires_phase = str(spec.get("expires_phase", "") or "MOVEMENT_PHASE").strip().upper() or "MOVEMENT_PHASE"
+        ctx = {
+            "ability": "post_shoot_pinned",
+            "ability_name": ability_name,
+            "phase": "Movement phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "attacker_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(range_value),
+            "move_penalty": int(move_penalty),
+            "charge_penalty": int(charge_penalty),
+            "expires_phase": expires_phase,
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a unit to pin.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_symphony_of_pain(
         self,
         *,

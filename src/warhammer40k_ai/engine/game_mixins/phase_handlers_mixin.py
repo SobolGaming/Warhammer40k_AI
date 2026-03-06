@@ -3479,7 +3479,7 @@ class GamePhaseHandlersMixin:
     def _on_phase_start_pinned_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear Pinned effects at the configured start phase for the effect owner."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
-        if pname not in {"COMMAND_PHASE", "SHOOTING_PHASE"}:
+        if pname not in {"COMMAND_PHASE", "SHOOTING_PHASE", "MOVEMENT_PHASE"}:
             return
         if player is None:
             return
@@ -15361,6 +15361,97 @@ class GamePhaseHandlersMixin:
             bonus_kind="hit",
             spec_method="model_movement_phase_end_visible_hit_bonus_specs",
         )
+
+    def _on_phase_end_movement_phase_pinned(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase: optional visible target selection to apply pinned until next Movement phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ...utility.entity_ids import get_entity_id
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        enemy_roots.sort(key=_unit_sort_key)
+
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            def _model_sort_key(m):
+                try:
+                    return str(get_entity_id(m))
+                except Exception:
+                    return str(getattr(m, "name", "") or "")
+
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                spec_fn = getattr(root, "model_movement_phase_pinned_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = spec_fn(model) or []
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                for spec in specs:
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    candidates = self._visible_enemy_candidates_for_model(
+                        source_unit=source_unit,
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                        game_map=game_map,
+                    )
+                    if not candidates:
+                        continue
+                    self._queue_movement_phase_end_pinned(
+                        player=player,
+                        source_unit=source_unit,
+                        model=model,
+                        candidates=candidates,
+                        spec=spec,
+                    )
 
     def _on_phase_end_misfortune(self, player=None, phase=None, **_kwargs) -> None:
         """Movement phase end: select a visible enemy unit to suffer -1 to wound rolls (Misfortune)."""

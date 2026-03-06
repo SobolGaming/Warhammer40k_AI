@@ -5497,6 +5497,77 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_movement_phase_pinned_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: in Movement phase, select one visible enemy within range; that unit is pinned
+        until the start of your next Movement phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - move_penalty: int (negative)
+            - charge_penalty: int (negative)
+            - expires_phase: str
+        """
+        if model is None:
+            return []
+        cache_key = f"model_movement_phase_pinned:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._MOVEMENT_PHASE_PINNED_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            try:
+                move_penalty = -int(m.group("move") or 0)
+            except Exception:
+                move_penalty = -2
+            try:
+                charge_penalty = -int(m.group("charge") or 0)
+            except Exception:
+                charge_penalty = -2
+            if move_penalty >= 0 and charge_penalty >= 0:
+                continue
+
+            source = str(name or "Pinned").strip() or "Pinned"
+            key = (source.lower(), int(range_value), int(move_penalty), int(charge_penalty))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "move_penalty": int(move_penalty),
+                    "charge_penalty": int(charge_penalty),
+                    "expires_phase": "MOVEMENT_PHASE",
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_movement_phase_end_toughness_penalty_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: end of Movement phase, select an enemy within range; that unit suffers -1 Toughness

@@ -243,6 +243,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_end", "_on_phase_end_hyperspace_hunters"),
                 ("phase_end", "_on_phase_end_movement_phase_visible_wound_bonus"),
                 ("phase_end", "_on_phase_end_movement_phase_visible_hit_bonus"),
+                ("phase_end", "_on_phase_end_movement_phase_pinned"),
                 ("phase_end", "_on_phase_end_misfortune"),
                 ("phase_end", "_on_phase_end_nurgles_rot"),
                 ("phase_end", "_on_phase_end_seed_the_garden_of_nurgle"),

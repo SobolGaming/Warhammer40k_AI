@@ -3324,6 +3324,12 @@ class Unit(
         r"that unit is rotted while a unit is rotted subtract (?P<pen_alt>\d+) from the toughness characteristic of models in that unit)",
         re.IGNORECASE,
     )
+    _MOVEMENT_PHASE_PINNED_RE = re.compile(
+        r"in your movement phase (?:you can )?select one enemy unit within (?P<range>\d+) of and visible to this model "
+        r"until the start of your next movement phase that enemy unit is pinned while a unit is pinned subtract (?P<move>\d+) "
+        r"from that unit s move characteristic and subtract (?P<charge>\d+) from (?:the )?charge rolls made for it",
+        re.IGNORECASE,
+    )
     _MOVEMENT_PHASE_END_BATTLESHOCK_REROLL_RE = re.compile(
         r"at the end of your movement phase you can select one enemy unit that is battle shocked and within (?P<range>\d+) of this model "
         r"until the end of the turn each time a (?P<keywords>[a-z0-9 ]+) model from your army makes an attack that targets that enemy unit "

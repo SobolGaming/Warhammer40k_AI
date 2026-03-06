@@ -5375,6 +5375,27 @@ def _necrons_named_datasheet_support(name: str, description: str, *, faction_id:
                 "Supported",
                 "Melee attacks by models in this unit against Below Half-strength targets treat each successful Hit roll as a Critical Hit.",
             )
+    if name_norm == "tectonic reverberations":
+        if (
+            "in your movement phase" in norm
+            and "select one enemy unit within 18 of and visible to this model" in norm
+            and "until the start of your next movement phase that enemy unit is pinned" in norm
+            and "while a unit is pinned subtract 2 from that units move characteristic" in norm
+            and "subtract 2 from charge rolls made for it" in norm
+        ):
+            return (
+                "Supported",
+                "In your Movement phase, this model can select one visible enemy unit within 18\" to pin until the start of your next Movement phase (Move -2 and -2 to Charge rolls).",
+            )
+    if name_norm == "obelisk node control":
+        if (
+            "while this model is within range of an objective marker you control" in norm
+            and "enemy units that are set up on the battlefield from reserves cannot be set up within 12 of this model" in norm
+        ):
+            return (
+                "Supported",
+                "While this model is within range of an objective marker you control, enemy units arriving from Reserves cannot be set up within 12\" of this model.",
+            )
     return None
 
 

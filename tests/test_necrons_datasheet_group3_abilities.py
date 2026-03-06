@@ -329,6 +329,194 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
         self.assertEqual(int(bodyguard_ctx.get("remaining", 0) or 0), 2)
         self.assertFalse(bool(bodyguard_ctx.get("allow_skip", True)))
 
+    def test_tectonic_reverberations_parses_movement_phase_pinned(self):
+        ability = {
+            "name": "Tectonic Reverberations",
+            "description": (
+                "In your Movement phase, you can select one enemy unit within 18\" of and visible to this model. "
+                "Until the start of your next Movement phase that enemy unit is pinned. While a unit is pinned, "
+                "subtract 2 from that unit's Move characteristic and subtract 2 from Charge rolls made for it."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        geomancer = _make_unit("Geomancer", abilities=[ability])
+        specs = geomancer.model_movement_phase_pinned_specs(geomancer.models[0])
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(int(specs[0].get("range", 0) or 0), 18)
+        self.assertEqual(int(specs[0].get("move_penalty", 0) or 0), -2)
+        self.assertEqual(int(specs[0].get("charge_penalty", 0) or 0), -2)
+        self.assertEqual(str(specs[0].get("expires_phase", "") or ""), "MOVEMENT_PHASE")
+
+    def test_tectonic_reverberations_queues_choice_applies_and_cleans_up(self):
+        from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        ability = {
+            "name": "Tectonic Reverberations",
+            "description": (
+                "In your Movement phase, you can select one enemy unit within 18\" of and visible to this model. "
+                "Until the start of your next Movement phase that enemy unit is pinned. While a unit is pinned, "
+                "subtract 2 from that unit's Move characteristic and subtract 2 from Charge rolls made for it."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        geomancer = _make_unit("Geomancer", abilities=[ability], keywords=["NECRONS", "INFANTRY", "CHARACTER"])
+        enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+
+        battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(battlefield)
+        army_one = Army("A1", detachment_type="Test")
+        army_two = Army("A2", detachment_type="Test")
+        player_one = Player("P1", control=PlayerControl.LOCAL, army=army_one)
+        player_two = Player("P2", control=PlayerControl.REMOTE, army=army_two)
+        game.add_player(player_one)
+        game.add_player(player_two)
+        army_one.add_unit(geomancer)
+        army_two.add_unit(enemy)
+
+        geomancer.deployed = True
+        geomancer.reserve_status = "deployed"
+        enemy.deployed = True
+        enemy.reserve_status = "deployed"
+        geomancer.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        enemy.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        geomancer._has_line_of_sight_to_target = lambda _model, _target, _map: True
+        game.map.units = [geomancer, enemy]
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 0
+        game.rebuild_entity_registry()
+
+        game._on_phase_end_movement_phase_pinned(player=player_one, phase=game.phase)
+
+        choose_req = None
+        for req in list(game.decision_queue.list() or []):
+            if req.decision_type != DECISION_CHOOSE_QUARRY:
+                continue
+            if str((req.context or {}).get("ability", "") or "") != "post_shoot_pinned":
+                continue
+            choose_req = req
+            break
+        self.assertIsNotNone(choose_req)
+        ctx = dict(choose_req.context or {})
+        self.assertEqual(str(ctx.get("expires_phase", "") or ""), "MOVEMENT_PHASE")
+        self.assertEqual(int(ctx.get("move_penalty", 0) or 0), -2)
+        self.assertEqual(int(ctx.get("charge_penalty", 0) or 0), -2)
+
+        enemy_id = str(get_entity_id(enemy) or "")
+        target_option = None
+        for option in list(choose_req.options or []):
+            if str((option.payload or {}).get("target_unit_id", "") or "") == enemy_id:
+                target_option = option
+                break
+        self.assertIsNotNone(target_option)
+
+        resolve_decision_command(
+            game,
+            choose_req,
+            target_option.option_id,
+            player_id=player_one.id,
+        )
+
+        sr = dict(getattr(enemy, "special_rules", {}) or {})
+        self.assertTrue(bool(sr.get("pinned_active", False)))
+        self.assertEqual(int(sr.get("pinned_move_penalty", 0) or 0), -2)
+        self.assertEqual(int(sr.get("pinned_charge_penalty", 0) or 0), -2)
+        self.assertEqual(str(sr.get("pinned_expires_phase", "") or ""), "MOVEMENT_PHASE")
+
+        game._on_phase_start_pinned_cleanup(player=player_one, phase=BattleRoundPhases.MOVEMENT_PHASE)
+        cleared = dict(getattr(enemy, "special_rules", {}) or {})
+        self.assertFalse(bool(cleared.get("pinned_active", False)))
+        self.assertNotIn("pinned_move_penalty", cleared)
+        self.assertNotIn("pinned_charge_penalty", cleared)
+
+    def test_obelisk_node_control_blocks_reserves_only_while_on_controlled_objective(self):
+        import copy
+        from types import SimpleNamespace
+        from warhammer40k_ai.battlefield.map import ObjectivePoint
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+
+        ability = {
+            "name": "Obelisk Node Control",
+            "description": (
+                "While this model is within range of an objective marker you control, enemy units that are set up on "
+                "the battlefield from Reserves cannot be set up within 12\" of this model."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        geomancer = _make_unit("Geomancer", abilities=[ability], keywords=["NECRONS", "CHARACTER", "INFANTRY"])
+
+        battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(battlefield)
+        army_one = Army("A1", detachment_type="Test")
+        army_two = Army("A2", detachment_type="Test")
+        player_one = Player("P1", control=PlayerControl.LOCAL, army=army_one)
+        player_two = Player("P2", control=PlayerControl.REMOTE, army=army_two)
+        game.add_player(player_one)
+        game.add_player(player_two)
+        army_two.add_unit(geomancer)
+
+        geomancer.deployed = True
+        geomancer.reserve_status = "deployed"
+        geomancer.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+        game.map.units = [geomancer]
+
+        objective_point = ObjectivePoint(10.0, 10.0, 0.0, control_radius=3.0)
+        objective_point.controlling_player = player_two
+        objective_point.update_control = lambda _game: None
+        game.map.objectives = [SimpleNamespace(location=objective_point)]
+
+        class _ArrivingUnit:
+            def __init__(self, army):
+                self._army = army
+                self.models = [
+                    Model(
+                        name="Arriving",
+                        movement=6,
+                        toughness=4,
+                        save=4,
+                        wounds=2,
+                        leadership=7,
+                        objective_control=1,
+                        model_base=Base(BaseType.CIRCULAR, 1.0),
+                    )
+                ]
+
+            def get_parent_army(self):
+                return self._army
+
+            def is_in_strategic_reserves(self):
+                return False
+
+            def has_deep_strike(self):
+                return True
+
+            def calculate_model_positions(self, x, y, _game_map, **_kwargs):
+                return [(x, y, 0.0, 0.0)]
+
+            def _create_potential_base(self, x, y, z, facing, model):
+                base = copy.deepcopy(model.model_base)
+                base.set_position(x, y, z)
+                base.set_facing(facing)
+                return base
+
+        arriving = _ArrivingUnit(army_one)
+        blocked_position = (23.0, 10.0, 0.0)
+        self.assertFalse(game.can_place_unit_arriving_from_reserves(arriving, blocked_position))
+
+        objective_point.controlling_player = player_one
+        self.assertTrue(game.can_place_unit_arriving_from_reserves(arriving, blocked_position))
+
     def test_living_lightning_parses_dice_pool_mortals(self):
         ability = {
             "name": "Living Lightning",

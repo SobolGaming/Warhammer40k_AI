@@ -102,6 +102,21 @@ import pytest
             ),
         ),
         (
+            "Tectonic Reverberations",
+            (
+                "In your Movement phase, you can select one enemy unit within 18\" of and visible to this model. Until the "
+                "start of your next Movement phase that enemy unit is pinned. While a unit is pinned, subtract 2 from that "
+                "unit's Move characteristic and subtract 2 from Charge rolls made for it."
+            ),
+        ),
+        (
+            "Obelisk Node Control",
+            (
+                "While this model is within range of an objective marker you control, enemy units that are set up on the "
+                "battlefield from Reserves cannot be set up within 12\" of this model."
+            ),
+        ),
+        (
             "Plasmacyte",
             (
                 "Once per battle for each Plasmacyte this unit has, when this unit is selected to fight, you can use this "

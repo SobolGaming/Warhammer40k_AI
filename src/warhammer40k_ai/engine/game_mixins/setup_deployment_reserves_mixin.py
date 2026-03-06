@@ -792,15 +792,31 @@ class GameSetupDeploymentReservesMixin:
                 if ("cannot be set up" not in flat) and ("cannot set up" not in flat):
                     continue
                 horizontal_only = ("horizontally" in flat) or ("horizontal" in flat)
+                requires_controlled_objective = (
+                    "while this model is within range of an objective marker you control" in flat
+                    or "while this unit is within range of an objective marker you control" in flat
+                )
                 distances = []
                 for match in re.finditer(r"within\s+(\d+(?:\.\d+)?)\b", flat):
                     distances.append(float(match.group(1)))
                 if not distances:
                     continue
+                source_model_id = ""
+                if "this model" in flat:
+                    for model in list(getattr(member, "models", []) or []):
+                        alive_attr = getattr(model, "is_alive", True)
+                        is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                        if not is_alive:
+                            continue
+                        source_model_id = str(get_entity_id(model) or "").strip()
+                        if source_model_id:
+                            break
                 ranges.append(
                     {
                         "range": max(distances),
                         "horizontal_only": horizontal_only,
+                        "requires_controlled_objective": bool(requires_controlled_objective),
+                        "source_model_id": source_model_id,
                     }
                 )
 
@@ -924,6 +940,32 @@ class GameSetupDeploymentReservesMixin:
             horizontal_distance_between_bases_2d,
         )
 
+        objectives = list(getattr(getattr(self, "map", None), "objectives", []) or [])
+
+        def _source_model_within_controlled_objective(source_model, owner_player) -> bool:
+            if source_model is None or owner_player is None:
+                return False
+            for objective in objectives:
+                location = getattr(objective, "location", None)
+                if location is None or bool(getattr(location, "removed", False)):
+                    continue
+                update_fn = getattr(location, "update_control", None)
+                if callable(update_fn):
+                    update_fn(self)
+                if getattr(location, "controlling_player", None) is not owner_player:
+                    continue
+                within_fn = getattr(self, "_model_within_objective_marker", None)
+                if callable(within_fn):
+                    if bool(within_fn(source_model, location)):
+                        return True
+                    continue
+                unit = getattr(source_model, "parent_unit", None)
+                if unit is None or not hasattr(unit, "is_within_objective_range"):
+                    continue
+                if bool(unit.is_within_objective_range(location)):
+                    return True
+            return False
+
         for enemy in enemy_units:
             if callable(getattr(enemy, "is_alive", None)):
                 if not enemy.is_alive():
@@ -938,6 +980,11 @@ class GameSetupDeploymentReservesMixin:
                 continue
             if bool(getattr(enemy, "is_embarked", False)):
                 continue
+            enemy_player = None
+            get_enemy_army = getattr(enemy, "get_parent_army", None)
+            enemy_army = get_enemy_army() if callable(get_enemy_army) else getattr(enemy, "parent_army", None)
+            if enemy_army is not None:
+                enemy_player = getattr(enemy_army, "player", None)
 
             ranges = self._reserves_denial_ranges_for_unit(enemy)
             if not ranges:
@@ -966,10 +1013,12 @@ class GameSetupDeploymentReservesMixin:
                     for rinfo in ranges:
                         source_model_id = ""
                         horizontal_only = False
+                        requires_controlled_objective = False
                         if isinstance(rinfo, dict):
                             r = float(rinfo.get("range", 0) or 0)
                             horizontal_only = bool(rinfo.get("horizontal_only", False))
                             source_model_id = str(rinfo.get("source_model_id", "") or "").strip()
+                            requires_controlled_objective = bool(rinfo.get("requires_controlled_objective", False))
                         elif isinstance(rinfo, (list, tuple)) and rinfo:
                             r = float(rinfo[0])
                             if len(rinfo) > 1:
@@ -979,6 +1028,8 @@ class GameSetupDeploymentReservesMixin:
                         if r <= 0:
                             continue
                         if source_model_id and str(get_entity_id(em) or "") != source_model_id:
+                            continue
+                        if requires_controlled_objective and not _source_model_within_controlled_objective(em, enemy_player):
                             continue
                         if horizontal_only:
                             dist = float(horizontal_distance_between_bases_2d(base, em.model_base))
