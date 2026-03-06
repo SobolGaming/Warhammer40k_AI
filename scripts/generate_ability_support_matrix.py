@@ -7448,7 +7448,7 @@ def _attack_keyword_label_from_text(raw: str) -> Optional[str]:
     if kw == "precision":
         return "Precision"
     if kw.startswith("anti "):
-        m_val = re.search(r"anti ([a-z0-9 ]+) (\\d+)", kw)
+        m_val = re.search(r"anti ([a-z0-9 ]+) (\d+)", kw)
         if m_val:
             anti_kw = m_val.group(1).strip().upper().replace(" ", "-")
             return f"Anti-{anti_kw} {m_val.group(2)}+"

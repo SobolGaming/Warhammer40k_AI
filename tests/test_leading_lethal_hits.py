@@ -149,6 +149,38 @@ class TestLeadingLethalHits(unittest.TestCase):
         self.assertTrue(res["hit"])
         self.assertFalse(attack_instance.get("lethal_hit", False))
 
+    def test_leading_anti_psyker_ranged_applies(self):
+        ability = {
+            "name": "Psyoculum",
+            "description": (
+                "While this model is leading a unit, ranged weapons equipped by models in that unit have the "
+                "[ANTI-PSYKER 4+] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability])
+        bodyguard = _make_unit("Bodyguard")
+        self._attach_leader(leader, bodyguard)
+
+        profile = _make_profile(weapon_type="Ranged", range_val="24")
+        attacker = SimpleNamespace(name="Attacker", parent_unit=bodyguard, _id="attacker-model-1")
+        target = SimpleNamespace(
+            toughness=8,
+            models=[SimpleNamespace(is_alive=True)],
+            has_keyword=lambda k: str(k).strip().upper() == "PSYKER",
+            has_any_keyword=lambda k: str(k).strip().upper() == "PSYKER",
+        )
+        attack_instance = {}
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[4, 4]):
+            hit_result = profile._hit_target_with_tracking(target, attacker, attack_instance)
+            wound_result = profile._wound_target_with_tracking(target, attacker, attack_instance)
+
+        self.assertTrue(hit_result["hit"])
+        self.assertTrue(wound_result["wound"])
+        self.assertIn(("PSYKER", 4), tuple(attack_instance.get("bonus_anti_specs") or ()))
+        self.assertTrue(any("Anti-PSYKER 4+" in effect for effect in wound_result.get("special_effects", [])))
+
 
 if __name__ == "__main__":
     unittest.main()
