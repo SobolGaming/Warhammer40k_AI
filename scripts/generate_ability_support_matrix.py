@@ -5408,6 +5408,26 @@ def _necrons_named_datasheet_support(name: str, description: str, *, faction_id:
                 "Supported",
                 "Once per turn in your opponent's Shooting phase, when an enemy unit targets a nearby friendly NECRONS unit, this model can make a reactive shooting attack against that enemy unit (if eligible).",
             )
+    if name_norm == "mechanical augmentation aura":
+        if (
+            "while a friendly necrons battleline unit is within 3 of this model" in norm
+            and "each time a model in that unit makes an attack improve the armour penetration characteristic of that attack by 1" in norm
+            and "each time an attack targets that unit worsen the armour penetration characteristic of that attack by 1" in norm
+        ):
+            return (
+                "Supported",
+                "Aura: friendly NECRONS BATTLELINE units within range improve AP by 1 when attacking, and attacks targeting those units have AP worsened by 1.",
+            )
+    if name_norm == "atomic energy manipulator":
+        if (
+            "at the end of the fight phase" in norm
+            and "if this model destroyed one or more models this phase" in norm
+            and "add 3 to the range of its mechanical augmentation ability to a max of 12" in norm
+        ):
+            return (
+                "Supported",
+                "End of Fight phase: if this model destroyed one or more models this phase, its Mechanical Augmentation aura range increases by 3\" (to a maximum of 12\") for the rest of the battle.",
+            )
     return None
 
 

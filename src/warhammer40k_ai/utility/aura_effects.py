@@ -2963,6 +2963,41 @@ def get_aura_ap_bonus(attacker_model, weapon_profile, target_unit, *, game_map=N
     applied_aura_names: set[str] = set()
 
     for source in list(game_map.get_friendly_units(attacker_unit)):
+        rule_fn = getattr(source, "get_mechanical_augmentation_aura_rule", None)
+        if callable(rule_fn):
+            try:
+                mech_rule = rule_fn()
+            except Exception:
+                mech_rule = None
+            if isinstance(mech_rule, dict):
+                mech_source = str(
+                    mech_rule.get("source", "") or "Mechanical Augmentation (Aura)"
+                ).strip() or "Mechanical Augmentation (Aura)"
+                aura_key = _norm_name(mech_source)
+                try:
+                    aura_range = float(mech_rule.get("range", 0.0) or 0.0)
+                except Exception:
+                    aura_range = 0.0
+                try:
+                    ap_bonus = int(mech_rule.get("attack_ap_bonus", 0) or 0)
+                except Exception:
+                    ap_bonus = 0
+                keyword_phrase = str(mech_rule.get("friendly_keyword_phrase", "") or "").strip()
+                if (
+                    int(ap_bonus) > 0
+                    and aura_range > 0.0
+                    and keyword_phrase
+                    and _unit_matches_keyword_or_name_phrase(attacker_unit, keyword_phrase)
+                    and _unit_within_aura_range(source, attacker_unit, float(aura_range))
+                ):
+                    if not aura_key or aura_key not in applied_aura_names:
+                        if aura_key:
+                            applied_aura_names.add(aura_key)
+                        total += int(ap_bonus)
+                        reasons.append(
+                            f"Aura: +{int(ap_bonus)} AP from {mech_source}"
+                        )
+
         source_sr = getattr(source, "special_rules", None)
         if isinstance(source_sr, dict) and bool(source_sr.get("enhancement_font_of_spores_aura")):
             aura_key = _norm_name("Font of Spores (Aura)")
@@ -3020,6 +3055,88 @@ def get_aura_ap_bonus(attacker_model, weapon_profile, target_unit, *, game_map=N
             if amt:
                 total += amt
                 reasons.append(f"Aura: +{amt} AP (closest enemy) from {ab_name}")
+
+    return int(total), tuple(reasons)
+
+
+def get_enemy_aura_ap_worsen(attacker_model, target_unit, weapon_profile, *, game_map=None) -> tuple[int, tuple[str, ...]]:
+    _count_regex_hotspot("get_enemy_aura_ap_worsen")
+    """
+    Return (ap_worsen, reasons) from enemy defensive AP-worsening auras affecting target_unit.
+    Example: Mechanical Augmentation (Aura) defensive half.
+    """
+    if attacker_model is None or target_unit is None or weapon_profile is None:
+        return 0, ()
+    try:
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+    except Exception:
+        attacker_unit = None
+    if attacker_unit is None:
+        return 0, ()
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(attacker_unit)
+    if game_map is None or not hasattr(game_map, "get_enemy_units"):
+        return 0, ()
+
+    try:
+        target_root = target_unit.get_attached_unit_root()
+    except Exception:
+        target_root = target_unit
+    if target_root is None:
+        return 0, ()
+
+    total = 0
+    reasons: list[str] = []
+    applied_aura_names: set[str] = set()
+
+    enemies = []
+    try:
+        enemies = list(game_map.get_enemy_units(attacker_unit) or [])
+    except Exception:
+        enemies = []
+
+    for source in enemies:
+        rule_fn = getattr(source, "get_mechanical_augmentation_aura_rule", None)
+        if not callable(rule_fn):
+            continue
+        try:
+            mech_rule = rule_fn()
+        except Exception:
+            mech_rule = None
+        if not isinstance(mech_rule, dict):
+            continue
+
+        mech_source = str(
+            mech_rule.get("source", "") or "Mechanical Augmentation (Aura)"
+        ).strip() or "Mechanical Augmentation (Aura)"
+        aura_key = _norm_name(mech_source)
+        if aura_key and aura_key in applied_aura_names:
+            continue
+
+        try:
+            aura_range = float(mech_rule.get("range", 0.0) or 0.0)
+        except Exception:
+            aura_range = 0.0
+        if aura_range <= 0.0:
+            continue
+        keyword_phrase = str(mech_rule.get("friendly_keyword_phrase", "") or "").strip()
+        if not keyword_phrase:
+            continue
+        try:
+            ap_worsen = int(mech_rule.get("incoming_ap_worsen", 0) or 0)
+        except Exception:
+            ap_worsen = 0
+        if ap_worsen <= 0:
+            continue
+        if not _unit_matches_keyword_or_name_phrase(target_root, keyword_phrase):
+            continue
+        if not _unit_within_aura_range(source, target_root, float(aura_range)):
+            continue
+
+        if aura_key:
+            applied_aura_names.add(aura_key)
+        total += int(ap_worsen)
+        reasons.append(f"Aura: incoming AP worsened by {int(ap_worsen)} from {mech_source}")
 
     return int(total), tuple(reasons)
 

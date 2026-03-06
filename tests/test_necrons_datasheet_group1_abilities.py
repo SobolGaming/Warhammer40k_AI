@@ -628,6 +628,180 @@ class TestNecronsDatasheetGroup1Abilities(unittest.TestCase):
             str(get_entity_id(enemy_attacker) or ""),
         )
 
+    def test_mechanical_augmentation_parses_aura_rule(self):
+        ability = {
+            "name": "Mechanical Augmentation (Aura)",
+            "description": (
+                "While a friendly Necrons Battleline unit is within 3\" of this model, each time a model in that unit "
+                "makes an attack, improve the Armour Penetration characteristic of that attack by 1, and each time an "
+                "attack targets that unit, worsen the Armour Penetration characteristic of that attack by 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        szeras = _make_unit(
+            "Illuminor Szeras",
+            abilities=[ability],
+            keywords=["NECRONS", "CHARACTER", "INFANTRY"],
+            faction_keywords=["NECRONS"],
+        )
+        rule = szeras.get_mechanical_augmentation_aura_rule()
+        self.assertIsNotNone(rule)
+        self.assertEqual(str((rule or {}).get("friendly_keyword_phrase", "") or ""), "NECRONS BATTLELINE")
+        self.assertEqual(int((rule or {}).get("base_range", 0) or 0), 3)
+        self.assertEqual(int((rule or {}).get("range", 0) or 0), 3)
+        self.assertEqual(int((rule or {}).get("attack_ap_bonus", 0) or 0), 1)
+        self.assertEqual(int((rule or {}).get("incoming_ap_worsen", 0) or 0), 1)
+
+    def test_mechanical_augmentation_improves_battleline_attack_ap_within_aura(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Mechanical Augmentation (Aura)",
+            "description": (
+                "While a friendly Necrons Battleline unit is within 3\" of this model, each time a model in that unit "
+                "makes an attack, improve the Armour Penetration characteristic of that attack by 1, and each time an "
+                "attack targets that unit, worsen the Armour Penetration characteristic of that attack by 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, _p1, _p2 = _build_game()
+        szeras = _make_unit(
+            "Illuminor Szeras",
+            abilities=[ability],
+            keywords=["NECRONS", "CHARACTER", "INFANTRY"],
+            faction_keywords=["NECRONS"],
+        )
+        battleline = _make_unit(
+            "Necron Warriors",
+            keywords=["NECRONS", "INFANTRY", "BATTLELINE"],
+            faction_keywords=["NECRONS"],
+        )
+        enemy = _make_unit("Enemy")
+        army1.add_unit(szeras)
+        army1.add_unit(battleline)
+        army2.add_unit(enemy)
+        szeras.deployed = True
+        battleline.deployed = True
+        enemy.deployed = True
+        szeras.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        battleline.models[0].set_location(2.0, 0.0, 0.0, 0.0)
+        enemy.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        game.map.units = [szeras, battleline, enemy]
+
+        parent = SimpleNamespace(name="Gauss Flayer", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={"range": "24", "A": "1", "BS_WS": "4+", "S": "4", "AP": "0", "D": "1", "description": ""},
+            parent_wargear=parent,
+        )
+        self.assertEqual(profile.get_effective_ap(battleline.models[0], enemy), -1)
+
+        battleline.models[0].set_location(6.5, 0.0, 0.0, 0.0)
+        self.assertEqual(profile.get_effective_ap(battleline.models[0], enemy), 0)
+
+    def test_mechanical_augmentation_worsens_incoming_ap_against_battleline_within_aura(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Mechanical Augmentation (Aura)",
+            "description": (
+                "While a friendly Necrons Battleline unit is within 3\" of this model, each time a model in that unit "
+                "makes an attack, improve the Armour Penetration characteristic of that attack by 1, and each time an "
+                "attack targets that unit, worsen the Armour Penetration characteristic of that attack by 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, _p1, _p2 = _build_game()
+        szeras = _make_unit(
+            "Illuminor Szeras",
+            abilities=[ability],
+            keywords=["NECRONS", "CHARACTER", "INFANTRY"],
+            faction_keywords=["NECRONS"],
+        )
+        battleline = _make_unit(
+            "Necron Warriors",
+            keywords=["NECRONS", "INFANTRY", "BATTLELINE"],
+            faction_keywords=["NECRONS"],
+        )
+        enemy = _make_unit("Enemy Shooters")
+        army1.add_unit(szeras)
+        army1.add_unit(battleline)
+        army2.add_unit(enemy)
+        szeras.deployed = True
+        battleline.deployed = True
+        enemy.deployed = True
+        szeras.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        battleline.models[0].set_location(2.0, 0.0, 0.0, 0.0)
+        enemy.models[0].set_location(14.0, 0.0, 0.0, 0.0)
+        game.map.units = [szeras, battleline, enemy]
+
+        parent = SimpleNamespace(name="Enemy Rifle", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={"range": "24", "A": "1", "BS_WS": "4+", "S": "4", "AP": "-2", "D": "1", "description": ""},
+            parent_wargear=parent,
+        )
+        self.assertEqual(profile.get_effective_ap(enemy.models[0], battleline), -1)
+
+        battleline.models[0].set_location(7.5, 0.0, 0.0, 0.0)
+        self.assertEqual(profile.get_effective_ap(enemy.models[0], battleline), -2)
+
+    def test_atomic_energy_manipulator_increases_mechanical_augmentation_range_to_max(self):
+        from warhammer40k_ai.engine.game import BattleRoundPhases
+
+        mechanical = {
+            "name": "Mechanical Augmentation (Aura)",
+            "description": (
+                "While a friendly Necrons Battleline unit is within 3\" of this model, each time a model in that unit "
+                "makes an attack, improve the Armour Penetration characteristic of that attack by 1, and each time an "
+                "attack targets that unit, worsen the Armour Penetration characteristic of that attack by 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        atomic = {
+            "name": "Atomic Energy Manipulator",
+            "description": (
+                "At the end of the Fight phase, if this model destroyed one or more models this phase, until the end of "
+                "the battle, add 3\" to the range of its Mechanical Augmentation ability to a max of 12."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, p1, _p2 = _build_game()
+        szeras = _make_unit(
+            "Illuminor Szeras",
+            abilities=[mechanical, atomic],
+            keywords=["NECRONS", "CHARACTER", "INFANTRY"],
+            faction_keywords=["NECRONS"],
+        )
+        enemy = _make_unit("Enemy")
+        army1.add_unit(szeras)
+        army2.add_unit(enemy)
+        szeras.deployed = True
+        enemy.deployed = True
+        game.map.units = [szeras, enemy]
+        game.current_player_index = 0
+        game.rebuild_entity_registry()
+
+        melee_profile = SimpleNamespace(parent_wargear=SimpleNamespace(is_melee=lambda: True, is_ranged=lambda: False))
+        for turn, expected_range in ((1, 6), (2, 9), (3, 12), (4, 12)):
+            game.turn = int(turn)
+            game.phase = BattleRoundPhases.FIGHT_PHASE
+            game._on_model_destroyed_rules(
+                attacker_model=szeras.models[0],
+                attacker_unit=szeras,
+                target_model=enemy.models[0],
+                target_unit=enemy,
+                weapon_profile=melee_profile,
+            )
+            game._on_phase_end_necrons_atomic_energy_manipulator(player=p1, phase=BattleRoundPhases.FIGHT_PHASE)
+            rule = szeras.get_mechanical_augmentation_aura_rule() or {}
+            self.assertEqual(int(rule.get("range", 0) or 0), int(expected_range))
+
 
 if __name__ == "__main__":
     unittest.main()

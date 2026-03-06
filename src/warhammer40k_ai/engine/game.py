@@ -7237,6 +7237,36 @@ class Game(
                         sr["enhancement_soul_glutton_turn_owner"] = owner
                         attacker_unit.special_rules = sr
 
+        if isinstance(sr, dict) and attacker_model is not None:
+            get_atomic_rule = getattr(attacker_unit, "get_atomic_energy_manipulator_rule", None)
+            atomic_rule = get_atomic_rule(attacker_model) if callable(get_atomic_rule) else None
+            if isinstance(atomic_rule, dict):
+                wp = _kwargs.get("weapon_profile", None)
+                pw = getattr(wp, "parent_wargear", None)
+                is_melee_attack = bool(wp is not None and pw is not None and pw.is_melee())
+                phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+                if is_melee_attack and phase_name == "FIGHT_PHASE":
+                    try:
+                        current_player = self.get_current_player()
+                    except Exception:
+                        current_player = None
+                    owner = str(getattr(current_player, "id", "") or "")
+                    model_id = str(get_entity_id(attacker_model) or "")
+                    if model_id:
+                        kills_by_model = sr.get("atomic_energy_manipulator_phase_kills")
+                        if not isinstance(kills_by_model, dict):
+                            kills_by_model = {}
+                        try:
+                            prev = int(kills_by_model.get(model_id, 0) or 0)
+                        except Exception:
+                            prev = 0
+                        kills_by_model[model_id] = int(max(0, prev) + 1)
+                        sr["atomic_energy_manipulator_phase_kills"] = kills_by_model
+                        sr["atomic_energy_manipulator_phase"] = "FIGHT_PHASE"
+                        sr["atomic_energy_manipulator_turn"] = int(getattr(self, "turn", 0) or 0)
+                        sr["atomic_energy_manipulator_turn_owner"] = owner
+                        attacker_unit.special_rules = sr
+
         if isinstance(sr, dict) and sr.get("enhancement_thief_of_secrets"):
             if attacker_model is not None:
                 bearer_id = str(

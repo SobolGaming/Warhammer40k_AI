@@ -88,6 +88,21 @@ import pytest
                 "target only that enemy unit when doing so, and can only do so if that enemy unit is an eligible target."
             ),
         ),
+        (
+            "Mechanical Augmentation (Aura)",
+            (
+                "While a friendly Necrons Battleline unit is within 3\" of this model, each time a model in that unit makes "
+                "an attack, improve the Armour Penetration characteristic of that attack by 1, and each time an attack "
+                "targets that unit, worsen the Armour Penetration characteristic of that attack by 1."
+            ),
+        ),
+        (
+            "Atomic Energy Manipulator",
+            (
+                "At the end of the Fight phase, if this model destroyed one or more models this phase, until the end of the "
+                "battle, add 3\" to the range of its Mechanical Augmentation ability to a max of 12."
+            ),
+        ),
     ],
 )
 def test_support_matrix_necrons_group1_datasheet_abilities_supported(name, description):

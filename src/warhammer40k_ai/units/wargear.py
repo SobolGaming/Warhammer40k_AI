@@ -3639,6 +3639,15 @@ class WargearProfile:
                             ap_val += int(entry.get("value", 0) or 0)
                         except Exception:
                             continue
+                    from ..utility.aura_effects import get_enemy_aura_ap_worsen
+                    aura_worsen, _aura_reasons = get_enemy_aura_ap_worsen(
+                        attacker,
+                        target_root,
+                        self,
+                        game_map=self._get_game_map_from_model(attacker),
+                    )
+                    if aura_worsen:
+                        ap_val += int(aura_worsen)
                     ap_val += int(self._bastion_shield_ap_worsen(attacker, target_root) or 0)
                     if attacker is not None:
                         target_army = target_root.get_parent_army() if target_root is not None else None

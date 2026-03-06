@@ -2387,6 +2387,211 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_mechanical_augmentation_aura_rule(self) -> Optional[dict]:
+        """
+        Return rule info for Illuminor Szeras' Mechanical Augmentation (Aura):
+        - Friendly NECRONS BATTLELINE within aura improve AP by 1 when attacking.
+        - Attacks targeting those units worsen AP by 1.
+        Aura starts at 3" and can be increased by Atomic Energy Manipulator up to a max.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "mechanical_augmentation_aura_rule"
+        cached_rule = getattr(root, "_ability_cache", {}).get(cache_key)
+        if isinstance(cached_rule, dict):
+            rule = dict(cached_rule)
+            try:
+                base_range = int(rule.get("base_range", 0) or 0)
+            except Exception:
+                base_range = 0
+            try:
+                max_range = int(rule.get("max_range", base_range) or base_range)
+            except Exception:
+                max_range = base_range
+            max_range = max(int(base_range), int(max_range))
+            try:
+                sr = getattr(root, "special_rules", None)
+            except Exception:
+                sr = None
+            try:
+                range_bonus = int(sr.get("mechanical_augmentation_range_bonus", 0) or 0) if isinstance(sr, dict) else 0
+            except Exception:
+                range_bonus = 0
+            range_bonus = max(0, int(range_bonus))
+            max_bonus = max(0, int(max_range) - int(base_range))
+            rule["range"] = int(min(int(max_range), int(base_range) + min(int(range_bonus), int(max_bonus))))
+            return rule
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text = unit._normalize_rules_text(unit._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+                norm = re.sub(r"\s+", " ", norm)
+                key = (str(name or "").strip().lower(), norm)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if "each time a model in that unit makes an attack improve the armour penetration characteristic of that attack by" not in norm:
+                    continue
+                if "each time an attack targets that unit worsen the armour penetration characteristic of that attack by" not in norm:
+                    continue
+                m_aura = re.search(
+                    r"while a friendly (?P<keyword>[a-z0-9 ]+?) unit is within (?P<range>\d+) of (?:this model|the bearer|this unit)",
+                    norm,
+                )
+                if not m_aura:
+                    continue
+                try:
+                    base_range = int(m_aura.group("range") or 0)
+                except Exception:
+                    base_range = 0
+                if base_range <= 0:
+                    continue
+                keyword_phrase = str(m_aura.group("keyword") or "").strip().upper()
+                if not keyword_phrase:
+                    continue
+                m_attack_bonus = re.search(
+                    r"each time a model in that unit makes an attack improve the armour penetration characteristic of that attack by (?P<val>\d+)",
+                    norm,
+                )
+                m_target_worsen = re.search(
+                    r"each time an attack targets that unit worsen the armour penetration characteristic of that attack by (?P<val>\d+)",
+                    norm,
+                )
+                try:
+                    attack_ap_bonus = int(m_attack_bonus.group("val") or 0) if m_attack_bonus else 0
+                except Exception:
+                    attack_ap_bonus = 0
+                try:
+                    incoming_ap_worsen = int(m_target_worsen.group("val") or 0) if m_target_worsen else 0
+                except Exception:
+                    incoming_ap_worsen = 0
+                if attack_ap_bonus <= 0 and incoming_ap_worsen <= 0:
+                    continue
+                max_range = 12
+                get_atomic = getattr(root, "get_atomic_energy_manipulator_rule", None)
+                if callable(get_atomic):
+                    atomic_rule = get_atomic(None)
+                    if isinstance(atomic_rule, dict):
+                        try:
+                            max_range = int(atomic_rule.get("max_range", max_range) or max_range)
+                        except Exception:
+                            max_range = 12
+                max_range = max(int(base_range), int(max_range))
+                source = str(name or "Mechanical Augmentation (Aura)").strip() or "Mechanical Augmentation (Aura)"
+                rule = {
+                    "source": source,
+                    "friendly_keyword_phrase": keyword_phrase,
+                    "base_range": int(base_range),
+                    "range": int(base_range),
+                    "max_range": int(max_range),
+                    "attack_ap_bonus": int(max(0, attack_ap_bonus)),
+                    "incoming_ap_worsen": int(max(0, incoming_ap_worsen)),
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        if not isinstance(rule, dict):
+            return rule
+        return root.get_mechanical_augmentation_aura_rule()
+
+    def get_atomic_energy_manipulator_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for Atomic Energy Manipulator:
+        end of Fight phase, if this model destroyed one or more models this phase,
+        increase Mechanical Augmentation aura range by +X up to a max range.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        model_key = str(get_entity_id(model) or "") if model is not None else "unit"
+        cache_key = f"atomic_energy_manipulator_rule:{model_key}"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        if model is None:
+            entries = list(root._iter_ability_entries_for_rules(model=None))
+        else:
+            entries = list(root._iter_model_specific_ability_entries(model))
+        for name, desc in entries:
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text = root._normalize_rules_text(root._strip_eligibility_prefix(text_src))
+            if not text:
+                continue
+            text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+            norm = re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+            norm = re.sub(r"\s+", " ", norm)
+            key = (str(name or "").strip().lower(), norm)
+            if key in seen:
+                continue
+            seen.add(key)
+            if "at the end of the fight phase" not in norm:
+                continue
+            if "if this model destroyed one or more models this phase" not in norm:
+                continue
+            if "add" not in norm or "to the range of its" not in norm or "ability to a max of" not in norm:
+                continue
+            m = re.search(
+                r"add (?P<bonus>\d+) to the range of (?:its|this model s) (?P<aura>[a-z0-9 ]+?) ability to a max of (?P<max>\d+)",
+                norm,
+            )
+            if not m:
+                continue
+            try:
+                range_bonus = int(m.group("bonus") or 0)
+            except Exception:
+                range_bonus = 0
+            try:
+                max_range = int(m.group("max") or 0)
+            except Exception:
+                max_range = 0
+            aura_name_phrase = str(m.group("aura") or "").strip().lower()
+            if range_bonus <= 0 or max_range <= 0 or not aura_name_phrase:
+                continue
+            source = str(name or "Atomic Energy Manipulator").strip() or "Atomic Energy Manipulator"
+            rule = {
+                "source": source,
+                "range_bonus": int(range_bonus),
+                "max_range": int(max_range),
+                "aura_name_phrase": aura_name_phrase,
+                "requires_fight_phase_kill": True,
+            }
+            break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def model_has_atomic_energy_manipulator_ability(self, model: Optional['Model'] = None) -> bool:
+        return bool(self.get_atomic_energy_manipulator_rule(model))
+
     def has_lord_of_the_death_guard(self) -> bool:
         """Check if the unit has the Lord of the Death Guard datasheet ability."""
         if "lord_of_the_death_guard" in getattr(self, "_ability_cache", {}):

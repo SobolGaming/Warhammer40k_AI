@@ -253,6 +253,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_end", "_on_phase_end_flickerjump_mortal_wounds"),
                 ("phase_end", "_on_phase_end_genestealer_cults_final_day_psionic_parasitism"),
                 ("phase_end", "_on_phase_end_lost_brethren_vengeful_onslaught"),
+                ("phase_end", "_on_phase_end_necrons_atomic_energy_manipulator"),
                 ("fight_targets_selected", "_on_fight_targets_selected_tracking"),
                 ("phase_end", "_on_phase_end_cleanup"),
                 ("fight_sequence_complete", "_on_fight_sequence_complete_gift_of_chaos"),

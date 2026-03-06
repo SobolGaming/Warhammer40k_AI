@@ -14266,6 +14266,142 @@ class GamePhaseHandlersMixin:
                     sr.pop(key, None)
                 unit.special_rules = sr
 
+    def _on_phase_end_necrons_atomic_energy_manipulator(self, player=None, phase=None, **_kwargs) -> None:
+        """Necrons: Atomic Energy Manipulator range growth at the end of the Fight phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+
+        def _unit_sort_key(unit) -> str:
+            try:
+                return str(get_entity_id(unit) or "")
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        for p in list(self.players or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            processed_roots: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                rid = str(get_entity_id(root) or "")
+                if rid and rid in processed_roots:
+                    continue
+                if rid:
+                    processed_roots.add(rid)
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                kills_by_model = sr.get("atomic_energy_manipulator_phase_kills")
+                if not isinstance(kills_by_model, dict) or not kills_by_model:
+                    continue
+
+                phase_marker = str(sr.get("atomic_energy_manipulator_phase", "") or "").strip().upper()
+                owner_marker = str(sr.get("atomic_energy_manipulator_turn_owner", "") or "")
+                try:
+                    turn_marker = int(sr.get("atomic_energy_manipulator_turn", 0) or 0)
+                except Exception:
+                    turn_marker = 0
+
+                eligible = True
+                if phase_marker and phase_marker != "FIGHT_PHASE":
+                    eligible = False
+                if owner_marker and owner_id and owner_marker != owner_id:
+                    eligible = False
+                if turn_marker and current_turn and turn_marker != current_turn:
+                    eligible = False
+
+                if eligible:
+                    try:
+                        models = list(root.get_attached_unit_models() or [])
+                    except Exception:
+                        models = list(getattr(root, "models", []) or [])
+                    model_by_id = {}
+                    for model in list(models or []):
+                        mid = str(get_entity_id(model) or "")
+                        if not mid:
+                            continue
+                        model_by_id[mid] = model
+
+                    for model_id, kill_count in sorted(kills_by_model.items(), key=lambda item: str(item[0])):
+                        try:
+                            kills = int(kill_count or 0)
+                        except Exception:
+                            kills = 0
+                        if kills <= 0:
+                            continue
+                        model = model_by_id.get(str(model_id))
+                        if model is None:
+                            continue
+                        alive_attr = getattr(model, "is_alive", True)
+                        model_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                        if not model_alive:
+                            continue
+
+                        get_atomic = getattr(root, "get_atomic_energy_manipulator_rule", None)
+                        atomic_rule = get_atomic(model) if callable(get_atomic) else None
+                        if not isinstance(atomic_rule, dict):
+                            continue
+                        get_mech = getattr(root, "get_mechanical_augmentation_aura_rule", None)
+                        mech_rule = get_mech() if callable(get_mech) else None
+                        if not isinstance(mech_rule, dict):
+                            continue
+
+                        try:
+                            range_bonus = int(atomic_rule.get("range_bonus", 0) or 0)
+                        except Exception:
+                            range_bonus = 0
+                        if range_bonus <= 0:
+                            continue
+                        try:
+                            base_range = int(mech_rule.get("base_range", 0) or 0)
+                        except Exception:
+                            base_range = 0
+                        try:
+                            max_range = int(atomic_rule.get("max_range", mech_rule.get("max_range", base_range)) or base_range)
+                        except Exception:
+                            max_range = int(base_range)
+                        max_range = max(int(base_range), int(max_range))
+                        try:
+                            current_bonus = int(sr.get("mechanical_augmentation_range_bonus", 0) or 0)
+                        except Exception:
+                            current_bonus = 0
+                        current_bonus = max(0, int(current_bonus))
+                        max_bonus = max(0, int(max_range) - int(base_range))
+                        new_bonus = min(int(max_bonus), int(current_bonus) + int(range_bonus))
+                        if new_bonus > current_bonus:
+                            sr["mechanical_augmentation_range_bonus"] = int(new_bonus)
+                            sr["mechanical_augmentation_range_current"] = int(base_range + new_bonus)
+                            sr["mechanical_augmentation_range_max"] = int(max_range)
+                            sr["mechanical_augmentation_range_source"] = str(
+                                atomic_rule.get("source", "") or "Atomic Energy Manipulator"
+                            ).strip() or "Atomic Energy Manipulator"
+                            ability_cache = getattr(root, "_ability_cache", None)
+                            if isinstance(ability_cache, dict):
+                                ability_cache.pop("mechanical_augmentation_aura_rule", None)
+
+                for key in (
+                    "atomic_energy_manipulator_phase_kills",
+                    "atomic_energy_manipulator_phase",
+                    "atomic_energy_manipulator_turn",
+                    "atomic_energy_manipulator_turn_owner",
+                ):
+                    sr.pop(key, None)
+                root.special_rules = sr
+
     def _on_phase_end_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Best-effort cleanup for model-level temporary effects that expire at end of a phase."""
         for p in list(self.players or []):
