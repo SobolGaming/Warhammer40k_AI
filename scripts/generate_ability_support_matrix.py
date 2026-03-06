@@ -5507,6 +5507,7 @@ def _classify_ability_base(
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
     order_range_extension_support = _order_range_extension_support(description)
     datasheet_command_reroll_cherub_support = _datasheet_command_reroll_cherub_support(description)
+    shieldbreaker_support = _shieldbreaker_support(description)
     act_of_faith_cherub_support = _act_of_faith_cherub_support(description)
     cat_unit_support = _cat_unit_support(description)
     ammo_runt_support = _ammo_runt_support(description)
@@ -5883,6 +5884,8 @@ def _classify_ability_base(
         return order_range_extension_support
     if datasheet_command_reroll_cherub_support:
         return datasheet_command_reroll_cherub_support
+    if shieldbreaker_support:
+        return shieldbreaker_support
     if act_of_faith_cherub_support:
         return act_of_faith_cherub_support
     if orders_support:
@@ -12275,6 +12278,33 @@ def _datasheet_command_reroll_cherub_support(description: str) -> Optional[Tuple
     return (
         "Supported",
         "Once per battle: this unit can be targeted with Command Re-roll for 0CP, including as a same-phase repeat target.",
+    )
+
+
+def _shieldbreaker_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"once per battle when selecting targets for this model(?: s|s) (?P<weapon>[a-z0-9 ]+) "
+        r"it can fire a shieldbreaker round if it does until the end of the phase each time this model makes an attack "
+        r"with that weapon add (?P<wound>\d+) to the wound roll and any successful wound roll scores a critical wound",
+        norm,
+    )
+    if not m:
+        return None
+    weapon = str(m.group("weapon") or "").strip() or "weapon"
+    try:
+        wound_bonus = int(m.group("wound") or 0)
+    except (TypeError, ValueError):
+        wound_bonus = 0
+    if wound_bonus <= 0:
+        return None
+    return (
+        "Supported",
+        f"Once per battle when selecting targets: {weapon} attacks gain +{int(wound_bonus)} to Wound and successful Wound rolls count as Critical Wounds until phase end.",
     )
 
 
