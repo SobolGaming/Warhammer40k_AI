@@ -4415,6 +4415,12 @@ class GameView:
             elif choice_kind == "experimental_enhancements":
                 title = "Experimental Enhancements"
                 header = "Choose Attacks 3 or Attacks 4 (Hazardous)."
+            elif choice_kind == "master_regenesist":
+                title = "Master Regenesist"
+                header = "Choose D3+3 or D3+1 returned models."
+            elif choice_kind == "sadistic_fulcrum_transport":
+                title = "Sadistic Fulcrum"
+                header = "Select a Transport or choose None."
 
             def _on_confirm(option_id: str):
                 resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))

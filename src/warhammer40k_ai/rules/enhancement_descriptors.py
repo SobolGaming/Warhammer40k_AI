@@ -3080,6 +3080,49 @@ _SPECTACLE_OF_SPITE_BY_NAME = {
 }
 
 _SKYSPLINTER_ASSAULT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010576002": EnhancementToolDescriptor(
+        enhancement_id="000010576002",
+        name="Phantasmal Smoke",
+        timing="passive_while_bearer_unit_wholly_within_friendly_transport_range",
+        target="bearer_unit",
+        duration="while_condition_met",
+        effect="grant_stealth_and_benefit_of_cover_while_wholly_within_range_of_friendly_transport",
+        effect_params={
+            "range": 6.0,
+            "requires_friendly_transport": True,
+            "requires_wholly_within": True,
+            "grants_stealth": True,
+            "grants_benefit_of_cover_vs_ranged": True,
+        },
+    ),
+    "000010576003": EnhancementToolDescriptor(
+        enhancement_id="000010576003",
+        name="Sadistic Fulcrum",
+        timing="on_bearer_unit_empower_in_shooting_phase",
+        target="friendly_drukhari_transport_within_6_of_bearer_unit",
+        duration="until_end_of_phase",
+        effect="optional_select_transport_reroll_hit_when_bearer_unit_empowered",
+        effect_params={
+            "trigger_phase": "shooting",
+            "range": 6.0,
+            "requires_friendly_transport": True,
+            "optional_selection_with_none": True,
+            "grants_hit_reroll": True,
+        },
+    ),
+    "000010576004": EnhancementToolDescriptor(
+        enhancement_id="000010576004",
+        name="Spiteful Raider",
+        timing="on_enemy_unit_destroyed_in_fight_phase_by_bearer_unit",
+        target="destroyed_enemy_unit_that_was_within_objective_when_bearer_unit_selected_to_fight",
+        duration="instant",
+        effect="gain_additional_pain_token_if_destroyed_unit_was_within_objective_when_selected_to_fight",
+        effect_params={
+            "pain_tokens_gained": 1,
+            "requires_fight_phase": True,
+            "requires_destroyed_unit_within_objective_when_selected_to_fight": True,
+        },
+    ),
     "000010576005": EnhancementToolDescriptor(
         enhancement_id="000010576005",
         name="Nightmare Shroud",

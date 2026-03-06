@@ -8130,6 +8130,17 @@ class PositioningMixin:
         applies_fn = getattr(dg_mgr, "verminous_haze_applies_to_unit", None) if dg_mgr is not None else None
         if callable(applies_fn) and applies_fn(self):
             return True
+        # Drukhari: Skysplinter Assault (Phantasmal Smoke).
+        drukhari_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+        phantasmal_fn = (
+            getattr(drukhari_mgr, "skysplinter_phantasmal_smoke_stealth_applies", None)
+            if drukhari_mgr is not None
+            else None
+        )
+        if callable(phantasmal_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if bool(phantasmal_fn(self, game=game)):
+                return True
         # Orks: Taktikal Brigade (Lissen 'Ere - Sneaky Stalkin').
         orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
         sneaky_fn = getattr(orks_mgr, "taktikal_brigade_sneaky_stalkin_stealth_applies", None) if orks_mgr is not None else None

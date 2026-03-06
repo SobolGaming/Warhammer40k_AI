@@ -12031,6 +12031,54 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Drukhari: Skysplinter Assault (Sadistic Fulcrum) selected transport can re-roll Hit rolls (optional).
+        if rerolls_allowed and "reroll" not in hit_result:
+            unit = getattr(attacker, "parent_unit", None)
+            get_parent_army = getattr(unit, "get_parent_army", None) if unit is not None else None
+            army = get_parent_army() if callable(get_parent_army) else None
+            drukhari_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(drukhari_mgr, "skysplinter_sadistic_fulcrum_hit_reroll_applies", None)
+                if drukhari_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                applies, source = reroll_fn(attacker, unit=unit, game=game)
+                if bool(applies):
+                    skill_value = getattr(self, "skill", 0)
+                    success = bool(
+                        dice_roll != 1
+                        and isinstance(skill_value, (int, float))
+                        and float(skill_value) > 0.0
+                        and dice_roll >= final_needed
+                    )
+                    player = getattr(army, "player", None) if army is not None else None
+                    is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                    source_name = str(source or "Sadistic Fulcrum").strip() or "Sadistic Fulcrum"
+                    if is_human and callable(provider):
+                        do_reroll = bool(
+                            provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="hit",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason=source_name,
+                            )
+                        )
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll:
+                        rr = _reroll_hit()
+                        hit_result.setdefault("special_effects", []).append(f"{source_name}: re-roll Hit roll")
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+
         # Fury's Cage: bearer melee attacks can re-roll the Hit roll (optional).
         try:
             if rerolls_allowed and "reroll" not in hit_result:
@@ -18590,6 +18638,34 @@ class WargearProfile:
                             attack_instance["benefit_of_cover_source"] = ", ".join(parts) if parts else existing
         except Exception:
             pass
+        # Drukhari: Skysplinter Assault (Phantasmal Smoke) grants Benefit of Cover to the bearer unit while active.
+        t_unit = getattr(target_model, "parent_unit", None)
+        get_parent_army = getattr(t_unit, "get_parent_army", None) if t_unit is not None else None
+        army = get_parent_army() if callable(get_parent_army) else None
+        drukhari_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+        cover_fn = (
+            getattr(drukhari_mgr, "skysplinter_phantasmal_smoke_benefit_of_cover", None)
+            if drukhari_mgr is not None
+            else None
+        )
+        if callable(cover_fn):
+            is_melee_attack = bool(
+                self.parent_wargear is not None and callable(getattr(self.parent_wargear, "is_melee", None))
+                and self.parent_wargear.is_melee()
+            )
+            attack_type = "melee" if is_melee_attack else "ranged"
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            has_cover, source = cover_fn(target_model, attack_type=attack_type, game=game)
+            if has_cover:
+                attack_instance.setdefault("benefit_of_cover", True)
+                source_name = str(source or "Phantasmal Smoke").strip() or "Phantasmal Smoke"
+                existing_source = str(attack_instance.get("benefit_of_cover_source", "") or "").strip()
+                if not existing_source:
+                    attack_instance["benefit_of_cover_source"] = source_name
+                elif source_name.lower() not in {
+                    part.strip().lower() for part in existing_source.split(",") if part.strip()
+                }:
+                    attack_instance["benefit_of_cover_source"] = f"{existing_source}, {source_name}"
         # Adeptus Mechanicus: Skitarii Hunter Cohort (Stealth Optimisation) grants cover to SICARIAN
         # targets against ranged attacks from attackers beyond 12".
         t_unit = getattr(target_model, "parent_unit", None)

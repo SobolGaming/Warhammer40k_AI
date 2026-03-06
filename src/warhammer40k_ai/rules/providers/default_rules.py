@@ -475,6 +475,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("shooting_targets_selected", "_on_shooting_targets_selected_power_from_pain"),
                 ("fight_unit_selected", "_on_fight_unit_selected_power_from_pain"),
                 ("fight_unit_selected", "_on_fight_unit_selected_eye_of_spite"),
+                ("fight_targets_selected", "_on_fight_targets_selected_drukhari_detachments"),
                 ("unit_move_started", "_on_unit_move_started_power_from_pain"),
                 ("charge_declared", "_on_charge_declared_power_from_pain"),
                 ("phase_start", "_on_phase_start_power_from_pain"),

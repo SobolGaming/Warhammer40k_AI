@@ -4,7 +4,12 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .detachment_manager import DetachmentManagerBase
-from ..utility.aura_utils import distance_between_models_bases_3d, model_within_range_of_unit
+from ..utility.aura_utils import (
+    distance_between_models_bases_3d,
+    model_within_range_of_unit,
+    unit_wholly_within_range_of_unit,
+    unit_within_range_of_unit,
+)
 from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
 
@@ -88,6 +93,14 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
     _WEBWAY_WALKER_CHARGE_REROLL_ACTIVE_KEY = "enhancement_webway_walker_charge_reroll_active"
     _WEBWAY_WALKER_CHARGE_REROLL_TURN_KEY = "enhancement_webway_walker_charge_reroll_turn"
     _WEBWAY_WALKER_CHARGE_REROLL_OWNER_KEY = "enhancement_webway_walker_charge_reroll_turn_owner"
+    _SKYSPLINTER_SADISTIC_FULCRUM_ACTIVE_KEY = "enhancement_sadistic_fulcrum_hit_reroll_active"
+    _SKYSPLINTER_SADISTIC_FULCRUM_SOURCE_KEY = "enhancement_sadistic_fulcrum_hit_reroll_source"
+    _SKYSPLINTER_SADISTIC_FULCRUM_TURN_KEY = "enhancement_sadistic_fulcrum_hit_reroll_turn"
+    _SKYSPLINTER_SADISTIC_FULCRUM_OWNER_KEY = "enhancement_sadistic_fulcrum_hit_reroll_owner"
+    _SKYSPLINTER_SADISTIC_FULCRUM_PHASE_KEY = "enhancement_sadistic_fulcrum_hit_reroll_expires_phase"
+    _SKYSPLINTER_SPITEFUL_TARGET_IDS_KEY = "enhancement_spiteful_raider_objective_target_ids"
+    _SKYSPLINTER_SPITEFUL_TURN_KEY = "enhancement_spiteful_raider_tracking_turn"
+    _SKYSPLINTER_SPITEFUL_OWNER_KEY = "enhancement_spiteful_raider_tracking_owner"
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -289,34 +302,40 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         return True
 
     def on_enemy_unit_destroyed(self, unit, *, destroyed_by_unit=None, destroyed_by_model=None, game=None) -> bool:
-        del unit
-        del game
-        if not self.is_reapers_wager():
-            return False
-        if not self.callous_competition_initialized:
-            return False
-        if self.army is None:
-            return False
+        applied = False
+        if self.is_reapers_wager():
+            if not self.callous_competition_initialized:
+                return False
+            if self.army is None:
+                return False
 
-        attacker_unit = self._unit_root(destroyed_by_unit)
-        attacker_model = destroyed_by_model
-        if attacker_model is not None and not self._model_in_army(attacker_model):
-            attacker_model = None
-        if attacker_unit is not None and not self._unit_in_army(attacker_unit):
-            attacker_unit = None
-        if attacker_unit is None and attacker_model is None:
-            return False
+            attacker_unit = self._unit_root(destroyed_by_unit)
+            attacker_model = destroyed_by_model
+            if attacker_model is not None and not self._model_in_army(attacker_model):
+                attacker_model = None
+            if attacker_unit is not None and not self._unit_in_army(attacker_unit):
+                attacker_unit = None
+            if attacker_unit is None and attacker_model is None:
+                return False
 
-        side = self._unit_side_for_callous_competition(attacker_unit)
-        if not side:
-            side = self._model_side_for_callous_competition(attacker_model, unit=attacker_unit)
-        if side not in {
-            self.CALLOUS_COMPETITION_SIDE_DRUKHARI,
-            self.CALLOUS_COMPETITION_SIDE_HARLEQUINS,
-        }:
-            return False
-        self.callous_competition_winning_side = side
-        return True
+            side = self._unit_side_for_callous_competition(attacker_unit)
+            if not side:
+                side = self._model_side_for_callous_competition(attacker_model, unit=attacker_unit)
+            if side in {
+                self.CALLOUS_COMPETITION_SIDE_DRUKHARI,
+                self.CALLOUS_COMPETITION_SIDE_HARLEQUINS,
+            }:
+                self.callous_competition_winning_side = side
+                applied = True
+        if self.is_skysplinter_assault():
+            applied = bool(
+                self._apply_spiteful_raider_on_enemy_unit_destroyed(
+                    unit,
+                    destroyed_by_unit=destroyed_by_unit,
+                    game=game,
+                )
+            ) or applied
+        return bool(applied)
 
     def callous_competition_hit_reroll_ones(self, model, *, unit=None) -> tuple[bool, str]:
         if not self.is_reapers_wager():
@@ -449,6 +468,408 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
             if current_owner_id and current_owner_id != owner_id:
                 return False
         return True
+
+    def _friendly_battlefield_roots(self) -> list:
+        if self.army is None:
+            return []
+        seen: set[str] = set()
+        out: list = []
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            root_id = self._unit_root_id(root) or f"obj:{id(root)}"
+            if root_id in seen:
+                continue
+            seen.add(root_id)
+            if not self._unit_on_battlefield(root):
+                continue
+            out.append(root)
+        out.sort(key=lambda entry: (self._unit_root_id(entry), self._norm(getattr(entry, "name", ""))))
+        return out
+
+    def _unit_is_transport_unit(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if self._unit_has_keyword(root, "TRANSPORT"):
+            return True
+        return bool(getattr(root, "is_transport", False))
+
+    def _skysplinter_phantasmal_smoke_source_for_unit(self, unit):
+        if not self.is_skysplinter_assault():
+            return None, None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None, None
+        members = self._unit_attached_members(root)
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_phantasmal_smoke", False)):
+                continue
+            bearer_model = self._resolve_member_bearer_model(
+                member,
+                bearer_keys=("enhancement_phantasmal_smoke_bearer_model_id",),
+            )
+            if bearer_model is None:
+                continue
+            return root, member, sr, bearer_model
+        return None, None, None, None
+
+    def skysplinter_phantasmal_smoke_active_spec(self, unit, *, game=None) -> tuple[bool, str]:
+        del game
+        if not self.is_skysplinter_assault() or self.army is None:
+            return False, ""
+        source_root, _source_member, source_sr, _bearer_model = self._skysplinter_phantasmal_smoke_source_for_unit(unit)
+        if source_root is None or not isinstance(source_sr, dict):
+            return False, ""
+        if not self._unit_on_battlefield(source_root):
+            return False, ""
+
+        source_name = str(source_sr.get("enhancement_phantasmal_smoke_source", "") or "Phantasmal Smoke").strip()
+        if not source_name:
+            source_name = "Phantasmal Smoke"
+        try:
+            range_value = float(source_sr.get("enhancement_phantasmal_smoke_range", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            range_value = 6.0
+        range_value = max(0.0, float(range_value))
+        if range_value <= 0.0:
+            return False, ""
+        requires_transport = bool(source_sr.get("enhancement_phantasmal_smoke_requires_friendly_transport", True))
+        if not requires_transport:
+            return True, source_name
+        requires_wholly_within = bool(source_sr.get("enhancement_phantasmal_smoke_requires_wholly_within", True))
+
+        for friendly in self._friendly_battlefield_roots():
+            if friendly is None or friendly is source_root:
+                continue
+            if not self._unit_is_transport_unit(friendly):
+                continue
+            if not self._unit_has_keyword(friendly, "DRUKHARI"):
+                continue
+            if requires_wholly_within:
+                in_range = bool(
+                    unit_wholly_within_range_of_unit(
+                        friendly,
+                        source_root,
+                        float(range_value),
+                        use_attached_aggregate=True,
+                    )
+                )
+            else:
+                in_range = bool(
+                    unit_within_range_of_unit(
+                        friendly,
+                        source_root,
+                        float(range_value),
+                        use_attached_aggregate=True,
+                    )
+                )
+            if in_range:
+                return True, source_name
+        return False, ""
+
+    def skysplinter_phantasmal_smoke_stealth_applies(self, unit, *, game=None) -> bool:
+        active, _source = self.skysplinter_phantasmal_smoke_active_spec(unit, game=game)
+        return bool(active)
+
+    def skysplinter_phantasmal_smoke_benefit_of_cover(
+        self,
+        target_model,
+        *,
+        attack_type: str = "",
+        game=None,
+    ) -> tuple[bool, str]:
+        if str(attack_type or "").strip().lower() not in ("", "ranged"):
+            return False, ""
+        if target_model is None:
+            return False, ""
+        unit = getattr(target_model, "parent_unit", None)
+        return self.skysplinter_phantasmal_smoke_active_spec(unit, game=game)
+
+    def _skysplinter_sadistic_fulcrum_source_for_unit(self, unit):
+        if not self.is_skysplinter_assault():
+            return None, None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None, None
+        members = self._unit_attached_members(root)
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_sadistic_fulcrum", False)):
+                continue
+            bearer_model = self._resolve_member_bearer_model(
+                member,
+                bearer_keys=("enhancement_sadistic_fulcrum_bearer_model_id",),
+            )
+            if bearer_model is None:
+                continue
+            return root, member, sr, bearer_model
+        return None, None, None, None
+
+    def skysplinter_sadistic_fulcrum_transport_candidates(self, unit, *, game=None) -> list:
+        del game
+        if not self.is_skysplinter_assault() or self.army is None:
+            return []
+        source_root, _source_member, source_sr, _bearer_model = self._skysplinter_sadistic_fulcrum_source_for_unit(unit)
+        if source_root is None or not isinstance(source_sr, dict):
+            return []
+        if not self._unit_on_battlefield(source_root):
+            return []
+
+        try:
+            range_value = float(source_sr.get("enhancement_sadistic_fulcrum_transport_range", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            range_value = 6.0
+        range_value = max(0.0, float(range_value))
+        if range_value <= 0.0:
+            return []
+        candidates: list = []
+        for friendly in self._friendly_battlefield_roots():
+            if friendly is None or friendly is source_root:
+                continue
+            if not self._unit_is_transport_unit(friendly):
+                continue
+            if not self._unit_has_keyword(friendly, "DRUKHARI"):
+                continue
+            if not bool(
+                unit_within_range_of_unit(
+                    source_root,
+                    friendly,
+                    float(range_value),
+                    use_attached_aggregate=True,
+                )
+            ):
+                continue
+            candidates.append(friendly)
+        candidates.sort(key=lambda entry: (self._unit_root_id(entry), self._norm(getattr(entry, "name", ""))))
+        return candidates
+
+    def activate_skysplinter_sadistic_fulcrum(self, source_unit, transport_unit, *, game=None) -> bool:
+        if not self.is_skysplinter_assault() or self.army is None:
+            return False
+        source_root, _source_member, source_sr, _bearer_model = self._skysplinter_sadistic_fulcrum_source_for_unit(source_unit)
+        if source_root is None or not isinstance(source_sr, dict):
+            return False
+        selected = self._unit_root(transport_unit)
+        if selected is None or not self._unit_in_army(selected):
+            return False
+        candidates = self.skysplinter_sadistic_fulcrum_transport_candidates(source_root, game=game)
+        candidate_ids = {self._unit_root_id(candidate) for candidate in candidates}
+        selected_id = self._unit_root_id(selected)
+        if not selected_id or selected_id not in candidate_ids:
+            return False
+
+        owner_id, turn = self._resolve_owner_and_turn(game=game, current_turn=int(getattr(game, "turn", 0) or 0))
+        sr = getattr(selected, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        source_name = str(source_sr.get("enhancement_sadistic_fulcrum_source", "") or "Sadistic Fulcrum").strip()
+        if not source_name:
+            source_name = "Sadistic Fulcrum"
+        sr[self._SKYSPLINTER_SADISTIC_FULCRUM_ACTIVE_KEY] = True
+        sr[self._SKYSPLINTER_SADISTIC_FULCRUM_SOURCE_KEY] = source_name
+        sr[self._SKYSPLINTER_SADISTIC_FULCRUM_PHASE_KEY] = "SHOOTING_PHASE"
+        sr["enhancement_sadistic_fulcrum_source_unit_id"] = self._unit_root_id(source_root)
+        if owner_id:
+            sr[self._SKYSPLINTER_SADISTIC_FULCRUM_OWNER_KEY] = owner_id
+        if turn:
+            sr[self._SKYSPLINTER_SADISTIC_FULCRUM_TURN_KEY] = int(turn)
+        selected.special_rules = sr
+        return True
+
+    def skysplinter_sadistic_fulcrum_hit_reroll_applies(self, model, *, unit=None, game=None) -> tuple[bool, str]:
+        if not self.is_skysplinter_assault():
+            return False, ""
+        source_unit = unit
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        root = self._unit_root(source_unit)
+        if root is None or not self._unit_in_army(root):
+            return False, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._SKYSPLINTER_SADISTIC_FULCRUM_ACTIVE_KEY, False)):
+            return False, ""
+        if game is None:
+            owner = getattr(self.army, "player", None)
+            game = getattr(owner, "game", None) if owner is not None else None
+        if game is not None:
+            expected_phase = str(sr.get(self._SKYSPLINTER_SADISTIC_FULCRUM_PHASE_KEY, "") or "").strip().upper()
+            if expected_phase:
+                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if current_phase and current_phase != expected_phase:
+                    return False, ""
+            owner_id = str(sr.get(self._SKYSPLINTER_SADISTIC_FULCRUM_OWNER_KEY, "") or "")
+            if owner_id:
+                current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+                if current_owner and current_owner != owner_id:
+                    return False, ""
+            try:
+                marked_turn = int(sr.get(self._SKYSPLINTER_SADISTIC_FULCRUM_TURN_KEY, 0) or 0)
+            except (TypeError, ValueError):
+                marked_turn = 0
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if marked_turn and current_turn and marked_turn != current_turn:
+                return False, ""
+        source_name = str(sr.get(self._SKYSPLINTER_SADISTIC_FULCRUM_SOURCE_KEY, "") or "Sadistic Fulcrum").strip()
+        if not source_name:
+            source_name = "Sadistic Fulcrum"
+        return True, source_name
+
+    def _unit_within_any_objective(self, unit, game_map) -> bool:
+        if unit is None or game_map is None:
+            return False
+        within_fn = getattr(unit, "is_within_objective_range", None)
+        if not callable(within_fn):
+            return False
+        objectives = list(getattr(game_map, "objectives", []) or [])
+        for objective in objectives:
+            loc = getattr(objective, "location", None)
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            if bool(within_fn(loc)):
+                return True
+        return False
+
+    def _skysplinter_spiteful_raider_source_for_unit(self, unit):
+        if not self.is_skysplinter_assault():
+            return None, None, None, None
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return None, None, None, None
+        members = self._unit_attached_members(root)
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_spiteful_raider", False)):
+                continue
+            bearer_model = self._resolve_member_bearer_model(
+                member,
+                bearer_keys=("enhancement_spiteful_raider_bearer_model_id",),
+            )
+            if bearer_model is None:
+                continue
+            return root, member, sr, bearer_model
+        return None, None, None, None
+
+    def on_fight_targets_selected(self, attacking_unit=None, target_units=None, *, game=None) -> None:
+        if not self.is_skysplinter_assault() or self.army is None:
+            return
+        attacker_root, _source_member, source_sr, _bearer_model = self._skysplinter_spiteful_raider_source_for_unit(attacking_unit)
+        if attacker_root is None or not isinstance(source_sr, dict):
+            return
+        if not self._unit_on_battlefield(attacker_root):
+            return
+        if game is None:
+            owner = getattr(self.army, "player", None)
+            game = getattr(owner, "game", None) if owner is not None else None
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        if phase_name and phase_name != "FIGHT_PHASE":
+            return
+        game_map = getattr(game, "map", None) if game is not None else None
+        owner_id, turn = self._resolve_owner_and_turn(game=game, current_turn=int(getattr(game, "turn", 0) or 0))
+        tracked_ids: set[str] = set()
+        sr_root = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr_root, dict):
+            sr_root = {}
+        existing_owner = str(sr_root.get(self._SKYSPLINTER_SPITEFUL_OWNER_KEY, "") or "")
+        try:
+            existing_turn = int(sr_root.get(self._SKYSPLINTER_SPITEFUL_TURN_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            existing_turn = 0
+        if existing_owner == owner_id and existing_turn == int(turn or 0):
+            tracked_ids = {
+                str(value or "").strip()
+                for value in list(sr_root.get(self._SKYSPLINTER_SPITEFUL_TARGET_IDS_KEY, []) or [])
+                if str(value or "").strip()
+            }
+        for target in list(target_units or []):
+            target_root = self._unit_root(target)
+            if target_root is None or not self._unit_is_alive(target_root):
+                continue
+            if not self._unit_within_any_objective(target_root, game_map):
+                continue
+            target_id = self._unit_root_id(target_root)
+            if target_id:
+                tracked_ids.add(target_id)
+        sr_root[self._SKYSPLINTER_SPITEFUL_TARGET_IDS_KEY] = sorted(tracked_ids)
+        if owner_id:
+            sr_root[self._SKYSPLINTER_SPITEFUL_OWNER_KEY] = owner_id
+        if turn:
+            sr_root[self._SKYSPLINTER_SPITEFUL_TURN_KEY] = int(turn)
+        attacker_root.special_rules = sr_root
+
+    def _spiteful_raider_tracked_target_ids(self, source_root, *, game=None) -> set[str]:
+        if source_root is None:
+            return set()
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return set()
+        tracked = {
+            str(value or "").strip()
+            for value in list(sr.get(self._SKYSPLINTER_SPITEFUL_TARGET_IDS_KEY, []) or [])
+            if str(value or "").strip()
+        }
+        if not tracked:
+            return set()
+        if game is None:
+            return tracked
+        owner_id = str(sr.get(self._SKYSPLINTER_SPITEFUL_OWNER_KEY, "") or "")
+        if owner_id:
+            current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+            if current_owner and current_owner != owner_id:
+                return set()
+        try:
+            tracked_turn = int(sr.get(self._SKYSPLINTER_SPITEFUL_TURN_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            tracked_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if tracked_turn and current_turn and tracked_turn != current_turn:
+            return set()
+        return tracked
+
+    def _apply_spiteful_raider_on_enemy_unit_destroyed(
+        self,
+        unit,
+        *,
+        destroyed_by_unit=None,
+        game=None,
+    ) -> bool:
+        if not self.is_skysplinter_assault() or self.army is None:
+            return False
+        if unit is None:
+            return False
+        if game is not None:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_name and phase_name != "FIGHT_PHASE":
+                return False
+        attacker_root, _source_member, source_sr, _bearer_model = self._skysplinter_spiteful_raider_source_for_unit(destroyed_by_unit)
+        if attacker_root is None or not isinstance(source_sr, dict):
+            return False
+        target_id = self._unit_root_id(unit)
+        if not target_id:
+            return False
+        tracked_ids = self._spiteful_raider_tracked_target_ids(attacker_root, game=game)
+        if target_id not in tracked_ids:
+            return False
+        pfp = getattr(self.army, "power_from_pain", None)
+        gain_tokens = getattr(pfp, "gain_tokens", None) if pfp is not None else None
+        if not callable(gain_tokens):
+            return False
+        try:
+            token_amount = int(source_sr.get("enhancement_spiteful_raider_pain_tokens_gained", 1) or 1)
+        except (TypeError, ValueError):
+            token_amount = 1
+        token_amount = max(1, int(token_amount))
+        source_name = str(source_sr.get("enhancement_spiteful_raider_source", "") or "Spiteful Raider").strip() or "Spiteful Raider"
+        gained = int(gain_tokens(token_amount, reason=source_name) or 0)
+        return bool(gained > 0)
 
     def _unit_on_battlefield(self, unit) -> bool:
         root = self._unit_root(unit)

@@ -382,6 +382,34 @@ class PowerFromPainManager:
                 return True
         return False
 
+    def _sadistic_fulcrum_transport_candidates_for_unit(self, unit, *, game=None) -> list:
+        del game
+        if unit is None:
+            return []
+        army = self.army
+        mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+        candidate_fn = (
+            getattr(mgr, "skysplinter_sadistic_fulcrum_transport_candidates", None)
+            if mgr is not None
+            else None
+        )
+        if not callable(candidate_fn):
+            return []
+        raw_candidates = candidate_fn(unit)
+        if raw_candidates is None:
+            return []
+        candidates = list(raw_candidates)
+        return [entry for entry in candidates if entry is not None]
+
+    def _unit_has_sadistic_fulcrum(self, unit) -> bool:
+        if unit is None:
+            return False
+        for member in self._iter_unit_members(unit):
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("enhancement_sadistic_fulcrum", False)):
+                return True
+        return False
+
     def _model_has_wargear_named(self, model, wargear_name: str) -> bool:
         want = str(wargear_name or "").strip().lower()
         want = re.sub(r"[^a-z0-9]+", " ", want)
@@ -603,6 +631,31 @@ class PowerFromPainManager:
                     payload={"choice_key": "BASE", "choice_kind": choice_kind, "unit_id": unit_id},
                 ),
             ]
+        elif choice_kind == "sadistic_fulcrum_transport":
+            title = "Sadistic Fulcrum"
+            source_unit = self._resolve_unit_by_id(unit_id, game=game)
+            candidates = self._sadistic_fulcrum_transport_candidates_for_unit(source_unit, game=game)
+            if not candidates:
+                return
+            options = [
+                DecisionOption.create(
+                    "None",
+                    payload={"choice_key": "NONE", "choice_kind": choice_kind, "unit_id": unit_id},
+                )
+            ]
+            for candidate in candidates:
+                candidate_id = str(get_entity_id(candidate) or "")
+                if not candidate_id:
+                    continue
+                label = str(getattr(candidate, "name", "") or "Transport").strip() or "Transport"
+                options.append(
+                    DecisionOption.create(
+                        label,
+                        payload={"choice_key": candidate_id, "choice_kind": choice_kind, "unit_id": unit_id},
+                    )
+                )
+            if len(options) <= 1:
+                return
         else:
             return
 
@@ -1380,6 +1433,35 @@ class PowerFromPainManager:
             pass
         return self._return_destroyed_bodyguard_models(unit, amount=amount, game_map=getattr(game, "map", None))
 
+    def _apply_sadistic_fulcrum(
+        self,
+        unit,
+        *,
+        sadistic_fulcrum_choice: Optional[str] = None,
+        game=None,
+        phase_name: str = "",
+    ) -> bool:
+        if str(phase_name or "").strip().upper() != "SHOOTING_PHASE":
+            return False
+        if unit is None or not self._unit_has_sadistic_fulcrum(unit):
+            return False
+        choice_key = str(sadistic_fulcrum_choice or "").strip()
+        if not choice_key or choice_key.upper() == "NONE":
+            return False
+        army = self.army
+        mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+        activate_fn = (
+            getattr(mgr, "activate_skysplinter_sadistic_fulcrum", None)
+            if mgr is not None
+            else None
+        )
+        if not callable(activate_fn):
+            return False
+        transport_unit = self._resolve_unit_by_id(choice_key, game=game)
+        if transport_unit is None:
+            return False
+        return bool(activate_fn(unit, transport_unit, game=game))
+
     def _apply_empowerment_effects(
         self,
         root,
@@ -1479,6 +1561,12 @@ class PowerFromPainManager:
                     self._apply_fade_away(root, game=game)
                 except Exception:
                     pass
+        self._apply_sadistic_fulcrum(
+            root,
+            sadistic_fulcrum_choice=choice_cache.get("sadistic_fulcrum_transport"),
+            game=game,
+            phase_name=phase_name,
+        )
         return True
 
     def empower_unit_for_trigger(self, unit, *, trigger: str, game) -> bool:
@@ -1516,6 +1604,12 @@ class PowerFromPainManager:
                 required_choices.append("experimental_enhancements")
             elif spec.key == "FLESHCRAFT" and self._unit_has_master_regenesist(root):
                 required_choices.append("master_regenesist")
+        if (
+            str(phase_name or "").strip().upper() == "SHOOTING_PHASE"
+            and self._unit_has_sadistic_fulcrum(root)
+            and self._sadistic_fulcrum_transport_candidates_for_unit(root, game=game)
+        ):
+            required_choices.append("sadistic_fulcrum_transport")
 
         unit_id = get_entity_id(root)
         pending_key = self._pending_empowerment_key(unit_id, str(trigger or ""), phase_name)

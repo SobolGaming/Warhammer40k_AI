@@ -380,7 +380,7 @@ Shooting:
 - spirit_thief_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="spirit_thief"`, `source_unit_id`, `model_id`, `ability_name`, `keyword`, `range`)
 - corrupt_machine_spirits_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="corrupt_machine_spirits"`, `source_unit_id`, `model_id`, `ability_name`, `range`)
 Other (any phase):
-- power_from_pain_option_dialog: CHOOSE_POWER_FROM_PAIN_OPTION {choice_key} (context `unit_id`, `choice_kind`, `pending_key`)
+- power_from_pain_option_dialog: CHOOSE_POWER_FROM_PAIN_OPTION {choice_key} (context `unit_id`, `choice_kind`, `pending_key`; choice kinds include `archon_poisoned_tongue`, `experimental_enhancements`, `master_regenesist`, `sadistic_fulcrum_transport` where `choice_key` is selected `transport_unit_id` or `NONE`)
 - piratical_raiders_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="piratical_raiders"`, `source_unit_id`, `ability_name`)
 Notes:
 - DECLARE_SHOTS declarations include wargear_id, profile_name, model_ids, target_unit_id (optional for Plasma Warhead), linked_fire_origin_unit_id (optional for Linked Fire / Infernal Puppeteer), linked_fire_mode ("linked_fire" | "infernal_puppeteer" when origin is provided).

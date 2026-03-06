@@ -6646,6 +6646,34 @@ class Game(
             used_deep_strike=bool(used_deep_strike),
         )
 
+    def _on_fight_targets_selected_drukhari_detachments(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        get_root = getattr(attacking_unit, "get_attached_unit_root", None)
+        source_root = get_root() if callable(get_root) else attacking_unit
+        if source_root is None:
+            return
+        get_parent_army = getattr(source_root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        if army is None:
+            return
+        mgr = getattr(army, "drukhari_detachments", None)
+        if mgr is None:
+            return
+        on_selected = getattr(mgr, "on_fight_targets_selected", None)
+        if not callable(on_selected):
+            return
+        on_selected(
+            attacking_unit=source_root,
+            target_units=list(target_units or []),
+            game=self,
+        )
+
     def _on_unit_set_up_genestealer_cults_detachments(
         self,
         unit=None,

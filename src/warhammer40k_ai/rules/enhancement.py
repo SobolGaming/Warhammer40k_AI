@@ -6307,10 +6307,77 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_towering_arrogance_bearer_model_id"] = bearer_id
 
+        if name == "phantasmal smoke" or enh_id == "000010576002":
+            if not is_skysplinter_assault:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Phantasmal Smoke").strip() or "Phantasmal Smoke"
+            unit.special_rules["enhancement_phantasmal_smoke"] = True
+            unit.special_rules["enhancement_phantasmal_smoke_source"] = source
+            unit.special_rules["enhancement_phantasmal_smoke_requires_friendly_transport"] = bool(
+                params.get("requires_friendly_transport", True)
+            )
+            unit.special_rules["enhancement_phantasmal_smoke_requires_wholly_within"] = bool(
+                params.get("requires_wholly_within", True)
+            )
+            unit.special_rules["enhancement_phantasmal_smoke_range"] = float(
+                max(0.0, _coerce_float(params.get("range", 6.0) or 6.0, default=6.0))
+            )
+            unit.special_rules["enhancement_phantasmal_smoke_stealth"] = bool(params.get("grants_stealth", True))
+            unit.special_rules["enhancement_phantasmal_smoke_benefit_of_cover"] = bool(
+                params.get("grants_benefit_of_cover_vs_ranged", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_phantasmal_smoke_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("stealth", None)
+
+        if name == "sadistic fulcrum" or enh_id == "000010576003":
+            if not is_skysplinter_assault:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Sadistic Fulcrum").strip() or "Sadistic Fulcrum"
+            unit.special_rules["enhancement_sadistic_fulcrum"] = True
+            unit.special_rules["enhancement_sadistic_fulcrum_source"] = source
+            unit.special_rules["enhancement_sadistic_fulcrum_trigger_phase"] = str(
+                params.get("trigger_phase", "shooting") or "shooting"
+            ).strip().upper()
+            unit.special_rules["enhancement_sadistic_fulcrum_transport_range"] = float(
+                max(0.0, _coerce_float(params.get("range", 6.0) or 6.0, default=6.0))
+            )
+            unit.special_rules["enhancement_sadistic_fulcrum_requires_friendly_transport"] = bool(
+                params.get("requires_friendly_transport", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_sadistic_fulcrum_bearer_model_id"] = bearer_id
+
+        if name == "spiteful raider" or enh_id == "000010576004":
+            if not is_skysplinter_assault:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Spiteful Raider").strip() or "Spiteful Raider"
+            unit.special_rules["enhancement_spiteful_raider"] = True
+            unit.special_rules["enhancement_spiteful_raider_source"] = source
+            unit.special_rules["enhancement_spiteful_raider_pain_tokens_gained"] = int(
+                max(1, _coerce_int(params.get("pain_tokens_gained", 1) or 1, default=1))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_spiteful_raider_bearer_model_id"] = bearer_id
+
         if name == "nightmare shroud" or enh_id == "000010576005":
             if not is_skysplinter_assault:
                 return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source = str(getattr(desc, "name", "") or "Nightmare Shroud").strip() or "Nightmare Shroud"
             unit.special_rules["enhancement_nightmare_shroud"] = True
+            unit.special_rules["enhancement_nightmare_shroud_source"] = source
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
