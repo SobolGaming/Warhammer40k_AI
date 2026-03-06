@@ -4270,6 +4270,7 @@ class GameReactiveDecisionsMixin:
             "shieldbreaker",
             "soulless_horror",
             "lord_of_the_storm",
+            "cat_unit",
             "ammo_runt",
             "plasmacyte",
             "flickerjump",
@@ -6706,6 +6707,74 @@ class GameReactiveDecisionsMixin:
                 mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
                 if callable(mark_used):
                     mark_used("ammo_runt", ability_name=ability_name)
+            return
+
+        if ability_key == "cat_unit":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            resolved_key = str(payload.get("ability_key") or ctx.get("ability_key") or "cat_unit").strip().lower() or "cat_unit"
+            if getattr(root, "has_used_unit_once_per_battle", lambda _k: False)(resolved_key):
+                return
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "CAT Unit").strip() or "CAT Unit"
+
+            def _iter_models() -> list:
+                try:
+                    return list(root.get_attached_unit_models() or [])
+                except Exception:
+                    return list(getattr(root, "models", []) or [])
+
+            for model in sorted(_iter_models(), key=lambda m: str(get_entity_id(m) or "")):
+                if model is None or not getattr(model, "is_alive", False):
+                    continue
+                set_fn = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_fn):
+                    continue
+                names: list[str] = []
+                seen: set[str] = set()
+                for wg in list(getattr(model, "wargear", []) or []):
+                    if wg is None:
+                        continue
+                    try:
+                        if not bool(getattr(wg, "is_ranged", lambda: False)()):
+                            continue
+                    except Exception:
+                        continue
+                    weapon_name = str(getattr(wg, "name", "") or "").strip()
+                    if not weapon_name:
+                        continue
+                    key_norm = Unit._norm_wargear_name(weapon_name)
+                    if not key_norm or key_norm in seen:
+                        continue
+                    seen.add(key_norm)
+                    names.append(weapon_name)
+                for idx, weapon_name in enumerate(names):
+                    set_fn(
+                        key=f"{resolved_key}:{get_entity_id(model)}:{idx}",
+                        weapon_name=weapon_name,
+                        keywords=["IGNORES COVER"],
+                        source=ability_name,
+                        expires_phase="SHOOTING_PHASE",
+                        attack_type="ranged",
+                    )
+
+            mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
+            if callable(mark_used):
+                mark_used(resolved_key, ability_name=ability_name)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["cat_unit_source"] = ability_name
+            root.special_rules = sr
             return
 
         if ability_key == "plasmacyte":

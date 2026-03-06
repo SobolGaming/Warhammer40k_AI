@@ -130,6 +130,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("shooting_targets_selected", "_on_shooting_targets_selected_cold_fervour"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_hand_of_asuryan"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_shieldbreaker"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_cat_unit"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_ammo_runt"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_sacrificial_dagger"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_sacrificial_blessing"),

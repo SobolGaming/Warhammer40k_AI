@@ -5478,6 +5478,7 @@ def _classify_ability_base(
     movement_phase_visible_hit_bonus_support = _movement_phase_end_visible_hit_bonus_support(description)
     grenade_pack_flyover_support = _grenade_pack_flyover_support(description)
     primed_and_ready_grenade_support = _primed_and_ready_grenade_support(description)
+    gheistskull_grenade_support = _gheistskull_grenade_support(description)
     battle_focus_token_refund_support = _battle_focus_agile_maneuver_token_refund_support(description)
     leading_leadership_reroll_support = _leading_leadership_reroll_support(description)
     dark_pacts_leadership_reroll_support = _dark_pacts_leadership_reroll_support(description)
@@ -5502,6 +5503,7 @@ def _classify_ability_base(
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
     order_range_extension_support = _order_range_extension_support(description)
     act_of_faith_cherub_support = _act_of_faith_cherub_support(description)
+    cat_unit_support = _cat_unit_support(description)
     ammo_runt_support = _ammo_runt_support(description)
     bomb_squigs_support = _bomb_squigs_support(description)
     orders_support = _orders_section_support(name, description)
@@ -5656,6 +5658,8 @@ def _classify_ability_base(
         return common_support
     if leading_support:
         return leading_support
+    if cat_unit_support:
+        return cat_unit_support
     if ammo_runt_support:
         return ammo_runt_support
     if bomb_squigs_support:
@@ -5824,6 +5828,8 @@ def _classify_ability_base(
         return grenade_pack_flyover_support
     if primed_and_ready_grenade_support:
         return primed_and_ready_grenade_support
+    if gheistskull_grenade_support:
+        return gheistskull_grenade_support
     if movement_phase_visible_wound_bonus_support:
         return movement_phase_visible_wound_bonus_support
     if movement_phase_visible_hit_bonus_support:
@@ -8402,6 +8408,42 @@ def _primed_and_ready_grenade_support(description: str) -> Optional[Tuple[str, s
     )
 
 
+def _gheistskull_grenade_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "once per battle" not in norm:
+        return None
+    if "grenade stratagem" not in norm:
+        return None
+    if "instead of one within" not in norm:
+        return None
+    if "not within engagement range of any units from your army" not in norm:
+        return None
+    m = re.search(
+        r"within (?P<range>\d+) of this unit .* instead of one within (?P<base>\d+)",
+        norm,
+    )
+    if not m:
+        return None
+    try:
+        range_value = int(m.group("range") or 0)
+    except Exception:
+        range_value = 0
+    try:
+        base_value = int(m.group("base") or 0)
+    except Exception:
+        base_value = 0
+    if range_value <= 0 or base_value <= 0 or range_value <= base_value:
+        return None
+    return (
+        "Supported",
+        f"Once per battle when targeted by Grenade: eligible visible enemy target range extends from {base_value}\" to {range_value}\" (enemy must still not be within Engagement Range of any friendly unit).",
+    )
+
+
 def _targeted_stratagem_cp_increase_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -8779,7 +8821,7 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         re.IGNORECASE,
     )
     objective_clause_re = re.compile(
-        r"^if (?:that attack targets|the target of that attack is) (?:a unit )?(?:that is )?"
+        r"^if (?:that attack targets|the target of that attack is|the target is) (?:a unit )?(?:that is )?"
         r"within range of (?:an|one or more) objective marker(?:s)?"
         r"(?: you do not control| your opponent controls)?"
         r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
@@ -8903,7 +8945,7 @@ def _unit_wound_reroll_ones_support(description: str) -> Optional[Tuple[str, str
         re.IGNORECASE,
     )
     objective_clause_re = re.compile(
-        r"^if (?:that attack targets|the target of that attack is|that enemy unit is) "
+        r"^if (?:that attack targets|the target of that attack is|the target is|that enemy unit is) "
         r"(?:(?:a|an) (?:enemy )?unit )?(?:that is )?"
         r"within range of (?:an|one or more) objective marker(?:s)?"
         r"(?: you do not control| your opponent controls)?"
@@ -12047,6 +12089,26 @@ def _ammo_runt_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         "Ammo Runt: once per battle when selected to shoot, unit ranged weapons gain Lethal Hits until end of phase.",
+    )
+
+
+def _cat_unit_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "once per battle" not in norm:
+        return None
+    if "selected to shoot" not in norm:
+        return None
+    if "ranged weapons equipped by models in this unit" not in norm:
+        return None
+    if "ignores cover ability" not in norm:
+        return None
+    return (
+        "Supported",
+        "Once per battle when selected to shoot: optional activation grants [IGNORES COVER] to the unit's ranged weapons until end of phase.",
     )
 
 

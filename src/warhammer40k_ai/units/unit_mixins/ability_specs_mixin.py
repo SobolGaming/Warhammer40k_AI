@@ -776,6 +776,78 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_cat_unit_specs(self) -> List[dict]:
+        """
+        Unit-level rule: once per battle, when selected to shoot, can gain [IGNORES COVER]
+        for ranged weapons until end of phase.
+
+        Returns specs with keys:
+            - source: ability name
+            - ability_key: deterministic once-per-battle usage key
+            - keywords: list[str]
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_cat_unit_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not normalized:
+                    continue
+
+                name_key = str(name or "").strip().lower()
+                is_named_cat_unit = name_key == "cat unit"
+                if not (
+                    "once per battle" in normalized
+                    and "selected to shoot" in normalized
+                    and "ranged weapons equipped by models in this unit" in normalized
+                    and "ignores cover" in normalized
+                ):
+                    continue
+                if not is_named_cat_unit and "cat unit" not in normalized:
+                    continue
+
+                source = str(name or "CAT Unit").strip() or "CAT Unit"
+                ability_key = "cat_unit"
+                dedupe_key = f"{source.lower()}:{ability_key}"
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                specs.append(
+                    {
+                        "source": source,
+                        "ability_key": ability_key,
+                        "keywords": ["IGNORES COVER"],
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_plasmacyte_specs(self) -> List[dict]:
         """
         Unit-level rule: when selected to fight, can gain [DEVASTATING WOUNDS] for melee weapons.

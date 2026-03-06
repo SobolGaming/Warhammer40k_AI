@@ -5153,6 +5153,172 @@ class KeywordsDetachmentsMixin:
             return False
         return True
 
+    def get_gheistskull_grenade_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "gheistskull_grenade_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not normalized:
+                    continue
+                if (
+                    "once per battle" not in normalized
+                    or "grenade stratagem" not in normalized
+                    or "instead of one within" not in normalized
+                ):
+                    continue
+
+                match = re.search(
+                    r"within (?P<range>\d+) of this unit .* instead of one within (?P<base>\d+)",
+                    normalized,
+                )
+                if not match:
+                    continue
+                try:
+                    range_value = int(match.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                try:
+                    base_range = int(match.group("base") or 0)
+                except Exception:
+                    base_range = 0
+                if range_value <= 0 or base_range <= 0 or range_value <= base_range:
+                    continue
+
+                source = str(name or "Gheistskull").strip() or "Gheistskull"
+                ability_key = "gheistskull_grenade_range_override"
+                rule = {
+                    "source": source,
+                    "ability_key": ability_key,
+                    "stratagems": ("GRENADE",),
+                    "range": int(range_value),
+                    "base_range": int(base_range),
+                    "requires_visible": True,
+                    "requires_enemy_not_within_friendly_engagement": True,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def can_use_gheistskull_grenade_range_override(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive():
+                return False
+        except Exception:
+            return False
+        try:
+            if not bool(getattr(root, "deployed", True)):
+                return False
+        except Exception:
+            pass
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_gheistskull_grenade_rule()
+        if not rule:
+            return False
+        if game is None:
+            try:
+                game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is not None:
+            phase_obj = getattr(game, "phase", None)
+            phase_name = str(getattr(phase_obj, "name", "") or phase_obj or "").strip().upper()
+            if phase_name and phase_name != "SHOOTING_PHASE":
+                return False
+            try:
+                owner = getattr(root.get_parent_army(), "player", None)
+            except Exception:
+                owner = None
+            get_current_player = getattr(game, "get_current_player", None)
+            if owner is not None and callable(get_current_player):
+                if get_current_player() is not owner:
+                    return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        usage_key = str(rule.get("ability_key", "") or "gheistskull_grenade_range_override").strip().lower()
+        if not usage_key:
+            usage_key = "gheistskull_grenade_range_override"
+        if root.has_used_unit_once_per_battle(usage_key):
+            return False
+        return True
+
+    def mark_gheistskull_grenade_used(self, game=None, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_gheistskull_grenade_rule()
+        usage_key = "gheistskull_grenade_range_override"
+        if isinstance(rule, dict):
+            usage_key = str(rule.get("ability_key", "") or usage_key).strip().lower() or usage_key
+        source_name = str(source or "").strip()
+        if not source_name and isinstance(rule, dict):
+            source_name = str(rule.get("source", "") or "Gheistskull").strip()
+        root.mark_unit_once_per_battle_used(usage_key, ability_name=source_name or "Gheistskull")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if source_name:
+            sr["gheistskull_grenade_used_source"] = source_name
+        if stratagem_name:
+            sr["gheistskull_grenade_used_stratagem"] = str(stratagem_name or "").strip()
+        if game is not None:
+            try:
+                sr["gheistskull_grenade_used_turn"] = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                sr["gheistskull_grenade_used_turn"] = 0
+        root.special_rules = sr
+
     def get_primed_and_ready_grenade_rule(self) -> Optional[dict]:
         try:
             root = self.get_attached_unit_root()

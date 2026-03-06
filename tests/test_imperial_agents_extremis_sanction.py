@@ -247,6 +247,140 @@ def test_hammerhand_grants_lethal_hits_to_unit_melee_weapons_after_charge_move()
     assert "LETHAL HITS" not in ranged_keywords
 
 
+def test_cat_unit_prompt_applies_ignores_cover_to_ranged_weapons():
+    game, ia_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.turn = 1
+
+    cat_unit = Ability(
+        "CAT Unit",
+        "AOI",
+        (
+            "Once per battle, when this unit is selected to shoot, until the end of the phase, "
+            "ranged weapons equipped by models in this unit gain the [IGNORES COVER] ability."
+        ),
+        "Datasheet",
+        "",
+    )
+    breachers = _make_unit(
+        "Imperial Navy Breachers",
+        keywords=["INFANTRY", "GRENADES"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[cat_unit],
+    )
+    attacker = breachers.models[0]
+    attacker.wargear = [
+        SimpleNamespace(_id="navis_shotgun_1", name="Navis shotgun", is_melee=lambda: False, is_ranged=lambda: True),
+    ]
+    target = _make_unit(
+        "Enemy Target",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["IMPERIUM"],
+    )
+
+    ia_player.army.add_unit(breachers)
+    enemy_player.army.add_unit(target)
+    _deploy_unit(game, breachers, 0.0, 0.0)
+    _deploy_unit(game, target, 6.0, 0.0)
+    game.rebuild_entity_registry()
+
+    game._on_shooting_targets_selected_cat_unit(attacking_unit=breachers, target_units=[target])
+    request = _pending_yes_no_for_ability(game, "cat_unit")
+    assert request is not None
+    result = _resolve_yes(game, request, ia_player)
+    assert bool(getattr(result, "ok", False))
+
+    bonuses = attacker.get_temporary_weapon_keyword_bonuses("Navis shotgun")
+    keywords = {str(entry.get("keyword", "")).upper() for entry in bonuses}
+    assert "IGNORES COVER" in keywords
+    assert breachers.has_used_unit_once_per_battle("cat_unit")
+
+    game._on_shooting_targets_selected_cat_unit(attacking_unit=breachers, target_units=[target])
+    assert _pending_yes_no_for_ability(game, "cat_unit") is None
+
+
+def test_gheistskull_extends_grenade_target_range_once_per_battle():
+    game, ia_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.turn = 1
+
+    gheistskull = Ability(
+        "Gheistskull",
+        "AOI",
+        (
+            "Once per battle, when you select this unit as the target of the Grenade Stratagem, "
+            "you can target one enemy unit visible to and within 18\" of this unit that is not within "
+            "Engagement Range of any units from your army, instead of one within 8\"."
+        ),
+        "Datasheet",
+        "",
+    )
+    breachers = _make_unit(
+        "Imperial Navy Breachers",
+        keywords=["INFANTRY", "GRENADES"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[gheistskull],
+    )
+    enemy_far = _make_unit(
+        "Enemy Far",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["IMPERIUM"],
+    )
+    enemy_near = _make_unit(
+        "Enemy Near",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["IMPERIUM"],
+    )
+
+    ia_player.army.add_unit(breachers)
+    enemy_player.army.add_unit(enemy_far)
+    enemy_player.army.add_unit(enemy_near)
+    _deploy_unit(game, breachers, 0.0, 0.0)
+    _deploy_unit(game, enemy_far, 15.0, 0.0)
+    _deploy_unit(game, enemy_near, 6.0, 0.0)
+    game.rebuild_entity_registry()
+
+    rule = breachers.get_gheistskull_grenade_rule()
+    assert isinstance(rule, dict)
+    assert int(rule.get("range", 0) or 0) == 18
+    assert int(rule.get("base_range", 0) or 0) == 8
+
+    ia_player.command_points = 3
+    assert ia_player.stratagems.use(
+        "Grenade",
+        target_unit=breachers,
+        unit=breachers,
+        enemy_unit=enemy_far,
+        phase_name="Shooting phase",
+    )
+    assert breachers.has_used_unit_once_per_battle("gheistskull_grenade_range_override")
+
+    ia_player.stratagems._used_stratagems_this_phase.clear()
+    ia_player.stratagems._grenade_units_this_phase.clear()
+    ia_player.command_points = 3
+
+    assert not ia_player.stratagems.use(
+        "Grenade",
+        target_unit=breachers,
+        unit=breachers,
+        enemy_unit=enemy_far,
+        phase_name="Shooting phase",
+    )
+
+    assert ia_player.stratagems.use(
+        "Grenade",
+        target_unit=breachers,
+        unit=breachers,
+        enemy_unit=enemy_near,
+        phase_name="Shooting phase",
+    )
+
+
 def test_shieldbreaker_prompt_applies_and_modifies_wound_resolution():
     game, ia_player, enemy_player = _build_game()
     game.phase = BattleRoundPhases.SHOOTING_PHASE

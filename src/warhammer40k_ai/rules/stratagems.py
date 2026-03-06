@@ -2571,6 +2571,42 @@ class StratagemManager(
             return bool(can_use_fn(unit, stratagem_name=stratagem_name))
         return False
 
+    def _unit_gheistskull_grenade_rule(self, unit) -> Optional[dict]:
+        if unit is None:
+            return None
+        get_rule = getattr(unit, "get_gheistskull_grenade_rule", None)
+        if not callable(get_rule):
+            return None
+        try:
+            rule = get_rule()
+        except Exception:
+            return None
+        if not isinstance(rule, dict):
+            return None
+        return dict(rule)
+
+    def _unit_can_use_gheistskull_grenade_range_override(self, unit, *, stratagem_name: str = "") -> bool:
+        if unit is None:
+            return False
+        can_use_fn = getattr(unit, "can_use_gheistskull_grenade_range_override", None)
+        if callable(can_use_fn):
+            try:
+                return bool(can_use_fn(self.game, stratagem_name=stratagem_name))
+            except Exception:
+                return False
+        return False
+
+    def _mark_gheistskull_grenade_used(self, unit, *, source: str = "", stratagem_name: str = "") -> None:
+        if unit is None:
+            return
+        mark_used = getattr(unit, "mark_gheistskull_grenade_used", None)
+        if not callable(mark_used):
+            return
+        try:
+            mark_used(self.game, source=source, stratagem_name=stratagem_name)
+        except Exception:
+            return
+
     def _unit_has_snarling_protector_heroic_intervention(self, unit) -> bool:
         if unit is None:
             return False
@@ -14825,6 +14861,7 @@ class StratagemManager(
         if s.name.upper() == "GRENADE":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             enemy = kwargs.get("enemy_unit")
+            game_map = getattr(self.game, "map", None) if self.game is not None else None
 
             def _grenade_unit_eligible(u) -> bool:
                 try:
@@ -14847,16 +14884,51 @@ class StratagemManager(
                         if owner and current_player is not None:
                             if owner == str(getattr(current_player, "id", "") or "") and int(getattr(self.game, "turn", 0) or 0) == turn:
                                 return False
-                    if self.game and getattr(self.game, "map", None):
+                    if game_map is not None:
                         if any(
-                            self.game.map.is_within_engagement_range(u, e)
-                            for e in (self.game.map.get_enemy_units(u) or [])
+                            game_map.is_within_engagement_range(u, e)
+                            for e in (game_map.get_enemy_units(u) or [])
                             if e.is_alive()
                         ):
                             return False
                 except Exception:
                     raise
                 return True
+
+            def _enemy_within_friendly_engagement(enemy_unit) -> bool:
+                if enemy_unit is None or game_map is None:
+                    return False
+                for friendly in list(getattr(self.player.get_army(), "units", []) or []):
+                    if friendly is None or not getattr(friendly, "deployed", False) or not friendly.is_alive():
+                        continue
+                    if game_map.is_within_engagement_range(friendly, enemy_unit):
+                        return True
+                return False
+
+            def _enemy_visible_from_unit(enemy_unit) -> bool:
+                if enemy_unit is None:
+                    return False
+                if game_map is None:
+                    return True
+                for model in (unit.get_models_for_collision() or []):
+                    if not getattr(model, "is_alive", False):
+                        continue
+                    for target_model in (enemy_unit.get_models_for_collision() or []):
+                        if not getattr(target_model, "is_alive", False):
+                            continue
+                        if game_map.can_model_see_model(model, target_model):
+                            return True
+                return False
+
+            def _enemy_within_range(enemy_unit, *, max_range: float) -> bool:
+                if enemy_unit is None:
+                    return False
+                if game_map is None:
+                    return True
+                try:
+                    return float(game_map.get_distance_between_units(unit, enemy_unit) or 0.0) <= float(max_range)
+                except Exception:
+                    raise
 
             if unit is None:
                 # Best-effort pick: first eligible GRENADES unit from your army
@@ -14870,50 +14942,85 @@ class StratagemManager(
             if not _grenade_unit_eligible(unit):
                 logger.error("ERROR: GRENADE: selected unit is not eligible (already shot/advanced/fell back/engaged or no Grenades)")
                 return False
-            if enemy is None and self.game and getattr(self.game, "map", None):
-                # Best-effort: pick the first eligible enemy within 8" and visible, and not in engagement range of any friendly unit.
+            use_gheistskull = False
+            gheistskull_source = ""
+            base_range = 8.0
+            gheistskull_available = self._unit_can_use_gheistskull_grenade_range_override(
+                unit,
+                stratagem_name="GRENADE",
+            )
+            gheistskull_rule = self._unit_gheistskull_grenade_rule(unit) if gheistskull_available else None
+            gheistskull_range = 18.0
+            if isinstance(gheistskull_rule, dict):
                 try:
-                    enemies = list(self.game.map.get_enemy_units(unit)) or []
+                    gheistskull_range = float(gheistskull_rule.get("range", 18.0) or 18.0)
+                except Exception:
+                    gheistskull_range = 18.0
+                gheistskull_source = str(gheistskull_rule.get("source", "") or "Gheistskull").strip() or "Gheistskull"
+            if gheistskull_range <= base_range:
+                gheistskull_available = False
+
+            if enemy is None and game_map is not None:
+                # Best-effort: prefer base-range legal targets; only use Gheistskull range if needed.
+                try:
+                    enemies = list(game_map.get_enemy_units(unit)) or []
                 except Exception:
                     raise
                 for e in enemies:
                     try:
                         if e is None or not e.is_alive():
                             continue
-                        # Enemy must not be within engagement range of any friendly unit
-                        ok = True
-                        for f in list(getattr(self.player.get_army(), "units", []) or []):
-                            if f is None or not getattr(f, "deployed", False) or not f.is_alive():
-                                continue
-                            if self.game.map.is_within_engagement_range(f, e):
-                                ok = False
-                                break
-                        if not ok:
+                        if _enemy_within_friendly_engagement(e):
                             continue
-                        if self.game.map.get_distance_between_units(unit, e) > 8.0:
+                        if not _enemy_within_range(e, max_range=base_range):
                             continue
-                        # Visibility: any model in unit can see any model in enemy
-                        vis = False
-                        for m in (unit.get_models_for_collision() or []):
-                            if not getattr(m, "is_alive", False):
-                                continue
-                            for tm in (e.get_models_for_collision() or []):
-                                if not getattr(tm, "is_alive", False):
-                                    continue
-                                if self.game.map.can_model_see_model(m, tm):
-                                    vis = True
-                                    break
-                            if vis:
-                                break
-                        if not vis:
+                        if not _enemy_visible_from_unit(e):
                             continue
                         enemy = e
+                        use_gheistskull = False
                         break
                     except Exception:
                         raise
+                if enemy is None and gheistskull_available:
+                    for e in enemies:
+                        try:
+                            if e is None or not e.is_alive():
+                                continue
+                            if _enemy_within_friendly_engagement(e):
+                                continue
+                            if not _enemy_within_range(e, max_range=gheistskull_range):
+                                continue
+                            if not _enemy_visible_from_unit(e):
+                                continue
+                            if _enemy_within_range(e, max_range=base_range):
+                                continue
+                            enemy = e
+                            use_gheistskull = True
+                            break
+                        except Exception:
+                            raise
             if enemy is None:
                 logger.error("ERROR: GRENADE: no eligible enemy target found/provided")
                 return False
+            if game_map is not None:
+                alive_attr = getattr(enemy, "is_alive", False)
+                enemy_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not enemy_alive:
+                    logger.error("ERROR: GRENADE: target enemy unit is not alive")
+                    return False
+                if _enemy_within_friendly_engagement(enemy):
+                    logger.error("ERROR: GRENADE: target enemy unit is within Engagement Range of a friendly unit")
+                    return False
+                if not _enemy_visible_from_unit(enemy):
+                    logger.error("ERROR: GRENADE: target enemy unit is not visible")
+                    return False
+                if _enemy_within_range(enemy, max_range=base_range):
+                    use_gheistskull = False
+                elif gheistskull_available and _enemy_within_range(enemy, max_range=gheistskull_range):
+                    use_gheistskull = True
+                else:
+                    logger.error("ERROR: GRENADE: target enemy unit is outside legal range")
+                    return False
             # Spend CP
             eff_cost = s.cp_cost
             try:
@@ -14965,6 +15072,12 @@ class StratagemManager(
                     mark_targeted(
                         self.game,
                         source="Grenade",
+                        stratagem_name=str(getattr(s, "name", "") or "GRENADE"),
+                    )
+                if use_gheistskull:
+                    self._mark_gheistskull_grenade_used(
+                        unit,
+                        source=gheistskull_source or "Gheistskull",
                         stratagem_name=str(getattr(s, "name", "") or "GRENADE"),
                     )
             except Exception:

@@ -4569,6 +4569,62 @@ class GameShootingFightHandlersMixin:
             )
             return
 
+    def _on_shooting_targets_selected_cat_unit(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+
+        specs = sorted(
+            list(getattr(root, "unit_cat_unit_specs", lambda: [])() or []),
+            key=lambda s: str(s.get("source", "") or "").strip().lower(),
+        )
+        if not specs:
+            return
+        spec = specs[0]
+        ability_name = str(spec.get("source", "") or "CAT Unit").strip() or "CAT Unit"
+        ability_key = str(spec.get("ability_key", "") or "cat_unit").strip().lower() or "cat_unit"
+        if getattr(root, "has_used_unit_once_per_battle", lambda _k: False)(ability_key):
+            return
+
+        unit_id = get_entity_id(root)
+        if not unit_id:
+            return
+        message = f"Use {ability_name} for {getattr(root, 'name', 'Unit')}?"
+        ctx = {
+            "ability": "cat_unit",
+            "ability_key": ability_key,
+            "ability_name": ability_name,
+            "phase": "Shooting phase",
+            "unit": getattr(root, "name", "") or "",
+            "unit_id": unit_id,
+        }
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="cat_unit",
+            ability_name=ability_name,
+            message=message,
+            context=ctx,
+            payload={
+                "unit_id": unit_id,
+                "ability_name": ability_name,
+                "ability_key": ability_key,
+            },
+            instance_key=f"{unit_id}:{ability_key}",
+        )
+
     def _on_shooting_targets_selected_ammo_runt(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None or not target_units:
             return
