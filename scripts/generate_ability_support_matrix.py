@@ -223,12 +223,15 @@ def _prey_selection_support(description: str) -> Optional[Tuple[str, str]]:
         "start of the first battle round" in tokens
         and "select one enemy unit to be this models prey" in tokens
     )
-    focused_hunters_selector = (
+    start_of_battle_opponent_selector = (
         "start of the battle" in tokens
         and "select one unit from your opponents army" in tokens
+    )
+    focused_hunters_selector = (
+        start_of_battle_opponent_selector
         and "until the end of the battle" in tokens
     )
-    if not (classic_prey_selector or focused_hunters_selector):
+    if not (classic_prey_selector or start_of_battle_opponent_selector):
         return None
 
     repick = "prey is destroyed" in tokens and "select one new enemy unit" in tokens
@@ -240,6 +243,19 @@ def _prey_selection_support(description: str) -> Optional[Tuple[str, str]]:
         and "reroll the hit roll" in tokens
     ):
         note = "Start of battle: select one enemy unit; attacks from this unit against it can re-roll Hit rolls."
+        if repick:
+            note += " Re-pick when prey is destroyed."
+        else:
+            note += " No re-pick on destruction."
+        return ("Supported", note)
+
+    if (
+        start_of_battle_opponent_selector
+        and "each time a model in this unit makes an attack" in tokens
+        and "targets that unit" in tokens
+        and "that attack has the lethal hits and precision abilities" in tokens
+    ):
+        note = "Start of battle: select one enemy unit; attacks from this unit against it gain [LETHAL HITS] and [PRECISION]."
         if repick:
             note += " Re-pick when prey is destroyed."
         else:

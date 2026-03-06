@@ -3147,11 +3147,21 @@ class Army:
         prompt = f"Select prey ({label})."
         context_extra = {}
         if isinstance(rule, dict):
+            keyword_list: list[str] = []
+            for raw in list(rule.get("keywords", []) or []):
+                keyword = str(raw or "").strip().upper()
+                if keyword and keyword not in keyword_list:
+                    keyword_list.append(keyword)
+            single_keyword = str(rule.get("keyword", "") or "").strip().upper()
+            if single_keyword and single_keyword not in keyword_list:
+                keyword_list.append(single_keyword)
+            primary_keyword = keyword_list[0] if keyword_list else ""
             context_extra = {
                 "prey_reroll_hit": bool(rule.get("reroll_hit", False)),
                 "prey_reroll_wound": bool(rule.get("reroll_wound", False)),
                 "prey_melee_only": bool(rule.get("melee_only", False)),
-                "prey_keyword": str(rule.get("keyword", "") or ""),
+                "prey_keyword": primary_keyword,
+                "prey_keywords": list(keyword_list),
                 "prey_repick_on_destroyed": bool(rule.get("repick_on_destroyed", False)),
             }
         return self._build_quarry_selection_request(

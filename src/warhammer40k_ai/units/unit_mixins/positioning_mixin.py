@@ -4788,8 +4788,15 @@ class PositioningMixin:
             if target is not None:
                 root = self.get_attached_unit_root()
                 prey_ids = getattr(root, "_prey_selection_prey_ids", None)
-                keyword = str(getattr(root, "_prey_selection_keyword", "") or "").strip().upper()
-                if prey_ids and keyword:
+                keywords = []
+                for raw in list(getattr(root, "_prey_selection_keywords", []) or []):
+                    keyword = str(raw or "").strip().upper()
+                    if keyword and keyword not in keywords:
+                        keywords.append(keyword)
+                fallback_keyword = str(getattr(root, "_prey_selection_keyword", "") or "").strip().upper()
+                if fallback_keyword and fallback_keyword not in keywords:
+                    keywords.append(fallback_keyword)
+                if prey_ids and keywords:
                     try:
                         target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
                         tid = getattr(target_root, "_id", None)
@@ -4799,7 +4806,8 @@ class PositioningMixin:
                         rid = None
                     if (tid in prey_ids) or (rid in prey_ids):
                         source = str(getattr(root, "_prey_selection_source", "") or "Prey selection").strip() or "Prey selection"
-                        rules = list(rules or []) + [{"attack_type": "any", "keyword": keyword, "source": source}]
+                        for keyword in keywords:
+                            rules = list(rules or []) + [{"attack_type": "any", "keyword": keyword, "source": source}]
         except Exception:
             pass
         try:

@@ -15013,9 +15013,17 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 setattr(source_unit, "_prey_selection_reroll_hit", bool(ctx.get("prey_reroll_hit", False)))
                 setattr(source_unit, "_prey_selection_reroll_wound", bool(ctx.get("prey_reroll_wound", False)))
                 setattr(source_unit, "_prey_selection_melee_only", bool(ctx.get("prey_melee_only", False)))
-                keyword = str(ctx.get("prey_keyword", "") or "").strip().upper()
-                if keyword:
-                    setattr(source_unit, "_prey_selection_keyword", keyword)
+                keywords = []
+                for raw in list(ctx.get("prey_keywords", []) or []):
+                    keyword = str(raw or "").strip().upper()
+                    if keyword and keyword not in keywords:
+                        keywords.append(keyword)
+                fallback_keyword = str(ctx.get("prey_keyword", "") or "").strip().upper()
+                if fallback_keyword and fallback_keyword not in keywords:
+                    keywords.append(fallback_keyword)
+                if keywords:
+                    setattr(source_unit, "_prey_selection_keywords", list(keywords))
+                    setattr(source_unit, "_prey_selection_keyword", str(keywords[0]))
             except Exception:
                 pass
             ability_name = str(ctx.get("ability_name", "") or "Prey selection").strip() or "Prey selection"

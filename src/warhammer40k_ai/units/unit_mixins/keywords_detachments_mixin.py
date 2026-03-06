@@ -2652,12 +2652,15 @@ class KeywordsDetachmentsMixin:
                     "start of the first battle round" in normalized
                     and "select one enemy unit to be this model s prey" in normalized
                 )
-                focused_hunters_selector = (
+                start_of_battle_opponent_selector = (
                     "start of the battle" in normalized
                     and "select one unit from your opponent s army" in normalized
+                )
+                focused_hunters_selector = (
+                    start_of_battle_opponent_selector
                     and "until the end of the battle" in normalized
                 )
-                if not (classic_prey_selector or focused_hunters_selector):
+                if not (classic_prey_selector or start_of_battle_opponent_selector):
                     continue
 
                 repick_on_destroyed = (
@@ -2678,6 +2681,24 @@ class KeywordsDetachmentsMixin:
                         "reroll_hit": True,
                         "reroll_wound": False,
                         "melee_only": False,
+                        "repick_on_destroyed": bool(repick_on_destroyed),
+                    }
+                    break
+
+                # Pattern: start-of-battle chosen enemy, attacks gain [LETHAL HITS] and [PRECISION] vs that unit.
+                if (
+                    start_of_battle_opponent_selector
+                    and _has_phrase(normalized, "each time a model in this unit makes an attack", "makes an attack")
+                    and _has_phrase(normalized, "targets that unit")
+                    and "that attack has the lethal hits and precision abilities" in normalized
+                ):
+                    source = str(name or "Prey selection").strip() or "Prey selection"
+                    rule = {
+                        "source": source,
+                        "reroll_hit": False,
+                        "reroll_wound": False,
+                        "melee_only": False,
+                        "keywords": ["LETHAL HITS", "PRECISION"],
                         "repick_on_destroyed": bool(repick_on_destroyed),
                     }
                     break

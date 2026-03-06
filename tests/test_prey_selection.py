@@ -166,6 +166,115 @@ class TestPreySelection(unittest.TestCase):
         self.assertFalse(bool(getattr(source_unit, "_prey_selection_reroll_wound", False)))
         self.assertFalse(bool(getattr(source_unit, "_prey_selection_melee_only", False)))
 
+    def test_prey_selection_start_of_battle_keyword_variant_imperial_law(self):
+        army = Army("Imperial Agents", detachment_type="Other")
+        army.faction_id = "AOI"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+
+        ability_desc = (
+            "At the start of the battle, select one unit from your opponent's army. "
+            "Each time a model in this unit makes an attack that targets that unit, that attack has the "
+            "[LETHAL HITS] and [PRECISION] abilities."
+        )
+        ability = Ability("Imperial Law", "AOI", ability_desc, "Datasheet", "")
+
+        source_unit = self._make_unit("Exaction Squad", army, abilities=[ability], faction_keywords=["IMPERIUM"])
+        source_model = self._make_model("Proctor-Exactant", source_unit)
+        source_model.abilities = {"Imperial Law": ability}
+        source_unit.models = [source_model]
+        army.units = [source_unit]
+
+        target_unit = self._make_unit("Target", enemy_army)
+        target_unit.models = [self._make_model("Target Model", target_unit)]
+        enemy_army.units = [target_unit]
+
+        game.rebuild_entity_registry()
+
+        army.on_battle_round_start(1)
+        pending = [
+            req for req in list(game.decision_queue.list() or [])
+            if req.decision_type == DECISION_CHOOSE_QUARRY
+            and str(getattr(req, "context", {}).get("ability", "")) == "prey_selection"
+        ]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(
+            list(getattr(request, "context", {}).get("prey_keywords", []) or []),
+            ["LETHAL HITS", "PRECISION"],
+        )
+
+        resolve_decision_command(game, request, request.options[0].option_id, player_id=player.id)
+        prey_ids = getattr(source_unit, "_prey_selection_prey_ids", set())
+        self.assertIn(target_unit._id, prey_ids)
+        self.assertEqual(
+            list(getattr(source_unit, "_prey_selection_keywords", []) or []),
+            ["LETHAL HITS", "PRECISION"],
+        )
+
+    def test_prey_keyword_bonus_applies_lethal_and_precision_vs_selected_target(self):
+        game = SimpleNamespace(
+            event_system=EventSystem(),
+            map=SimpleNamespace(roll_reroll_provider=lambda **_k: False),
+        )
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        enemy_player = SimpleNamespace(name="P2", id="P2", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        army = SimpleNamespace(player=player, faction_id="AOI")
+        enemy_army = SimpleNamespace(player=enemy_player, faction_id="SM")
+
+        attacker_unit = self._make_unit("Exaction Squad", army, faction_keywords=["IMPERIUM"])
+        target_unit = self._make_unit("Marked Enemy", enemy_army, faction_keywords=["CHAOS"])
+        attacker_unit._prey_selection_prey_ids = {target_unit._id}
+        attacker_unit._prey_selection_keywords = ["LETHAL HITS", "PRECISION"]
+        attacker_unit._prey_selection_source = "Imperial Law"
+
+        attacker_model = self._make_model("Exaction Vigilant", attacker_unit)
+        attacker_unit.models = [attacker_model]
+        target_model = self._make_model("Enemy", target_unit)
+        target_unit.models = [target_model]
+
+        ranged_parent = SimpleNamespace(name="Arbites combat shotgun", is_melee=lambda: False, is_ranged=lambda: True)
+        prof = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "4+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=ranged_parent,
+        )
+
+        aura_stub = SimpleNamespace(
+            hit=0,
+            wound=0,
+            reroll_hit_ones=False,
+            reroll_wound_ones=False,
+            reroll_hit_reasons=(),
+            reroll_wound_reasons=(),
+            target_toughness_delta=0,
+            target_toughness_reasons=(),
+        )
+
+        from warhammer40k_ai.units import wargear as wargear_mod
+        old_get_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _s: 6
+        try:
+            attack_instance = {"_aura_attack_mods": aura_stub}
+            hit_res = prof._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(bool(attack_instance.get("bonus_precision", False)))
+            self.assertIn("Lethal Hits", list(hit_res.get("special_effects", []) or []))
+        finally:
+            wargear_mod.get_roll = old_get_roll
+
     def test_prey_wound_reroll_melee_only(self):
         game = SimpleNamespace(
             event_system=EventSystem(),
