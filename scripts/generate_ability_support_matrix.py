@@ -3451,6 +3451,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AS", "Null Rod"): ("Supported", "Feel No Pain 4+ against mortal wounds and Psychic attacks."),
         ("AS", "Rituale Nullificatus"): ("Supported", "Feel No Pain 4+ against Psychic attacks and mortal wounds."),
         ("AS", "Spiritual Fortitude"): ("Supported", "Feel No Pain 4+ against Psychic attacks and mortal wounds."),
+        ("AOI", "Psychic Assassin"): (
+            "Supported",
+            "When targeting a unit with the PSYKER keyword, this weapon's Attacks characteristic becomes 6.",
+        ),
         ("QT", "Taskmaster (Aura)"): ("Supported", "WAR DOG models within 9\" re-roll Hit rolls of 1 for ranged attacks."),
         ("QT", "Frenzied Rampage (Aura)"): ("Supported", "WAR DOG models within 9\" re-roll Hit rolls of 1 for melee attacks."),
         ("CD", "Shadow of Khorne (Aura)"): (
@@ -5015,6 +5019,10 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
         ("GC", "Psychic Spoor", "000001569"): (
             "Supported",
             "BR1 prey selection; attacks vs prey can re-roll Hit and Wound rolls (no re-pick on destruction).",
+        ),
+        ("AOI", "Psychic Assassin", "000000873"): (
+            "Supported",
+            "When targeting a unit with the PSYKER keyword, this weapon's Attacks characteristic becomes 6.",
         ),
         ("DG", "DEPLOYMENT", "000002462"): (
             "Supported",
