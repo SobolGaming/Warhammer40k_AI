@@ -10762,14 +10762,17 @@ def _movement_phase_once_normal_move_weapon_attacks_bonus_support(description: s
     if not norm:
         return None
     pattern = (
-        r"once per battle (?:in|during) your movement phase before this model makes (?:a )?normal move it can use this ability "
-        r"if it does until the end of the turn add (?P<move>\d+d\d+) to this models move characteristic "
+        r"once per battle (?:in|during) your movement phase "
+        r"(?:(?:before this model makes (?:a )?normal move it can use this ability)|"
+        r"(?:this model can use this ability before it makes (?:a )?normal move)) "
+        r"if it does until the end of the turn add (?P<move>\d+d\d+|\d+) to this models move characteristic "
         r"and add (?P<attacks>\d+) to the attacks characteristic of this models (?P<weapon>[a-z0-9 ]+? weapon(?:s)?)"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
-    move = str(m.group("move") or "").upper()
+    move_raw = str(m.group("move") or "").strip()
+    move = move_raw.upper() if "d" in move_raw.lower() else move_raw
     attacks = m.group("attacks") or ""
     weapon = m.group("weapon") or "weapon"
     return (
