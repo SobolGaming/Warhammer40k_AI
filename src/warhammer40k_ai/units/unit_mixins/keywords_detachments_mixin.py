@@ -3717,6 +3717,152 @@ class KeywordsDetachmentsMixin:
             return True
         return False
 
+    def get_datasheet_command_reroll_stratagem_discount_rule(self) -> Optional[dict]:
+        """
+        Return rule info for datasheet abilities that grant Command Re-roll for 0CP
+        with same-phase repeat-use bypass, such as:
+        - Cherub
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "datasheet_command_reroll_stratagem_discount_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "command re roll" not in normalized and "command reroll" not in normalized:
+                    continue
+                if "stratagem" not in normalized or "0cp" not in normalized:
+                    continue
+                if "once per battle" not in normalized:
+                    continue
+                if not re.search(
+                    r"you can target this (?:unit|model|model s unit) with the command re ?roll stratagem for 0cp",
+                    normalized,
+                ):
+                    continue
+                repeat_bypass = (
+                    "can do so even if you have already targeted a different unit with that stratagem this phase" in normalized
+                    or "can do so even if you have already targeted another unit with that stratagem this phase" in normalized
+                    or "can do so even if you have already used that stratagem on a different unit this phase" in normalized
+                    or "can do so even if you have already used that stratagem on another unit this phase" in normalized
+                )
+                if not repeat_bypass:
+                    continue
+                source = str(name or "Cherub").strip() or "Cherub"
+                rule = {
+                    "source": source,
+                    "ability_key": "datasheet_command_reroll_discount",
+                    "stratagems": ("COMMAND RE-ROLL", "COMMAND REROLL"),
+                    "limit": "unit_battle",
+                    "repeat_bypass": True,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def can_use_datasheet_command_reroll_stratagem_discount(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive():
+                return False
+        except Exception:
+            return False
+        try:
+            if not bool(getattr(root, "deployed", True)):
+                return False
+        except Exception:
+            pass
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_datasheet_command_reroll_stratagem_discount_rule()
+        if not rule:
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        limit = str(rule.get("limit", "") or "").strip().lower()
+        ability_key = str(rule.get("ability_key", "") or "datasheet_command_reroll_discount").strip().lower()
+        if limit == "unit_battle" and ability_key and root.has_used_unit_once_per_battle(ability_key):
+            return False
+        return True
+
+    def mark_datasheet_command_reroll_stratagem_discount_used(
+        self,
+        game=None,
+        *,
+        source: str = "",
+        stratagem_name: str = "",
+    ) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_datasheet_command_reroll_stratagem_discount_rule() or {}
+        usage_key = str(rule.get("ability_key", "") or "datasheet_command_reroll_discount").strip().lower()
+        source_name = str(source or "").strip()
+        if not source_name:
+            source_name = str(rule.get("source", "") or "Cherub").strip() or "Cherub"
+        root.mark_unit_once_per_battle_used(usage_key, ability_name=source_name)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if source_name:
+            sr["datasheet_command_reroll_discount_used_source"] = source_name
+        if stratagem_name:
+            sr["datasheet_command_reroll_discount_used_stratagem"] = str(stratagem_name or "").strip()
+        if game is not None:
+            try:
+                sr["datasheet_command_reroll_discount_used_turn"] = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                sr["datasheet_command_reroll_discount_used_turn"] = 0
+        root.special_rules = sr
+
     def get_prophetic_sentinels_stratagem_discount_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:

@@ -209,7 +209,7 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
         return AttackRollCondition(attacker_charged_this_turn=True)
 
     m = re.fullmatch(
-        r"(?:this unit|that unit|it) contains (?:an?|one or more)?\s*(?P<model>[a-z0-9 \\-]+?) models?",
+        r"(?:this unit|that unit|it) contains (?:an?|one or more)?\s*(?P<model>[a-z0-9 \\-]+?)(?: models?)?",
         t,
     )
     if m:

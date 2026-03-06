@@ -5506,6 +5506,7 @@ def _classify_ability_base(
     weapon_keyword_grant_support = _weapon_keyword_grant_support(description)
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
     order_range_extension_support = _order_range_extension_support(description)
+    datasheet_command_reroll_cherub_support = _datasheet_command_reroll_cherub_support(description)
     act_of_faith_cherub_support = _act_of_faith_cherub_support(description)
     cat_unit_support = _cat_unit_support(description)
     ammo_runt_support = _ammo_runt_support(description)
@@ -5880,6 +5881,8 @@ def _classify_ability_base(
         return closest_enemy_hit_charge_support
     if order_range_extension_support:
         return order_range_extension_support
+    if datasheet_command_reroll_cherub_support:
+        return datasheet_command_reroll_cherub_support
     if act_of_faith_cherub_support:
         return act_of_faith_cherub_support
     if orders_support:
@@ -12244,6 +12247,34 @@ def _act_of_faith_cherub_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         f"After this unit performs an Act of Faith: gain 1 Miracle die ({label.lower()}).",
+    )
+
+
+def _datasheet_command_reroll_cherub_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "once per battle" not in norm:
+        return None
+    if "command re roll stratagem" not in norm and "command reroll stratagem" not in norm:
+        return None
+    if "you can target this unit" not in norm:
+        return None
+    if "0cp" not in norm:
+        return None
+    repeat_clause = (
+        "can do so even if you have already targeted a different unit with that stratagem this phase" in norm
+        or "can do so even if you have already targeted another unit with that stratagem this phase" in norm
+        or "can do so even if you have already used that stratagem on a different unit this phase" in norm
+        or "can do so even if you have already used that stratagem on another unit this phase" in norm
+    )
+    if not repeat_clause:
+        return None
+    return (
+        "Supported",
+        "Once per battle: this unit can be targeted with Command Re-roll for 0CP, including as a same-phase repeat target.",
     )
 
 

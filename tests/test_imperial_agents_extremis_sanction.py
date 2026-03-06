@@ -829,6 +829,180 @@ def test_shieldbreaker_prompt_applies_and_modifies_wound_resolution():
     assert any("to wound" in str(reason or "").lower() for reason in list(wound.get("modifiers", []) or []))
 
 
+def test_sanctifiers_cherub_command_reroll_zero_cp_once_per_battle():
+    game, ia_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.turn = 1
+
+    cherub = Ability(
+        "Cherub",
+        "AOI",
+        (
+            "Once per battle, you can target this unit with the Command Re-roll Stratagem for 0CP, and can do so "
+            "even if you have already targeted a different unit with that Stratagem this phase."
+        ),
+        "Datasheet",
+        "",
+    )
+    sanctifiers = _make_unit(
+        "Sanctifiers",
+        keywords=["INFANTRY"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[cherub],
+    )
+    ia_player.army.add_unit(sanctifiers)
+    _deploy_unit(game, sanctifiers, 0.0, 0.0)
+    game.rebuild_entity_registry()
+
+    strat = ia_player.stratagems.get_by_name("COMMAND RE-ROLL")
+    assert strat is not None
+
+    ia_player.command_points = 0
+    ia_player.set_next_optional_decision("DATASHEET_COMMAND_REROLL_DISCOUNT", True)
+    first = ia_player.apply_stratagem_cp_cost(strat, target_unit=sanctifiers)
+    assert int(first.get("cost", -1)) == 0
+    assert "Cherub" in " ".join(list(first.get("reasons", []) or []))
+    assert sanctifiers.has_used_unit_once_per_battle("datasheet_command_reroll_discount")
+
+    second = ia_player.apply_stratagem_cp_cost(strat, target_unit=sanctifiers)
+    assert int(second.get("cost", -1) or -1) == 1
+
+
+def test_sanctifiers_cherub_allows_command_reroll_repeat_target_in_phase():
+    game, ia_player, _enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.turn = 1
+
+    cherub = Ability(
+        "Cherub",
+        "AOI",
+        (
+            "Once per battle, you can target this unit with the Command Re-roll Stratagem for 0CP, and can do so "
+            "even if you have already targeted a different unit with that Stratagem this phase."
+        ),
+        "Datasheet",
+        "",
+    )
+    sanctifiers = _make_unit(
+        "Sanctifiers",
+        keywords=["INFANTRY"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[cherub],
+    )
+    other = _make_unit(
+        "Other Agents Unit",
+        keywords=["INFANTRY"],
+        faction_keywords=_ia_faction_keywords(),
+    )
+    ia_player.army.add_unit(sanctifiers)
+    ia_player.army.add_unit(other)
+    _deploy_unit(game, sanctifiers, 0.0, 0.0)
+    _deploy_unit(game, other, 2.0, 0.0)
+    game.rebuild_entity_registry()
+
+    strat = ia_player.stratagems.get_by_name("COMMAND RE-ROLL")
+    assert strat is not None
+
+    mgr = ia_player.stratagems
+    mgr._current_phase_name = "Shooting phase"
+    mgr._used_stratagems_this_phase = {"COMMAND RE-ROLL"}
+    mgr._command_reroll_units_this_phase = set()
+    mgr._record_command_reroll_use(other)
+    ia_player.command_points = 0
+
+    cherub_ctx = {"phase_name": "Shooting phase", "target_unit": sanctifiers, "unit": sanctifiers}
+    cherub_avail = mgr._evaluate_availability(strat, cherub_ctx, is_active_turn=True)
+    assert bool(cherub_avail.get("available", False))
+    assert int(cherub_avail.get("cp_cost", 99)) == 0
+
+    other_ctx = {"phase_name": "Shooting phase", "target_unit": other, "unit": other}
+    other_avail = mgr._evaluate_availability(strat, other_ctx, is_active_turn=True)
+    assert not bool(other_avail.get("available", True))
+    assert str(other_avail.get("reason", "") or "") == "Already used this phase"
+
+    mgr._record_command_reroll_use(sanctifiers)
+    cherub_again = mgr._evaluate_availability(strat, cherub_ctx, is_active_turn=True)
+    assert not bool(cherub_again.get("available", True))
+
+
+def test_ministorum_sermon_adds_one_to_melee_wound_while_unit_contains_priest():
+    sermon = Ability(
+        "Ministorum Sermon",
+        "AOI",
+        (
+            "While this unit contains a MINISTORUM PRIEST, each time a model in this unit makes a melee attack, "
+            "add 1 to the Wound roll."
+        ),
+        "Datasheet",
+        "",
+    )
+    sanctifiers = _make_unit(
+        "Sanctifiers",
+        keywords=["INFANTRY"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[sermon],
+    )
+    priest = _make_unit(
+        "Ministorum Priest",
+        keywords=["INFANTRY", "CHARACTER", "MINISTORUM PRIEST"],
+        faction_keywords=_ia_faction_keywords(),
+    )
+    sanctifiers.attached_leaders = [priest]
+    priest.attached_to = sanctifiers
+    priest.can_be_attached_to = [sanctifiers.name]
+
+    target = _make_unit(
+        "Enemy Target",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["IMPERIUM"],
+        toughness=4,
+    )
+
+    profile = WargearProfile(
+        "Standard",
+        {
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=SimpleNamespace(name="Mace", is_melee=lambda: True, is_ranged=lambda: False),
+    )
+
+    with_priest = profile._wound_target_with_tracking(
+        target,
+        sanctifiers.models[0],
+        {},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(with_priest.get("wound", False))
+    assert any("to wound" in str(reason or "").lower() for reason in list(with_priest.get("modifiers", []) or []))
+
+    sanctifiers_no_priest = _make_unit(
+        "Sanctifiers (No Priest)",
+        keywords=["INFANTRY"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[sermon],
+    )
+    without_priest = profile._wound_target_with_tracking(
+        target,
+        sanctifiers_no_priest.models[0],
+        {},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert not bool(without_priest.get("wound", False))
+
+
 def test_soulless_horror_can_be_used_twice_per_battle_but_not_twice_in_the_same_round():
     game, ia_player, enemy_player = _build_game()
     game.phase = BattleRoundPhases.COMMAND_PHASE

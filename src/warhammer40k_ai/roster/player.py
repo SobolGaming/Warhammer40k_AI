@@ -2470,6 +2470,17 @@ class Player:
                 return False
         return True
 
+    def _target_unit_can_use_datasheet_command_reroll_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        fn = getattr(target_unit, "can_use_datasheet_command_reroll_stratagem_discount", None)
+        if not callable(fn):
+            return False
+        return bool(fn(self.game, stratagem_name=stratagem_name))
+
     def _preview_faultless_opportunist_discount(self, *, stratagem=None, target_unit=None) -> int:
         if stratagem is None or target_unit is None:
             return 0
@@ -2737,6 +2748,20 @@ class Player:
         if name_u != "GRENADE":
             return 0
         if not self._target_unit_can_use_primed_and_ready_grenade(target_unit, stratagem_name=name_u):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_datasheet_command_reroll_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = self._normalize_stratagem_name_key(getattr(stratagem, "name", "") or "")
+        if name_u not in ("COMMAND RE ROLL", "COMMAND REROLL"):
+            return 0
+        if not self._target_unit_can_use_datasheet_command_reroll_stratagem_discount(
+            target_unit,
+            stratagem_name="COMMAND RE-ROLL",
+        ):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -3636,6 +3661,19 @@ class Player:
             ):
                 discount += int(seer_discount)
                 reasons.append(f"Strands of Fate: discard Fate die {int(seer_die_value)} for -1CP")
+
+        cherub_discount = self._preview_datasheet_command_reroll_discount(stratagem=stratagem, target_unit=target_unit)
+        if cherub_discount:
+            discount += int(cherub_discount)
+            ability_name = "Cherub"
+            try:
+                get_rule = getattr(target_unit, "get_datasheet_command_reroll_stratagem_discount_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            reasons.append(f"{ability_name}: Command Re-roll for 0CP.")
 
         gof = self._preview_gift_of_foresight_discount(stratagem=stratagem, target_unit=target_unit)
         if gof:
@@ -5370,6 +5408,48 @@ class Player:
                     applied_discount += int(consumed.get("discount", 1) or 1)
                     used_value = int(consumed.get("die_value", int(seer_die_value)) or int(seer_die_value))
                     reasons.append(f"Strands of Fate: discarded Fate die {used_value} for -1CP (used)")
+
+        # Decide whether to apply datasheet Command Re-roll 0CP discount if available (e.g. Cherub).
+        cherub_discount = int(
+            self._preview_datasheet_command_reroll_discount(stratagem=stratagem, target_unit=target_unit) or 0
+        )
+        if cherub_discount and target_unit is not None:
+            ability_name = "Cherub"
+            try:
+                get_rule = getattr(target_unit, "get_datasheet_command_reroll_stratagem_discount_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            use_cherub = self._should_use_optional_ability("DATASHEET_COMMAND_REROLL_DISCOUNT", ctx)
+            command_reroll_used_this_phase = False
+            mgr = getattr(self, "stratagems", None)
+            if mgr is not None and name_u == "COMMAND RE-ROLL":
+                used_set = getattr(mgr, "_used_stratagems_this_phase", set())
+                if isinstance(used_set, set):
+                    command_reroll_used_this_phase = "COMMAND RE-ROLL" in used_set
+            if command_reroll_used_this_phase:
+                use_cherub = True
+            if use_cherub or getattr(self, "decision_hook", None) is None:
+                applied_discount += int(cherub_discount)
+                reasons.append(f"{ability_name}: Command Re-roll for 0CP (used)")
+                try:
+                    mark_used = getattr(target_unit, "mark_datasheet_command_reroll_stratagem_discount_used", None)
+                    if callable(mark_used):
+                        mark_used(
+                            self.game,
+                            source=ability_name,
+                            stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                        )
+                except Exception:
+                    pass
 
         # Decide whether to apply Gift of Foresight if available.
         gof_available = bool(self._preview_gift_of_foresight_discount(stratagem=stratagem, target_unit=target_unit))

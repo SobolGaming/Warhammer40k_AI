@@ -3118,19 +3118,34 @@ class StratagemManager(
         root.special_rules = sr
 
     def _command_reroll_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
-        can_use_fn = getattr(self.player, "_target_unit_can_use_mirror_of_fates_command_reroll", None)
-        if not callable(can_use_fn):
+        can_use_mirror_fn = getattr(self.player, "_target_unit_can_use_mirror_of_fates_command_reroll", None)
+        can_use_datasheet_fn = getattr(
+            self.player,
+            "_target_unit_can_use_datasheet_command_reroll_stratagem_discount",
+            None,
+        )
+
+        def _can_repeat(unit) -> bool:
+            if unit is None:
+                return False
+            if callable(can_use_mirror_fn) and bool(can_use_mirror_fn(unit)):
+                return True
+            if callable(can_use_datasheet_fn) and bool(
+                can_use_datasheet_fn(unit, stratagem_name="COMMAND RE-ROLL")
+            ):
+                return True
             return False
+
         if target_unit is not None:
             uid = self._heroic_intervention_target_id(target_unit)
             if not uid or uid in self._command_reroll_units_this_phase:
                 return False
-            return bool(can_use_fn(target_unit))
+            return _can_repeat(target_unit)
         for cand in list(candidates or []):
             uid = self._heroic_intervention_target_id(cand)
             if not uid or uid in self._command_reroll_units_this_phase:
                 continue
-            if bool(can_use_fn(cand)):
+            if _can_repeat(cand):
                 return True
         return False
 
