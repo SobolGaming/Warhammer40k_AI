@@ -1172,8 +1172,20 @@ class ShootingMixin:
             if not has_los:
                 return False
 
+        ignore_lone_operative = False
+        ignore_lone_operative_fn = getattr(
+            self,
+            "_model_can_ignore_lone_operative_when_selecting_targets",
+            None,
+        )
+        if callable(ignore_lone_operative_fn):
+            ignore_lone_operative = bool(ignore_lone_operative_fn(model))
+
         try:
-            limit, _sources = target_unit.get_ranged_targeting_restriction(game_map=game_map)
+            limit, _sources = target_unit.get_ranged_targeting_restriction(
+                game_map=game_map,
+                ignore_lone_operative=ignore_lone_operative,
+            )
             if limit is not None and min_distance > float(limit):
                 return False
         except Exception:

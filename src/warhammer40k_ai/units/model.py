@@ -2173,7 +2173,19 @@ class Model:
             closest_model, closest_dist = self.return_closest_model_in_unit(enemy_unit)
             if closest_model and closest_dist < self.maximum_range(wargear_item, wargear_profile):
                 try:
-                    limit, _sources = enemy_unit.get_ranged_targeting_restriction(game_map=game_map)
+                    ignore_lone_operative = False
+                    parent_unit = getattr(self, "parent_unit", None)
+                    ignore_lone_operative_fn = (
+                        getattr(parent_unit, "_model_can_ignore_lone_operative_when_selecting_targets", None)
+                        if parent_unit is not None
+                        else None
+                    )
+                    if callable(ignore_lone_operative_fn):
+                        ignore_lone_operative = bool(ignore_lone_operative_fn(self))
+                    limit, _sources = enemy_unit.get_ranged_targeting_restriction(
+                        game_map=game_map,
+                        ignore_lone_operative=ignore_lone_operative,
+                    )
                     if limit is not None and closest_dist > float(limit):
                         continue
                 except Exception:

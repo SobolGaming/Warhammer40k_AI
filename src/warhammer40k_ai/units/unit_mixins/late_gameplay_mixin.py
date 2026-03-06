@@ -28,6 +28,10 @@ _REPAIR_BARGE_RE = re.compile(
     r"select one of those necron warriors units that unit s reanimation protocols activate the same necron warriors unit cannot be "
     r"selected for this ability more than once per turn"
 )
+_RANGED_TARGET_IGNORE_LONE_OPERATIVE_RE = re.compile(
+    r"each time (?:this model|the bearer|a model in this unit|a model in that unit) makes a ranged attack "
+    r"when selecting targets for (?:that|this) attack you can ignore (?:the )?lone operative(?: ability)?"
+)
 
 
 class LateGameplayMixin:
@@ -2918,7 +2922,41 @@ class LateGameplayMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
-    def get_ranged_targeting_restriction(self, *, game_map=None) -> tuple[Optional[float], list[str]]:
+    def _model_can_ignore_lone_operative_when_selecting_targets(self, model: Optional['Model'] = None) -> bool:
+        """
+        Return True if the model can ignore Lone Operative when selecting ranged targets.
+        """
+        if model is None:
+            return False
+        cache_key = f"model_ignore_lone_operative_targeting:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache[cache_key])
+
+        applies = False
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if _RANGED_TARGET_IGNORE_LONE_OPERATIVE_RE.fullmatch(normalized):
+                applies = True
+                break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(applies)
+        return bool(applies)
+
+    def get_ranged_targeting_restriction(
+        self,
+        *,
+        game_map=None,
+        ignore_lone_operative: bool = False,
+    ) -> tuple[Optional[float], list[str]]:
         """
         Return the strictest ranged targeting distance restriction and sources, if any.
 
@@ -2945,7 +2983,7 @@ class LateGameplayMixin:
                     sources.append(src_name)
 
         try:
-            if root.has_lone_operative():
+            if (not bool(ignore_lone_operative)) and root.has_lone_operative():
                 _consider(12.0, "Lone Operative")
         except Exception:
             pass

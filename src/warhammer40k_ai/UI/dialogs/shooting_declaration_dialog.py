@@ -863,8 +863,19 @@ class ShootingDeclarationDialog(BaseDialog):
             # If validator returns False, try to infer common reasons
             if not self.unit._can_model_shoot_weapon_at_target(shooting_model, weapon_profile, target_unit, self.game_map):
                 # Ranged targeting restriction (e.g., Lone Operative or other range caps).
+                ignore_lone_operative = False
+                ignore_lone_operative_fn = getattr(
+                    self.unit,
+                    "_model_can_ignore_lone_operative_when_selecting_targets",
+                    None,
+                )
+                if callable(ignore_lone_operative_fn):
+                    ignore_lone_operative = bool(ignore_lone_operative_fn(shooting_model))
                 try:
-                    limit, sources = target_unit.get_ranged_targeting_restriction(game_map=self.game_map)
+                    limit, sources = target_unit.get_ranged_targeting_restriction(
+                        game_map=self.game_map,
+                        ignore_lone_operative=ignore_lone_operative,
+                    )
                 except Exception:
                     limit, sources = (None, [])
                 if limit is not None:

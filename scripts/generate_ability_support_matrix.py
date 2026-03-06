@@ -5510,6 +5510,7 @@ def _classify_ability_base(
     ranged_ignore_bs_hit_support = _ranged_ignore_bs_hit_modifiers_support(description)
     ranged_ignore_hit_support = _ranged_ignore_hit_modifiers_support(description)
     ignore_skill_and_hit_modifiers_support = _ignore_skill_and_hit_modifiers_support(description)
+    ranged_target_ignore_lone_operative_support = _ranged_target_ignore_lone_operative_support(description)
     ranged_targeting_restriction_support = _ranged_targeting_restriction_support(description)
 
     if battlesuit_support_system_support:
@@ -5538,6 +5539,8 @@ def _classify_ability_base(
         return ranged_ignore_hit_support
     if ignore_skill_and_hit_modifiers_support:
         return ignore_skill_and_hit_modifiers_support
+    if ranged_target_ignore_lone_operative_support:
+        return ranged_target_ignore_lone_operative_support
     if ranged_targeting_restriction_support:
         return ranged_targeting_restriction_support
     if fight_phase_below_starting_strength_fight_first_support:
@@ -7333,6 +7336,21 @@ def _ranged_targeting_restriction_support(description: str) -> Optional[Tuple[st
     if rng <= 0:
         return None
     return ("Supported", f"Ranged attacks can only target this unit within {rng}\".")
+
+
+def _ranged_target_ignore_lone_operative_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time (?:this model|the bearer|a model in this unit|a model in that unit) makes a ranged attack "
+        r"when selecting targets for (?:that|this) attack you can ignore (?:the )?lone operative(?: ability)?"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return ("Supported", "Ranged attacks: can ignore Lone Operative when selecting targets.")
 
 
 def _objective_attack_keyword_support(description: str) -> Optional[Tuple[str, str]]:
