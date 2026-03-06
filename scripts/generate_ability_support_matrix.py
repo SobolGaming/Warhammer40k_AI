@@ -5419,6 +5419,7 @@ def _classify_ability_base(
     battle_protocols_support = _battle_protocols_support(description)
     start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
     opponent_command_phase_below_starting_battleshock_support = _opponent_command_phase_below_starting_battleshock_support(description)
+    start_any_command_phase_enemy_range_battleshock_support = _start_any_command_phase_enemy_range_battleshock_support(description)
     start_any_command_phase_objective_battleshock_support = _start_any_command_phase_objective_battleshock_support(description)
     start_selected_phases_enemy_range_battleshock_support = _start_selected_phases_enemy_range_battleshock_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
@@ -5727,6 +5728,8 @@ def _classify_ability_base(
         return start_shooting_phase_visible_battleshock_support
     if opponent_command_phase_below_starting_battleshock_support:
         return opponent_command_phase_below_starting_battleshock_support
+    if start_any_command_phase_enemy_range_battleshock_support:
+        return start_any_command_phase_enemy_range_battleshock_support
     if start_any_command_phase_objective_battleshock_support:
         return start_any_command_phase_objective_battleshock_support
     if start_selected_phases_enemy_range_battleshock_support:
@@ -9936,6 +9939,45 @@ def _start_any_command_phase_objective_battleshock_support(description: str) -> 
     return (
         "Supported",
         f"Once per battle at start of any Command phase: select one objective marker within {rng}\" of the bearer; enemy units within range of that marker take Battle-shock tests.",
+    )
+
+
+def _start_any_command_phase_enemy_range_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle at the start of any command phase this model can use this ability if it does "
+        r"each enemy unit within (?P<range>\d+) of this model must take a battle shock test "
+        r"subtracting (?P<pen>\d+) from that test(?: or subtracting (?P<psyker_pen>\d+) if that unit is a psyker)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        rng = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        rng = 0
+    try:
+        pen = int(m.group("pen") or 0)
+    except (TypeError, ValueError):
+        pen = 0
+    try:
+        psyker_pen = int(m.group("psyker_pen") or 0)
+    except (TypeError, ValueError):
+        psyker_pen = 0
+    if rng <= 0 or pen <= 0:
+        return None
+    if psyker_pen > 0:
+        return (
+            "Supported",
+            f"Once per battle at start of any Command phase: enemy units within {rng}\" take Battle-shock tests at -{pen} ({-psyker_pen} for PSYKER units).",
+        )
+    return (
+        "Supported",
+        f"Once per battle at start of any Command phase: enemy units within {rng}\" take Battle-shock tests at -{pen}.",
     )
 
 
