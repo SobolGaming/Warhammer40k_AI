@@ -2717,6 +2717,20 @@ _SKYSPLINTER_ASSAULT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] =
             "remove_disembarked_charge_restriction": True,
         },
     ),
+    "000010577005": StratagemToolDescriptor(
+        stratagem_id="000010577005",
+        name="Skyborne Annihilation",
+        timing="shooting_phase",
+        target="drukhari_unit_that_disembarked_from_transport_this_turn_not_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="grant_ranged_sustained_hits",
+        cp_cost=1,
+        effect_params={
+            "sustained_hits_value": 1,
+            "optional_target_keywords_any": ["KABALITE WARRIORS", "HAND OF THE ARCHON"],
+            "optional_sustained_hits_value": 2,
+        },
+    ),
     "000010577003": StratagemToolDescriptor(
         stratagem_id="000010577003",
         name="Wraithlike Retreat",

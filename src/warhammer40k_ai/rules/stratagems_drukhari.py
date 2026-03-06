@@ -102,6 +102,19 @@ class DrukhariStratagemMixin:
         name_u = str(getattr(root, "name", "") or "").strip().upper()
         return "WYCH" in name_u
 
+    def _is_drukhari_kabalite_warriors_or_hand_of_the_archon_unit(self, unit: Any) -> bool:
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        if self._drukhari_has_keyword(root, "KABALITE WARRIORS"):
+            return True
+        if self._drukhari_has_keyword(root, "HAND OF THE ARCHON"):
+            return True
+        name_u = str(getattr(root, "name", "") or "").strip().upper()
+        if "KABALITE WARRIORS" in name_u:
+            return True
+        return "HAND OF THE ARCHON" in name_u
+
     def _drukhari_owned_by_player(self, unit: Any, player: Any) -> bool:
         if unit is None or player is None:
             return False
@@ -242,6 +255,83 @@ class DrukhariStratagemMixin:
             if bool(is_within(root, enemy_root)):
                 return True
         return False
+
+    def _drukhari_skysplinter_skyborne_annihilation_candidates(self) -> list[Any]:
+        if not self._is_drukhari_skysplinter_assault():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._drukhari_root(unit)
+            if root is None:
+                continue
+            uid = self._drukhari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._drukhari_owned_by_player(root, self.player):
+                continue
+            if not self._drukhari_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_drukhari_unit(root):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if not bool(getattr(round_state, "disembarked_this_round", False)):
+                continue
+            if bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._drukhari_sort_key)
+
+    def _queue_drukhari_skysplinter_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_drukhari_skysplinter_assault():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "SHOOTING_PHASE":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("SKYBORNE ANNIHILATION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._drukhari_skysplinter_skyborne_annihilation_candidates()
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "phase_start":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() != "shooting phase":
+                continue
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": "Shooting phase",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
 
     def _queue_drukhari_skysplinter_unit_disembarked_reactions(self, *, unit: Any, transport_unit: Any = None) -> None:
         if unit is None or not self._is_drukhari_skysplinter_assault():
@@ -452,12 +542,56 @@ class DrukhariStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload, use_timer=False)
 
+    def _cleanup_drukhari_skysplinter_phase_end_effects(self, *, phase: Any) -> None:
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "SHOOTING_PHASE":
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._drukhari_root(unit)
+            if root is None:
+                continue
+            uid = self._drukhari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("drukhari_skyborne_annihilation_active")):
+                continue
+            if bool(sr.get("drukhari_skyborne_annihilation_added_sustained_ranged")):
+                prev = int(sr.get("drukhari_skyborne_annihilation_prev_sustained_ranged", 0) or 0)
+                if prev > 0:
+                    sr["bearer_unit_sustained_hits_value_ranged"] = int(prev)
+                else:
+                    sr.pop("bearer_unit_sustained_hits_value_ranged", None)
+            for key in (
+                "drukhari_skyborne_annihilation_active",
+                "drukhari_skyborne_annihilation_expires_phase",
+                "drukhari_skyborne_annihilation_turn_owner",
+                "drukhari_skyborne_annihilation_turn",
+                "drukhari_skyborne_annihilation_source",
+                "drukhari_skyborne_annihilation_sustained_hits_value",
+                "drukhari_skyborne_annihilation_prev_sustained_ranged",
+                "drukhari_skyborne_annihilation_added_sustained_ranged",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
     def _use_drukhari_skysplinter_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "SCINTILLATING TEMPO":
             return self._use_drukhari_reapers_wager_scintillating_tempo(stratagem, **kwargs)
         if name_u == "POUNCE ON THE PREY":
             return self._use_drukhari_skysplinter_pounce_on_the_prey(stratagem, **kwargs)
+        if name_u == "SKYBORNE ANNIHILATION":
+            return self._use_drukhari_skysplinter_skyborne_annihilation(stratagem, **kwargs)
         if name_u == "WRAITHLIKE RETREAT":
             return self._use_drukhari_skysplinter_wraithlike_retreat(stratagem, **kwargs)
         return None
@@ -622,6 +756,92 @@ class DrukhariStratagemMixin:
         logger.info(
             "INFO: POUNCE ON THE PREY: %s is eligible to declare a charge this turn.",
             getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_drukhari_skysplinter_skyborne_annihilation(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_drukhari_skysplinter_assault():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SKYBORNE ANNIHILATION":
+                    continue
+                unit = unit or reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+        if unit is None:
+            logger.error("ERROR: SKYBORNE ANNIHILATION: no target unit provided")
+            return False
+        root = self._drukhari_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: SKYBORNE ANNIHILATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SKYBORNE ANNIHILATION: not your Shooting phase")
+            return False
+        if candidates and not self._drukhari_unit_in_candidates(root, candidates):
+            logger.error("ERROR: SKYBORNE ANNIHILATION: target is not currently eligible")
+            return False
+        if not self._drukhari_owned_by_player(root, self.player):
+            logger.error("ERROR: SKYBORNE ANNIHILATION: target unit is not yours")
+            return False
+        if not self._drukhari_on_battlefield(root):
+            return False
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            logger.error("ERROR: SKYBORNE ANNIHILATION: target cannot be selected")
+            return False
+        if not self._is_drukhari_unit(root):
+            logger.error("ERROR: SKYBORNE ANNIHILATION: target must be a Drukhari unit")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: SKYBORNE ANNIHILATION: target has already been selected to shoot")
+            return False
+        if not bool(getattr(round_state, "disembarked_this_round", False)):
+            logger.error("ERROR: SKYBORNE ANNIHILATION: target did not disembark this turn")
+            return False
+        if not self._drukhari_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sustained_hits_value = 2 if self._is_drukhari_kabalite_warriors_or_hand_of_the_archon_unit(root) else 1
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        prev_ranged_sustained = int(sr.get("bearer_unit_sustained_hits_value_ranged", 0) or 0)
+        new_ranged_sustained = max(int(prev_ranged_sustained), int(sustained_hits_value))
+        sr["drukhari_skyborne_annihilation_active"] = True
+        sr["drukhari_skyborne_annihilation_expires_phase"] = "SHOOTING_PHASE"
+        sr["drukhari_skyborne_annihilation_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["drukhari_skyborne_annihilation_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["drukhari_skyborne_annihilation_source"] = str(
+            getattr(stratagem, "name", "SKYBORNE ANNIHILATION") or "SKYBORNE ANNIHILATION"
+        )
+        sr["drukhari_skyborne_annihilation_sustained_hits_value"] = int(sustained_hits_value)
+        sr["drukhari_skyborne_annihilation_prev_sustained_ranged"] = int(prev_ranged_sustained)
+        sr["drukhari_skyborne_annihilation_added_sustained_ranged"] = bool(
+            int(new_ranged_sustained) != int(prev_ranged_sustained)
+        )
+        sr["bearer_unit_sustained_hits_value_ranged"] = int(new_ranged_sustained)
+        root.special_rules = sr
+
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add(str(stratagem.name or "").strip().upper())
+        logger.info(
+            "INFO: SKYBORNE ANNIHILATION: %s gains [SUSTAINED HITS %d] on ranged weapons until end of phase.",
+            getattr(root, "name", "Unit"),
+            int(sustained_hits_value),
         )
         return True
 

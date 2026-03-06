@@ -63,6 +63,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PINPOINT COUNTER-OFFENSIVE",
     "POUNCE ON THE PREY",
     "PULSE ONSLAUGHT",
+    "SKYBORNE ANNIHILATION",
     "PREDATORY IMPERATIVE",
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
@@ -1903,6 +1904,7 @@ class StratagemManager(
             "PARTING THE VEIL",
             "PRETERNATURAL PRECISION",
             "RUTHLESS KILLERS",
+            "SKYBORNE ANNIHILATION",
             "TO THEIR FINAL BREATH",
             "WARRIOR FOCUS",
             "HONOUR THE PRINCE",
@@ -4673,6 +4675,7 @@ class StratagemManager(
             "WARRIOR FOCUS": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit not yet selected to shoot/fight",
             "A CHALLENGE MET": "Target: WYCH CULT unit; enemy within 9\" that moved or was set up this phase",
             "A DEADLY SNARE": "Target: your GENESTEALER CULTS INFANTRY unit selected as a target of a just-declared enemy charge; roll D6 to deal mortal wounds to the charging unit (2-4: D3, 5+: 3)",
+            "SKYBORNE ANNIHILATION": "Target: your DRUKHARI unit that disembarked from a TRANSPORT this turn and has not been selected to shoot this phase",
             "ENSNARING TRAP": "Target: AGENTS OF THE IMPERIUM INFANTRY unit within 6\" of enemy units it can charge",
             "HYPERSTIMMS": "Target: AGENTS OF THE IMPERIUM CHARACTER unit selected as a target of the attacking enemy unit's attacks",
             "ORBITAL OVERSIGHT": "Target: AGENTS OF THE IMPERIUM INFANTRY unit selected as a target of an enemy shooter's attacks",
@@ -5376,6 +5379,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_windrider_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_drukhari_skysplinter_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -6457,6 +6464,10 @@ class StratagemManager(
             raise
         try:
             self._queue_drukhari_skysplinter_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_drukhari_skysplinter_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
