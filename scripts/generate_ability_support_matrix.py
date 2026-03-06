@@ -5393,6 +5393,7 @@ def _classify_ability_base(
     setup_reactive_shoot_charge_support = _setup_reactive_shoot_or_charge_support(description)
     post_deployment_redeploy_support = _post_deployment_redeploy_support(description)
     sticky_support = _sticky_objective_support(description)
+    command_phase_unit_return_support = _command_phase_unit_return_support(description)
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
     charge_phase_bodyguard_loss_support = _charge_phase_bodyguard_loss_support(description)
     opponent_turn_reserves_support = _opponent_turn_strategic_reserves_support(description)
@@ -5680,6 +5681,8 @@ def _classify_ability_base(
         return post_deployment_redeploy_support
     if sticky_support:
         return sticky_support
+    if command_phase_unit_return_support:
+        return command_phase_unit_return_support
     if bodyguard_return_support:
         return bodyguard_return_support
     if charge_phase_bodyguard_loss_support:
@@ -9437,17 +9440,82 @@ def _command_phase_regain_wound_support(description: str) -> Optional[Tuple[str,
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    pattern = (
-        r"(?:at the )?start of (?:(?:each|either) player s command phases?|(?:each of )?your command phases?) "
+    start_end_pattern = (
+        r"(?:at the )?(?P<timing>start|end) of (?:(?:each|either) player s command phases?|(?:each of )?your command phases?) "
         r"this model regains (?:(?P<up_to>up to) )?(?P<amt>\d+|d3) lost wounds?"
+    )
+    m = re.fullmatch(start_end_pattern, norm)
+    timing_label = ""
+    if m:
+        timing_label = "Start of Command phase" if str(m.group("timing") or "").strip().lower() == "start" else "End of Command phase"
+    else:
+        command_phase_pattern = (
+            r"in (?:(?:each|either) player s command phases?|(?:each of )?your command phases?) "
+            r"this model regains (?:(?P<up_to>up to) )?(?P<amt>\d+|d3) lost wounds?"
+        )
+        m = re.fullmatch(command_phase_pattern, norm)
+        if not m:
+            return None
+        timing_label = "Command phase"
+    amount = str(m.group("amt") or "").upper()
+    if m.group("up_to"):
+        return ("Supported", f"{timing_label}: this model regains up to {amount} lost wound(s).")
+    return ("Supported", f"{timing_label}: this model regains {amount} lost wound(s).")
+
+
+def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "bodyguard model" in norm or "bodyguard models" in norm:
+        return None
+    if "select one of the following" in norm:
+        return None
+    if "objective marker" in norm and "instead" in norm:
+        return None
+    amount_token = r"(one|a|\d+|(?:\d+)?d\d+(?:\+\d+)?)"
+    pattern = (
+        r"(?:in your command phase|(?:at the )?(?:start|end) of your command phase)"
+        r"(?: if (?P<condition>[^,]+))? "
+        r"you can return(?: (?P<up_to>up to))? (?P<amt>"
+        + amount_token
+        + r") destroyed (?P<returned>.+?) "
+        r"to (?:this unit|the bearer s unit|that unit)"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
-    amount = str(m.group("amt") or "").upper()
-    if m.group("up_to"):
-        return ("Supported", f"Start of Command phase: this model regains up to {amount} lost wound(s).")
-    return ("Supported", f"Start of Command phase: this model regains {amount} lost wound(s).")
+    timing_label = "Command phase"
+    if "start of your command phase" in norm:
+        timing_label = "Start of Command phase"
+    elif "end of your command phase" in norm:
+        timing_label = "End of Command phase"
+    token = str(m.group("amt") or "").strip().lower()
+    if token in {"one", "a"}:
+        amount_label = "1"
+    elif token.isdigit():
+        amount_label = str(int(token))
+    else:
+        amount_label = token.upper()
+    up_to_prefix = "up to " if m.group("up_to") else ""
+    returned_phrase = str(m.group("returned") or "").strip()
+    note = f"{timing_label}: return {up_to_prefix}{amount_label} destroyed model(s) to this/bearer's unit."
+    if "excluding character" in returned_phrase or "excluding character" in norm:
+        note = f"{note} Excludes CHARACTER models."
+    returned_clean = re.sub(r"\s+excluding\s+character\s+models?", "", returned_phrase).strip()
+    named_return = re.sub(r"\s+models?$", "", returned_clean).strip()
+    if named_return and named_return not in {"model", "models"}:
+        note = f"{note} Restricted to destroyed {named_return.upper()}."
+    condition = str(m.group("condition") or "").strip()
+    if "bearer is on the battlefield" in condition or "bearer is not destroyed" in condition:
+        note = f"{note} Requires the bearer to be on the battlefield."
+    if "below its starting strength" in condition and (
+        "bearer s unit" in condition or "bearers unit" in condition or "this unit" in condition
+    ):
+        note = f"{note} Requires the bearer/unit to be below Starting Strength."
+    return ("Supported", note)
 
 
 def _command_phase_model_repair_fnp_support(description: str) -> Optional[Tuple[str, str]]:

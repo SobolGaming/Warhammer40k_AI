@@ -556,16 +556,50 @@ class RulesParsingMixin:
             if ("to the bearer s unit" not in plain and "to this unit" not in plain):
                 continue
             amount_token_re = r"(one|a|\d+|(?:\d+)?d\d+(?:\+\d+)?)"
-            base_match = re.search(
-                r"return(?:\s+up\s+to)?\s+" + amount_token_re + r"\s+destroyed\s+models?",
+            amount_match = re.search(
+                r"return(?:\s+up\s+to)?\s+" + amount_token_re + r"\s+destroyed\b",
                 plain,
             )
-            if not base_match:
+            if not amount_match:
                 continue
-            token = str(base_match.group(1) or "").strip()
+            token = str(amount_match.group(1) or "").strip()
             amount, amount_roll = self._parse_command_phase_return_amount_token(token)
             if amount <= 0:
                 continue
+            required_keyword = ""
+            required_model_name = ""
+            named_models_match = re.search(
+                r"return(?:\s+up\s+to)?\s+"
+                + amount_token_re
+                + r"\s+destroyed\s+(?P<name>(?!models?\b)[a-z0-9' -]+?)\s+models?\b",
+                plain,
+            )
+            named_to_unit_match = re.search(
+                r"return(?:\s+up\s+to)?\s+"
+                + amount_token_re
+                + r"\s+destroyed\s+(?P<name>[a-z0-9' -]+?)\s+to\s+(?:that\s+unit|the\s+bearer\s+s\s+unit|this\s+unit)\b",
+                plain,
+            )
+            named_phrase = ""
+            if named_models_match is not None:
+                named_phrase = str(named_models_match.group("name") or "").strip()
+            if not named_phrase and named_to_unit_match is not None:
+                named_phrase = str(named_to_unit_match.group("name") or "").strip()
+            if named_phrase:
+                named_phrase = re.sub(r"\s+excluding\s+character\s+models?$", "", named_phrase).strip()
+                named_phrase = re.sub(r"^(?:a|an)\s+", "", named_phrase).strip()
+                if named_phrase and not re.match(r"^models?\b", named_phrase):
+                    parts = [part for part in named_phrase.split() if part]
+                    has_any_keyword = getattr(self, "has_any_keyword", None)
+                    is_keyword_phrase = (
+                        len(parts) == 1
+                        and callable(has_any_keyword)
+                        and bool(has_any_keyword(parts[0].upper()))
+                    )
+                    if is_keyword_phrase:
+                        required_keyword = str(parts[0] or "").upper()
+                    else:
+                        required_model_name = named_phrase
             objective_amount = 0
             objective_amount_roll = ""
             objective_match = re.search(
@@ -590,7 +624,22 @@ class RulesParsingMixin:
                     ("excluding character" in low)
                     or bool(re.search(r"cannot be used to return destroyed character models? in attached units?", plain))
                 ),
+                "requires_bearer_on_battlefield": bool(
+                    re.search(r"if\s+(?:the\s+)?bearer\s+is\s+on\s+the\s+battlefield", plain)
+                    or re.search(r"if\s+(?:the\s+)?bearer\s+is\s+not\s+destroyed", plain)
+                ),
+                "requires_bearer_unit_below_starting_strength": bool(
+                    re.search(
+                        r"if\s+the\s+bearer\s+s\s+unit\s+is\s+below\s+(?:its\s+)?starting\s+strength",
+                        plain,
+                    )
+                    or re.search(r"if\s+this\s+unit\s+is\s+below\s+(?:its\s+)?starting\s+strength", plain)
+                ),
             }
+            if required_keyword:
+                parsed["required_keyword"] = required_keyword
+            if required_model_name:
+                parsed["required_model_name"] = required_model_name
             if objective_amount > 0:
                 parsed["controlled_objective_amount"] = int(objective_amount)
                 parsed["controlled_objective_amount_roll"] = str(objective_amount_roll or "")

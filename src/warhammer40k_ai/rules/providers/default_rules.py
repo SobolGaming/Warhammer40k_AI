@@ -229,6 +229,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_end", "_on_phase_end_plough_through_the_enemy"),
                 ("phase_end", "_on_phase_end_soul_eater"),
                 ("phase_end", "_on_phase_end_leadership_cp_gain"),
+                ("phase_end", "_on_phase_end_command_phase_regain_wounds"),
                 ("phase_end", "_on_phase_end_command_phase_mortal_table"),
                 ("phase_end", "_on_phase_end_daemonic_patrons"),
                 ("phase_end", "_on_phase_end_setup_reactive_shoot_or_charge"),

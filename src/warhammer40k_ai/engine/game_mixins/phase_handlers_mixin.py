@@ -1691,6 +1691,51 @@ class GamePhaseHandlersMixin:
                     return True
             return False
 
+        def _normalize_return_model_name(unit_obj, value: str) -> str:
+            text = str(value or "").strip().lower().replace("\u2019", "'").replace("\u0192?T", "'")
+            if not text:
+                return ""
+            normalize_fn = getattr(unit_obj, "_normalize_attached_unit_name", None)
+            if callable(normalize_fn):
+                text = str(normalize_fn(text) or "").strip().lower()
+            else:
+                text = re.sub(r"[^a-z0-9]+", " ", text).strip()
+            text = re.sub(r"^(?:an|a)\s+", "", text).strip()
+            text = re.sub(r"\s+", " ", text).strip()
+            return text
+
+        def _singularized_words(text: str) -> str:
+            words: list[str] = []
+            for token in str(text or "").split():
+                if token.endswith("s") and len(token) > 1:
+                    words.append(token[:-1])
+                else:
+                    words.append(token)
+            return " ".join(words).strip()
+
+        def _bodyguard_return_model_matches_name(bodyguard_unit, model, required_name: str) -> bool:
+            if model is None:
+                return False
+            wanted = _normalize_return_model_name(bodyguard_unit, required_name)
+            if not wanted:
+                return True
+            model_name = _normalize_return_model_name(bodyguard_unit, getattr(model, "name", ""))
+            if not model_name:
+                return False
+            if wanted in model_name:
+                return True
+            wanted_tokens = set(wanted.split())
+            model_tokens = set(model_name.split())
+            if wanted_tokens and wanted_tokens.issubset(model_tokens):
+                return True
+            wanted_singular = _singularized_words(wanted)
+            model_singular = _singularized_words(model_name)
+            if wanted_singular and wanted_singular in model_singular:
+                return True
+            wanted_singular_tokens = set(wanted_singular.split())
+            model_singular_tokens = set(model_singular.split())
+            return bool(wanted_singular_tokens) and wanted_singular_tokens.issubset(model_singular_tokens)
+
         def _filtered_bodyguard_return_model_ids(bodyguard_unit, ability_spec: dict) -> list[str] | None:
             if bodyguard_unit is None:
                 return None
@@ -1698,7 +1743,8 @@ class GamePhaseHandlersMixin:
                 return None
             exclude_character = bool(ability_spec.get("exclude_character", False))
             required_keyword = str(ability_spec.get("required_keyword", "") or "").strip().upper()
-            if not exclude_character and not required_keyword:
+            required_model_name = str(ability_spec.get("required_model_name", "") or "").strip()
+            if not exclude_character and not required_keyword and not required_model_name:
                 return None
             allowed_ids: list[str] = []
             for model in list(getattr(bodyguard_unit, "models_lost", []) or []):
@@ -1708,11 +1754,44 @@ class GamePhaseHandlersMixin:
                     continue
                 if required_keyword and not _bodyguard_return_model_has_keyword(model, required_keyword):
                     continue
+                if required_model_name and not _bodyguard_return_model_matches_name(bodyguard_unit, model, required_model_name):
+                    continue
                 model_id = str(get_entity_id(model) or "")
                 if model_id:
                     allowed_ids.append(model_id)
             allowed_ids.sort()
             return allowed_ids
+
+        def _return_ability_bearer_alive(source_unit, ability_spec: dict) -> bool:
+            if source_unit is None:
+                return False
+            if not isinstance(ability_spec, dict):
+                return False
+            if not bool(ability_spec.get("requires_bearer_on_battlefield", False)):
+                return True
+
+            sr = getattr(source_unit, "special_rules", None)
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip() if isinstance(sr, dict) else ""
+            if bearer_id:
+                for model in list(getattr(source_unit, "models", []) or []):
+                    if model is None:
+                        continue
+                    model_entity_id = str(get_entity_id(model) or "").strip()
+                    model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                    if bearer_id != model_entity_id and bearer_id != model_local_id:
+                        continue
+                    alive_attr = getattr(model, "is_alive", True)
+                    return bool(alive_attr() if callable(alive_attr) else alive_attr)
+                return False
+
+            get_bearer = getattr(source_unit, "_get_enhancement_bearer_model", None)
+            if not callable(get_bearer):
+                return False
+            bearer = get_bearer()
+            if bearer is None:
+                return False
+            alive_attr = getattr(bearer, "is_alive", True)
+            return bool(alive_attr() if callable(alive_attr) else alive_attr)
 
         for unit in list(army.units):
             if not unit.is_alive():
@@ -1845,6 +1924,15 @@ class GamePhaseHandlersMixin:
             ability = root.get_command_phase_unit_return_ability()
             if not ability:
                 continue
+            if not _return_ability_bearer_alive(root, ability):
+                continue
+            if bool(ability.get("requires_bearer_unit_below_starting_strength", False)):
+                below_fn = getattr(root, "is_below_starting_strength", None)
+                is_below_starting_strength = (
+                    bool(below_fn()) if callable(below_fn) else bool(list(getattr(root, "models_lost", []) or []))
+                )
+                if not is_below_starting_strength:
+                    continue
 
             if bool(ability.get("single_choice", False)):
                 required_model_name = str(ability.get("required_model_name", "") or "").strip()
@@ -1979,16 +2067,8 @@ class GamePhaseHandlersMixin:
             if amount <= 0:
                 continue
 
-            allowed_ids = []
-            if bool(ability.get("exclude_character", False)):
-                for model in list(getattr(root, "models_lost", []) or []):
-                    is_character = bool(getattr(model, "is_character", False))
-                    if is_character:
-                        continue
-                    model_id = str(get_entity_id(model) or "")
-                    if model_id:
-                        allowed_ids.append(model_id)
-            if bool(ability.get("exclude_character", False)) and not allowed_ids:
+            allowed_ids = _filtered_bodyguard_return_model_ids(root, ability)
+            if allowed_ids is not None and not allowed_ids:
                 continue
 
             self._queue_bodyguard_return_decision(
@@ -1997,7 +2077,7 @@ class GamePhaseHandlersMixin:
                 bodyguard_unit=root,
                 ability=ability,
                 remaining=amount,
-                allowed_model_ids=list(allowed_ids) if allowed_ids else None,
+                allowed_model_ids=list(allowed_ids) if allowed_ids is not None else None,
                 allow_skip=True,
             )
 
@@ -15828,6 +15908,17 @@ class GamePhaseHandlersMixin:
                 )
 
         self._phase_enemy_unit_destroyers[pname] = set()
+
+    def _on_phase_end_command_phase_regain_wounds(self, player=None, phase=None, **_kwargs) -> None:
+        """End of Command phase: apply passive self-heal abilities that trigger at Command phase end."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        apply_regain = getattr(self, "_apply_command_phase_regain_wounds", None)
+        if callable(apply_regain):
+            apply_regain(player, timing="end")
 
     def _on_phase_end_command_phase_mortal_table(self, player=None, phase=None, **_kwargs) -> None:
         """End of Command phase: queue optional once-per-battle mortal table abilities (e.g., Lord of the Storm)."""

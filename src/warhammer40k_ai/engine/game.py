@@ -1108,12 +1108,43 @@ class Game(
                 roll_expr="D3",
             )
 
-    def _apply_command_phase_regain_wounds(self, current_player) -> None:
+    def _apply_command_phase_regain_wounds(self, current_player, *, timing: str = "start") -> None:
         if current_player is None:
             raise RuntimeError("Command phase regain wounds requires a current player.")
         army = current_player.get_army()
         if army is None:
             raise RuntimeError("Command phase regain wounds requires an army.")
+        timing_key = str(timing or "start").strip().lower()
+        if timing_key not in {"start", "end"}:
+            raise RuntimeError("Command phase regain wounds timing must be 'start' or 'end'.")
+
+        def _matches_command_phase_regain_timing(low: str) -> bool:
+            plain = re.sub(r"[^a-z0-9]+", " ", str(low or "")).strip()
+            if not plain:
+                return False
+            explicit_end = bool(
+                re.search(
+                    r"(?:at\s+the\s+)?end\s+of\s+(?:(?:each|either)\s+player\s+s|(?:each\s+of\s+)?your)\s+command\s+phases?",
+                    plain,
+                )
+            )
+            explicit_start = bool(
+                re.search(
+                    r"(?:at\s+the\s+)?start\s+of\s+(?:(?:each|either)\s+player\s+s|(?:each\s+of\s+)?your)\s+command\s+phases?",
+                    plain,
+                )
+            )
+            generic_in = bool(
+                re.search(
+                    r"in\s+(?:(?:each|either)\s+player\s+s|(?:each\s+of\s+)?your)\s+command\s+phases?",
+                    plain,
+                )
+            )
+            if timing_key == "end":
+                return explicit_end
+            if explicit_end and not explicit_start:
+                return False
+            return explicit_start or generic_in
 
         for unit in list(getattr(army, "units", []) or []):
             if unit is None:
@@ -1141,7 +1172,9 @@ class Game(
                 desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
                 text = str(desc or "")
                 low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
-                if "command phase" not in low or "regains" not in low or "wounds" not in low:
+                if "command phase" not in low or "regains" not in low or "wound" not in low:
+                    continue
+                if not _matches_command_phase_regain_timing(low):
                     continue
                 m_single = re.search(
                     r"one model in this unit regains(?:\s+up\s+to)?\s+(\d+|d3)\s+lost wounds?",
@@ -1180,7 +1213,9 @@ class Game(
                     low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
                     if low in single_model_regain_texts:
                         continue
-                    if "command phase" not in low or "regains" not in low or "wounds" not in low:
+                    if "command phase" not in low or "regains" not in low or "wound" not in low:
+                        continue
+                    if not _matches_command_phase_regain_timing(low):
                         continue
                     # Targeted support abilities (e.g., "select one friendly ... that model regains ...")
                     # are handled through explicit decision flows and should not self-heal here.
@@ -10351,7 +10386,7 @@ class Game(
             current_player.gain_command_points(bonus, reason="Command phase bonus CP")
 
         # Datasheet abilities: start of your Command phase regain lost wounds.
-        self._apply_command_phase_regain_wounds(current_player)
+        self._apply_command_phase_regain_wounds(current_player, timing="start")
 
         # Drukhari: Power from Pain tokens at start of your Command phase.
         mgr = getattr(army, "power_from_pain", None)
