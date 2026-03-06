@@ -4433,6 +4433,11 @@ class GamePhaseHandlersMixin:
             return
         if not bool(getattr(self, "is_authoritative", True)):
             return
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        current_turn_owner_id = str(getattr(player, "id", "") or "").strip()
 
         def _unit_sort_key(u):
             try:
@@ -4445,6 +4450,124 @@ class GamePhaseHandlersMixin:
                 return str(get_entity_id(m))
             except Exception:
                 return str(getattr(m, "name", "") or "")
+
+        def _objective_sort_key(obj):
+            try:
+                return str(get_entity_id(obj))
+            except (AttributeError, TypeError, ValueError):
+                return str(getattr(obj, "name", "") or "")
+
+        def _is_model_within_objective_selection_range(model, objective, *, range_value: float) -> bool:
+            if model is None or objective is None:
+                return False
+            within_fn = getattr(self, "_model_within_range_of_objective_marker", None)
+            if callable(within_fn):
+                return bool(within_fn(model, objective, range_value=range_value))
+            location = getattr(objective, "location", None)
+            if location is None:
+                return False
+            get_location = getattr(model, "get_location", None)
+            model_location = get_location() if callable(get_location) else None
+            if not model_location or len(model_location) < 3:
+                return False
+            base_radius_fn = getattr(getattr(model, "model_base", None), "get_radius", None)
+            try:
+                base_radius = float(base_radius_fn() if callable(base_radius_fn) else 0.0)
+            except (TypeError, ValueError):
+                base_radius = 0.0
+            try:
+                mx = float(model_location[0])
+                my = float(model_location[1])
+                mz = float(model_location[2])
+            except (TypeError, ValueError):
+                return False
+            if hasattr(location, "x") and hasattr(location, "y"):
+                try:
+                    ox = float(getattr(location, "x", 0.0) or 0.0)
+                    oy = float(getattr(location, "y", 0.0) or 0.0)
+                    oz = float(getattr(location, "z", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    return False
+            elif isinstance(location, (tuple, list)) and len(location) >= 2:
+                try:
+                    ox = float(location[0])
+                    oy = float(location[1])
+                    oz = float(location[2]) if len(location) >= 3 else 0.0
+                except (TypeError, ValueError):
+                    return False
+            else:
+                return False
+            dx = mx - ox
+            dy = my - oy
+            dz = mz - oz
+            return ((dx * dx) + (dy * dy) + (dz * dz)) ** 0.5 <= float(range_value) + float(base_radius) + 1e-6
+
+        def _collect_targeted_objective_ids_for_turn(turn: int, *, turn_owner_id: str = "") -> set[str]:
+            if turn <= 0:
+                return set()
+            targeted: set[str] = set()
+            normalized_turn_owner = str(turn_owner_id or "").strip()
+            for owner in list(getattr(self, "players", []) or []):
+                if owner is None:
+                    continue
+                owner_army = self._get_player_army(owner)
+                if owner_army is None:
+                    continue
+                seen_owner_roots: set[str] = set()
+                for owner_unit in list(getattr(owner_army, "units", []) or []):
+                    if owner_unit is None:
+                        continue
+                    owner_get_root = getattr(owner_unit, "get_attached_unit_root", None)
+                    owner_root = owner_get_root() if callable(owner_get_root) else owner_unit
+                    if owner_root is None:
+                        continue
+                    owner_root_id = str(get_entity_id(owner_root) or "")
+                    if owner_root_id and owner_root_id in seen_owner_roots:
+                        continue
+                    if owner_root_id:
+                        seen_owner_roots.add(owner_root_id)
+                    owner_sr = getattr(owner_root, "special_rules", None)
+                    if not isinstance(owner_sr, dict):
+                        continue
+                    try:
+                        used_turn = int(owner_sr.get("start_any_command_phase_objective_battleshock_turn", 0) or 0)
+                    except (TypeError, ValueError):
+                        used_turn = 0
+                    if int(used_turn) != int(turn):
+                        continue
+                    used_turn_owner = str(
+                        owner_sr.get("start_any_command_phase_objective_battleshock_turn_owner_id", "")
+                        or owner_sr.get("start_any_command_phase_objective_battleshock_turn_owner", "")
+                        or ""
+                    ).strip()
+                    if normalized_turn_owner and used_turn_owner and used_turn_owner != normalized_turn_owner:
+                        continue
+                    for objective_id in list(owner_sr.get("start_any_command_phase_objective_battleshock_objective_ids", []) or []):
+                        objective_key = str(objective_id or "").strip()
+                        if objective_key:
+                            targeted.add(objective_key)
+            return targeted
+
+        objective_pool: list = []
+        objective_seen: set[str] = set()
+        for objective in list(getattr(getattr(self, "map", None), "objectives", []) or []):
+            if objective is None:
+                continue
+            objective_id = str(get_entity_id(objective) or "").strip()
+            if not objective_id or objective_id in objective_seen:
+                continue
+            location = getattr(objective, "location", None)
+            if location is None:
+                continue
+            if bool(getattr(location, "removed", False)):
+                continue
+            objective_seen.add(objective_id)
+            objective_pool.append(objective)
+        objective_pool = sorted(list(objective_pool or []), key=_objective_sort_key)
+        targeted_objective_ids = _collect_targeted_objective_ids_for_turn(
+            int(current_turn),
+            turn_owner_id=current_turn_owner_id,
+        )
 
         for owner in sorted(list(getattr(self, "players", []) or []), key=lambda p: str(getattr(p, "id", "") or "")):
             if owner is None:
@@ -4486,6 +4609,50 @@ class GamePhaseHandlersMixin:
                 except Exception:
                     models = list(getattr(root, "models", []) or [])
                 for model in sorted([m for m in list(models or []) if getattr(m, "is_alive", False)], key=_model_sort_key):
+                    objective_specs = root.model_start_any_command_phase_objective_battleshock_specs(model) or []
+                    queue_objective_fn = getattr(self, "_queue_start_any_command_phase_objective_battleshock", None)
+                    if objective_specs and callable(queue_objective_fn):
+                        for objective_spec in list(objective_specs or []):
+                            objective_ability_key = str(
+                                objective_spec.get("ability_key", "") or "start_any_command_phase_objective_battleshock"
+                            ).strip().lower()
+                            if not objective_ability_key:
+                                objective_ability_key = "start_any_command_phase_objective_battleshock"
+                            if getattr(model, "has_used_once_per_battle", lambda _k: False)(objective_ability_key):
+                                continue
+                            try:
+                                objective_selection_range = int(objective_spec.get("objective_selection_range", 0) or 0)
+                            except (TypeError, ValueError):
+                                objective_selection_range = 0
+                            if objective_selection_range <= 0:
+                                continue
+                            per_objective_once_per_turn = bool(objective_spec.get("per_objective_once_per_turn", False))
+                            candidate_objectives = []
+                            for objective in list(objective_pool or []):
+                                objective_id = str(get_entity_id(objective) or "").strip()
+                                if not objective_id:
+                                    continue
+                                if per_objective_once_per_turn and objective_id in targeted_objective_ids:
+                                    continue
+                                if not _is_model_within_objective_selection_range(
+                                    model,
+                                    objective,
+                                    range_value=float(objective_selection_range),
+                                ):
+                                    continue
+                                candidate_objectives.append(objective)
+                            if not candidate_objectives:
+                                continue
+                            source_unit = getattr(model, "parent_unit", None) or root
+                            queue_objective_fn(
+                                player=owner,
+                                source_unit=source_unit,
+                                model=model,
+                                objectives=list(candidate_objectives),
+                                spec=dict(objective_spec),
+                                turn_owner_id=current_turn_owner_id,
+                            )
+
                     specs = root.model_start_any_command_phase_battleshock_specs(model) or []
                     if not specs:
                         continue

@@ -3096,6 +3096,112 @@ def _mark_resurrection_orb_used_this_turn(source_unit, *, turn: int, turn_owner_
     source_unit.special_rules = updated
 
 
+def _model_within_objective_marker_range(model: object, objective: object, *, range_value: float) -> bool:
+    if model is None or objective is None:
+        return False
+    try:
+        rng = float(range_value or 0.0)
+    except (TypeError, ValueError):
+        rng = 0.0
+    if rng <= 0.0:
+        return False
+    location = getattr(objective, "location", None)
+    if location is None:
+        return False
+    if bool(getattr(location, "removed", False)):
+        return False
+    get_location = getattr(model, "get_location", None)
+    model_location = get_location() if callable(get_location) else None
+    if not model_location or len(model_location) < 3:
+        return False
+    try:
+        mx = float(model_location[0])
+        my = float(model_location[1])
+        mz = float(model_location[2])
+    except (TypeError, ValueError):
+        return False
+    if hasattr(location, "x") and hasattr(location, "y"):
+        try:
+            ox = float(getattr(location, "x", 0.0) or 0.0)
+            oy = float(getattr(location, "y", 0.0) or 0.0)
+            oz = float(getattr(location, "z", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return False
+    elif isinstance(location, (tuple, list)) and len(location) >= 2:
+        try:
+            ox = float(location[0])
+            oy = float(location[1])
+            oz = float(location[2]) if len(location) >= 3 else 0.0
+        except (TypeError, ValueError):
+            return False
+    else:
+        return False
+    base_radius_fn = getattr(getattr(model, "model_base", None), "get_radius", None)
+    try:
+        base_radius = float(base_radius_fn() if callable(base_radius_fn) else 0.0)
+    except (TypeError, ValueError):
+        base_radius = 0.0
+    dx = mx - ox
+    dy = my - oy
+    dz = mz - oz
+    return ((dx * dx) + (dy * dy) + (dz * dz)) ** 0.5 <= float(rng + base_radius) + 1e-6
+
+
+def _collect_start_any_command_phase_objective_battleshock_targeted_ids(
+    game: object,
+    *,
+    turn: int,
+    turn_owner_id: str = "",
+) -> set[str]:
+    if game is None or int(turn or 0) <= 0:
+        return set()
+    targeted: set[str] = set()
+    normalized_turn_owner = str(turn_owner_id or "").strip()
+    for player in list(getattr(game, "players", []) or []):
+        if player is None:
+            continue
+        army = getattr(player, "army", None)
+        if army is None:
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else None
+        if army is None:
+            continue
+        seen_roots: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id in seen_roots:
+                continue
+            if root_id:
+                seen_roots.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            try:
+                used_turn = int(sr.get("start_any_command_phase_objective_battleshock_turn", 0) or 0)
+            except (TypeError, ValueError):
+                used_turn = 0
+            if int(used_turn) != int(turn):
+                continue
+            used_turn_owner = str(
+                sr.get("start_any_command_phase_objective_battleshock_turn_owner_id", "")
+                or sr.get("start_any_command_phase_objective_battleshock_turn_owner", "")
+                or ""
+            ).strip()
+            if normalized_turn_owner and used_turn_owner and used_turn_owner != normalized_turn_owner:
+                continue
+            for objective_id in list(sr.get("start_any_command_phase_objective_battleshock_objective_ids", []) or []):
+                key = str(objective_id or "").strip()
+                if key:
+                    targeted.add(key)
+    return targeted
+
+
 def _validate_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -7006,6 +7112,121 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if callable(in_range_fn):
             if not bool(in_range_fn(model, target_root, range_value=float(range_value))):
                 return ("Harbinger of Despair target is out of range.",)
+        return ()
+    if ability == "start_any_command_phase_objective_battleshock":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if model is None:
+            return ("Objective marker Battle-shock source model was not found.",)
+        if source_unit is None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return ("Objective marker Battle-shock source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Objective marker Battle-shock source unit was not found.",)
+        is_alive_fn = getattr(source_root, "is_alive", None)
+        source_is_alive = bool(is_alive_fn()) if callable(is_alive_fn) else False
+        if not source_is_alive:
+            return ("Objective marker Battle-shock source unit is not alive.",)
+        if not bool(getattr(source_root, "deployed", False)):
+            return ("Objective marker Battle-shock source unit is not deployed.",)
+        is_in_reserves_fn = getattr(source_root, "is_in_reserves", None)
+        if callable(is_in_reserves_fn) and bool(is_in_reserves_fn()):
+            return ("Objective marker Battle-shock source unit is in Reserves.",)
+        if bool(getattr(source_root, "is_embarked", False)):
+            return ("Objective marker Battle-shock source unit is embarked.",)
+
+        model_parent = getattr(model, "parent_unit", None)
+        model_parent_root = (
+            model_parent.get_attached_unit_root()
+            if model_parent is not None and hasattr(model_parent, "get_attached_unit_root")
+            else model_parent
+        )
+        if model_parent_root is not None and model_parent_root is not source_root:
+            return ("Objective marker Battle-shock source model does not belong to the source unit.",)
+        if not bool(getattr(model, "is_alive", True)):
+            return ("Objective marker Battle-shock source model is not alive.",)
+
+        ability_key = str(payload.get("ability_key") or ctx.get("ability_key") or "").strip().lower()
+        if not ability_key:
+            return ("Objective marker Battle-shock ability_key is required.",)
+        if bool(getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key)):
+            return ("Objective marker Battle-shock has already been used by this model.",)
+
+        phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name and current_phase and current_phase != phase_name:
+            return ("Objective marker Battle-shock can only be resolved in the queued phase.",)
+        try:
+            queued_turn = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            queued_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or ctx.get("turn_owner", "") or "").strip()
+        if not turn_owner_id:
+            get_current_player = getattr(game, "get_current_player", None)
+            current_player = get_current_player() if callable(get_current_player) else None
+            turn_owner_id = str(getattr(current_player, "id", "") or "").strip()
+        if queued_turn > 0 and current_turn > 0 and queued_turn != current_turn:
+            return ("Objective marker Battle-shock decision is no longer valid this turn.",)
+
+        if is_skip_choice(request, result):
+            return ()
+
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return ("Objective marker Battle-shock selection requires objective_id.",)
+        objective = get_objective(game, objective_id)
+        if objective is None:
+            return ("Selected objective marker was not found.",)
+        objective_location = getattr(objective, "location", None)
+        if objective_location is None or bool(getattr(objective_location, "removed", False)):
+            return ("Selected objective marker is not available.",)
+
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_objective_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and objective_id not in candidate_ids:
+            return ("Selected objective marker is not an eligible candidate.",)
+
+        try:
+            selection_range = float(ctx.get("objective_selection_range", payload.get("objective_selection_range", 0)) or 0.0)
+        except (TypeError, ValueError):
+            selection_range = 0.0
+        if selection_range <= 0:
+            return ("Objective marker Battle-shock range is invalid.",)
+        within_fn = getattr(game, "_model_within_range_of_objective_marker", None)
+        if callable(within_fn):
+            if not bool(within_fn(model, objective, range_value=float(selection_range))):
+                return ("Selected objective marker is out of range of the bearer.",)
+        elif not _model_within_objective_marker_range(model, objective, range_value=float(selection_range)):
+            return ("Selected objective marker is out of range of the bearer.",)
+
+        if bool(ctx.get("per_objective_once_per_turn", False)):
+            targeted = _collect_start_any_command_phase_objective_battleshock_targeted_ids(
+                game,
+                turn=int(current_turn or queued_turn or 0),
+                turn_owner_id=turn_owner_id,
+            )
+            if objective_id in targeted:
+                return ("Selected objective marker has already been targeted by this ability this turn.",)
         return ()
     if is_skip_choice(request, result):
         return ()
@@ -13442,6 +13663,184 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             f"{ability_name}: {getattr(target_root, 'name', 'Unit')} takes a Battle-shock test at {int(modifier)}.",
         )
         return target_root
+    if ability == "start_any_command_phase_objective_battleshock":
+        payload = _option_payload(request, result)
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        if model is None or source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "Nuncio Aquila").strip() or "Nuncio Aquila"
+        ability_key = str(ctx.get("ability_key", "") or payload.get("ability_key", "") or "").strip().lower()
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or ctx.get("turn_owner", "") or "").strip()
+        if not turn_owner_id:
+            get_current_player = getattr(game, "get_current_player", None)
+            current_player = get_current_player() if callable(get_current_player) else None
+            turn_owner_id = str(getattr(current_player, "id", "") or "").strip()
+
+        if is_skip_choice(request, result):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: selected none.",
+            )
+            return None
+        if not ability_key:
+            return None
+        if bool(getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key)):
+            return None
+
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return None
+        objective = get_objective(game, objective_id)
+        if objective is None:
+            return None
+        objective_location = getattr(objective, "location", None)
+        if objective_location is None or bool(getattr(objective_location, "removed", False)):
+            return None
+
+        try:
+            selection_range = float(ctx.get("objective_selection_range", payload.get("objective_selection_range", 0)) or 0.0)
+        except (TypeError, ValueError):
+            selection_range = 0.0
+        if selection_range <= 0:
+            return None
+        within_fn = getattr(game, "_model_within_range_of_objective_marker", None)
+        if callable(within_fn):
+            if not bool(within_fn(model, objective, range_value=float(selection_range))):
+                return None
+        elif not _model_within_objective_marker_range(model, objective, range_value=float(selection_range)):
+            return None
+
+        per_objective_once_per_turn = bool(ctx.get("per_objective_once_per_turn", False))
+        if per_objective_once_per_turn:
+            targeted = _collect_start_any_command_phase_objective_battleshock_targeted_ids(
+                game,
+                turn=int(current_turn or 0),
+                turn_owner_id=turn_owner_id,
+            )
+            if objective_id in targeted:
+                return None
+
+        if not bool(getattr(model, "mark_used_once_per_battle", lambda *_args, **_kwargs: False)(
+            ability_key,
+            ability_name=ability_name,
+            source="datasheet",
+        )):
+            return None
+
+        exclude_monster_vehicle = bool(ctx.get("exclude_monster_vehicle", False))
+        tested_unit_ids: list[str] = []
+        tested_unit_names: list[str] = []
+        for candidate_player in list(getattr(game, "players", []) or []):
+            if candidate_player is None:
+                continue
+            candidate_army = getattr(candidate_player, "army", None)
+            if candidate_army is None:
+                get_army = getattr(candidate_player, "get_army", None)
+                candidate_army = get_army() if callable(get_army) else None
+            if candidate_army is None or candidate_army is source_army:
+                continue
+            seen_roots: set[str] = set()
+            for candidate_unit in list(getattr(candidate_army, "units", []) or []):
+                if candidate_unit is None:
+                    continue
+                candidate_root = (
+                    candidate_unit.get_attached_unit_root()
+                    if hasattr(candidate_unit, "get_attached_unit_root")
+                    else candidate_unit
+                )
+                if candidate_root is None:
+                    continue
+                candidate_root_id = str(get_entity_id(candidate_root) or "")
+                if not candidate_root_id or candidate_root_id in seen_roots:
+                    continue
+                seen_roots.add(candidate_root_id)
+                candidate_is_alive_fn = getattr(candidate_root, "is_alive", None)
+                candidate_is_alive = bool(candidate_is_alive_fn()) if callable(candidate_is_alive_fn) else False
+                if not candidate_is_alive:
+                    continue
+                if not bool(getattr(candidate_root, "deployed", False)):
+                    continue
+                if bool(getattr(candidate_root, "is_embarked", False)):
+                    continue
+                candidate_is_in_reserves_fn = getattr(candidate_root, "is_in_reserves", None)
+                if callable(candidate_is_in_reserves_fn) and bool(candidate_is_in_reserves_fn()):
+                    continue
+                in_range = False
+                within_objective_fn = getattr(candidate_root, "is_within_objective_range", None)
+                if callable(within_objective_fn):
+                    in_range = bool(within_objective_fn(objective_location))
+                if not in_range:
+                    continue
+                if exclude_monster_vehicle:
+                    has_any_keyword = getattr(candidate_root, "has_any_keyword", None)
+                    if callable(has_any_keyword):
+                        if bool(has_any_keyword("MONSTER")) or bool(has_any_keyword("VEHICLE")):
+                            continue
+                take_test = getattr(candidate_root, "take_battle_shock_test", None)
+                if callable(take_test):
+                    take_test(int(current_turn or 1))
+                tested_unit_ids.append(candidate_root_id)
+                tested_unit_names.append(str(getattr(candidate_root, "name", "Unit") or "Unit"))
+
+        source_sr = getattr(source_root, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        used_ids = [
+            str(value or "").strip()
+            for value in list(source_sr.get("start_any_command_phase_objective_battleshock_objective_ids", []) or [])
+            if str(value or "").strip()
+        ]
+        if objective_id not in used_ids:
+            used_ids.append(objective_id)
+        source_sr["start_any_command_phase_objective_battleshock_turn"] = int(current_turn or 0)
+        source_sr["start_any_command_phase_objective_battleshock_turn_owner_id"] = turn_owner_id
+        source_sr["start_any_command_phase_objective_battleshock_objective_ids"] = sorted(set(used_ids))
+        source_root.special_rules = source_sr
+
+        objective_name = str(getattr(objective, "name", "") or "objective marker")
+        if tested_unit_names:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {objective_name} selected; {', '.join(tested_unit_names)} take Battle-shock tests.",
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {objective_name} selected; no eligible enemy units were within range.",
+            )
+        return {
+            "objective_id": objective_id,
+            "objective_name": objective_name,
+            "tested_unit_ids": list(tested_unit_ids),
+            "tested_count": int(len(tested_unit_ids)),
+        }
     if is_skip_choice(request, result):
         return None
     payload = _option_payload(request, result)

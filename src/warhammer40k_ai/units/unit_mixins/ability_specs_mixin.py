@@ -1903,6 +1903,87 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_any_command_phase_objective_battleshock_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: once per battle, start of any Command phase, select one
+        objective marker near the bearer; enemy units in range of that marker take
+        Battle-shock tests.
+
+        Returns specs with keys:
+            - source: ability name
+            - objective_selection_range: int
+            - exclude_monster_vehicle: bool
+            - per_objective_once_per_turn: bool
+            - ability_key: str
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_any_command_phase_objective_battleshock:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, bool, bool]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._START_ANY_COMMAND_PHASE_OBJECTIVE_BATTLESHOCK_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                objective_selection_range = int(m.group("range") or 0)
+            except (TypeError, ValueError):
+                objective_selection_range = 0
+            if objective_selection_range <= 0:
+                continue
+            exclude_raw = str(m.group("exclude") or "").strip().lower()
+            exclude_monster_vehicle = (
+                "excluding monsters and vehicles" in exclude_raw
+                or "excluding monster and vehicle" in exclude_raw
+                or "excluding monsters and vehicles" in normalized
+                or "excluding monster and vehicle" in normalized
+            )
+            per_objective_once_per_turn = "each objective marker can only be targeted by this ability once per turn" in normalized
+            source = str(name or "Objective marker Battle-shock").strip() or "Objective marker Battle-shock"
+            source_key = re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_")
+            if not source_key:
+                source_key = "objective_battleshock"
+            ability_key = f"start_any_command_phase_objective_battleshock:{source_key}"
+            dedupe_key = (
+                source.lower(),
+                int(objective_selection_range),
+                bool(exclude_monster_vehicle),
+                bool(per_objective_once_per_turn),
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "objective_selection_range": int(objective_selection_range),
+                    "exclude_monster_vehicle": bool(exclude_monster_vehicle),
+                    "per_objective_once_per_turn": bool(per_objective_once_per_turn),
+                    "ability_key": ability_key,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_selected_phases_enemy_range_battleshock_specs(
         self,
         model: Optional['Model'] = None,

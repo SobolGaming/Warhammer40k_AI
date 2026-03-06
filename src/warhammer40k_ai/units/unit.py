@@ -3658,6 +3658,15 @@ class Unit(
         r"subtracting (?P<pen>\d+) from that test(?: or subtracting (?P<psyker_pen>\d+) if that unit is a psyker)?",
         re.IGNORECASE,
     )
+    _START_ANY_COMMAND_PHASE_OBJECTIVE_BATTLESHOCK_RE = re.compile(
+        r"once per battle at the start of any command phase "
+        r"(?:(?:this model|the bearer) can use this ability(?: if it does)? )?"
+        r"(?:you can )?select one objective marker within (?P<range>\d+)\s*\"?\s*of (?:the bearer|this model) "
+        r"all enemy units(?: (?P<exclude>excluding [a-z0-9 ]+?))? within range of that objective marker must take a battle shock test"
+        r"(?: each objective marker can only be targeted by this ability once per turn)?"
+        r"(?: designer(?:s| s)? note .+)?",
+        re.IGNORECASE,
+    )
     _START_SELECTED_PHASES_ENEMY_RANGE_BATTLESHOCK_RE = re.compile(
         r"once per turn at the start of your (?P<phases>[a-z ]+?) phase(?:s)? "
         r"you can select one enemy unit within (?P<range>\d+)\s*\"?\s*of this model "

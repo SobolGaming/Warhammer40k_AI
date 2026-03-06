@@ -1395,6 +1395,134 @@ class GameReactiveDecisionsMixin:
         self.request_decision(request)
         return request
 
+    def _queue_start_any_command_phase_objective_battleshock(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        objectives: list,
+        spec: dict,
+        turn_owner_id: str = "",
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not objectives:
+            return None
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
+
+        model_id = str(get_entity_id(model) or "").strip()
+        unit_id = str(get_entity_id(source_unit) or "").strip()
+        if not model_id or not unit_id:
+            return None
+
+        ability_name = str(spec.get("source", "") or "Nuncio Aquila").strip() or "Nuncio Aquila"
+        ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+        if not ability_key:
+            source_key = re.sub(r"[^a-z0-9]+", "_", ability_name.lower()).strip("_")
+            if not source_key:
+                source_key = "objective_battleshock"
+            ability_key = f"start_any_command_phase_objective_battleshock:{source_key}"
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        normalized_turn_owner_id = str(turn_owner_id or "").strip()
+        try:
+            selection_range = int(spec.get("objective_selection_range", 0) or 0)
+        except (TypeError, ValueError):
+            selection_range = 0
+        if selection_range <= 0:
+            return None
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "start_any_command_phase_objective_battleshock":
+                    continue
+                if str(ctx.get("model_id", "") or "") != model_id:
+                    continue
+                if str(ctx.get("ability_key", "") or "").strip().lower() != ability_key:
+                    continue
+                try:
+                    queued_turn = int(ctx.get("turn", 0) or 0)
+                except (TypeError, ValueError):
+                    queued_turn = 0
+                if queued_turn and current_turn and queued_turn != current_turn:
+                    continue
+                queued_turn_owner = str(ctx.get("turn_owner_id", "") or "").strip()
+                if (
+                    normalized_turn_owner_id
+                    and queued_turn_owner
+                    and queued_turn_owner != normalized_turn_owner_id
+                ):
+                    continue
+                return None
+
+        def _objective_sort_key(obj):
+            try:
+                return str(get_entity_id(obj))
+            except (AttributeError, TypeError, ValueError):
+                return str(getattr(obj, "name", "") or "")
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        candidate_objective_ids: list[str] = []
+        for objective in sorted(list(objectives or []), key=_objective_sort_key):
+            objective_id = str(get_entity_id(objective) or "").strip()
+            if not objective_id:
+                continue
+            candidate_objective_ids.append(objective_id)
+            objective_name = str(getattr(objective, "name", "") or "Objective marker").strip() or "Objective marker"
+            options.append(
+                DecisionOption.create(
+                    objective_name,
+                    payload={
+                        "objective_id": objective_id,
+                        "objective_name": objective_name,
+                        "model_id": model_id,
+                        "unit_id": unit_id,
+                    },
+                )
+            )
+        if len(options) <= 1:
+            return None
+
+        ctx = {
+            "ability": "start_any_command_phase_objective_battleshock",
+            "ability_name": ability_name,
+            "ability_key": ability_key,
+            "phase_name": "COMMAND_PHASE",
+            "phase": "Command phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "objective_selection_range": int(selection_range),
+            "exclude_monster_vehicle": bool(spec.get("exclude_monster_vehicle", False)),
+            "per_objective_once_per_turn": bool(spec.get("per_objective_once_per_turn", False)),
+            "candidate_objective_ids": list(candidate_objective_ids),
+            "optional": True,
+            "turn": int(current_turn or 0),
+            "turn_owner_id": normalized_turn_owner_id,
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select one objective marker within {int(selection_range)}\" of the bearer.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_start_shooting_phase_visible_hit_bonus(
         self,
         *,

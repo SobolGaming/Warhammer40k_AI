@@ -5400,6 +5400,7 @@ def _classify_ability_base(
     battle_protocols_support = _battle_protocols_support(description)
     start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
     opponent_command_phase_below_starting_battleshock_support = _opponent_command_phase_below_starting_battleshock_support(description)
+    start_any_command_phase_objective_battleshock_support = _start_any_command_phase_objective_battleshock_support(description)
     start_selected_phases_enemy_range_battleshock_support = _start_selected_phases_enemy_range_battleshock_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
     start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
@@ -5699,6 +5700,8 @@ def _classify_ability_base(
         return start_shooting_phase_visible_battleshock_support
     if opponent_command_phase_below_starting_battleshock_support:
         return opponent_command_phase_below_starting_battleshock_support
+    if start_any_command_phase_objective_battleshock_support:
+        return start_any_command_phase_objective_battleshock_support
     if start_selected_phases_enemy_range_battleshock_support:
         return start_selected_phases_enemy_range_battleshock_support
     if shooting_phase_dice_pool_mortal_support:
@@ -9672,6 +9675,54 @@ def _opponent_command_phase_below_starting_battleshock_support(description: str)
     return (
         "Supported",
         f"Opponent Command phase Battle-shock step: enemy units below Starting Strength within {rng}\" take Battle-shock tests.",
+    )
+
+
+def _start_any_command_phase_objective_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle at the start of any command phase you can select one objective marker within (?P<range>\d+) of the bearer "
+        r"all enemy units(?: excluding (?P<exclude>[a-z0-9 ]+?))? within range of that objective marker must take a battle shock test"
+        r"(?: each objective marker can only be targeted by this ability once per turn)?"
+        r"(?: designers note .+)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        rng = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        rng = 0
+    if rng <= 0:
+        return None
+    exclude_text = str(m.group("exclude") or "").strip().lower()
+    exclude_monster_vehicle = (
+        "monsters and vehicles" in exclude_text
+        or "monster and vehicle" in exclude_text
+    )
+    once_per_turn = "each objective marker can only be targeted by this ability once per turn" in norm
+    if exclude_monster_vehicle and once_per_turn:
+        return (
+            "Supported",
+            f"Once per battle at start of any Command phase: select one objective marker within {rng}\" of the bearer; enemy non-MONSTER/VEHICLE units within range of that marker take Battle-shock tests; each objective marker can only be targeted once per turn.",
+        )
+    if exclude_monster_vehicle:
+        return (
+            "Supported",
+            f"Once per battle at start of any Command phase: select one objective marker within {rng}\" of the bearer; enemy non-MONSTER/VEHICLE units within range of that marker take Battle-shock tests.",
+        )
+    if once_per_turn:
+        return (
+            "Supported",
+            f"Once per battle at start of any Command phase: select one objective marker within {rng}\" of the bearer; enemy units within range of that marker take Battle-shock tests; each objective marker can only be targeted once per turn.",
+        )
+    return (
+        "Supported",
+        f"Once per battle at start of any Command phase: select one objective marker within {rng}\" of the bearer; enemy units within range of that marker take Battle-shock tests.",
     )
 
 
