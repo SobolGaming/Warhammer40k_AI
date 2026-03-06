@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 
 class _MockDatasheet:
@@ -105,6 +106,78 @@ class TestNecronsDatasheetGroup2Abilities(unittest.TestCase):
         self.assertIsNotNone(rule)
         self.assertEqual(int(rule.get("threshold", 0)), 2)
         self.assertEqual(str(rule.get("source", "")), "Systematic Vigour")
+
+    def test_flesh_hunger_parses_melee_successful_hit_critical_vs_below_half(self):
+        ability = {
+            "name": "Flesh Hunger",
+            "description": (
+                "Each time a model in this unit makes a melee attack, if the target of that attack is Below Half-strength, "
+                "a successful Hit roll scores a Critical Hit."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Flayed Ones", abilities=[ability])
+        specs = unit.unit_melee_successful_hit_critical_vs_below_half_specs()
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(str(specs[0].get("source", "")), "Flesh Hunger")
+
+    def test_flesh_hunger_crit_on_successful_melee_hit_vs_below_half_only(self):
+        from warhammer40k_ai.units import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Flesh Hunger",
+            "description": (
+                "Each time a model in this unit makes a melee attack, if the target of that attack is Below Half-strength, "
+                "a successful Hit roll scores a Critical Hit."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        attacker = _make_unit("Flayed Ones", abilities=[ability])
+        target = _make_unit("Enemy")
+        target.is_below_half_strength = lambda: True
+        target.is_below_starting_strength = lambda: True
+
+        parent = SimpleNamespace(name="Flayer Claws", is_melee=lambda: True, is_ranged=lambda: False)
+        profile = WargearProfile(
+            profile_name="Melee",
+            wargear_data={"range": "Melee", "A": "1", "BS_WS": "4+", "S": "4", "AP": "0", "D": "1", "description": ""},
+            parent_wargear=parent,
+        )
+        aura_stub = SimpleNamespace(
+            hit=0,
+            wound=0,
+            reroll_hit_ones=False,
+            reroll_wound_ones=False,
+            reroll_hit_reasons=(),
+            reroll_wound_reasons=(),
+            target_toughness_delta=0,
+            target_toughness_reasons=(),
+        )
+
+        attack_instance = {"_aura_attack_mods": aura_stub}
+        original_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _d: 4
+        try:
+            hit_result = profile._hit_target_with_tracking(target, attacker.models[0], attack_instance)
+        finally:
+            wargear_mod.get_roll = original_roll
+        self.assertEqual(int(hit_result.get("crit_threshold", 0) or 0), 4)
+        self.assertTrue(bool(attack_instance.get("crit_hit", False)))
+
+        target.is_below_half_strength = lambda: False
+        target.is_below_starting_strength = lambda: False
+        attack_instance = {"_aura_attack_mods": aura_stub}
+        original_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _d: 4
+        try:
+            hit_result = profile._hit_target_with_tracking(target, attacker.models[0], attack_instance)
+        finally:
+            wargear_mod.get_roll = original_roll
+        self.assertEqual(int(hit_result.get("crit_threshold", 0) or 0), 6)
+        self.assertFalse(bool(attack_instance.get("crit_hit", False)))
 
     def test_bound_creation_grants_fnp_to_attached_cryptek(self):
         ability = {

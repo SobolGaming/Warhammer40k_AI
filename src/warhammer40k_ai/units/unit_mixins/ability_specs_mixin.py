@@ -5142,6 +5142,49 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_melee_successful_hit_critical_vs_below_half_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: melee attacks against Below Half-strength targets treat successful Hit rolls as Critical Hits.
+
+        Returns a list of specs with keys:
+            - source: ability name
+        """
+        cache_key = "unit_melee_successful_hit_critical_vs_below_half_specs"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if "each time a model in this unit makes a melee attack" not in normalized:
+                continue
+            if "target of that attack is below half strength" not in normalized:
+                continue
+            if "a successful hit roll scores a critical hit" not in normalized:
+                continue
+
+            source = str(name or "Melee critical vs Below Half-strength").strip() or "Melee critical vs Below Half-strength"
+            key = source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_end_of_fight_embark_specs(self) -> List[dict]:
         """
         Unit-specific rule: end of Fight phase, select a friendly Infantry unit within 6"

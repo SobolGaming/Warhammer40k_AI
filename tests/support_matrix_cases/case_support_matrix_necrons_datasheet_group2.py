@@ -43,6 +43,13 @@ import pytest
             ),
         ),
         (
+            "Flesh Hunger",
+            (
+                "Each time a model in this unit makes a melee attack, if the target of that attack is Below Half-strength, "
+                "a successful Hit roll scores a Critical Hit."
+            ),
+        ),
+        (
             "Implacable Resilience",
             "Each time an attack is allocated to this model, subtract 1 from that attack's Damage characteristic.",
         ),

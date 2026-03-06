@@ -5365,6 +5365,16 @@ def _necrons_named_datasheet_support(name: str, description: str, *, faction_id:
                 "Supported",
                 "When this model selects targets with its heavy death ray, the target player chooses Stand Firm or Duck for Cover: Stand Firm marks that target so ranged attacks score critical hits on 5+ against it for the current Shooting phase, and Duck for Cover applies -1 to hit for that unit's attacks until the start of your next Shooting phase.",
             )
+    if name_norm == "flesh hunger":
+        if (
+            "each time a model in this unit makes a melee attack" in norm
+            and "target of that attack is below half strength" in norm
+            and "successful hit roll scores a critical hit" in norm
+        ):
+            return (
+                "Supported",
+                "Melee attacks by models in this unit against Below Half-strength targets treat each successful Hit roll as a Critical Hit.",
+            )
     return None
 
 

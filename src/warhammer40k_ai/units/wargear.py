@@ -12573,9 +12573,13 @@ class WargearProfile:
         except Exception:
             pass
         try:
-            if isinstance(unit_hit_mods, dict) and unit_hit_mods.get("crit_hit_threshold"):
-                crit_threshold = min(int(crit_threshold), int(unit_hit_mods.get("crit_hit_threshold")))
-                crit_hit_reasons.extend(list(unit_hit_mods.get("crit_hit_reasons", ()) or ()))
+            if isinstance(unit_hit_mods, dict):
+                if unit_hit_mods.get("crit_hit_threshold"):
+                    crit_threshold = min(int(crit_threshold), int(unit_hit_mods.get("crit_hit_threshold")))
+                    crit_hit_reasons.extend(list(unit_hit_mods.get("crit_hit_reasons", ()) or ()))
+                if unit_hit_mods.get("crit_hit_on_successful_hit"):
+                    crit_threshold = min(int(crit_threshold), int(final_needed))
+                    crit_hit_reasons.extend(list(unit_hit_mods.get("crit_hit_reasons", ()) or ()))
         except Exception:
             pass
         try:

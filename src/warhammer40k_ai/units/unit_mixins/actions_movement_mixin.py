@@ -4111,6 +4111,7 @@ class ActionsMovementMixin:
             "reroll_hit_values": (),
             "reroll_hit_full": False,
             "crit_hit_threshold": None,
+            "crit_hit_on_successful_hit": False,
             "hit_reasons": (),
             "reroll_hit_reasons": (),
             "reroll_hit_full_reasons": (),
@@ -4123,6 +4124,7 @@ class ActionsMovementMixin:
         crit_hit_reasons: list[str] = []
         reroll_hit_values: set[int] = set()
         crit_hit_threshold = None
+        crit_hit_on_successful_hit = False
 
         def _cond_suffix(cond: Optional[AttackRollCondition]) -> str:
             if not cond:
@@ -4518,6 +4520,22 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # Flesh Hunger: melee attacks against Below Half-strength targets score critical hits on any successful hit roll.
+        if atype in ("any", "melee") and target is not None:
+            target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+            is_below_half = False
+            if target_root is not None and hasattr(target_root, "is_below_half_strength"):
+                is_below_half = bool(target_root.is_below_half_strength())
+            if is_below_half:
+                spec_fn = getattr(root, "unit_melee_successful_hit_critical_vs_below_half_specs", None)
+                if callable(spec_fn):
+                    for spec in list(spec_fn() or []):
+                        if not isinstance(spec, dict):
+                            continue
+                        source = str(spec.get("source", "") or "Flesh Hunger").strip() or "Flesh Hunger"
+                        crit_hit_on_successful_hit = True
+                        crit_hit_reasons.append(f"{source}: critical hit on successful hit vs Below Half-strength target")
+
         # Invocation of Machine Vengeance: friendly ADEPTUS MECHANICUS attacks
         # can re-roll Hit rolls against the selected Machine Vengeance target.
         try:
@@ -4839,6 +4857,7 @@ class ActionsMovementMixin:
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
         mods["crit_hit_threshold"] = crit_hit_threshold
+        mods["crit_hit_on_successful_hit"] = bool(crit_hit_on_successful_hit)
         mods["hit_reasons"] = tuple(hit_reasons)
         mods["reroll_hit_reasons"] = tuple(reroll_hit_reasons)
         mods["reroll_hit_full_reasons"] = tuple(reroll_hit_full_reasons)
