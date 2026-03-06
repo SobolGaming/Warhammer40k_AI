@@ -5459,6 +5459,7 @@ def _classify_ability_base(
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
     fight_phase_aura_battleshock_support = _fight_phase_aura_battleshock_support(description)
     charge_end_engagement_battleshock_support = _charge_end_engagement_battleshock_support(description)
+    start_any_phase_tome_skull_support = _start_any_phase_tome_skull_support(description)
     start_any_phase_battleshock_clear_support = _start_any_phase_battleshock_clear_support(description)
     fight_phase_below_starting_strength_fight_first_support = _fight_phase_below_starting_strength_fight_first_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
@@ -5798,6 +5799,8 @@ def _classify_ability_base(
         return fight_phase_aura_battleshock_support
     if charge_end_engagement_battleshock_support:
         return charge_end_engagement_battleshock_support
+    if start_any_phase_tome_skull_support:
+        return start_any_phase_tome_skull_support
     if start_any_phase_battleshock_clear_support:
         return start_any_phase_battleshock_clear_support
     if fight_phase_end_mortal_support:
@@ -7757,7 +7760,7 @@ def _defensive_wound_penalty_support(description: str) -> Optional[Tuple[str, st
     pattern = (
         r"(?:while (?:(?:a|an|the) [a-z0-9 ]+|this)(?: model)? is leading (?:this|a) unit )?"
         r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
-        r"(?:targets|target|is allocated to) "
+        r"(?:targets|target|is allocated to|is made against) "
         r"(?P<scope>this model|this unit|this model s unit|a model in this unit) "
         r"subtract (?P<val>\d+) from (?:the|that|that attacks) wound roll(?:s)?"
     )
@@ -10639,6 +10642,42 @@ def _charge_end_engagement_battleshock_support(description: str) -> Optional[Tup
     if not re.fullmatch(pattern, norm):
         return None
     return ("Supported", "After this unit ends a Charge move, engaged enemy units take Battle-shock tests.")
+
+
+def _start_any_phase_tome_skull_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle for each tome skull this unit is equipped with at the start of any phase you can select either one friendly "
+        r"(?P<keyword>[a-z0-9 ]+?) unit that is battle shocked and within (?P<range>\d+) of this unit "
+        r"or one enemy unit within (?P<enemy_range>\d+) of this unit "
+        r"if you select a friendly unit that unit is no longer battle shocked if you select an enemy unit it must take a battle shock test"
+        r"(?: designers note .+)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        rng = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        rng = 0
+    try:
+        enemy_rng = int(m.group("enemy_range") or 0)
+    except (TypeError, ValueError):
+        enemy_rng = 0
+    if rng <= 0 or enemy_rng <= 0:
+        return None
+    if rng != enemy_rng:
+        return None
+    keyword = str(m.group("keyword") or "").strip()
+    keyword_label = keyword.upper() if keyword else "friendly"
+    return (
+        "Supported",
+        f"Once per battle for each Tome-skull: start of any phase, either clear Battle-shock on a {keyword_label} unit within {rng}\" or select an enemy unit within {rng}\" to take a Battle-shock test.",
+    )
 
 
 def _start_any_phase_battleshock_clear_support(description: str) -> Optional[Tuple[str, str]]:

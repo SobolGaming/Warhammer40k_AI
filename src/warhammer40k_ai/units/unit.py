@@ -2488,7 +2488,7 @@ class Unit(
                     r"(?:while (?:(?:a|an|the) (?P<lemma>[a-z0-9 ]+)|this)(?: model)? is leading (?:this|a) unit |"
                     r"while this unit contains one or more (?P<lemma_contains>[a-z0-9 ]+) models )?"
                     r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
-                    r"(?:targets|target|is allocated to) "
+                    r"(?:targets|target|is allocated to|is made against) "
                     r"(?:this model|this unit|this model s unit|a model in this unit) "
                     r"subtract (?P<val>\d+) from (?:the|that|that attacks) wound roll(?:s)?"
                 )
@@ -3732,6 +3732,14 @@ class Unit(
     _START_ANY_PHASE_CLEAR_BATTLESHOCK_RE = re.compile(
         r"once per battle at the start of any phase you can select one friendly (?P<keyword>[a-z0-9 ]+?) unit that is battle shocked "
         r"and within (?P<range>\d+)\s*\"?\s*of (?:this model|the bearer|this unit s (?P<model>[a-z0-9 ]+?) model) that unit is no longer battle shocked",
+        re.IGNORECASE,
+    )
+    _START_ANY_PHASE_TOME_SKULL_RE = re.compile(
+        r"once per battle for each tome skull this unit is equipped with at the start of any phase you can select either one friendly "
+        r"(?P<keyword>[a-z0-9 ]+?) unit that is battle shocked and within (?P<range>\d+)\s*\"?\s*of this unit "
+        r"or one enemy unit within (?P<enemy_range>\d+)\s*\"?\s*of this unit "
+        r"if you select a friendly unit that unit is no longer battle shocked if you select an enemy unit it must take a battle shock test"
+        r"(?: designer(?:s| s)? note .+)?",
         re.IGNORECASE,
     )
     _FIGHT_SELECTED_ENEMY_MELEE_HIT_PENALTY_RE = re.compile(

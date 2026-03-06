@@ -4379,6 +4379,89 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_start_any_phase_tome_skull_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: per Tome-skull, at the start of any phase, choose either:
+        - one friendly Battle-shocked unit in range to clear Battle-shock, or
+        - one enemy unit in range to take a Battle-shock test.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - friendly_keyword: str
+            - ability_key: str
+            - per_tome_skull: bool
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_start_any_phase_tome_skull_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, str]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = self._START_ANY_PHASE_TOME_SKULL_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except (TypeError, ValueError):
+                    range_value = 0
+                try:
+                    enemy_range = int(m.group("enemy_range") or 0)
+                except (TypeError, ValueError):
+                    enemy_range = 0
+                if range_value <= 0:
+                    continue
+                if enemy_range > 0 and enemy_range != range_value:
+                    continue
+                friendly_keyword = str(m.group("keyword") or "").strip()
+                if not friendly_keyword:
+                    continue
+                source = str(name or "Tome-skull").strip() or "Tome-skull"
+                key_seed = self._normalize_keyword_phrase(source) or "tome_skull"
+                ability_key = f"start_any_phase_tome_skull:{key_seed}"
+                dedupe_key = (ability_key, int(range_value), friendly_keyword.lower())
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "friendly_keyword": friendly_keyword,
+                        "ability_key": ability_key,
+                        "per_tome_skull": True,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_start_any_phase_fnp_specs(self) -> List[dict]:
         """
         Unit-specific rule: once per battle, at the start of any phase, grant Feel No Pain to the unit.

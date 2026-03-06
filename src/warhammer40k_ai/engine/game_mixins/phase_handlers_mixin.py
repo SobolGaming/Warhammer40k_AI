@@ -1160,6 +1160,266 @@ class GamePhaseHandlersMixin:
                             spec=spec,
                             phase_label=pname.replace("_", " ").title(),
                         )
+
+                    # Unit-level: Tome-skull (start of any phase, per token).
+                    get_tome_skull_specs = getattr(root, "unit_start_any_phase_tome_skull_specs", None)
+                    tome_skull_specs = list(get_tome_skull_specs() or []) if callable(get_tome_skull_specs) else []
+                    if tome_skull_specs:
+                        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+                        from ..decisions import DecisionOption, DecisionRequest
+                        from ...units.unit import Unit
+                        from ...utility.aura_utils import unit_within_range_of_unit
+
+                        def _int_value(raw, *, default: int = 0) -> int:
+                            try:
+                                return int(raw or 0)
+                            except (TypeError, ValueError):
+                                return int(default)
+
+                        def _is_alive(obj) -> bool:
+                            alive_attr = getattr(obj, "is_alive", False)
+                            return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+                        def _is_deployed_and_on_table(obj) -> bool:
+                            if not _is_alive(obj):
+                                return False
+                            if not bool(getattr(obj, "deployed", True)):
+                                return False
+                            embarked_attr = getattr(obj, "is_embarked", False)
+                            is_embarked = bool(embarked_attr() if callable(embarked_attr) else embarked_attr)
+                            if is_embarked or bool(getattr(obj, "embarked_in", None)):
+                                return False
+                            in_reserves = False
+                            in_reserves_attr = getattr(obj, "is_in_reserves", None)
+                            if callable(in_reserves_attr):
+                                try:
+                                    in_reserves = bool(in_reserves_attr())
+                                except TypeError:
+                                    in_reserves = False
+                            reserve_status = str(getattr(obj, "reserve_status", "deployed") or "").strip().lower()
+                            in_reserves = in_reserves or reserve_status in {"reserves", "strategic_reserves"}
+                            return not in_reserves
+
+                        def _count_tome_skulls(unit_obj) -> int:
+                            get_models = getattr(unit_obj, "_get_bodyguard_support_models", None)
+                            models = list(get_models() or []) if callable(get_models) else []
+                            if not models:
+                                models = list(getattr(unit_obj, "models", []) or [])
+                            count = 0
+                            for model in list(models or []):
+                                if model is None or not bool(getattr(model, "is_alive", False)):
+                                    continue
+                                for wargear in list(getattr(model, "wargear", []) or []):
+                                    if wargear is None:
+                                        continue
+                                    if Unit._norm_wargear_name(getattr(wargear, "name", "")) == "tome-skull":
+                                        count += 1
+                                for optional_wargear in list(getattr(model, "optional_wargear", []) or []):
+                                    if Unit._norm_wargear_name(str(optional_wargear or "")) == "tome-skull":
+                                        count += 1
+                            return max(0, int(count))
+
+                        current_turn = _int_value(getattr(self, "turn", 0), default=0)
+                        source_unit_id = str(get_entity_id(root) or "")
+                        if source_unit_id:
+                            queue_obj = getattr(self, "decision_queue", None)
+                            pending_contexts = []
+                            if queue_obj is not None and hasattr(queue_obj, "list"):
+                                for pending in list(queue_obj.list() or []):
+                                    if str(getattr(pending, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                                        continue
+                                    pending_ctx = dict(getattr(pending, "context", {}) or {})
+                                    if str(pending_ctx.get("ability", "") or "") != "imperial_agents_tome_skull":
+                                        continue
+                                    if str(pending_ctx.get("source_unit_id", "") or "") != source_unit_id:
+                                        continue
+                                    pending_contexts.append(pending_ctx)
+
+                            for spec in list(tome_skull_specs or []):
+                                ability_name = str(spec.get("source", "") or "Tome-skull").strip() or "Tome-skull"
+                                ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+                                if not ability_key:
+                                    ability_key = "start_any_phase_tome_skull:tome_skull"
+                                range_value = _int_value(spec.get("range", 0), default=0)
+                                if range_value <= 0:
+                                    continue
+                                friendly_keyword = str(spec.get("friendly_keyword", "") or "").strip()
+                                if not friendly_keyword:
+                                    continue
+
+                                duplicate = False
+                                for pending_ctx in pending_contexts:
+                                    if str(pending_ctx.get("ability_key", "") or "").strip().lower() != ability_key:
+                                        continue
+                                    queued_turn = _int_value(pending_ctx.get("turn", 0), default=0)
+                                    if queued_turn and current_turn and queued_turn != current_turn:
+                                        continue
+                                    duplicate = True
+                                    break
+                                if duplicate:
+                                    continue
+
+                                sr = getattr(root, "special_rules", None)
+                                if not isinstance(sr, dict):
+                                    sr = {}
+                                used = _int_value(sr.get("imperial_agents_tome_skull_uses", 0), default=0)
+                                if (
+                                    "imperial_agents_tome_skull_token_total" in sr
+                                    or "tome_skull_token_total" in sr
+                                ):
+                                    max_uses = _int_value(
+                                        sr.get(
+                                            "imperial_agents_tome_skull_token_total",
+                                            sr.get("tome_skull_token_total", 0),
+                                        ),
+                                        default=0,
+                                    )
+                                else:
+                                    max_uses = _count_tome_skulls(root)
+                                    if max_uses <= 0:
+                                        # Roster/test contexts may omit explicit Tome-skull equipment.
+                                        max_uses = 1
+                                max_uses = max(0, int(max_uses))
+                                if max_uses <= 0 or used >= max_uses:
+                                    continue
+
+                                matches_keyword = getattr(root, "_unit_matches_keyword_phrase", None)
+                                if not callable(matches_keyword):
+                                    continue
+
+                                friendly_candidates = []
+                                seen_friendly: set[str] = set()
+                                for other in list(getattr(army, "units", []) or []):
+                                    if other is None:
+                                        continue
+                                    get_other_root = getattr(other, "get_attached_unit_root", None)
+                                    other_root = get_other_root() if callable(get_other_root) else other
+                                    if other_root is None:
+                                        continue
+                                    other_id = str(get_entity_id(other_root) or "")
+                                    if not other_id or other_id in seen_friendly:
+                                        continue
+                                    seen_friendly.add(other_id)
+                                    if not _is_deployed_and_on_table(other_root):
+                                        continue
+                                    is_battle_shocked = getattr(other_root, "is_battle_shocked", None)
+                                    if not callable(is_battle_shocked) or not bool(is_battle_shocked()):
+                                        continue
+                                    if not bool(matches_keyword(other_root, friendly_keyword)):
+                                        continue
+                                    if not bool(
+                                        unit_within_range_of_unit(
+                                            root,
+                                            other_root,
+                                            float(range_value),
+                                            use_attached_aggregate=True,
+                                        )
+                                    ):
+                                        continue
+                                    friendly_candidates.append(other_root)
+
+                                enemy_candidates = []
+                                seen_enemy: set[str] = set()
+                                for enemy_root in list(self._collect_enemy_unit_roots(p) or []):
+                                    if enemy_root is None:
+                                        continue
+                                    enemy_id = str(get_entity_id(enemy_root) or "")
+                                    if not enemy_id or enemy_id in seen_enemy:
+                                        continue
+                                    seen_enemy.add(enemy_id)
+                                    if not _is_deployed_and_on_table(enemy_root):
+                                        continue
+                                    if not bool(
+                                        unit_within_range_of_unit(
+                                            root,
+                                            enemy_root,
+                                            float(range_value),
+                                            use_attached_aggregate=True,
+                                        )
+                                    ):
+                                        continue
+                                    enemy_candidates.append(enemy_root)
+
+                                if not friendly_candidates and not enemy_candidates:
+                                    continue
+
+                                source_models = list(getattr(root, "models", []) or [])
+                                model_id = str(get_entity_id(source_models[0]) or "") if source_models else ""
+
+                                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                                friendly_ids: list[str] = []
+                                for cand in sorted(
+                                    list(friendly_candidates or []),
+                                    key=lambda u: str(get_entity_id(u) or ""),
+                                ):
+                                    cand_id = str(get_entity_id(cand) or "")
+                                    if not cand_id:
+                                        continue
+                                    friendly_ids.append(cand_id)
+                                    options.append(
+                                        DecisionOption.create(
+                                            f"Rally: {str(getattr(cand, 'name', 'Unit') or 'Unit')}",
+                                            payload={
+                                                "selection": "friendly_clear",
+                                                "target_unit_id": cand_id,
+                                            },
+                                        )
+                                    )
+
+                                enemy_ids: list[str] = []
+                                for cand in sorted(
+                                    list(enemy_candidates or []),
+                                    key=lambda u: str(get_entity_id(u) or ""),
+                                ):
+                                    cand_id = str(get_entity_id(cand) or "")
+                                    if not cand_id:
+                                        continue
+                                    enemy_ids.append(cand_id)
+                                    options.append(
+                                        DecisionOption.create(
+                                            f"Shock: {str(getattr(cand, 'name', 'Unit') or 'Unit')}",
+                                            payload={
+                                                "selection": "enemy_battleshock",
+                                                "target_unit_id": cand_id,
+                                            },
+                                        )
+                                    )
+
+                                if len(options) <= 1:
+                                    continue
+                                remaining = max(0, int(max_uses - used))
+                                message = (
+                                    f"{ability_name}: select one Battle-shocked friendly unit to rally or one enemy unit "
+                                    f"within {int(range_value)}\" to test (or None)."
+                                )
+                                if max_uses > 1:
+                                    message = f"{message} ({int(remaining)} use(s) remaining)"
+                                request = DecisionRequest.create(
+                                    DECISION_CHOOSE_QUARRY,
+                                    message,
+                                    player_id=getattr(p, "id", None),
+                                    options=options,
+                                    context={
+                                        "ability": "imperial_agents_tome_skull",
+                                        "ability_name": ability_name,
+                                        "ability_key": ability_key,
+                                        "phase": pname.replace("_", " ").title(),
+                                        "phase_name": pname,
+                                        "unit": getattr(root, "name", "") or "",
+                                        "unit_id": source_unit_id,
+                                        "source_unit_id": source_unit_id,
+                                        "model_id": model_id,
+                                        "range": int(range_value),
+                                        "friendly_keyword": friendly_keyword,
+                                        "candidate_friendly_unit_ids": list(friendly_ids),
+                                        "candidate_enemy_unit_ids": list(enemy_ids),
+                                        "max_uses": int(max_uses),
+                                        "remaining_uses": int(remaining),
+                                        "optional": True,
+                                        "turn": int(current_turn or 0),
+                                    },
+                                )
+                                self.request_decision(request)
         if pname == "FIGHT_PHASE":
             if player is None:
                 return

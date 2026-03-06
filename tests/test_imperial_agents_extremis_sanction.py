@@ -923,6 +923,151 @@ def test_soulless_horror_can_be_used_twice_per_battle_but_not_twice_in_the_same_
     assert _pending_yes_no_for_ability(game, "soulless_horror") is None
 
 
+def test_loyal_henchmen_parses_defensive_wound_penalty_for_attacks_made_against_unit():
+    loyal_henchmen = Ability(
+        "Loyal Henchmen",
+        "AOI",
+        (
+            "While an Inquisitor model is leading this unit, each time an attack is made against this unit, "
+            "subtract 1 from the Wound roll."
+        ),
+        "Datasheet",
+        "",
+    )
+    unit = _make_unit(
+        "Inquisitorial Agents",
+        keywords=["INFANTRY", "RETINUE"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[loyal_henchmen],
+    )
+    unit._ability_is_active = lambda _ability: True
+
+    unit.special_rules = {}
+    unit._parse_against_attack_characteristic_defensive_rules()
+    mods = list(getattr(unit, "special_rules", {}).get("defensive_wound_mods", []) or [])
+
+    assert any(
+        int(entry.get("value", 0) or 0) == 1
+        and str(entry.get("attack_type", "") or "") == "any"
+        and str(entry.get("requires_leading_keyword", "") or "").upper() == "INQUISITOR"
+        for entry in mods
+    )
+
+
+def test_tome_skull_queues_choice_and_resolves_clear_or_enemy_test_with_token_limit():
+    game, ia_player, enemy_player = _build_game()
+    game.turn = 1
+    game.current_player_index = 0
+
+    tome_skull = Ability(
+        "Tome-skull",
+        "AOI",
+        (
+            "Once per battle, for each Tome-skull this unit is equipped with, at the start of any phase, you can select either one "
+            "friendly AGENTS OF THE IMPERIUM unit that is Battle-shocked and within 6\" of this unit, or one enemy unit within 6\" "
+            "of this unit. If you select a friendly unit, that unit is no longer Battle-shocked; if you select an enemy unit, it "
+            "must take a Battle-shock test. Designer's Note: Place a Tome-skull token next to this unit, removing one each time "
+            "this ability is used."
+        ),
+        "Datasheet",
+        "",
+    )
+    inquisitorial_agents = _make_unit(
+        "Inquisitorial Agents",
+        keywords=["INFANTRY"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[tome_skull],
+    )
+    allied_unit = _make_unit(
+        "Friendly Allies",
+        keywords=["INFANTRY"],
+        faction_keywords=_ia_faction_keywords(),
+    )
+    enemy_unit = _make_unit(
+        "Enemy Unit",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["IMPERIUM"],
+    )
+
+    ia_player.army.add_unit(inquisitorial_agents)
+    ia_player.army.add_unit(allied_unit)
+    enemy_player.army.add_unit(enemy_unit)
+    _deploy_unit(game, inquisitorial_agents, 0.0, 0.0)
+    _deploy_unit(game, allied_unit, 4.0, 0.0)
+    _deploy_unit(game, enemy_unit, 5.0, 0.0)
+    game.rebuild_entity_registry()
+
+    inquisitorial_agents.special_rules = {
+        "imperial_agents_tome_skull_token_total": 2,
+        "imperial_agents_tome_skull_uses": 0,
+    }
+    allied_state = {"battle_shocked": True}
+    allied_unit.is_battle_shocked = lambda: bool(allied_state["battle_shocked"])
+
+    def _clear_allied_battle_shock():
+        if not allied_state["battle_shocked"]:
+            return False
+        allied_state["battle_shocked"] = False
+        return True
+
+    allied_unit.clear_battle_shock = _clear_allied_battle_shock
+    enemy_tests: list[int] = []
+    enemy_unit.take_battle_shock_test = lambda turn: enemy_tests.append(int(turn))
+
+    specs = list(inquisitorial_agents.unit_start_any_phase_tome_skull_specs() or [])
+    assert specs
+    assert int(specs[0].get("range", 0) or 0) == 6
+
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.event_system.publish("phase_start", player=ia_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+    request = _pending_quarry_for_ability(game, ability="imperial_agents_tome_skull")
+    assert request is not None
+
+    friendly_option_id = None
+    allied_id = str(get_entity_id(allied_unit) or "")
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if (
+            str(payload.get("selection", "") or "") == "friendly_clear"
+            and str(payload.get("target_unit_id", "") or "") == allied_id
+        ):
+            friendly_option_id = option.option_id
+            break
+    assert friendly_option_id is not None
+    first_result = resolve_decision_command(game, request, friendly_option_id, player_id=ia_player.id)
+    assert bool(getattr(first_result, "ok", False))
+    assert allied_state["battle_shocked"] is False
+    assert int(inquisitorial_agents.special_rules.get("imperial_agents_tome_skull_uses", 0) or 0) == 1
+    assert not inquisitorial_agents.has_used_unit_once_per_battle("start_any_phase_tome_skull:tome_skull")
+
+    allied_state["battle_shocked"] = True
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.event_system.publish("phase_start", player=ia_player, phase=BattleRoundPhases.FIGHT_PHASE)
+    request = _pending_quarry_for_ability(game, ability="imperial_agents_tome_skull")
+    assert request is not None
+
+    enemy_option_id = None
+    enemy_id = str(get_entity_id(enemy_unit) or "")
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if (
+            str(payload.get("selection", "") or "") == "enemy_battleshock"
+            and str(payload.get("target_unit_id", "") or "") == enemy_id
+        ):
+            enemy_option_id = option.option_id
+            break
+    assert enemy_option_id is not None
+    second_result = resolve_decision_command(game, request, enemy_option_id, player_id=ia_player.id)
+    assert bool(getattr(second_result, "ok", False))
+    assert enemy_tests == [1]
+    assert int(inquisitorial_agents.special_rules.get("imperial_agents_tome_skull_uses", 0) or 0) == 2
+
+    game.phase = BattleRoundPhases.CHARGE_PHASE
+    game.event_system.publish("phase_start", player=ia_player, phase=BattleRoundPhases.CHARGE_PHASE)
+    assert _pending_quarry_for_ability(game, ability="imperial_agents_tome_skull") is None
+
+
 def test_acrobatic_escape_parses_redeploy_for_next_reinforcements_step():
     acrobatic_escape = Ability(
         "Acrobatic Escape",

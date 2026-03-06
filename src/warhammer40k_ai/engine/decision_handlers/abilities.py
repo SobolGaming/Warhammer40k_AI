@@ -16723,6 +16723,128 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {sname} targeted {tname} for Battle-shock.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "imperial_agents_tome_skull":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            from ...utility.aura_utils import unit_within_range_of_unit
+
+            payload = _option_payload(request, result)
+            selection = str(payload.get("selection", "") or "").strip().lower()
+            if selection not in {"friendly_clear", "enemy_battleshock"}:
+                return chosen
+
+            target_id = str(get_entity_id(chosen) or "")
+            allowed_ids: set[str] = set()
+            if selection == "friendly_clear":
+                allowed_ids = {
+                    str(v or "").strip()
+                    for v in list(ctx.get("candidate_friendly_unit_ids", []) or [])
+                    if str(v or "").strip()
+                }
+            else:
+                allowed_ids = {
+                    str(v or "").strip()
+                    for v in list(ctx.get("candidate_enemy_unit_ids", []) or [])
+                    if str(v or "").strip()
+                }
+            if allowed_ids and (not target_id or target_id not in allowed_ids):
+                return chosen
+
+            get_source_root = getattr(source_unit, "get_attached_unit_root", None)
+            source_root = get_source_root() if callable(get_source_root) else source_unit
+            get_target_root = getattr(chosen, "get_attached_unit_root", None)
+            target_root = get_target_root() if callable(get_target_root) else chosen
+            if source_root is None or target_root is None:
+                return chosen
+
+            try:
+                range_value = float(ctx.get("range", 0) or 0)
+            except (TypeError, ValueError):
+                range_value = 0.0
+            if range_value <= 0.0:
+                return chosen
+            if not bool(
+                unit_within_range_of_unit(
+                    source_root,
+                    target_root,
+                    float(range_value),
+                    use_attached_aggregate=True,
+                )
+            ):
+                return chosen
+
+            sr = getattr(source_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+
+            def _to_int(raw, *, default: int = 0) -> int:
+                try:
+                    return int(raw or 0)
+                except (TypeError, ValueError):
+                    return int(default)
+
+            used = _to_int(sr.get("imperial_agents_tome_skull_uses", 0), default=0)
+            max_uses = _to_int(
+                ctx.get(
+                    "max_uses",
+                    sr.get(
+                        "imperial_agents_tome_skull_token_total",
+                        sr.get("tome_skull_token_total", sr.get("imperial_agents_tome_skull_max_uses", 0)),
+                    ),
+                ),
+                default=0,
+            )
+            if max_uses <= 0:
+                max_uses = max(1, int(used))
+            if used >= max_uses:
+                return chosen
+
+            ability_name = str(ctx.get("ability_name", "") or "Tome-skull").strip() or "Tome-skull"
+            friendly_keyword = str(ctx.get("friendly_keyword", "") or "").strip()
+            consumed = False
+            if selection == "friendly_clear":
+                if friendly_keyword:
+                    matches_keyword = getattr(source_root, "_unit_matches_keyword_phrase", None)
+                    if not callable(matches_keyword) or not bool(matches_keyword(target_root, friendly_keyword)):
+                        return chosen
+                is_battle_shocked = getattr(target_root, "is_battle_shocked", None)
+                if not callable(is_battle_shocked) or not bool(is_battle_shocked()):
+                    return chosen
+                clear_battle_shock = getattr(target_root, "clear_battle_shock", None)
+                if not callable(clear_battle_shock):
+                    return chosen
+                consumed = bool(clear_battle_shock())
+            else:
+                turn = _to_int(getattr(game, "turn", 0), default=0)
+                take_battle_shock_test = getattr(target_root, "take_battle_shock_test", None)
+                if not callable(take_battle_shock_test):
+                    return chosen
+                take_battle_shock_test(int(turn or 0))
+                consumed = True
+
+            if not consumed:
+                return chosen
+
+            used = int(used + 1)
+            sr["imperial_agents_tome_skull_uses"] = int(used)
+            prev_max = _to_int(sr.get("imperial_agents_tome_skull_max_uses", 0), default=0)
+            sr["imperial_agents_tome_skull_max_uses"] = max(int(max_uses), int(prev_max))
+            source_root.special_rules = sr
+
+            ability_key = str(ctx.get("ability_key", "") or "start_any_phase_tome_skull:tome_skull").strip().lower()
+            if ability_key and used >= int(max_uses):
+                mark_used = getattr(source_root, "mark_unit_once_per_battle_used", None)
+                if callable(mark_used):
+                    mark_used(ability_key, ability_name=ability_name)
+
+            get_parent_army = getattr(source_root, "get_parent_army", None)
+            parent_army = get_parent_army() if callable(get_parent_army) else None
+            player = getattr(parent_army, "player", None)
+            target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+            if selection == "friendly_clear":
+                _log_action_for_players(game, player, f"{ability_name}: rallied {target_name}.")
+            else:
+                _log_action_for_players(game, player, f"{ability_name}: {target_name} takes a Battle-shock test.")
     if str(ctx.get("ability", "") or "") == "grenade_pack_flyover":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is not None and chosen is not None:
