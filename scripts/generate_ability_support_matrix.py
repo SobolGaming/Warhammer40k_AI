@@ -5438,6 +5438,7 @@ def _classify_ability_base(
     start_any_command_phase_enemy_range_battleshock_support = _start_any_command_phase_enemy_range_battleshock_support(description)
     start_any_command_phase_objective_battleshock_support = _start_any_command_phase_objective_battleshock_support(description)
     start_selected_phases_enemy_range_battleshock_support = _start_selected_phases_enemy_range_battleshock_support(description)
+    command_phase_enemy_no_cover_support = _command_phase_enemy_no_cover_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
     start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
@@ -5754,6 +5755,8 @@ def _classify_ability_base(
         return start_any_command_phase_objective_battleshock_support
     if start_selected_phases_enemy_range_battleshock_support:
         return start_selected_phases_enemy_range_battleshock_support
+    if command_phase_enemy_no_cover_support:
+        return command_phase_enemy_no_cover_support
     if shooting_phase_dice_pool_mortal_support:
         return shooting_phase_dice_pool_mortal_support
     if start_shooting_phase_vehicle_mortal_heal_support:
@@ -6310,11 +6313,33 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
 
     m = re.search(
         r"(?:models?\s+in\s+)?(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+"
+        r"(?:have|has)\s+(?:a\s+|the\s+)?(?P<base>[1-6])\+?\s+invulnerable\s+save\s*,?\s*and\s+"
+        r"(?:a\s+|the\s+)?(?P<vs>[1-6])\+?\s+invulnerable\s+save\s+against\s+psychic\s+attacks\s+and\s+attacks\s+made\s+by\s+daemon\s+models",
+        low,
+        flags=re.IGNORECASE,
+    )
+    has_conditional_invuln = bool(m)
+    if m:
+        base_val = str(m.group("base") or "").strip()
+        vs_val = str(m.group("vs") or "").strip()
+        if leading_prefix:
+            notes.append(
+                f"{leading_prefix}Invulnerable save {base_val}+ "
+                f"({vs_val}+ vs Psychic attacks and attacks made by DAEMON models)."
+            )
+        else:
+            notes.append(
+                f"Unit gains a {base_val}+ invulnerable save "
+                f"({vs_val}+ vs Psychic attacks and attacks made by DAEMON models)."
+            )
+
+    m = re.search(
+        r"(?:models?\s+in\s+)?(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+"
         r"(?:have|has)\s+(?:a\s+|the\s+)?([1-6])\+?\s+invulnerable\s+save",
         low,
         flags=re.IGNORECASE,
     )
-    if m:
+    if m and not has_conditional_invuln:
         match_text = m.group(0)
         if leading_prefix:
             notes.append(f"{leading_prefix}Invulnerable save {m.group(1)}+.")
@@ -6503,6 +6528,8 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds?",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds? and psychic attacks",
         rf"{lead_prefix}(?:you can )?reroll advance rolls? made for {unit_ref} and you can reroll any rolls made for {unit_ref} while it is performing an agile (?:manoeuvre|maneuver)",
+        rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? [1-6] invulnerable save and (?:a|the)? [1-6] invulnerable save against psychic attacks and attacks made by daemon models",
+        rf"{lead_prefix}{unit_ref} has (?:a|the)? [1-6] invulnerable save and (?:a|the)? [1-6] invulnerable save against psychic attacks and attacks made by daemon models",
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? [1-6] invulnerable save",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? [1-6] invulnerable save",
         rf"{lead_prefix}models? in {unit_ref} have the deep strike ability",
@@ -8679,12 +8706,23 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if fight_first_match:
         notes.append("Leading: unit gains Fights First.")
 
+    invuln_psychic_daemon_match = re.search(
+        r"models in that unit have (?:a|the)?\s*(\d)\+\s*invulnerable save,?\s*and\s*(?:a|the)?\s*(\d)\+\s*invulnerable save against psychic attacks and attacks made by daemon models",
+        low,
+        flags=re.IGNORECASE,
+    )
     invuln_match = re.search(
         r"models in that unit have (?:a|the)?\s*(\d)\+\s*invulnerable save",
         low,
         flags=re.IGNORECASE,
     )
-    if invuln_match:
+    if invuln_psychic_daemon_match:
+        notes.append(
+            "Leading: unit models gain "
+            f"{invuln_psychic_daemon_match.group(1)}+ invulnerable save "
+            f"({invuln_psychic_daemon_match.group(2)}+ vs Psychic attacks and attacks made by DAEMON models)."
+        )
+    elif invuln_match:
         notes.append(f"Leading: unit models gain {invuln_match.group(1)}+ invulnerable save.")
 
     if "melee attack" in low:
@@ -8769,6 +8807,7 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}add \d+ to the wound roll(?: as well)? if that unit is below half strength",
         rf"{lead_prefix}add \d+ to the wound roll(?: as well)? if the target is battle shocked",
         rf"{lead_prefix}if the target is battle shocked add \d+ to the wound roll",
+        rf"{lead_prefix}models in that unit have (?:a|the)?\s*\d+ invulnerable save,?\s*and\s*(?:a|the)?\s*\d+ invulnerable save against psychic attacks and attacks made by daemon models",
         rf"{lead_prefix}models in that unit have (?:a|the)?\s*\d+ invulnerable save",
         rf"{lead_prefix}(?:in addition )?each time a model in that unit makes an attack a critical hit is scored on an unmodified hit roll of \d\+?(?: instead of only a 6)?",
         rf"{lead_prefix}.*reroll .*hit roll.* of 1.*",
@@ -10275,6 +10314,32 @@ def _post_shoot_no_cover_support(description: str) -> Optional[Tuple[str, str]]:
     if weapon:
         return ("Supported", f"After shooting: select a hit enemy unit hit by {weapon}; it cannot gain Benefit of Cover until phase end.")
     return ("Supported", "After shooting: select a hit enemy unit; it cannot gain Benefit of Cover until phase end.")
+
+
+def _command_phase_enemy_no_cover_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your command phase (?:you can )?select one enemy unit within (?P<range>\d+)\s*of "
+        r"(?:the bearer|this model) until the start of your next command phase that unit cannot have the benefit of cover"
+        r"(?: designer(?:s| s)? note .+)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        range_value = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        range_value = 0
+    if range_value <= 0:
+        return None
+    return (
+        "Supported",
+        f"Command phase: select one enemy unit within {int(range_value)}\" of the bearer; it cannot gain Benefit of Cover until your next Command phase.",
+    )
 
 
 def _post_shoot_disembark_wound_reroll_support(description: str) -> Optional[Tuple[str, str]]:

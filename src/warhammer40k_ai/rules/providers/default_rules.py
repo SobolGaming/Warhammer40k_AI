@@ -206,6 +206,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_engagement_battleshock"),
                 ("phase_start", "_on_phase_start_tocsin_of_misery"),
                 ("phase_start", "_on_phase_start_soulless_horror"),
+                ("phase_start", "_on_phase_start_command_phase_enemy_no_cover"),
                 ("phase_start", "_on_phase_start_harbinger_of_despair_battleshock"),
                 ("phase_start", "_on_phase_start_blinding_spray"),
                 ("phase_start", "_on_phase_start_empowered_by_death"),

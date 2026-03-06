@@ -2117,6 +2117,146 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_command_phase_enemy_no_cover_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: in your Command phase, optionally select one enemy unit in range;
+        selected unit cannot have the Benefit of Cover until your next Command phase.
+
+        Returns specs with keys:
+            - source: ability name
+            - range: int
+            - ability_key: str
+            - optional: bool
+            - expires_timing: str ("owner_next_command_start")
+        """
+        if model is None:
+            return []
+        cache_key = f"model_command_phase_enemy_no_cover:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._COMMAND_PHASE_ENEMY_NO_COVER_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except (TypeError, ValueError):
+                range_value = 0
+            if range_value <= 0:
+                continue
+            source = str(name or "Command phase no cover").strip() or "Command phase no cover"
+            source_key = re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_")
+            if not source_key:
+                source_key = "command_phase_no_cover"
+            ability_key = f"command_phase_no_cover:{source_key}"
+            dedupe_key = (ability_key, int(range_value))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "ability_key": ability_key,
+                    "optional": True,
+                    "expires_timing": "owner_next_command_start",
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_leading_psychic_daemon_invulnerable_specs(self) -> List[dict]:
+        """
+        Unit-level rule parser for "while this model is leading" invulnerable clauses with
+        a stronger save vs Psychic attacks and attacks made by DAEMON models.
+
+        Returns specs with keys:
+            - source: ability name
+            - source_unit_id: str
+            - base_invulnerable: int
+            - conditioned_invulnerable: int
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_leading_psychic_daemon_invulnerable_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._LEADING_UNIT_PSYCHIC_DAEMON_INVULN_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    base_inv = int(m.group("base") or 0)
+                except (TypeError, ValueError):
+                    base_inv = 0
+                try:
+                    conditioned_inv = int(m.group("vs") or 0)
+                except (TypeError, ValueError):
+                    conditioned_inv = 0
+                if base_inv <= 0 or conditioned_inv <= 0:
+                    continue
+                source = str(name or "Leading invulnerable save").strip() or "Leading invulnerable save"
+                source_unit_id = str(get_entity_id(unit) or "").strip()
+                dedupe_key = (source.lower(), source_unit_id, int(base_inv), int(conditioned_inv))
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                specs.append(
+                    {
+                        "source": source,
+                        "source_unit_id": source_unit_id,
+                        "base_invulnerable": int(base_inv),
+                        "conditioned_invulnerable": int(conditioned_inv),
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_selected_phases_enemy_range_battleshock_specs(
         self,
         model: Optional['Model'] = None,

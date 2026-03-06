@@ -18978,6 +18978,65 @@ class WargearProfile:
                         attack_instance["inv_save_override"] = int(inv_value)
                         source = str(inv_source or "Daemonic Illusions (Aura)").strip() or "Daemonic Illusions (Aura)"
                         attack_instance["inv_save_override_reason"] = source
+        # Leading rules with stronger invulnerable saves vs Psychic attacks and attacks made by DAEMON models.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            spec_fn = getattr(t_unit, "unit_leading_psychic_daemon_invulnerable_specs", None) if t_unit is not None else None
+            if callable(spec_fn):
+                specs = list(spec_fn() or [])
+            else:
+                specs = []
+            if specs:
+                attacker_model = attack_instance.get("attacker_model")
+                attack_is_psychic = bool(self._is_psychic_attack(attacker_model))
+                attack_from_daemon = False
+                if attacker_model is not None:
+                    has_any_keyword = getattr(attacker_model, "has_any_keyword", None)
+                    if callable(has_any_keyword):
+                        attack_from_daemon = bool(has_any_keyword("DAEMON"))
+                    if not attack_from_daemon:
+                        has_keyword = getattr(attacker_model, "has_keyword", None)
+                        if callable(has_keyword):
+                            attack_from_daemon = bool(has_keyword("DAEMON"))
+                if attack_is_psychic or attack_from_daemon:
+                    try:
+                        target_root = t_unit.get_attached_unit_root()
+                    except Exception:
+                        target_root = t_unit
+                    try:
+                        members = list(target_root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = [target_root]
+                    if not members:
+                        members = [target_root]
+                    members_by_id = {str(get_entity_id(member) or ""): member for member in list(members or []) if member is not None}
+
+                    for spec in list(specs or []):
+                        try:
+                            conditioned_inv = int(spec.get("conditioned_invulnerable", 0) or 0)
+                        except (TypeError, ValueError):
+                            conditioned_inv = 0
+                        if conditioned_inv <= 0:
+                            continue
+                        source_unit_id = str(spec.get("source_unit_id", "") or "").strip()
+                        if source_unit_id:
+                            source_member = members_by_id.get(source_unit_id)
+                            if source_member is None:
+                                continue
+                            if not bool(getattr(source_member, "is_attached_leader", False)):
+                                continue
+                        current = attack_instance.get("inv_save_override", None)
+                        try:
+                            current_value = int(current) if current is not None else None
+                        except (TypeError, ValueError):
+                            current_value = None
+                        if current_value is None or current_value > int(conditioned_inv):
+                            attack_instance["inv_save_override"] = int(conditioned_inv)
+                            condition_label = "Psychic/DAEMON attacks"
+                            source = str(spec.get("source", "") or "Leading ability").strip() or "Leading ability"
+                            attack_instance["inv_save_override_reason"] = f"{source} ({condition_label})"
+        except Exception:
+            pass
         # Wargear abilities (e.g. "The bearer has a 4+ invulnerable save.").
         try:
             t_unit = getattr(target_model, "parent_unit", None)

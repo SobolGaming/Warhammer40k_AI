@@ -2979,9 +2979,9 @@ class GamePhaseHandlersMixin:
                     unit.clear_post_shoot_leadership_debuff()
 
     def _on_phase_start_post_shoot_duration_cleanup(self, player=None, phase=None, **_kwargs) -> None:
-        """Clear owner-next-Shooting-phase post-shoot markers."""
+        """Clear owner-next-phase post-shoot markers."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
-        if pname != "SHOOTING_PHASE":
+        if pname not in ("SHOOTING_PHASE", "COMMAND_PHASE"):
             return
         if player is None:
             return
@@ -2998,10 +2998,15 @@ class GamePhaseHandlersMixin:
                 sr = getattr(unit, "special_rules", None)
                 if not isinstance(sr, dict):
                     continue
-                if (
+                expires_timing = str(sr.get("post_shoot_no_cover_expires_timing", "") or "").strip().upper()
+                should_clear_no_cover = (
                     str(sr.get("post_shoot_no_cover_owner", "") or "") == owner_id
-                    and str(sr.get("post_shoot_no_cover_expires_timing", "") or "").strip().upper() == "OWNER_NEXT_SHOOTING_START"
-                ):
+                    and (
+                        (expires_timing == "OWNER_NEXT_SHOOTING_START" and pname == "SHOOTING_PHASE")
+                        or (expires_timing == "OWNER_NEXT_COMMAND_START" and pname == "COMMAND_PHASE")
+                    )
+                )
+                if should_clear_no_cover:
                     for key in (
                         "post_shoot_no_cover_active",
                         "post_shoot_no_cover_expires_timing",
@@ -5385,6 +5390,99 @@ class GamePhaseHandlersMixin:
                             },
                             instance_key=f"{str(get_entity_id(model) or '')}:{ability_key}",
                         )
+
+    def _on_phase_start_command_phase_enemy_no_cover(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase: optionally select an enemy unit that cannot gain Benefit of Cover until next Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        queue_fn = getattr(self, "_queue_command_phase_enemy_no_cover", None)
+        if not callable(queue_fn):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        enemy_roots = list(self._collect_enemy_unit_roots(player) or [])
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(unit):
+            try:
+                return str(get_entity_id(unit))
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        def _model_sort_key(model):
+            try:
+                return str(get_entity_id(model))
+            except Exception:
+                return str(getattr(model, "name", "") or "")
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+
+            spec_fn = getattr(root, "model_command_phase_enemy_no_cover_specs", None)
+            if not callable(spec_fn):
+                continue
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            for model in sorted(list(models or []), key=_model_sort_key):
+                is_alive_attr = getattr(model, "is_alive", True)
+                model_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+                if not model_alive:
+                    continue
+                specs = list(spec_fn(model) or [])
+                if not specs:
+                    continue
+                for spec in list(specs or []):
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except (TypeError, ValueError):
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    candidates = self._enemy_candidates_within_range_of_model(
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                    )
+                    if not candidates:
+                        continue
+                    source_unit = getattr(model, "parent_unit", None) or root
+                    queue_fn(
+                        player=player,
+                        source_unit=source_unit,
+                        model=model,
+                        candidates=list(candidates),
+                        spec=dict(spec),
+                    )
 
     def _on_phase_start_harbinger_of_despair_battleshock(self, player=None, phase=None, **_kwargs) -> None:
         """Start of selected phases: optional single-target Battle-shock selection (Harbinger of Despair style)."""

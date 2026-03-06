@@ -3694,11 +3694,23 @@ class Unit(
         r"(?: designer(?:s| s)? note .+)?",
         re.IGNORECASE,
     )
+    _COMMAND_PHASE_ENEMY_NO_COVER_RE = re.compile(
+        r"in your command phase (?:you can )?select one enemy unit within (?P<range>\d+)\s*\"?\s*of "
+        r"(?:the bearer|this model) until the start of your next command phase that unit cannot have the benefit of cover"
+        r"(?: designer(?:s| s)? note .+)?",
+        re.IGNORECASE,
+    )
     _START_SELECTED_PHASES_ENEMY_RANGE_BATTLESHOCK_RE = re.compile(
         r"once per turn at the start of your (?P<phases>[a-z ]+?) phase(?:s)? "
         r"you can select one enemy unit within (?P<range>\d+)\s*\"?\s*of this model "
         r"that(?: enemy)? unit must take a battle shock test "
         r"subtracting (?P<pen>\d+) from (?:(?:that|the) )?test(?: when it does so)?",
+        re.IGNORECASE,
+    )
+    _LEADING_UNIT_PSYCHIC_DAEMON_INVULN_RE = re.compile(
+        r"while this model is leading a unit models in that unit have (?:a|the)? (?P<base>\d)\+? invulnerable save and "
+        r"(?:a|the)? (?P<vs>\d)\+? invulnerable save against psychic attacks and attacks made by daemon models"
+        r"(?: designer(?:s| s)? note .+)?",
         re.IGNORECASE,
     )
     _CHARGE_END_ENGAGEMENT_BATTLESHOCK_RE = re.compile(

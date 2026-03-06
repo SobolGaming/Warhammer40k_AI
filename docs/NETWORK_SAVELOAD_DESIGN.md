@@ -263,6 +263,7 @@ Command phase:
 - malefic_surge_unit_dialog: CHOOSE_MALEFIC_SURGE_UNIT {unit_id | skip} (context `ability="malefic_surge"`, `battle_round`)
 - soulless_horror_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="soulless_horror"`, `unit_id`, `model_id`, `ability_key`, `range`, `test_penalty`, `psyker_test_penalty`)
 - harbinger_of_despair_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="harbinger_of_despair_battleshock"`, `ability_name`, `ability_key`, `phase_name`, `unit_id`, `model_id`, `range`, `test_penalty`, `candidate_unit_ids[]`, `optional=true`, `once_per_turn=true`, `turn`)
+- glovodan_psyber_eagle_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="post_shoot_no_cover"`, `ability_name="Glovodan Psyber-eagle"`, `ability_key="command_phase_no_cover:glovodan_psyber_eagle"`, `phase="Command phase"`, `unit_id`, `source_unit_id`, `attacker_unit_id`, `model_id`, `range=18`, `candidate_unit_ids[]`, `expires_timing="OWNER_NEXT_COMMAND_START"`, `optional=true`, `turn`)
 
 Movement:
 - movement_choice_dialog: SELECT_MOVEMENT_ACTION {unit_id, action_type}

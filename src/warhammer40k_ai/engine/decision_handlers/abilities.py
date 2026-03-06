@@ -17092,6 +17092,9 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             if expires_timing == "OWNER_NEXT_SHOOTING_START":
                 sr.pop("post_shoot_no_cover_expires_phase", None)
                 sr["post_shoot_no_cover_expires_timing"] = "OWNER_NEXT_SHOOTING_START"
+            elif expires_timing == "OWNER_NEXT_COMMAND_START":
+                sr.pop("post_shoot_no_cover_expires_phase", None)
+                sr["post_shoot_no_cover_expires_timing"] = "OWNER_NEXT_COMMAND_START"
             else:
                 sr["post_shoot_no_cover_expires_phase"] = expires_phase
                 sr.pop("post_shoot_no_cover_expires_timing", None)
@@ -17106,6 +17109,12 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                         game,
                         player,
                         f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover until the start of your next Shooting phase.",
+                    )
+                elif expires_timing == "OWNER_NEXT_COMMAND_START":
+                    _log_action_for_players(
+                        game,
+                        player,
+                        f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover until the start of your next Command phase.",
                     )
                 else:
                     _log_action_for_players(

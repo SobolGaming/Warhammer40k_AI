@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
-from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.game import BattleRoundPhases, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -115,6 +115,19 @@ def _pending_yes_no_for_ability(game: Game, ability_key: str):
         ctx = dict(getattr(request, "context", {}) or {})
         if str(ctx.get("ability", "") or "") == str(ability_key or ""):
             return request
+    return None
+
+
+def _pending_quarry_for_ability(game: Game, *, ability: str, ability_key: str = ""):
+    for request in list(game.decision_queue.list() or []):
+        if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+            continue
+        ctx = dict(getattr(request, "context", {}) or {})
+        if str(ctx.get("ability", "") or "") != str(ability or ""):
+            continue
+        if ability_key and str(ctx.get("ability_key", "") or "") != str(ability_key or ""):
+            continue
+        return request
     return None
 
 
@@ -379,6 +392,220 @@ def test_gheistskull_extends_grenade_target_range_once_per_battle():
         enemy_unit=enemy_near,
         phase_name="Shooting phase",
     )
+
+
+def test_glovodan_psyber_eagle_selects_target_and_blocks_cover_until_next_command_phase():
+    game, ia_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.current_player_index = 0
+    game.turn = 1
+
+    glovodan = Ability(
+        "Glovodan Psyber-eagle",
+        "AOI",
+        (
+            "In your Command phase, you can select one enemy unit within 18\" of the bearer. "
+            "Until the start of your next Command phase, that unit cannot have the Benefit of Cover."
+        ),
+        "Datasheet",
+        "",
+    )
+    coteaz = _make_unit(
+        "Inquisitor Coteaz",
+        keywords=["INFANTRY", "CHARACTER", "INQUISITOR"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[glovodan],
+    )
+    enemy_target = _make_unit(
+        "Enemy Target",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["IMPERIUM"],
+    )
+
+    ia_player.army.add_unit(coteaz)
+    enemy_player.army.add_unit(enemy_target)
+    _deploy_unit(game, coteaz, 0.0, 0.0)
+    _deploy_unit(game, enemy_target, 12.0, 0.0)
+    game.rebuild_entity_registry()
+
+    game.event_system.publish("phase_start", player=ia_player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    request = _pending_quarry_for_ability(
+        game,
+        ability="post_shoot_no_cover",
+        ability_key="command_phase_no_cover:glovodan_psyber_eagle",
+    )
+    assert request is not None
+
+    target_option_id = None
+    target_unit_id = str(get_entity_id(enemy_target) or "")
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if str(payload.get("target_unit_id", "") or "") == target_unit_id:
+            target_option_id = option.option_id
+            break
+    assert target_option_id is not None
+
+    result = resolve_decision_command(game, request, target_option_id, player_id=ia_player.id)
+    assert bool(getattr(result, "ok", False))
+
+    target_sr = dict(getattr(enemy_target, "special_rules", {}) or {})
+    assert bool(target_sr.get("post_shoot_no_cover_active"))
+    assert str(target_sr.get("post_shoot_no_cover_expires_timing", "") or "") == "OWNER_NEXT_COMMAND_START"
+
+    attacker = coteaz.models[0]
+    attack_profile = WargearProfile(
+        "Test Rifle",
+        {
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=SimpleNamespace(name="Test Rifle", is_melee=lambda: False, is_ranged=lambda: True),
+    )
+    attack_instance = {}
+    attack_profile._hit_target_with_tracking(
+        enemy_target,
+        attacker,
+        attack_instance,
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(attack_instance.get("ignores_cover"))
+
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=BattleRoundPhases.COMMAND_PHASE)
+    assert bool(getattr(enemy_target, "special_rules", {}).get("post_shoot_no_cover_active"))
+
+    game.turn = 2
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=ia_player, phase=BattleRoundPhases.COMMAND_PHASE)
+    assert not bool(getattr(enemy_target, "special_rules", {}).get("post_shoot_no_cover_active"))
+
+
+def test_malefic_wardings_grants_four_plus_invulnerable_vs_psychic_and_daemon_attacks():
+    game, ia_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+
+    malefic_wardings = Ability(
+        "Malefic Wardings (Psychic)",
+        "AOI",
+        (
+            "While this model is leading a unit, models in that unit have a 6+ invulnerable save, "
+            "and a 4+ invulnerable save against Psychic Attacks and attacks made by DAEMON models."
+        ),
+        "Datasheet",
+        "",
+    )
+    leader = Ability("Leader", "AOI", "Leader.", "Datasheet", "")
+    bodyguard = _make_unit(
+        "Inquisitorial Agents",
+        keywords=["INFANTRY"],
+        faction_keywords=_ia_faction_keywords(),
+    )
+    coteaz = _make_unit(
+        "Inquisitor Coteaz",
+        keywords=["INFANTRY", "CHARACTER", "INQUISITOR"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[leader, malefic_wardings],
+    )
+    daemon_attacker_unit = _make_unit(
+        "Daemon Attacker",
+        faction_name="Enemy",
+        keywords=["INFANTRY", "DAEMON"],
+        faction_keywords=["CHAOS"],
+    )
+    normal_attacker_unit = _make_unit(
+        "Normal Attacker",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["IMPERIUM"],
+    )
+
+    ia_player.army.add_unit(bodyguard)
+    ia_player.army.add_unit(coteaz)
+    enemy_player.army.add_unit(daemon_attacker_unit)
+    enemy_player.army.add_unit(normal_attacker_unit)
+    _deploy_unit(game, bodyguard, 0.0, 0.0)
+    _deploy_unit(game, coteaz, 0.2, 0.0)
+    _deploy_unit(game, daemon_attacker_unit, 10.0, 0.0)
+    _deploy_unit(game, normal_attacker_unit, 10.0, 2.0)
+    game.rebuild_entity_registry()
+
+    coteaz.can_be_attached_to = [bodyguard.get_datasheet_id()]
+    coteaz.can_be_attached_to_names = [bodyguard.name]
+    coteaz.attach_to_unit(bodyguard)
+
+    target_model = bodyguard.models[0]
+    daemon_attacker = daemon_attacker_unit.models[0]
+    normal_attacker = normal_attacker_unit.models[0]
+
+    base_profile = WargearProfile(
+        "Bolt Rifle",
+        {
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "-6",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=SimpleNamespace(name="Bolt Rifle", is_melee=lambda: False, is_ranged=lambda: True),
+    )
+    psychic_profile = WargearProfile(
+        "Psychic Bolt",
+        {
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "-6",
+            "D": "1",
+            "description": "[PSYCHIC]",
+        },
+        parent_wargear=SimpleNamespace(name="Psychic Bolt", is_melee=lambda: False, is_ranged=lambda: True),
+    )
+
+    daemon_save = base_profile._save_with_tracking(
+        target_model,
+        {"attacker_model": daemon_attacker, "target_unit": bodyguard},
+        ap=-6,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert str(daemon_save.get("save_type", "") or "") == "invulnerable"
+    assert int(daemon_save.get("final_save", 0) or 0) == 4
+
+    psychic_save = psychic_profile._save_with_tracking(
+        target_model,
+        {"attacker_model": normal_attacker, "target_unit": bodyguard},
+        ap=-6,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert str(psychic_save.get("save_type", "") or "") == "invulnerable"
+    assert int(psychic_save.get("final_save", 0) or 0) == 4
+
+    normal_save = base_profile._save_with_tracking(
+        target_model,
+        {"attacker_model": normal_attacker, "target_unit": bodyguard},
+        ap=-6,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert str(normal_save.get("save_type", "") or "") == "invulnerable"
+    assert int(normal_save.get("final_save", 0) or 0) == 6
 
 
 def test_shieldbreaker_prompt_applies_and_modifies_wound_resolution():
