@@ -14755,6 +14755,87 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
     payload = _option_payload(request, result)
     unit_val = payload.get("target_unit_id", payload.get("unit_id", payload.get("unit")))
     chosen = resolve_unit(game, unit_val)
+    if str(ctx.get("ability", "") or "") == "imperial_agents_psychic_veil":
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return None
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Psychic Veil (Psychic)").strip() or "Psychic Veil (Psychic)"
+        try:
+            targeting_range = int(payload.get("targeting_range", ctx.get("targeting_range", 18)) or 18)
+        except (TypeError, ValueError):
+            targeting_range = 18
+        if targeting_range <= 0:
+            targeting_range = 18
+        try:
+            from ...utility.dice import get_roll
+            from ...utility.event_bus import append_dice
+        except Exception:
+            get_roll = None
+            append_dice = None
+        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+        if callable(append_dice) and player is not None:
+            append_dice(player, f"{ability_name} roll: {roll}")
+        if roll <= 1:
+            mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            if callable(append_dice) and player is not None:
+                append_dice(player, f"{ability_name} mortal wounds: {mortal}")
+            if mortal > 0 and source_unit is not None:
+                try:
+                    source_unit._apply_mortal_wounds_to_unit(
+                        source_unit,
+                        int(mortal),
+                        game_map=getattr(game, "map", None),
+                        is_psychic_attack=True,
+                    )
+                except Exception:
+                    pass
+            try:
+                sname = str(getattr(source_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {sname} suffers {int(mortal)} mortal wounds.")
+            except Exception:
+                pass
+            return source_root
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["imperial_agents_psychic_veil_active"] = True
+        sr["imperial_agents_psychic_veil_targeting_range"] = int(targeting_range)
+        sr["imperial_agents_psychic_veil_owner"] = str(getattr(player, "id", "") or "")
+        try:
+            sr["imperial_agents_psychic_veil_turn"] = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            sr["imperial_agents_psychic_veil_turn"] = 0
+        sr["imperial_agents_psychic_veil_source"] = ability_name
+        source_root.special_rules = sr
+        try:
+            sname = str(getattr(source_root, "name", "Unit") or "Unit")
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {sname} can only be targeted by ranged attacks from within {int(targeting_range)}\" until your next Command phase.",
+            )
+        except Exception:
+            pass
+        return source_root
     if str(ctx.get("ability", "") or "") == "sublime_prescience":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is None or chosen is None:

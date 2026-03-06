@@ -3275,6 +3275,34 @@ class LateGameplayMixin:
             pass
 
         try:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("imperial_agents_psychic_veil_active"):
+                applies = True
+                owner_id = str(sr.get("imperial_agents_psychic_veil_owner", "") or "").strip()
+                if owner_id:
+                    unit_owner = ""
+                    try:
+                        unit_owner = str(
+                            getattr(getattr(root.get_parent_army(), "player", None), "id", "") or ""
+                        ).strip()
+                    except Exception:
+                        unit_owner = ""
+                    if unit_owner and unit_owner != owner_id:
+                        applies = False
+                if applies:
+                    try:
+                        dist = float(sr.get("imperial_agents_psychic_veil_targeting_range", 18) or 18)
+                    except Exception:
+                        dist = 18.0
+                    source = (
+                        str(sr.get("imperial_agents_psychic_veil_source", "") or "").strip()
+                        or "Psychic Veil (Psychic)"
+                    )
+                    _consider(dist, source)
+        except Exception:
+            pass
+
+        try:
             if game_map is not None and bool(
                 root.has_any_keyword("LEGIONES DAEMONICA") and root.has_any_keyword("NURGLE")
             ):

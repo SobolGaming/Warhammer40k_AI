@@ -5484,6 +5484,217 @@ class GamePhaseHandlersMixin:
                         spec=dict(spec),
                     )
 
+    def _on_phase_start_imperial_agents_psychic_veil_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Start of Command phase: clear prior Psychic Veil effects for the active player."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+
+        def _unit_sort_key(unit):
+            try:
+                return str(get_entity_id(unit))
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("imperial_agents_psychic_veil_active")):
+                continue
+            effect_owner = str(sr.get("imperial_agents_psychic_veil_owner", "") or "")
+            if effect_owner and owner_id and effect_owner != owner_id:
+                continue
+            for key in (
+                "imperial_agents_psychic_veil_active",
+                "imperial_agents_psychic_veil_targeting_range",
+                "imperial_agents_psychic_veil_owner",
+                "imperial_agents_psychic_veil_turn",
+                "imperial_agents_psychic_veil_source",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
+    def _on_phase_start_imperial_agents_psychic_veil(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase: optional Psychic Veil activation for eligible models."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        try:
+            from ..decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..decisions import DecisionOption, DecisionRequest
+        except Exception:
+            return
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        queue = getattr(self, "decision_queue", None)
+
+        def _unit_sort_key(unit):
+            try:
+                return str(get_entity_id(unit))
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        def _model_sort_key(model):
+            try:
+                return str(get_entity_id(model))
+            except Exception:
+                return str(getattr(model, "name", "") or "")
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+
+            spec_fn = getattr(root, "model_command_phase_psychic_veil_specs", None)
+            if not callable(spec_fn):
+                continue
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            for model in sorted(list(models or []), key=_model_sort_key):
+                is_alive_attr = getattr(model, "is_alive", True)
+                model_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+                if not model_alive:
+                    continue
+                specs = list(spec_fn(model) or [])
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                source_unit_id = str(get_entity_id(source_unit) or "")
+                model_id = str(get_entity_id(model) or "")
+                if not source_unit_id or not model_id:
+                    continue
+                for spec in list(specs or []):
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except (TypeError, ValueError):
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    ability_name = str(spec.get("source", "") or "Psychic Veil (Psychic)").strip() or "Psychic Veil (Psychic)"
+                    ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+                    if not ability_key:
+                        source_key = re.sub(r"[^a-z0-9]+", "_", ability_name.lower()).strip("_")
+                        if not source_key:
+                            source_key = "psychic_veil"
+                        ability_key = f"command_phase_psychic_veil:{source_key}"
+
+                    if queue is not None and hasattr(queue, "list"):
+                        duplicate = False
+                        for req in list(queue.list() or []):
+                            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                                continue
+                            ctx = dict(getattr(req, "context", {}) or {})
+                            if str(ctx.get("ability", "") or "") != "imperial_agents_psychic_veil":
+                                continue
+                            if str(ctx.get("model_id", "") or "") != model_id:
+                                continue
+                            if str(ctx.get("ability_key", "") or "").strip().lower() != ability_key:
+                                continue
+                            try:
+                                queued_turn = int(ctx.get("turn", 0) or 0)
+                            except (TypeError, ValueError):
+                                queued_turn = 0
+                            if queued_turn and current_turn and queued_turn != current_turn:
+                                continue
+                            duplicate = True
+                            break
+                        if duplicate:
+                            continue
+
+                    options = [
+                        DecisionOption.create("None", payload={"action": "skip"}),
+                        DecisionOption.create(
+                            f"Use {ability_name}",
+                            payload={
+                                "action": "use",
+                                "source_unit_id": source_unit_id,
+                                "unit_id": source_unit_id,
+                                "model_id": model_id,
+                                "targeting_range": int(range_value),
+                            },
+                        ),
+                    ]
+                    ctx = {
+                        "ability": "imperial_agents_psychic_veil",
+                        "ability_name": ability_name,
+                        "ability_key": ability_key,
+                        "phase": "Command phase",
+                        "unit": getattr(source_unit, "name", "") or "",
+                        "unit_id": source_unit_id,
+                        "source_unit_id": source_unit_id,
+                        "model": getattr(model, "name", "") or "",
+                        "model_id": model_id,
+                        "targeting_range": int(range_value),
+                        "optional": True,
+                        "turn": int(current_turn or 0),
+                    }
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        (
+                            f"{ability_name}: use this ability (roll D6). On 1, this unit suffers D3 mortal wounds; "
+                            f"on 2+, this unit can only be targeted by ranged attacks from within {int(range_value)}\" "
+                            "until your next Command phase."
+                        ),
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context=ctx,
+                    )
+                    self.request_decision(request)
+
     def _on_phase_start_harbinger_of_despair_battleshock(self, player=None, phase=None, **_kwargs) -> None:
         """Start of selected phases: optional single-target Battle-shock selection (Harbinger of Despair style)."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

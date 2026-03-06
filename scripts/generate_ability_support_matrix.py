@@ -5439,6 +5439,7 @@ def _classify_ability_base(
     start_any_command_phase_objective_battleshock_support = _start_any_command_phase_objective_battleshock_support(description)
     start_selected_phases_enemy_range_battleshock_support = _start_selected_phases_enemy_range_battleshock_support(description)
     command_phase_enemy_no_cover_support = _command_phase_enemy_no_cover_support(description)
+    command_phase_psychic_veil_support = _command_phase_psychic_veil_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
     start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
@@ -5757,6 +5758,8 @@ def _classify_ability_base(
         return start_selected_phases_enemy_range_battleshock_support
     if command_phase_enemy_no_cover_support:
         return command_phase_enemy_no_cover_support
+    if command_phase_psychic_veil_support:
+        return command_phase_psychic_veil_support
     if shooting_phase_dice_pool_mortal_support:
         return shooting_phase_dice_pool_mortal_support
     if start_shooting_phase_vehicle_mortal_heal_support:
@@ -10339,6 +10342,33 @@ def _command_phase_enemy_no_cover_support(description: str) -> Optional[Tuple[st
     return (
         "Supported",
         f"Command phase: select one enemy unit within {int(range_value)}\" of the bearer; it cannot gain Benefit of Cover until your next Command phase.",
+    )
+
+
+def _command_phase_psychic_veil_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your command phase this psyker can use this ability if it does roll (?:one|1) d6 "
+        r"on a 1 this psyker(?: s|s) unit suffers d3 mortal wounds on a 2\+? until the start of your next command phase "
+        r"this psyker(?: s|s) unit can only be selected as the target of a ranged attack if the attacking model is within (?P<range>\d+)"
+        r"(?: designer(?:s| s)? note .+)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        range_value = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        range_value = 0
+    if range_value <= 0:
+        return None
+    return (
+        "Supported",
+        f"Command phase optional activation: roll D6; on 1 this PSYKER's unit suffers D3 mortal wounds, on 2+ it can only be targeted by ranged attacks from within {int(range_value)}\" until your next Command phase.",
     )
 
 

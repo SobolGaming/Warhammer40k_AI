@@ -608,6 +608,145 @@ def test_malefic_wardings_grants_four_plus_invulnerable_vs_psychic_and_daemon_at
     assert int(normal_save.get("final_save", 0) or 0) == 6
 
 
+def test_psychic_veil_roll_success_applies_ranged_targeting_cap_until_next_command_phase(monkeypatch):
+    game, ia_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.current_player_index = 0
+    game.turn = 1
+
+    psychic_veil = Ability(
+        "Psychic Veil (Psychic)",
+        "AOI",
+        (
+            "In your Command phase, this PSYKER can use this ability. If it does, roll one D6: on a 1, this "
+            "PSYKER's unit suffers D3 mortal wounds; on a 2+, until the start of your next Command phase, this "
+            "PSYKER's unit can only be selected as the target of a ranged attack if the attacking model is within 18\"."
+        ),
+        "Datasheet",
+        "",
+    )
+    draxus = _make_unit(
+        "Inquisitor Draxus",
+        keywords=["INFANTRY", "CHARACTER", "INQUISITOR", "PSYKER"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[psychic_veil],
+    )
+    enemy_target = _make_unit(
+        "Enemy Target",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["IMPERIUM"],
+    )
+
+    ia_player.army.add_unit(draxus)
+    enemy_player.army.add_unit(enemy_target)
+    _deploy_unit(game, draxus, 0.0, 0.0)
+    _deploy_unit(game, enemy_target, 12.0, 0.0)
+    game.rebuild_entity_registry()
+
+    game.event_system.publish("phase_start", player=ia_player, phase=BattleRoundPhases.COMMAND_PHASE)
+    request = _pending_quarry_for_ability(game, ability="imperial_agents_psychic_veil")
+    assert request is not None
+
+    use_option_id = None
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if str(payload.get("action", "") or "").strip().lower() == "use":
+            use_option_id = option.option_id
+            break
+    assert use_option_id is not None
+
+    monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", lambda spec: 4 if str(spec).upper() == "D6" else 0)
+
+    result = resolve_decision_command(game, request, use_option_id, player_id=ia_player.id)
+    assert bool(getattr(result, "ok", False))
+
+    sr = dict(getattr(draxus, "special_rules", {}) or {})
+    assert bool(sr.get("imperial_agents_psychic_veil_active"))
+    assert int(sr.get("imperial_agents_psychic_veil_targeting_range", 0) or 0) == 18
+    limit, sources = draxus.get_ranged_targeting_restriction(game_map=game.map)
+    assert float(limit or 0.0) == 18.0
+    assert any("PSYCHIC VEIL" in str(source).upper() for source in list(sources or []))
+
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=BattleRoundPhases.COMMAND_PHASE)
+    assert bool(getattr(draxus, "special_rules", {}).get("imperial_agents_psychic_veil_active"))
+
+    game.turn = 2
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=ia_player, phase=BattleRoundPhases.COMMAND_PHASE)
+    sr_after = dict(getattr(draxus, "special_rules", {}) or {})
+    assert not bool(sr_after.get("imperial_agents_psychic_veil_active"))
+    _limit_after, sources_after = draxus.get_ranged_targeting_restriction(game_map=game.map)
+    assert not any("PSYCHIC VEIL" in str(source).upper() for source in list(sources_after or []))
+
+
+def test_psychic_veil_roll_one_inflicts_self_mortal_wounds_and_grants_no_targeting_cap(monkeypatch):
+    game, ia_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.current_player_index = 0
+    game.turn = 1
+
+    psychic_veil = Ability(
+        "Psychic Veil (Psychic)",
+        "AOI",
+        (
+            "In your Command phase, this PSYKER can use this ability. If it does, roll one D6: on a 1, this "
+            "PSYKER's unit suffers D3 mortal wounds; on a 2+, until the start of your next Command phase, this "
+            "PSYKER's unit can only be selected as the target of a ranged attack if the attacking model is within 18\"."
+        ),
+        "Datasheet",
+        "",
+    )
+    draxus = _make_unit(
+        "Inquisitor Draxus",
+        keywords=["INFANTRY", "CHARACTER", "INQUISITOR", "PSYKER"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[psychic_veil],
+    )
+    enemy_target = _make_unit(
+        "Enemy Target",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["IMPERIUM"],
+    )
+
+    ia_player.army.add_unit(draxus)
+    enemy_player.army.add_unit(enemy_target)
+    _deploy_unit(game, draxus, 0.0, 0.0)
+    _deploy_unit(game, enemy_target, 12.0, 0.0)
+    game.rebuild_entity_registry()
+
+    pre_wounds = int(draxus.models[0].wounds or 0)
+
+    game.event_system.publish("phase_start", player=ia_player, phase=BattleRoundPhases.COMMAND_PHASE)
+    request = _pending_quarry_for_ability(game, ability="imperial_agents_psychic_veil")
+    assert request is not None
+
+    use_option_id = None
+    for option in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(option, "payload", {}) or {})
+        if str(payload.get("action", "") or "").strip().lower() == "use":
+            use_option_id = option.option_id
+            break
+    assert use_option_id is not None
+
+    rolls = iter([1, 3])
+    monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", lambda _spec: next(rolls))
+
+    result = resolve_decision_command(game, request, use_option_id, player_id=ia_player.id)
+    assert bool(getattr(result, "ok", False))
+    assert int(draxus.models[0].wounds or 0) == int(max(0, pre_wounds - 3))
+
+    sr = dict(getattr(draxus, "special_rules", {}) or {})
+    assert not bool(sr.get("imperial_agents_psychic_veil_active"))
+    limit, sources = draxus.get_ranged_targeting_restriction(game_map=game.map)
+    if limit is not None:
+        assert float(limit or 0.0) != 18.0 or not any(
+            "PSYCHIC VEIL" in str(source).upper() for source in list(sources or [])
+        )
+
+
 def test_shieldbreaker_prompt_applies_and_modifies_wound_resolution():
     game, ia_player, enemy_player = _build_game()
     game.phase = BattleRoundPhases.SHOOTING_PHASE

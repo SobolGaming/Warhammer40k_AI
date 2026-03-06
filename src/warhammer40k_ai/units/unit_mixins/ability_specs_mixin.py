@@ -2184,6 +2184,74 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_command_phase_psychic_veil_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: in your Command phase, optional Psychic Veil use with D6 roll.
+
+        On 1: this PSYKER's unit suffers D3 mortal wounds.
+        On 2+: until your next Command phase, this PSYKER's unit can only be targeted by
+        ranged attacks from within a fixed distance.
+
+        Returns specs with keys:
+            - source: ability name
+            - range: int
+            - ability_key: str
+            - optional: bool
+        """
+        if model is None:
+            return []
+        cache_key = f"model_command_phase_psychic_veil:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._COMMAND_PHASE_PSYCHIC_VEIL_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except (TypeError, ValueError):
+                range_value = 0
+            if range_value <= 0:
+                continue
+            source = str(name or "Psychic Veil (Psychic)").strip() or "Psychic Veil (Psychic)"
+            source_key = re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_")
+            if not source_key:
+                source_key = "psychic_veil"
+            ability_key = f"command_phase_psychic_veil:{source_key}"
+            dedupe_key = (ability_key, int(range_value))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "ability_key": ability_key,
+                    "optional": True,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_leading_psychic_daemon_invulnerable_specs(self) -> List[dict]:
         """
         Unit-level rule parser for "while this model is leading" invulnerable clauses with

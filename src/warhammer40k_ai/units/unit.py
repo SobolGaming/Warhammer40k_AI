@@ -3700,6 +3700,13 @@ class Unit(
         r"(?: designer(?:s| s)? note .+)?",
         re.IGNORECASE,
     )
+    _COMMAND_PHASE_PSYCHIC_VEIL_RE = re.compile(
+        r"in your command phase this psyker can use this ability if it does roll (?:one|1) d6 "
+        r"on a 1 this psyker s unit suffers d3 mortal wounds on a 2\+? until the start of your next command phase "
+        r"this psyker s unit can only be selected as the target of a ranged attack if the attacking model is within (?P<range>\d+)"
+        r"(?: designer(?:s| s)? note .+)?",
+        re.IGNORECASE,
+    )
     _START_SELECTED_PHASES_ENEMY_RANGE_BATTLESHOCK_RE = re.compile(
         r"once per turn at the start of your (?P<phases>[a-z ]+?) phase(?:s)? "
         r"you can select one enemy unit within (?P<range>\d+)\s*\"?\s*of this model "
