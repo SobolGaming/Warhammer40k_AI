@@ -186,6 +186,7 @@ Deployment / Pre-battle:
 - houndpack_lance_character_selection_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids} (context `ability="houndpack_lance_character_selection"`, `ability_name="Marked Prey"`, `phase="Muster Armies step"`, `army_id`, `allowed_unit_ids[]`, `max_units=3`, `required_units=3`)
 - masters_of_misdirection_selection_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="deceptors_masters_of_misdirection_selection"`, `ability_name="Masters of Misdirection"`, `phase="Declare Battle Formations step"`, `army_id`, `allowed_unit_ids[]`, `max_units`, `max_units_per_type`)
 - miasmic_bombardment_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="miasmic_bombardment"`, `ability_name="Miasmic Bombardment"`, `army_id`, `battle_round`, `allowed_unit_ids[]`, `max_units`, `optional=true`)
+- selected_leading_infiltrators_dialog: CHOOSE_QUARRY {selected_unit_id} (context `ability="army_selected_leading_infiltrators_declare"`, `ability_name`, `phase="Declare Battle Formations step"`, `army_id`, `candidate_unit_ids[]`, `optional=false`)
 
 Command phase:
 - shadow_in_the_warp_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="shadow_in_the_warp"`)

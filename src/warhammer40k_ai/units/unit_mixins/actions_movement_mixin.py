@@ -546,6 +546,16 @@ class ActionsMovementMixin:
         if self._ability_attached_unit_bodyguard_leader_deep_strike(ability) is not None:
             return False
         try:
+            if self._ability_declare_selected_leading_infiltrators(ability):
+                sr = getattr(self, "special_rules", None)
+                if not isinstance(sr, dict):
+                    return False
+                if not bool(sr.get("declare_battle_formations_selected_leading_infiltrators", False)):
+                    return False
+                return bool(getattr(self, "is_attached_leader", False))
+        except Exception:
+            pass
+        try:
             from ...rules.wrathful_presence import ability_name_to_key, unit_has_active_wrathful_presence
             name = ability if isinstance(ability, str) else getattr(ability, "name", "")
             key = ability_name_to_key(name)
@@ -704,6 +714,35 @@ class ActionsMovementMixin:
         if dist <= 0:
             return None
         return {"keywords": kw_phrase, "scout_distance": int(dist)}
+
+    def _ability_declare_selected_leading_infiltrators(self, ability) -> bool:
+        """
+        Match abilities like:
+        "If your army contains one or more units with this ability, during the
+        Declare Battle Formations step, select one of those units. While the selected
+        unit is leading a unit, models in that unit have the Infiltrators ability."
+        """
+        name, desc = self._ability_name_and_description(ability)
+        text = self._normalize_rules_text(f"{name} {desc}".strip())
+        if not text:
+            return False
+        low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+        if "if your army contains one or more units with this ability" not in low:
+            return False
+        if "during the declare battle formations step" not in low:
+            return False
+        if "select one of those units" not in low:
+            return False
+        if "while the selected unit is leading a unit" not in low:
+            return False
+        return "models in that unit have the infiltrators ability" in low
+
+    def has_declare_battle_formations_selected_leading_infiltrators_ability(self) -> bool:
+        """True if this unit has the selected-leading Infiltrators Declare Battle Formations ability pattern."""
+        for ability in list(getattr(self, "possible_abilities", []) or []):
+            if self._ability_declare_selected_leading_infiltrators(ability):
+                return True
+        return False
 
     def _apply_attached_possessed_formation_bonus(self, bodyguard: 'Unit') -> None:
         """Apply the WORLD EATERS POSSESSED formation bonus for Leaders like LORD OF THE EIGHTBOUND."""

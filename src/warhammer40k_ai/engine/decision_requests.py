@@ -249,6 +249,65 @@ def _unit_has_ability_name(unit: object, ability_name: str) -> bool:
     return False
 
 
+def _ability_name_and_description(ability: object) -> tuple[str, str]:
+    if isinstance(ability, str):
+        return "", str(ability or "")
+    if isinstance(ability, dict):
+        return (
+            str(ability.get("name", "") or ""),
+            str(ability.get("description", "") or ""),
+        )
+    return (
+        str(getattr(ability, "name", "") or ""),
+        str(getattr(ability, "description", "") or ""),
+    )
+
+
+def _ability_is_declare_selected_leading_infiltrators(ability: object) -> bool:
+    name, desc = _ability_name_and_description(ability)
+    text = str(f"{name} {desc}".strip() or "").lower()
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return False
+    if "if your army contains one or more units with this ability" not in text:
+        return False
+    if "during the declare battle formations step select one of those units" not in text:
+        return False
+    if "while the selected unit is leading a unit" not in text:
+        return False
+    return "models in that unit have the infiltrators ability" in text
+
+
+def _unit_has_declare_selected_leading_infiltrators_ability(unit: object) -> bool:
+    if unit is None:
+        return False
+    check_method = getattr(unit, "has_declare_battle_formations_selected_leading_infiltrators_ability", None)
+    if callable(check_method):
+        try:
+            return bool(check_method())
+        except Exception:
+            pass
+    for ability in list(getattr(unit, "possible_abilities", []) or []):
+        if _ability_is_declare_selected_leading_infiltrators(ability):
+            return True
+    return False
+
+
+def _unit_declare_selected_leading_infiltrators_ability_name(unit: object) -> str:
+    if unit is None:
+        return ""
+    for ability in list(getattr(unit, "possible_abilities", []) or []):
+        if not _ability_is_declare_selected_leading_infiltrators(ability):
+            continue
+        name, _desc = _ability_name_and_description(ability)
+        label = str(name or "").strip()
+        if label:
+            return label
+    return ""
+
+
 def _unit_alive_model_count(unit: object) -> int:
     models = [
         model
@@ -995,6 +1054,122 @@ def build_ethereal_pathway_requests(
         if queue_requests and hasattr(game, "request_decision"):
             game.request_decision(request)
             pending_by_source.add(source_id)
+
+    return requests
+
+
+def build_army_selected_leading_infiltrators_requests(
+    game: object,
+    units: Iterable[object],
+    *,
+    queue_requests: bool = True,
+) -> List[DecisionRequest]:
+    all_units = _iter_units(units)
+    requests: List[DecisionRequest] = []
+    if not all_units:
+        return requests
+
+    pending_army_ids: set[str] = set()
+    queue = getattr(game, "decision_queue", None)
+    if queue is not None and hasattr(queue, "list"):
+        for req in list(queue.list() or []):
+            if getattr(req, "decision_type", None) != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != "army_selected_leading_infiltrators_declare":
+                continue
+            army_id = str(ctx.get("army_id", "") or "")
+            if army_id:
+                pending_army_ids.add(army_id)
+
+    units_by_army: dict[str, list[object]] = {}
+    army_by_key: dict[str, object] = {}
+    for unit in all_units:
+        army = _army_for_unit(unit)
+        if army is None:
+            continue
+        key = _army_key(army)
+        if not key:
+            continue
+        units_by_army.setdefault(key, []).append(unit)
+        army_by_key[key] = army
+
+    for key in sorted(units_by_army.keys()):
+        army = army_by_key[key]
+        army_id = str(get_entity_id(army) or "")
+        if army_id and army_id in pending_army_ids:
+            continue
+
+        roots = _unique_army_root_units(units_by_army[key])
+        source_units = [
+            unit
+            for unit in roots
+            if _unit_has_declare_selected_leading_infiltrators_ability(unit)
+        ]
+        source_units.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        if not source_units:
+            continue
+
+        already_selected = False
+        for unit in source_units:
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("declare_battle_formations_selected_leading_infiltrators")):
+                already_selected = True
+                break
+        if already_selected:
+            continue
+
+        candidate_unit_ids: list[str] = []
+        options: List[DecisionOption] = []
+        for unit in source_units:
+            unit_id = str(get_entity_id(unit) or "")
+            if not unit_id:
+                continue
+            candidate_unit_ids.append(unit_id)
+            options.append(
+                DecisionOption.create(
+                    str(getattr(unit, "name", "Unit") or "Unit"),
+                    payload={
+                        "selected_unit_id": unit_id,
+                        "source_unit_id": unit_id,
+                        "selection_kind": "declare_battle_formations_selected_leading_infiltrators",
+                    },
+                )
+            )
+
+        if not options:
+            continue
+
+        ability_name = ""
+        for unit in source_units:
+            ability_name = _unit_declare_selected_leading_infiltrators_ability_name(unit)
+            if ability_name:
+                break
+        if not ability_name:
+            ability_name = "Declare Battle Formations Selection"
+
+        player = getattr(army, "player", None)
+        player_id = getattr(player, "id", None) if player is not None else None
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select one of your units with this ability.",
+            player_id=player_id,
+            options=options,
+            context={
+                "ability": "army_selected_leading_infiltrators_declare",
+                "ability_name": ability_name,
+                "phase": "Declare Battle Formations step",
+                "army_id": army_id,
+                "candidate_unit_ids": list(candidate_unit_ids),
+                "optional": False,
+                "instruction": "Select one unit with this ability.",
+            },
+        )
+        requests.append(request)
+        if queue_requests and hasattr(game, "request_decision"):
+            game.request_decision(request)
+            if army_id:
+                pending_army_ids.add(army_id)
 
     return requests
 

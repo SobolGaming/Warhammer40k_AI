@@ -3979,7 +3979,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Leading: attached unit can only be targeted by ranged attacks within 18\".",
         ),
         ("AOI", "Abomination"): ("Supported", "Feel No Pain 2+ against Psychic attacks."),
-        ("AOI", "Backroom Deals"): ("Partial", "Infiltrators applied without formation selection/leading restriction."),
+        ("AOI", "Backroom Deals"): (
+            "Supported",
+            "Declare Battle Formations: select one source unit with this ability; while that selected unit is leading, models in that attached unit gain Infiltrators.",
+        ),
         ("AOI", "Frenzon"): ("Supported", "Shoot and charge after Advancing."),
         ("AOI", "Psychic Hood"): ("Supported", "Feel No Pain 4+ against Psychic attacks."),
         ("AOI", "NAVY BODYGUARD"): (
@@ -9268,8 +9271,9 @@ def _post_deployment_redeploy_support(description: str) -> Optional[Tuple[str, s
     if not norm:
         return None
     pattern = (
-        r"(?:if your army includes this model )?after both players have deployed their armies "
-        r"select up to (?P<count>\d+|one|two|three|four|five|six|d3(?: \+ \d+)?) "
+        r"(?:if your army includes this model |if your army (?:includes|contains) one or more units with this ability )?"
+        r"after both players have deployed their armies "
+        r"select up ?to (?P<count>\d+|one|two|three|four|five|six|d3(?: \+ \d+)?) "
         r"(?P<filter>[a-z0-9 ']+?) units? from your army and redeploy them(?: (?P<tail>.*))?"
     )
     m = re.fullmatch(pattern, norm)

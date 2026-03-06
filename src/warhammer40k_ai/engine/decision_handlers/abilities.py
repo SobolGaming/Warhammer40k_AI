@@ -4291,6 +4291,53 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(is_valid_target(target_root, player=player, game=game)):
             return ("Marked Prey target must be an enemy unit on the battlefield.",)
         return ()
+    if ability == "army_selected_leading_infiltrators_declare":
+        if is_skip_choice(request, result):
+            return ("Selected-unit Infiltrators selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return ("Selected-unit Infiltrators army not found.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None)
+        owner = getattr(source_army, "player", None)
+        if owner is not None and player is not None and player is not owner:
+            return ("Selected-unit Infiltrators must be resolved by the owning player.",)
+        selected_unit = resolve_unit(
+            game,
+            payload.get("selected_unit_id")
+            or payload.get("source_unit_id")
+            or ctx.get("selected_unit_id")
+            or ctx.get("source_unit_id"),
+        )
+        if selected_unit is None:
+            return ("Selected-unit Infiltrators unit was not found.",)
+        target_root = (
+            selected_unit.get_attached_unit_root()
+            if hasattr(selected_unit, "get_attached_unit_root")
+            else selected_unit
+        )
+        if target_root is None:
+            return ("Selected-unit Infiltrators unit was not found.",)
+        target_id = str(get_entity_id(target_root) or "")
+        if not target_id:
+            return ("Selected-unit Infiltrators unit was not found.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Selected-unit Infiltrators unit is not an eligible candidate.",)
+        get_parent_army = getattr(target_root, "get_parent_army", None)
+        parent_army = get_parent_army() if callable(get_parent_army) else getattr(target_root, "parent_army", None)
+        if parent_army is not source_army:
+            return ("Selected-unit Infiltrators unit must be from your army.",)
+        has_rule = getattr(target_root, "has_declare_battle_formations_selected_leading_infiltrators_ability", None)
+        if not callable(has_rule) or not bool(has_rule()):
+            return ("Selected-unit Infiltrators unit does not have the required ability.",)
+        return ()
     if ability == "ordo_xenos_deathwatch_mission_tactics":
         payload = _option_payload(request, result)
         source_army = _resolve_army(game, request, payload)
@@ -8686,6 +8733,93 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "target_unit_id": str(get_entity_id(target_root) or ""),
             "source": ability_name,
         }
+    if ability == "army_selected_leading_infiltrators_declare":
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None)
+        selected_unit = resolve_unit(
+            game,
+            payload.get("selected_unit_id")
+            or payload.get("source_unit_id")
+            or ctx.get("selected_unit_id")
+            or ctx.get("source_unit_id"),
+        )
+        if selected_unit is None:
+            return None
+        selected_root = (
+            selected_unit.get_attached_unit_root()
+            if hasattr(selected_unit, "get_attached_unit_root")
+            else selected_unit
+        )
+        if selected_root is None:
+            return None
+        selected_id = str(get_entity_id(selected_root) or "")
+        if not selected_id:
+            return None
+
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and selected_id not in candidate_ids:
+            return None
+
+        ability_name = str(ctx.get("ability_name", "") or "Backroom Deals").strip() or "Backroom Deals"
+
+        roots: list[object] = []
+        seen_root_ids: set[str] = set()
+        for unit in list(getattr(source_army, "units", []) or []):
+            if unit is None:
+                continue
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_root_ids:
+                continue
+            seen_root_ids.add(root_id)
+            roots.append(root)
+
+        for root in roots:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            changed = False
+            if sr.pop("declare_battle_formations_selected_leading_infiltrators", None) is not None:
+                changed = True
+            if sr.pop("declare_battle_formations_selected_leading_infiltrators_source", None) is not None:
+                changed = True
+            root_id = str(get_entity_id(root) or "")
+            if root_id == selected_id:
+                sr["declare_battle_formations_selected_leading_infiltrators"] = True
+                sr["declare_battle_formations_selected_leading_infiltrators_source"] = ability_name
+                changed = True
+            if changed:
+                root.special_rules = sr
+            invalidate_cache = getattr(root, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+            members = []
+            get_members = getattr(root, "get_attached_unit_members", None)
+            if callable(get_members):
+                members = list(get_members() or [])
+            for member in members:
+                invalidate_member_cache = getattr(member, "_invalidate_ability_cache", None)
+                if callable(invalidate_member_cache):
+                    invalidate_member_cache()
+
+        selected_name = str(getattr(selected_root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: selected {selected_name}; while it is leading, models in its attached unit have Infiltrators.",
+        )
+        return selected_root
     if ability == "ordo_xenos_deathwatch_mission_tactics":
         payload = _option_payload(request, result)
         source_army = _resolve_army(game, request, payload)

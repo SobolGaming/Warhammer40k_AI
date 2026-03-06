@@ -8061,6 +8061,15 @@ class PositioningMixin:
             except (AttributeError, TypeError, ValueError):
                 pass
         if not found:
+            try:
+                if self._attached_unit_has_active_leading_enhancement(
+                    "declare_battle_formations_selected_leading_infiltrators",
+                    require_bearer_alive=True,
+                ):
+                    found = True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        if not found:
             found, _ = self._find_ability_with_patterns(["infiltrators", "infiltrate"])
         
         # Cache the result
@@ -8757,6 +8766,7 @@ class PositioningMixin:
         allow_embarked_transport_on_battlefield = False
         must_include_source_unit = False
         require_exact_count = False
+        army_once_per_ability = False
 
         for name, desc in abilities_to_check:
             text = html.unescape(str(desc or ""))
@@ -8769,6 +8779,11 @@ class PositioningMixin:
                 has_redeploy = True
                 if name and not ability_name:
                     ability_name = str(name)
+                if (
+                    "if your army includes one or more units with this ability" in text
+                    or "if your army contains one or more units with this ability" in text
+                ):
+                    army_once_per_ability = True
                 if ("if this unit is on the battlefield" in text) or ("if the bearer is on the battlefield" in text):
                     requires_source_on_battlefield = True
                 if "transport it is embarked within is on the battlefield" in text:
@@ -8787,7 +8802,7 @@ class PositioningMixin:
                     require_exact_count = True
                 # Support numeric or dice expressions like D3, D6, D10 (optionally with +N)
                 m = re.search(
-                    r"select\s+up\s+to\s+((?:\d+)|(?:d\d+(?:\s*\+\s*\d+)?)|one|two|three|four|five|six)",
+                    r"select\s+up\s*to\s+((?:\d+)|(?:d\d+(?:\s*\+\s*\d+)?)|one|two|three|four|five|six)",
                     text,
                 )
                 if m:
@@ -8825,6 +8840,8 @@ class PositioningMixin:
                     count = max(count, 3)  # default to 3 if unspecified
                 if "strategic reserves" in text:
                     can_place_in_reserves = True
+                if re.search(r"\bimperium\s+batt(?:le)?line\s+units?\b", text):
+                    redeploy_filters = ["IMPERIUM", "BATTLELINE"]
                 if (
                     "agents of the imperium units" in text
                     or "agents of the imperium unit" in text
@@ -8885,5 +8902,6 @@ class PositioningMixin:
         )
         self._ability_cache['redeploy_must_include_source_unit'] = bool(must_include_source_unit)
         self._ability_cache['redeploy_require_exact_count'] = bool(require_exact_count)
+        self._ability_cache['redeploy_army_once_per_ability'] = bool(army_once_per_ability)
         return result
     

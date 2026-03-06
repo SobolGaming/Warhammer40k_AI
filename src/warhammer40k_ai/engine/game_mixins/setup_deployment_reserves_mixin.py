@@ -2299,6 +2299,43 @@ class GameSetupDeploymentReservesMixin:
                 if unit_id:
                     pending_unit_ids.add(unit_id)
 
+    def _apply_selected_leading_infiltrators_declarations(self) -> None:
+        """Queue Declare Battle Formations selection requests for selected-unit leading Infiltrators abilities."""
+        players = list(self.players or [])
+        if not players:
+            return
+
+        pending_army_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "").strip().lower() != "army_selected_leading_infiltrators_declare":
+                    continue
+                army_id = str(ctx.get("army_id", "") or "")
+                if army_id:
+                    pending_army_ids.add(army_id)
+
+        from ..decision_requests import build_army_selected_leading_infiltrators_requests
+
+        for player in players:
+            if player is None:
+                raise RuntimeError("Selected leading Infiltrators declarations require players.")
+            army = player.get_army()
+            if army is None:
+                raise RuntimeError(f"Selected leading Infiltrators declarations require an army for {player.name}.")
+            units = list(getattr(army, "units", []) or [])
+            requests = build_army_selected_leading_infiltrators_requests(self, units, queue_requests=False)
+            for req in list(requests or []):
+                army_id = str(getattr(req, "context", {}).get("army_id", "") or "")
+                if army_id and army_id in pending_army_ids:
+                    continue
+                self.request_decision(req)
+                if army_id:
+                    pending_army_ids.add(army_id)
+
     def _apply_rapid_drop_deployment_declarations(self) -> None:
         """Queue Rapid-drop Deployment selections for Orbital Assault Force armies."""
         players = list(self.players or [])
@@ -2433,6 +2470,8 @@ class GameSetupDeploymentReservesMixin:
                 raise RuntimeError(f"Missing army for {p.name} during Declare Battle Formations.")
             units = list(getattr(army, "units", []) or [])
             build_risen_rubricae_requests(self, units, queue_requests=True)
+
+        self._apply_selected_leading_infiltrators_declarations()
 
         # Chaos Space Marines Deceptors: select Masters of Misdirection units.
         for p in list(self.players or []):
@@ -2673,11 +2712,13 @@ class GameSetupDeploymentReservesMixin:
 
         players_in_order = [self.players[self.attacker_index], self.players[self.defender_index]]
         redeploy_queues: dict[str, list[dict]] = {}
+        army_once_seen_by_player: dict[str, set[str]] = {}
 
         for p in players_in_order:
             army = p.get_army()
             if not army:
                 continue
+            player_id = str(getattr(p, "id", "") or "")
             tokens: list[dict] = []
             for u in list(getattr(army, "units", []) or []):
                 has_redeploy, count, can_place_in_reserves = u.has_redeploy()
@@ -2704,9 +2745,17 @@ class GameSetupDeploymentReservesMixin:
                 exclude_source_unit = bool(cache.get("redeploy_exclude_source_unit", False))
                 must_include_source_unit = bool(cache.get("redeploy_must_include_source_unit", False))
                 require_exact_count = bool(cache.get("redeploy_require_exact_count", False))
+                army_once_per_ability = bool(cache.get("redeploy_army_once_per_ability", False))
                 ability_name = str(cache.get("redeploy_ability_name") or "")
                 if not ability_name:
                     ability_name = str(getattr(getattr(u, "enhancement", None), "name", "") or "Redeploy")
+                if army_once_per_ability:
+                    army_once_key = str(ability_name or "").strip().lower()
+                    if army_once_key:
+                        seen = army_once_seen_by_player.setdefault(player_id, set())
+                        if army_once_key in seen:
+                            continue
+                        seen.add(army_once_key)
                 source_unit_id = get_entity_id(u)
                 used_unit_ids = [source_unit_id] if exclude_source_unit and source_unit_id else []
                 tokens.append(
@@ -2726,7 +2775,7 @@ class GameSetupDeploymentReservesMixin:
                 )
             if tokens:
                 tokens.sort(key=lambda t: str(t.get("source_unit_id", "")))
-                redeploy_queues[str(getattr(p, "id", "") or "")] = tokens
+                redeploy_queues[player_id] = tokens
 
         if not any(redeploy_queues.values()):
             logger.info("INFO: No units with Redeploy; skipping")
