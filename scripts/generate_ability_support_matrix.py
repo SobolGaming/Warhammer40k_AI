@@ -6121,21 +6121,41 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         else:
             notes.append("Re-roll Charge rolls.")
 
+    eligible_shoot = (
+        "eligible to shoot in a turn in which" in low
+        or "eligible to shoot and declare a charge" in low
+        or "eligible to shoot and charge" in low
+    )
     eligible_charge = (
         "eligible to declare a charge" in low
         or "eligible to charge" in low
         or "eligible to shoot and declare a charge" in low
         or "eligible to shoot and charge" in low
     )
-    if eligible_charge:
+    if eligible_shoot or eligible_charge:
         has_advance = ("advance" in low) or ("advanced" in low) or ("advancing" in low)
         has_fall_back = ("fell back" in low) or ("fall back" in low) or ("falling back" in low)
-        if has_advance and has_fall_back:
-            notes.append("Charge-after-Advance/Fall Back eligibility.")
-        elif has_advance:
-            notes.append("Charge-after-Advance eligibility.")
-        elif has_fall_back:
-            notes.append("Charge-after-Fall-Back eligibility.")
+        if eligible_shoot and eligible_charge:
+            if has_advance and has_fall_back:
+                notes.append("Shoot-and-charge after Advance/Fall Back eligibility.")
+            elif has_advance:
+                notes.append("Shoot-and-charge after Advance eligibility.")
+            elif has_fall_back:
+                notes.append("Shoot-and-charge after Fall Back eligibility.")
+        elif eligible_shoot:
+            if has_advance and has_fall_back:
+                notes.append("Shoot-after-Advance/Fall Back eligibility.")
+            elif has_advance:
+                notes.append("Shoot-after-Advance eligibility.")
+            elif has_fall_back:
+                notes.append("Shoot-after-Fall-Back eligibility.")
+        else:
+            if has_advance and has_fall_back:
+                notes.append("Charge-after-Advance/Fall Back eligibility.")
+            elif has_advance:
+                notes.append("Charge-after-Advance eligibility.")
+            elif has_fall_back:
+                notes.append("Charge-after-Fall-Back eligibility.")
 
     m = re.search(
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",
@@ -6451,6 +6471,9 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}add \d+ to the range characteristic of melta weapons equipped by models in {unit_ref}",
         rf"{lead_prefix}(?:melee |ranged )?(?:weapons equipped by models in|attacks made by models in) {unit_ref} .* ignores cover(?: ability)?",
         rf"{lead_prefix}each time (?:a|an) (?:melee |ranged )?attack targets {unit_ref} subtract 1 from the hit roll",
+        rf"{lead_prefix}{unit_ref} is eligible to shoot in a turn in which it (?:advanced|fell back|advanced or fell back|fell back or advanced)",
+        rf"{lead_prefix}{unit_ref} is eligible to shoot and declare a charge in a turn in which it (?:advanced|fell back|advanced or fell back|fell back or advanced)",
+        rf"{lead_prefix}{unit_ref} is eligible to shoot and charge in a turn in which it (?:advanced|fell back|advanced or fell back|fell back or advanced)",
         rf"{lead_prefix}(?:while|if) {unit_ref} is within range of (?:an|one or more) objective marker(?:s)?(?: you control)? each time "
         rf"(?:a|an) (?:melee |ranged )?attack targets {unit_ref} models in (?:it|{unit_ref}) have the benefit of cover(?: against that attack)?",
         rf"{lead_prefix}each time (?:a|an) (?:melee |ranged )?attack targets {unit_ref} models in (?:it|{unit_ref}) have the benefit of cover(?: against that attack)?",

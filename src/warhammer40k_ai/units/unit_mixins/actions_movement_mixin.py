@@ -12705,6 +12705,44 @@ class ActionsMovementMixin:
         t = f" {text} "
         return any(m in t for m in markers)
 
+    def _has_attached_leader_simple_eligibility_rule(self, patterns: List[str]) -> bool:
+        """Check simple eligibility text on active attached-leader leading abilities."""
+        if not patterns:
+            return False
+
+        def _canon(value: str) -> str:
+            normalized = self._normalize_rules_text(str(value or "")).lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            return re.sub(r"\s+", " ", normalized).strip()
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+
+        normalized_patterns = {
+            _canon(str(pattern or ""))
+            for pattern in patterns
+            if str(pattern or "").strip()
+        }
+        if not normalized_patterns:
+            return False
+
+        for ability, leader in root._iter_attached_leader_leading_abilities():
+            _name, desc = self._ability_name_and_description(ability)
+            text = leader._strip_eligibility_prefix(desc or "")
+            text = leader._normalize_rules_text(text).lower()
+            if not text:
+                continue
+            stripped = leader._LEADING_ABILITY_PREFIX_RE.sub("", text, count=1).strip(" ,:;-")
+            if not stripped or stripped == text:
+                continue
+            if _canon(stripped) in normalized_patterns:
+                return True
+        return False
+
     def _has_simple_eligibility_rule(self, patterns: List[str]) -> bool:
         try:
             root = self.get_attached_unit_root()
@@ -12729,6 +12767,8 @@ class ActionsMovementMixin:
                 if self._eligibility_text_has_extra_clauses(text):
                     continue
                 return True
+        if self._has_attached_leader_simple_eligibility_rule(patterns):
+            return True
         return False
 
     def _get_fall_back_shoot_extended_rule_data(self) -> dict:
