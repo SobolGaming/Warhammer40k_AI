@@ -4412,6 +4412,59 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # Atavistic Instigation (Stand Firm): ranged attacks vs target score critical hits on 5+ this phase.
+        try:
+            if atype in ("any", "ranged") and target is not None:
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                tsr = getattr(target_root, "special_rules", None)
+                if isinstance(tsr, dict) and tsr.get("atavistic_instigation_stand_firm_active"):
+                    should_clear = False
+                    owner_id = str(tsr.get("atavistic_instigation_stand_firm_owner", "") or "")
+                    try:
+                        marked_turn = int(tsr.get("atavistic_instigation_stand_firm_turn", 0) or 0)
+                    except Exception:
+                        marked_turn = 0
+                    game_local = None
+                    try:
+                        game_local = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                    except Exception:
+                        game_local = None
+                    if game_local is not None:
+                        try:
+                            current_turn = int(getattr(game_local, "turn", 0) or 0)
+                        except Exception:
+                            current_turn = 0
+                        current_phase = str(getattr(getattr(game_local, "phase", None), "name", "") or "").strip().upper()
+                        current_player_id = str(getattr(game_local.get_current_player(), "id", "") or "")
+                        if marked_turn and current_turn and marked_turn != current_turn:
+                            should_clear = True
+                        if owner_id and current_player_id and owner_id != current_player_id:
+                            should_clear = True
+                        if current_phase and current_phase != "SHOOTING_PHASE":
+                            should_clear = True
+                    if should_clear:
+                        for k in (
+                            "atavistic_instigation_stand_firm_active",
+                            "atavistic_instigation_stand_firm_owner",
+                            "atavistic_instigation_stand_firm_turn",
+                            "atavistic_instigation_stand_firm_source",
+                            "atavistic_instigation_stand_firm_value",
+                            "atavistic_instigation_stand_firm_expires_phase",
+                        ):
+                            tsr.pop(k, None)
+                        target_root.special_rules = tsr
+                    elif isinstance(tsr, dict) and tsr.get("atavistic_instigation_stand_firm_active"):
+                        try:
+                            threshold = int(tsr.get("atavistic_instigation_stand_firm_value", 5) or 5)
+                        except Exception:
+                            threshold = 5
+                        threshold = max(2, min(6, int(threshold)))
+                        crit_hit_threshold = threshold if crit_hit_threshold is None else min(int(crit_hit_threshold), threshold)
+                        source = str(tsr.get("atavistic_instigation_stand_firm_source", "") or "Atavistic Instigation").strip() or "Atavistic Instigation"
+                        crit_hit_reasons.append(f"{source}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
+
         # Inflamed Infections: selected model scores critical hits on 5+ (or 4+ vs Below Half-strength) against marked target.
         try:
             if target is not None and attacker_model is not None:

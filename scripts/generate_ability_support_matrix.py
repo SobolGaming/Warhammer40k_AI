@@ -4685,6 +4685,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Fortification cover support: ranged attacks allocated to models not fully visible because of this FORTIFICATION grant Benefit of Cover.",
         ),
+        ("NEC", "Atavistic Instigation"): (
+            "Supported",
+            "When this model selects targets with its heavy death ray, the target player chooses Stand Firm or Duck for Cover: Stand Firm marks that target so ranged attacks score critical hits on 5+ against it for the current Shooting phase, and Duck for Cover applies -1 to hit for that unit's attacks until the start of your next Shooting phase.",
+        ),
         ("NEC", "CRYPTEK RETINUE"): (
             "Supported",
             "Declare Battle Formations: this unit can join one bodyguard led by a CRYPTEK INFANTRY Leader; joined-support attachment updates attached-unit membership and Starting Strength aggregation.",
@@ -5338,6 +5342,32 @@ def _admech_named_datasheet_support(name: str, description: str, *, faction_id: 
     return None
 
 
+def _necrons_named_datasheet_support(name: str, description: str, *, faction_id: str = "") -> Optional[Tuple[str, str]]:
+    fid = str(faction_id or "").strip().upper()
+    if fid != "NEC":
+        return None
+    name_norm = _norm(name)
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+
+    if name_norm == "atavistic instigation":
+        if (
+            "heavy death ray" in norm
+            and "stand firm or duck for cover" in norm
+            and "stands firm" in norm
+            and "unmodified hit roll of 5 scores a critical hit" in norm
+            and "ducks for cover" in norm
+            and "start of your next shooting phase" in norm
+            and "subtract 1 from the hit roll" in norm
+        ):
+            return (
+                "Supported",
+                "When this model selects targets with its heavy death ray, the target player chooses Stand Firm or Duck for Cover: Stand Firm marks that target so ranged attacks score critical hits on 5+ against it for the current Shooting phase, and Duck for Cover applies -1 to hit for that unit's attacks until the start of your next Shooting phase.",
+            )
+    return None
+
+
 def _classify_ability_base(
     name: str,
     description: str,
@@ -5379,6 +5409,9 @@ def _classify_ability_base(
     admech_named_support = _admech_named_datasheet_support(name, description, faction_id=faction_id)
     if admech_named_support:
         return admech_named_support
+    necrons_named_support = _necrons_named_datasheet_support(name, description, faction_id=faction_id)
+    if necrons_named_support:
+        return necrons_named_support
     closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
     monster_vehicle_reroll_support = _monster_vehicle_reroll_support(description)
     unit_contains_oc_support = _unit_contains_oc_support(description)

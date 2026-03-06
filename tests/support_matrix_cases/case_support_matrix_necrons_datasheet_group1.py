@@ -20,6 +20,15 @@ import pytest
             ),
         ),
         (
+            "Atavistic Instigation",
+            (
+                "Each time this model targets an enemy unit with its heavy death ray, your opponent must declare if that unit "
+                "will stand firm or duck for cover: - If it stands firm, when resolving ranged attacks against that unit this "
+                "phase, a successful unmodified Hit roll of 5+ scores a Critical Hit. - If it ducks for cover, until the start "
+                "of your next Shooting phase, each time a model in that unit makes an attack, subtract 1 from the Hit roll."
+            ),
+        ),
+        (
             "Targeting Relay",
             (
                 "In your Shooting phase, each time this model is selected to shoot, after resolving its attacks, select one "

@@ -3525,6 +3525,15 @@ class Unit(
         r"an unmodified hit roll of (?P<threshold>\d)\+? scores a critical hit",
         re.IGNORECASE,
     )
+    _ATAVISTIC_INSTIGATION_RE = re.compile(
+        r"each time this model targets an enemy unit with its (?P<weapon>[a-z0-9 ]+) "
+        r"your opponent must declare if that unit will stand firm or duck for cover "
+        r"if it stands firm when resolving ranged attacks against that unit this phase "
+        r"(?:a successful )?unmodified hit roll of (?P<threshold>\d)\+? scores a critical hit "
+        r"if it ducks for cover until the start of your next shooting phase each time a model in that unit makes an attack "
+        r"subtract (?P<hit_penalty>\d+) from the hit roll",
+        re.IGNORECASE,
+    )
     _SONIC_DESTRUCTION_RE = re.compile(
         r"in your shooting phase each time this model makes an attack with its (?P<weapon>[a-z0-9 ]+) that targets an enemy unit "
         r"improve the strength armour penetration and damage characteristics of that attack by (?P<val>\d+) "

@@ -3686,6 +3686,176 @@ class GameShootingFightHandlersMixin:
         if callable(trigger_fn):
             trigger_fn(self, phase_name=phase_name, trigger="shooting")
 
+    def _on_shooting_targets_selected_atavistic_instigation(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        weapon_declarations=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+        if not isinstance(weapon_declarations, list) or not weapon_declarations:
+            return
+
+        def _normalize_weapon_key(profile) -> str:
+            weapon_name = ""
+            try:
+                parent = getattr(profile, "parent_wargear", None)
+                if parent is not None:
+                    weapon_name = str(getattr(parent, "name", "") or "")
+            except Exception:
+                weapon_name = ""
+            if not weapon_name:
+                weapon_name = str(getattr(profile, "name", "") or "")
+            if hasattr(root, "_normalize_keyword_phrase"):
+                try:
+                    return str(root._normalize_keyword_phrase(weapon_name) or "")
+                except Exception:
+                    return ""
+            return str(weapon_name or "").strip().lower()
+
+        model_specs: dict[str, tuple[Any, list[dict]]] = {}
+        for model in list(getattr(root, "models", []) or []):
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            specs = root.model_atavistic_instigation_specs(model) or []
+            if not specs:
+                continue
+            mid = str(get_entity_id(model) or "")
+            if not mid:
+                continue
+            model_specs[mid] = (model, list(specs))
+        if not model_specs:
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        queued_keys: set[tuple[str, str, str]] = set()
+        source_unit_id = str(get_entity_id(root) or "")
+        source_owner_id = str(getattr(player, "id", "") or "")
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+
+        for declaration in list(weapon_declarations or []):
+            if not isinstance(declaration, dict):
+                continue
+            profile = declaration.get("weapon_profile")
+            if profile is None:
+                continue
+            target_unit = declaration.get("target_unit")
+            if target_unit is None:
+                continue
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            if target_root is None or not target_root.is_alive():
+                continue
+            if target_root.get_parent_army() == root.get_parent_army():
+                continue
+            weapon_key = _normalize_weapon_key(profile)
+            if not weapon_key:
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id:
+                continue
+            target_player = getattr(target_root.get_parent_army(), "player", None)
+            if target_player is None:
+                continue
+
+            declaration_models = [
+                model
+                for model in list(declaration.get("models") or [])
+                if model is not None and getattr(model, "is_alive", False)
+            ]
+            if declaration_models:
+                source_models = declaration_models
+            else:
+                source_models = [entry[0] for entry in model_specs.values()]
+
+            for model in list(source_models):
+                mid = str(get_entity_id(model) or "")
+                if not mid:
+                    continue
+                model_entry = model_specs.get(mid)
+                if model_entry is None:
+                    continue
+                matched_specs = [
+                    spec for spec in list(model_entry[1] or []) if str(spec.get("weapon_key", "") or "") == weapon_key
+                ]
+                if not matched_specs:
+                    continue
+                for spec in matched_specs:
+                    queue_key = (mid, target_id, weapon_key)
+                    if queue_key in queued_keys:
+                        continue
+                    queued_keys.add(queue_key)
+                    ability_name = str(spec.get("source", "") or "Atavistic Instigation").strip() or "Atavistic Instigation"
+                    try:
+                        threshold = int(spec.get("stand_firm_crit_hit_threshold", 5) or 5)
+                    except Exception:
+                        threshold = 5
+                    try:
+                        duck_penalty = int(spec.get("duck_hit_roll_penalty", 1) or 1)
+                    except Exception:
+                        duck_penalty = 1
+                    source_model_id = str(get_entity_id(model) or "")
+                    options = [
+                        DecisionOption.create(
+                            "Stand Firm",
+                            payload={
+                                "target_unit_id": target_id,
+                                "source_unit_id": source_unit_id,
+                                "source_model_id": source_model_id,
+                                "atavistic_instigation_choice": "stand_firm",
+                            },
+                        ),
+                        DecisionOption.create(
+                            "Duck for Cover",
+                            payload={
+                                "target_unit_id": target_id,
+                                "source_unit_id": source_unit_id,
+                                "source_model_id": source_model_id,
+                                "atavistic_instigation_choice": "duck_for_cover",
+                            },
+                        ),
+                    ]
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: choose how {getattr(target_root, 'name', 'this unit')} responds.",
+                        player_id=getattr(target_player, "id", None),
+                        options=options,
+                        context={
+                            "ability": "atavistic_instigation",
+                            "ability_name": ability_name,
+                            "source_unit_id": source_unit_id,
+                            "source_model_id": source_model_id,
+                            "source_owner_id": source_owner_id,
+                            "target_unit_id": target_id,
+                            "stand_firm_crit_hit_threshold": int(threshold),
+                            "duck_hit_roll_penalty": int(duck_penalty),
+                            "turn": int(current_turn or 0),
+                        },
+                    )
+                    self.request_decision(request)
+
     def _on_shooting_targets_selected_orks_try_dat_button(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None or not target_units:
             return

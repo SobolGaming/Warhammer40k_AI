@@ -323,6 +323,217 @@ class TestNecronsDatasheetGroup1Abilities(unittest.TestCase):
         enemy.deployed = True
         self.assertEqual(unit.get_destroyer_of_futures_overwatch_hit_threshold(enemy_unit=enemy, game=game), 5)
 
+    def test_atavistic_instigation_parses_model_weapon_choice_spec(self):
+        ability = {
+            "name": "Atavistic Instigation",
+            "description": (
+                "Each time this model targets an enemy unit with its heavy death ray, your opponent must declare if that unit "
+                "will stand firm or duck for cover: - If it stands firm, when resolving ranged attacks against that unit this "
+                "phase, a successful unmodified Hit roll of 5+ scores a Critical Hit. - If it ducks for cover, until the start "
+                "of your next Shooting phase, each time a model in that unit makes an attack, subtract 1 from the Hit roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Doom Scythe", abilities=[ability])
+        specs = unit.model_atavistic_instigation_specs(unit.models[0])
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(str(specs[0].get("weapon_key", "")), "heavy death ray")
+        self.assertEqual(int(specs[0].get("stand_firm_crit_hit_threshold", 0)), 5)
+        self.assertEqual(int(specs[0].get("duck_hit_roll_penalty", 0)), 1)
+
+    def test_atavistic_instigation_queues_opponent_choice_for_heavy_death_ray_target(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.engine.game import BattleRoundPhases
+
+        ability = {
+            "name": "Atavistic Instigation",
+            "description": (
+                "Each time this model targets an enemy unit with its heavy death ray, your opponent must declare if that unit "
+                "will stand firm or duck for cover: - If it stands firm, when resolving ranged attacks against that unit this "
+                "phase, a successful unmodified Hit roll of 5+ scores a Critical Hit. - If it ducks for cover, until the start "
+                "of your next Shooting phase, each time a model in that unit makes an attack, subtract 1 from the Hit roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, p1, p2 = _build_game()
+        source = _make_unit("Doom Scythe", abilities=[ability])
+        target = _make_unit("Enemy")
+        army1.add_unit(source)
+        army2.add_unit(target)
+        source.deployed = True
+        target.deployed = True
+        source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        target.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        game.map.units = [source, target]
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+        game.turn = 1
+        game.rebuild_entity_registry()
+
+        heavy_profile = SimpleNamespace(parent_wargear=SimpleNamespace(name="heavy death ray"), name="Heavy Profile")
+        tesla_profile = SimpleNamespace(parent_wargear=SimpleNamespace(name="tesla destructor"), name="Tesla Profile")
+        game._on_shooting_targets_selected_atavistic_instigation(
+            attacking_unit=source,
+            target_units=[target],
+            weapon_declarations=[
+                {"weapon_profile": heavy_profile, "target_unit": target, "models": [source.models[0]]},
+                {"weapon_profile": tesla_profile, "target_unit": target, "models": [source.models[0]]},
+            ],
+        )
+
+        pending = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+            and str((req.context or {}).get("ability", "") or "") == "atavistic_instigation"
+        ]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.player_id, p2.id)
+        choices = {str((opt.payload or {}).get("atavistic_instigation_choice", "") or "") for opt in list(request.options or [])}
+        self.assertEqual(choices, {"stand_firm", "duck_for_cover"})
+        self.assertNotEqual(p1.id, request.player_id)
+
+    def test_atavistic_instigation_stand_firm_applies_ranged_crit_threshold_this_phase(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.engine.game import BattleRoundPhases
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+
+        ability = {
+            "name": "Atavistic Instigation",
+            "description": (
+                "Each time this model targets an enemy unit with its heavy death ray, your opponent must declare if that unit "
+                "will stand firm or duck for cover: - If it stands firm, when resolving ranged attacks against that unit this "
+                "phase, a successful unmodified Hit roll of 5+ scores a Critical Hit. - If it ducks for cover, until the start "
+                "of your next Shooting phase, each time a model in that unit makes an attack, subtract 1 from the Hit roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, p1, p2 = _build_game()
+        source = _make_unit("Doom Scythe", abilities=[ability])
+        target = _make_unit("Enemy")
+        army1.add_unit(source)
+        army2.add_unit(target)
+        source.deployed = True
+        target.deployed = True
+        source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        target.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        game.map.units = [source, target]
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+        game.turn = 1
+        game.rebuild_entity_registry()
+
+        heavy_profile = SimpleNamespace(parent_wargear=SimpleNamespace(name="heavy death ray"), name="Heavy Profile")
+        game._on_shooting_targets_selected_atavistic_instigation(
+            attacking_unit=source,
+            target_units=[target],
+            weapon_declarations=[{"weapon_profile": heavy_profile, "target_unit": target, "models": [source.models[0]]}],
+        )
+        request = next(
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+            and str((req.context or {}).get("ability", "") or "") == "atavistic_instigation"
+        )
+        option = next(
+            opt for opt in list(request.options or []) if str((opt.payload or {}).get("atavistic_instigation_choice", "")) == "stand_firm"
+        )
+        result = resolve_decision_command(game, request, option.option_id, player_id=p2.id)
+        self.assertTrue(bool(getattr(result, "ok", False)))
+
+        sr = getattr(target, "special_rules", {}) or {}
+        self.assertTrue(bool(sr.get("atavistic_instigation_stand_firm_active")))
+        self.assertEqual(int(sr.get("atavistic_instigation_stand_firm_value", 0)), 5)
+
+        ranged_mods = source.get_unit_hit_reroll_modifiers("ranged", target=target)
+        self.assertEqual(int(ranged_mods.get("crit_hit_threshold", 0) or 0), 5)
+        melee_mods = source.get_unit_hit_reroll_modifiers("melee", target=target)
+        self.assertEqual(int(melee_mods.get("crit_hit_threshold", 0) or 0), 0)
+
+        game._on_phase_end_cleanup(player=p1, phase=BattleRoundPhases.SHOOTING_PHASE)
+        self.assertFalse(bool((target.special_rules or {}).get("atavistic_instigation_stand_firm_active")))
+
+    def test_atavistic_instigation_duck_for_cover_applies_hit_penalty_until_owner_next_shooting(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.engine.game import BattleRoundPhases
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from warhammer40k_ai.units import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Atavistic Instigation",
+            "description": (
+                "Each time this model targets an enemy unit with its heavy death ray, your opponent must declare if that unit "
+                "will stand firm or duck for cover: - If it stands firm, when resolving ranged attacks against that unit this "
+                "phase, a successful unmodified Hit roll of 5+ scores a Critical Hit. - If it ducks for cover, until the start "
+                "of your next Shooting phase, each time a model in that unit makes an attack, subtract 1 from the Hit roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, p1, p2 = _build_game()
+        source = _make_unit("Doom Scythe", abilities=[ability])
+        ducked = _make_unit("Enemy")
+        army1.add_unit(source)
+        army2.add_unit(ducked)
+        source.deployed = True
+        ducked.deployed = True
+        source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        ducked.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        game.map.units = [source, ducked]
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+        game.turn = 1
+        game.rebuild_entity_registry()
+
+        heavy_profile = SimpleNamespace(parent_wargear=SimpleNamespace(name="heavy death ray"), name="Heavy Profile")
+        game._on_shooting_targets_selected_atavistic_instigation(
+            attacking_unit=source,
+            target_units=[ducked],
+            weapon_declarations=[{"weapon_profile": heavy_profile, "target_unit": ducked, "models": [source.models[0]]}],
+        )
+        request = next(
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+            and str((req.context or {}).get("ability", "") or "") == "atavistic_instigation"
+        )
+        option = next(
+            opt for opt in list(request.options or []) if str((opt.payload or {}).get("atavistic_instigation_choice", "")) == "duck_for_cover"
+        )
+        result = resolve_decision_command(game, request, option.option_id, player_id=p2.id)
+        self.assertTrue(bool(getattr(result, "ok", False)))
+        self.assertTrue(bool((ducked.special_rules or {}).get("atavistic_instigation_duck_active")))
+
+        parent = SimpleNamespace(name="Blaster", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={"range": "24", "A": "1", "BS_WS": "4+", "S": "4", "AP": "0", "D": "1", "description": ""},
+            parent_wargear=parent,
+        )
+        original_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _d: 4
+        try:
+            attack_with_penalty = profile.attack(source, ducked.models[0], game_map=game.map)
+        finally:
+            wargear_mod.get_roll = original_roll
+        self.assertEqual(int(attack_with_penalty.hit_results[0].get("final_needed", 0) or 0), 5)
+
+        game._on_phase_start_post_shoot_duration_cleanup(player=p1, phase=BattleRoundPhases.SHOOTING_PHASE)
+        self.assertFalse(bool((ducked.special_rules or {}).get("atavistic_instigation_duck_active")))
+
+        original_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _d: 4
+        try:
+            attack_after_cleanup = profile.attack(source, ducked.models[0], game_map=game.map)
+        finally:
+            wargear_mod.get_roll = original_roll
+        self.assertEqual(int(attack_after_cleanup.hit_results[0].get("final_needed", 0) or 0), 4)
+
 
 if __name__ == "__main__":
     unittest.main()

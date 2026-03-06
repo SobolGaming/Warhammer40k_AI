@@ -6673,6 +6673,32 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not callable(in_zone) or not bool(in_zone(target_unit, player_id, game=game)):
             return ("Rad-bombardment target must be within the opponent deployment zone.",)
         return ()
+    if ability == "atavistic_instigation":
+        if is_skip_choice(request, result):
+            return ("Atavistic Instigation choice cannot be skipped.",)
+        payload = _option_payload(request, result)
+        choice = str(payload.get("atavistic_instigation_choice", "") or "").strip().lower()
+        if choice not in ("stand_firm", "duck_for_cover", "duck"):
+            return ("Atavistic Instigation choice must be Stand Firm or Duck for Cover.",)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Atavistic Instigation target unit was not found.",)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        if source_unit is None:
+            return ("Atavistic Instigation source unit was not found.",)
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        if target_root is None or source_root is None:
+            return ("Atavistic Instigation source/target resolution failed.",)
+        if target_root.get_parent_army() == source_root.get_parent_army():
+            return ("Atavistic Instigation target must be an enemy unit.",)
+        return ()
     if ability == "vanguard_of_dark_city":
         if is_skip_choice(request, result):
             return ("Vanguard of the Dark City selection cannot be skipped.",)
@@ -11809,6 +11835,100 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     player,
                     f"Rad-bombardment: {target_name} stood firm and suffered no mortal wounds (roll {int(roll)}).",
                 )
+        return target_root
+    if ability == "atavistic_instigation":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        choice = str(payload.get("atavistic_instigation_choice", "") or "").strip().lower()
+        if choice == "duck":
+            choice = "duck_for_cover"
+        if choice not in ("stand_firm", "duck_for_cover"):
+            return None
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return None
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return None
+
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        if source_unit is None:
+            return None
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        if source_root is None:
+            return None
+
+        source_player = None
+        try:
+            source_player = source_root.get_parent_army().player
+        except Exception:
+            source_player = None
+        owner_id = str(getattr(source_player, "id", "") or "")
+        if not owner_id:
+            owner_id = str(ctx.get("source_owner_id", "") or "")
+        log_player = source_player
+        if log_player is None:
+            log_player = _resolve_player(game, request, payload)
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        ability_name = str(ctx.get("ability_name", "") or "Atavistic Instigation").strip() or "Atavistic Instigation"
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+
+        if choice == "stand_firm":
+            try:
+                threshold = int(ctx.get("stand_firm_crit_hit_threshold", 5) or 5)
+            except Exception:
+                threshold = 5
+            sr["atavistic_instigation_stand_firm_active"] = True
+            sr["atavistic_instigation_stand_firm_owner"] = owner_id
+            sr["atavistic_instigation_stand_firm_turn"] = int(turn or 0)
+            sr["atavistic_instigation_stand_firm_source"] = ability_name
+            sr["atavistic_instigation_stand_firm_value"] = int(threshold)
+            sr["atavistic_instigation_stand_firm_expires_phase"] = "SHOOTING_PHASE"
+            target_root.special_rules = sr
+            try:
+                target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    log_player,
+                    f"{ability_name}: {target_name} stands firm (ranged attacks score critical hits on {int(threshold)}+ this phase).",
+                )
+            except Exception:
+                pass
+            return target_root
+
+        try:
+            penalty = int(ctx.get("duck_hit_roll_penalty", 1) or 1)
+        except Exception:
+            penalty = 1
+        sr["atavistic_instigation_duck_active"] = True
+        sr["atavistic_instigation_duck_owner"] = owner_id
+        sr["atavistic_instigation_duck_turn"] = int(turn or 0)
+        sr["atavistic_instigation_duck_source"] = ability_name
+        sr["atavistic_instigation_duck_hit_roll_penalty"] = int(penalty)
+        sr["atavistic_instigation_duck_expires_timing"] = "OWNER_NEXT_SHOOTING_START"
+        target_root.special_rules = sr
+        try:
+            target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+            _log_action_for_players(
+                game,
+                log_player,
+                f"{ability_name}: {target_name} ducks for cover (-{int(penalty)} to hit until the start of your next Shooting phase).",
+            )
+        except Exception:
+            pass
         return target_root
     if ability == "vanguard_of_dark_city":
         if is_skip_choice(request, result):

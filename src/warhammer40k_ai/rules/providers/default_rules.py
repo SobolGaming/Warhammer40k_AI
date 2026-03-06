@@ -138,6 +138,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("shooting_targets_selected", "_on_shooting_targets_selected_spore_laced_shock_waves"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_thundershock"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_harvester_of_souls"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_atavistic_instigation"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_blood_surge"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_repair_barge"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_guns_blazing"),

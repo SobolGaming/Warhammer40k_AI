@@ -2658,6 +2658,71 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_atavistic_instigation_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: when this model targets with a named weapon, opponent chooses Stand Firm or Duck for Cover.
+
+        Returns a list of specs with keys:
+            - weapon_key: str
+            - weapon_name: str
+            - stand_firm_crit_hit_threshold: int
+            - duck_hit_roll_penalty: int
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_atavistic_instigation:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._ATAVISTIC_INSTIGATION_RE.fullmatch(normalized)
+            if not m:
+                continue
+            weapon_raw = str(m.group("weapon") or "").strip()
+            if not weapon_raw:
+                continue
+            weapon_key = self._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+            try:
+                threshold = int(m.group("threshold") or 5)
+            except Exception:
+                threshold = 5
+            try:
+                hit_penalty = int(m.group("hit_penalty") or 1)
+            except Exception:
+                hit_penalty = 1
+            source = str(name or "Atavistic Instigation").strip() or "Atavistic Instigation"
+            key = (source.lower(), weapon_key, int(threshold), int(hit_penalty))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "weapon_key": weapon_key,
+                    "weapon_name": weapon_raw,
+                    "stand_firm_crit_hit_threshold": int(threshold),
+                    "duck_hit_roll_penalty": int(hit_penalty),
+                    "source": source,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_post_shoot_keyword_strength_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: after this model's unit has shot, select a hit enemy unit hit by a named weapon;

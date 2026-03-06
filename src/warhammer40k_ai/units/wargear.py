@@ -9609,6 +9609,17 @@ class WargearProfile:
                     _add_hit_mod(-1, "-1 from Agonising Suppression (suppressed)")
                 if sr.get("post_shoot_suppressed_active"):
                     _add_hit_mod(-1, "-1 from Suppressed")
+                if sr.get("atavistic_instigation_duck_active"):
+                    try:
+                        penalty = int(sr.get("atavistic_instigation_duck_hit_roll_penalty", 1) or 1)
+                    except Exception:
+                        penalty = 1
+                    if penalty > 0:
+                        source_name = (
+                            str(sr.get("atavistic_instigation_duck_source", "") or "Atavistic Instigation").strip()
+                            or "Atavistic Instigation"
+                        )
+                        _add_hit_mod(-int(penalty), f"-{int(penalty)} from {source_name} (duck for cover)")
                 if sr.get("tripwires_stunned_active"):
                     try:
                         penalty = int(sr.get("tripwires_stunned_hit_roll_modifier", -1) or -1)

@@ -3283,6 +3283,20 @@ class GamePhaseHandlersMixin:
                         "post_shoot_no_overwatch_turn",
                     ):
                         sr.pop(key, None)
+                if (
+                    pname == "SHOOTING_PHASE"
+                    and str(sr.get("atavistic_instigation_duck_owner", "") or "") == owner_id
+                    and sr.get("atavistic_instigation_duck_active")
+                ):
+                    for key in (
+                        "atavistic_instigation_duck_active",
+                        "atavistic_instigation_duck_owner",
+                        "atavistic_instigation_duck_turn",
+                        "atavistic_instigation_duck_source",
+                        "atavistic_instigation_duck_hit_roll_penalty",
+                        "atavistic_instigation_duck_expires_timing",
+                    ):
+                        sr.pop(key, None)
                 unit.special_rules = sr
 
     def _on_phase_start_wracked_with_agonies_cleanup(self, player=None, phase=None, **_kwargs) -> None:
@@ -14820,6 +14834,22 @@ class GamePhaseHandlersMixin:
                         sr.pop(k, None)
                 if pname == "SHOOTING_PHASE":
                     sr.pop("cabal_temporal_surge_move_max", None)
+                    owner = str(sr.get("atavistic_instigation_stand_firm_owner", "") or "")
+                    try:
+                        turn = int(sr.get("atavistic_instigation_stand_firm_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    if owner and owner == active_name:
+                        if int(turn or 0) == int(getattr(self, "turn", 0) or 0):
+                            for k in (
+                                "atavistic_instigation_stand_firm_active",
+                                "atavistic_instigation_stand_firm_owner",
+                                "atavistic_instigation_stand_firm_turn",
+                                "atavistic_instigation_stand_firm_source",
+                                "atavistic_instigation_stand_firm_value",
+                                "atavistic_instigation_stand_firm_expires_phase",
+                            ):
+                                sr.pop(k, None)
                 if pname == "FIGHT_PHASE" and active_name:
                     owner = str(sr.get("wargear_charge_keyword_hits_turn_owner", "") or "")
                     if owner and owner == active_name:
