@@ -33,6 +33,8 @@ In Warhammer 40,000 (10th Edition), keywords can exist at both the **model level
 ### Ability-Added Keywords
 - Some abilities can add keywords to a unit (e.g., Hover mode removes AIRCRAFT keyword)
 - These are stored separately at the unit level and included in the effective keyword computation
+- Exact bearer-keyword clauses such as `The bearer has the PSYKER keyword.` are parsed and applied.
+- For enhancement text using that pattern, the keyword is applied to the resolved enhancement bearer model when available.
 
 ## Backwards Compatibility
 
@@ -58,4 +60,3 @@ This works correctly because:
 - All keyword comparisons are **case-insensitive** (using `.lower()`)
 - Keyword checks use try-except blocks for safety to avoid breaking game flow on unexpected data
 - The effective keyword computation handles attached units correctly by iterating through all unit members
-

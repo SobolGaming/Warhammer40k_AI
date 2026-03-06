@@ -5372,7 +5372,7 @@ def _classify_ability_base(
     attached_character_fnp_support = _attached_character_fnp_support(description)
     unit_contains_character_fnp_support = _unit_contains_character_fnp_support(description)
     leading_unit_contains_invuln_support = _leading_unit_contains_invuln_support(description)
-    bearer_smoke_support = _bearer_smoke_keyword_support(description)
+    bearer_keyword_support = _bearer_keyword_support(description)
     bearer_unit_keyword_support = _bearer_unit_keyword_support(description)
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     unit_wound_reroll_support = _unit_wound_reroll_ones_support(description)
@@ -5640,8 +5640,8 @@ def _classify_ability_base(
         return bearer_save_support
     if model_fnp_support:
         return model_fnp_support
-    if bearer_smoke_support:
-        return bearer_smoke_support
+    if bearer_keyword_support:
+        return bearer_keyword_support
     if bearer_unit_keyword_support:
         return bearer_unit_keyword_support
     if unit_hit_reroll_support:
@@ -6822,15 +6822,31 @@ def _model_fnp_support(description: str) -> Optional[Tuple[str, str]]:
     return ("Supported", f"Model has Feel No Pain {val}+.")
 
 
-def _bearer_smoke_keyword_support(description: str) -> Optional[Tuple[str, str]]:
+def _bearer_keyword_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    if not re.fullmatch(r"(?:the )?bearer has the smoke keyword", norm):
+    m = re.fullmatch(r"(?:the )?bearer has the (?P<keywords>[a-z0-9 ]+) keywords?", norm)
+    if not m:
         return None
-    return ("Supported", "Bearer gains the SMOKE keyword.")
+    raw_keywords = re.sub(r"\s+", " ", str(m.group("keywords") or "").strip())
+    if not raw_keywords:
+        return None
+    parts = [raw_keywords]
+    if " and " in raw_keywords:
+        parts = [p.strip() for p in re.split(r"\s+and\s+", raw_keywords) if p.strip()]
+    keywords = [str(p or "").strip().upper() for p in parts if str(p or "").strip()]
+    if not keywords:
+        return None
+    if len(keywords) == 1:
+        return ("Supported", f"Bearer gains the {keywords[0]} keyword.")
+    if len(keywords) == 2:
+        joined = f"{keywords[0]} and {keywords[1]}"
+    else:
+        joined = f"{', '.join(keywords[:-1])}, and {keywords[-1]}"
+    return ("Supported", f"Bearer gains the {joined} keywords.")
 
 
 def _bearer_unit_keyword_support(description: str) -> Optional[Tuple[str, str]]:

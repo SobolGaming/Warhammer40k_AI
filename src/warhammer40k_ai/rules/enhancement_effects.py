@@ -72,6 +72,7 @@ class EnhancementEffectSpec:
     value: int
     notes: str
     supported: bool = True
+    keyword: str = ""
 
 
 @dataclass(frozen=True)
@@ -292,6 +293,34 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
                 notes=f"Bearer gains Feel No Pain {m.group(1)}+.",
             )
         )
+
+    # The bearer has the <KEYWORD> keyword / keywords.
+    for sentence in [seg.strip() for seg in re.split(r"[.]", r) if seg.strip()]:
+        m = re.fullmatch(
+            r"(?:the\s+)?bearer\s+has\s+the\s+(?P<keywords>.+?)\s+keywords?",
+            sentence,
+            flags=re.IGNORECASE,
+        )
+        if not m:
+            continue
+        raw_keywords = re.sub(r"\s+", " ", str(m.group("keywords") or "").strip())
+        if not raw_keywords:
+            continue
+        keyword_tokens = [raw_keywords]
+        if " and " in raw_keywords.lower():
+            keyword_tokens = [part.strip() for part in re.split(r"\s+and\s+", raw_keywords, flags=re.IGNORECASE) if part.strip()]
+        for token in keyword_tokens:
+            keyword = re.sub(r"\s+", " ", str(token or "").strip()).upper()
+            if not keyword:
+                continue
+            out.append(
+                EnhancementEffectSpec(
+                    kind="bearer_keyword_add",
+                    value=1,
+                    notes=f"Bearer gains the {keyword} keyword.",
+                    keyword=keyword,
+                )
+            )
 
     # Each time an attack is allocated to the bearer, subtract X from the Damage characteristic of that attack.
     # IMPORTANT: only supported when it is unconditional (no trailing 'If ...' clause).
@@ -555,6 +584,9 @@ def _enhancement_rules_fully_consumed(description: str) -> bool:
         r"once per battle at the start of the fight phase the bearer can use this enhancement if it does until the end of the phase models in the bearers unit have the fights first ability",
         # Feel No Pain X+.
         r"the bearer has the feel no pain \d+ ability",
+        # Bearer keyword grants.
+        r"(?:the )?bearer has the [a-z0-9 ]+ keyword",
+        r"(?:the )?bearer has the [a-z0-9 ]+ keywords",
         # A'rgath, the King of Blades.
         r"add \d+ to the attacks and strength characteristics of the bearers melee weapons while the bearer is within your armys shadow of chaos add \d+ to the attacks and strength characteristics of the bearers melee weapons instead",
         # Soulstealer.
@@ -629,6 +661,32 @@ def apply_enhancement_effects(unit, effects: List[EnhancementEffectSpec]) -> Non
         if eff.kind == "save_set" and eff.supported:
             from ..utility.modifiers import Modifier, ModifierOp
             unit.add_characteristic_modifier("save", Modifier(ModifierOp.SET, int(eff.value), source="enhancement:save_set"))
+            continue
+
+        if eff.kind == "bearer_keyword_add" and eff.supported:
+            keyword = str(getattr(eff, "keyword", "") or "").strip().upper()
+            if not keyword:
+                continue
+            bearer = None
+            get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+            if callable(get_bearer):
+                bearer = get_bearer()
+            if bearer is None:
+                for model in list(getattr(unit, "models", []) or []):
+                    alive_attr = getattr(model, "is_alive", True)
+                    if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                        bearer = model
+                        break
+            if bearer is not None:
+                existing = list(getattr(bearer, "keywords", []) or [])
+                if keyword.lower() not in {str(v or "").strip().lower() for v in existing}:
+                    existing.append(keyword)
+                    bearer.keywords = existing
+                continue
+            current = list(unit.special_rules.get("ability_added_keywords", []) or [])
+            if keyword.lower() not in {str(v or "").strip().lower() for v in current}:
+                current.append(keyword)
+                unit.special_rules["ability_added_keywords"] = current
             continue
 
         if eff.kind == "reduce_damage_taken" and eff.supported:

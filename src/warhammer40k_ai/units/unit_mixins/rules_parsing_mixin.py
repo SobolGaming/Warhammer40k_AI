@@ -4007,6 +4007,20 @@ class RulesParsingMixin:
 
         unit_added_keywords: list[str] = []
 
+        def _extract_keyword_list(raw_text: str) -> list[str]:
+            text = re.sub(r"\s+", " ", str(raw_text or "").strip().lower())
+            if not text:
+                return []
+            parts = [text]
+            if " and " in text:
+                parts = [p.strip() for p in re.split(r"\s+and\s+", text) if p.strip()]
+            keywords: list[str] = []
+            for part in parts:
+                token = re.sub(r"\s+", " ", str(part or "").strip())
+                if token:
+                    keywords.append(token.upper())
+            return keywords
+
         for u in members:
             added: list[str] = []
             removed: list[str] = []
@@ -4031,6 +4045,9 @@ class RulesParsingMixin:
                 norm = re.sub(r"\s+", " ", norm).strip()
                 if re.fullmatch(r"(?:the )?" + re.escape(self._BEARER_SMOKE_KEYWORD_TOKENS), norm):
                     added.append("Smoke")
+                m = re.fullmatch(r"(?:the )?bearer has the (?P<keywords>[a-z0-9 ]+) keywords?", norm)
+                if m:
+                    added.extend(_extract_keyword_list(m.group("keywords") or ""))
                 if re.search(r"\b" + re.escape(self._BEARER_LOSES_SMOKE_KEYWORD_TOKENS) + r"\b", norm):
                     removed.append("Smoke")
                 if re.fullmatch(r"(?:the )?bearers unit has the smoke keyword", norm):

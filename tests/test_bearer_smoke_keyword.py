@@ -47,6 +47,16 @@ class TestBearerSmokeKeyword(unittest.TestCase):
         unit = _make_unit("Smoke Unit", abilities=[ability])
         self.assertTrue(unit.has_keyword("SMOKE"))
 
+    def test_bearer_psyker_keyword_added(self):
+        ability = {
+            "name": "Warp Sigil",
+            "description": "The bearer has the PSYKER keyword.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Psyker Unit", abilities=[ability])
+        self.assertTrue(unit.has_keyword("PSYKER"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -55,6 +55,33 @@ class TestEnhancementEffects(unittest.TestCase):
         self.assertEqual(status, "Supported")
         self.assertIn("Bearer ranged weapons", notes)
 
+    def test_classify_supported_for_bearer_keyword_grant(self):
+        from warhammer40k_ai.rules.enhancement_effects import classify_enhancement_support
+
+        status, notes = classify_enhancement_support(
+            "HERETIC ASTARTES model only. The bearer has the PSYKER keyword."
+        )
+
+        self.assertEqual(status, "Supported")
+        self.assertIn("Bearer gains the PSYKER keyword", notes)
+
+    def test_apply_bearer_keyword_grants_keyword_to_bearer_model_only(self):
+        from warhammer40k_ai.rules.enhancement_effects import apply_enhancement_effects, parse_enhancement_effects
+
+        bearer = SimpleNamespace(keywords=["CHARACTER"], is_alive=True)
+        other = SimpleNamespace(keywords=["CHARACTER"], is_alive=True)
+        unit = SimpleNamespace(
+            special_rules={},
+            models=[other, bearer],
+            _get_enhancement_bearer_model=lambda: bearer,
+        )
+
+        effects = parse_enhancement_effects("The bearer has the PSYKER keyword.")
+        apply_enhancement_effects(unit, effects)
+
+        self.assertIn("PSYKER", [str(k).upper() for k in bearer.keywords])
+        self.assertNotIn("PSYKER", [str(k).upper() for k in other.keywords])
+
     def test_move_add_uses_modifier_pipeline(self):
         from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
