@@ -2910,6 +2910,80 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_canoptek_swarm_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: Canoptek Swarm (Command phase target selection + model return count).
+
+        Returns a list of specs with keys:
+            - target_keyword: str
+            - count_keyword: str
+            - range: int
+            - source: ability name
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_canoptek_swarm_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, str, int]] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._CANOPTEK_SWARM_RE.fullmatch(normalized)
+                if not m:
+                    continue
+
+                target_keyword_raw = str(m.group("target_keyword") or "").strip()
+                target_keyword = unit._normalize_keyword_phrase(target_keyword_raw) or target_keyword_raw.lower()
+                count_keyword_raw = str(m.group("count_keyword") or "").strip()
+                count_keyword = unit._normalize_keyword_phrase(count_keyword_raw) or count_keyword_raw.lower()
+                try:
+                    rng = int(m.group("range") or 0)
+                except Exception:
+                    rng = 0
+                if rng <= 0 or not target_keyword or not count_keyword:
+                    continue
+
+                source = str(name or "Canoptek Swarm").strip() or "Canoptek Swarm"
+                key = (source.lower(), target_keyword, count_keyword, int(rng))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "target_keyword": target_keyword,
+                        "count_keyword": count_keyword,
+                        "range": int(rng),
+                        "source": source,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_post_shoot_leadership_debuff_specs(self) -> List[dict]:
         """
         Unit-specific rule: after this unit has shot, select a hit enemy unit; that unit suffers -1 to

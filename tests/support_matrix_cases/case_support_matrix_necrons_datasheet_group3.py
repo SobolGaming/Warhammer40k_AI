@@ -64,6 +64,13 @@ import pytest
             ),
         ),
         (
+            "Canoptek Swarm",
+            (
+                "In your Command phase, select one friendly Canoptek Scarab Swarm unit within 6\" of this unit. One destroyed "
+                "model is returned to that CANOPTEK SCARAB SWARM unit for each SPYDER model in this unit."
+            ),
+        ),
+        (
             "Living Lightning",
             (
                 "In your Shooting phase, select one enemy unit within 18\" of and visible to this model (excluding units with the "

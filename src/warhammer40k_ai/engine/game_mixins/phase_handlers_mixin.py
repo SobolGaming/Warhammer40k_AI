@@ -11485,6 +11485,239 @@ class GamePhaseHandlersMixin:
             pass
         return True
 
+    def _on_phase_start_canoptek_swarm(self, player=None, phase=None, **_kwargs) -> None:
+        """Canoptek Spyders: Canoptek Swarm target selection at start of Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError(f"Canoptek Swarm requires an army for {player.name}.")
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            raise RuntimeError("Canoptek Swarm requires a game map.")
+
+        try:
+            from ...utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return
+
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+
+        queue = getattr(self, "decision_queue", None)
+        pending_source_unit_ids = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "canoptek_swarm_target":
+                    continue
+                source_unit_id = str(ctx.get("source_unit_id", "") or ctx.get("unit_id", "") or "")
+                if source_unit_id:
+                    pending_source_unit_ids.add(source_unit_id)
+
+        def _unit_has_keyword(root, keyword: str) -> bool:
+            if not keyword:
+                return True
+            try:
+                return bool(root.has_any_keyword(keyword) or root.has_keyword(keyword))
+            except Exception:
+                pass
+            try:
+                keys = list(getattr(root, "keywords", []) or []) + list(getattr(root, "faction_keywords", []) or [])
+            except Exception:
+                keys = []
+            return any(str(k or "").strip().upper() == str(keyword).strip().upper() for k in keys)
+
+        def _model_has_keyword(model, keyword: str) -> bool:
+            if model is None:
+                return False
+            check_any = getattr(model, "has_any_keyword", None)
+            if callable(check_any) and bool(check_any(keyword)):
+                return True
+            check = getattr(model, "has_keyword", None)
+            if callable(check) and bool(check(keyword)):
+                return True
+            parent = getattr(model, "parent_unit", None)
+            if parent is not None:
+                try:
+                    if bool(parent.has_any_keyword(keyword) or parent.has_keyword(keyword)):
+                        return True
+                except Exception:
+                    pass
+            kw = str(keyword or "").strip().upper()
+            if not kw:
+                return False
+            keywords = list(getattr(model, "keywords", []) or []) + list(getattr(model, "faction_keywords", []) or [])
+            return any(str(v or "").strip().upper() == kw for v in keywords)
+
+        def _alive_keyword_model_count(source_root, keyword: str) -> int:
+            try:
+                models = list(source_root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(source_root, "models", []) or [])
+            count = 0
+            for model in list(models or []):
+                if model is None:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not is_alive:
+                    continue
+                if _model_has_keyword(model, keyword):
+                    count += 1
+            return int(count)
+
+        seen_sources = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                source_root = unit.get_attached_unit_root()
+            except Exception:
+                source_root = unit
+            source_id = str(get_entity_id(source_root) or "")
+            if not source_id or source_id in seen_sources:
+                continue
+            seen_sources.add(source_id)
+            if source_id in pending_source_unit_ids:
+                continue
+
+            try:
+                if not getattr(source_root, "is_alive", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            try:
+                if not getattr(source_root, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if source_root.is_in_reserves() or source_root.is_embarked:
+                    continue
+            except Exception:
+                pass
+
+            source_sr = getattr(source_root, "special_rules", None)
+            if isinstance(source_sr, dict):
+                if str(source_sr.get("canoptek_swarm_selected_turn_owner", "") or "") == owner_id:
+                    try:
+                        selected_turn = int(source_sr.get("canoptek_swarm_selected_turn", 0) or 0)
+                    except Exception:
+                        selected_turn = 0
+                    if selected_turn == int(turn or 0):
+                        continue
+
+            specs = source_root.unit_canoptek_swarm_specs() or []
+            if not specs:
+                continue
+
+            for spec in list(specs or []):
+                ability_name = str(spec.get("source", "") or "Canoptek Swarm").strip() or "Canoptek Swarm"
+                target_keyword = str(spec.get("target_keyword", "") or "").strip()
+                count_keyword = str(spec.get("count_keyword", "") or "").strip()
+                try:
+                    rng = int(spec.get("range", 0) or 0)
+                except Exception:
+                    rng = 0
+                if rng <= 0 or not target_keyword or not count_keyword:
+                    continue
+
+                return_count = _alive_keyword_model_count(source_root, count_keyword)
+                if return_count <= 0:
+                    continue
+
+                candidates = []
+                seen_targets = set()
+                for cand in list(getattr(army, "units", []) or []):
+                    if cand is None:
+                        continue
+                    try:
+                        target_root = cand.get_attached_unit_root()
+                    except Exception:
+                        target_root = cand
+                    target_id = str(get_entity_id(target_root) or "")
+                    if not target_id or target_id in seen_targets:
+                        continue
+                    seen_targets.add(target_id)
+                    try:
+                        if not getattr(target_root, "is_alive", lambda: False)():
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if not getattr(target_root, "deployed", True):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if target_root.is_in_reserves() or target_root.is_embarked:
+                            continue
+                    except Exception:
+                        pass
+                    if not _unit_has_keyword(target_root, target_keyword):
+                        continue
+                    if not unit_within_range_of_unit(
+                        source_root,
+                        target_root,
+                        float(rng),
+                        game_map=game_map,
+                        use_attached_aggregate=True,
+                    ):
+                        continue
+                    candidates.append(target_root)
+
+                if not candidates:
+                    continue
+
+                try:
+                    candidates = sorted(candidates, key=lambda u: str(get_entity_id(u) or ""))
+                except Exception:
+                    candidates = list(candidates)
+
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                options.extend(
+                    [
+                        DecisionOption.create(
+                            str(getattr(cand, "name", "Unit") or "Unit"),
+                            payload={"target_unit_id": get_entity_id(cand)},
+                        )
+                        for cand in list(candidates)
+                    ]
+                )
+                if len(options) <= 1:
+                    continue
+
+                ctx = {
+                    "ability": "canoptek_swarm_target",
+                    "ability_name": ability_name,
+                    "phase": "Command phase",
+                    "unit": getattr(source_root, "name", "") or "",
+                    "unit_id": source_id,
+                    "source_unit_id": source_id,
+                    "range": int(rng),
+                    "target_keyword": target_keyword,
+                    "count_keyword": count_keyword,
+                    "return_count": int(return_count),
+                }
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{ability_name}: select a unit.",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context=ctx,
+                )
+                self.request_decision(request)
+                break
+
     def _on_phase_start_tears_of_isha(self, player=None, phase=None, **_kwargs) -> None:
         """Spiritseer: Tears of Isha selection at start of Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

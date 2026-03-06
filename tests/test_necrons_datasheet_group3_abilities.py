@@ -11,12 +11,15 @@ class _MockDatasheet:
         keywords=None,
         faction_keywords=None,
         objective_control=1,
+        model_count=1,
     ):
         self.name = name
         self.faction_data = {"name": "Necrons"}
         self.keywords = list(keywords or [])
         self.faction_keywords = list(faction_keywords or [])
-        self.datasheets_unit_composition = [{"description": "1 Test Model"}]
+        model_count = max(1, int(model_count or 1))
+        model_label = "Test Model" if model_count == 1 else "Test Models"
+        self.datasheets_unit_composition = [{"description": f"{model_count} {model_label}"}]
         self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
         self.datasheets_models = [
             {
@@ -38,7 +41,16 @@ class _MockDatasheet:
         self.transport = ""
 
 
-def _make_unit(name, *, abilities=None, keywords=None, faction_keywords=None, objective_control=1):
+def _make_unit(
+    name,
+    *,
+    abilities=None,
+    keywords=None,
+    faction_keywords=None,
+    objective_control=1,
+    model_count=1,
+    quantity=None,
+):
     from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
@@ -47,8 +59,9 @@ def _make_unit(name, *, abilities=None, keywords=None, faction_keywords=None, ob
         keywords=keywords,
         faction_keywords=faction_keywords,
         objective_control=objective_control,
+        model_count=model_count,
     )
-    return Unit(datasheet)
+    return Unit(datasheet, quantity=quantity)
 
 
 class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
@@ -185,6 +198,136 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
 
         self.assertEqual(baseline_oc, 2)
         self.assertEqual(boosted_oc, 1)
+
+    def test_canoptek_swarm_parses_command_phase_targeted_return(self):
+        ability = {
+            "name": "Canoptek Swarm",
+            "description": (
+                "In your Command phase, select one friendly Canoptek Scarab Swarm unit within 6\" of this unit. "
+                "One destroyed model is returned to that CANOPTEK SCARAB SWARM unit for each SPYDER model in this unit."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        spyders = _make_unit(
+            "Canoptek Spyders",
+            abilities=[ability],
+            keywords=["CANOPTEK", "SPYDER"],
+        )
+        specs = spyders.unit_canoptek_swarm_specs()
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(str(specs[0].get("target_keyword", "")), "canoptek scarab swarm")
+        self.assertEqual(str(specs[0].get("count_keyword", "")), "spyder")
+        self.assertEqual(int(specs[0].get("range", 0)), 6)
+
+    def test_canoptek_swarm_queues_target_and_bodyguard_return(self):
+        from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE, DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.engine.decisions import DecisionResult
+        from warhammer40k_ai.engine.decision_handlers.abilities import _apply_choose_quarry
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        ability = {
+            "name": "Canoptek Swarm",
+            "description": (
+                "In your Command phase, select one friendly Canoptek Scarab Swarm unit within 6\" of this unit. "
+                "One destroyed model is returned to that CANOPTEK SCARAB SWARM unit for each SPYDER model in this unit."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        spyders = _make_unit(
+            "Canoptek Spyders",
+            abilities=[ability],
+            keywords=["CANOPTEK", "SPYDER"],
+            model_count=2,
+            quantity=2,
+        )
+        scarabs = _make_unit(
+            "Canoptek Scarab Swarms",
+            keywords=["CANOPTEK", "SCARAB", "SWARM", "CANOPTEK SCARAB SWARM"],
+            model_count=2,
+            quantity=2,
+        )
+        enemy = _make_unit("Enemy")
+        self.assertEqual(len(spyders.models), 2)
+
+        battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(battlefield)
+        army_one = Army("A1", detachment_type="Test")
+        army_two = Army("A2", detachment_type="Test")
+        player_one = Player("P1", control=PlayerControl.LOCAL, army=army_one)
+        player_two = Player("P2", control=PlayerControl.REMOTE, army=army_two)
+        game.add_player(player_one)
+        game.add_player(player_two)
+
+        army_one.add_unit(spyders)
+        army_one.add_unit(scarabs)
+        army_two.add_unit(enemy)
+
+        for unit in (spyders, scarabs, enemy):
+            unit.deployed = True
+            unit.reserve_status = "deployed"
+
+        lost = scarabs.models[0]
+        scarabs.remove_model(lost)
+        self.assertIn(lost, scarabs.models_lost)
+
+        game.map.units = [spyders, scarabs, enemy]
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        game.current_player_index = 0
+        game.rebuild_entity_registry()
+
+        with patch("warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit", return_value=True):
+            game._on_phase_start_canoptek_swarm(player=player_one, phase=game.phase)
+
+        pending = list(game.decision_queue.list() or [])
+        choose_req = None
+        for req in pending:
+            if req.decision_type != DECISION_CHOOSE_QUARRY:
+                continue
+            if str((req.context or {}).get("ability", "") or "") == "canoptek_swarm_target":
+                choose_req = req
+                break
+        self.assertIsNotNone(choose_req)
+        ctx = dict(choose_req.context or {})
+        self.assertEqual(int(ctx.get("return_count", 0) or 0), 2)
+
+        scarab_id = str(get_entity_id(scarabs) or "")
+        target_option = None
+        for opt in list(choose_req.options or []):
+            if str((opt.payload or {}).get("target_unit_id", "") or "") == scarab_id:
+                target_option = opt
+                break
+        self.assertIsNotNone(target_option)
+
+        result = DecisionResult(
+            decision_id=choose_req.decision_id,
+            player_id=player_one.id,
+            option_id=target_option.option_id,
+        )
+        _apply_choose_quarry(game, choose_req, result)
+
+        pending_after = list(game.decision_queue.list() or [])
+        bodyguard_req = None
+        for req in pending_after:
+            if req.decision_type != DECISION_ALLOCATE_DAMAGE:
+                continue
+            req_ctx = dict(req.context or {})
+            if str(req_ctx.get("selection_kind", "") or "") != "bodyguard_return":
+                continue
+            if str(req_ctx.get("leader_unit_id", "") or "") != str(get_entity_id(spyders) or ""):
+                continue
+            if str(req_ctx.get("bodyguard_unit_id", "") or "") != scarab_id:
+                continue
+            bodyguard_req = req
+            break
+        self.assertIsNotNone(bodyguard_req)
+        bodyguard_ctx = dict(bodyguard_req.context or {})
+        self.assertEqual(int(bodyguard_ctx.get("remaining", 0) or 0), 2)
+        self.assertFalse(bool(bodyguard_ctx.get("allow_skip", True)))
 
     def test_living_lightning_parses_dice_pool_mortals(self):
         ability = {

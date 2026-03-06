@@ -3562,6 +3562,11 @@ class Unit(
         r"otherwise one model in that unit regains up to d3 lost wounds each unit can only be selected for this ability once per turn",
         re.IGNORECASE,
     )
+    _CANOPTEK_SWARM_RE = re.compile(
+        r"in your command phase select one friendly (?P<target_keyword>[a-z0-9 ]+) unit within (?P<range>\d+)\s*\"?\s*of this unit "
+        r"one destroyed model is returned to that (?P=target_keyword) unit for each (?P<count_keyword>[a-z0-9 ]+) model in this unit",
+        re.IGNORECASE,
+    )
     _WORD_OF_PHOENIX_RE = re.compile(
         r"while this model is leading a unit in your command phase roll one d6 on a 2\+ d3\+1 destroyed bodyguard models "
         r"\(excluding support weapon models\) are returned to that unit with their full wounds remaining",

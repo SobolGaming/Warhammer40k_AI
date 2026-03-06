@@ -17328,6 +17328,92 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {tname} regains up to {int(heal)} wounds.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "canoptek_swarm_target":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            player = _resolve_player(game, request, payload)
+            if player is None:
+                try:
+                    player = source_root.get_parent_army().player
+                except Exception:
+                    player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Canoptek Swarm").strip() or "Canoptek Swarm"
+
+            source_sr = getattr(source_root, "special_rules", None)
+            if not isinstance(source_sr, dict):
+                source_sr = {}
+            source_sr["canoptek_swarm_selected_turn_owner"] = owner_id
+            source_sr["canoptek_swarm_selected_turn"] = int(turn or 0)
+            source_sr["canoptek_swarm_selected_source"] = ability_name
+            source_root.special_rules = source_sr
+
+            count_keyword = str(ctx.get("count_keyword", "") or "").strip()
+
+            def _model_has_keyword(model, keyword: str) -> bool:
+                if model is None or not keyword:
+                    return False
+                check_any = getattr(model, "has_any_keyword", None)
+                if callable(check_any) and bool(check_any(keyword)):
+                    return True
+                check = getattr(model, "has_keyword", None)
+                if callable(check) and bool(check(keyword)):
+                    return True
+                parent = getattr(model, "parent_unit", None)
+                if parent is not None:
+                    try:
+                        if bool(parent.has_any_keyword(keyword) or parent.has_keyword(keyword)):
+                            return True
+                    except Exception:
+                        pass
+                kw = str(keyword or "").strip().upper()
+                keywords = list(getattr(model, "keywords", []) or []) + list(getattr(model, "faction_keywords", []) or [])
+                return any(str(v or "").strip().upper() == kw for v in keywords)
+
+            return_count = 0
+            try:
+                models = list(source_root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(source_root, "models", []) or [])
+            for model in list(models or []):
+                if model is None:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not is_alive:
+                    continue
+                if _model_has_keyword(model, count_keyword):
+                    return_count += 1
+            if return_count <= 0:
+                return chosen
+
+            destroyed = list(getattr(target_root, "models_lost", []) or [])
+            if not destroyed:
+                return chosen
+
+            queue_fn = getattr(game, "_queue_bodyguard_return_decision", None)
+            if callable(queue_fn):
+                queue_fn(
+                    player=player,
+                    leader_unit=source_root,
+                    bodyguard_unit=target_root,
+                    ability={"name": ability_name},
+                    remaining=int(return_count),
+                    allow_skip=False,
+                )
+            return chosen
     if str(ctx.get("ability", "") or "") == "post_shoot_no_cover":
         if chosen is not None:
             try:

@@ -4708,6 +4708,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Enemy units within Engagement Range suffer Objective Control -1 (minimum 1), and this unit's Objective Control is set to 1 while within 6\" of a friendly CRYPTEK model.",
         ),
+        ("NEC", "Canoptek Swarm"): (
+            "Supported",
+            "Command phase: optional CHOOSE_QUARRY target selection (with None) for a friendly CANOPTEK SCARAB SWARM unit within 6\"; returns one destroyed model per alive SPYDER model in the source unit.",
+        ),
         ("AM", "DEPLOYMENT"): (
             "Supported",
             "Aegis Defence Line deployment enforces section composition limits and connectivity, including the broken-shield 1/2\" middle-pair exception, while treating all sections as one model.",
@@ -9743,6 +9747,20 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    targeted_unit_pattern = (
+        r"(?:in your command phase|(?:at the )?(?:start|end) of your command phase) "
+        r"select one friendly (?P<target_keyword>[a-z0-9 ]+) unit within (?P<range>\d+) of this unit "
+        r"one destroyed model is returned to that (?P=target_keyword) unit for each (?P<count_keyword>[a-z0-9 ]+) model in this unit"
+    )
+    targeted = re.fullmatch(targeted_unit_pattern, norm)
+    if targeted:
+        target_keyword = str(targeted.group("target_keyword") or "friendly").strip().upper()
+        count_keyword = str(targeted.group("count_keyword") or "source").strip().upper()
+        range_value = str(targeted.group("range") or "0")
+        return (
+            "Supported",
+            f"Command phase: select one friendly {target_keyword} unit within {range_value}\"; return one destroyed model to that unit for each {count_keyword} model in the source unit.",
+        )
     if "bodyguard model" in norm or "bodyguard models" in norm:
         return None
     if "select one of the following" in norm:
