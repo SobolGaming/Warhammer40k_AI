@@ -106,6 +106,30 @@ class TestNecronsDatasheetGroup2Abilities(unittest.TestCase):
         self.assertEqual(int(rule.get("threshold", 0)), 2)
         self.assertEqual(str(rule.get("source", "")), "Systematic Vigour")
 
+    def test_bound_creation_grants_fnp_to_attached_cryptek(self):
+        ability = {
+            "name": "Bound Creation",
+            "description": (
+                "While this unit is in the same unit as a Cryptek model, that CRYPTEK model has the Feel No Pain 4+ ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        bodyguard = _make_unit("Cryptothralls", abilities=[ability])
+        cryptek_leader = _make_unit("Technomancer")
+        other_leader = _make_unit("Overlord")
+        cryptek_leader.keywords = ["Character", "Cryptek", "Infantry"]
+        other_leader.keywords = ["Character", "Noble", "Infantry"]
+        bodyguard.attached_leaders = [cryptek_leader, other_leader]
+        cryptek_leader.attached_to = bodyguard
+        other_leader.attached_to = bodyguard
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertIn((4, None), cryptek_leader.has_feel_no_pain(target_model=cryptek_leader.models[0]))
+        self.assertNotIn((4, None), other_leader.has_feel_no_pain(target_model=other_leader.models[0]))
+        self.assertNotIn((4, None), bodyguard.has_feel_no_pain(target_model=bodyguard.models[0]))
+
     def test_implacable_resilience_parses_allocated_damage_reduction(self):
         ability = {
             "name": "Implacable Resilience",

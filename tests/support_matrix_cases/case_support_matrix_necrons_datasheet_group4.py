@@ -5,6 +5,13 @@ import pytest
     "name,description",
     [
         (
+            "Ancient Cover",
+            (
+                "Each time a ranged attack is allocated to a model, if that model is not fully visible to every model "
+                "in the attacking unit because of this FORTIFICATION, that model has the Benefit of Cover against that attack."
+            ),
+        ),
+        (
             "Fabricator Claw Array (Aura)",
             "While a friendly Necrons Vehicle unit is within 6\" of the bearer, that unit has the Feel No Pain 6+ ability.",
         ),

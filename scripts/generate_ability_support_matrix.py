@@ -4681,6 +4681,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("LOV", "Teleport Crest"): ("Supported", "Models in the bearer's unit gain Deep Strike; leading-gated variants require the bearer to be leading."),
         ("LOV", "Unhinged Vengeance"): ("Supported", "Opponent Shooting phase reaction: if model lost wounds after enemy shooting, optional D6+2 reactive move toward closest non-AIRCRAFT enemy (can end in Engagement Range), once per phase."),
         ("NEC", "Adaptive Strategy"): ("Supported", "Shoot and charge after Falling Back."),
+        ("NEC", "Ancient Cover"): (
+            "Supported",
+            "Fortification cover support: ranged attacks allocated to models not fully visible because of this FORTIFICATION grant Benefit of Cover.",
+        ),
         ("NEC", "CRYPTEK RETINUE"): (
             "Supported",
             "Declare Battle Formations: this unit can join one bodyguard led by a CRYPTEK INFANTRY Leader; joined-support attachment updates attached-unit membership and Starting Strength aggregation.",
@@ -7032,11 +7036,20 @@ def _unit_contains_character_fnp_support(description: str) -> Optional[Tuple[str
         r"(?:a|the)? feel no pain (?P<val>[1-6])(?: ability)?"
     )
     m = re.fullmatch(pattern, norm)
+    if m:
+        model = (m.group("model") or "specified model").strip()
+        val = m.group("val")
+        return ("Supported", f"Unit contains {model}: Character models gain Feel No Pain {val}+.")
+    same_unit_pattern = (
+        r"while this unit is in the same unit as an? (?P<keyword>.+?) model that (?P=keyword) model has "
+        r"(?:a|the)? feel no pain (?P<val>[1-6])(?: ability)?"
+    )
+    m = re.fullmatch(same_unit_pattern, norm)
     if not m:
         return None
-    model = (m.group("model") or "specified model").strip()
+    keyword = (m.group("keyword") or "specified").strip()
     val = m.group("val")
-    return ("Supported", f"Unit contains {model}: Character models gain Feel No Pain {val}+.")
+    return ("Supported", f"While this unit is in the same unit as a {keyword} model, that model gains Feel No Pain {val}+.")
 
 
 def _unit_contains_model_action_support(description: str) -> Optional[Tuple[str, str]]:

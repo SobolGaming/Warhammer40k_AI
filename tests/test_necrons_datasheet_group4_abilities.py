@@ -190,6 +190,22 @@ class TestNecronsDatasheetGroup4Abilities(unittest.TestCase):
         fnp = list(target.has_feel_no_pain())
         self.assertTrue(any(int(v) == 6 for v, _c in fnp))
 
+    def test_ancient_cover_registers_fortification_cover_rule(self):
+        ability = {
+            "name": "Ancient Cover",
+            "description": (
+                "Each time a ranged attack is allocated to a model, if that model is not fully visible to every model "
+                "in the attacking unit because of this FORTIFICATION, that model has the Benefit of Cover against that attack."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        source = _make_unit("Convergence Of Dominion", abilities=[ability], keywords=["NECRONS", "FORTIFICATION"])
+        rule = source.get_fortification_cover_rule()
+
+        self.assertIsNotNone(rule)
+        self.assertEqual("Ancient Cover", rule.get("source"))
+
     def test_relentless_march_adds_move_within_szarekh_aura(self):
         ability = {
             "name": "Relentless March (Aura)",

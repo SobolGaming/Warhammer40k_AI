@@ -5,6 +5,12 @@ import pytest
     "name,description",
     [
         (
+            "Bound Creation",
+            (
+                "While this unit is in the same unit as a Cryptek model, that CRYPTEK model has the Feel No Pain 4+ ability."
+            ),
+        ),
+        (
             "Grand Illusion",
             (
                 "If your army includes this model, after both players have deployed their armies, select up to three "
