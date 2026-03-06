@@ -199,8 +199,15 @@ class Player:
             "battle_ready": int(self.vp_battle_ready or 0),
         }
     
-    def gain_command_points(self, amount: int = 1, *, is_normal_command_phase_gain: bool = False,
-                            exempt_from_guardrail: bool = False, reason: str | None = None) -> int:
+    def gain_command_points(
+        self,
+        amount: int = 1,
+        *,
+        is_normal_command_phase_gain: bool = False,
+        exempt_from_guardrail: bool = False,
+        reason: str | None = None,
+        source: str | None = None,
+    ) -> int:
         """
         Gain command points, enforcing the core CP gain guardrail:
         - The normal +1CP at the start of your own Command phase is always allowed and does not count.
@@ -215,25 +222,41 @@ class Player:
         # Keep battle-round counter fresh
         self._sync_cp_gain_guardrail_battle_round()
 
+        gain_reason = str(reason or "").strip() or "Command Points gained"
+        gain_source = str(source or "").strip().lower()
+        recorded_source = gain_source if gain_source else "gain"
+        gained = 0
+
         if is_normal_command_phase_gain:
-            self.command_points += amount
-            self._record_cp_change(amount, reason=reason or "Normal Command phase CP", source="gain")
-            return amount
+            gained = int(amount)
+            self.command_points += gained
+            self._record_cp_change(
+                gained,
+                reason=reason or "Normal Command phase CP",
+                source=(recorded_source if gain_source else "normal_command_phase"),
+            )
+        elif exempt_from_guardrail:
+            gained = int(amount)
+            self.command_points += gained
+            self._record_cp_change(gained, reason=gain_reason, source=recorded_source)
+        else:
+            # Guardrail: max +1 CP per battle round from non-normal sources.
+            if int(self.cp_gained_this_battle_round_excluding_normal_command_cp or 0) >= 1:
+                return 0
 
-        if exempt_from_guardrail:
-            self.command_points += amount
-            self._record_cp_change(amount, reason=reason or "Command Points gained", source="gain")
-            return amount
+            gained = min(int(amount), 1)
+            self.command_points += gained
+            self.cp_gained_this_battle_round_excluding_normal_command_cp += 1
+            self._record_cp_change(gained, reason=gain_reason, source=recorded_source)
 
-        # Guardrail: max +1 CP per battle round from non-normal sources.
-        if int(self.cp_gained_this_battle_round_excluding_normal_command_cp or 0) >= 1:
-            return 0
-
-        gained = min(amount, 1)
-        self.command_points += gained
-        self.cp_gained_this_battle_round_excluding_normal_command_cp += 1
-        self._record_cp_change(gained, reason=reason or "Command Points gained", source="gain")
-        return gained
+        if gained > 0:
+            self._maybe_trigger_opponent_cp_gain_reactions(
+                gained=gained,
+                reason=gain_reason,
+                source=gain_source,
+                is_normal_command_phase_gain=bool(is_normal_command_phase_gain),
+            )
+        return int(gained)
 
     def get_normal_command_phase_cp_gain(self) -> int:
         """
@@ -364,6 +387,178 @@ class Player:
             "source": source,
         }
         self.cp_history.append(entry)
+
+    def _cp_gain_source_counts_as_ability(
+        self,
+        *,
+        source: str,
+        reason: str,
+        is_normal_command_phase_gain: bool,
+    ) -> bool:
+        if bool(is_normal_command_phase_gain):
+            return False
+        source_key = str(source or "").strip().lower()
+        if source_key == "gain":
+            source_key = ""
+        non_ability_sources = {
+            "normal_command_phase",
+            "mission",
+            "mission_rule",
+            "secondary",
+            "secondary_discard",
+            "objective",
+        }
+        if source_key in non_ability_sources:
+            return False
+        if source_key:
+            return True
+        reason_key = str(reason or "").strip().lower()
+        if "normal command phase cp" in reason_key:
+            return False
+        if "discard secondary" in reason_key:
+            return False
+        return bool(reason_key)
+
+    def _opponent_cp_gain_reaction_specs(self) -> list[dict]:
+        army = self.get_army()
+        if army is None:
+            return []
+        specs: list[dict] = []
+        seen_roots: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            if root is None or not self._unit_is_alive_or_unknown(root):
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id in seen_roots:
+                continue
+            if root_id:
+                seen_roots.add(root_id)
+            members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else []
+            if not members:
+                members = [root]
+            members = sorted(members, key=lambda m: str(get_entity_id(m) or ""))
+            for member in members:
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                for raw_spec in list(sr.get("opponent_ability_cp_gain_reaction_specs", []) or []):
+                    if not isinstance(raw_spec, dict):
+                        continue
+                    source_model_id = str(raw_spec.get("source_model_id", "") or "").strip()
+                    if source_model_id and not self._unit_has_alive_model_id(root, source_model_id):
+                        continue
+                    spec = dict(raw_spec)
+                    spec["source_unit_id"] = root_id
+                    specs.append(spec)
+        seen_specs: set[tuple] = set()
+        deduped_specs: list[dict] = []
+        for spec in specs:
+            key = (
+                str(spec.get("source_unit_id", "") or "").strip(),
+                str(spec.get("source_model_id", "") or "").strip(),
+                str(spec.get("name", "") or "").strip().lower(),
+                int(spec.get("roll_min", 0) or 0),
+                int(spec.get("cp_gain", 0) or 0),
+            )
+            if key in seen_specs:
+                continue
+            seen_specs.add(key)
+            deduped_specs.append(spec)
+        deduped_specs.sort(
+            key=lambda item: (
+                str(item.get("name", "") or "").strip().lower(),
+                str(item.get("source_unit_id", "") or "").strip(),
+                str(item.get("source_model_id", "") or "").strip(),
+                int(item.get("roll_min", 0) or 0),
+                int(item.get("cp_gain", 0) or 0),
+            )
+        )
+        return deduped_specs
+
+    def _resolve_opponent_cp_gain_reactions(
+        self,
+        *,
+        opponent_player,
+        opponent_gain: int,
+        opponent_reason: str,
+    ) -> None:
+        specs = self._opponent_cp_gain_reaction_specs()
+        if not specs:
+            return
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_action, append_dice
+
+        game = getattr(self, "game", None)
+        event_system = getattr(game, "event_system", None) if game is not None else None
+        trigger_player = getattr(opponent_player, "name", "Opponent")
+        trigger_reason = str(opponent_reason or "").strip() or "ability"
+
+        for spec in specs:
+            try:
+                roll_min = int(spec.get("roll_min", 2) or 2)
+            except (TypeError, ValueError):
+                roll_min = 2
+            try:
+                cp_gain = int(spec.get("cp_gain", 1) or 1)
+            except (TypeError, ValueError):
+                cp_gain = 1
+            if roll_min <= 0 or cp_gain <= 0:
+                continue
+            source_name = str(spec.get("name", "") or "Opponent CP Gain Reaction").strip() or "Opponent CP Gain Reaction"
+            roll = int(get_roll("D6") or 0)
+            gained = 0
+            if int(roll) >= int(roll_min):
+                gained = int(self.gain_command_points(cp_gain, reason=source_name, source="ability") or 0)
+
+            append_dice(
+                self,
+                f"{source_name} roll: {int(roll)} (vs {int(roll_min)}+) after {trigger_player} gained CP ({int(opponent_gain)}).",
+            )
+            if gained > 0:
+                append_action(self, f"{source_name}: gained {int(gained)} CP (trigger: {trigger_reason}).")
+            else:
+                append_action(self, f"{source_name}: no CP gained (trigger: {trigger_reason}).")
+            if event_system is not None:
+                event_system.publish(
+                    "command_points_gained",
+                    player=self,
+                    amount=int(gained or 0),
+                    reason=source_name,
+                    source="opponent_cp_gain_reaction",
+                    triggering_player=opponent_player,
+                    triggering_reason=trigger_reason,
+                    triggering_cp_gain=int(opponent_gain or 0),
+                    roll=int(roll),
+                    roll_min=int(roll_min),
+                )
+            if gained > 0:
+                break
+
+    def _maybe_trigger_opponent_cp_gain_reactions(
+        self,
+        *,
+        gained: int,
+        reason: str,
+        source: str,
+        is_normal_command_phase_gain: bool,
+    ) -> None:
+        if int(gained or 0) <= 0:
+            return
+        if not self._cp_gain_source_counts_as_ability(
+            source=source,
+            reason=reason,
+            is_normal_command_phase_gain=bool(is_normal_command_phase_gain),
+        ):
+            return
+        opponent = self._get_opponent_player()
+        if opponent is None or opponent is self:
+            return
+        resolve = getattr(opponent, "_resolve_opponent_cp_gain_reactions", None)
+        if callable(resolve):
+            resolve(opponent_player=self, opponent_gain=int(gained), opponent_reason=reason)
 
     # ---------------- Stratagem CP modifiers (e.g. Direct the Slaughter) ----------------
 
@@ -5371,7 +5566,7 @@ class Player:
             self.discarded_secondaries.append(card)
             if gain_cp:
                 # Voluntary discard CP gain is subject to the core CP gain guardrail.
-                self.gain_command_points(1, reason="Discard Secondary (gain 1CP)")
+                self.gain_command_points(1, reason="Discard Secondary (gain 1CP)", source="mission_rule")
 
     def discard_achieved_secondaries(self, achieved_cards: list[SecondaryMissionCard]) -> None:
         for card in list(achieved_cards):

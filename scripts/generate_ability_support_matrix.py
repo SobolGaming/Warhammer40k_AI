@@ -5495,6 +5495,7 @@ def _classify_ability_base(
     model_stationary_weapon_keyword_support = _model_stationary_weapon_keyword_support(description)
     ordered_stationary_heavy_sustained_support = _ordered_stationary_heavy_sustained_hits_support(description)
     targeted_stratagem_refund_support = _targeted_stratagem_cp_refund_support(description)
+    opponent_ability_cp_gain_reaction_support = _opponent_ability_cp_gain_reaction_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     targeted_stratagem_increase_support = _targeted_stratagem_cp_increase_support(description)
     datasheet_overwatch_discount_support = _datasheet_overwatch_discount_support(description)
@@ -5866,6 +5867,8 @@ def _classify_ability_base(
         return ordered_stationary_heavy_sustained_support
     if targeted_stratagem_refund_support:
         return targeted_stratagem_refund_support
+    if opponent_ability_cp_gain_reaction_support:
+        return opponent_ability_cp_gain_reaction_support
     if targeted_stratagem_discount_support:
         return targeted_stratagem_discount_support
     if targeted_stratagem_increase_support:
@@ -8310,6 +8313,27 @@ def _targeted_stratagem_cp_refund_support(description: str) -> Optional[Tuple[st
             f"When targeted by a Stratagem, roll D6{bonus_note} and gain {cp} CP on {roll}+ (CP gain guardrail respected).",
         )
     return None
+
+
+def _opponent_ability_cp_gain_reaction_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time your opponent gains (?:a|one|\d+) ?(?:cp|command points?) as (?:the |a )?result of an ability "
+        r"roll one d6 on a (?P<roll>\d+)\+? you (?:also )?gain (?P<cp>\d+) ?(?:cp|command points?)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    roll = m.group("roll") or "2"
+    cp = m.group("cp") or "1"
+    return (
+        "Supported",
+        f"When your opponent gains CP from an ability, roll D6 and gain {cp} CP on {roll}+ (CP gain guardrail respected).",
+    )
 
 
 def _primed_and_ready_grenade_support(description: str) -> Optional[Tuple[str, str]]:
@@ -12083,6 +12107,7 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000008560003": "Clandestine Infiltrator: bearer and its attached unit gain Infiltrators and Scouts 6\".",
         "000008560004": "Veiled Hunter: after deployment, select up to three friendly SKITARII INFANTRY units to redeploy, with optional placement into Strategic Reserves regardless of current reserves limits.",
         "000008560005": "Battle-sphere Uplink: in your Shooting phase after the bearer unit shoots, while not in Engagement Range, optional reactive Normal move up to 6\" with no-charge until end of turn.",
+        "000008546004": "Autodivinator: each time your opponent gains CP from an ability, roll D6 and gain 1CP on 2+ (CP gain guardrail respected).",
         "000008376002": "Speed of the Primarch: once per battle at the start of the Fight phase, optional activation grants Fights First to the bearer's unit until end of phase.",
         "000008376003": "Rage-fuelled Warrior: once per battle at the start of the Fight phase, optional activation grants the bearer [SUSTAINED HITS 3] on melee attacks until end of phase.",
         "000008376004": "Icon of the Angel: enemy non-MONSTER/non-VEHICLE units within Engagement Range of the bearer's unit that Fall Back must take Desperate Escape tests; if Battle-shocked, those tests are at -1.",

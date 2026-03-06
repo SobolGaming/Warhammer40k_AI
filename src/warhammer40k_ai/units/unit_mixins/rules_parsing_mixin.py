@@ -1566,8 +1566,102 @@ class RulesParsingMixin:
 
         self.special_rules = sr
 
+    def _refresh_opponent_ability_cp_gain_reaction_flags(self) -> None:
+        """Parse abilities that gain CP when the opponent gains CP from an ability."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+        sr = self.special_rules
+        if "opponent_ability_cp_gain_reaction_specs" in sr:
+            del sr["opponent_ability_cp_gain_reaction_specs"]
+
+        entries: list[tuple[str, str, str]] = []
+        entries.extend((name, desc, "") for name, desc in self._iter_ability_entries_for_rules(model=None))
+        for model in list(getattr(self, "models", []) or []):
+            model_id = str(get_entity_id(model) or "").strip()
+            entries.extend((name, desc, model_id) for name, desc in self._iter_ability_entries_for_rules(model=model))
+
+        enhancement = getattr(self, "enhancement", None)
+        enhancement_name = str(getattr(enhancement, "name", "") or "").strip().lower()
+        get_bearer_id = getattr(self, "_get_enhancement_bearer_id", None)
+        enhancement_bearer_id = str(get_bearer_id() or "").strip() if callable(get_bearer_id) else ""
+        reaction_pattern = re.compile(
+            r"each time your opponent gains (?:a|one|\d+) ?(?:cp|command points?) as (?:the |a )?result of an ability "
+            r"roll one d6 on a (?P<roll>\d+)\+? you (?:also )?gain (?P<cp>\d+) ?(?:cp|command points?)",
+            re.IGNORECASE,
+        )
+
+        specs: list[dict] = []
+        seen_entries: set[tuple[str, str, str]] = set()
+        for name, desc, source_model_id in entries:
+            entry_key = (
+                str(name or "").strip().lower(),
+                str(desc or "").strip().lower(),
+                str(source_model_id or "").strip(),
+            )
+            if entry_key in seen_entries:
+                continue
+            seen_entries.add(entry_key)
+
+            text_src = self._strip_eligibility_prefix(desc or name)
+            text = self._normalize_rules_text(text_src or "")
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", "s", norm)
+            norm = re.sub(r"[^a-z0-9+]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if not norm or "opponent gains" not in norm or "result of an ability" not in norm:
+                continue
+            m = reaction_pattern.fullmatch(norm)
+            if not m:
+                continue
+            try:
+                roll_min = int(m.group("roll") or 2)
+            except (TypeError, ValueError):
+                roll_min = 2
+            try:
+                cp_gain = int(m.group("cp") or 1)
+            except (TypeError, ValueError):
+                cp_gain = 1
+            if roll_min <= 0 or cp_gain <= 0:
+                continue
+            source_model = str(source_model_id or "").strip()
+            if not source_model and enhancement_name:
+                entry_name = str(name or "").strip().lower()
+                if entry_name and entry_name == enhancement_name and enhancement_bearer_id:
+                    source_model = enhancement_bearer_id
+            spec = {
+                "roll_min": int(roll_min),
+                "cp_gain": int(cp_gain),
+                "name": str(name or "Opponent Ability CP Gain").strip() or "Opponent Ability CP Gain",
+                "description": str(desc or ""),
+            }
+            if source_model:
+                spec["source_model_id"] = source_model
+            specs.append(spec)
+
+        if specs:
+            seen_specs: set[tuple] = set()
+            deduped_specs: list[dict] = []
+            for spec in specs:
+                key = (
+                    int(spec.get("roll_min", 0) or 0),
+                    int(spec.get("cp_gain", 0) or 0),
+                    str(spec.get("name", "") or "").strip().lower(),
+                    str(spec.get("source_model_id", "") or "").strip(),
+                )
+                if key in seen_specs:
+                    continue
+                seen_specs.add(key)
+                deduped_specs.append(spec)
+            if deduped_specs:
+                sr["opponent_ability_cp_gain_reaction_specs"] = deduped_specs
+
+        self.special_rules = sr
+
     def _refresh_targeted_stratagem_cp_refund_flags(self) -> None:
         """Parse abilities that refund CP when this unit is targeted by a Stratagem."""
+        self._refresh_opponent_ability_cp_gain_reaction_flags()
         if getattr(self, "special_rules", None) is None:
             self.special_rules = {}
         sr = self.special_rules
