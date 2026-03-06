@@ -818,6 +818,10 @@ class Enhancement:
         is_imperialis_fleet = bool(callable(is_imperialis_fleet_fn) and is_imperialis_fleet_fn())
         dru_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
         try:
+            is_covenite_coterie = bool(dru_mgr and dru_mgr.is_covenite_coterie())
+        except Exception:
+            is_covenite_coterie = False
+        try:
             is_skysplinter_assault = bool(dru_mgr and dru_mgr.is_skysplinter_assault())
         except Exception:
             is_skysplinter_assault = False
@@ -5948,6 +5952,117 @@ class Enhancement:
             unit.special_rules["enhancement_the_stave_abominus"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "master regenesist" or enh_id == "000010584002":
+            if not is_covenite_coterie:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Master Regenesist").strip() or "Master Regenesist"
+            unit.special_rules["enhancement_master_regenesist"] = True
+            unit.special_rules["enhancement_master_regenesist_source"] = source
+            unit.special_rules["enhancement_master_regenesist_fleshcraft_roll"] = str(
+                params.get("enhanced_return_roll", "D3+3") or "D3+3"
+            ).strip().upper()
+            unit.special_rules["enhancement_master_regenesist_base_fleshcraft_roll"] = str(
+                params.get("base_return_roll", "D3+1") or "D3+1"
+            ).strip().upper()
+            unit.special_rules["enhancement_master_regenesist_optional"] = bool(params.get("optional", True))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_master_regenesist_bearer_model_id"] = bearer_id
+
+        if name == "master nemesine" or enh_id == "000010584003":
+            if not is_covenite_coterie:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Master Nemesine").strip() or "Master Nemesine"
+            unit.special_rules["enhancement_master_nemesine"] = True
+            unit.special_rules["enhancement_master_nemesine_source"] = source
+            unit.special_rules["enhancement_master_nemesine_anti_beast"] = int(
+                min(6, max(2, _coerce_int(params.get("anti_beast", 2) or 2, default=2)))
+            )
+            unit.special_rules["enhancement_master_nemesine_anti_monster"] = int(
+                min(6, max(2, _coerce_int(params.get("anti_monster", 4) or 4, default=4)))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_master_nemesine_bearer_model_id"] = bearer_id
+
+        if name == "master artisan" or enh_id == "000010584004":
+            if not is_covenite_coterie:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Master Artisan").strip() or "Master Artisan"
+            unit.special_rules["enhancement_master_artisan"] = True
+            unit.special_rules["enhancement_master_artisan_source"] = source
+            wounds_bonus = int(max(0, _coerce_int(params.get("bearer_wounds_bonus", 1) or 1, default=1)))
+            toughness_bonus = int(max(0, _coerce_int(params.get("bearer_unit_toughness_bonus", 1) or 1, default=1)))
+            unit.special_rules["enhancement_master_artisan_bearer_wounds_bonus"] = int(wounds_bonus)
+            unit.special_rules["enhancement_master_artisan_toughness_bonus"] = int(toughness_bonus)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_master_artisan_bearer_model_id"] = bearer_id
+            if not bool(unit.special_rules.get("enhancement_master_artisan_wounds_corrected", False)):
+                applied_kinds = getattr(unit, "_enhancement_effect_kinds_applied", set())
+                wounds_add_applied = bool(isinstance(applied_kinds, set) and "wounds_add" in applied_kinds)
+                for model in list(getattr(unit, "models", []) or []):
+                    if model is None:
+                        continue
+                    if not wounds_add_applied:
+                        break
+                    try:
+                        model._base_wounds = max(1, int(getattr(model, "_base_wounds", 1) or 1) - int(wounds_bonus))
+                        model._wounds = max(1, int(getattr(model, "_wounds", 1) or 1) - int(wounds_bonus))
+                        base_unmod = getattr(model, "_base_wounds_unmodified", None)
+                        if base_unmod is not None:
+                            model._base_wounds_unmodified = max(1, int(base_unmod or 1) - int(wounds_bonus))
+                    except (TypeError, ValueError):
+                        continue
+                unit.special_rules["enhancement_master_artisan_wounds_corrected"] = True
+            if bearer is not None and not bool(unit.special_rules.get("enhancement_master_artisan_bearer_wounds_applied", False)):
+                try:
+                    bearer._base_wounds = int(getattr(bearer, "_base_wounds", 0) or 0) + int(wounds_bonus)
+                    bearer._wounds = int(getattr(bearer, "_wounds", 0) or 0) + int(wounds_bonus)
+                    base_unmod = getattr(bearer, "_base_wounds_unmodified", None)
+                    if base_unmod is not None:
+                        bearer._base_wounds_unmodified = int(base_unmod or 0) + int(wounds_bonus)
+                    unit.special_rules["enhancement_master_artisan_bearer_wounds_applied"] = True
+                except (TypeError, ValueError):
+                    pass
+            try:
+                unit.starting_total_wounds = sum(
+                    int(getattr(model, "_base_wounds", 0) or 0)
+                    for model in list(getattr(unit, "models", []) or [])
+                )
+            except (TypeError, ValueError):
+                pass
+
+        if name in {"master repugnomancer (aura)", "master repugnomancer"} or enh_id == "000010584005":
+            if not is_covenite_coterie:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Master Repugnomancer (Aura)").strip() or "Master Repugnomancer (Aura)"
+            unit.special_rules["enhancement_master_repugnomancer"] = True
+            unit.special_rules["enhancement_master_repugnomancer_source"] = source
+            unit.special_rules["enhancement_master_repugnomancer_fear_incarnate_range_bonus"] = int(
+                max(0, _coerce_int(params.get("fear_incarnate_range_bonus", 3) or 3, default=3))
+            )
+            unit.special_rules["enhancement_master_repugnomancer_trigger_range"] = float(
+                max(0.0, _coerce_float(params.get("trigger_range", 9.0) or 9.0, default=9.0))
+            )
+            unit.special_rules["enhancement_master_repugnomancer_success_on"] = int(
+                min(6, max(2, _coerce_int(params.get("success_on", 4) or 4, default=4)))
+            )
+            unit.special_rules["enhancement_master_repugnomancer_pain_tokens_gained"] = int(
+                max(1, _coerce_int(params.get("pain_tokens_gained", 1) or 1, default=1))
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_master_repugnomancer_bearer_model_id"] = bearer_id
 
         if name == "nightmare shroud" or enh_id == "000010576005":
             if not is_skysplinter_assault:

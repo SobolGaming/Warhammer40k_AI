@@ -4318,6 +4318,47 @@ class PositioningMixin:
                 ]
         except Exception:
             pass
+        try:
+            if self._attached_unit_model_is_enhancement_bearer(
+                model,
+                flag_key="enhancement_master_nemesine",
+                enhancement_id="000010584003",
+                enhancement_name="master nemesine",
+                require_leading=False,
+            ):
+                try:
+                    root = self.get_attached_unit_root()
+                except Exception:
+                    root = self
+                source = "Master Nemesine"
+                anti_beast = 2
+                anti_monster = 4
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [root]
+                if not members:
+                    members = [root]
+                for member in members:
+                    sr = getattr(member, "special_rules", None)
+                    if not isinstance(sr, dict) or not bool(sr.get("enhancement_master_nemesine", False)):
+                        continue
+                    source = str(sr.get("enhancement_master_nemesine_source", "") or "Master Nemesine").strip() or "Master Nemesine"
+                    try:
+                        anti_beast = int(sr.get("enhancement_master_nemesine_anti_beast", 2) or 2)
+                    except Exception:
+                        anti_beast = 2
+                    try:
+                        anti_monster = int(sr.get("enhancement_master_nemesine_anti_monster", 4) or 4)
+                    except Exception:
+                        anti_monster = 4
+                    break
+                rules = list(rules or []) + [
+                    {"attack_type": "any", "keyword": f"ANTI-BEAST {int(max(2, anti_beast))}+", "source": source},
+                    {"attack_type": "any", "keyword": f"ANTI-MONSTER {int(max(2, anti_monster))}+", "source": source},
+                ]
+        except Exception:
+            pass
         atype = str(attack_type or "").strip().lower()
         is_ranged_attack = atype in ("", "any", "ranged")
         if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(

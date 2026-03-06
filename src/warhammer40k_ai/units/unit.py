@@ -1393,6 +1393,22 @@ class Unit(
             except Exception:
                 pass
             try:
+                drukhari_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+                bonus_fn = getattr(drukhari_mgr, "master_artisan_toughness_bonus", None) if drukhari_mgr is not None else None
+                if callable(bonus_fn):
+                    bonus, source = bonus_fn(model, unit=self)
+                    if int(bonus or 0):
+                        source_name = str(source or "Master Artisan").strip() or "Master Artisan"
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source=f"enhancement:{source_name}",
+                            )
+                        )
+            except Exception:
+                pass
+            try:
                 mode_active_fn = getattr(self, "battle_protocols_mode_active", None)
                 if callable(mode_active_fn) and bool(mode_active_fn("aegis_protocol")):
                     is_kastelan_model = False

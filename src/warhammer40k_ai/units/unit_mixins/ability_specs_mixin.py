@@ -1456,6 +1456,67 @@ class AbilitySpecsMixin:
         if not members:
             members = [root]
         model_id = str(get_entity_id(model) or "").strip()
+        repugnomancer_bonus = 0
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_master_repugnomancer", False)):
+                continue
+            bearer_id = str(
+                sr.get("enhancement_master_repugnomancer_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if bearer_id and model_id and bearer_id != model_id:
+                continue
+            try:
+                bonus = int(sr.get("enhancement_master_repugnomancer_fear_incarnate_range_bonus", 3) or 3)
+            except Exception:
+                bonus = 3
+            repugnomancer_bonus = max(int(repugnomancer_bonus), int(max(0, bonus)))
+        if repugnomancer_bonus > 0:
+            adjusted_specs: list[dict] = []
+            adjusted_seen: set[tuple[str, int, int, int]] = set()
+            for spec in specs:
+                if not isinstance(spec, dict):
+                    continue
+                spec_row = dict(spec)
+                source_name = str(spec_row.get("source", "") or "").strip()
+                source_key = source_name.lower()
+                try:
+                    range_value = int(spec_row.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0
+                try:
+                    test_penalty = int(spec_row.get("test_penalty", 0) or 0)
+                except Exception:
+                    test_penalty = 0
+                try:
+                    psyker_penalty = int(spec_row.get("psyker_penalty", 0) or 0)
+                except Exception:
+                    psyker_penalty = 0
+                if "fear incarnate" in source_key:
+                    range_value = max(0, int(range_value) + int(repugnomancer_bonus))
+                    spec_row["range"] = int(range_value)
+                dedupe_key = (source_key, int(range_value), int(test_penalty), int(psyker_penalty))
+                if dedupe_key in adjusted_seen:
+                    continue
+                adjusted_seen.add(dedupe_key)
+                adjusted_specs.append(spec_row)
+            specs = adjusted_specs
+            seen = adjusted_seen
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
         for member in members:
             if member is None:
                 continue

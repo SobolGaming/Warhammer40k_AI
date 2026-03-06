@@ -2805,6 +2805,58 @@ _VETERANS_OF_THE_LONG_WAR_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VETERANS_OF_THE_LONG_WAR_DESCRIPTORS.values()
 }
 
+_COVENITE_COTERIE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010584002": EnhancementToolDescriptor(
+        enhancement_id="000010584002",
+        name="Master Regenesist",
+        timing="on_bearer_fleshcraft_use",
+        target="bearer_unit",
+        duration="instant",
+        effect="fleshcraft_optional_return_up_to_d3_plus_3_instead_of_d3_plus_1",
+        effect_params={
+            "optional": True,
+            "base_return_roll": "D3+1",
+            "enhanced_return_roll": "D3+3",
+        },
+    ),
+    "000010584003": EnhancementToolDescriptor(
+        enhancement_id="000010584003",
+        name="Master Nemesine",
+        timing="passive",
+        target="bearer_weapons",
+        duration="constant",
+        effect="grant_bearer_weapon_anti_beast_and_monster",
+        effect_params={"anti_beast": 2, "anti_monster": 4},
+    ),
+    "000010584004": EnhancementToolDescriptor(
+        enhancement_id="000010584004",
+        name="Master Artisan",
+        timing="passive",
+        target="bearer_and_bearer_unit_models",
+        duration="constant",
+        effect="bearer_wounds_and_bearer_unit_toughness_bonus",
+        effect_params={"bearer_wounds_bonus": 1, "bearer_unit_toughness_bonus": 1},
+    ),
+    "000010584005": EnhancementToolDescriptor(
+        enhancement_id="000010584005",
+        name="Master Repugnomancer (Aura)",
+        timing="passive_aura_and_on_friendly_battleshock_fail_or_destroyed",
+        target="friendly_drukhari_units_within_9_of_bearer",
+        duration="constant",
+        effect="fear_incarnate_range_bonus_and_pain_token_on_friendly_battleshock_fail_or_destroyed",
+        effect_params={
+            "fear_incarnate_range_bonus": 3,
+            "trigger_range": 9,
+            "success_on": 4,
+            "pain_tokens_gained": 1,
+        },
+    ),
+}
+
+_COVENITE_COTERIE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _COVENITE_COTERIE_DESCRIPTORS.values()
+}
+
 _SPECTACLE_OF_SPITE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010580002": EnhancementToolDescriptor(
         enhancement_id="000010580002",
@@ -6604,6 +6656,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _VETERANS_OF_THE_LONG_WAR_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _COVENITE_COTERIE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPECTACLE_OF_SPITE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -6889,6 +6944,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _RENEGADE_WARBAND_BY_NAME.get(key)
         or _SOULFORGED_WARPACK_BY_NAME.get(key)
         or _VETERANS_OF_THE_LONG_WAR_BY_NAME.get(key)
+        or _COVENITE_COTERIE_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
         or _SKYSPLINTER_ASSAULT_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_BY_NAME.get(key)

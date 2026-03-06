@@ -349,6 +349,22 @@ class PowerFromPainManager:
                         return True
         return False
 
+    def _unit_has_master_regenesist(self, unit) -> bool:
+        if unit is None:
+            return False
+        for member in self._iter_unit_members(unit):
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("enhancement_master_regenesist", False)):
+                return True
+            enh = getattr(member, "enhancement", None)
+            if enh is None:
+                continue
+            enh_id = str(getattr(enh, "id", "") or "").strip()
+            enh_name = str(getattr(enh, "name", "") or "").strip().lower()
+            if enh_id == "000010584002" or enh_name == "master regenesist":
+                return True
+        return False
+
     def _model_has_wargear_named(self, model, wargear_name: str) -> bool:
         want = str(wargear_name or "").strip().lower()
         want = re.sub(r"[^a-z0-9]+", " ", want)
@@ -556,6 +572,18 @@ class PowerFromPainManager:
                 DecisionOption.create(
                     "Attacks 4 (Hazardous)",
                     payload={"choice_key": "ATTACKS_4_HAZARDOUS", "choice_kind": choice_kind, "unit_id": unit_id},
+                ),
+            ]
+        elif choice_kind == "master_regenesist":
+            title = "Master Regenesist"
+            options = [
+                DecisionOption.create(
+                    "Return D3+3 Models",
+                    payload={"choice_key": "ENHANCED", "choice_kind": choice_kind, "unit_id": unit_id},
+                ),
+                DecisionOption.create(
+                    "Return D3+1 Models",
+                    payload={"choice_key": "BASE", "choice_kind": choice_kind, "unit_id": unit_id},
                 ),
             ]
         else:
@@ -1316,17 +1344,21 @@ class PowerFromPainManager:
             returned += 1
         return returned
 
-    def _apply_fleshcraft(self, unit, *, game=None) -> int:
+    def _apply_fleshcraft(self, unit, *, game=None, master_regenesist_choice: Optional[str] = None) -> int:
         try:
             roll = int(get_roll("D3"))
         except Exception:
             roll = 0
-        amount = max(0, int(roll or 0) + 1)
+        choice = str(master_regenesist_choice or "").strip().upper()
+        has_master_regenesist = self._unit_has_master_regenesist(unit)
+        use_enhanced = bool(has_master_regenesist and choice == "ENHANCED")
+        amount = max(0, int(roll or 0) + (3 if use_enhanced else 1))
         try:
             from ..utility.event_bus import append_dice
             player = self._unit_owner(unit)
             if player is not None:
-                append_dice(player, f"Fleshcraft return: D3+1 = {amount}")
+                expr = "D3+3" if use_enhanced else "D3+1"
+                append_dice(player, f"Fleshcraft return: {expr} = {amount}")
         except Exception:
             pass
         return self._return_destroyed_bodyguard_models(unit, amount=amount, game_map=getattr(game, "map", None))
@@ -1418,7 +1450,11 @@ class PowerFromPainManager:
         for spec_key in list(spec_keys or []):
             if spec_key == "FLESHCRAFT":
                 try:
-                    self._apply_fleshcraft(root, game=game)
+                    self._apply_fleshcraft(
+                        root,
+                        game=game,
+                        master_regenesist_choice=choice_cache.get("master_regenesist"),
+                    )
                 except Exception:
                     pass
             if spec_key == "FADE_AWAY":
@@ -1460,6 +1496,8 @@ class PowerFromPainManager:
                 required_choices.append("archon_poisoned_tongue")
             elif spec.key == "EXPERIMENTAL_ENHANCEMENTS":
                 required_choices.append("experimental_enhancements")
+            elif spec.key == "FLESHCRAFT" and self._unit_has_master_regenesist(root):
+                required_choices.append("master_regenesist")
 
         unit_id = get_entity_id(root)
         pending_key = self._pending_empowerment_key(unit_id, str(trigger or ""), phase_name)

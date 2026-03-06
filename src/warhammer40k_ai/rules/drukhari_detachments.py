@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .detachment_manager import DetachmentManagerBase
+from ..utility.aura_utils import distance_between_models_bases_3d, model_within_range_of_unit
 from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
 
@@ -311,6 +312,18 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
         return reserve_status == "deployed"
 
+    def _unit_is_alive(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        is_alive = getattr(root, "is_alive", None)
+        if callable(is_alive):
+            return bool(is_alive())
+        for model in list(getattr(root, "models", []) or []):
+            if self._model_is_alive(model):
+                return True
+        return False
+
     def _army_has_combat_drugs(self) -> bool:
         return self.is_spectacle_of_spite()
 
@@ -386,6 +399,209 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         if not members:
             members = [root]
         return [m for m in members if m is not None]
+
+    @staticmethod
+    def _model_is_alive(model) -> bool:
+        if model is None:
+            return False
+        try:
+            alive = getattr(model, "is_alive", True)
+            return bool(alive() if callable(alive) else alive)
+        except Exception:
+            return False
+
+    def _resolve_member_bearer_model(self, member, *, bearer_keys: tuple[str, ...]) -> object | None:
+        if member is None:
+            return None
+        sr = getattr(member, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        bearer_id = ""
+        for key in list(bearer_keys or ()):
+            value = str(sr.get(str(key), "") or "").strip()
+            if value:
+                bearer_id = value
+                break
+        if not bearer_id:
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        candidates = list(getattr(member, "models", []) or [])
+        if not candidates:
+            return None
+        if bearer_id:
+            for model in candidates:
+                if not self._model_is_alive(model):
+                    continue
+                model_id = str(get_entity_id(model) or "") or str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                if model_id == bearer_id:
+                    return model
+            return None
+        for model in candidates:
+            if self._model_is_alive(model):
+                return model
+        return None
+
+    def master_artisan_toughness_bonus(self, model, *, unit=None) -> tuple[int, str]:
+        if not self.is_covenite_coterie():
+            return 0, ""
+        source_unit = unit
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        root = self._unit_root(source_unit)
+        if root is None or not self._unit_in_army(root):
+            return 0, ""
+
+        members = self._unit_attached_members(root)
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_master_artisan", False)):
+                continue
+            bearer_model = self._resolve_member_bearer_model(
+                member,
+                bearer_keys=("enhancement_master_artisan_bearer_model_id",),
+            )
+            if bearer_model is None:
+                continue
+            try:
+                bonus = int(sr.get("enhancement_master_artisan_toughness_bonus", 1) or 1)
+            except Exception:
+                bonus = 1
+            if bonus <= 0:
+                continue
+            source = str(sr.get("enhancement_master_artisan_source", "") or "Master Artisan").strip() or "Master Artisan"
+            return int(bonus), source
+        return 0, ""
+
+    def _iter_master_repugnomancer_sources(self) -> list[dict]:
+        if not self.is_covenite_coterie() or self.army is None:
+            return []
+        out: list[dict] = []
+        for member in self._iter_unique_army_attached_members():
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_master_repugnomancer", False)):
+                continue
+            source_root = self._unit_root(member)
+            if source_root is None or not self._unit_in_army(source_root):
+                continue
+            if not self._unit_on_battlefield(source_root) or not self._unit_is_alive(source_root):
+                continue
+            bearer_model = self._resolve_member_bearer_model(
+                member,
+                bearer_keys=("enhancement_master_repugnomancer_bearer_model_id",),
+            )
+            if bearer_model is None:
+                continue
+            try:
+                aura_range = float(sr.get("enhancement_master_repugnomancer_trigger_range", 9.0) or 9.0)
+            except Exception:
+                aura_range = 9.0
+            try:
+                success_on = int(sr.get("enhancement_master_repugnomancer_success_on", 4) or 4)
+            except Exception:
+                success_on = 4
+            try:
+                tokens_gained = int(sr.get("enhancement_master_repugnomancer_pain_tokens_gained", 1) or 1)
+            except Exception:
+                tokens_gained = 1
+            source = str(sr.get("enhancement_master_repugnomancer_source", "") or "Master Repugnomancer (Aura)").strip()
+            if not source:
+                source = "Master Repugnomancer (Aura)"
+            out.append(
+                {
+                    "source_unit": source_root,
+                    "bearer_model": bearer_model,
+                    "range": max(0.0, float(aura_range)),
+                    "success_on": min(6, max(2, int(success_on))),
+                    "pain_tokens_gained": max(1, int(tokens_gained)),
+                    "source_name": source,
+                    "source_unit_id": str(get_entity_id(source_root) or ""),
+                    "bearer_model_id": str(get_entity_id(bearer_model) or ""),
+                }
+            )
+        out.sort(key=lambda entry: (str(entry.get("source_unit_id", "")), str(entry.get("bearer_model_id", ""))))
+        return out
+
+    def _master_repugnomancer_gain_tokens_for_friendly_event(
+        self,
+        target_unit,
+        *,
+        last_model=None,
+        reason: str,
+    ) -> int:
+        if not self.is_covenite_coterie() or self.army is None or target_unit is None:
+            return 0
+        root = self._unit_root(target_unit)
+        if root is None or not self._unit_in_army(root):
+            return 0
+        if not self._unit_has_keyword(root, "DRUKHARI"):
+            return 0
+        pfp = getattr(self.army, "power_from_pain", None)
+        gain_tokens = getattr(pfp, "gain_tokens", None) if pfp is not None else None
+        if not callable(gain_tokens):
+            return 0
+
+        gained_total = 0
+        for source in self._iter_master_repugnomancer_sources():
+            bearer_model = source.get("bearer_model")
+            if bearer_model is None or not self._model_is_alive(bearer_model):
+                continue
+            try:
+                aura_range = float(source.get("range", 9.0) or 9.0)
+            except Exception:
+                aura_range = 9.0
+            if aura_range <= 0.0:
+                continue
+            in_range = False
+            try:
+                in_range = bool(
+                    model_within_range_of_unit(
+                        bearer_model,
+                        root,
+                        aura_range,
+                        use_attached_aggregate=True,
+                    )
+                )
+            except Exception:
+                in_range = False
+            if not in_range and last_model is not None:
+                try:
+                    distance = float(distance_between_models_bases_3d(bearer_model, last_model))
+                    in_range = bool(distance <= aura_range + 1e-6)
+                except Exception:
+                    in_range = False
+            if not in_range:
+                continue
+            try:
+                roll = int(get_roll("D6"))
+            except Exception:
+                roll = 0
+            threshold = int(source.get("success_on", 4) or 4)
+            if roll < threshold:
+                continue
+            token_amount = int(source.get("pain_tokens_gained", 1) or 1)
+            source_name = str(source.get("source_name", "") or "Master Repugnomancer (Aura)").strip()
+            if reason:
+                source_name = f"{source_name} ({reason})"
+            gained = int(gain_tokens(token_amount, reason=source_name) or 0)
+            if gained > 0:
+                gained_total += gained
+        return int(gained_total)
+
+    def on_battle_shock_test_resolved(self, unit, *, passed: bool, game=None) -> int:
+        del game
+        if bool(passed):
+            return 0
+        return self._master_repugnomancer_gain_tokens_for_friendly_event(
+            unit,
+            reason="Battle-shock failed",
+        )
+
+    def on_friendly_unit_destroyed(self, unit, *, last_model=None, game=None) -> int:
+        del game
+        return self._master_repugnomancer_gain_tokens_for_friendly_event(
+            unit,
+            last_model=last_model,
+            reason="Friendly unit destroyed",
+        )
 
     def _unit_has_pharmacophex(self, unit) -> bool:
         if unit is None:
