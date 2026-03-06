@@ -2927,13 +2927,13 @@ class Unit(
     )
     _OPPONENT_TURN_STRATEGIC_RESERVES_RE = re.compile(
         r"(?:once per battle(?:,)?\s+)?(?:while this model is leading a unit )?at the end of your opponent(?:s|\s+s) turn if "
-        r"(?:this unit|that unit|this model s unit|this models unit|the bearer s unit) "
+        r"(?:this unit|that unit|this model s unit|this models unit|the bearer s unit|this model) "
         r"(?:(?:is wholly within (?P<edge_dist>\d+) of one or more battlefield edges? and )?"
-        r"(?:(?:is\s+)?not within engagement range of one or more enemy units?|is more than (?P<min_dist>\d+) horizontally away from all enemy units?)"
+        r"(?:(?:is\s+)?not within engagement range of one or more enemy units?|is more than (?P<min_dist>\d+) horizontally away from all enemy units?|(?:is\s+)?not within (?P<min_dist_alt>\d+) of one or more enemy units?)"
         r"|(?:(?:is\s+)?not within engagement range of one or more enemy units?) and is wholly within (?P<edge_dist_alt>\d+) of one or more battlefield edges?) "
-        r"you can remove (?:it|that unit|this unit) from the battlefield "
-        r"(?:and place (?:it|that unit|this unit) into strategic reserves?"
-        r"|in the reinforcements step of your next movement phase set it up anywhere on the battlefield that is more than (?P<return_dist>\d+) horizontally away from all enemy models?)",
+        r"you can remove (?:it|that unit|this unit|this model) from the battlefield "
+        r"(?:and place (?:it|that unit|this unit|this model) into strategic reserves?"
+        r"|(?:and(?: then)? )?in the reinforcements step of your next movement phase set (?:it|that unit|this unit|this model) up anywhere on the battlefield that is more than (?P<return_dist>\d+) horizontally away from all enemy models?)",
         re.IGNORECASE,
     )
     _FIGHT_PHASE_END_DESTROYED_STRATEGIC_RESERVES_RE = re.compile(
@@ -4052,6 +4052,11 @@ class Unit(
         r"at the end of the fight phase if this unit was eligible to fight this phase and is not within engagement range of one or more enemy units "
         r"it can make a normal move of up to d3 3 "
         r"otherwise if this unit was eligible to fight this phase this unit can make a fall back move of up to d3 3",
+        re.IGNORECASE,
+    )
+    _END_OF_FIGHT_ENGAGED_FALL_BACK_MOVE_RE = re.compile(
+        r"at the end of the fight phase if this (?:model|unit) is within engagement range of one or more enemy units "
+        r"it can make a fall back move of up to (?P<move>d\d+(?: \d+)?|\d+)",
         re.IGNORECASE,
     )
     _TITANIC_AGILITY_RE = re.compile(

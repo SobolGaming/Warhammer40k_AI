@@ -4689,12 +4689,15 @@ class AbilitySpecsMixin:
 
     def unit_end_of_fight_raid_and_run_specs(self) -> List[dict]:
         """
-        Unit-level rule: end of Fight phase, if the unit was eligible to fight this phase,
-        it can make a Normal move (if not engaged) or a Fall Back move (if engaged) of D3+3".
+        End-of-Fight-phase reactive move rules.
 
         Returns list of specs with keys:
             - source: ability name
             - move_expr: movement roll expression string
+            - requires_eligible_to_fight: bool
+            - engaged_only: bool
+            - engaged_movement_type: str
+            - non_engaged_movement_type: str
         """
         cache_key = "unit_end_of_fight_raid_and_run_specs"
         if cache_key in getattr(self, "_ability_cache", {}):
@@ -4713,17 +4716,42 @@ class AbilitySpecsMixin:
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
-            if not self._RAID_AND_RUN_RE.fullmatch(normalized):
-                continue
             source = str(name or "Raid and Run").strip() or "Raid and Run"
-            key = source.lower()
+            if self._RAID_AND_RUN_RE.fullmatch(normalized):
+                key = f"{source.lower()}:d3+3:raid_and_run"
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "move_expr": "D3+3",
+                        "requires_eligible_to_fight": True,
+                        "engaged_only": False,
+                        "engaged_movement_type": "fall_back",
+                        "non_engaged_movement_type": "move",
+                    }
+                )
+                continue
+
+            engaged_fall_back = self._END_OF_FIGHT_ENGAGED_FALL_BACK_MOVE_RE.search(normalized)
+            if not engaged_fall_back:
+                continue
+            move_expr = str(engaged_fall_back.group("move") or "").strip().upper().replace(" ", "+")
+            if not move_expr:
+                continue
+            key = f"{source.lower()}:{move_expr}:engaged_fall_back"
             if key in seen:
                 continue
             seen.add(key)
             specs.append(
                 {
                     "source": source,
-                    "move_expr": "D3+3",
+                    "move_expr": move_expr,
+                    "requires_eligible_to_fight": False,
+                    "engaged_only": True,
+                    "engaged_movement_type": "fall_back",
+                    "non_engaged_movement_type": "",
                 }
             )
 

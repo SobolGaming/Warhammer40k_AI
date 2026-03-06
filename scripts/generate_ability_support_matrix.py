@@ -8391,11 +8391,15 @@ def _targeted_stratagem_cp_increase_support(description: str) -> Optional[Tuple[
         return None
     if "opponent" not in norm:
         return None
-    if "stratagem" not in norm or "increase" not in norm or "cp cost" not in norm:
+    if "stratagem" not in norm or "increase" not in norm:
+        return None
+    has_cp_cost_phrase = "cp cost" in norm
+    has_cost_of_phrase = bool(re.search(r"increase\s+(?:the\s+)?cost\s+of", norm))
+    if not has_cp_cost_phrase and not has_cost_of_phrase:
         return None
     if ("target" not in norm and "uses a stratagem" not in norm) or "within" not in norm:
         return None
-    if not re.search(r"increase .* cp cost .* stratagem", norm):
+    if not has_cost_of_phrase and not re.search(r"increase .* cp cost .* stratagem", norm):
         return None
     m = re.search(r"within (?P<range>\d+) of (?:this model|the bearer|this unit)", norm)
     rng = m.group("range") if m else "?"
@@ -9384,21 +9388,18 @@ def _opponent_turn_strategic_reserves_support(description: str) -> Optional[Tupl
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    base = (
-        r"(?:once per battle(?:,)?\s+)?at the end of your opponents turn if this unit is not within engagement range of one or more enemy units "
-        r"you can remove (?:it|this unit|that unit) from the battlefield"
-    )
-    strategic_reserves_pattern = rf"{base} and place (?:it|this unit|that unit) into strategic reserves"
-    tunneling_pattern = (
-        rf"{base} in the reinforcements step of your next movement phase set it up anywhere on the battlefield "
-        r"that is more than (?P<dist>\d+) horizontally away from all enemy models"
-    )
-    if re.fullmatch(strategic_reserves_pattern, norm):
+    if "at the end of your opponents turn" not in norm:
+        return None
+    if "remove" not in norm or "from the battlefield" not in norm:
+        return None
+    if "strategic reserves" in norm:
         note = "End of opponent's turn: if not in Engagement Range, may enter Strategic Reserves."
         if "once per battle" in norm:
             note = f"{note} Once per battle."
         return ("Supported", note)
-    m = re.fullmatch(tunneling_pattern, norm)
+    if "reinforcements step of your next movement phase" not in norm:
+        return None
+    m = re.search(r"more than (?P<dist>\d+) horizontally away from all enemy models", norm)
     if not m:
         return None
     note = (

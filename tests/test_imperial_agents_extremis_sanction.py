@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
-from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.game import BattleRoundPhases, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -383,3 +383,129 @@ def test_soulless_horror_can_be_used_twice_per_battle_but_not_twice_in_the_same_
     game.turn = 3
     game.event_system.publish("phase_start", player=ia_player, phase=game.phase)
     assert _pending_yes_no_for_ability(game, "soulless_horror") is None
+
+
+def test_acrobatic_escape_parses_redeploy_for_next_reinforcements_step():
+    acrobatic_escape = Ability(
+        "Acrobatic Escape",
+        "AOI",
+        (
+            "At the end of the Fight phase, if this model is within Engagement Range of one or more enemy units, "
+            "it can make a Fall Back move of up to D6\". In addition, at the end of your opponent's turn, if this "
+            "model is not within 3\" of one or more enemy units, you can remove it from the battlefield and then, "
+            "in the Reinforcements step of your next Movement phase, set it up anywhere on the battlefield that is "
+            "more than 9\" horizontally away from all enemy models. If the battle ends and this model is not on the "
+            "battlefield, it is destroyed."
+        ),
+        "Datasheet",
+        "",
+    )
+    callidus = _make_unit(
+        "Callidus Assassin",
+        keywords=_officio_keywords(),
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[acrobatic_escape],
+    )
+
+    spec = callidus._scan_end_of_opponent_turn_strategic_reserves_ability()
+    assert spec is not None
+    assert spec.get("ability_key") == "opponent_turn_strategic_reserves"
+    assert bool(spec.get("once_per_battle", True)) is False
+    assert int(spec.get("min_enemy_distance_horiz", 0) or 0) == 3
+    assert bool(spec.get("return_as_deep_strike")) is True
+    assert float(spec.get("return_setup_min_enemy_distance_horiz", 0.0) or 0.0) == 9.0
+    assert bool(spec.get("must_arrive_next_movement_phase")) is True
+
+
+def test_acrobatic_escape_queues_fall_back_move_at_fight_phase_end(monkeypatch):
+    game, ia_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+
+    acrobatic_escape = Ability(
+        "Acrobatic Escape",
+        "AOI",
+        (
+            "At the end of the Fight phase, if this model is within Engagement Range of one or more enemy units, "
+            "it can make a Fall Back move of up to D6\". In addition, at the end of your opponent's turn, if this "
+            "model is not within 3\" of one or more enemy units, you can remove it from the battlefield and then, "
+            "in the Reinforcements step of your next Movement phase, set it up anywhere on the battlefield that is "
+            "more than 9\" horizontally away from all enemy models."
+        ),
+        "Datasheet",
+        "",
+    )
+    callidus = _make_unit(
+        "Callidus Assassin",
+        keywords=_officio_keywords(),
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[acrobatic_escape],
+    )
+    enemy = _make_unit(
+        "Enemy Unit",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["IMPERIUM"],
+    )
+
+    ia_player.army.add_unit(callidus)
+    enemy_player.army.add_unit(enemy)
+    _deploy_unit(game, callidus, 0.0, 0.0)
+    _deploy_unit(game, enemy, 0.5, 0.0)
+    callidus.round_state.eligible_to_fight_this_phase = False
+    callidus.round_state.fought_this_phase = False
+    game.rebuild_entity_registry()
+
+    monkeypatch.setattr("warhammer40k_ai.engine.game.get_roll", lambda spec: 4 if str(spec).upper() == "D6" else 0)
+
+    game._on_phase_end_raid_and_run(phase=BattleRoundPhases.FIGHT_PHASE)
+
+    move_requests = [r for r in list(game.decision_queue.list() or []) if r.decision_type == DECISION_MOVE_UNIT]
+    assert len(move_requests) == 1
+    ctx = dict(getattr(move_requests[0], "context", {}) or {})
+    assert str(ctx.get("reactive_move_kind", "") or "") == "raid_and_run"
+    assert str(ctx.get("movement_type", "") or "") == "fall_back"
+    assert int(ctx.get("max_distance", 0) or 0) == 4
+
+
+def test_acrobatic_escape_does_not_queue_fall_back_when_not_engaged():
+    game, ia_player, enemy_player = _build_game()
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+
+    acrobatic_escape = Ability(
+        "Acrobatic Escape",
+        "AOI",
+        (
+            "At the end of the Fight phase, if this model is within Engagement Range of one or more enemy units, "
+            "it can make a Fall Back move of up to D6\". In addition, at the end of your opponent's turn, if this "
+            "model is not within 3\" of one or more enemy units, you can remove it from the battlefield and then, "
+            "in the Reinforcements step of your next Movement phase, set it up anywhere on the battlefield that is "
+            "more than 9\" horizontally away from all enemy models."
+        ),
+        "Datasheet",
+        "",
+    )
+    callidus = _make_unit(
+        "Callidus Assassin",
+        keywords=_officio_keywords(),
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[acrobatic_escape],
+    )
+    enemy = _make_unit(
+        "Enemy Unit",
+        faction_name="Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["IMPERIUM"],
+    )
+
+    ia_player.army.add_unit(callidus)
+    enemy_player.army.add_unit(enemy)
+    _deploy_unit(game, callidus, 0.0, 0.0)
+    _deploy_unit(game, enemy, 12.0, 0.0)
+    game.rebuild_entity_registry()
+
+    game._on_phase_end_raid_and_run(phase=BattleRoundPhases.FIGHT_PHASE)
+
+    move_requests = [r for r in list(game.decision_queue.list() or []) if r.decision_type == DECISION_MOVE_UNIT]
+    assert not move_requests

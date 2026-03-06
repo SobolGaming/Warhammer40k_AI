@@ -995,19 +995,29 @@ class RulesParsingMixin:
             norm = re.sub(r"'s\b", "s", norm)
             norm = re.sub(r"[^a-z0-9]+", " ", norm)
             norm = re.sub(r"\s+", " ", norm).strip()
-            m = pattern.fullmatch(norm)
+            m = pattern.search(norm)
             if m:
                 min_enemy_distance = 0
                 min_edge_distance = 0
+                return_setup_min_enemy_distance = 0
                 try:
                     min_enemy_distance = int(m.group("min_dist") or 0)
                 except Exception:
                     min_enemy_distance = 0
+                if min_enemy_distance <= 0:
+                    try:
+                        min_enemy_distance = int(m.group("min_dist_alt") or 0)
+                    except Exception:
+                        min_enemy_distance = 0
                 try:
                     min_edge_distance = int(m.group("edge_dist") or m.group("edge_dist_alt") or 0)
                 except Exception:
                     min_edge_distance = 0
-                return {
+                try:
+                    return_setup_min_enemy_distance = int(m.group("return_dist") or 0)
+                except Exception:
+                    return_setup_min_enemy_distance = 0
+                parsed = {
                     "name": name or "Strategic Reserves",
                     "description": desc or "",
                     "once_per_battle": "once per battle" in norm,
@@ -1015,6 +1025,11 @@ class RulesParsingMixin:
                     "min_enemy_distance_horiz": int(min_enemy_distance or 0),
                     "min_battlefield_edge_distance_horiz": int(min_edge_distance or 0),
                 }
+                if return_setup_min_enemy_distance > 0:
+                    parsed["return_as_deep_strike"] = True
+                    parsed["return_setup_min_enemy_distance_horiz"] = float(return_setup_min_enemy_distance)
+                    parsed["must_arrive_next_movement_phase"] = True
+                return parsed
         return None
 
     def _scan_end_of_fight_phase_destroyed_strategic_reserves_ability(self):

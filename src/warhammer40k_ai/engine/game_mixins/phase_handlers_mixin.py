@@ -15400,7 +15400,7 @@ class GamePhaseHandlersMixin:
         return
 
     def _on_phase_end_raid_and_run(self, player=None, phase=None, **_kwargs) -> None:
-        """Fight phase end: Raid and Run reactive move for units that were eligible to fight this phase."""
+        """Fight phase end: queue reactive movement from Raid and Run style datasheet abilities."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
         if pname != "FIGHT_PHASE":
             return
@@ -15409,6 +15409,31 @@ class GamePhaseHandlersMixin:
         game_map = self.map
         if game_map is None:
             return
+
+        def _roll_move_expr(expr: str) -> int:
+            token = str(expr or "").strip().upper().replace(" ", "")
+            if not token:
+                return 0
+            if token == "D3+3":
+                return int(get_roll("D3") or 0) + 3
+            if token == "D6":
+                return int(get_roll("D6") or 0)
+            if token == "D3":
+                return int(get_roll("D3") or 0)
+            m = re.fullmatch(r"D(?P<sides>\d+)\+(?P<add>\d+)", token)
+            if m:
+                sides = int(m.group("sides") or 0)
+                add = int(m.group("add") or 0)
+                if sides > 0:
+                    return int(get_roll(f"D{sides}") or 0) + int(add)
+            m = re.fullmatch(r"D(?P<sides>\d+)", token)
+            if m:
+                sides = int(m.group("sides") or 0)
+                if sides > 0:
+                    return int(get_roll(f"D{sides}") or 0)
+            if token.isdigit():
+                return int(token)
+            return 0
 
         for p in list(self.players or []):
             if p is None:
@@ -15458,8 +15483,6 @@ class GamePhaseHandlersMixin:
                 was_eligible = bool(getattr(round_state, "eligible_to_fight_this_phase", False))
                 if not was_eligible and bool(getattr(round_state, "fought_this_phase", False)):
                     was_eligible = True
-                if not was_eligible:
-                    continue
 
                 engaged = False
                 for enemy in list(game_map.get_enemy_units(root) or []):
@@ -15472,23 +15495,32 @@ class GamePhaseHandlersMixin:
                     except Exception:
                         continue
 
-                movement_type = "fall_back" if engaged else "move"
                 for spec in list(specs or []):
-                    move_expr = str(spec.get("move_expr", "") or "D3+3").strip() or "D3+3"
-                    if str(move_expr).upper() != "D3+3":
+                    requires_eligible = bool(spec.get("requires_eligible_to_fight", True))
+                    if requires_eligible and not was_eligible:
                         continue
-                    try:
-                        max_distance = int(get_roll("D3") or 0) + 3
-                    except Exception:
-                        max_distance = 0
+                    engaged_only = bool(spec.get("engaged_only", False))
+                    if engaged_only and not engaged:
+                        continue
+                    if bool(spec.get("not_engaged_only", False)) and engaged:
+                        continue
+                    if engaged:
+                        movement_type = str(spec.get("engaged_movement_type", "fall_back") or "").strip().lower()
+                    else:
+                        movement_type = str(spec.get("non_engaged_movement_type", "move") or "").strip().lower()
+                    if movement_type not in {"move", "fall_back"}:
+                        continue
+                    move_expr = str(spec.get("move_expr", "") or "D3+3").strip() or "D3+3"
+                    max_distance = _roll_move_expr(move_expr)
                     if max_distance <= 0:
                         continue
                     ability_name = str(spec.get("source", "") or "Raid and Run").strip() or "Raid and Run"
+                    move_kind = str(spec.get("reactive_move_kind", "raid_and_run") or "raid_and_run").strip()
                     self._queue_reactive_move_movement_decision(
                         player=p,
                         unit=root,
                         max_distance=int(max_distance),
-                        kind="raid_and_run",
+                        kind=move_kind,
                         movement_type=movement_type,
                         source=ability_name,
                         allow_skip=True,
