@@ -12018,27 +12018,32 @@ class ActionsMovementMixin:
 
         specs: list[dict] = []
         seen: set[tuple[str, str, str]] = set()
+        charge_move_unit_melee_keyword_re = re.compile(
+            r"(?:while\s+this\s+model\s+is\s+leading\s+a\s+unit\s+)?"
+            r"each\s+time\s+(?:a\s+model\s+in\s+this\s+unit|models\s+in\s+this\s+unit|this\s+model\s+s\s+unit|this\s+models\s+unit|this\s+unit|that\s+unit)\s+"
+            r"makes?\s+a\s+charge\s+move\s+until\s+the\s+end\s+of\s+the\s+turn\s+"
+            r"melee\s+weapons\s+equipped\s+by\s+models\s+in\s+(?:this\s+unit|that\s+unit)\s+have\s+the\s+"
+            r"(?P<keyword>[a-z0-9 \-]+)\s+ability",
+            re.IGNORECASE,
+        )
 
         try:
-            leaders = list(getattr(root, "attached_leaders", []) or [])
+            members = list(root.get_attached_unit_members() or [])
         except Exception:
-            leaders = []
+            members = [root]
+        if not members:
+            members = [root]
 
-        for leader in leaders:
-            if leader is None:
+        for member in members:
+            if member is None:
                 continue
             try:
-                if not bool(getattr(leader, "is_attached_leader", False)):
-                    continue
-            except Exception:
-                continue
-            try:
-                alive = getattr(leader, "is_alive", None)
+                alive = getattr(member, "is_alive", None)
                 if callable(alive) and not alive():
                     continue
             except Exception:
                 pass
-            for name, desc in leader._iter_ability_entries_for_rules(model=None):
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
                 text_src = desc or name or ""
                 if not text_src:
                     continue
@@ -12049,10 +12054,19 @@ class ActionsMovementMixin:
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
                 m = self._CHARGE_END_WEAPON_KEYWORD_BONUS_RE.fullmatch(normalized)
+                weapon = ""
+                keyword = ""
+                if m:
+                    weapon = str(m.group("weapon") or "").strip()
+                    keyword = str(m.group("keyword") or "").strip()
+                else:
+                    generic = charge_move_unit_melee_keyword_re.fullmatch(normalized)
+                    if generic:
+                        weapon = "melee weapons"
+                        keyword = str(generic.group("keyword") or "").strip()
                 if not m:
-                    continue
-                weapon = str(m.group("weapon") or "").strip()
-                keyword = str(m.group("keyword") or "").strip()
+                    if not weapon or not keyword:
+                        continue
                 if not weapon or not keyword:
                     continue
                 source = str(name or "Charge move ability").strip() or "Charge move ability"
@@ -12104,21 +12118,42 @@ class ActionsMovementMixin:
                 continue
             source = str(spec.get("source", "") or "Charge move ability").strip() or "Charge move ability"
             attack_type = str(spec.get("attack_type", "") or "melee").strip().lower()
+            apply_all_melee_weapons = self._weapon_name_matches(["melee weapon", "melee weapons"], weapon)
             for model in models:
                 if model is None or not getattr(model, "is_alive", True):
                     continue
                 model_id = get_entity_id(model) or ""
-                key = f"charge_end_weapon_keyword:{model_id}:{weapon}:{keyword}".lower()
+                weapon_names = [weapon]
+                if apply_all_melee_weapons:
+                    weapon_names = []
+                    for wargear in list(getattr(model, "wargear", []) or []):
+                        if wargear is None:
+                            continue
+                        is_melee = getattr(wargear, "is_melee", None)
+                        if not callable(is_melee):
+                            continue
+                        try:
+                            if not bool(is_melee()):
+                                continue
+                        except Exception:
+                            continue
+                        wargear_name = str(getattr(wargear, "name", "") or "").strip()
+                        if wargear_name and wargear_name not in weapon_names:
+                            weapon_names.append(wargear_name)
+                    if not weapon_names:
+                        weapon_names = [weapon]
                 if hasattr(model, "set_temporary_weapon_keyword_bonuses"):
-                    model.set_temporary_weapon_keyword_bonuses(
-                        key=key,
-                        weapon_name=weapon,
-                        keywords=[keyword],
-                        source=source,
-                        expires_phase="FIGHT_PHASE",
-                        attack_type=attack_type,
-                    )
-                    applied = True
+                    for weapon_name in weapon_names:
+                        key = f"charge_end_weapon_keyword:{model_id}:{weapon_name}:{keyword}".lower()
+                        model.set_temporary_weapon_keyword_bonuses(
+                            key=key,
+                            weapon_name=weapon_name,
+                            keywords=[keyword],
+                            source=source,
+                            expires_phase="FIGHT_PHASE",
+                            attack_type=attack_type,
+                        )
+                        applied = True
         return applied
 
     def fall_back(self, destination: Tuple[float, float, float], path: List[Tuple[float, float, float]], game_map: 'Map') -> bool:

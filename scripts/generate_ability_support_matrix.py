@@ -11424,22 +11424,45 @@ def _charge_move_devastating_wounds_support(description: str) -> Optional[Tuple[
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    model_patterns = (
-        r"each time this model makes a charge move until the end of the turn its melee weapons have the devastating wounds ability",
-        r"each time this model makes a charge move until the end of the turn melee weapons equipped by this model have the devastating wounds ability",
-        r"each time this model makes a charge move until the end of the turn melee weapons it is equipped with have the devastating wounds ability",
+    patterns = (
+        (
+            r"each time this model makes a charge move until the end of the turn its melee weapons have the (?P<keyword>[a-z0-9 \-]+) ability",
+            "model",
+        ),
+        (
+            r"each time this model makes a charge move until the end of the turn melee weapons equipped by this model have the (?P<keyword>[a-z0-9 \-]+) ability",
+            "model",
+        ),
+        (
+            r"each time this model makes a charge move until the end of the turn melee weapons it is equipped with have the (?P<keyword>[a-z0-9 \-]+) ability",
+            "model",
+        ),
+        (
+            r"each time this unit makes a charge move until the end of the turn melee weapons equipped by models in this unit have the (?P<keyword>[a-z0-9 \-]+) ability",
+            "unit",
+        ),
+        (
+            r"each time this models unit makes a charge move until the end of the turn melee weapons equipped by models in that unit have the (?P<keyword>[a-z0-9 \-]+) ability",
+            "unit",
+        ),
+        (
+            r"each time this unit makes a charge move until the end of the turn its melee weapons have the (?P<keyword>[a-z0-9 \-]+) ability",
+            "unit",
+        ),
+        (
+            r"each time a model in this unit makes a charge move until the end of the turn melee weapons equipped by models in this unit have the (?P<keyword>[a-z0-9 \-]+) ability",
+            "unit",
+        ),
     )
-    unit_patterns = (
-        r"each time this unit makes a charge move until the end of the turn melee weapons equipped by models in this unit have the devastating wounds ability",
-        r"each time this models unit makes a charge move until the end of the turn melee weapons equipped by models in that unit have the devastating wounds ability",
-        r"each time this unit makes a charge move until the end of the turn its melee weapons have the devastating wounds ability",
-    )
-    for pattern in model_patterns:
-        if re.fullmatch(pattern, norm):
-            return ("Supported", "On charge: model melee weapons gain Devastating Wounds until end of turn.")
-    for pattern in unit_patterns:
-        if re.fullmatch(pattern, norm):
-            return ("Supported", "On charge: unit melee weapons gain Devastating Wounds until end of turn.")
+    for pattern, scope in patterns:
+        m = re.fullmatch(pattern, norm)
+        if not m:
+            continue
+        keyword = str(m.group("keyword") or "").strip().upper()
+        if not keyword:
+            continue
+        subject = "model" if scope == "model" else "unit"
+        return ("Supported", f"On charge: {subject} melee weapons gain [{keyword}] until end of turn.")
     return None
 
 

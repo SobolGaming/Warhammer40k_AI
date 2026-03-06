@@ -209,6 +209,44 @@ def test_extremis_sanction_grants_extra_use_from_unit_level_assassin_ability_and
     assert int(model.remaining_once_per_battle_uses("movement_phase_normal_move_bonus:overkill")) == 1
 
 
+def test_hammerhand_grants_lethal_hits_to_unit_melee_weapons_after_charge_move():
+    army = Army("Imperial Agents", "Other")
+    army.faction_id = "AOI"
+    hammerhand = Ability(
+        "Hammerhand (Psychic)",
+        "AOI",
+        (
+            "Each time a model in this unit makes a Charge move, until the end of the turn, "
+            "melee weapons equipped by models in this unit have the [LETHAL HITS] ability."
+        ),
+        "Datasheet",
+        "",
+    )
+    terminators = _make_unit(
+        "Grey Knights Terminator Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=_ia_faction_keywords(),
+        abilities=[hammerhand],
+    )
+
+    model = terminators.models[0]
+    model.wargear = [
+        SimpleNamespace(name="Nemesis force weapon", is_melee=lambda: True, is_ranged=lambda: False),
+        SimpleNamespace(name="Storm bolter", is_melee=lambda: False, is_ranged=lambda: True),
+    ]
+
+    applied = terminators._apply_charge_move_weapon_keyword_bonuses()
+    assert applied
+
+    melee_bonuses = model.get_temporary_weapon_keyword_bonuses("Nemesis force weapon")
+    melee_keywords = {str(entry.get("keyword", "")).upper() for entry in melee_bonuses}
+    assert "LETHAL HITS" in melee_keywords
+
+    ranged_bonuses = model.get_temporary_weapon_keyword_bonuses("Storm bolter")
+    ranged_keywords = {str(entry.get("keyword", "")).upper() for entry in ranged_bonuses}
+    assert "LETHAL HITS" not in ranged_keywords
+
+
 def test_shieldbreaker_prompt_applies_and_modifies_wound_resolution():
     game, ia_player, enemy_player = _build_game()
     game.phase = BattleRoundPhases.SHOOTING_PHASE
