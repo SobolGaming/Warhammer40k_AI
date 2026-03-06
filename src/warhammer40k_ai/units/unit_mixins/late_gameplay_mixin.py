@@ -2928,7 +2928,13 @@ class LateGameplayMixin:
         """
         if model is None:
             return False
-        cache_key = f"model_ignore_lone_operative_targeting:{get_entity_id(model)}"
+        model_id = getattr(model, "id", None) or getattr(model, "_id", None)
+        if model_id:
+            cache_suffix = str(model_id)
+        else:
+            # Some focused tests use lightweight model stubs without ids.
+            cache_suffix = f"obj-{id(model)}"
+        cache_key = f"model_ignore_lone_operative_targeting:{cache_suffix}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return bool(self._ability_cache[cache_key])
 
