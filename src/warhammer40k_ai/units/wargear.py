@@ -8455,6 +8455,7 @@ class WargearProfile:
                 bonus = mgr.guided_attack_bonus(unit, target)
                 if isinstance(bonus, dict):
                     ftgg_guided_bonus = dict(bonus)
+                    attack_instance["_ftgg_guided_bonus"] = dict(ftgg_guided_bonus)
                 if isinstance(bonus, dict) and bonus.get("bs_improve"):
                     try:
                         val = int(bonus.get("bs_improve", 0) or 0)
@@ -11014,6 +11015,11 @@ class WargearProfile:
         # T'au Empire: Precise Targeting (guided attacks vs Spotted unit).
         try:
             if isinstance(ftgg_guided_bonus, dict):
+                if bool(ftgg_guided_bonus.get("reroll_hit_ones", False)):
+                    reroll_hit_values.add(1)
+                    reason = str(ftgg_guided_bonus.get("reroll_hit_ones_reason", "") or "").strip()
+                    source_name = reason or "Forward Observers"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
                 if bool(ftgg_guided_bonus.get("reroll_hit_full", False)):
                     reason = str(ftgg_guided_bonus.get("reroll_hit_full_reason", "") or "").strip()
                     source_name = reason or "Precise Targeting"
@@ -16218,6 +16224,20 @@ class WargearProfile:
             source_name = str(
                 attack_instance.get("hexwarp_flow_reroll_wound_ones_source", "") or "Flow of Magic"
             ).strip() or "Flow of Magic"
+            reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
+        # T'au Empire: Forward Observers (guided attacks vs Spotted unit).
+        ftgg_guided_bonus = attack_instance.get("_ftgg_guided_bonus")
+        if not isinstance(ftgg_guided_bonus, dict):
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            mgr = getattr(army, "for_the_greater_good", None) if army is not None else None
+            ftgg_guided_bonus = mgr.guided_attack_bonus(unit, target) if mgr is not None and unit is not None else None
+            if isinstance(ftgg_guided_bonus, dict):
+                attack_instance["_ftgg_guided_bonus"] = dict(ftgg_guided_bonus)
+        if isinstance(ftgg_guided_bonus, dict) and bool(ftgg_guided_bonus.get("reroll_wound_ones", False)):
+            reroll_wound_values.add(1)
+            reason = str(ftgg_guided_bonus.get("reroll_wound_ones_reason", "") or "").strip()
+            source_name = reason or "Forward Observers"
             reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         # Space Marines: Librarius Conclave (Psychic Disciplines - Divination).
         try:

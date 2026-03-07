@@ -27,6 +27,7 @@ class ForTheGreaterGoodManager:
         self._spotted_by: dict[str, str] = {}
         self._spotted_markerlight: dict[str, bool] = {}
         self._spotted_coordinated_exploitation: dict[str, int] = {}
+        self._spotted_forward_observers: dict[str, bool] = {}
 
     def reset_for_phase(self) -> None:
         self._observer_unit_ids = set()
@@ -34,6 +35,7 @@ class ForTheGreaterGoodManager:
         self._spotted_by = {}
         self._spotted_markerlight = {}
         self._spotted_coordinated_exploitation = {}
+        self._spotted_forward_observers = {}
 
     def on_shooting_phase_start(self, *, game=None, player=None) -> None:
         self.reset_for_phase()
@@ -448,6 +450,7 @@ class ForTheGreaterGoodManager:
         coordinated_sustained = self._coordinated_exploitation_sustained_value(observer)
         if coordinated_sustained > 0:
             self._spotted_coordinated_exploitation[tgt_id] = coordinated_sustained
+        self._spotted_forward_observers[tgt_id] = self._unit_has_named_ability(observer, "forward observers")
         return True
 
     def is_observer(self, unit) -> bool:
@@ -495,6 +498,11 @@ class ForTheGreaterGoodManager:
         if self._unit_has_named_ability(attacker_unit, "precise targeting"):
             out["reroll_hit_full"] = True
             out["reroll_hit_full_reason"] = "Precise Targeting"
+        if bool(self._spotted_forward_observers.get(tid, False)):
+            out["reroll_hit_ones"] = True
+            out["reroll_hit_ones_reason"] = "Forward Observers"
+            out["reroll_wound_ones"] = True
+            out["reroll_wound_ones_reason"] = "Forward Observers"
         coordinated_sustained = int(self._spotted_coordinated_exploitation.get(tid, 0) or 0)
         if coordinated_sustained > 0:
             out["sustained_hits_value"] = coordinated_sustained

@@ -277,6 +277,7 @@ class TestForTheGreaterGood(unittest.TestCase):
         )
         target_model.parent_unit = target_unit
         target_unit.models = [target_model]
+        target_unit.toughness = 4
 
         ranged_parent = SimpleNamespace(name="Longshot Pulse Rifle", is_melee=lambda: False)
         profile = WargearProfile(
@@ -317,5 +318,105 @@ class TestForTheGreaterGood(unittest.TestCase):
             self.assertTrue(bool(hit_res.get("hit")))
             self.assertIn("reroll", hit_res)
             self.assertTrue(any("Precise Targeting" in x for x in hit_res.get("special_effects", [])))
+        finally:
+            wargear_mod.get_roll = old_get_roll
+
+    def test_forward_observers_guided_attack_rerolls_hit_and_wound_ones(self):
+        from warhammer40k_ai.engine.event.system import EventSystem
+        from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        game = SimpleNamespace(
+            event_system=EventSystem(),
+            map=None,
+            is_shooting_phase=lambda: True,
+        )
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        game.get_current_player = lambda: player
+
+        army = SimpleNamespace(player=player, faction_id="TAU", units=[])
+        mgr = ForTheGreaterGoodManager(army)
+        army.for_the_greater_good = mgr
+
+        attacker_unit = self._make_unit("Strike Team")
+        observer_unit = self._make_unit("Stealth Battlesuits", abilities=["Forward Observers"])
+        target_unit = self._make_unit("Enemy Unit")
+
+        for u in (attacker_unit, observer_unit, target_unit):
+            u.set_army(army)
+        army.units = [attacker_unit, observer_unit]
+
+        self.assertTrue(mgr.mark_spotted(observer_unit, target_unit, game=game, player=player))
+
+        attacker_model = Model(
+            name="Fire Warrior",
+            movement=6,
+            toughness=4,
+            save=4,
+            wounds=2,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        attacker_model.parent_unit = attacker_unit
+
+        target_model = Model(
+            name="Target",
+            movement=6,
+            toughness=4,
+            save=4,
+            wounds=2,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        target_model.parent_unit = target_unit
+        target_unit.models = [target_model]
+        target_unit.toughness = 4
+
+        ranged_parent = SimpleNamespace(name="Pulse Rifle", is_melee=lambda: False)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "4+",
+                "S": "5",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=ranged_parent,
+        )
+
+        aura_stub = SimpleNamespace(
+            hit=0,
+            wound=0,
+            reroll_hit_ones=False,
+            reroll_wound_ones=False,
+            reroll_hit_reasons=(),
+            reroll_wound_reasons=(),
+            target_toughness_delta=0,
+            target_toughness_reasons=(),
+        )
+
+        from warhammer40k_ai.units import wargear as wargear_mod
+
+        seq = iter([1, 4, 1, 4])
+        old_get_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _s: next(seq, 4)
+        try:
+            attack_instance = {"_aura_attack_mods": aura_stub}
+            hit_res = profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(bool(hit_res.get("hit")))
+            self.assertEqual(int(hit_res.get("roll", 0) or 0), 4)
+            self.assertTrue(any("Forward Observers" in x for x in hit_res.get("special_effects", [])))
+
+            wound_res = profile._wound_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(bool(wound_res.get("wound")))
+            self.assertEqual(int(wound_res.get("roll", 0) or 0), 4)
+            self.assertTrue(any("Forward Observers" in x for x in wound_res.get("special_effects", [])))
         finally:
             wargear_mod.get_roll = old_get_roll
