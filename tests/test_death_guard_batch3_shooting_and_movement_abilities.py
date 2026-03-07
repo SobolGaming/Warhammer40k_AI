@@ -522,6 +522,68 @@ def test_putrefying_stink_blocks_advance_start_or_end_within_range():
     assert blocked_end
 
 
+def test_bio_minefield_blocks_advance_start_or_end_within_range_for_multi_model_source():
+    from warhammer40k_ai.engine.decision_handlers.movement import _validate_advance_start_end_denial
+
+    game, dg_army, enemy_army, _dg_player, _enemy_player = _build_game()
+    denial = {
+        "name": "Bio-minefield",
+        "description": "Enemy units cannot start or end an Advance move within 6\" of this unit.",
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    source = _make_unit(
+        "Spore Mines",
+        "tyr-spore-mines",
+        faction_name="Tyranids",
+        faction_keywords=["TYRANIDS"],
+        keywords=["INFANTRY"],
+        abilities=[denial],
+    )
+    source_donor = _make_unit(
+        "Spore Mines",
+        "tyr-spore-mines-donor",
+        faction_name="Tyranids",
+        faction_keywords=["TYRANIDS"],
+        keywords=["INFANTRY"],
+    )
+    source.add_model(source_donor.models[0])
+    mover = _make_unit(
+        "Enemy Mover",
+        "en-mover",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    dg_army.add_unit(source)
+    enemy_army.add_unit(mover)
+    _deploy(source, mover)
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    source.models[1].set_location(2.0, 0.0, 0.0, 0.0)
+    mover.models[0].set_location(5.0, 0.0, 0.0, 0.0)
+    game.map.units = [source, mover]
+
+    specs = source.unit_no_advance_start_or_end_within_specs()
+    assert len(specs) == 1
+    assert specs[0]["source"] == "Bio-minefield"
+    assert specs[0]["range"] == 6
+
+    blocked_start = _validate_advance_start_end_denial(
+        game,
+        mover,
+        [{"model_id": str(mover.models[0]._id), "position": [9.0, 0.0, 0.0], "facing": 0.0}],
+    )
+    assert blocked_start
+
+    mover.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+    blocked_end = _validate_advance_start_end_denial(
+        game,
+        mover,
+        [{"model_id": str(mover.models[0]._id), "position": [4.0, 0.0, 0.0], "facing": 0.0}],
+    )
+    assert blocked_end
+
+
 def test_death_approaches_deep_strike_distance_split():
     game, dg_army, enemy_army, _dg_player, _enemy_player = _build_game()
     ability = {

@@ -4843,6 +4843,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("TAU", "Volley Fire"): ("Supported", "While leading, models in the led unit gain +1 Attacks on ranged weapons."),
         ("TYR", "Adaptable Predators"): ("Supported", "Shoot and charge after Falling Back."),
+        ("TYR", "Bio-minefield"): (
+            "Supported",
+            "Enemy units cannot start or end an Advance move within 6\"; advance path validation enforces the denial.",
+        ),
         ("TYR", "Bounding Leap"): ("Supported", "Charge-after-Advance eligibility."),
         ("TYR", "Irresistible Force"): ("Supported", "Charge-after-Fall-Back eligibility."),
         ("TYR", "Pheromone Trail"): (

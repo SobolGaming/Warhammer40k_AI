@@ -3905,7 +3905,8 @@ class Unit(
         re.IGNORECASE,
     )
     _NO_ADVANCE_START_OR_END_WITHIN_RE = re.compile(
-        r"enemy models cannot start or end an advance move within (?P<range>\d+) of this model",
+        r"enemy (?P<enemy_subject>models|units) cannot start or end an advance move within (?P<range>\d+) "
+        r"of this (?P<source_subject>model|unit)",
         re.IGNORECASE,
     )
     _FIGHT_PHASE_END_ENGAGEMENT_MORTAL_EIGHT_D6_RE = re.compile(

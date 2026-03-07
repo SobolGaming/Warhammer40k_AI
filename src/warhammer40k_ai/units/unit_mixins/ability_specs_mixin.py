@@ -8308,6 +8308,9 @@ class AbilitySpecsMixin:
             m = self._NO_ADVANCE_START_OR_END_WITHIN_RE.fullmatch(normalized)
             if not m:
                 continue
+            source_subject = str(m.groupdict().get("source_subject", "") or "").strip().lower()
+            if source_subject and source_subject != "model":
+                continue
             try:
                 range_value = int(m.group("range") or 0)
             except Exception:
@@ -8324,6 +8327,67 @@ class AbilitySpecsMixin:
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_no_advance_start_or_end_within_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: enemy units/models cannot start or end an Advance move within range of this unit.
+
+        Returns specs with keys:
+            - source: ability name
+            - range: int
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_no_advance_start_or_end_within_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for member in members:
+            if member is None:
+                continue
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text_src = member._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = member._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = member._NO_ADVANCE_START_OR_END_WITHIN_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                source_subject = str(m.groupdict().get("source_subject", "") or "").strip().lower()
+                if source_subject and source_subject != "unit":
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                source = str(name or "Advance denial").strip() or "Advance denial"
+                key = (source.lower(), int(range_value))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append({"source": source, "range": int(range_value)})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def unit_deep_strike_afflicted_distance_specs(self) -> List[dict]:

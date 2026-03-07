@@ -1186,6 +1186,58 @@ def _validate_advance_start_end_denial(
     except Exception:
         moving_army = None
 
+    moving_model_bases: list[tuple[object, object]] = []
+    for moving_model in list(getattr(unit, "models", []) or []):
+        if moving_model is None:
+            continue
+        moving_alive_attr = getattr(moving_model, "is_alive", True)
+        moving_alive = bool(moving_alive_attr() if callable(moving_alive_attr) else moving_alive_attr)
+        if not moving_alive:
+            continue
+        mid = str(get_entity_id(moving_model) or "")
+        if not mid or mid not in positions_by_id:
+            continue
+        start_base = getattr(moving_model, "model_base", None)
+        if start_base is None:
+            continue
+        x, y, z, facing = positions_by_id[mid]
+        end_base = None
+        if hasattr(unit, "_create_potential_base"):
+            try:
+                end_base = unit._create_potential_base(x, y, z, facing, model=moving_model)
+            except Exception:
+                end_base = None
+        if end_base is None:
+            continue
+        moving_model_bases.append((start_base, end_base))
+    if not moving_model_bases:
+        return ()
+
+    def _first_advance_denial_violation(specs: list[dict], source_bases: list[object]) -> str:
+        for spec in specs:
+            try:
+                range_value = float(spec.get("range", 0) or 0)
+            except Exception:
+                range_value = 0.0
+            if range_value <= 0:
+                continue
+            source = str(spec.get("source", "") or "Advance denial").strip() or "Advance denial"
+            for source_base in source_bases:
+                if source_base is None:
+                    continue
+                for start_base, end_base in moving_model_bases:
+                    try:
+                        start_dist = float(distance_between_bases_3d(start_base, source_base))
+                    except Exception:
+                        start_dist = float("inf")
+                    try:
+                        end_dist = float(distance_between_bases_3d(end_base, source_base))
+                    except Exception:
+                        end_dist = float("inf")
+                    if start_dist <= range_value or end_dist <= range_value:
+                        return f"Advance move cannot start or end within {int(range_value)}\" of {source}."
+        return ""
+
     for enemy in list(getattr(game_map, "units", []) or []):
         if enemy is None:
             continue
@@ -1217,60 +1269,45 @@ def _validate_advance_start_end_denial(
             enemy_models = list(enemy_root.get_attached_unit_models() or [])
         except Exception:
             enemy_models = list(getattr(enemy_root, "models", []) or [])
-        enemy_models = [m for m in enemy_models if m is not None and getattr(m, "is_alive", True)]
-        if not enemy_models:
+        alive_enemy_models: list[object] = []
+        for enemy_model in enemy_models:
+            if enemy_model is None:
+                continue
+            enemy_alive_attr = getattr(enemy_model, "is_alive", True)
+            enemy_alive = bool(enemy_alive_attr() if callable(enemy_alive_attr) else enemy_alive_attr)
+            if enemy_alive:
+                alive_enemy_models.append(enemy_model)
+        if not alive_enemy_models:
             continue
 
-        for enemy_model in enemy_models:
-            get_specs = getattr(enemy_root, "model_no_advance_start_or_end_within_specs", None)
-            if not callable(get_specs):
-                continue
+        get_unit_specs = getattr(enemy_root, "unit_no_advance_start_or_end_within_specs", None)
+        if callable(get_unit_specs):
             try:
-                specs = list(get_specs(enemy_model) or [])
+                unit_specs = list(get_unit_specs() or [])
             except Exception:
-                specs = []
-            if not specs:
+                unit_specs = []
+            if unit_specs:
+                unit_bases = [getattr(model, "model_base", None) for model in alive_enemy_models]
+                violation = _first_advance_denial_violation(unit_specs, unit_bases)
+                if violation:
+                    return (violation,)
+
+        get_model_specs = getattr(enemy_root, "model_no_advance_start_or_end_within_specs", None)
+        if not callable(get_model_specs):
+            continue
+        for enemy_model in alive_enemy_models:
+            try:
+                model_specs = list(get_model_specs(enemy_model) or [])
+            except Exception:
+                model_specs = []
+            if not model_specs:
                 continue
-            for spec in specs:
-                try:
-                    range_value = float(spec.get("range", 0) or 0)
-                except Exception:
-                    range_value = 0.0
-                if range_value <= 0:
-                    continue
-                source = str(spec.get("source", "") or "Advance denial").strip() or "Advance denial"
-                enemy_base = getattr(enemy_model, "model_base", None)
-                if enemy_base is None:
-                    continue
-                for moving_model in list(getattr(unit, "models", []) or []):
-                    if moving_model is None or not getattr(moving_model, "is_alive", True):
-                        continue
-                    mid = str(get_entity_id(moving_model) or "")
-                    if not mid or mid not in positions_by_id:
-                        continue
-                    start_base = getattr(moving_model, "model_base", None)
-                    if start_base is None:
-                        continue
-                    x, y, z, facing = positions_by_id[mid]
-                    if hasattr(unit, "_create_potential_base"):
-                        try:
-                            end_base = unit._create_potential_base(x, y, z, facing, model=moving_model)
-                        except Exception:
-                            end_base = None
-                    else:
-                        end_base = None
-                    if end_base is None:
-                        continue
-                    try:
-                        start_dist = float(distance_between_bases_3d(start_base, enemy_base))
-                    except Exception:
-                        start_dist = float("inf")
-                    try:
-                        end_dist = float(distance_between_bases_3d(end_base, enemy_base))
-                    except Exception:
-                        end_dist = float("inf")
-                    if start_dist <= range_value or end_dist <= range_value:
-                        return (f"Advance move cannot start or end within {int(range_value)}\" of {source}.",)
+            enemy_base = getattr(enemy_model, "model_base", None)
+            if enemy_base is None:
+                continue
+            violation = _first_advance_denial_violation(model_specs, [enemy_base])
+            if violation:
+                return (violation,)
 
     return ()
 
