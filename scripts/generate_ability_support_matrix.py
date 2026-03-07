@@ -8493,9 +8493,16 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
     if not norm:
         return None
 
+    battleshock_clause = (
+        r"(?: if one or more enemy models are destroyed as a result of these mortal wounds "
+        r"that enemy unit must take a battle shock test)?"
+    )
     per_model = (
-        r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model) "
-        r"(?:then |and (?:then )?)?roll one d6 for each model in (?:this unit|that unit|this models unit) for each 4\+? that enemy unit suffers d3 mortal wounds?"
+        r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model|it) "
+        r"(?:then |and (?:then )?)?roll one d6 for each model in (?:this unit|that unit|this models unit)"
+        r"(?: that is within engagement range of that enemy unit)? "
+        r"for each 4\+? that enemy unit suffers d3 mortal wounds?"
+        rf"{battleshock_clause}"
     )
     per_model_flat = (
         r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model|it) "
@@ -8503,6 +8510,7 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         r"(?: that is within engagement range of that enemy unit)?"
         r"(?: adding (?P<bonus>\d+) to the result if this unit started its charge move within (?P<range>\d+) of one or more friendly adeptus mechanicus battleline units)? "
         r"for each 4\+? that enemy unit suffers 1 mortal wounds?"
+        rf"{battleshock_clause}"
     )
     table = (
         r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model) "
@@ -8518,22 +8526,28 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         r"(?: to a maximum of 6 mortal wounds?)?"
     )
     if re.fullmatch(per_model, norm):
+        suffix = ""
+        if "if one or more enemy models are destroyed as a result of these mortal wounds" in norm:
+            suffix = " If mortal wounds destroy one or more enemy models, that unit takes a Battle-shock test."
         return (
             "Supported",
-            "Charge end: pick an engaged enemy; D6 per model, each 4+ inflicts D3 mortal wounds.",
+            f"Charge end: pick an engaged enemy; D6 per model, each 4+ inflicts D3 mortal wounds.{suffix}",
         )
     m_flat = re.fullmatch(per_model_flat, norm)
     if m_flat:
+        suffix = ""
+        if "if one or more enemy models are destroyed as a result of these mortal wounds" in norm:
+            suffix = " If mortal wounds destroy one or more enemy models, that unit takes a Battle-shock test."
         bonus = str(m_flat.group("bonus") or "").strip()
         range_value = str(m_flat.group("range") or "").strip()
         if bonus and range_value:
             return (
                 "Supported",
-                f"Charge end: pick an engaged enemy; roll D6 per engaged model, adding +{bonus} if the charge started within {range_value}\" of friendly ADEPTUS MECHANICUS BATTLELINE units, each 4+ inflicts 1 mortal wound.",
+                f"Charge end: pick an engaged enemy; roll D6 per engaged model, adding +{bonus} if the charge started within {range_value}\" of friendly ADEPTUS MECHANICUS BATTLELINE units, each 4+ inflicts 1 mortal wound.{suffix}",
             )
         return (
             "Supported",
-            "Charge end: pick an engaged enemy; roll D6 per engaged model, each 4+ inflicts 1 mortal wound.",
+            f"Charge end: pick an engaged enemy; roll D6 per engaged model, each 4+ inflicts 1 mortal wound.{suffix}",
         )
     if re.fullmatch(table, norm):
         return (

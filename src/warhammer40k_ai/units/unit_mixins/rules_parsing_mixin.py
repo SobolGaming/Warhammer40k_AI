@@ -2463,6 +2463,8 @@ class RulesParsingMixin:
                     continue
                 text = text.replace("\u2019", "'").replace("\u0192?T", "'")
                 low = text.lower()
+                low_compact = re.sub(r"[^a-z0-9]+", " ", low)
+                low_compact = re.sub(r"\s+", " ", low_compact).strip()
                 if "charge move" not in low or "mortal wound" not in low:
                     continue
                 kind = None
@@ -2481,6 +2483,11 @@ class RulesParsingMixin:
                     kind = "table_d6_2_5_6"
                 if not kind:
                     continue
+                battle_shock_on_models_destroyed = bool(
+                    "if one or more enemy models are destroyed as a result of these mortal wounds "
+                    "that enemy unit must take a battle shock test"
+                    in low_compact
+                )
                 engagement_only = bool(
                     re.search(
                         r"for\s+each\s+model\s+in\s+(?:this\s+unit|that\s+unit|this\s+model'?s\s+unit)\s+that\s+is\s+within\s+engagement\s+range\s+of\s+that\s+enemy\s+unit",
@@ -2510,6 +2517,7 @@ class RulesParsingMixin:
                     kind,
                     source.lower(),
                     bool(engagement_only),
+                    bool(battle_shock_on_models_destroyed),
                     int(start_charge_bonus),
                     int(start_charge_range),
                 )
@@ -2523,6 +2531,8 @@ class RulesParsingMixin:
                 }
                 if engagement_only:
                     spec["engagement_only"] = True
+                if battle_shock_on_models_destroyed:
+                    spec["battle_shock_on_models_destroyed"] = True
                 if start_charge_bonus > 0 and start_charge_range > 0:
                     spec["start_charge_bonus"] = int(start_charge_bonus)
                     spec["start_charge_range"] = int(start_charge_range)

@@ -4557,8 +4557,12 @@ class Game(
         logger.info(f"{ability_name}: {getattr(unit, 'name', 'Unit')} -> "
             f"{getattr(target_unit, 'name', 'Target')} ({roll_summary}) => {total_mw} mortal wounds")
 
+        models_destroyed = 0
         if total_mw > 0:
-            unit._apply_mortal_wounds_to_unit(target_unit, int(total_mw), game_map=game_map)
+            models_destroyed = int(
+                unit._apply_mortal_wounds_to_unit(target_unit, int(total_mw), game_map=game_map)
+                or 0
+            )
         from ..utility.event_bus import append_action
         player = getattr(unit.get_parent_army(), "player", None)
         if player is not None:
@@ -4566,6 +4570,13 @@ class Game(
                 player,
                 f"{ability_name}: {getattr(unit, 'name', 'Unit')} dealt {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
             )
+            if bool(spec.get("battle_shock_on_models_destroyed", False)) and models_destroyed > 0:
+                append_action(
+                    player,
+                    f"{ability_name}: {getattr(target_unit, 'name', 'Target')} takes a Battle-shock test (models destroyed by mortal wounds).",
+                )
+        if bool(spec.get("battle_shock_on_models_destroyed", False)) and models_destroyed > 0 and target_unit.is_alive():
+            target_unit.take_battle_shock_test(int(getattr(self, "turn", 0) or 1))
 
     def resolve_floating_death_mortal_wounds(self, unit, model, target_unit, spec) -> None:
         if unit is None or model is None or target_unit is None or not isinstance(spec, dict):
