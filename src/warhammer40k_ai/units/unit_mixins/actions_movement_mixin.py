@@ -4228,6 +4228,26 @@ class ActionsMovementMixin:
                     return ""
         return choice
 
+    def _adaptive_instincts_choice(self, *, game=None) -> str:
+        root_fn = getattr(self, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        choice = str(sr.get("adaptive_instincts_choice", "") or "").strip().upper()
+        if not choice:
+            return ""
+        exp = str(sr.get("adaptive_instincts_expires_phase", "") or "").strip().upper()
+        if exp:
+            if game is None:
+                army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if game is not None:
+                pname = str(getattr(getattr(game, "phase", None), "name", "") or getattr(game, "phase", "") or "").strip().upper()
+                if pname and pname != exp:
+                    return ""
+        return choice
+
     def _needgaard_huntrs_mark_active_for_shooting(self, *, game=None) -> bool:
         try:
             root = self.get_attached_unit_root()
@@ -4536,6 +4556,12 @@ class ActionsMovementMixin:
         if choice in ("HERO", "ALL"):
             reroll_hit_values.add(1)
             reroll_hit_reasons.append("Dance of Death (Hero's Prowess): re-roll Hit rolls of 1")
+
+        choice_fn = getattr(self, "_adaptive_instincts_choice", None)
+        choice = choice_fn() if callable(choice_fn) else ""
+        if choice in ("AGGRESSION", "ALL"):
+            reroll_hit_values.add(1)
+            reroll_hit_reasons.append("Adaptive Instincts (Aggression Imperative): re-roll Hit rolls of 1")
 
         # Angelic Inheritors: Carmine Wrath (character units) re-roll Hit rolls of 1.
         try:

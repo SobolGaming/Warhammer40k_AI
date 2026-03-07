@@ -19753,7 +19753,29 @@ class WargearProfile:
                         save_result["roll"] = dice_roll
         except Exception:
             pass
-        
+
+        # Tyranids: Adaptive Instincts (Bioregeneration) re-roll saving throws of 1 this Fight phase.
+        if (
+            rerolls_allowed
+            and not shadow_field_no_reroll
+            and dice_roll == 1
+            and "reroll" not in save_result
+        ):
+            t_unit = getattr(target_model, "parent_unit", None)
+            choice_fn = getattr(t_unit, "_adaptive_instincts_choice", None) if t_unit is not None else None
+            army = t_unit.get_parent_army() if t_unit is not None and hasattr(t_unit, "get_parent_army") else None
+            game_local = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            choice = str(choice_fn(game=game_local) or "").strip().upper() if callable(choice_fn) else ""
+            if choice in ("BIOREGENERATION", "ALL"):
+                rr = _reroll_save()
+                save_result["reroll_of_one"] = 1
+                save_result["reroll"] = rr
+                save_result["special_effects"].append(
+                    "Adaptive Instincts (Bioregeneration): re-roll saving throw of 1"
+                )
+                dice_roll = rr
+                save_result["roll"] = dice_roll
+
         if triptych_auto_success:
             save_result['saved'] = True
         elif dice_roll == 1:  # unmodified dice roll of 1 is always a fail

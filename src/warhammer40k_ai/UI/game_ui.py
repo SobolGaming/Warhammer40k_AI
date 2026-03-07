@@ -3759,6 +3759,7 @@ class GameView:
                 DECISION_CHOOSE_TECHNOSORCEROUS_AUGMENTATION,
                 DECISION_CHOOSE_HARBINGER_OF_DEATH,
                 DECISION_CHOOSE_DANCE_OF_DEATH,
+                DECISION_CHOOSE_ADAPTIVE_INSTINCTS,
                 DECISION_USE_CAREEN,
                 DECISION_USE_GILDED_CHAMPION,
                 DECISION_CHOOSE_MALEFIC_SURGE_UNIT,
@@ -4931,7 +4932,7 @@ class GameView:
                 pass
             return
 
-        if decision_type == DECISION_CHOOSE_DANCE_OF_DEATH:
+        if decision_type in (DECISION_CHOOSE_DANCE_OF_DEATH, DECISION_CHOOSE_ADAPTIVE_INSTINCTS):
             if self.martial_katah_dialog is None:
                 try:
                     from .dialogs import MartialKatahDialog
@@ -4946,8 +4947,12 @@ class GameView:
 
             ctx = dict(getattr(request, "context", {}) or {})
             unit = self._resolve_unit_by_id(ctx.get("unit_id"))
-            ability_name = str(ctx.get("ability_name", "") or "Dance of Death").strip()
-            subtitle = f"{getattr(unit, 'name', 'Unit')} selects a performance."
+            default_ability = "Dance of Death" if decision_type == DECISION_CHOOSE_DANCE_OF_DEATH else "Adaptive Instincts"
+            ability_name = str(ctx.get("ability_name", "") or default_ability).strip()
+            if decision_type == DECISION_CHOOSE_DANCE_OF_DEATH:
+                subtitle = f"{getattr(unit, 'name', 'Unit')} selects a performance."
+            else:
+                subtitle = f"{getattr(unit, 'name', 'Unit')} selects an imperative."
 
             def _on_confirm(option_id: str):
                 resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))

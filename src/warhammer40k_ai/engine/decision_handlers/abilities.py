@@ -33,6 +33,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_TECHNOSORCEROUS_AUGMENTATION,
     DECISION_CHOOSE_HARBINGER_OF_DEATH,
     DECISION_CHOOSE_DANCE_OF_DEATH,
+    DECISION_CHOOSE_ADAPTIVE_INSTINCTS,
     DECISION_CHOOSE_LIMB_FROM_LIMB,
     DECISION_CHOOSE_RED_WRATH,
     DECISION_USE_MIRACLE_DIE,
@@ -2061,6 +2062,56 @@ def _apply_choose_dance_of_death(game: object, request: DecisionRequest, result:
         )
     except Exception:
         pass
+    return str(choice_key)
+
+
+def _validate_choose_adaptive_instincts(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ("Adaptive Instincts selection cannot be skipped.",)
+    payload = _option_payload(request, result)
+    unit_val = payload.get("unit_id") or payload.get("unit") or request.context.get("unit_id")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    if unit_val is None or not choice:
+        return ("Adaptive Instincts requires unit_id and choice.",)
+    unit = resolve_unit(game, unit_val)
+    if unit is None:
+        return ("Adaptive Instincts unit not found.",)
+    choice_key = str(choice or "").strip().upper()
+    if choice_key not in ("AGGRESSION", "BIOREGENERATION"):
+        return ("Adaptive Instincts choice must be AGGRESSION or BIOREGENERATION.",)
+    has_fn = getattr(unit, "has_adaptive_instincts", None)
+    if callable(has_fn) and not has_fn():
+        return ("Adaptive Instincts is not applicable for this unit.",)
+    return ()
+
+
+def _apply_choose_adaptive_instincts(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    unit = resolve_unit(game, payload.get("unit_id") or payload.get("unit") or request.context.get("unit_id"))
+    if unit is None:
+        raise RuntimeError("Adaptive Instincts unit not found.")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    choice_key = str(choice or "").strip().upper()
+    phase_name = str(request.context.get("phase_name", "") or payload.get("phase_name", "") or "FIGHT_PHASE")
+    set_fn = getattr(unit, "set_adaptive_instincts_choice", None)
+    if not callable(set_fn):
+        raise RuntimeError("Adaptive Instincts apply hook missing.")
+    set_fn(choice_key, phase_name=phase_name)
+    army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+    player = getattr(army, "player", None) if army is not None else None
+    if player is not None:
+        label = {
+            "AGGRESSION": "Aggression Imperative",
+            "BIOREGENERATION": "Bioregeneration",
+        }.get(choice_key, choice_key.title())
+        _log_action_for_players(
+            game,
+            player,
+            f"Adaptive Instincts: {getattr(unit, 'name', 'Unit')} chose {label}.",
+        )
     return str(choice_key)
 
 
@@ -22467,6 +22518,11 @@ register_decision_handler(
 )
 register_decision_handler(DECISION_CHOOSE_HARBINGER_OF_DEATH, validate=_validate_choose_harbinger_of_death, apply=_apply_choose_harbinger_of_death)
 register_decision_handler(DECISION_CHOOSE_DANCE_OF_DEATH, validate=_validate_choose_dance_of_death, apply=_apply_choose_dance_of_death)
+register_decision_handler(
+    DECISION_CHOOSE_ADAPTIVE_INSTINCTS,
+    validate=_validate_choose_adaptive_instincts,
+    apply=_apply_choose_adaptive_instincts,
+)
 register_decision_handler(DECISION_CHOOSE_LIMB_FROM_LIMB, validate=_validate_choose_limb_from_limb, apply=_apply_choose_limb_from_limb)
 register_decision_handler(DECISION_CHOOSE_RED_WRATH, validate=_validate_choose_red_wrath, apply=_apply_choose_red_wrath)
 register_decision_handler(DECISION_USE_MIRACLE_DIE, validate=_validate_use_miracle_die, apply=_apply_use_miracle_die)

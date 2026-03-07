@@ -4843,6 +4843,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("TAU", "Volley Fire"): ("Supported", "While leading, models in the led unit gain +1 Attacks on ranged weapons."),
         ("TYR", "Adaptable Predators"): ("Supported", "Shoot and charge after Falling Back."),
+        ("TYR", "Adaptive Instincts"): (
+            "Supported",
+            "Fight phase start decision: choose Aggression Imperative (re-roll Hit rolls of 1) or Bioregeneration (re-roll saving throws of 1) until phase end.",
+        ),
         ("TYR", "Bio-minefield"): (
             "Supported",
             "Enemy units cannot start or end an Advance move within 6\"; advance path validation enforces the denial.",

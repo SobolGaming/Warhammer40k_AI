@@ -2295,6 +2295,24 @@ class PositioningMixin:
         root._ability_cache[cache_key] = bool(found)
         return bool(found)
 
+    def has_adaptive_instincts(self) -> bool:
+        root_fn = getattr(self, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else self
+        cache_key = "adaptive_instincts"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return bool(cache.get(cache_key))
+        found = False
+        for name, desc in root._iter_ability_entries_for_rules(model=None):
+            text = f"{name or ''} {desc or ''}".lower()
+            if "adaptive instincts" in text:
+                found = True
+                break
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
     def _iter_attached_model_specific_ability_entries(self, root, model):
         """Resolve model-specific ability text via each model's owning unit."""
         if model is None:
@@ -5469,6 +5487,25 @@ class PositioningMixin:
         if not isinstance(sr, dict):
             return
         for k in ("dance_of_death_choice", "dance_of_death_expires_phase"):
+            sr.pop(k, None)
+        root.special_rules = sr
+
+    def set_adaptive_instincts_choice(self, choice: str, *, phase_name: str = "") -> None:
+        root = self.get_attached_unit_root()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["adaptive_instincts_choice"] = str(choice or "").strip().upper()
+        if phase_name:
+            sr["adaptive_instincts_expires_phase"] = str(phase_name or "").strip().upper()
+        root.special_rules = sr
+
+    def clear_adaptive_instincts_choice(self) -> None:
+        root = self.get_attached_unit_root()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for k in ("adaptive_instincts_choice", "adaptive_instincts_expires_phase"):
             sr.pop(k, None)
         root.special_rules = sr
 
