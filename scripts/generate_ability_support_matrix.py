@@ -5596,6 +5596,7 @@ def _classify_ability_base(
     enemy_aura_oc_penalty_support = _enemy_aura_objective_control_penalty_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
     aura_hit_support = _aura_hit_bonus_support(description)
+    aura_hit_reroll_ones_support = _aura_hit_reroll_ones_support(description)
     aura_strength_support = _aura_strength_support(description)
     aura_toughness_support = _aura_toughness_support(description)
     aura_melee_ap_support = _aura_melee_ap_support(description)
@@ -5850,6 +5851,8 @@ def _classify_ability_base(
         return aura_adv_charge_support
     if aura_hit_support:
         return aura_hit_support
+    if aura_hit_reroll_ones_support:
+        return aura_hit_reroll_ones_support
     if aura_strength_support:
         return aura_strength_support
     if aura_toughness_support:
@@ -7039,6 +7042,25 @@ def _aura_hit_bonus_support(description: str) -> Optional[Tuple[str, str]]:
     amt = m.group("amt")
     atype = m.group("atype").strip().lower()
     return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain +{amt} to {atype} Hit rolls.")
+
+
+def _aura_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while a friendly (?P<kw>.+) unit is within (?P<rng>\d+) of this (?:model|unit|bearer) "
+        r"each time a model in that unit makes a (?P<atype>melee|ranged) attack reroll a hit roll of 1",
+        norm,
+    )
+    if not m:
+        return None
+    faction_kw = m.group("kw").strip()
+    rng = m.group("rng")
+    atype = m.group("atype").strip().lower()
+    return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" re-roll Hit rolls of 1 for {atype} attacks.")
 
 
 def _aura_strength_support(description: str) -> Optional[Tuple[str, str]]:
