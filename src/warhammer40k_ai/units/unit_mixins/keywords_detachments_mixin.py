@@ -192,6 +192,200 @@ class KeywordsDetachmentsMixin:
 
             self._firing_deck_virtual_wargear.append(vwg)
             self._firing_deck_virtual_sources[pclone.id] = [src_model]
+
+    ###########################################################################
+    ### DS8 Support Turret (Breacher Team / Strike Team) support
+    ###########################################################################
+
+    def has_ds8_support_turret_ability(self) -> bool:
+        """Return True when this unit has the DS8 Support Turret datasheet ability."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is not self:
+            return bool(root.has_ds8_support_turret_ability())
+
+        cache = getattr(root, "_ability_cache", None)
+        cache_key = "ds8_support_turret_ability"
+        if isinstance(cache, dict) and cache_key in cache:
+            return bool(cache.get(cache_key))
+
+        found = False
+        for name, desc in root._iter_ability_entries_for_rules(model=None):
+            name_norm = root._normalize_rules_text(name).lower()
+            if "ds8 support turret" in name_norm:
+                found = True
+                break
+            text_src = root._strip_eligibility_prefix(desc or name or "")
+            text = root._normalize_rules_text(text_src or "")
+            norm = (
+                text.lower()
+                .replace("\u2019", "'")
+                .replace("\u0192?T", "'")
+            )
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if (
+                "remains stationary" in norm
+                and "start of your next movement phase" in norm
+                and "fire warrior shas ui model is equipped with the support turret missile system weapon" in norm
+            ):
+                found = True
+                break
+
+        if not isinstance(cache, dict):
+            cache = {}
+            root._ability_cache = cache
+        cache[cache_key] = bool(found)
+        return bool(found)
+
+    @staticmethod
+    def _ds8_support_turret_model_alive(model: Optional['Model']) -> bool:
+        if model is None:
+            return False
+        alive_attr = getattr(model, "is_alive", False)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def _get_ds8_support_turret_bearer_model(self) -> Optional['Model']:
+        """Return the alive Fire Warrior Shas'ui model that carries the temporary DS8 weapon."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is not self:
+            return root._get_ds8_support_turret_bearer_model()
+
+        try:
+            models = list(getattr(root, "models", []) or [])
+        except Exception:
+            models = []
+        if not models:
+            return None
+
+        alive_models = [m for m in models if root._ds8_support_turret_model_alive(m)]
+        if not alive_models:
+            return None
+
+        def _model_sort_key(model):
+            return str(get_entity_id(model) or "")
+
+        try:
+            ordered = sorted(alive_models, key=_model_sort_key)
+        except Exception:
+            ordered = list(alive_models)
+
+        for model in ordered:
+            name_norm = root._normalize_keyword_phrase(getattr(model, "name", "") or "")
+            if "shas ui" in name_norm and "fire warrior" in name_norm:
+                return model
+        for model in ordered:
+            name_norm = root._normalize_keyword_phrase(getattr(model, "name", "") or "")
+            if "shas ui" in name_norm:
+                return model
+        return None
+
+    def _get_ds8_support_turret_wargear_template(self) -> Optional[Wargear]:
+        """Find the DS8 Support Turret weapon template from datasheet possible wargear."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is not self:
+            return root._get_ds8_support_turret_wargear_template()
+
+        try:
+            possible = list(getattr(root, "possible_wargear", []) or [])
+        except Exception:
+            possible = []
+        for wargear in possible:
+            name_norm = root._normalize_keyword_phrase(getattr(wargear, "name", "") or "")
+            if "support turret" not in name_norm:
+                continue
+            is_ranged = getattr(wargear, "is_ranged", None)
+            if callable(is_ranged) and not bool(is_ranged()):
+                continue
+            return wargear
+        return None
+
+    def activate_ds8_support_turret_wargear(self) -> bool:
+        """
+        Apply DS8 Support Turret virtual wargear to the Fire Warrior Shas'ui model.
+
+        The effect is applied at the end of a Movement phase where the unit remained
+        stationary, and cleared at the start of that player's next Movement phase.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is not self:
+            return bool(root.activate_ds8_support_turret_wargear())
+        if not root.has_ds8_support_turret_ability():
+            return False
+
+        existing = list(getattr(root, "_ds8_support_turret_virtual_wargear", []) or [])
+        if existing:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["ds8_support_turret_active"] = True
+            root.special_rules = sr
+            return True
+
+        bearer_model = root._get_ds8_support_turret_bearer_model()
+        if bearer_model is None:
+            return False
+        template = root._get_ds8_support_turret_wargear_template()
+        if template is None:
+            return False
+
+        cloned_weapon = template.clone()
+        try:
+            bearer_model.wargear = list(getattr(bearer_model, "wargear", []) or []) + [cloned_weapon]
+        except Exception:
+            return False
+
+        root._ds8_support_turret_virtual_wargear = [cloned_weapon]
+        root._ds8_support_turret_virtual_bearer_model_id = str(get_entity_id(bearer_model) or "")
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["ds8_support_turret_active"] = True
+        sr["ds8_support_turret_bearer_model_id"] = str(get_entity_id(bearer_model) or "")
+        root.special_rules = sr
+        return True
+
+    def clear_ds8_support_turret_virtual_wargear(self) -> None:
+        """Remove previously injected DS8 Support Turret virtual wargear from the unit."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is not self:
+            root.clear_ds8_support_turret_virtual_wargear()
+            return
+
+        virtual_wargear = list(getattr(root, "_ds8_support_turret_virtual_wargear", []) or [])
+        if virtual_wargear:
+            for model in list(getattr(root, "models", []) or []):
+                try:
+                    wargear = list(getattr(model, "wargear", []) or [])
+                except Exception:
+                    continue
+                if not wargear:
+                    continue
+                model.wargear = [wg for wg in wargear if wg not in virtual_wargear]
+
+        root._ds8_support_turret_virtual_wargear = []
+        root._ds8_support_turret_virtual_bearer_model_id = ""
+
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict):
+            sr.pop("ds8_support_turret_active", None)
+            sr.pop("ds8_support_turret_bearer_model_id", None)
+            root.special_rules = sr
     
 
     def _attached_leader_grants_fight_first_to_unit(self) -> bool:
@@ -8404,7 +8598,9 @@ class KeywordsDetachmentsMixin:
 
         rule = None
         try:
-            for name, desc in self._iter_model_specific_ability_entries(model):
+            entries = list(self._iter_model_specific_ability_entries(model) or [])
+            entries.extend(list(self._iter_ability_entries_for_rules(model=None) or []))
+            for name, desc in entries:
                 text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
                 if not text:
                     continue
@@ -8450,7 +8646,9 @@ class KeywordsDetachmentsMixin:
 
         rule = None
         try:
-            for name, desc in self._iter_model_specific_ability_entries(model):
+            entries = list(self._iter_model_specific_ability_entries(model) or [])
+            entries.extend(list(self._iter_ability_entries_for_rules(model=None) or []))
+            for name, desc in entries:
                 text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
                 if not text:
                     continue
@@ -8540,7 +8738,9 @@ class KeywordsDetachmentsMixin:
 
         rule = None
         try:
-            for name, desc in self._iter_model_specific_ability_entries(model):
+            entries = list(self._iter_model_specific_ability_entries(model) or [])
+            entries.extend(list(self._iter_ability_entries_for_rules(model=None) or []))
+            for name, desc in entries:
                 text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
                 if not text:
                     continue
@@ -8894,6 +9094,63 @@ class KeywordsDetachmentsMixin:
                 source = str(name or "Melee target AP bonus").strip() or "Melee target AP bonus"
                 rule = {
                     "attack_type": "melee",
+                    "ap_bonus": int(ap_bonus),
+                    "target_exclude_keywords_any": ("monster", "vehicle"),
+                    "source": source,
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
+    def get_ranged_target_excluding_keywords_ap_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return ranged AP bonus rule for patterns like:
+        "Each time a model in this unit makes a ranged attack (excluding attacks that target MONSTERS and VEHICLES),
+         improve the Armour Penetration characteristic of that attack by 1."
+        """
+        if model is None:
+            return None
+        cache_key = f"ranged_target_excluding_keywords_ap_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            entries = list(self._iter_model_specific_ability_entries(model) or [])
+            entries.extend(list(self._iter_ability_entries_for_rules(model=None) or []))
+            for name, desc in entries:
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                low = re.sub(r"'s\b", "s", low)
+                low = re.sub(r"[^a-z0-9]+", " ", low)
+                low = re.sub(r"\s+", " ", low).strip()
+                if "ranged attack" not in low:
+                    continue
+                if "armour penetration" not in low and "armor penetration" not in low:
+                    continue
+                if "improve" not in low:
+                    continue
+                if "excluding attacks that target monsters and vehicles" not in low:
+                    continue
+                m = re.search(r"by\s+(\d+)", low)
+                if not m:
+                    continue
+                try:
+                    ap_bonus = int(m.group(1) or 0)
+                except Exception:
+                    ap_bonus = 0
+                if ap_bonus <= 0:
+                    continue
+                source = str(name or "Ranged target AP bonus").strip() or "Ranged target AP bonus"
+                rule = {
+                    "attack_type": "ranged",
                     "ap_bonus": int(ap_bonus),
                     "target_exclude_keywords_any": ("monster", "vehicle"),
                     "source": source,
@@ -10245,33 +10502,44 @@ class KeywordsDetachmentsMixin:
             return self._ability_cache[cache_key]
 
         rule: Optional[dict] = None
-        for name, desc in self._iter_model_specific_ability_entries(model):
+        def _parse_entry(name: str, desc: str) -> Optional[dict]:
             source = str(name or "").strip()
             source_key = source.lower()
             text_src = desc or name or ""
             if not text_src:
-                continue
+                return None
             normalized = self._normalize_rules_text(text_src)
             normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
             low = normalized.lower().replace("reroll", "re roll")
             low = re.sub(r"[^a-z0-9]+", " ", low)
             low = re.sub(r"\s+", " ", low).strip()
             if source_key != "eradicate the foe" and "at its starting strength" not in low:
-                continue
+                return None
             if "at its starting strength" not in low:
-                continue
-            if "re roll a hit roll of 1" in low:
-                rule = {
-                    "source": source or "Eradicate the Foe",
-                    "mode": "ones",
-                }
-                break
-            if "re roll the hit roll" in low:
-                rule = {
+                return None
+            has_reroll_ones = "re roll a hit roll of 1" in low
+            has_reroll_full = "re roll the hit roll" in low
+            if has_reroll_full:
+                return {
                     "source": source or "Eradicate the Foe",
                     "mode": "full",
                 }
+            if has_reroll_ones:
+                return {
+                    "source": source or "Eradicate the Foe",
+                    "mode": "ones",
+                }
+            return None
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            rule = _parse_entry(name, desc)
+            if rule:
                 break
+        if rule is None:
+            for name, desc in self._iter_ability_entries_for_rules(model=None):
+                rule = _parse_entry(name, desc)
+                if rule:
+                    break
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

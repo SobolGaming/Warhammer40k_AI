@@ -198,6 +198,36 @@ class GamePhaseHandlersMixin:
                         f"{source}: gained {int(gained)}CP.",
                     )
 
+    def _on_phase_start_ds8_support_turret_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase start: clear prior DS8 Support Turret virtual weapons for the active player."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            uid = str(get_entity_id(root) or "")
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            clear_fn = getattr(root, "clear_ds8_support_turret_virtual_wargear", None)
+            if callable(clear_fn):
+                clear_fn()
+
     def _on_phase_start_death_guard_detachments(self, player=None, phase=None, **_kwargs) -> None:
         """Resolve Death Guard phase-start detachment effects."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -16745,6 +16775,50 @@ class GamePhaseHandlersMixin:
                         healed += 1
                 if healed > 0:
                     append_action(owner, f"Grotesque Regeneration: {getattr(root, 'name', 'Unit')} fully healed ({healed} model(s)).")
+
+    def _on_phase_end_ds8_support_turret(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase end: if eligible unit remained stationary, apply DS8 Support Turret virtual weapon."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            uid = str(get_entity_id(root) or "")
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", True)):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            if not bool(getattr(getattr(root, "round_state", None), "remained_stationary_this_round", False)):
+                continue
+            has_rule = getattr(root, "has_ds8_support_turret_ability", None)
+            if not callable(has_rule) or not bool(has_rule()):
+                continue
+            activate_fn = getattr(root, "activate_ds8_support_turret_wargear", None)
+            if callable(activate_fn):
+                activate_fn()
 
     def _on_phase_end_movement_phase_mortal_table(self, player=None, phase=None, **_kwargs) -> None:
         """Movement phase end: roll a D6 for each enemy unit within range of this model; apply mortal wound table."""

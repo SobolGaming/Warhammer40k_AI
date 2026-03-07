@@ -4802,8 +4802,37 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Army validation enforces Commander Farsight and ETHEREAL units as mutually exclusive.",
         ),
         ("TAU", "Advanced Armour"): ("Supported", "Feel No Pain 4+ against mortal wounds."),
+        ("TAU", "Advanced Guardian Drone"): ("Supported", "Ranged attacks that target the bearer suffer -1 to wound."),
         ("TAU", "Agile Combatant"): ("Supported", "Shoot after Falling Back."),
+        ("TAU", "Command-link Drone (Aura)"): (
+            "Supported",
+            "Aura: while friendly T'AU EMPIRE units are within 6\" of the bearer, targeting those units with a Stratagem can refund 1CP on 5+.",
+        ),
+        ("TAU", "Fire and Fade"): (
+            "Supported",
+            "After this unit/model shoots, it can make a Normal move up to the listed distance; if it does, it cannot declare a charge this turn.",
+        ),
+        ("TAU", "Fireknife"): (
+            "Supported",
+            "Ranged attacks re-roll Hit rolls of 1; against targets at Starting Strength they re-roll the Hit roll instead.",
+        ),
+        ("TAU", "Grav-inhibitor Drone"): ("Supported", "Enemy charge rolls against the bearer's unit are reduced by 2 (non-cumulative)."),
+        ("TAU", "Kroot Ambush"): (
+            "Supported",
+            "After deployment, redeploy this unit and one other friendly KROOT unit; selected units can be placed into Strategic Reserves regardless of current limits.",
+        ),
+        ("TAU", "Pulse Accelerator Drone"): ("Supported", "Adds 6\" to the Range characteristic of pulse carbines in the bearer's unit."),
+        ("TAU", "Puretide's Teachings"): ("Supported", "Once per battle round, targeting this model's unit with a Stratagem can reduce its CP cost by 1."),
         ("TAU", "Recon Drone"): ("Supported", "Infiltrators."),
+        ("TAU", "Starscythe"): ("Supported", "Ranged attacks improve AP by 1 against non-MONSTER/non-VEHICLE targets."),
+        ("TAU", "Stealth Drones"): ("Supported", "Twice per battle, after an attack is allocated to this model, you can change that attack's Damage to 0."),
+        ("TAU", "Suppression Volley"): ("Supported", "After shooting, select a hit enemy unit to become suppressed (-1 to hit) until your next turn."),
+        ("TAU", "Tidewall Cover"): ("Supported", "Eligible defenders obscured by this Fortification gain the Benefit of Cover against allocated ranged attacks."),
+        ("TAU", "Trail Finding"): (
+            "Supported",
+            "Once per turn, when an enemy ends a Normal/Advance/Fall Back move within 9\", this unit can make a reactive Normal move up to D6\" if not in Engagement Range.",
+        ),
+        ("TAU", "Volley Fire"): ("Supported", "While leading, models in the led unit gain +1 Attacks on ranged weapons."),
         ("TYR", "Adaptable Predators"): ("Supported", "Shoot and charge after Falling Back."),
         ("TYR", "Bounding Leap"): ("Supported", "Charge-after-Advance eligibility."),
         ("TYR", "Irresistible Force"): ("Supported", "Charge-after-Fall-Back eligibility."),
@@ -5674,6 +5703,7 @@ def _classify_ability_base(
     command_phase_end_mortal_table_support = _command_phase_end_enemy_within_range_mortal_table_support(description)
     dark_ritual_support = _dark_ritual_support(description)
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
+    ds8_support_turret_support = _ds8_support_turret_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
     movement_phase_end_mortal_table_support = _movement_phase_end_enemy_within_range_mortal_table_support(description)
     movement_phase_end_mortal_threshold_support = _movement_phase_end_enemy_within_range_mortal_threshold_support(description)
@@ -6031,6 +6061,8 @@ def _classify_ability_base(
         return dark_ritual_support
     if movement_phase_normal_move_weapon_attacks_bonus_support:
         return movement_phase_normal_move_weapon_attacks_bonus_support
+    if ds8_support_turret_support:
+        return ds8_support_turret_support
     if movement_phase_speed_mortal_support:
         return movement_phase_speed_mortal_support
     if movement_phase_end_mortal_table_support:
@@ -8164,6 +8196,25 @@ def _model_stationary_weapon_keyword_support(description: str) -> Optional[Tuple
     return (
         "Supported",
         f"If this model remains stationary in your Movement phase, its {weapon} gains [{keyword}] until end of turn.",
+    )
+
+
+def _ds8_support_turret_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your movement phase if this unit remains stationary until the start of your next movement phase "
+        r"its fire warrior shas ui model is equipped with the support turret missile system weapon"
+        r"(?: designers note place a support turret token next to this unit to remind you)?"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Movement phase: if this unit remains stationary, its Fire Warrior Shas'ui model gains the Support Turret weapon until your next Movement phase.",
     )
 
 
