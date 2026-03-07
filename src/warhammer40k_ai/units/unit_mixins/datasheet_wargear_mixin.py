@@ -1123,9 +1123,12 @@ class DatasheetWargearMixin:
         possible_wargear = []
         if hasattr(datasheet, 'datasheets_wargear'):
             for wargear_data in datasheet.datasheets_wargear:
-                #print(f"Parsing wargear {wargear_data['name']}")
-                if ' \u2013 ' in wargear_data['name']:
-                    name, profile = wargear_data['name'].split(' \u2013 ')
+                raw_name = str(wargear_data.get("name", "") or "").strip()
+                if not raw_name:
+                    continue
+                #print(f"Parsing wargear {raw_name}")
+                if ' \u2013 ' in raw_name:
+                    name, profile = raw_name.split(' \u2013 ')
                     if name not in [wargear.name for wargear in possible_wargear]:
                         #print(f"Adding wargear {name} with profile {profile}")
                         possible_wargear.append(Wargear(wargear_data))
@@ -1136,7 +1139,7 @@ class DatasheetWargearMixin:
                                 wargear.add_profile(profile, wargear_data)
                                 break
                 else:
-                    #print(f"Adding wargear {wargear_data['name']}")
+                    #print(f"Adding wargear {raw_name}")
                     possible_wargear.append(Wargear(wargear_data))
         return possible_wargear
 

@@ -638,7 +638,14 @@ class ActionsMovementMixin:
         try:
             atype = str(getattr(ability, "type", "") or "").lower()
             if "wargear" in atype:
-                return self._has_wargear_named(getattr(ability, "name", ""))
+                ability_name = str(getattr(ability, "name", "") or "")
+                if self._has_wargear_named(ability_name):
+                    return True
+                # Some datasheets encode non-weapon systems as "Wargear" abilities without
+                # corresponding wargear profiles/options (e.g., built-in drones).
+                if not self._wargear_option_mentions_name(ability_name):
+                    return True
+                return False
         except Exception:
             pass
         return True
@@ -1245,6 +1252,42 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        return False
+
+    def _wargear_option_mentions_name(self, name: str) -> bool:
+        want = Unit._norm_wargear_name(name)
+        if not want:
+            return False
+        want_base = re.sub(r"\b(?:aura|ability)\b", " ", want)
+        want_base = re.sub(r"\s+", " ", want_base).strip()
+        candidates = [want]
+        if want_base and want_base != want:
+            candidates.append(want_base)
+
+        def _matches(raw_name: str) -> bool:
+            norm = Unit._norm_wargear_name(raw_name)
+            if not norm:
+                return False
+            for token in candidates:
+                if not token:
+                    continue
+                if norm == token or norm in token or token in norm:
+                    return True
+            return False
+
+        for option in list(getattr(self, "wargear_options", []) or []):
+            for attr in ("wargear_from", "wargear_to"):
+                groups = getattr(option, attr, None)
+                if not isinstance(groups, list):
+                    continue
+                for group in groups:
+                    if not isinstance(group, list):
+                        continue
+                    for item in group:
+                        if not (isinstance(item, tuple) and len(item) >= 2):
+                            continue
+                        if _matches(str(item[1] or "")):
+                            return True
         return False
 
     def _parse_bearer_invulnerable_save(self, text: str) -> Optional[int]:
@@ -2714,27 +2757,33 @@ class ActionsMovementMixin:
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
             usage = ""
-            if self._MODEL_ONCE_PER_BATTLE_ROUND_ALLOCATED_DAMAGE_ZERO_RE.fullmatch(normalized):
+            uses_per_battle = 1
+            if self._MODEL_ONCE_PER_BATTLE_ROUND_ALLOCATED_DAMAGE_ZERO_RE.search(normalized):
                 usage = "battle_round"
-            elif self._MODEL_ONCE_PER_BATTLE_ALLOCATED_DAMAGE_ZERO_RE.fullmatch(normalized):
+            elif self._MODEL_ONCE_PER_BATTLE_ALLOCATED_DAMAGE_ZERO_RE.search(normalized):
                 usage = "battle"
+            elif self._MODEL_TWICE_PER_BATTLE_ALLOCATED_DAMAGE_ZERO_RE.search(normalized):
+                usage = "battle"
+                uses_per_battle = 2
             if not usage:
                 continue
             is_optional = bool(re.search(r"\byou can change\b", normalized))
             source = str(name or "Damage set to 0").strip() or "Damage set to 0"
             key_seed = self._normalize_keyword_phrase(source) or "allocated_damage_zero"
-            key = f"model_allocated_damage_zero:{key_seed}:{usage}"
-            if key in seen:
-                continue
-            seen.add(key)
-            specs.append(
-                {
-                    "source": source,
-                    "key": key,
-                    "usage": usage,
-                    "optional": bool(is_optional),
-                }
-            )
+            for use_idx in range(int(uses_per_battle)):
+                key_suffix = f":{int(use_idx) + 1}" if uses_per_battle > 1 else ""
+                key = f"model_allocated_damage_zero:{key_seed}:{usage}{key_suffix}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "key": key,
+                        "usage": usage,
+                        "optional": bool(is_optional),
+                    }
+                )
 
         # Chaos Knights (Lords of Dread): Blessing of the Dark Master.
         sr = getattr(self, "special_rules", None)
@@ -2937,15 +2986,41 @@ class ActionsMovementMixin:
             weapon_phrase = str(spec.get("weapon_name", "") or "").strip()
             if not weapon_phrase:
                 continue
+            weapon_phrase_norm = re.sub(r"[^a-z0-9]+", " ", weapon_phrase.lower()).strip()
+            is_all_ranged = weapon_phrase_norm in ("ranged", "ranged weapon", "ranged weapons")
+            is_all_melee = weapon_phrase_norm in ("melee", "melee weapon", "melee weapons")
+            is_all_weapons = weapon_phrase_norm == "weapon"
+            is_melee_weapon = False
             try:
                 if hasattr(root, "_weapon_name_matches") and callable(getattr(root, "_weapon_name_matches")):
-                    if not root._weapon_name_matches([weapon_phrase], weapon_name):
-                        continue
+                    is_melee_weapon = bool(
+                        root._weapon_name_matches(
+                            ["melee weapon", "melee weapons", "close combat weapon", "close combat weapons"],
+                            weapon_name,
+                        )
+                    )
                 else:
-                    wn = str(weapon_name or "").strip().lower()
-                    wp = str(weapon_phrase or "").strip().lower()
-                    if not wn or not wp or (wp not in wn and wn not in wp):
-                        continue
+                    is_melee_weapon = "melee" in str(weapon_name or "").lower()
+            except Exception:
+                is_melee_weapon = "melee" in str(weapon_name or "").lower()
+            if is_all_ranged and is_melee_weapon:
+                continue
+            if is_all_melee and (not is_melee_weapon):
+                continue
+            if (is_all_ranged or is_all_melee or is_all_weapons):
+                matched = True
+            else:
+                matched = False
+            try:
+                if not matched:
+                    if hasattr(root, "_weapon_name_matches") and callable(getattr(root, "_weapon_name_matches")):
+                        if not root._weapon_name_matches([weapon_phrase], weapon_name):
+                            continue
+                    else:
+                        wn = str(weapon_name or "").strip().lower()
+                        wp = str(weapon_phrase or "").strip().lower()
+                        if not wn or not wp or (wp not in wn and wn not in wp):
+                            continue
             except Exception:
                 continue
             try:
@@ -2957,6 +3032,134 @@ class ActionsMovementMixin:
             total += int(bonus)
             source = str(spec.get("source", "") or "Leading weapon attacks bonus").strip() or "Leading weapon attacks bonus"
             reasons.append(f"{source} +{int(bonus)}A ({weapon_phrase})")
+        return int(total), reasons
+
+    def unit_weapon_range_bonus_specs(self) -> list[dict]:
+        """
+        Unit/model ability: add to the Range characteristic of named weapons in this unit.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - weapon_name: target weapon phrase
+            - range_bonus: int
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_weapon_range_bonus_specs"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int]] = set()
+        pattern = re.compile(
+            r"add\s+(?P<bonus>\d+)\s+to\s+the\s+range\s+characteristic\s+of\s+"
+            r"(?P<weapon>[a-z0-9 ']+?)\s+equipped\s+by\s+models\s+in\s+"
+            r"(?:the\s+bearer(?:\s+s)?|this|that)\s+unit",
+            re.IGNORECASE,
+        )
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for member in members:
+            if member is None:
+                continue
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text_src = member._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = member._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = pattern.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    bonus = int(m.group("bonus") or 0)
+                except Exception:
+                    bonus = 0
+                if bonus <= 0:
+                    continue
+                weapon_name = str(m.group("weapon") or "").strip()
+                if not weapon_name:
+                    continue
+                source = str(name or "Weapon range bonus").strip() or "Weapon range bonus"
+                key = (source.lower(), weapon_name.lower(), int(bonus))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "weapon_name": weapon_name,
+                        "range_bonus": int(bonus),
+                    }
+                )
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = list(specs)
+        root._ability_cache = cache
+        return list(specs)
+
+    def unit_weapon_range_bonus_for_weapon(self, weapon_name: str, attacker_model=None) -> tuple[int, list[str]]:
+        """Return (total_bonus, reasons) for unit/model weapon range bonuses on the named weapon."""
+        if not weapon_name:
+            return 0, []
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return 0, []
+        if attacker_model is not None:
+            try:
+                model_unit = getattr(attacker_model, "parent_unit", None)
+                model_root = model_unit.get_attached_unit_root() if model_unit is not None else None
+                if model_root is not None and model_root is not root:
+                    return 0, []
+            except Exception:
+                pass
+
+        specs = root.unit_weapon_range_bonus_specs() if hasattr(root, "unit_weapon_range_bonus_specs") else []
+        if not specs:
+            return 0, []
+
+        total = 0
+        reasons: list[str] = []
+        for spec in list(specs or []):
+            phrase = str(spec.get("weapon_name", "") or "").strip()
+            if not phrase:
+                continue
+            try:
+                if hasattr(root, "_weapon_name_matches") and callable(getattr(root, "_weapon_name_matches")):
+                    if not root._weapon_name_matches([phrase], weapon_name):
+                        continue
+                else:
+                    wn = str(weapon_name or "").strip().lower()
+                    wp = str(phrase or "").strip().lower()
+                    if not wn or not wp or (wp not in wn and wn not in wp):
+                        continue
+            except Exception:
+                continue
+            try:
+                bonus = int(spec.get("range_bonus", 0) or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            total += int(bonus)
+            source = str(spec.get("source", "") or "Weapon range bonus").strip() or "Weapon range bonus"
+            reasons.append(f"{source} +{int(bonus)}\" ({phrase})")
         return int(total), reasons
 
     def unit_post_shoot_reactive_move_no_charge_specs(self) -> list[dict]:
@@ -8937,7 +9140,7 @@ class ActionsMovementMixin:
                 if not m:
                     continue
                 try:
-                    val = int(m.group("val") or 0)
+                    val = int((m.group("val_a") or m.group("val_b") or 0))
                 except Exception:
                     val = 0
                 if val <= 0:

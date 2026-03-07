@@ -277,8 +277,19 @@ class DeploymentManager:
             context=context,
         )
 
-    def _build_deployment_model_positions(self, unit: 'Unit', position: Tuple[float, float]) -> List[dict]:
+    def _build_deployment_model_positions(
+        self,
+        unit: 'Unit',
+        position: Tuple[float, float],
+        decision_maker: DeploymentDecisionMaker | None = None,
+    ) -> List[dict]:
         x, y = position
+        if decision_maker is not None:
+            custom_builder = getattr(decision_maker, "build_deployment_model_positions", None)
+            if callable(custom_builder):
+                payload_positions = list(custom_builder(unit, (float(x), float(y))) or [])
+                if payload_positions:
+                    return payload_positions
         game_map = getattr(self.game, "map", None)
         if game_map is None:
             raise RuntimeError("Deployment requires an active game map.")
@@ -386,7 +397,11 @@ class DeploymentManager:
                 # Route deployment placement through DecisionRequest/Command API.
                 request = self._build_deployment_move_request(unit)
                 self.game.request_decision(request)
-                model_positions = self._build_deployment_model_positions(unit, position)
+                model_positions = self._build_deployment_model_positions(
+                    unit,
+                    position,
+                    decision_maker=current_decision_maker,
+                )
                 option_id = request.options[0].option_id if getattr(request, "options", None) else ""
                 queue = getattr(self.game, "decision_queue", None)
                 pending = queue.get(request.decision_id) if queue is not None and hasattr(queue, "get") else request

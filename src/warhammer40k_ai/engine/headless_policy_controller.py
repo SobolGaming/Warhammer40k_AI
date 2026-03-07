@@ -195,6 +195,8 @@ class HeadlessPolicyDecisionController(DecisionController):
             now = time.perf_counter()
             if now >= deadline:
                 break
+            if self._quick_reject_reserves_anchor(game, unit, x=float(x), y=float(y), _context=context):
+                continue
             attempted += 1
             model_positions = self._build_model_positions_from_anchor(game, unit, x=float(x), y=float(y))
             if not model_positions:
@@ -307,37 +309,72 @@ class HeadlessPolicyDecisionController(DecisionController):
                     ay = float(anchor_pos[1])
                     _add(ax, ay)
                     radius_steps = (
-                        max(0.5, float(anchor_range) * 0.25),
-                        max(0.5, float(anchor_range) * 0.5),
-                        max(0.5, float(anchor_range) * 0.75),
+                        max(0.5, float(anchor_range) * 0.33),
+                        max(0.5, float(anchor_range) * 0.66),
                         float(anchor_range),
                     )
                     for radius in radius_steps:
-                        for deg in range(0, 360, 30):
+                        for deg in range(0, 360, 45):
                             rad = math.radians(float(deg))
                             _add(ax + math.cos(rad) * float(radius), ay + math.sin(rad) * float(radius))
 
         in_strategic_fn = getattr(unit, "is_in_strategic_reserves", None)
         in_strategic = bool(in_strategic_fn()) if callable(in_strategic_fn) else False
         if in_strategic:
-            for step in (1.0, 0.5, 0.25):
-                xs = self._axis_points(0.0, width, step=step, offset=0.0)
-                ys = self._axis_points(0.0, height, step=step, offset=0.0)
-                band = self._axis_points(0.0, min(8.0, max(width, height)), step=step, offset=0.0)
-                for x in xs:
-                    for d in band:
-                        _add(x, d)
-                        _add(x, max(0.0, height - d))
-                for y in ys:
-                    for d in band:
-                        _add(d, y)
-                        _add(max(0.0, width - d), y)
+            along_step = self._strategic_edge_scan_step(unit, width=width, height=height)
+            preferred_offset = self._strategic_edge_offset_preference(unit)
+            offsets = self._strategic_edge_offsets(preferred_offset)
+            xs_primary = self._axis_points(0.0, width, step=along_step, offset=0.0)
+            ys_primary = self._axis_points(0.0, height, step=along_step, offset=0.0)
+            xs_secondary = self._axis_points(0.0, width, step=along_step, offset=(along_step / 2.0))
+            ys_secondary = self._axis_points(0.0, height, step=along_step, offset=(along_step / 2.0))
+            for edge_offset in offsets:
+                for x in xs_primary:
+                    _add(x, edge_offset)
+                    _add(x, max(0.0, height - edge_offset))
+                for y in ys_primary:
+                    _add(edge_offset, y)
+                    _add(max(0.0, width - edge_offset), y)
+                for x in xs_secondary:
+                    _add(x, edge_offset)
+                    _add(x, max(0.0, height - edge_offset))
+                for y in ys_secondary:
+                    _add(edge_offset, y)
+                    _add(max(0.0, width - edge_offset), y)
+                _add(edge_offset, edge_offset)
+                _add(edge_offset, max(0.0, height - edge_offset))
+                _add(max(0.0, width - edge_offset), edge_offset)
+                _add(max(0.0, width - edge_offset), max(0.0, height - edge_offset))
+            # Always include corners as fallbacks (some rules/test doubles require exact edge touch at 0").
+            _add(0.0, 0.0)
+            _add(0.0, float(height))
+            _add(float(width), 0.0)
+            _add(float(width), float(height))
+
+            # Sparse fallback edge bands in case preferred offsets are blocked.
+            fallback_step = max(1.5, along_step * 1.5)
+            fallback_offsets = self._strategic_edge_offsets(0.0)
+            xs_fallback = self._axis_points(0.0, width, step=fallback_step, offset=0.0)
+            ys_fallback = self._axis_points(0.0, height, step=fallback_step, offset=0.0)
+            for edge_offset in fallback_offsets:
+                for x in xs_fallback:
+                    _add(x, edge_offset)
+                    _add(x, max(0.0, height - edge_offset))
+                for y in ys_fallback:
+                    _add(edge_offset, y)
+                    _add(max(0.0, width - edge_offset), y)
         else:
-            for step in (2.0, 1.0, 0.5):
+            deep_steps = self._deep_strike_scan_steps(unit)
+            for step in deep_steps:
                 xs = self._axis_points(0.0, width, step=step, offset=0.0)
                 ys = self._axis_points(0.0, height, step=step, offset=0.0)
+                xs_half = self._axis_points(0.0, width, step=step, offset=(step / 2.0))
+                ys_half = self._axis_points(0.0, height, step=step, offset=(step / 2.0))
                 for y in ys:
                     for x in xs:
+                        _add(x, y)
+                for y in ys_half:
+                    for x in xs_half:
                         _add(x, y)
 
         center_x = width / 2.0
@@ -372,6 +409,92 @@ class HeadlessPolicyDecisionController(DecisionController):
         if max_points > 0 and len(points) > max_points:
             return points[:max_points]
         return points
+
+    def _quick_reject_reserves_anchor(
+        self,
+        game: object,
+        unit: object,
+        *,
+        x: float,
+        y: float,
+        _context: dict,
+    ) -> bool:
+        width, height = self._board_dimensions(game)
+        if float(x) < 0.0 or float(x) > float(width):
+            return True
+        if float(y) < 0.0 or float(y) > float(height):
+            return True
+        in_strategic_fn = getattr(unit, "is_in_strategic_reserves", None)
+        in_strategic = bool(in_strategic_fn()) if callable(in_strategic_fn) else False
+        if not in_strategic:
+            return False
+        largest_radius = self._largest_model_radius(unit)
+        edge_dist = min(float(x), float(y), float(max(0.0, width - x)), float(max(0.0, height - y)))
+        # Strategic-reserves setups must end wholly within 6" of an edge; very deep interior anchors are never viable.
+        if edge_dist > 10.0 + float(largest_radius):
+            return True
+        return False
+
+    @staticmethod
+    def _deep_strike_scan_steps(unit: object) -> tuple[float, float, float]:
+        largest = HeadlessPolicyDecisionController._largest_model_radius(unit)
+        models = int(len(list(getattr(unit, "models", []) or [])) or 1)
+        base_step = max(1.5, min(5.0, (largest * 2.0) + (0.2 * models)))
+        return (base_step * 2.0, base_step, max(1.0, base_step / 2.0))
+
+    @staticmethod
+    def _strategic_edge_scan_step(unit: object, *, width: float, height: float) -> float:
+        largest = HeadlessPolicyDecisionController._largest_model_radius(unit)
+        models = int(len(list(getattr(unit, "models", []) or [])) or 1)
+        unit_span = max(2.0, (largest * 2.0) + (0.4 * models))
+        board_min = max(1.0, min(float(width), float(height)))
+        return float(max(1.0, min(4.0, min(unit_span, board_min / 8.0))))
+
+    @staticmethod
+    def _largest_model_radius(unit: object) -> float:
+        largest = 0.0
+        for model in list(getattr(unit, "models", []) or []):
+            base = getattr(model, "model_base", None)
+            if base is None:
+                continue
+            radius = 0.0
+            if bool(getattr(base, "has_circular_base", False)):
+                get_radius = getattr(base, "get_radius", None)
+                radius = float(get_radius()) if callable(get_radius) else 0.0
+            else:
+                get_longest = getattr(base, "get_longest_radius", None)
+                if callable(get_longest):
+                    radius = float(get_longest())
+                else:
+                    get_radius = getattr(base, "get_radius", None)
+                    radius = float(get_radius()) if callable(get_radius) else 0.0
+            largest = max(float(largest), float(max(0.0, radius)))
+        return float(largest)
+
+    @staticmethod
+    def _strategic_edge_offsets(preferred_offset: float) -> list[float]:
+        candidates = [
+            float(preferred_offset),
+            float(preferred_offset) + 0.5,
+            float(preferred_offset) - 0.5,
+            float(preferred_offset) + 1.0,
+            float(preferred_offset) - 1.0,
+            0.0,
+            1.0,
+            2.0,
+            4.0,
+            6.0,
+        ]
+        normalized: list[float] = []
+        seen: set[float] = set()
+        for value in candidates:
+            bounded = float(max(0.0, min(8.0, value)))
+            key = round(bounded, 3)
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(float(key))
+        return normalized
 
     @staticmethod
     def _axis_points(start: float, end: float, *, step: float, offset: float) -> list[float]:

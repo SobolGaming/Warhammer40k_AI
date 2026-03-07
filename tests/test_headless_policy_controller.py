@@ -294,3 +294,49 @@ def test_headless_policy_controller_reserves_bruteforce_respects_timeout_budget(
 
     assert resolved is False
     assert elapsed < 0.5
+
+
+def test_reserves_anchor_generation_is_bounded_and_deterministic_for_strategic_reserves() -> None:
+    class _Base:
+        has_circular_base = True
+
+        def get_radius(self) -> float:
+            return 0.5
+
+    class _Model:
+        def __init__(self, model_id: str) -> None:
+            self._id = model_id
+            self.id = model_id
+            self.model_base = _Base()
+
+    class _Unit:
+        def __init__(self) -> None:
+            self._id = "unit:strategic"
+            self.id = "unit:strategic"
+            self.models = [_Model("model:1")]
+
+        def is_in_strategic_reserves(self) -> bool:
+            return True
+
+    class _Map:
+        width = 60.0
+        height = 44.0
+
+    class _Battlefield:
+        width = 60.0
+        height = 44.0
+
+    class _Game:
+        map = _Map()
+        battlefield = _Battlefield()
+
+    controller = HeadlessPolicyDecisionController(game=None, auto_attach=False, max_reserves_anchor_points=20000)
+    unit = _Unit()
+    game = _Game()
+
+    first = controller._reserves_arrival_anchor_points(game, unit, context={"placement_kind": "reserves_arrival"})
+    second = controller._reserves_arrival_anchor_points(game, unit, context={"placement_kind": "reserves_arrival"})
+
+    assert first == second
+    assert len(first) < 2500
+    assert any(abs(x - 0.0) < 1e-6 and abs(y - 0.0) < 1e-6 for x, y in first)

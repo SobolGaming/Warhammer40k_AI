@@ -655,6 +655,50 @@ class Player:
                     continue
                 specs.append(spec)
 
+        army = self.get_army()
+        if army is not None:
+            seen_source_roots: set[str] = set()
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    source_root = unit.get_attached_unit_root()
+                except Exception:
+                    source_root = unit
+                source_root_id = str(get_entity_id(source_root) or "")
+                if not source_root_id or source_root_id in seen_source_roots:
+                    continue
+                seen_source_roots.add(source_root_id)
+                if not self._unit_is_alive_or_unknown(source_root):
+                    continue
+                sr = getattr(source_root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                for spec in list(sr.get("stratagem_target_cp_refund_aura", []) or []):
+                    if not isinstance(spec, dict):
+                        continue
+                    source_model_id = str(spec.get("source_model_id", "") or "").strip()
+                    if source_model_id and not self._unit_has_alive_model_id(source_root, source_model_id):
+                        continue
+                    kw = str(spec.get("keyword", "") or "").strip().upper()
+                    if kw and not self._unit_has_keyword(target_unit, kw):
+                        continue
+                    try:
+                        aura_range = float(spec.get("range", 0) or 0)
+                    except (TypeError, ValueError):
+                        aura_range = 0.0
+                    if aura_range <= 0.0:
+                        continue
+                    if not self._source_model_within_range_for_ability(
+                        source_root,
+                        target_unit,
+                        float(aura_range),
+                        str(spec.get("name", "") or ""),
+                        source_model_id=source_model_id,
+                    ):
+                        continue
+                    specs.append(spec)
+
         if not specs:
             has_rule = getattr(target_unit, "has_multiwave_comms_array", None)
             if callable(has_rule) and bool(has_rule()):
@@ -689,6 +733,8 @@ class Player:
                 str(spec.get("roll_bonus_if_target_has_keyword", "") or "").strip().upper(),
                 bool(spec.get("roll_bonus_if_source_model_within_vowed_objective", False)),
                 str(spec.get("source_model_id", "") or "").strip(),
+                str(spec.get("keyword", "") or "").strip().upper(),
+                int(spec.get("range", 0) or 0),
             )
             if key in seen:
                 continue
@@ -705,6 +751,8 @@ class Player:
                 str(item.get("roll_bonus_if_target_has_keyword", "") or "").strip().upper(),
                 int(bool(item.get("roll_bonus_if_source_model_within_vowed_objective", False))),
                 str(item.get("source_model_id", "") or "").strip(),
+                str(item.get("keyword", "") or "").strip().upper(),
+                int(item.get("range", 0) or 0),
             )
         )
         return deduped

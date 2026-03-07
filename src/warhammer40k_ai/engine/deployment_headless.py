@@ -33,6 +33,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         self.lattice_step = float(max(0.5, lattice_step))
         self.exhaustive_lattice_step = float(max(0.25, exhaustive_lattice_step))
         self.reserve_policy = self._normalize_reserve_policy(reserve_policy)
+        self._selected_payload_by_unit_id: dict[str, tuple[tuple[float, float], list[dict]]] = {}
 
     def choose_deployment_zone(self, available_zones: list[dict]) -> dict:
         zones = [dict(zone or {}) for zone in list(available_zones or [])]
@@ -175,31 +176,42 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         if not callable(validate_fn):
             return self._zone_center(deployment_zone)
 
-        for x, y in self._candidate_positions(unit, deployment_zone, already_deployed):
-            if self._is_valid_deployment_candidate(
-                unit,
-                player_id=str(player_id),
-                x=float(x),
-                y=float(y),
-                fast_validate_fn=validate_fn,
-            ):
-                return (float(x), float(y))
-        for x, y in self._candidate_positions_exhaustive(unit, deployment_zone):
-            if self._is_valid_deployment_candidate(
-                unit,
-                player_id=str(player_id),
-                x=float(x),
-                y=float(y),
-                fast_validate_fn=validate_fn,
-            ):
-                return (float(x), float(y))
+        unit_id = str(get_entity_id(unit) or "")
+        if unit_id:
+            self._selected_payload_by_unit_id.pop(unit_id, None)
+
+        candidate_groups: list[list[tuple[float, float]]] = [
+            self._candidate_positions(unit, deployment_zone, already_deployed),
+            self._candidate_positions_exhaustive(unit, deployment_zone),
+        ]
+        if self._unit_has_infiltrate(unit):
+            candidate_groups.extend(self._infiltrate_candidate_groups(unit, already_deployed=already_deployed))
+
+        seen: set[tuple[float, float]] = set()
+        for group in candidate_groups:
+            for x, y in group:
+                key = (round(float(x), 3), round(float(y), 3))
+                if key in seen:
+                    continue
+                seen.add(key)
+                payload = self._select_valid_deployment_payload(
+                    unit,
+                    player_id=str(player_id),
+                    x=float(x),
+                    y=float(y),
+                    fast_validate_fn=validate_fn,
+                )
+                if payload:
+                    if unit_id:
+                        self._selected_payload_by_unit_id[unit_id] = ((float(x), float(y)), list(payload))
+                    return (float(x), float(y))
 
         raise RuntimeError(
             f"No valid deployment position found for unit {getattr(unit, 'name', 'Unit')} "
             f"(player_id={player_id})."
         )
 
-    def _is_valid_deployment_candidate(
+    def _select_valid_deployment_payload(
         self,
         unit: object,
         *,
@@ -207,48 +219,50 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         x: float,
         y: float,
         fast_validate_fn,
-    ) -> bool:
+    ) -> list[dict]:
         if not bool(fast_validate_fn(unit, float(x), float(y), str(player_id))):
-            return False
-        model_positions = self._build_model_positions(unit, x=float(x), y=float(y))
-        if not model_positions:
-            return False
+            return []
         unit_id = str(get_entity_id(unit) or "")
         if not unit_id:
-            return False
-        allowed_model_ids = [str(entry.get("model_id", "") or "") for entry in list(model_positions or [])]
-        if not all(allowed_model_ids):
-            return False
-        request = DecisionRequest.create(
-            DECISION_MOVE_UNIT,
-            f"Deploy {getattr(unit, 'name', 'Unit')}",
-            player_id=str(player_id),
-            options=[
-                DecisionOption.create(
-                    "Confirm",
-                    payload={"unit_id": unit_id, "movement_type": "deploy", "action": "confirm"},
-                )
-            ],
-            context={
-                "unit_id": unit_id,
-                "movement_type": "deploy",
-                "placement_kind": "deployment",
-                "allowed_model_ids": list(allowed_model_ids),
-                "allow_skip": False,
-                "max_distance": 0.0,
-            },
-        )
-        option_id = request.options[0].option_id if getattr(request, "options", None) else ""
-        if not option_id:
-            return False
-        result = DecisionResult(
-            decision_id=str(request.decision_id or ""),
-            player_id=str(player_id),
-            option_id=str(option_id),
-            payload={"model_positions": list(model_positions)},
-        )
-        errors = tuple(validate_decision(self.game, request, result) or ())
-        return not errors
+            return []
+
+        payload_variants = self._build_model_positions_variants(unit, x=float(x), y=float(y))
+        for model_positions in payload_variants:
+            allowed_model_ids = [str(entry.get("model_id", "") or "") for entry in list(model_positions or [])]
+            if not all(allowed_model_ids):
+                continue
+            request = DecisionRequest.create(
+                DECISION_MOVE_UNIT,
+                f"Deploy {getattr(unit, 'name', 'Unit')}",
+                player_id=str(player_id),
+                options=[
+                    DecisionOption.create(
+                        "Confirm",
+                        payload={"unit_id": unit_id, "movement_type": "deploy", "action": "confirm"},
+                    )
+                ],
+                context={
+                    "unit_id": unit_id,
+                    "movement_type": "deploy",
+                    "placement_kind": "deployment",
+                    "allowed_model_ids": list(allowed_model_ids),
+                    "allow_skip": False,
+                    "max_distance": 0.0,
+                },
+            )
+            option_id = request.options[0].option_id if getattr(request, "options", None) else ""
+            if not option_id:
+                continue
+            result = DecisionResult(
+                decision_id=str(request.decision_id or ""),
+                player_id=str(player_id),
+                option_id=str(option_id),
+                payload={"model_positions": list(model_positions)},
+            )
+            errors = tuple(validate_decision(self.game, request, result) or ())
+            if not errors:
+                return list(model_positions)
+        return []
 
     def _build_model_positions(self, unit: object, *, x: float, y: float) -> list[dict]:
         game_map = getattr(self.game, "map", None)
@@ -287,6 +301,234 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                 }
             )
         return payload_positions
+
+    def _build_model_positions_variants(self, unit: object, *, x: float, y: float) -> list[list[dict]]:
+        base_positions = self._build_model_positions(unit, x=float(x), y=float(y))
+        if not base_positions:
+            return []
+        models = list(getattr(unit, "models", []) or [])
+        if not models or len(models) != len(base_positions):
+            return [list(base_positions)]
+
+        per_model_surfaces: list[list[float]] = []
+        for model, entry in zip(models, base_positions):
+            pos = list(entry.get("position", []) or [])
+            if len(pos) < 3:
+                return [list(base_positions)]
+            per_model_surfaces.append(
+                self._ruins_surface_z_options_for_model(model, x=float(pos[0]), y=float(pos[1]), current_z=float(pos[2]))
+            )
+
+        variants: list[list[dict]] = []
+        seen: set[tuple[tuple[str, float], ...]] = set()
+
+        def _add_variant(positions: list[dict]) -> None:
+            key: list[tuple[str, float]] = []
+            for entry in list(positions or []):
+                model_id = str(entry.get("model_id", "") or "")
+                pos = list(entry.get("position", []) or [])
+                if len(pos) < 3:
+                    return
+                key.append((model_id, round(float(pos[2]), 3)))
+            key_tuple = tuple(key)
+            if key_tuple in seen:
+                return
+            seen.add(key_tuple)
+            variants.append(positions)
+
+        mixed_high = self._with_model_surface_selection(base_positions, per_model_surfaces, select_max=True)
+        if mixed_high:
+            _add_variant(mixed_high)
+
+        common_surfaces: set[float] = set(round(v, 3) for v in list(per_model_surfaces[0] or []))
+        for values in per_model_surfaces[1:]:
+            common_surfaces &= set(round(v, 3) for v in list(values or []))
+        for surface_z in sorted(common_surfaces, reverse=True):
+            uniform = self._with_uniform_surface(base_positions, z_surface=float(surface_z))
+            _add_variant(uniform)
+
+        _add_variant(list(base_positions))
+        return variants
+
+    @staticmethod
+    def _with_uniform_surface(base_positions: list[dict], *, z_surface: float) -> list[dict]:
+        updated: list[dict] = []
+        for entry in list(base_positions or []):
+            pos = list(entry.get("position", []) or [])
+            if len(pos) < 3:
+                continue
+            next_entry = dict(entry)
+            next_entry["position"] = [float(pos[0]), float(pos[1]), float(z_surface)]
+            updated.append(next_entry)
+        return updated
+
+    @staticmethod
+    def _with_model_surface_selection(
+        base_positions: list[dict],
+        per_model_surfaces: list[list[float]],
+        *,
+        select_max: bool,
+    ) -> list[dict]:
+        updated: list[dict] = []
+        for entry, surfaces in zip(list(base_positions or []), list(per_model_surfaces or [])):
+            pos = list(entry.get("position", []) or [])
+            if len(pos) < 3:
+                continue
+            z_surface = float(pos[2])
+            if surfaces:
+                z_surface = float(max(surfaces)) if select_max else float(min(surfaces))
+            next_entry = dict(entry)
+            next_entry["position"] = [float(pos[0]), float(pos[1]), float(z_surface)]
+            updated.append(next_entry)
+        return updated
+
+    def _ruins_surface_z_options_for_model(self, model: object, *, x: float, y: float, current_z: float) -> list[float]:
+        options: set[float] = {round(float(current_z), 3)}
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return sorted(options)
+
+        base = getattr(model, "model_base", None)
+        base_geom = None
+        if base is not None:
+            get_shape_at = getattr(base, "get_base_shape_at", None)
+            if callable(get_shape_at):
+                facing = float(getattr(base, "facing", 0.0) or 0.0)
+                base_geom = get_shape_at(float(x), float(y), facing)
+
+        for terrain in list(getattr(game_map, "terrain_features", []) or []):
+            terrain_type = str(getattr(getattr(terrain, "terrain_type", None), "name", "") or "")
+            if terrain_type != "RUINS":
+                continue
+            footprint = getattr(terrain, "footprint", None)
+            if footprint is None:
+                continue
+            if base_geom is None:
+                contains = getattr(footprint, "contains", None)
+                if not callable(contains):
+                    continue
+                from shapely.geometry import Point
+                if not bool(contains(Point(float(x), float(y)))):
+                    continue
+            else:
+                intersects = getattr(base_geom, "intersects", None)
+                if not callable(intersects):
+                    continue
+                if not bool(intersects(footprint)):
+                    continue
+
+            for floor in list(getattr(terrain, "floors", []) or []):
+                if not isinstance(floor, dict):
+                    continue
+                poly = floor.get("polygon")
+                if poly is None:
+                    continue
+                if base_geom is None:
+                    contains = getattr(poly, "contains", None)
+                    if not callable(contains):
+                        continue
+                    from shapely.geometry import Point
+                    if not bool(contains(Point(float(x), float(y)))):
+                        continue
+                else:
+                    covers = getattr(poly, "covers", None)
+                    intersects = getattr(poly, "intersects", None)
+                    on_floor = bool(covers(base_geom)) if callable(covers) else False
+                    if not on_floor and callable(intersects):
+                        on_floor = bool(intersects(base_geom))
+                    if not on_floor:
+                        continue
+                elevation = float(floor.get("elevation", 0.0) or 0.0)
+                thickness = float(floor.get("thickness", 0.0) or 0.0)
+                options.add(round(elevation + thickness, 3))
+
+        return sorted(options)
+
+    def _infiltrate_candidate_groups(self, unit: object, *, already_deployed: Iterable[object]) -> list[list[tuple[float, float]]]:
+        board_bounds = self._zone_bounds({})
+        if board_bounds is None:
+            return []
+        min_x, max_x, min_y, max_y = board_bounds
+        board_zone = {
+            "name": "board",
+            "x_range": [min_x, max_x],
+            "y_range": [min_y, max_y],
+        }
+        center_x = (float(min_x) + float(max_x)) / 2.0
+        center_y = (float(min_y) + float(max_y)) / 2.0
+        offsets = self._ordered_offsets(unit=unit, already_deployed=already_deployed)
+        around_center: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+        for dx, dy in offsets:
+            x = float(center_x + dx)
+            y = float(center_y + dy)
+            if not self._point_in_zone(board_zone, x, y):
+                continue
+            key = (round(x, 3), round(y, 3))
+            if key in seen:
+                continue
+            seen.add(key)
+            around_center.append((x, y))
+        return [
+            around_center,
+            self._candidate_positions_exhaustive_for_bounds(unit, bounds=(min_x, max_x, min_y, max_y)),
+        ]
+
+    def _candidate_positions_exhaustive_for_bounds(
+        self,
+        unit: object,
+        *,
+        bounds: tuple[float, float, float, float],
+    ) -> list[tuple[float, float]]:
+        min_x, max_x, min_y, max_y = bounds
+        if min_x > max_x or min_y > max_y:
+            return []
+        center_x = (float(min_x) + float(max_x)) / 2.0
+        center_y = (float(min_y) + float(max_y)) / 2.0
+        unit_id = str(get_entity_id(unit) or "")
+
+        candidates: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+        for step in (4.0, 2.0, 1.0):
+            offsets = (0.0, step / 2.0)
+            for off_y in offsets:
+                ys = self._axis_points(min_y, max_y, step=step, offset=off_y)
+                for off_x in offsets:
+                    xs = self._axis_points(min_x, max_x, step=step, offset=off_x)
+                    for y in ys:
+                        for x in xs:
+                            key = (round(float(x), 3), round(float(y), 3))
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            candidates.append((float(x), float(y)))
+
+        def _sort_key(point: tuple[float, float]) -> tuple[float, str]:
+            x, y = point
+            dist_sq = (float(x) - float(center_x)) ** 2 + (float(y) - float(center_y)) ** 2
+            token = f"{unit_id}:{x:.3f}:{y:.3f}"
+            tie = hashlib.sha256(token.encode("utf-8")).hexdigest()
+            return (float(dist_sq), tie)
+
+        candidates.sort(key=_sort_key)
+        return candidates
+
+    @staticmethod
+    def _unit_has_infiltrate(unit: object) -> bool:
+        has_infiltrate = getattr(unit, "has_infiltrate", None)
+        return bool(has_infiltrate()) if callable(has_infiltrate) else False
+
+    def build_deployment_model_positions(self, unit: object, position: tuple[float, float]) -> list[dict]:
+        unit_id = str(get_entity_id(unit) or "")
+        if unit_id:
+            cached = self._selected_payload_by_unit_id.pop(unit_id, None)
+            if cached is not None:
+                (cx, cy), payload = cached
+                if abs(float(cx) - float(position[0])) <= 1e-3 and abs(float(cy) - float(position[1])) <= 1e-3:
+                    return [dict(entry) for entry in list(payload or [])]
+
+        payload_variants = self._build_model_positions_variants(unit, x=float(position[0]), y=float(position[1]))
+        return list(payload_variants[0] if payload_variants else [])
 
     def _reserve_group_roots(self, army: object) -> list[object]:
         iter_roots = getattr(army, "_iter_reserve_group_roots", None)
