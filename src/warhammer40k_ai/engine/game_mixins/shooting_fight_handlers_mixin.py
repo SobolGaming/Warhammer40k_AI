@@ -4750,6 +4750,127 @@ class GameShootingFightHandlersMixin:
             )
             return
 
+    def _on_shooting_targets_selected_nova_charge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+
+        pending_models = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "nova_charge":
+                        continue
+                    mid = str(ctx.get("model_id", "") or "")
+                    if mid:
+                        pending_models.add(mid)
+        except Exception:
+            pending_models = set()
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return ""
+
+        for model in sorted(list(getattr(root, "models", []) or []), key=_model_sort_key):
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in pending_models:
+                continue
+            specs = list(getattr(root, "model_nova_charge_specs", lambda _m: [])(model) or [])
+            if not specs:
+                continue
+            spec = dict(specs[0] or {})
+            ability_name = str(spec.get("source", "") or "Nova Charge").strip() or "Nova Charge"
+            ability_key = str(spec.get("ability_key", "") or "nova_charge").strip().lower() or "nova_charge"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+                continue
+
+            ranged_weapon_names: list[str] = []
+            seen: set[str] = set()
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged):
+                    continue
+                try:
+                    if not bool(is_ranged()):
+                        continue
+                except Exception:
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                normalized_name = Unit._norm_wargear_name(weapon_name)
+                if not normalized_name or normalized_name in seen:
+                    continue
+                seen.add(normalized_name)
+                ranged_weapon_names.append(weapon_name)
+            if not ranged_weapon_names:
+                continue
+            ranged_weapon_names = sorted(ranged_weapon_names, key=lambda n: Unit._norm_wargear_name(n))
+
+            unit_id = str(get_entity_id(root) or "")
+            if not unit_id or not model_id:
+                continue
+
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            for weapon_name in list(ranged_weapon_names):
+                options.append(
+                    DecisionOption.create(
+                        weapon_name,
+                        payload={
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "weapon_name": weapon_name,
+                            "ability_key": ability_key,
+                        },
+                    )
+                )
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select one ranged weapon for {getattr(model, 'name', 'Model')} (or None).",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "nova_charge",
+                    "ability_name": ability_name,
+                    "ability_key": ability_key,
+                    "phase": "Shooting phase",
+                    "unit": getattr(root, "name", "") or "",
+                    "unit_id": unit_id,
+                    "model": getattr(model, "name", "") or "",
+                    "model_id": model_id,
+                    "weapon_names": list(ranged_weapon_names),
+                    "keywords": list(spec.get("keywords", []) or ["DEVASTATING WOUNDS"]),
+                },
+            )
+            self.request_decision(request)
+            return
+
     def _on_shooting_targets_selected_shieldbreaker(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return

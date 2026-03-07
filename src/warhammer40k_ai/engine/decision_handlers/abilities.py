@@ -16750,6 +16750,98 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             _log_action_for_players(game, player, f"{ability_name}: {tname} takes a Battle-shock test.")
         except Exception:
             pass
+    if str(ctx.get("ability", "") or "") == "nova_charge":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id") or ctx.get("source_unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if model is None:
+            return None
+        if is_skip_choice(request, result):
+            player = _resolve_player(game, request, payload)
+            if player is None:
+                try:
+                    player = getattr(source_root.get_parent_army(), "player", None)
+                except Exception:
+                    player = None
+            ability_name = str(ctx.get("ability_name", "") or "Nova Charge").strip() or "Nova Charge"
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(model, 'name', 'Model')} selected none.",
+            )
+            return {
+                "unit_id": str(get_entity_id(source_root) or ""),
+                "model_id": str(get_entity_id(model) or ""),
+                "weapon_name": "",
+                "skipped": True,
+                "source": ability_name,
+            }
+        weapon_name = str(payload.get("weapon_name") or "").strip()
+        if not weapon_name:
+            return None
+
+        def _norm_weapon_name(name: str) -> str:
+            return "".join(ch for ch in str(name or "").strip().lower() if ch.isalnum())
+
+        normalized_weapon = _norm_weapon_name(weapon_name)
+        if not normalized_weapon:
+            return None
+        allowed_weapon_names = [str(w).strip() for w in list(ctx.get("weapon_names", []) or []) if str(w).strip()]
+        if allowed_weapon_names:
+            allowed_norm = {_norm_weapon_name(w) for w in allowed_weapon_names}
+            if normalized_weapon not in allowed_norm:
+                return None
+        ability_name = str(ctx.get("ability_name", "") or "Nova Charge").strip() or "Nova Charge"
+        ability_key = str(payload.get("ability_key") or ctx.get("ability_key") or "nova_charge").strip().lower() or "nova_charge"
+        if bool(getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key)):
+            return None
+        keywords = [str(k).strip() for k in list(payload.get("keywords") or ctx.get("keywords") or ["DEVASTATING WOUNDS"]) if str(k).strip()]
+        if not keywords:
+            keywords = ["DEVASTATING WOUNDS"]
+        set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+        if not callable(set_keywords):
+            return None
+        set_keywords(
+            key=f"{ability_key}:{normalized_weapon}",
+            weapon_name=weapon_name,
+            keywords=list(keywords),
+            source=ability_name,
+            expires_phase="SHOOTING_PHASE",
+            attack_type="ranged",
+        )
+        getattr(model, "mark_used_once_per_battle", lambda *_args, **_kwargs: None)(
+            ability_key,
+            ability_name=ability_name,
+            source="datasheet",
+        )
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = getattr(source_root.get_parent_army(), "player", None)
+            except Exception:
+                player = None
+        keyword_text = ", ".join(list(keywords))
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(model, 'name', 'Model')} selected {weapon_name}; it gains [{keyword_text}] until end of phase.",
+        )
+        return {
+            "unit_id": str(get_entity_id(source_root) or ""),
+            "model_id": str(get_entity_id(model) or ""),
+            "weapon_name": weapon_name,
+            "keywords": list(keywords),
+            "source": ability_name,
+        }
     if str(ctx.get("ability", "") or "") == "move_over_battleshock":
         if is_skip_choice(request, result):
             return None

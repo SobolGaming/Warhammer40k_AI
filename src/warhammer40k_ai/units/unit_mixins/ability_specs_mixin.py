@@ -717,6 +717,64 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_nova_charge_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, when selected to shoot, select one ranged weapon
+        equipped by this model; that weapon gains [DEVASTATING WOUNDS] until end of phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - ability_key: deterministic once-per-battle usage key
+            - keywords: list[str]
+        """
+        if model is None:
+            return []
+        cache_key = f"model_nova_charge:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if "once per battle" not in normalized:
+                continue
+            if "selected to shoot" not in normalized:
+                continue
+            if "select one ranged weapon equipped by this model" not in normalized:
+                continue
+            if "that weapon has the devastating wounds ability" not in normalized:
+                continue
+
+            source = str(name or "Nova Charge").strip() or "Nova Charge"
+            ability_key_seed = self._normalize_keyword_phrase(source) or "nova_charge"
+            ability_key = f"nova_charge:{ability_key_seed}"
+            dedupe_key = f"{source.lower()}:{ability_key}"
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "ability_key": ability_key,
+                    "keywords": ["DEVASTATING WOUNDS"],
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_ammo_runt_specs(self) -> List[dict]:
         """
         Unit-level rule: when selected to shoot, can gain [LETHAL HITS] for ranged weapons.

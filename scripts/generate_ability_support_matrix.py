@@ -5711,6 +5711,7 @@ def _classify_ability_base(
     tau_precise_targeting_support = _tau_precise_targeting_support(description)
     tau_hunting_hounds_support = _tau_hunting_hounds_support(description)
     tau_rites_of_feasting_support = _tau_rites_of_feasting_support(description)
+    tau_nova_charge_support = _tau_nova_charge_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
     movement_phase_end_mortal_table_support = _movement_phase_end_enemy_within_range_mortal_table_support(description)
     movement_phase_end_mortal_threshold_support = _movement_phase_end_enemy_within_range_mortal_threshold_support(description)
@@ -5856,6 +5857,8 @@ def _classify_ability_base(
         return tau_advanced_scouting_support
     if tau_rites_of_feasting_support:
         return tau_rites_of_feasting_support
+    if tau_nova_charge_support:
+        return tau_nova_charge_support
     if tau_hunting_hounds_support:
         return tau_hunting_hounds_support
     if closest_m_veh_support:
@@ -6105,6 +6108,8 @@ def _classify_ability_base(
         return tau_hunting_hounds_support
     if tau_rites_of_feasting_support:
         return tau_rites_of_feasting_support
+    if tau_nova_charge_support:
+        return tau_nova_charge_support
     if movement_phase_speed_mortal_support:
         return movement_phase_speed_mortal_support
     if movement_phase_end_mortal_table_support:
@@ -8410,6 +8415,25 @@ def _tau_rites_of_feasting_support(description: str) -> Optional[Tuple[str, str]
     return (
         "Supported",
         "Leading: Feel No Pain 6+; after this unit destroys an enemy unit in the Fight phase, it upgrades to Feel No Pain 5+ for the rest of the battle.",
+    )
+
+
+def _tau_nova_charge_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle when this unit is selected to shoot in your shooting phase "
+        r"select one ranged weapon equipped by this model "
+        r"until the end of the phase that weapon has the devastating wounds ability"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Once per battle when selected to shoot: select one ranged weapon equipped by this model; that weapon gains [DEVASTATING WOUNDS] until end of phase.",
     )
 
 
