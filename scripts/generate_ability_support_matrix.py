@@ -5710,6 +5710,7 @@ def _classify_ability_base(
     tau_advanced_scouting_support = _tau_advanced_scouting_support(description)
     tau_precise_targeting_support = _tau_precise_targeting_support(description)
     tau_forward_observers_support = _tau_forward_observers_support(description)
+    tau_droneport_support = _tau_droneport_support(description)
     tau_hunting_hounds_support = _tau_hunting_hounds_support(description)
     tau_rites_of_feasting_support = _tau_rites_of_feasting_support(description)
     tau_nova_charge_support = _tau_nova_charge_support(description)
@@ -5858,6 +5859,8 @@ def _classify_ability_base(
         return tau_advanced_scouting_support
     if tau_forward_observers_support:
         return tau_forward_observers_support
+    if tau_droneport_support:
+        return tau_droneport_support
     if tau_rites_of_feasting_support:
         return tau_rites_of_feasting_support
     if tau_nova_charge_support:
@@ -6109,6 +6112,8 @@ def _classify_ability_base(
         return tau_precise_targeting_support
     if tau_forward_observers_support:
         return tau_forward_observers_support
+    if tau_droneport_support:
+        return tau_droneport_support
     if tau_hunting_hounds_support:
         return tau_hunting_hounds_support
     if tau_rites_of_feasting_support:
@@ -8399,6 +8404,24 @@ def _tau_forward_observers_support(description: str) -> Optional[Tuple[str, str]
     return (
         "Supported",
         "When this unit is an Observer, guided ranged attacks against their Spotted unit re-roll Hit rolls of 1 and re-roll Wound rolls of 1 until end of phase.",
+    )
+
+
+def _tau_droneport_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time this fortification is selected to shoot its drone defenders weapon "
+        r"will target and resolve attacks against every enemy unit that is an eligible target to this fortification"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "When this FORTIFICATION is selected to shoot, its Drone defenders weapon profile resolves against every eligible enemy target.",
     )
 
 

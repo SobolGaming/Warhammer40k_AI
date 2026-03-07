@@ -182,6 +182,11 @@ class ShootingMixin:
         except Exception:
             pass
 
+        weapon_declarations = self._expand_tau_droneport_shooting_declarations(
+            weapon_declarations,
+            game_map=game_map,
+        )
+
         ctan_ok, ctan_reason = self.validate_ctan_power_selection(weapon_declarations)
         if not ctan_ok:
             logger.info(f"{self.name}: {ctan_reason}")
@@ -575,6 +580,155 @@ class ShootingMixin:
             pass
 
         return successful_attacks > 0
+
+    @staticmethod
+    def _droneport_norm(text: object) -> str:
+        norm = str(text or "").replace("\u2019", "'").lower()
+        norm = re.sub(r"[^a-z0-9]+", " ", norm)
+        return re.sub(r"\s+", " ", norm).strip()
+
+    def _has_tau_droneport_ability(self) -> bool:
+        cache = getattr(self, "_ability_cache", None)
+        cache_key = "tau_droneport_ability"
+        if isinstance(cache, dict) and cache_key in cache:
+            return bool(cache[cache_key])
+
+        abilities = list(getattr(self, "possible_abilities", []) or [])
+        iter_active = getattr(self, "_iter_active_possible_abilities", None)
+        if callable(iter_active):
+            abilities = list(iter_active() or [])
+
+        found = False
+        for ability in abilities:
+            if isinstance(ability, str):
+                ability_name = str(ability or "")
+                ability_desc = ""
+            else:
+                ability_name = str(getattr(ability, "name", "") or "")
+                ability_desc = str(getattr(ability, "description", "") or "")
+            name_norm = self._droneport_norm(ability_name)
+            desc_norm = self._droneport_norm(ability_desc)
+            if name_norm == "droneport":
+                found = True
+                break
+            if (
+                "each time this fortification is selected to shoot" in desc_norm
+                and "drone defender" in desc_norm
+                and "every enemy unit" in desc_norm
+                and "eligible target" in desc_norm
+            ):
+                found = True
+                break
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = bool(found)
+        self._ability_cache = cache
+        return bool(found)
+
+    def _is_tau_drone_defender_profile(self, weapon_profile) -> bool:
+        if weapon_profile is None:
+            return False
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        weapon_name = str(getattr(parent, "name", "") or getattr(weapon_profile, "name", "") or "")
+        return "drone defender" in self._droneport_norm(weapon_name)
+
+    def _tau_droneport_declaration_key(self, declaration: dict) -> tuple:
+        weapon_profile = declaration.get("weapon_profile")
+        parent = getattr(weapon_profile, "parent_wargear", None) if weapon_profile is not None else None
+        weapon_name = self._droneport_norm(
+            str(getattr(parent, "name", "") or getattr(weapon_profile, "name", "") or "")
+        )
+        profile_name = self._droneport_norm(str(getattr(weapon_profile, "name", "") or ""))
+        model_ids = tuple(
+            sorted(
+                str(get_entity_id(model) or "")
+                for model in list(declaration.get("models") or [])
+                if model is not None
+            )
+        )
+        firing_deck_source_ids = tuple(
+            sorted(
+                str(get_entity_id(model) or "")
+                for model in list(declaration.get("firing_deck_source_models") or [])
+                if model is not None
+            )
+        )
+        linked_fire_origin = declaration.get("linked_fire_origin_unit")
+        linked_fire_origin_id = (
+            str(get_entity_id(linked_fire_origin) or "") if linked_fire_origin is not None else ""
+        )
+        linked_fire_mode = str(declaration.get("linked_fire_mode", "") or "").strip().lower()
+        weapon_instance = str(declaration.get("weapon_instance", "") or "")
+        return (
+            weapon_name,
+            profile_name,
+            model_ids,
+            firing_deck_source_ids,
+            linked_fire_origin_id,
+            linked_fire_mode,
+            weapon_instance,
+        )
+
+    def _expand_tau_droneport_shooting_declarations(
+        self,
+        weapon_declarations: List[dict],
+        *,
+        game_map: 'Map',
+    ) -> List[dict]:
+        if not weapon_declarations or not self._has_tau_droneport_ability():
+            return weapon_declarations
+        get_enemy_units = getattr(game_map, "get_enemy_units", None) if game_map is not None else None
+        if not callable(get_enemy_units):
+            return weapon_declarations
+
+        enemy_units = [unit for unit in list(get_enemy_units(self) or []) if unit is not None]
+        if not enemy_units:
+            return weapon_declarations
+        enemy_units = sorted(enemy_units, key=lambda unit: str(get_entity_id(unit) or ""))
+
+        expanded = list(weapon_declarations)
+        template_by_key: dict[tuple, dict] = {}
+        seen_targets_by_key: dict[tuple, set[str]] = {}
+
+        for declaration in list(weapon_declarations):
+            weapon_profile = declaration.get("weapon_profile")
+            if not self._is_tau_drone_defender_profile(weapon_profile):
+                continue
+            key = self._tau_droneport_declaration_key(declaration)
+            if key not in template_by_key:
+                template_by_key[key] = declaration
+            target_unit = declaration.get("target_unit")
+            if target_unit is not None:
+                seen_targets_by_key.setdefault(key, set()).add(str(get_entity_id(target_unit) or ""))
+
+        for key in sorted(template_by_key.keys(), key=str):
+            template = template_by_key[key]
+            weapon_profile = template.get("weapon_profile")
+            models = list(template.get("models") or [])
+            if weapon_profile is None or not models:
+                continue
+            seen_targets = seen_targets_by_key.setdefault(key, set())
+            for enemy_unit in enemy_units:
+                enemy_id = str(get_entity_id(enemy_unit) or "")
+                if not enemy_id or enemy_id in seen_targets:
+                    continue
+                validation = self._validate_shooting_declaration(
+                    weapon_profile,
+                    enemy_unit,
+                    models,
+                    game_map,
+                    linked_fire_origin_unit=template.get("linked_fire_origin_unit"),
+                    linked_fire_mode=template.get("linked_fire_mode"),
+                )
+                if not bool((validation or {}).get("valid", False)):
+                    continue
+                extra_decl = dict(template)
+                extra_decl["target_unit"] = enemy_unit
+                expanded.append(extra_decl)
+                seen_targets.add(enemy_id)
+
+        return expanded
 
     @staticmethod
     def _ctan_power_parse_number_token(token: object) -> Optional[int]:
