@@ -8913,7 +8913,7 @@ class GamePhaseHandlersMixin:
         )
 
     def _on_phase_end_enrage_machine_spirits(self, player=None, phase=None, **_kwargs) -> None:
-        """End of Movement phase: optional enemy VEHICLE within range takes a Battle-shock test."""
+        """End of Movement phase: optionally select an enemy unit within range to take a Battle-shock test."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
         if pname != "MOVEMENT_PHASE":
             return
@@ -9011,23 +9011,36 @@ class GamePhaseHandlersMixin:
                     )
                     if not candidates:
                         continue
-                    vehicle_candidates = []
+                    target_keyword_phrase = str(spec.get("target_keyword_phrase", "") or "").strip()
+                    filtered_candidates = []
                     for cand in list(candidates or []):
                         if cand is None:
                             continue
-                        try:
-                            if not cand.has_any_keyword("VEHICLE"):
+                        if target_keyword_phrase:
+                            matches_keyword = False
+                            matches_phrase_fn = getattr(root, "_unit_matches_keyword_phrase", None)
+                            if callable(matches_phrase_fn):
+                                try:
+                                    matches_keyword = bool(matches_phrase_fn(cand, target_keyword_phrase, use_effective=True))
+                                except Exception:
+                                    matches_keyword = False
+                            if not matches_keyword:
+                                has_kw = getattr(cand, "has_any_keyword", None)
+                                if callable(has_kw):
+                                    try:
+                                        matches_keyword = bool(has_kw(target_keyword_phrase))
+                                    except Exception:
+                                        matches_keyword = False
+                            if not matches_keyword:
                                 continue
-                        except Exception:
-                            continue
-                        vehicle_candidates.append(cand)
-                    if not vehicle_candidates:
+                        filtered_candidates.append(cand)
+                    if not filtered_candidates:
                         continue
 
                     options = []
                     if bool(spec.get("optional", False)):
                         options.append(DecisionOption.create("None", payload={"action": "skip"}))
-                    for cand in sorted(list(vehicle_candidates), key=_unit_sort_key):
+                    for cand in sorted(list(filtered_candidates), key=_unit_sort_key):
                         target_id = str(get_entity_id(cand) or "")
                         if not target_id:
                             continue
@@ -9042,9 +9055,14 @@ class GamePhaseHandlersMixin:
                     if len(options) == 1 and options[0].payload.get("action") == "skip":
                         continue
                     ability_name = str(spec.get("source", "") or "Enrage Machine Spirits").strip() or "Enrage Machine Spirits"
+                    if target_keyword_phrase:
+                        prompt_target = f"an enemy {target_keyword_phrase.upper()} unit"
+                    else:
+                        prompt_target = "an enemy unit"
+                    suffix = " (or None)" if bool(spec.get("optional", False)) else ""
                     request = DecisionRequest.create(
                         DECISION_CHOOSE_QUARRY,
-                        f"{ability_name}: select an enemy VEHICLE within {int(range_value)}\" (or None).",
+                        f"{ability_name}: select {prompt_target} within {int(range_value)}\"{suffix}.",
                         player_id=getattr(player, "id", None),
                         options=options,
                         context={

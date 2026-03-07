@@ -5716,6 +5716,7 @@ def _classify_ability_base(
     movement_phase_end_mortal_threshold_support = _movement_phase_end_enemy_within_range_mortal_threshold_support(description)
     movement_phase_visible_wound_bonus_support = _movement_phase_end_visible_wound_bonus_support(description)
     movement_phase_visible_hit_bonus_support = _movement_phase_end_visible_hit_bonus_support(description)
+    movement_phase_end_select_enemy_battleshock_support = _movement_phase_end_select_enemy_battleshock_support(description)
     grenade_pack_flyover_support = _grenade_pack_flyover_support(description)
     primed_and_ready_grenade_support = _primed_and_ready_grenade_support(description)
     gheistskull_grenade_support = _gheistskull_grenade_support(description)
@@ -6110,6 +6111,8 @@ def _classify_ability_base(
         return movement_phase_end_mortal_table_support
     if movement_phase_end_mortal_threshold_support:
         return movement_phase_end_mortal_threshold_support
+    if movement_phase_end_select_enemy_battleshock_support:
+        return movement_phase_end_select_enemy_battleshock_support
     if grenade_pack_flyover_support:
         return grenade_pack_flyover_support
     if primed_and_ready_grenade_support:
@@ -11620,6 +11623,36 @@ def _movement_phase_end_visible_hit_bonus_support(description: str) -> Optional[
     return (
         "Supported",
         f"End of Movement phase: select visible enemy within {range_val}\"; friendly {keyword} models gain +{bonus} to hit vs that target until next Command phase.",
+    )
+
+
+def _movement_phase_end_select_enemy_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the end of your movement phase "
+        r"(?:(?P<optional>you can )?)"
+        r"select one enemy (?:(?P<keyword>[a-z0-9 ]+?) )?unit within (?P<range>\d+) of this (?:model|unit) "
+        r"(?:that enemy unit|that unit|it) must take a battle shock test"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    range_val = m.group("range") or "12"
+    keyword = str(m.group("keyword") or "").strip().upper()
+    optional = bool(m.group("optional"))
+    opt_text = "you can " if optional else ""
+    if keyword:
+        return (
+            "Supported",
+            f"End of Movement phase: {opt_text}select one enemy {keyword} unit within {range_val}\" to take a Battle-shock test.",
+        )
+    return (
+        "Supported",
+        f"End of Movement phase: {opt_text}select one enemy unit within {range_val}\" to take a Battle-shock test.",
     )
 
 

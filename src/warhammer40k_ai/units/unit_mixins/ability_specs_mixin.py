@@ -7030,13 +7030,14 @@ class AbilitySpecsMixin:
 
     def model_movement_phase_end_vehicle_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
-        Model-specific rule: end of Movement phase, optionally select an enemy VEHICLE within range;
+        Model-specific rule: end of Movement phase, optionally select an enemy unit (optionally keyword-limited) within range;
         that unit takes a Battle-shock test.
 
         Returns a list of specs with keys:
             - source: ability name
             - range: int
             - optional: bool
+            - target_keyword_phrase: str (optional)
             - ability_key: str
         """
         if model is None:
@@ -7046,7 +7047,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, bool]] = set()
+        seen: set[tuple[str, int, bool, str]] = set()
 
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
@@ -7060,13 +7061,12 @@ class AbilitySpecsMixin:
             normalized = re.sub(r"\s+", " ", normalized).strip()
             if "end of your movement phase" not in normalized:
                 continue
-            if "battle shock test" not in normalized:
+            if "must take a battle shock test" not in normalized:
                 continue
-            if "enemy vehicle unit within" not in normalized:
-                continue
-            if "of this model" not in normalized:
-                continue
-            m = re.search(r"enemy vehicle unit within (?P<range>\d+) of this model", normalized)
+            m = re.search(
+                r"select one enemy (?:(?P<keyword>[a-z0-9 ]+?) )?unit within (?P<range>\d+) of (?P<source>this model|this unit)",
+                normalized,
+            )
             if m is None:
                 continue
             try:
@@ -7075,22 +7075,27 @@ class AbilitySpecsMixin:
                 range_value = 0
             if range_value <= 0:
                 continue
+            keyword_raw = str(m.group("keyword") or "").strip()
+            target_keyword_phrase = self._normalize_keyword_phrase(keyword_raw) if keyword_raw else ""
             optional = "you can select one enemy vehicle unit" in normalized
+            if not optional:
+                optional = "you can select one enemy unit" in normalized
             source = str(name or "Enrage Machine Spirits").strip() or "Enrage Machine Spirits"
             ability_key_seed = self._normalize_keyword_phrase(source) or "movement_phase_end_vehicle_battleshock"
             ability_key = f"movement_phase_end_vehicle_battleshock:{ability_key_seed}"
-            key = (source.lower(), int(range_value), bool(optional))
+            key = (source.lower(), int(range_value), bool(optional), str(target_keyword_phrase))
             if key in seen:
                 continue
             seen.add(key)
-            specs.append(
-                {
-                    "source": source,
-                    "range": int(range_value),
-                    "optional": bool(optional),
-                    "ability_key": ability_key,
-                }
-            )
+            spec = {
+                "source": source,
+                "range": int(range_value),
+                "optional": bool(optional),
+                "ability_key": ability_key,
+            }
+            if target_keyword_phrase:
+                spec["target_keyword_phrase"] = str(target_keyword_phrase)
+            specs.append(spec)
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
