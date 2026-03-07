@@ -7239,6 +7239,99 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_opponent_movement_phase_gravitic_pulse_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: start of opponent's Movement phase, select one visible enemy within range.
+        Selected unit has Move halved and Advance/Charge rolls halved until end of turn; if it can FLY,
+        it suffers D3 mortal wounds on 4+ each time it ends any type of move until the start of your next Movement phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int (selection range)
+            - optional: bool
+            - requires_visibility: bool
+            - half_move_characteristic: bool
+            - half_advance_roll: bool
+            - half_charge_roll: bool
+            - fly_mortal_threshold: int
+            - fly_mortal_wounds: str
+            - fly_mortal_expires_phase: str
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_opponent_movement_phase_gravitic_pulse:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+
+            if "at the start of your opponent s movement phase" not in normalized:
+                continue
+            if "select one enemy unit within" not in normalized or "visible to this model" not in normalized:
+                continue
+            if "until the end of the turn halve the move characteristic of models in that unit" not in normalized:
+                continue
+            if "halve advance and charge rolls made for that unit" not in normalized:
+                continue
+            if "if that unit can fly" not in normalized:
+                continue
+            if "until the start of your next movement phase" not in normalized:
+                continue
+            if "roll one d6 each time that unit ends any type of move" not in normalized:
+                continue
+            if (
+                "on a 4 that unit suffers d3 mortal wounds" not in normalized
+                and "on a 4 that unit suffers d3 mortal wound" not in normalized
+            ):
+                continue
+
+            m = re.search(r"select one enemy unit within (?P<range>\d+)", normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except (TypeError, ValueError):
+                range_value = 0
+            if range_value <= 0:
+                continue
+
+            source = str(name or "Gravitic Pulse").strip() or "Gravitic Pulse"
+            key = (source.lower(), int(range_value))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "optional": True,
+                    "requires_visibility": True,
+                    "half_move_characteristic": True,
+                    "half_advance_roll": True,
+                    "half_charge_roll": True,
+                    "fly_mortal_threshold": 4,
+                    "fly_mortal_wounds": "D3",
+                    "fly_mortal_expires_phase": "MOVEMENT_PHASE",
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_start_opponent_shooting_phase_grant_stealth_specs(self) -> List[dict]:
         """
         Unit-specific rule: start of opponent's Shooting phase, optionally select a visible friendly keyworded unit

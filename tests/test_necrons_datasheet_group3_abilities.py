@@ -435,26 +435,54 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
         self.assertNotIn("pinned_move_penalty", cleared)
         self.assertNotIn("pinned_charge_penalty", cleared)
 
-    def test_obelisk_node_control_blocks_reserves_only_while_on_controlled_objective(self):
-        import copy
-        from types import SimpleNamespace
-        from warhammer40k_ai.battlefield.map import ObjectivePoint
-        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.roster.army import Army
-        from warhammer40k_ai.roster.player import Player, PlayerControl
-        from warhammer40k_ai.units.model import Model
-        from warhammer40k_ai.utility.model_base import Base, BaseType
-
+    def test_gravitic_pulse_parses_start_opponent_movement_phase_spec(self):
         ability = {
-            "name": "Obelisk Node Control",
+            "name": "Gravitic Pulse",
             "description": (
-                "While this model is within range of an objective marker you control, enemy units that are set up on "
-                "the battlefield from Reserves cannot be set up within 12\" of this model."
+                "At the start of your opponent's Movement phase, select one enemy unit within 18\" of and visible to this "
+                "model. Until the end of the turn, halve the Move characteristic of models in that unit and halve Advance "
+                "and Charge rolls made for that unit. If that unit can FLY, until the start of your next Movement phase, "
+                "roll one D6 each time that unit ends any type of move: on a 4+, that unit suffers D3 mortal wounds."
             ),
             "type": "Datasheet",
             "parameter": "",
         }
-        geomancer = _make_unit("Geomancer", abilities=[ability], keywords=["NECRONS", "CHARACTER", "INFANTRY"])
+        obelisk = _make_unit("Obelisk", abilities=[ability], keywords=["NECRONS", "VEHICLE", "FLY"])
+        specs = obelisk.model_start_opponent_movement_phase_gravitic_pulse_specs(obelisk.models[0])
+        self.assertEqual(len(specs), 1)
+        spec = dict(specs[0] or {})
+        self.assertEqual(int(spec.get("range", 0) or 0), 18)
+        self.assertTrue(bool(spec.get("optional", False)))
+        self.assertTrue(bool(spec.get("requires_visibility", False)))
+        self.assertTrue(bool(spec.get("half_move_characteristic", False)))
+        self.assertTrue(bool(spec.get("half_advance_roll", False)))
+        self.assertTrue(bool(spec.get("half_charge_roll", False)))
+        self.assertEqual(int(spec.get("fly_mortal_threshold", 0) or 0), 4)
+        self.assertEqual(str(spec.get("fly_mortal_wounds", "") or "").upper(), "D3")
+        self.assertEqual(str(spec.get("fly_mortal_expires_phase", "") or ""), "MOVEMENT_PHASE")
+
+    def test_gravitic_pulse_queues_applies_roll_halving_triggers_fly_mortals_and_cleans_up(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        ability = {
+            "name": "Gravitic Pulse",
+            "description": (
+                "At the start of your opponent's Movement phase, select one enemy unit within 18\" of and visible to this "
+                "model. Until the end of the turn, halve the Move characteristic of models in that unit and halve Advance "
+                "and Charge rolls made for that unit. If that unit can FLY, until the start of your next Movement phase, "
+                "roll one D6 each time that unit ends any type of move: on a 4+, that unit suffers D3 mortal wounds."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        obelisk = _make_unit("Obelisk", abilities=[ability], keywords=["NECRONS", "VEHICLE", "FLY"])
+        enemy_fly = _make_unit("Enemy Fly", keywords=["INFANTRY", "FLY"], model_count=2, quantity=2)
+        enemy_ground = _make_unit("Enemy Ground", keywords=["INFANTRY"], model_count=2, quantity=2)
 
         battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
         game = Game(battlefield)
@@ -464,58 +492,101 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
         player_two = Player("P2", control=PlayerControl.REMOTE, army=army_two)
         game.add_player(player_one)
         game.add_player(player_two)
-        army_two.add_unit(geomancer)
+        army_one.add_unit(obelisk)
+        army_two.add_unit(enemy_fly)
+        army_two.add_unit(enemy_ground)
 
-        geomancer.deployed = True
-        geomancer.reserve_status = "deployed"
-        geomancer.models[0].set_location(10.0, 10.0, 0.0, 0.0)
-        game.map.units = [geomancer]
+        for unit in (obelisk, enemy_fly, enemy_ground):
+            unit.deployed = True
+            unit.reserve_status = "deployed"
 
-        objective_point = ObjectivePoint(10.0, 10.0, 0.0, control_radius=3.0)
-        objective_point.controlling_player = player_two
-        objective_point.update_control = lambda _game: None
-        game.map.objectives = [SimpleNamespace(location=objective_point)]
+        obelisk.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        enemy_fly.models[0].set_location(12.0, 0.0, 0.0, 0.0)
+        enemy_ground.models[0].set_location(10.0, 3.0, 0.0, 0.0)
+        obelisk._has_line_of_sight_to_target = lambda _model, _target, _game_map: True
+        game.map.units = [obelisk, enemy_fly, enemy_ground]
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 1
+        game.turn = 3
+        game.rebuild_entity_registry()
 
-        class _ArrivingUnit:
-            def __init__(self, army):
-                self._army = army
-                self.models = [
-                    Model(
-                        name="Arriving",
-                        movement=6,
-                        toughness=4,
-                        save=4,
-                        wounds=2,
-                        leadership=7,
-                        objective_control=1,
-                        model_base=Base(BaseType.CIRCULAR, 1.0),
-                    )
-                ]
+        game._on_phase_start_opponent_movement_phase_gravitic_pulse(player=player_two, phase=game.phase)
 
-            def get_parent_army(self):
-                return self._army
+        choose_req = None
+        for req in list(game.decision_queue.list() or []):
+            if req.decision_type != DECISION_CHOOSE_QUARRY:
+                continue
+            if str((req.context or {}).get("ability", "") or "") != "gravitic_pulse_target":
+                continue
+            choose_req = req
+            break
+        self.assertIsNotNone(choose_req)
 
-            def is_in_strategic_reserves(self):
-                return False
+        target_id = str(get_entity_id(enemy_fly) or "")
+        target_option = None
+        for option in list(choose_req.options or []):
+            if str((option.payload or {}).get("target_unit_id", "") or "") == target_id:
+                target_option = option
+                break
+        self.assertIsNotNone(target_option)
 
-            def has_deep_strike(self):
-                return True
+        decision_result = resolve_decision_command(
+            game,
+            choose_req,
+            target_option.option_id,
+            player_id=player_one.id,
+        )
+        self.assertTrue(bool(getattr(decision_result, "ok", False)))
 
-            def calculate_model_positions(self, x, y, _game_map, **_kwargs):
-                return [(x, y, 0.0, 0.0)]
+        active = dict(getattr(enemy_fly, "special_rules", {}) or {})
+        self.assertTrue(bool(active.get("necrons_gravitic_pulse_active", False)))
+        self.assertEqual(str(active.get("necrons_gravitic_pulse_turn_owner", "") or ""), player_two.id)
+        self.assertEqual(int(active.get("necrons_gravitic_pulse_turn", 0) or 0), 3)
+        self.assertEqual(int(active.get("necrons_gravitic_pulse_stacks", 0) or 0), 1)
+        self.assertTrue(bool(active.get("necrons_gravitic_pulse_half_advance_roll", False)))
+        self.assertTrue(bool(active.get("necrons_gravitic_pulse_half_charge_roll", False)))
+        self.assertTrue(bool(active.get("necrons_gravitic_pulse_fly_mortal_active", False)))
+        self.assertEqual(str(active.get("necrons_gravitic_pulse_fly_mortal_source_owner", "") or ""), player_one.id)
 
-            def _create_potential_base(self, x, y, z, facing, model):
-                base = copy.deepcopy(model.model_base)
-                base.set_position(x, y, z)
-                base.set_facing(facing)
-                return base
+        move_after = int(
+            enemy_fly.get_effective_model_characteristic(
+                enemy_fly.models[0],
+                "movement",
+                game_map=game.map,
+            )
+        )
+        self.assertEqual(move_after, 3)
+        self.assertEqual(int(enemy_fly._apply_advance_roll_modifiers(5)), 3)
+        self.assertEqual(int(game._apply_charge_modifiers(enemy_fly, 7, target_unit=obelisk)), 4)
+        self.assertEqual(int(game.get_max_charge_distance(enemy_fly, target_unit=obelisk)), 6)
 
-        arriving = _ArrivingUnit(army_one)
-        blocked_position = (23.0, 10.0, 0.0)
-        self.assertFalse(game.can_place_unit_arriving_from_reserves(arriving, blocked_position))
+        mortal_calls = []
 
-        objective_point.controlling_player = player_one
-        self.assertTrue(game.can_place_unit_arriving_from_reserves(arriving, blocked_position))
+        def _capture_mortals(target, amount, game_map=None, **_kwargs):
+            mortal_calls.append((target, int(amount)))
+
+        enemy_fly._apply_mortal_wounds_to_unit = _capture_mortals
+        with patch("warhammer40k_ai.utility.dice.get_roll", side_effect=[4, 2]):
+            game._on_unit_move_ended_gravitic_pulse(unit=enemy_fly, action="move")
+        self.assertEqual(len(mortal_calls), 1)
+        self.assertIs(mortal_calls[0][0], enemy_fly)
+        self.assertEqual(int(mortal_calls[0][1]), 2)
+
+        game.current_player_index = 0
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game._on_phase_start_gravitic_pulse_cleanup(player=player_one, phase=game.phase)
+
+        cleared = dict(getattr(enemy_fly, "special_rules", {}) or {})
+        self.assertFalse(bool(cleared.get("necrons_gravitic_pulse_active", False)))
+        self.assertFalse(bool(cleared.get("necrons_gravitic_pulse_fly_mortal_active", False)))
+        restored_move = int(
+            enemy_fly.get_effective_model_characteristic(
+                enemy_fly.models[0],
+                "movement",
+                game_map=game.map,
+            )
+        )
+        self.assertEqual(restored_move, 6)
 
     def test_eternity_gate_parses_reinforcements_setup_spec(self):
         ability = {

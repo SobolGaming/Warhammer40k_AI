@@ -7528,6 +7528,62 @@ class ActionsMovementMixin:
             pass
         return mods
 
+    def _gravitic_pulse_roll_divisor(self, *, game=None, roll_kind: str = "charge") -> tuple[int, str]:
+        """Return active Gravitic Pulse roll divisor for Advance/Charge rolls."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return 1, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 1, ""
+        if not bool(sr.get("necrons_gravitic_pulse_active", False)):
+            return 1, ""
+
+        if game is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if game is not None:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            expected_owner_id = str(sr.get("necrons_gravitic_pulse_turn_owner", "") or "")
+            if expected_owner_id and current_owner_id and expected_owner_id != current_owner_id:
+                return 1, ""
+            try:
+                effect_turn = int(sr.get("necrons_gravitic_pulse_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                return 1, ""
+
+        kind_key = str(roll_kind or "charge").strip().lower()
+        if kind_key == "advance":
+            if not bool(sr.get("necrons_gravitic_pulse_half_advance_roll", False)):
+                return 1, ""
+        elif kind_key == "charge":
+            if not bool(sr.get("necrons_gravitic_pulse_half_charge_roll", False)):
+                return 1, ""
+        else:
+            return 1, ""
+
+        try:
+            stacks = int(sr.get("necrons_gravitic_pulse_stacks", 1) or 1)
+        except (TypeError, ValueError):
+            stacks = 1
+        stacks = max(1, int(stacks))
+        divisor = int(2 ** stacks)
+        source_name = str(sr.get("necrons_gravitic_pulse_source", "") or "Gravitic Pulse").strip() or "Gravitic Pulse"
+        return int(max(1, divisor)), source_name
+
     def _apply_advance_roll_modifiers(self, roll: int) -> int:
         effect = self._get_advance_no_roll_effect()
         if isinstance(effect, dict):
@@ -7556,6 +7612,24 @@ class ActionsMovementMixin:
                     logger.info(f"{self.name} advance penalty: {val}\" ({source})")
             except Exception:
                 pass
+        divisor = 1
+        source_name = ""
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        divisor_fn = getattr(self, "_gravitic_pulse_roll_divisor", None)
+        if callable(divisor_fn):
+            try:
+                divisor, source_name = divisor_fn(game=game, roll_kind="advance")
+            except Exception:
+                divisor = 1
+                source_name = ""
+        if int(divisor or 1) > 1:
+            roll = int(max(0, math.ceil(float(roll) / float(divisor))))
+            if source_name:
+                logger.info(f"{self.name} advance roll halved by {source_name} (x{int(divisor)} divisor): {int(roll)}")
         return int(roll)
 
     def _is_charge_target_closest_eligible(self, target_unit, *, game_map=None, game=None) -> bool:

@@ -6246,6 +6246,92 @@ class Game(
                 f"{ability_name}: {getattr(root, 'name', 'Unit')} suffered {int(ones)} mortal wounds.",
             )
 
+    def _on_unit_move_ended_gravitic_pulse(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if not action_key:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("necrons_gravitic_pulse_fly_mortal_active", False)):
+            return
+
+        source_owner_id = str(sr.get("necrons_gravitic_pulse_fly_mortal_source_owner", "") or "")
+        try:
+            source_turn = int(sr.get("necrons_gravitic_pulse_fly_mortal_source_turn", 0) or 0)
+        except (TypeError, ValueError):
+            source_turn = 0
+        current_player = self.get_current_player() if hasattr(self, "get_current_player") else None
+        current_owner_id = str(getattr(current_player, "id", "") or "")
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if (
+            source_owner_id
+            and current_owner_id
+            and source_owner_id == current_owner_id
+            and source_turn
+            and current_turn >= source_turn
+        ):
+            return
+
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_action, append_dice
+
+        ability_name = str(sr.get("necrons_gravitic_pulse_fly_mortal_source", "") or "Gravitic Pulse").strip() or "Gravitic Pulse"
+        try:
+            threshold = int(sr.get("necrons_gravitic_pulse_fly_mortal_threshold", 4) or 4)
+        except (TypeError, ValueError):
+            threshold = 4
+        threshold = max(2, min(6, int(threshold)))
+        mortal_spec = str(sr.get("necrons_gravitic_pulse_fly_mortal_wounds", "") or "D3").strip().upper()
+        roll = int(get_roll("D6") or 0)
+        total_mw = 0
+        if int(roll) >= int(threshold):
+            if mortal_spec == "D3":
+                total_mw = int(get_roll("D3") or 0)
+            elif mortal_spec == "D6":
+                total_mw = int(get_roll("D6") or 0)
+            else:
+                try:
+                    total_mw = int(mortal_spec or 0)
+                except (TypeError, ValueError):
+                    total_mw = 0
+        if int(total_mw) > 0:
+            root._apply_mortal_wounds_to_unit(root, int(total_mw), game_map=getattr(self, "map", None))
+
+        owner = self._resolve_player_by_id(source_owner_id) if source_owner_id else None
+        if owner is not None:
+            append_dice(
+                owner,
+                (
+                    f"{ability_name}: {getattr(root, 'name', 'Unit')} ended a {action_key} move; "
+                    f"roll {int(roll)} (needs {int(threshold)}+) => {int(total_mw)} mortal wounds."
+                ),
+            )
+            if int(total_mw) > 0:
+                append_action(
+                    owner,
+                    f"{ability_name}: {getattr(root, 'name', 'Unit')} suffered {int(total_mw)} mortal wounds after moving.",
+                )
+            else:
+                append_action(
+                    owner,
+                    f"{ability_name}: {getattr(root, 'name', 'Unit')} was unaffected after moving.",
+                )
+
     def _resolve_charge_phase_bodyguard_loss(self, leader_unit, bodyguard, model, ability):
         if model is None:
             return
@@ -11793,7 +11879,23 @@ class Game(
                 total += int(val)
             except Exception:
                 continue
-        return max(0.0, base_max + float(total))
+        distance = max(0.0, base_max + float(total))
+        divisor = 1
+        source_name = ""
+        divisor_fn = getattr(charging_unit, "_gravitic_pulse_roll_divisor", None)
+        if callable(divisor_fn):
+            try:
+                divisor, source_name = divisor_fn(game=self, roll_kind="charge")
+            except Exception:
+                divisor = 1
+                source_name = ""
+        if int(divisor or 1) > 1:
+            distance = float(max(0, math.ceil(float(distance) / float(divisor))))
+            if source_name:
+                logger.info(
+                    f"Charge distance halved by {source_name} (x{int(divisor)} divisor): max distance {distance}\""
+                )
+        return float(distance)
 
     def _apply_charge_modifiers(self, charging_unit: 'Unit', base_roll: int, *, target_unit: Optional['Unit'] = None) -> int:
         """Apply charge roll modifiers based on unit abilities, stratagems, etc."""
@@ -11808,6 +11910,22 @@ class Game(
                 logger.info(f"Charge bonus: +{val} ({source})")
             else:
                 logger.info(f"Charge penalty: {val} ({source})")
+
+        divisor = 1
+        source_name = ""
+        divisor_fn = getattr(charging_unit, "_gravitic_pulse_roll_divisor", None)
+        if callable(divisor_fn):
+            try:
+                divisor, source_name = divisor_fn(game=self, roll_kind="charge")
+            except Exception:
+                divisor = 1
+                source_name = ""
+        if int(divisor or 1) > 1:
+            modified_roll = max(0, math.ceil(float(modified_roll) / float(divisor)))
+            if source_name:
+                logger.info(
+                    f"Charge roll halved by {source_name} (x{int(divisor)} divisor): {int(modified_roll)}"
+                )
 
         return int(modified_roll)
 

@@ -7552,6 +7552,137 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if _unit_has_keyword(target_unit, keyword):
                 return (f"Opponent Shooting phase disruption target cannot have keyword {keyword}.",)
         return ()
+    if ability == "gravitic_pulse_target":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if model is None:
+            return ("Gravitic Pulse source model was not found.",)
+        if source_unit is None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return ("Gravitic Pulse source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Gravitic Pulse source unit was not found.",)
+        source_is_alive_fn = getattr(source_root, "is_alive", None)
+        source_is_alive = bool(source_is_alive_fn()) if callable(source_is_alive_fn) else False
+        if not source_is_alive:
+            return ("Gravitic Pulse source unit is not alive.",)
+        if not bool(getattr(source_root, "deployed", False)):
+            return ("Gravitic Pulse source unit is not deployed.",)
+        source_in_reserves_fn = getattr(source_root, "is_in_reserves", None)
+        if callable(source_in_reserves_fn) and bool(source_in_reserves_fn()):
+            return ("Gravitic Pulse source unit is in Reserves.",)
+        if bool(getattr(source_root, "is_embarked", False)):
+            return ("Gravitic Pulse source unit is embarked.",)
+
+        model_parent = getattr(model, "parent_unit", None)
+        model_parent_root = (
+            model_parent.get_attached_unit_root()
+            if model_parent is not None and hasattr(model_parent, "get_attached_unit_root")
+            else model_parent
+        )
+        if model_parent_root is not source_root:
+            return ("Gravitic Pulse source model does not belong to the source unit.",)
+        model_alive_attr = getattr(model, "is_alive", True)
+        model_alive = bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr)
+        if not model_alive:
+            return ("Gravitic Pulse source model is not alive.",)
+
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return ("Gravitic Pulse can only be resolved in the Movement phase.",)
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        current_turn_owner_id = str(getattr(current_player, "id", "") or "")
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or "")
+        if turn_owner_id and current_turn_owner_id and turn_owner_id != current_turn_owner_id:
+            return ("Gravitic Pulse decision is no longer valid for this turn owner.",)
+        source_owner_id = str(ctx.get("source_owner_id", "") or "")
+        request_player_id = str(getattr(request, "player_id", "") or "")
+        if source_owner_id and request_player_id and source_owner_id != request_player_id:
+            return ("Gravitic Pulse decision owner does not match the queued source player.",)
+        try:
+            queued_turn = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            queued_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if queued_turn > 0 and current_turn > 0 and queued_turn != current_turn:
+            return ("Gravitic Pulse decision is no longer valid this turn.",)
+
+        if is_skip_choice(request, result):
+            return ()
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Gravitic Pulse target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Gravitic Pulse target unit was not found.",)
+        if target_root is source_root:
+            return ("Gravitic Pulse target must be an enemy unit.",)
+        target_is_alive_fn = getattr(target_root, "is_alive", None)
+        target_is_alive = bool(target_is_alive_fn()) if callable(target_is_alive_fn) else False
+        if not target_is_alive:
+            return ("Gravitic Pulse target unit is not alive.",)
+        if not bool(getattr(target_root, "deployed", False)):
+            return ("Gravitic Pulse target unit is not deployed.",)
+        target_in_reserves_fn = getattr(target_root, "is_in_reserves", None)
+        if callable(target_in_reserves_fn) and bool(target_in_reserves_fn()):
+            return ("Gravitic Pulse target unit is in Reserves.",)
+        if bool(getattr(target_root, "is_embarked", False)):
+            return ("Gravitic Pulse target unit is embarked.",)
+
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Gravitic Pulse target is not an eligible candidate.",)
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is target_army:
+            return ("Gravitic Pulse target must be an enemy unit.",)
+
+        try:
+            range_value = float(ctx.get("range", payload.get("range", 0)) or 0.0)
+        except (TypeError, ValueError):
+            range_value = 0.0
+        if range_value <= 0:
+            return ("Gravitic Pulse range is invalid.",)
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        if callable(in_range_fn):
+            if not bool(in_range_fn(model, target_root, range_value=float(range_value))):
+                return ("Gravitic Pulse target is out of range.",)
+        if bool(ctx.get("requires_visibility", True)):
+            can_see_fn = getattr(game, "_model_can_see_unit", None)
+            if callable(can_see_fn):
+                if not bool(can_see_fn(model, target_root, game_map=getattr(game, "map", None))):
+                    return ("Gravitic Pulse target must be visible to the source model.",)
+        return ()
     if ability == "harbinger_of_despair_battleshock":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(
@@ -19332,6 +19463,159 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{source}: {tname} is snared until your next turn.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "gravitic_pulse_target":
+        if chosen is not None:
+            source_unit = resolve_unit(
+                game,
+                payload.get("source_unit_id")
+                or payload.get("unit_id")
+                or ctx.get("source_unit_id")
+                or ctx.get("unit_id"),
+            )
+            if source_unit is None:
+                return None
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            if target_root is None:
+                return None
+            player = _resolve_player(game, request, payload)
+            if player is None:
+                try:
+                    player = source_root.get_parent_army().player if source_root is not None else None
+                except Exception:
+                    player = None
+            ability_name = str(ctx.get("ability_name", "") or "Gravitic Pulse").strip() or "Gravitic Pulse"
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            turn_owner_id = str(ctx.get("turn_owner_id", "") or getattr(current_player, "id", "") or "")
+            source_owner_id = str(ctx.get("source_owner_id", "") or getattr(player, "id", "") or "")
+            try:
+                turn = int(ctx.get("turn", getattr(game, "turn", 0)) or 0)
+            except (TypeError, ValueError):
+                turn = int(getattr(game, "turn", 0) or 0)
+            half_move_characteristic = bool(ctx.get("half_move_characteristic", True))
+            half_advance_roll = bool(ctx.get("half_advance_roll", True))
+            half_charge_roll = bool(ctx.get("half_charge_roll", True))
+
+            tsr = getattr(target_root, "special_rules", None)
+            if not isinstance(tsr, dict):
+                tsr = {}
+
+            prior_half_advance = bool(tsr.get("necrons_gravitic_pulse_half_advance_roll", False))
+            prior_half_charge = bool(tsr.get("necrons_gravitic_pulse_half_charge_roll", False))
+            prior_active = bool(tsr.get("necrons_gravitic_pulse_active", False))
+            prior_owner = str(tsr.get("necrons_gravitic_pulse_turn_owner", "") or "")
+            try:
+                prior_turn = int(tsr.get("necrons_gravitic_pulse_turn", 0) or 0)
+            except (TypeError, ValueError):
+                prior_turn = 0
+            try:
+                prior_stacks = int(tsr.get("necrons_gravitic_pulse_stacks", 0) or 0)
+            except (TypeError, ValueError):
+                prior_stacks = 0
+            same_window = bool(
+                prior_active
+                and turn_owner_id
+                and prior_owner == turn_owner_id
+                and prior_turn
+                and int(prior_turn) == int(turn or 0)
+            )
+            if not same_window:
+                remove_mods = getattr(target_root, "remove_characteristic_modifiers_by_source", None)
+                if callable(remove_mods):
+                    remove_mods("ability:gravitic_pulse_move_div")
+                prior_stacks = 0
+            if half_move_characteristic:
+                try:
+                    from ...utility.modifiers import Modifier, ModifierOp
+                    add_mod = getattr(target_root, "add_characteristic_modifier", None)
+                    if callable(add_mod):
+                        add_mod(
+                            "movement",
+                            Modifier(ModifierOp.DIV, 2, source="ability:gravitic_pulse_move_div"),
+                        )
+                    prior_stacks += 1
+                except Exception:
+                    prior_stacks = max(1, int(prior_stacks or 1))
+            stacks = max(1, int(prior_stacks or 1))
+
+            tsr["necrons_gravitic_pulse_active"] = True
+            tsr["necrons_gravitic_pulse_turn_owner"] = turn_owner_id
+            tsr["necrons_gravitic_pulse_turn"] = int(turn or 0)
+            tsr["necrons_gravitic_pulse_source"] = ability_name
+            tsr["necrons_gravitic_pulse_stacks"] = int(stacks)
+            tsr["necrons_gravitic_pulse_half_move_characteristic"] = bool(half_move_characteristic)
+            tsr["necrons_gravitic_pulse_half_advance_roll"] = bool(half_advance_roll or prior_half_advance)
+            tsr["necrons_gravitic_pulse_half_charge_roll"] = bool(half_charge_roll or prior_half_charge)
+
+            can_fly = False
+            has_any_keyword = getattr(target_root, "has_any_keyword", None)
+            if callable(has_any_keyword):
+                try:
+                    can_fly = bool(has_any_keyword("FLY"))
+                except Exception:
+                    can_fly = False
+            if not can_fly:
+                has_keyword = getattr(target_root, "has_keyword", None)
+                if callable(has_keyword):
+                    try:
+                        can_fly = bool(has_keyword("FLY"))
+                    except Exception:
+                        can_fly = False
+            if not can_fly:
+                can_fly = bool(getattr(target_root, "is_flying", False))
+
+            fly_note = ""
+            if can_fly:
+                try:
+                    fly_threshold = int(ctx.get("fly_mortal_threshold", 4) or 4)
+                except (TypeError, ValueError):
+                    fly_threshold = 4
+                fly_threshold = max(2, min(6, int(fly_threshold)))
+                fly_mw = str(ctx.get("fly_mortal_wounds", "") or "D3").strip().upper() or "D3"
+                fly_expires_phase = str(ctx.get("fly_mortal_expires_phase", "") or "MOVEMENT_PHASE").strip().upper() or "MOVEMENT_PHASE"
+                tsr["necrons_gravitic_pulse_fly_mortal_active"] = True
+                tsr["necrons_gravitic_pulse_fly_mortal_source_owner"] = source_owner_id
+                tsr["necrons_gravitic_pulse_fly_mortal_source_turn"] = int(turn or 0)
+                tsr["necrons_gravitic_pulse_fly_mortal_source"] = ability_name
+                tsr["necrons_gravitic_pulse_fly_mortal_threshold"] = int(fly_threshold)
+                tsr["necrons_gravitic_pulse_fly_mortal_wounds"] = str(fly_mw)
+                tsr["necrons_gravitic_pulse_fly_mortal_expires_phase"] = str(fly_expires_phase)
+                fly_note = (
+                    f"; FLY move-end trigger active ({int(fly_threshold)}+ => {str(fly_mw)}) "
+                    "until the start of your next Movement phase"
+                )
+            else:
+                for key in (
+                    "necrons_gravitic_pulse_fly_mortal_active",
+                    "necrons_gravitic_pulse_fly_mortal_source_owner",
+                    "necrons_gravitic_pulse_fly_mortal_source_turn",
+                    "necrons_gravitic_pulse_fly_mortal_source",
+                    "necrons_gravitic_pulse_fly_mortal_threshold",
+                    "necrons_gravitic_pulse_fly_mortal_wounds",
+                    "necrons_gravitic_pulse_fly_mortal_expires_phase",
+                ):
+                    tsr.pop(key, None)
+
+            target_root.special_rules = tsr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    player,
+                    (
+                        f"{ability_name}: {tname} is affected (Move and Advance/Charge rolls halved until end of turn)"
+                        f"{fly_note}."
+                    ),
+                )
+            except Exception:
+                pass
+            return target_root
     if str(ctx.get("ability", "") or "") == "post_shoot_pinned":
         if chosen is not None:
             try:

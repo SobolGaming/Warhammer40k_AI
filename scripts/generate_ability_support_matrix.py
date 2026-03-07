@@ -5387,6 +5387,24 @@ def _necrons_named_datasheet_support(name: str, description: str, *, faction_id:
                 "Supported",
                 "In your Movement phase, this model can select one visible enemy unit within 18\" to pin until the start of your next Movement phase (Move -2 and -2 to Charge rolls).",
             )
+    if name_norm == "gravitic pulse":
+        if (
+            "at the start of your opponents movement phase" in norm
+            and "select one enemy unit within 18 of and visible to this model" in norm
+            and "until the end of the turn halve the move characteristic of models in that unit" in norm
+            and "halve advance and charge rolls made for that unit" in norm
+            and "if that unit can fly" in norm
+            and "until the start of your next movement phase" in norm
+            and "roll one d6 each time that unit ends any type of move" in norm
+            and (
+                "on a 4 that unit suffers d3 mortal wounds" in norm
+                or "on a 4 that unit suffers d3 mortal wound" in norm
+            )
+        ):
+            return (
+                "Supported",
+                "Start of opponent Movement phase: select one visible enemy unit within 18\"; until end of turn that unit halves Move and halves Advance/Charge rolls, and if it can FLY it also suffers D3 mortal wounds on each move-end roll of 4+ until the start of your next Movement phase.",
+            )
     if name_norm == "obelisk node control":
         if (
             "while this model is within range of an objective marker you control" in norm

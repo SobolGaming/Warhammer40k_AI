@@ -9539,6 +9539,270 @@ class GamePhaseHandlersMixin:
             instance_key=f"ruthless_reinvestment:{owner_id}:{turn}",
         )
 
+    def _on_phase_start_gravitic_pulse_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear expired Gravitic Pulse effects."""
+        if player is None:
+            return
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if not pname:
+            return
+        current_owner_id = str(getattr(player, "id", "") or "")
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                get_root = getattr(unit, "get_attached_unit_root", None)
+                root = get_root() if callable(get_root) else unit
+                if root is None:
+                    continue
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                updated = dict(sr)
+                changed = False
+
+                if bool(updated.get("necrons_gravitic_pulse_active")):
+                    effect_owner = str(updated.get("necrons_gravitic_pulse_turn_owner", "") or "")
+                    try:
+                        effect_turn = int(updated.get("necrons_gravitic_pulse_turn", 0) or 0)
+                    except (TypeError, ValueError):
+                        effect_turn = 0
+                    still_active = bool(
+                        effect_owner
+                        and current_owner_id
+                        and effect_turn
+                        and effect_owner == current_owner_id
+                        and int(effect_turn) == int(current_turn or 0)
+                    )
+                    if not still_active:
+                        remove_mods = getattr(root, "remove_characteristic_modifiers_by_source", None)
+                        if callable(remove_mods):
+                            remove_mods("ability:gravitic_pulse_move_div")
+                        for key in (
+                            "necrons_gravitic_pulse_active",
+                            "necrons_gravitic_pulse_turn_owner",
+                            "necrons_gravitic_pulse_turn",
+                            "necrons_gravitic_pulse_source",
+                            "necrons_gravitic_pulse_stacks",
+                            "necrons_gravitic_pulse_half_move_characteristic",
+                            "necrons_gravitic_pulse_half_advance_roll",
+                            "necrons_gravitic_pulse_half_charge_roll",
+                        ):
+                            if key in updated:
+                                updated.pop(key, None)
+                                changed = True
+
+                if bool(updated.get("necrons_gravitic_pulse_fly_mortal_active")) and pname == "MOVEMENT_PHASE":
+                    source_owner = str(updated.get("necrons_gravitic_pulse_fly_mortal_source_owner", "") or "")
+                    try:
+                        source_turn = int(updated.get("necrons_gravitic_pulse_fly_mortal_source_turn", 0) or 0)
+                    except (TypeError, ValueError):
+                        source_turn = 0
+                    if source_owner and source_owner == current_owner_id and int(current_turn or 0) >= int(source_turn or 0):
+                        for key in (
+                            "necrons_gravitic_pulse_fly_mortal_active",
+                            "necrons_gravitic_pulse_fly_mortal_source_owner",
+                            "necrons_gravitic_pulse_fly_mortal_source_turn",
+                            "necrons_gravitic_pulse_fly_mortal_source",
+                            "necrons_gravitic_pulse_fly_mortal_threshold",
+                            "necrons_gravitic_pulse_fly_mortal_wounds",
+                            "necrons_gravitic_pulse_fly_mortal_expires_phase",
+                        ):
+                            if key in updated:
+                                updated.pop(key, None)
+                                changed = True
+
+                if changed:
+                    root.special_rules = updated
+
+    def _on_phase_start_opponent_movement_phase_gravitic_pulse(self, player=None, phase=None, **_kwargs) -> None:
+        """Start of opponent's Movement phase: queue Gravitic Pulse target selections."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        current_owner_id = str(getattr(player, "id", "") or "")
+
+        def _unit_sort_key(unit):
+            try:
+                return str(get_entity_id(unit))
+            except (AttributeError, TypeError, ValueError):
+                return str(getattr(unit, "name", "") or "")
+
+        def _model_sort_key(model):
+            try:
+                return str(get_entity_id(model))
+            except (AttributeError, TypeError, ValueError):
+                return str(getattr(model, "name", "") or "")
+
+        for opp in list(getattr(self, "players", []) or []):
+            if opp is None or opp is player:
+                continue
+            army = self._get_player_army(opp)
+            if army is None:
+                continue
+            enemy_roots = self._collect_enemy_unit_roots(opp)
+            if not enemy_roots:
+                continue
+            enemy_roots.sort(key=_unit_sort_key)
+
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                if not getattr(unit, "is_alive", lambda: False)():
+                    continue
+                if not getattr(unit, "deployed", True):
+                    continue
+                try:
+                    if unit.is_in_reserves() or unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not getattr(root, "is_alive", lambda: False)():
+                    continue
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                models = [m for m in list(models or []) if getattr(m, "is_alive", True)]
+                if not models:
+                    continue
+
+                for model in sorted(models, key=_model_sort_key):
+                    spec_fn = getattr(root, "model_start_opponent_movement_phase_gravitic_pulse_specs", None)
+                    if not callable(spec_fn):
+                        continue
+                    specs = list(spec_fn(model) or [])
+                    if not specs:
+                        continue
+                    source_unit = getattr(model, "parent_unit", None) or root
+                    source_unit_id = str(get_entity_id(source_unit) or "")
+                    model_id = str(get_entity_id(model) or "")
+                    if not source_unit_id or not model_id:
+                        continue
+
+                    for spec in specs:
+                        try:
+                            range_value = int(spec.get("range", 0) or 0)
+                        except (TypeError, ValueError):
+                            range_value = 0
+                        if range_value <= 0:
+                            continue
+
+                        candidates = self._visible_enemy_candidates_for_model(
+                            source_unit=source_unit,
+                            model=model,
+                            enemy_roots=enemy_roots,
+                            range_value=float(range_value),
+                            game_map=game_map,
+                        )
+                        if not candidates:
+                            continue
+
+                        queue = getattr(self, "decision_queue", None)
+                        if queue is not None and hasattr(queue, "list"):
+                            duplicate = False
+                            for req in list(queue.list() or []):
+                                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                                    continue
+                                ctx = dict(getattr(req, "context", {}) or {})
+                                if str(ctx.get("ability", "") or "") != "gravitic_pulse_target":
+                                    continue
+                                if str(ctx.get("model_id", "") or "") != model_id:
+                                    continue
+                                if str(ctx.get("turn_owner_id", "") or "") != current_owner_id:
+                                    continue
+                                try:
+                                    queued_turn = int(ctx.get("turn", 0) or 0)
+                                except (TypeError, ValueError):
+                                    queued_turn = 0
+                                if queued_turn and current_turn and queued_turn != current_turn:
+                                    continue
+                                duplicate = True
+                                break
+                            if duplicate:
+                                continue
+
+                        ability_name = str(spec.get("source", "") or "Gravitic Pulse").strip() or "Gravitic Pulse"
+                        candidate_ids: list[str] = []
+                        options = [DecisionOption.create("None", payload={"action": "skip"})]
+                        for cand in sorted(list(candidates or []), key=_unit_sort_key):
+                            target_id = str(get_entity_id(cand) or "")
+                            if not target_id or target_id in candidate_ids:
+                                continue
+                            candidate_ids.append(target_id)
+                            options.append(
+                                DecisionOption.create(
+                                    str(getattr(cand, "name", "Unit") or "Unit"),
+                                    payload={
+                                        "source_unit_id": source_unit_id,
+                                        "model_id": model_id,
+                                        "target_unit_id": target_id,
+                                    },
+                                )
+                            )
+                        if len(options) <= 1:
+                            continue
+
+                        request = DecisionRequest.create(
+                            DECISION_CHOOSE_QUARRY,
+                            (
+                                f"{ability_name}: select one visible enemy unit within {int(range_value)}\" "
+                                "to be affected (or None)."
+                            ),
+                            player_id=getattr(opp, "id", None),
+                            options=options,
+                            context={
+                                "ability": "gravitic_pulse_target",
+                                "ability_name": ability_name,
+                                "ability_key": "gravitic_pulse",
+                                "phase": "Movement phase",
+                                "source_unit_id": source_unit_id,
+                                "model_id": model_id,
+                                "range": int(range_value),
+                                "candidate_unit_ids": list(candidate_ids),
+                                "turn_owner_id": current_owner_id,
+                                "source_owner_id": str(getattr(opp, "id", "") or ""),
+                                "turn": int(current_turn or 0),
+                                "optional": bool(spec.get("optional", True)),
+                                "requires_visibility": bool(spec.get("requires_visibility", True)),
+                                "half_move_characteristic": bool(spec.get("half_move_characteristic", True)),
+                                "half_advance_roll": bool(spec.get("half_advance_roll", True)),
+                                "half_charge_roll": bool(spec.get("half_charge_roll", True)),
+                                "fly_mortal_threshold": int(spec.get("fly_mortal_threshold", 4) or 4),
+                                "fly_mortal_wounds": str(spec.get("fly_mortal_wounds", "") or "D3"),
+                                "fly_mortal_expires_phase": str(
+                                    spec.get("fly_mortal_expires_phase", "") or "MOVEMENT_PHASE"
+                                ).strip().upper(),
+                            },
+                        )
+                        self.request_decision(request)
+
     def _on_phase_start_opponent_shooting_phase_disrupt(self, player=None, phase=None, **_kwargs) -> None:
         """Start of opponent's Shooting phase: resolve Mischief and Confusion / Horrible Fascination."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
