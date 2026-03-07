@@ -3907,6 +3907,12 @@ class Unit(
         r")",
         re.IGNORECASE,
     )
+    _FIGHT_PHASE_WEAPON_TRIPLE_ATTACKS_STRENGTH_CRIT_WOUND_RE = re.compile(
+        r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
+        r"triple the attacks and strength characteristics of this model s (?P<weapon>[a-z0-9 ]+?) "
+        r"and every successful wound roll made for this model s attacks scores a critical wound",
+        re.IGNORECASE,
+    )
     _FIGHT_PHASE_MELEE_ATTACKS_SET_INVULN_RE = re.compile(
         r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
         r"this model has a (?P<invuln>\d)\+? invulnerable save and change the attacks characteristic of melee weapons "

@@ -4002,6 +4002,72 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_fight_phase_weapon_triple_attacks_strength_crit_wound_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: once per battle, at the start of the Fight phase,
+        triple a named weapon's Attacks/Strength and make successful wound rolls critical.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - key: once-per-battle tracking key
+            - weapon_name: str
+            - attacks_multiplier: int
+            - strength_multiplier: int
+            - crit_wound_threshold: int
+            - crit_all_attacks: bool
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_phase_weapon_triple_attacks_strength_crit_wound:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._FIGHT_PHASE_WEAPON_TRIPLE_ATTACKS_STRENGTH_CRIT_WOUND_RE.fullmatch(normalized)
+            if not m:
+                continue
+            weapon_name = str(m.group("weapon") or "").strip()
+            if not weapon_name:
+                continue
+            source = str(name or "Fight phase weapon triple attacks/strength").strip() or "Fight phase weapon triple attacks/strength"
+            key_seed = self._normalize_keyword_phrase(source) or "fight_phase_weapon_triple_attacks_strength_crit_wound"
+            key = f"fight_phase_weapon_triple_attacks_strength_crit_wound:{key_seed}"
+            de_dupe = (key, self._normalize_keyword_phrase(weapon_name) or weapon_name.lower())
+            if de_dupe in seen:
+                continue
+            seen.add(de_dupe)
+            specs.append(
+                {
+                    "source": source,
+                    "key": key,
+                    "weapon_name": weapon_name,
+                    "attacks_multiplier": 3,
+                    "strength_multiplier": 3,
+                    "crit_wound_threshold": 2,
+                    "crit_all_attacks": True,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_fight_phase_melee_attacks_set_invuln_specs(
         self,
         model: Optional['Model'] = None,

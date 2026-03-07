@@ -1575,6 +1575,78 @@ class GamePhaseHandlersMixin:
                             payload={"unit_id": unit_id, "model_id": model_id, "buff_key": key},
                             instance_key=f"{model_id}:{key}",
                         )
+            # Once per battle: start of Fight phase -> triple named weapon Attacks/Strength and crit on successful wounds.
+            for unit in list(army.units):
+                if not unit.is_alive():
+                    continue
+                models = list(getattr(unit, "models", []) or [])
+                for m in models:
+                    if not getattr(m, "is_alive", True):
+                        continue
+                    get_specs = getattr(
+                        unit,
+                        "model_start_fight_phase_weapon_triple_attacks_strength_crit_wound_specs",
+                        None,
+                    )
+                    specs = list(get_specs(m) or []) if callable(get_specs) else []
+                    if not specs:
+                        continue
+                    for spec in specs:
+                        key = str(
+                            spec.get("key")
+                            or "fight_phase_weapon_triple_attacks_strength_crit_wound"
+                        ).strip().lower()
+                        if not key:
+                            key = "fight_phase_weapon_triple_attacks_strength_crit_wound"
+                        if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
+                            continue
+                        unit_id = maybe_entity_id(unit)
+                        model_id = maybe_entity_id(m)
+                        ability_name = str(
+                            spec.get("source", "") or "Fight phase weapon triple attacks/strength"
+                        ).strip()
+                        weapon_name = str(spec.get("weapon_name", "") or "").strip()
+                        if not weapon_name:
+                            continue
+                        try:
+                            attacks_multiplier = int(spec.get("attacks_multiplier", 1) or 1)
+                        except Exception:
+                            attacks_multiplier = 1
+                        try:
+                            strength_multiplier = int(spec.get("strength_multiplier", 1) or 1)
+                        except Exception:
+                            strength_multiplier = 1
+                        try:
+                            crit_wound_threshold = int(spec.get("crit_wound_threshold", 0) or 0)
+                        except Exception:
+                            crit_wound_threshold = 0
+                        ctx = {
+                            "ability_name": ability_name,
+                            "unit": getattr(unit, "name", "") or "",
+                            "model": getattr(m, "name", "") or "",
+                            "phase": "Fight phase",
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "buff_key": key,
+                            "weapon_name": weapon_name,
+                            "attacks_multiplier": int(attacks_multiplier),
+                            "strength_multiplier": int(strength_multiplier),
+                            "crit_wound_threshold": int(crit_wound_threshold),
+                            "crit_all_attacks": bool(spec.get("crit_all_attacks", False)),
+                        }
+                        message = (
+                            f"Activate {ability_name} for {getattr(m, 'name', 'Model')} "
+                            f"({getattr(unit, 'name', 'Unit')})?"
+                        )
+                        self._queue_optional_ability_confirmation(
+                            player=player,
+                            ability_key="stars_are_right",
+                            ability_name=ability_name,
+                            message=message,
+                            context=ctx,
+                            payload={"unit_id": unit_id, "model_id": model_id, "buff_key": key},
+                            instance_key=f"{model_id}:{key}",
+                        )
             # Once per battle: start of Fight phase -> improve S/A/AP/D for this model.
             for unit in list(army.units):
                 if not unit.is_alive():

@@ -3675,6 +3675,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Once per battle, end of any phase: optional target selection supports both variants (nearby NECRONS INFANTRY/MOUNTED within 6\" and bearer-leading-unit only), activates Reanimation Protocols for D6 wounds, and enforces at most one resurrected unit per turn.",
         ),
+        ("NEC", "The Stars Are Right"): (
+            "Supported",
+            "Once per battle, start of Fight phase optional activation: Staff of Tomorrow Attacks and Strength are tripled, and successful Wound rolls from the model's attacks are treated as Critical Wounds until end of phase.",
+        ),
         ("NEC", "Voice of the Triarch"): (
             "Supported",
             "Start of each battle round, select exactly one Triarch ability for The Silent King (Phaeron of the Stars, Phaeron of the Blades, or Relentless March); only the selected Triarch aura is active until the next battle round.",

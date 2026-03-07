@@ -1021,6 +1021,127 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
         )
         self.assertTrue(bool(bonuses.get("devastating_wounds", False)))
 
+    def test_the_stars_are_right_parses_start_fight_phase_multiplier_spec(self):
+        ability = {
+            "name": "The Stars Are Right",
+            "description": (
+                "Once per battle, at the start of the Fight phase, this model can use this ability. If it does, until the "
+                "end of the phase, triple the Attacks and Strength characteristics of this model's Staff of Tomorrow and "
+                "every successful Wound roll made for this model's attacks scores a Critical Wound."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        orikan = _make_unit("Orikan The Diviner", abilities=[ability], keywords=["NECRONS", "CHARACTER", "INFANTRY"])
+        specs = orikan.model_start_fight_phase_weapon_triple_attacks_strength_crit_wound_specs(orikan.models[0])
+        self.assertEqual(len(specs), 1)
+        spec = dict(specs[0] or {})
+        self.assertEqual(str(spec.get("weapon_name", "") or "").lower(), "staff of tomorrow")
+        self.assertEqual(int(spec.get("attacks_multiplier", 0) or 0), 3)
+        self.assertEqual(int(spec.get("strength_multiplier", 0) or 0), 3)
+        self.assertEqual(int(spec.get("crit_wound_threshold", 0) or 0), 2)
+        self.assertTrue(bool(spec.get("crit_all_attacks", False)))
+
+    def test_the_stars_are_right_queues_applies_and_cleans_up(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+        from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.units.wargear import Wargear
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+
+        ability = {
+            "name": "The Stars Are Right",
+            "description": (
+                "Once per battle, at the start of the Fight phase, this model can use this ability. If it does, until the "
+                "end of the phase, triple the Attacks and Strength characteristics of this model's Staff of Tomorrow and "
+                "every successful Wound roll made for this model's attacks scores a Critical Wound."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        orikan = _make_unit("Orikan The Diviner", abilities=[ability], keywords=["NECRONS", "CHARACTER", "INFANTRY"])
+        enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+
+        # Explicit Staff profile so the multiplier can resolve base Attacks/Strength.
+        orikan.models[0].add_wargear(
+            Wargear(
+                {
+                    "name": "Staff of Tomorrow",
+                    "type": "Melee",
+                    "range": "Melee",
+                    "A": "2",
+                    "BS_WS": "3",
+                    "S": "4",
+                    "AP": "-3",
+                    "D": "D3",
+                    "description": "devastating wounds",
+                }
+            )
+        )
+
+        battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(battlefield)
+        army_one = Army("A1", detachment_type="Test")
+        army_two = Army("A2", detachment_type="Test")
+        player_one = Player("P1", control=PlayerControl.LOCAL, army=army_one)
+        player_two = Player("P2", control=PlayerControl.REMOTE, army=army_two)
+        game.add_player(player_one)
+        game.add_player(player_two)
+        army_one.add_unit(orikan)
+        army_two.add_unit(enemy)
+
+        for unit in (orikan, enemy):
+            unit.deployed = True
+            unit.reserve_status = "deployed"
+
+        game.map.units = [orikan, enemy]
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game.current_player_index = 0
+        game.turn = 2
+        game.rebuild_entity_registry()
+
+        game._on_phase_start_optional_abilities(player=player_one, phase=game.phase)
+        request = None
+        for req in list(game.decision_queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CONFIRM_YES_NO:
+                continue
+            if str((req.context or {}).get("ability", "") or "") != "stars_are_right":
+                continue
+            request = req
+            break
+        self.assertIsNotNone(request)
+
+        yes_option_id = ""
+        for option in list(request.options or []):
+            if bool((option.payload or {}).get("choice", False)):
+                yes_option_id = str(option.option_id or "")
+                break
+        self.assertTrue(bool(yes_option_id))
+
+        result = resolve_decision_command(game, request, yes_option_id, player_id=player_one.id)
+        self.assertTrue(bool(getattr(result, "ok", False)))
+
+        model = orikan.models[0]
+        once_key = str((request.context or {}).get("buff_key", "") or "")
+        self.assertTrue(bool(once_key))
+        self.assertTrue(bool(model.has_used_once_per_battle(once_key)))
+
+        attacks_override, _attacks_source = model.get_temporary_weapon_attacks_override("Staff of Tomorrow")
+        self.assertEqual(int(attacks_override or 0), 6)
+        strength_bonus, _strength_reasons = model.get_temporary_weapon_strength_bonus("Staff of Tomorrow")
+        self.assertEqual(int(strength_bonus or 0), 8)
+        crit_threshold, _crit_reasons = model.get_temporary_weapon_crit_wound_threshold("Staff of Tomorrow")
+        self.assertEqual(int(crit_threshold or 0), 2)
+
+        game._on_phase_end_cleanup(player=player_one, phase=BattleRoundPhases.FIGHT_PHASE)
+        attacks_after, _ = model.get_temporary_weapon_attacks_override("Staff of Tomorrow")
+        strength_after, _ = model.get_temporary_weapon_strength_bonus("Staff of Tomorrow")
+        crit_after, _ = model.get_temporary_weapon_crit_wound_threshold("Staff of Tomorrow")
+        self.assertEqual(int(attacks_after or 0), 0)
+        self.assertEqual(int(strength_after or 0), 0)
+        self.assertEqual(int(crit_after or 0), 0)
+
     def test_malign_sacrifice_roll_handler_uses_vehicle_bonus_profile(self):
         from warhammer40k_ai.engine.roll_handlers import handle_malign_sacrifice_roll
         from warhammer40k_ai.engine.dice_rolls import DiceRollState

@@ -4475,6 +4475,7 @@ class GameReactiveDecisionsMixin:
             "possessed_lord",
             "fight_phase_melee_ap_boost",
             "might_of_titan",
+            "stars_are_right",
             "thrilling_spectacle",
             "chance_for_glory",
             "malefic_destruction",
@@ -5797,6 +5798,52 @@ class GameReactiveDecisionsMixin:
                 ability_name=ability_name,
                 attacks_bonus=int(attacks_bonus),
                 strength_bonus=int(strength_bonus),
+            )
+            return
+
+        if ability_key == "stars_are_right":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None:
+                return
+            key = str(
+                payload.get("buff_key")
+                or ctx.get("buff_key")
+                or "fight_phase_weapon_triple_attacks_strength_crit_wound"
+            ).strip().lower()
+            if not key:
+                key = "fight_phase_weapon_triple_attacks_strength_crit_wound"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            ability_name = str(ctx.get("ability_name", "") or "The Stars Are Right").strip() or "The Stars Are Right"
+            weapon_name = str(payload.get("weapon_name") or ctx.get("weapon_name") or "Staff of Tomorrow").strip()
+            if not weapon_name:
+                return
+            try:
+                attacks_multiplier = int(payload.get("attacks_multiplier") or ctx.get("attacks_multiplier") or 3)
+            except Exception:
+                attacks_multiplier = 3
+            try:
+                strength_multiplier = int(payload.get("strength_multiplier") or ctx.get("strength_multiplier") or 3)
+            except Exception:
+                strength_multiplier = 3
+            try:
+                crit_wound_threshold = int(payload.get("crit_wound_threshold") or ctx.get("crit_wound_threshold") or 2)
+            except Exception:
+                crit_wound_threshold = 2
+            crit_all_attacks = bool(payload.get("crit_all_attacks") or ctx.get("crit_all_attacks"))
+            model.activate_fight_phase_weapon_attacks_strength_multiplier(
+                key=key,
+                ability_name=ability_name,
+                weapon_name=weapon_name,
+                attacks_multiplier=int(attacks_multiplier),
+                strength_multiplier=int(strength_multiplier),
+                crit_wound_threshold=int(crit_wound_threshold),
+                crit_all_attacks=bool(crit_all_attacks),
             )
             return
 

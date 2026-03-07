@@ -542,6 +542,157 @@ class Model:
             damage_bonus=bonus,
         )
 
+    def _resolve_weapon_flat_attacks_and_strength(self, weapon_name: str) -> tuple[str, int, int]:
+        target = self._normalize_weapon_name(weapon_name)
+        if not target:
+            return "", 0, 0
+
+        unit = getattr(self, "parent_unit", None)
+        match_fn = getattr(unit, "_weapon_name_matches", None) if unit is not None else None
+
+        best_weapon_name = ""
+        best_attacks = 0
+        best_strength = 0
+        best_score = -1
+
+        for wargear in list(getattr(self, "wargear", []) or []):
+            if wargear is None:
+                continue
+            base_name = str(getattr(wargear, "name", "") or "").strip()
+            if not base_name:
+                continue
+            profiles = getattr(wargear, "profiles", None)
+            if not isinstance(profiles, dict):
+                continue
+            for profile_name, profile in sorted(profiles.items(), key=lambda item: str(item[0]).lower()):
+                candidate_names = [base_name]
+                profile_label = str(profile_name or "").strip()
+                if profile_label and profile_label.lower() != "default":
+                    candidate_names.append(f"{base_name} - {profile_label}")
+
+                matched = False
+                for candidate in candidate_names:
+                    candidate_norm = self._normalize_weapon_name(candidate)
+                    if not candidate_norm:
+                        continue
+                    if callable(match_fn) and bool(match_fn([weapon_name], candidate)):
+                        matched = True
+                        break
+                    if candidate_norm == target or candidate_norm in target or target in candidate_norm:
+                        matched = True
+                        break
+                if not matched:
+                    continue
+
+                attacks_raw = getattr(profile, "attacks", None)
+                if isinstance(attacks_raw, Count):
+                    if attacks_raw.ctype is not CountType.FLAT:
+                        continue
+                    attacks_value = int(attacks_raw.value or 0)
+                elif isinstance(attacks_raw, int):
+                    attacks_value = int(attacks_raw)
+                else:
+                    continue
+
+                strength_raw = getattr(profile, "strength", 0)
+                strength_value = int(strength_raw) if isinstance(strength_raw, int) else 0
+                if attacks_value <= 0 or strength_value <= 0:
+                    continue
+
+                score = len(self._normalize_weapon_name(base_name))
+                if score > best_score:
+                    best_score = score
+                    best_weapon_name = str(base_name)
+                    best_attacks = int(attacks_value)
+                    best_strength = int(strength_value)
+
+        return best_weapon_name, best_attacks, best_strength
+
+    def activate_fight_phase_weapon_attacks_strength_multiplier(
+        self,
+        *,
+        key: str,
+        ability_name: str,
+        weapon_name: str,
+        attacks_multiplier: int = 1,
+        strength_multiplier: int = 1,
+        crit_wound_threshold: int = 0,
+        crit_all_attacks: bool = False,
+    ) -> bool:
+        """
+        Once per battle, at the start of the Fight phase:
+        multiply a named weapon's Attacks/Strength and optionally force critical wounds
+        on successful wound rolls.
+        """
+        key = str(key or "").strip().lower()
+        if not key:
+            return False
+        if self.has_used_once_per_battle(key):
+            return False
+
+        resolved_weapon_name, base_attacks, base_strength = self._resolve_weapon_flat_attacks_and_strength(weapon_name)
+        if not resolved_weapon_name:
+            resolved_weapon_name = str(weapon_name or "").strip()
+        if not resolved_weapon_name:
+            return False
+
+        attacks_multiplier = int(attacks_multiplier or 1)
+        strength_multiplier = int(strength_multiplier or 1)
+        crit_wound_threshold = int(crit_wound_threshold or 0)
+
+        applied = False
+        source_name = str(ability_name or "").strip() or "Fight phase weapon multiplier"
+
+        if attacks_multiplier > 1 and base_attacks > 0:
+            self.set_temporary_weapon_attacks_override(
+                key=f"{key}:attacks",
+                weapon_name=resolved_weapon_name,
+                attacks_value=int(base_attacks * attacks_multiplier),
+                source=source_name,
+                expires_phase="FIGHT_PHASE",
+            )
+            applied = True
+
+        if strength_multiplier > 1 and base_strength > 0:
+            self.set_temporary_weapon_bonus(
+                key=f"{key}:strength",
+                weapon_name=resolved_weapon_name,
+                strength_bonus=int(base_strength * (strength_multiplier - 1)),
+                source=source_name,
+                expires_phase="FIGHT_PHASE",
+            )
+            applied = True
+
+        if crit_wound_threshold > 0:
+            crit_weapon_names: list[str] = []
+            if crit_all_attacks:
+                for wargear in list(getattr(self, "wargear", []) or []):
+                    if wargear is None:
+                        continue
+                    is_melee = bool(getattr(wargear, "is_melee", lambda: False)())
+                    if not is_melee:
+                        continue
+                    name = str(getattr(wargear, "name", "") or "").strip()
+                    if name and name not in crit_weapon_names:
+                        crit_weapon_names.append(name)
+            if not crit_weapon_names:
+                crit_weapon_names = [resolved_weapon_name]
+
+            for index, crit_weapon_name in enumerate(sorted(crit_weapon_names, key=lambda n: n.lower())):
+                self.set_temporary_weapon_wound_crit_bonus(
+                    key=f"{key}:crit:{index}",
+                    weapon_name=str(crit_weapon_name),
+                    crit_wound_threshold=int(crit_wound_threshold),
+                    source=source_name,
+                    expires_phase="FIGHT_PHASE",
+                )
+            applied = True
+
+        if not applied:
+            return False
+        self.mark_used_once_per_battle(key, ability_name=source_name, source="datasheet")
+        return True
+
     def activate_fight_phase_hellforged_attacks_bonus(
         self,
         *,
