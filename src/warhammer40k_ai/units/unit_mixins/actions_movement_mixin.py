@@ -1344,10 +1344,20 @@ class ActionsMovementMixin:
             except Exception:
                 return None
         m = self._BEARER_MOVE_CHARACTERISTIC_RE.match(normalized)
-        if not m:
+        if m:
+            try:
+                return int(m.group(1))
+            except Exception:
+                return None
+        m_combo = re.match(
+            r"^the bearer can fly and has a move characteristic of (?P<move>\d+)\"?\.?$",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if not m_combo:
             return None
         try:
-            return int(m.group(1))
+            return int(m_combo.group("move"))
         except Exception:
             return None
 

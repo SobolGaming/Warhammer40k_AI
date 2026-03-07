@@ -3,6 +3,12 @@
 from ._common import *
 
 
+_COMMAND_PHASE_END_CP_ROLL_RE = re.compile(
+    r"at the end of your command phase(?: if (?:this model|this unit|the bearer) is on the battlefield)? "
+    r"roll (?P<dice>\d+|one) d6 on a (?P<threshold>\d+)\+? you gain (?P<cp>\d+) ?(?:cp|command points?)"
+)
+
+
 class RulesParsingMixin:
     def _parse_warlord_enhancement_restrictions(self) -> None:
         """Parse datasheet abilities that forbid Warlord selection or Enhancements."""
@@ -1267,6 +1273,8 @@ class RulesParsingMixin:
                 del sr["command_phase_bonus_cp"]
             if "command_phase_bonus_cp_roll_specs" in sr:
                 del sr["command_phase_bonus_cp_roll_specs"]
+            if "command_phase_end_bonus_cp_roll_specs" in sr:
+                del sr["command_phase_end_bonus_cp_roll_specs"]
             if "sticky_objectives" in sr:
                 del sr["sticky_objectives"]
             if "sticky_objectives_requires_leading_unit" in sr:
@@ -1282,7 +1290,23 @@ class RulesParsingMixin:
 
         bonus_cp = 0
         cp_roll_specs: list[dict] = []
+        cp_end_roll_specs: list[dict] = []
         seen_roll_specs: set[tuple[str, int, int, int]] = set()
+        seen_end_roll_specs: set[tuple[str, int, int, int]] = set()
+
+        def _parse_int_token(token: str) -> int:
+            raw = str(token or "").strip().lower()
+            if not raw:
+                return 0
+            if raw.isdigit():
+                return int(raw)
+            words = getattr(self, "_NUMBER_WORDS", {})
+            if isinstance(words, dict):
+                val = words.get(raw)
+                if isinstance(val, int):
+                    return int(val)
+            return 0
+
         for ab in self._iter_active_abilities():
             try:
                 desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
@@ -1306,28 +1330,54 @@ class RulesParsingMixin:
             if not norm:
                 continue
             m_roll = self._COMMAND_PHASE_CP_ROLL_RE.fullmatch(norm)
-            if not m_roll:
+            if m_roll:
+                try:
+                    dice_count = int(m_roll.group("dice") or 0)
+                except Exception:
+                    dice_count = 0
+                try:
+                    threshold = int(m_roll.group("threshold") or 0)
+                except Exception:
+                    threshold = 0
+                try:
+                    cp_gain = int(m_roll.group("cp") or 0)
+                except Exception:
+                    cp_gain = 0
+                if dice_count > 0 and threshold > 0 and cp_gain > 0:
+                    source = str(name or "Command phase CP roll").strip() or "Command phase CP roll"
+                    key = (source.lower(), int(dice_count), int(threshold), int(cp_gain))
+                    if key not in seen_roll_specs:
+                        seen_roll_specs.add(key)
+                        cp_roll_specs.append(
+                            {
+                                "source": source,
+                                "dice_count": int(dice_count),
+                                "threshold": int(threshold),
+                                "cp": int(cp_gain),
+                            }
+                        )
                 continue
+
+            m_end_roll = _COMMAND_PHASE_END_CP_ROLL_RE.fullmatch(norm)
+            if not m_end_roll:
+                continue
+            dice_count = _parse_int_token(str(m_end_roll.group("dice") or ""))
             try:
-                dice_count = int(m_roll.group("dice") or 0)
-            except Exception:
-                dice_count = 0
-            try:
-                threshold = int(m_roll.group("threshold") or 0)
+                threshold = int(m_end_roll.group("threshold") or 0)
             except Exception:
                 threshold = 0
             try:
-                cp_gain = int(m_roll.group("cp") or 0)
+                cp_gain = int(m_end_roll.group("cp") or 0)
             except Exception:
                 cp_gain = 0
             if dice_count <= 0 or threshold <= 0 or cp_gain <= 0:
                 continue
-            source = str(name or "Command phase CP roll").strip() or "Command phase CP roll"
+            source = str(name or "Command phase end CP roll").strip() or "Command phase end CP roll"
             key = (source.lower(), int(dice_count), int(threshold), int(cp_gain))
-            if key in seen_roll_specs:
+            if key in seen_end_roll_specs:
                 continue
-            seen_roll_specs.add(key)
-            cp_roll_specs.append(
+            seen_end_roll_specs.add(key)
+            cp_end_roll_specs.append(
                 {
                     "source": source,
                     "dice_count": int(dice_count),
@@ -1340,6 +1390,8 @@ class RulesParsingMixin:
             sr["command_phase_bonus_cp"] = int(bonus_cp)
         if cp_roll_specs:
             sr["command_phase_bonus_cp_roll_specs"] = list(cp_roll_specs)
+        if cp_end_roll_specs:
+            sr["command_phase_end_bonus_cp_roll_specs"] = list(cp_end_roll_specs)
 
         if self._scan_command_phase_sticky_objective():
             sr["sticky_objectives"] = True
@@ -4169,6 +4221,12 @@ class RulesParsingMixin:
                 m = re.fullmatch(r"(?:the )?bearer has the (?P<keywords>[a-z0-9 ]+) keywords?", norm)
                 if m:
                     added.extend(_extract_keyword_list(m.group("keywords") or ""))
+                m_combo = re.fullmatch(
+                    r"(?:the )?bearer can (?P<keywords>[a-z0-9 ]+) and has a move characteristic of (?P<move>\d+)",
+                    norm,
+                )
+                if m_combo:
+                    added.extend(_extract_keyword_list(m_combo.group("keywords") or ""))
                 if re.search(r"\b" + re.escape(self._BEARER_LOSES_SMOKE_KEYWORD_TOKENS) + r"\b", norm):
                     removed.append("Smoke")
                 if re.fullmatch(r"(?:the )?bearers unit has the smoke keyword", norm):

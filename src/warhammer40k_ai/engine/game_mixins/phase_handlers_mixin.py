@@ -18442,6 +18442,7 @@ class GamePhaseHandlersMixin:
             army = self._get_player_army(player)
             if army is None:
                 return
+            from ...utility.event_bus import append_action, append_dice
 
             def _unit_sort_key(u):
                 try:
@@ -18449,6 +18450,7 @@ class GamePhaseHandlersMixin:
                 except Exception:
                     return str(getattr(u, "name", "") or "")
 
+            processed_roots: set[str] = set()
             processed_models: set[str] = set()
             for unit in sorted(list(army.units or []), key=_unit_sort_key):
                 if unit is None:
@@ -18459,10 +18461,61 @@ class GamePhaseHandlersMixin:
                     root = unit
                 if root is None:
                     continue
+                root_id = str(get_entity_id(root) or "")
+                if root_id and root_id in processed_roots:
+                    continue
+                if root_id:
+                    processed_roots.add(root_id)
                 if not root.is_alive() or not getattr(root, "deployed", True):
                     continue
                 if root.is_in_reserves() or root.is_embarked:
                     continue
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict):
+                    end_roll_specs = list(sr.get("command_phase_end_bonus_cp_roll_specs", []) or [])
+                else:
+                    end_roll_specs = []
+                for spec in end_roll_specs:
+                    if not isinstance(spec, dict):
+                        continue
+                    try:
+                        dice_count = int(spec.get("dice_count", 0) or 0)
+                    except Exception:
+                        dice_count = 0
+                    try:
+                        threshold = int(spec.get("threshold", 0) or 0)
+                    except Exception:
+                        threshold = 0
+                    try:
+                        cp_gain = int(spec.get("cp", 0) or 0)
+                    except Exception:
+                        cp_gain = 0
+                    if dice_count <= 0 or threshold <= 0 or cp_gain <= 0:
+                        continue
+                    source = str(spec.get("source", "") or "Command phase end CP roll").strip() or "Command phase end CP roll"
+                    roll_spec = f"{int(dice_count)}D6"
+                    try:
+                        rolled = int(get_roll(roll_spec) or 0)
+                    except Exception:
+                        rolled = 0
+                    append_dice(
+                        player,
+                        f"{source}: rolled {roll_spec}={int(rolled)} (need {int(threshold)}+).",
+                    )
+                    if int(rolled) < int(threshold):
+                        append_action(
+                            player,
+                            f"{source}: failed to gain CP ({int(rolled)} < {int(threshold)}).",
+                        )
+                        continue
+                    try:
+                        gained = int(player.gain_command_points(int(cp_gain), reason=source) or 0)
+                    except Exception:
+                        gained = 0
+                    append_action(
+                        player,
+                        f"{source}: gained {int(gained)}CP.",
+                    )
                 try:
                     models = list(getattr(unit, "models", []) or [])
                 except Exception:

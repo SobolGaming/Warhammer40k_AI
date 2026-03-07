@@ -7198,6 +7198,14 @@ def _bearer_keyword_support(description: str) -> Optional[Tuple[str, str]]:
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    m_combo = re.fullmatch(
+        r"(?:the )?bearer can (?P<keyword>[a-z0-9 ]+) and has a move characteristic of (?P<move>\d+)",
+        norm,
+    )
+    if m_combo:
+        keyword = re.sub(r"\s+", " ", str(m_combo.group("keyword") or "").strip()).upper()
+        move_value = str(m_combo.group("move") or "0")
+        return ("Supported", f"Bearer gains the {keyword} keyword and has a Move characteristic of {move_value}\".")
     m = re.fullmatch(r"(?:the )?bearer has the (?P<keywords>[a-z0-9 ]+) keywords?", norm)
     if not m:
         return None
@@ -10008,9 +10016,21 @@ def _command_phase_bonus_cp_support(description: str) -> Optional[Tuple[str, str
         r"you gain (?P<cp>\d+) ?(?:cp|command points?)"
     )
     m = re.fullmatch(pattern, norm)
-    if not m:
+    if m:
+        return ("Supported", f"Start of Command phase: gain {m.group('cp')} CP while on the battlefield.")
+    end_roll_pattern = (
+        r"at the end of your command phase(?: if (?:this model|this unit|the bearer) is on the battlefield)? "
+        r"roll (?P<dice>\d+|one) d6 on a (?P<threshold>\d+) you gain (?P<cp>\d+) ?(?:cp|command points?)"
+    )
+    m_end = re.fullmatch(end_roll_pattern, norm)
+    if not m_end:
         return None
-    return ("Supported", f"Start of Command phase: gain {m.group('cp')} CP while on the battlefield.")
+    dice_token = str(m_end.group("dice") or "").strip().lower()
+    dice_count = "1" if dice_token == "one" else dice_token
+    return (
+        "Supported",
+        f"End of Command phase: roll {dice_count}D6; on {m_end.group('threshold')}+ gain {m_end.group('cp')} CP.",
+    )
 
 
 def _phase_end_leadership_cp_gain_support(description: str) -> Optional[Tuple[str, str]]:
