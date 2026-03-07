@@ -1118,6 +1118,79 @@ class WargearProfile:
         source = str(sr.get("aeldari_fate_inescapable_source", "") or "FATE INESCAPABLE").strip() or "FATE INESCAPABLE"
         return int(bonus), source
 
+    def _tau_crack_shot_critical_ap_override(self, attack_instance: Dict) -> tuple[Optional[int], str]:
+        """Return a fixed AP characteristic override for T'au Crack Shot on critical wounds."""
+        if not isinstance(attack_instance, dict):
+            return None, ""
+        if not bool(attack_instance.get("crit_wound", False)):
+            return None, ""
+        try:
+            is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+        except Exception:
+            is_ranged = False
+        if not is_ranged:
+            return None, ""
+
+        attacker_model = attack_instance.get("attacker_model")
+        attacker_unit = attack_instance.get("attacker_unit")
+        if attacker_unit is None and attacker_model is not None:
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_model is None and attacker_unit is not None:
+            try:
+                alive_models = [m for m in list(getattr(attacker_unit, "models", []) or []) if getattr(m, "is_alive", True)]
+            except Exception:
+                alive_models = []
+            if len(alive_models) == 1:
+                attacker_model = alive_models[0]
+        if attacker_unit is None:
+            return None, ""
+
+        entries: list[tuple[str, str]] = []
+        iter_entries = getattr(attacker_unit, "_iter_ability_entries_for_rules", None)
+        if callable(iter_entries):
+            try:
+                entries.extend(list(iter_entries(model=attacker_model)))
+            except Exception:
+                entries = []
+        if not entries:
+            try:
+                for ability in list(getattr(attacker_unit, "possible_abilities", []) or []):
+                    name = str(getattr(ability, "name", "") or "")
+                    desc = str(getattr(ability, "description", "") or "") or name
+                    entries.append((name, desc))
+            except Exception:
+                pass
+            if attacker_model is not None:
+                try:
+                    for ability in list(getattr(attacker_model, "abilities", {}) or {}).values():
+                        if isinstance(ability, str):
+                            entries.append((ability, ability))
+                            continue
+                        name = str(getattr(ability, "name", "") or "")
+                        desc = str(getattr(ability, "description", "") or "") or name
+                        entries.append((name, desc))
+                except Exception:
+                    pass
+        if not entries:
+            return None, ""
+
+        for name, desc in entries:
+            name_norm = re.sub(r"\s+", " ", str(name or "").strip().lower())
+            if "crack shot" in name_norm:
+                return -3, str(name or "Crack Shot").strip() or "Crack Shot"
+            text = str(desc or "")
+            norm = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+            norm = re.sub(r"[^a-z0-9\-]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if (
+                "each time this model makes a ranged attack" in norm
+                and "on a critical wound" in norm
+                and "armour penetration characteristic of -3" in norm
+            ):
+                source = str(name or "Crack Shot").strip() or "Crack Shot"
+                return -3, source
+        return None, ""
+
     def _aeldari_focused_firepower_ap_bonus(self, attack_instance: Dict) -> tuple[int, str]:
         if not isinstance(attack_instance, dict):
             return 0, ""
@@ -1240,11 +1313,29 @@ class WargearProfile:
         except Exception:
             pass
         bonus = 0
+        weapon_name = ""
+        try:
+            if self.parent_wargear is not None:
+                weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
+            if not weapon_name:
+                weapon_name = str(getattr(self, "name", "") or "")
+        except Exception:
+            weapon_name = ""
         try:
             if self.is_melta():
                 unit = getattr(attacker, "parent_unit", None)
                 if unit is not None and hasattr(unit, "leading_unit_melta_range_bonus"):
                     bonus += int(unit.leading_unit_melta_range_bonus() or 0)
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            if unit is not None and hasattr(unit, "unit_weapon_range_bonus_for_weapon"):
+                range_bonus, _reasons = unit.unit_weapon_range_bonus_for_weapon(
+                    weapon_name,
+                    attacker_model=attacker,
+                )
+                bonus += int(range_bonus or 0)
         except Exception:
             pass
         try:
@@ -3366,6 +3457,42 @@ class WargearProfile:
                                 applies = bool(target.has_any_keyword(target_kw))
                             except Exception:
                                 applies = False
+                        if applies:
+                            ap_val -= int(bonus)
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                unit = getattr(attacker, "parent_unit", None)
+                get_rule = getattr(unit, "get_ranged_target_excluding_keywords_ap_bonus_rule", None) if unit is not None else None
+                if callable(get_rule):
+                    rule = get_rule(attacker)
+                else:
+                    rule = None
+                if isinstance(rule, dict):
+                    try:
+                        bonus = int(rule.get("ap_bonus", 0) or 0)
+                    except Exception:
+                        bonus = 0
+                    excluded = tuple(
+                        str(v or "").strip().upper()
+                        for v in list(rule.get("target_exclude_keywords_any", ()) or ())
+                        if str(v or "").strip()
+                    )
+                    if bonus > 0 and excluded:
+                        applies = True
+                        for kw in excluded:
+                            has_kw = False
+                            try:
+                                has_kw = bool(target.has_keyword(kw))
+                            except Exception:
+                                try:
+                                    has_kw = bool(target.has_any_keyword(kw))
+                                except Exception:
+                                    has_kw = False
+                            if has_kw:
+                                applies = False
+                                break
                         if applies:
                             ap_val -= int(bonus)
         except Exception:
@@ -19213,6 +19340,16 @@ class WargearProfile:
 
         # Calculate save value
         effective_ap = int(ap)
+        try:
+            crack_shot_ap, crack_shot_source = self._tau_crack_shot_critical_ap_override(attack_instance)
+        except Exception:
+            crack_shot_ap, crack_shot_source = None, ""
+        if crack_shot_ap is not None:
+            effective_ap = int(crack_shot_ap)
+            source_name = str(crack_shot_source or "Crack Shot").strip() or "Crack Shot"
+            save_result["special_effects"].append(
+                f"{source_name}: AP characteristic set to {int(effective_ap)} on Critical Wound"
+            )
         try:
             focused_ap_bonus, focused_source = self._aeldari_focused_firepower_ap_bonus(attack_instance)
         except Exception:

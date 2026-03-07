@@ -5704,6 +5704,7 @@ def _classify_ability_base(
     dark_ritual_support = _dark_ritual_support(description)
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
     ds8_support_turret_support = _ds8_support_turret_support(description)
+    tau_crack_shot_support = _tau_crack_shot_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
     movement_phase_end_mortal_table_support = _movement_phase_end_enemy_within_range_mortal_table_support(description)
     movement_phase_end_mortal_threshold_support = _movement_phase_end_enemy_within_range_mortal_threshold_support(description)
@@ -6063,6 +6064,8 @@ def _classify_ability_base(
         return movement_phase_normal_move_weapon_attacks_bonus_support
     if ds8_support_turret_support:
         return ds8_support_turret_support
+    if tau_crack_shot_support:
+        return tau_crack_shot_support
     if movement_phase_speed_mortal_support:
         return movement_phase_speed_mortal_support
     if movement_phase_end_mortal_table_support:
@@ -8215,6 +8218,24 @@ def _ds8_support_turret_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         "Movement phase: if this unit remains stationary, its Fire Warrior Shas'ui model gains the Support Turret weapon until your next Movement phase.",
+    )
+
+
+def _tau_crack_shot_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time this model makes a ranged attack on a critical wound "
+        r"that attack has an armour penetration characteristic of 3"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Critical wounds from this model's ranged attacks set that attack's AP characteristic to -3.",
     )
 
 
