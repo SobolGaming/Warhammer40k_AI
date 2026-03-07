@@ -1192,6 +1192,26 @@ class LateGameplayMixin:
             pass
         try:
             sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("fight_phase_destroy_enemy_fnp_upgrade_active")):
+                entries = sr.get("fight_phase_destroy_enemy_fnp_upgrade_entries")
+                if isinstance(entries, list):
+                    seen = set((int(v), (c or "")) for v, c in result)
+                    for entry in entries:
+                        if not isinstance(entry, dict):
+                            continue
+                        try:
+                            val = int(entry.get("value"))
+                        except Exception:
+                            continue
+                        key = (int(val), "")
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        result.append((int(val), None))
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
             entries = sr.get("bearer_unit_keyword_fnp_entries") if isinstance(sr, dict) else None
             if isinstance(entries, list):
                 seen = set((int(v), (c or "")) for v, c in result)

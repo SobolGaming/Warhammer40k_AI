@@ -10927,6 +10927,15 @@ class WargearProfile:
                     reroll_full_reasons.append(f"{source}: re-roll Hit roll")
         except Exception:
             pass
+        # T'au Empire: Precise Targeting (guided attacks vs Spotted unit).
+        try:
+            if isinstance(ftgg_guided_bonus, dict):
+                if bool(ftgg_guided_bonus.get("reroll_hit_full", False)):
+                    reason = str(ftgg_guided_bonus.get("reroll_hit_full_reason", "") or "").strip()
+                    source_name = reason or "Precise Targeting"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        except Exception:
+            pass
         # World Eaters (Cult of Blood): Fail Not the Blood God.
         try:
             unit = getattr(attacker, "parent_unit", None)

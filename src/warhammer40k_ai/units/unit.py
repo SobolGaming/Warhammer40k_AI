@@ -1219,13 +1219,24 @@ class Unit(
                                     friendly_root = friendly
                                 if friendly_root is None or friendly_root is root:
                                     continue
-                                has_kw = getattr(friendly_root, "has_any_keyword", None)
-                                if not callable(has_kw):
-                                    continue
-                                try:
-                                    if not bool(has_kw(keyword)):
+                                keyword_matches = False
+                                phrase_match_fn = getattr(root, "_unit_matches_keyword_phrase", None)
+                                if callable(phrase_match_fn):
+                                    try:
+                                        keyword_matches = bool(
+                                            phrase_match_fn(friendly_root, keyword, use_effective=True)
+                                        )
+                                    except Exception:
+                                        keyword_matches = False
+                                if not keyword_matches:
+                                    has_kw = getattr(friendly_root, "has_any_keyword", None)
+                                    if not callable(has_kw):
                                         continue
-                                except Exception:
+                                    try:
+                                        keyword_matches = bool(has_kw(keyword))
+                                    except Exception:
+                                        keyword_matches = False
+                                if not keyword_matches:
                                     continue
                                 if unit_within_range_of_unit(root, friendly_root, float(range_inches), use_attached_aggregate=True):
                                     applies = True
@@ -2585,7 +2596,7 @@ class Unit(
                     r"while this unit contains one or more (?P<lemma_contains>[a-z0-9 ]+) models )?"
                     r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
                     r"(?:targets|target|is allocated to|is made against) "
-                    r"(?:this model|this unit|this model s unit|a model in this unit) "
+                    r"(?:this model|this unit|this model s unit|a model in this unit|the bearer) "
                     r"subtract (?P<val>\d+) from (?:the|that|that attacks) wound roll(?:s)?"
                 )
                 m = re.fullmatch(pattern, norm)
@@ -2638,7 +2649,7 @@ class Unit(
                     r"(?:while (?:(?:a|an|the) (?P<lemma>[a-z0-9 ]+)|this)(?: model)? is leading (?:this|a) unit )?"
                     r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
                     r"(?:targets|target|is allocated to) "
-                    r"(?:this model|this unit|this model s unit|a model in this unit) "
+                    r"(?:this model|this unit|this model s unit|a model in this unit|the bearer) "
                     r"if (?:the )?(?:strength characteristic of that attack|that attacks strength characteristic) "
                     r"is greater than "
                     r"(?:the toughness characteristic of (?:this model|this unit|that model)|(?:this model|this unit|that model)s toughness characteristic) "
@@ -2692,7 +2703,7 @@ class Unit(
                     r"(?:while (?:(?:a|an|the) (?P<lemma>[a-z0-9 ]+)|this)(?: model)? is leading (?:this|a) unit )?"
                     r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
                     r"(?:targets|target) "
-                    r"(?:this model|this unit|this model s unit|that unit|the bearer s unit) "
+                    r"(?:this model|this unit|this model s unit|that unit|the bearer|the bearer s unit) "
                     r"worsen the armou?r penetration characteristic of that attack by (?P<val>\d+)"
                 )
                 m = re.fullmatch(pattern, norm)
@@ -2958,7 +2969,7 @@ class Unit(
         re.IGNORECASE,
     )
     _BEARER_UNIT_IGNORES_COVER_RE = re.compile(
-        r"(?:weapons?\s+equipped\s+by\s+models\s+in|attacks?\s+made\s+by\s+models\s+in)\s+"
+        r"(?:weapons?\s+equipped\s+by(?:\s+models\s+in)?|attacks?\s+made\s+by\s+models\s+in)\s+"
         r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit|this\s+model'?s\s+unit).*?\bignores\s+cover\b",
         re.IGNORECASE,
     )
@@ -3167,20 +3178,26 @@ class Unit(
         re.IGNORECASE,
     )
     _DEFENSIVE_CHARGE_ROLL_PENALTY_RE = re.compile(
+        r"(?:"
         r"each\s+time\s+an?\s+enemy\s+unit\s+declares\s+a\s+charge\s+if\s+one\s+or\s+more\s+units?\s+with\s+this\s+ability\s+are\s+"
-        r"selected\s+as\s+a\s+target\s+of\s+that\s+charge\s+subtract\s+(?P<val>\d+)\s+from\s+the\s+charge\s+roll",
+        r"selected\s+as\s+a\s+target\s+of\s+that\s+charge\s+subtract\s+(?P<val_a>\d+)\s+from\s+the\s+charge\s+roll"
+        r"|"
+        r"subtract\s+(?P<val_b>\d+)\s+from\s+charge\s+rolls?\s+made\s+for\s+(?:any\s+)?enemy\s+unit\s+that\s+declares\s+a\s+charge\s+"
+        r"against\s+(?:the\s+bearer(?:\s+s|s)?\s+unit|this\s+unit|that\s+unit)"
+        r"(?:\s+this\s+is\s+not\s+cumulative\s+with\s+any\s+other\s+reductions?\s+to\s+that\s+charge\s+roll)?"
+        r")",
         re.IGNORECASE,
     )
     _TARGETED_STRATAGEM_CP_DISCOUNT_RE = re.compile(
         r"once\s+per\s+battle\s+round\s+one\s+(?:unit|model)\s+from\s+your\s+army\s+with\s+this\s+ability\s+can\s+use\s+it\s+when\s+"
         r"(?:its\s+unit|this\s+models\s+unit|that\s+models\s+unit)\s+is\s+targeted\s+with\s+a\s+stratagem\s+"
-        r"(?:if\s+it\s+does\s+)?reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1\s*cp",
+        r"(?:if\s+it\s+does\s+)?reduce\s+the\s+cp\s+cost\s+(?:of\s+that\s+(?:use|usage)\s+of\s+)?(?:that\s+)?stratagem\s+by\s+1\s*cp",
         re.IGNORECASE,
     )
     _TARGETED_STRATAGEM_CP_DISCOUNT_SELECT_RE = re.compile(
         r"once\s+per\s+battle\s+round\s+you\s+can\s+select\s+one\s+model\s+from\s+your\s+army\s+with\s+this\s+ability\s+"
         r"(?:that\s+models\s+unit\s+can\s+be\s+targeted\s+with\s+a\s+stratagem|and\s+target\s+that\s+models\s+unit\s+with\s+a\s+stratagem)\s+"
-        r"(?:if\s+it\s+does\s+)?reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1\s*cp",
+        r"(?:if\s+it\s+does\s+)?reduce\s+the\s+cp\s+cost\s+(?:of\s+that\s+(?:use|usage)\s+of\s+)?(?:that\s+)?stratagem\s+by\s+1\s*cp",
         re.IGNORECASE,
     )
     _TARGETED_STRATAGEM_CP_DISCOUNT_AURA_RE = re.compile(
@@ -3223,6 +3240,12 @@ class Unit(
         r"(?P<subject>the\s+bearers\s+unit|the\s+bearer\s+s\s+unit|this\s+models\s+unit|this\s+model\s+s\s+unit|"
         r"its\s+unit|that\s+unit|this\s+unit)\s+"
         r"as\s+the\s+target\s+of\s+a\s+stratagem\s+roll\s+one\s+d6\s+on\s+a\s+(?P<roll>\d+)\s+"
+        r"(?:you\s+)?gain\s+(?P<cp>\d+)\s*cp",
+        re.IGNORECASE,
+    )
+    _TARGETED_STRATAGEM_CP_REFUND_AURA_RE = re.compile(
+        r"while\s+a\s+friendly\s+(?P<keyword>[a-z0-9 ]+?)\s+unit\s+is\s+within\s+(?P<range>\d+)\s+of\s+(?:this\s+model|the\s+bearer)\s+"
+        r"each\s+time\s+you\s+select\s+that\s+unit\s+as\s+the\s+target\s+of\s+a\s+stratagem\s+roll\s+one\s+d6\s+on\s+a\s+(?P<roll>\d+)\s+"
         r"(?:you\s+)?gain\s+(?P<cp>\d+)\s*cp",
         re.IGNORECASE,
     )
@@ -3607,11 +3630,11 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_RE = re.compile(
-        r"in your shooting phase after this (?:model s unit|unit) has shot"
+        r"in your shooting phase after this (?:model(?: s)?(?: unit)?|unit) has shot"
         r"(?: if it is not within engagement range of (?:one or more|any) enemy units)? "
-        r"(?:it|that unit|this unit) can make a normal move of up to (?P<range_expr>d6|\d+)\s*\"?\s*"
+        r"(?:it|that unit|this unit|this model) can make a normal move of up to (?P<range_expr>d6|\d+)\s*\"?\s*"
         r"(?:as if it were your movement phase )?"
-        r"if it does until the end of the turn (?:that unit|this unit) is not eligible to declare a charge",
+        r"if it does until the end of the turn (?:that unit|this unit|this model) is not eligible to declare a charge",
         re.IGNORECASE,
     )
     _POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_BATTLELINE_ALT_RE = re.compile(
@@ -3637,10 +3660,11 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_SUPPRESSION_RE = re.compile(
-        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit "
+        r"in your shooting phase after this (?:model|unit) has shot select one enemy (?:(?P<infantry>infantry)\s+)?unit "
         r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
         r"(?:made with (?:(?:a|an|the|its)\s+)?(?P<weapon>[a-z0-9 ]+) )?"
-        r"(?:excluding monsters and vehicles )?until the start of your next turn that enemy unit is suppressed "
+        r"(?:excluding monsters and vehicles )?until the start of your next turn "
+        r"(?:while this unit is on the battlefield )?that enemy unit is suppressed "
         r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll",
         re.IGNORECASE,
     )
@@ -4148,6 +4172,11 @@ class Unit(
         r"(?:the )?damage characteristic(?: of that attack)? to 0",
         re.IGNORECASE,
     )
+    _MODEL_TWICE_PER_BATTLE_ALLOCATED_DAMAGE_ZERO_RE = re.compile(
+        r"twice per battle after an attack has been allocated to (?:the bearer|this model) you (?:can )?change "
+        r"(?:the )?damage characteristic(?: of that attack)? to 0",
+        re.IGNORECASE,
+    )
     _MODEL_ONCE_PER_BATTLE_ROUND_ALLOCATED_DAMAGE_ZERO_RE = re.compile(
         r"once per battle round when an attack is allocated to (?:the bearer|this model) you (?:can )?change "
         r"(?:the )?damage characteristic(?: of that attack)? to 0",
@@ -4285,6 +4314,14 @@ class Unit(
         r"(?:the bearers unit|the bearer s unit|this unit|this models unit|this model s unit) destroyed one or more enemy units? that phase "
         r"(?:the bearers unit|the bearer s unit|this unit|this models unit|this model s unit) takes a leadership test "
         r"if that test is passed you gain (?P<cp>\d+|one) ?(?:cp|command points?)",
+        re.IGNORECASE,
+    )
+    _FIGHT_PHASE_DESTROY_ENEMY_FNP_UPGRADE_RE = re.compile(
+        r"if (?:the bearer'?s unit|the bearer s unit|that unit|this unit|this model'?s unit|this model s unit)\s+"
+        r"destroy(?:s|ed)\s+one or more enemy units?\s+in the fight phase\s*,?\s*"
+        r"until the end of the battle\s*,?\s*models in "
+        r"(?:the bearer'?s unit|the bearer s unit|that unit|this unit|this model'?s unit|this model s unit)\s+"
+        r"have\s+(?:a|the)?\s*feel no pain\s+(?P<val>\d+)\+?\s+ability\s+instead",
         re.IGNORECASE,
     )
     _COMMAND_PHASE_END_LEADERSHIP_CP_GAIN_RE = re.compile(

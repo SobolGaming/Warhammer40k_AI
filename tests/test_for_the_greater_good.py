@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 
 class TestForTheGreaterGood(unittest.TestCase):
-    def _make_unit(self, name: str, *, markerlight: bool = False):
+    def _make_unit(self, name: str, *, markerlight: bool = False, abilities=None):
         from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
         from warhammer40k_ai.units.wargear import Wargear
@@ -39,6 +39,13 @@ class TestForTheGreaterGood(unittest.TestCase):
             remained_stationary_this_round=False,
             charged_this_round=False,
         )
+        ability_names = ["For the Greater Good"]
+        for ability_name in list(abilities or []):
+            text = str(ability_name or "").strip()
+            if not text:
+                continue
+            if text not in ability_names:
+                ability_names.append(text)
 
         class _Unit:
             def __init__(self):
@@ -50,7 +57,7 @@ class TestForTheGreaterGood(unittest.TestCase):
                 self.deployed = True
                 self.reserve_status = "deployed"
                 self.embarked_in = None
-                self.possible_abilities = [SimpleNamespace(name="For the Greater Good")]
+                self.possible_abilities = [SimpleNamespace(name=ability_name) for ability_name in ability_names]
                 self._markerlight = markerlight
                 self.is_vehicle = False
                 self.is_monster = False
@@ -214,5 +221,101 @@ class TestForTheGreaterGood(unittest.TestCase):
             save_res = profile._save_with_tracking(target_model, attack_instance, ap=0)
             self.assertTrue(any("Ignores Cover" in x for x in save_res.get("special_effects", [])))
             self.assertFalse(any("Benefit of Cover" in x for x in save_res.get("special_effects", [])))
+        finally:
+            wargear_mod.get_roll = old_get_roll
+
+    def test_precise_targeting_guided_attack_rerolls_hit(self):
+        from warhammer40k_ai.engine.event.system import EventSystem
+        from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        game = SimpleNamespace(
+            event_system=EventSystem(),
+            map=None,
+            is_shooting_phase=lambda: True,
+        )
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        game.get_current_player = lambda: player
+
+        army = SimpleNamespace(player=player, faction_id="TAU", units=[])
+        mgr = ForTheGreaterGoodManager(army)
+        army.for_the_greater_good = mgr
+
+        attacker_unit = self._make_unit("Firesight Team", abilities=["Precise Targeting"])
+        observer_unit = self._make_unit("Pathfinders", markerlight=True)
+        target_unit = self._make_unit("Enemy Unit")
+
+        for u in (attacker_unit, observer_unit, target_unit):
+            u.set_army(army)
+        army.units = [attacker_unit, observer_unit]
+
+        self.assertTrue(mgr.mark_spotted(observer_unit, target_unit, game=game, player=player))
+
+        attacker_model = Model(
+            name="Marksman",
+            movement=6,
+            toughness=4,
+            save=4,
+            wounds=2,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        attacker_model.parent_unit = attacker_unit
+
+        target_model = Model(
+            name="Target",
+            movement=6,
+            toughness=4,
+            save=4,
+            wounds=2,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        target_model.parent_unit = target_unit
+        target_unit.models = [target_model]
+
+        ranged_parent = SimpleNamespace(name="Longshot Pulse Rifle", is_melee=lambda: False)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "30",
+                "A": "1",
+                "BS_WS": "4+",
+                "S": "5",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=ranged_parent,
+        )
+
+        aura_stub = SimpleNamespace(
+            hit=0,
+            wound=0,
+            reroll_hit_ones=False,
+            reroll_wound_ones=False,
+            reroll_hit_reasons=(),
+            reroll_wound_reasons=(),
+            target_toughness_delta=0,
+            target_toughness_reasons=(),
+        )
+
+        from warhammer40k_ai.units import wargear as wargear_mod
+
+        seq = iter([2, 4])
+        old_get_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _s: next(seq)
+        try:
+            attack_instance = {"_aura_attack_mods": aura_stub}
+            hit_res = profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertEqual(int(hit_res["final_needed"]), 3)
+            self.assertEqual(int(hit_res["roll"]), 4)
+            self.assertTrue(bool(hit_res.get("hit")))
+            self.assertIn("reroll", hit_res)
+            self.assertTrue(any("Precise Targeting" in x for x in hit_res.get("special_effects", [])))
         finally:
             wargear_mod.get_roll = old_get_roll

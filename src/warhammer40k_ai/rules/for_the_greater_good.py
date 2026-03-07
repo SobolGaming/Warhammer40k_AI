@@ -124,15 +124,26 @@ class ForTheGreaterGoodManager:
         except Exception:
             return False
 
-    def _unit_has_ftgg(self, unit) -> bool:
+    @staticmethod
+    def _unit_has_named_ability(unit, ability_name: str) -> bool:
         if unit is None:
+            return False
+        needle = str(ability_name or "").strip().lower()
+        if not needle:
             return False
         try:
             for ab in list(getattr(unit, "possible_abilities", []) or []):
-                if str(getattr(ab, "name", "") or "").strip().lower() == "for the greater good":
+                if str(getattr(ab, "name", "") or "").strip().lower() == needle:
                     return True
         except Exception:
-            pass
+            return False
+        return False
+
+    def _unit_has_ftgg(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._unit_has_named_ability(unit, "for the greater good"):
+            return True
         try:
             if unit.has_any_keyword("T'AU EMPIRE"):
                 return True
@@ -481,6 +492,9 @@ class ForTheGreaterGoodManager:
             "bs_improve": 1,
             "ignores_cover": bool(self._spotted_markerlight.get(tid, False)),
         }
+        if self._unit_has_named_ability(attacker_unit, "precise targeting"):
+            out["reroll_hit_full"] = True
+            out["reroll_hit_full_reason"] = "Precise Targeting"
         coordinated_sustained = int(self._spotted_coordinated_exploitation.get(tid, 0) or 0)
         if coordinated_sustained > 0:
             out["sustained_hits_value"] = coordinated_sustained

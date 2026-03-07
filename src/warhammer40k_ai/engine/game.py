@@ -7779,6 +7779,25 @@ class Game(
         if root is None:
             return
 
+        if pname == "FIGHT_PHASE":
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in members:
+                if member is None:
+                    continue
+                member_sr = getattr(member, "special_rules", None)
+                if not isinstance(member_sr, dict):
+                    continue
+                upgrade_entries = list(member_sr.get("fight_phase_destroy_enemy_fnp_upgrade_entries", []) or [])
+                if not upgrade_entries:
+                    continue
+                member_sr["fight_phase_destroy_enemy_fnp_upgrade_active"] = True
+                member.special_rules = member_sr
+
         # Blood Legion enhancement: Gateway Unto Damnation kill tracking.
         attacker_model_id = str(get_entity_id(destroyed_by_model) or "") if destroyed_by_model is not None else ""
         if attacker_model_id:

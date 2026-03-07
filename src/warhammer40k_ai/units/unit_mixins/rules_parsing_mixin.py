@@ -1504,8 +1504,10 @@ class RulesParsingMixin:
 
         seen_entries: set[tuple[str, str, str]] = set()
         self_target_discount_re = re.compile(
-            r"once\s+per\s+(?P<limit>battle\s+round|turn)\s+when\s+you\s+target\s+this\s+(?:model|unit)\s+with\s+a\s+stratagem\s+"
-            r"(?:you\s+may\s+)?reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1\s*cp",
+            r"once\s+per\s+(?P<limit>battle\s+round|turn)\s+(?:when\s+)?you\s+(?:can\s+)?target\s+"
+            r"(?:this\s+(?:model|unit)|this\s+models\s+unit|this\s+model\s+s\s+unit)\s+with\s+a\s+stratagem\s+"
+            r"(?:if\s+it\s+does\s+)?(?:you\s+may\s+)?reduce\s+the\s+cp\s+cost\s+"
+            r"(?:of\s+that\s+(?:use|usage)\s+of\s+)?(?:that\s+)?stratagem\s+by\s+1\s*cp",
             re.IGNORECASE,
         )
 
@@ -1654,10 +1656,19 @@ class RulesParsingMixin:
             del sr["opponent_ability_cp_gain_reaction_specs"]
 
         entries: list[tuple[str, str, str]] = []
+        model_level_signatures: set[tuple[str, str]] = set()
         entries.extend((name, desc, "") for name, desc in self._iter_ability_entries_for_rules(model=None))
         for model in list(getattr(self, "models", []) or []):
             model_id = str(get_entity_id(model) or "").strip()
-            entries.extend((name, desc, model_id) for name, desc in self._iter_ability_entries_for_rules(model=model))
+            model_entries = list(self._iter_ability_entries_for_rules(model=model))
+            for name, desc in model_entries:
+                model_level_signatures.add(
+                    (
+                        str(name or "").strip().lower(),
+                        self._normalize_rules_text(str(desc or "")),
+                    )
+                )
+            entries.extend((name, desc, model_id) for name, desc in model_entries)
 
         enhancement = getattr(self, "enhancement", None)
         enhancement_name = str(getattr(enhancement, "name", "") or "").strip().lower()
@@ -1672,6 +1683,14 @@ class RulesParsingMixin:
         specs: list[dict] = []
         seen_entries: set[tuple[str, str, str]] = set()
         for name, desc, source_model_id in entries:
+            if (
+                not source_model_id
+                and (
+                    str(name or "").strip().lower(),
+                    self._normalize_rules_text(str(desc or "")),
+                ) in model_level_signatures
+            ):
+                continue
             entry_key = (
                 str(name or "").strip().lower(),
                 str(desc or "").strip().lower(),
@@ -1749,11 +1768,17 @@ class RulesParsingMixin:
                 del sr["stratagem_target_cp_refund_specs"]
         except Exception:
             pass
+        try:
+            if "stratagem_target_cp_refund_aura" in sr:
+                del sr["stratagem_target_cp_refund_aura"]
+        except Exception:
+            pass
 
-        entries: list[tuple[str, str]] = []
-        entries.extend(list(self._iter_ability_entries_for_rules(model=None)))
+        entries: list[tuple[str, str, str]] = []
+        entries.extend((name, desc, "") for name, desc in self._iter_ability_entries_for_rules(model=None))
         for model in list(getattr(self, "models", []) or []):
-            entries.extend(list(self._iter_ability_entries_for_rules(model=model)))
+            model_id = str(get_entity_id(model) or "").strip()
+            entries.extend((name, desc, model_id) for name, desc in self._iter_ability_entries_for_rules(model=model))
 
         bonus_clause_re = re.compile(
             r"adding\s+(?P<bonus>\d+)\s+to\s+the\s+result\s+if\s+there\s+(?:are|is)\s+one\s+or\s+more\s+friendly\s+"
@@ -1762,9 +1787,14 @@ class RulesParsingMixin:
         )
 
         specs: list[dict] = []
-        seen_entries: set[tuple[str, str]] = set()
-        for name, desc in entries:
-            entry_key = (str(name or "").strip().lower(), str(desc or "").strip().lower())
+        aura_specs: list[dict] = []
+        seen_entries: set[tuple[str, str, str]] = set()
+        for name, desc, source_model_id in entries:
+            entry_key = (
+                str(name or "").strip().lower(),
+                str(desc or "").strip().lower(),
+                str(source_model_id or "").strip(),
+            )
             if entry_key in seen_entries:
                 continue
             seen_entries.add(entry_key)
@@ -1797,6 +1827,35 @@ class RulesParsingMixin:
                 roll_bonus_keyword = re.sub(r"\s+", " ", str(m_bonus.group("keyword") or "").strip()).upper()
                 norm_for_match = re.sub(r"\s+", " ", f"{norm[:m_bonus.start()]} {norm[m_bonus.end():]}").strip()
 
+            m_aura = self._TARGETED_STRATAGEM_CP_REFUND_AURA_RE.fullmatch(norm_for_match)
+            if m_aura:
+                try:
+                    roll_min = int(m_aura.group("roll") or 5)
+                except Exception:
+                    roll_min = 5
+                try:
+                    cp_gain = int(m_aura.group("cp") or 1)
+                except Exception:
+                    cp_gain = 1
+                try:
+                    aura_range = int(m_aura.group("range") or 0)
+                except Exception:
+                    aura_range = 0
+                aura_keyword = re.sub(r"\s+", " ", str(m_aura.group("keyword") or "").strip()).upper()
+                if roll_min > 0 and cp_gain > 0 and aura_range > 0 and aura_keyword:
+                    spec = {
+                        "roll_min": int(roll_min),
+                        "cp_gain": int(cp_gain),
+                        "range": int(aura_range),
+                        "keyword": str(aura_keyword),
+                        "name": name or "Stratagem CP Refund",
+                        "description": desc or "",
+                    }
+                    if source_model_id:
+                        spec["source_model_id"] = str(source_model_id)
+                    aura_specs.append(spec)
+                continue
+
             m = self._TARGETED_STRATAGEM_CP_REFUND_RE.fullmatch(norm_for_match)
             if not m:
                 m = self._TARGETED_STRATAGEM_CP_REFUND_SELECT_RE.fullmatch(norm_for_match)
@@ -1818,6 +1877,8 @@ class RulesParsingMixin:
                 "name": name or "Stratagem CP Refund",
                 "description": desc or "",
             }
+            if source_model_id:
+                spec["source_model_id"] = str(source_model_id)
             if roll_bonus > 0 and roll_bonus_keyword and roll_bonus_range > 0:
                 spec["roll_bonus"] = int(roll_bonus)
                 spec["roll_bonus_keyword"] = str(roll_bonus_keyword)
@@ -1835,13 +1896,84 @@ class RulesParsingMixin:
                     int(spec.get("roll_bonus", 0) or 0),
                     str(spec.get("roll_bonus_keyword", "") or "").strip().upper(),
                     int(spec.get("roll_bonus_range", 0) or 0),
+                    str(spec.get("source_model_id", "") or "").strip(),
                 )
                 if key in seen_specs:
                     continue
                 seen_specs.add(key)
                 deduped_specs.append(spec)
             if deduped_specs:
-                sr["stratagem_target_cp_refund_specs"] = deduped_specs
+                base_with_source: set[tuple] = set()
+                for spec in deduped_specs:
+                    if str(spec.get("source_model_id", "") or "").strip():
+                        base_with_source.add(
+                            (
+                                int(spec.get("roll_min", 0) or 0),
+                                int(spec.get("cp_gain", 0) or 0),
+                                str(spec.get("name", "") or "").strip().lower(),
+                            )
+                        )
+                filtered_specs: list[dict] = []
+                for spec in deduped_specs:
+                    base_key = (
+                        int(spec.get("roll_min", 0) or 0),
+                        int(spec.get("cp_gain", 0) or 0),
+                        str(spec.get("name", "") or "").strip().lower(),
+                    )
+                    if (
+                        not str(spec.get("source_model_id", "") or "").strip()
+                        and base_key in base_with_source
+                    ):
+                        continue
+                    filtered_specs.append(spec)
+                if filtered_specs:
+                    sr["stratagem_target_cp_refund_specs"] = filtered_specs
+        if aura_specs:
+            seen_specs: set[tuple] = set()
+            deduped_specs: list[dict] = []
+            for spec in aura_specs:
+                key = (
+                    int(spec.get("roll_min", 0) or 0),
+                    int(spec.get("cp_gain", 0) or 0),
+                    int(spec.get("range", 0) or 0),
+                    str(spec.get("keyword", "") or "").strip().upper(),
+                    str(spec.get("name", "") or "").strip().lower(),
+                    str(spec.get("source_model_id", "") or "").strip(),
+                )
+                if key in seen_specs:
+                    continue
+                seen_specs.add(key)
+                deduped_specs.append(spec)
+            if deduped_specs:
+                base_with_source: set[tuple] = set()
+                for spec in deduped_specs:
+                    if str(spec.get("source_model_id", "") or "").strip():
+                        base_with_source.add(
+                            (
+                                int(spec.get("roll_min", 0) or 0),
+                                int(spec.get("cp_gain", 0) or 0),
+                                int(spec.get("range", 0) or 0),
+                                str(spec.get("keyword", "") or "").strip().upper(),
+                                str(spec.get("name", "") or "").strip().lower(),
+                            )
+                        )
+                filtered_specs: list[dict] = []
+                for spec in deduped_specs:
+                    base_key = (
+                        int(spec.get("roll_min", 0) or 0),
+                        int(spec.get("cp_gain", 0) or 0),
+                        int(spec.get("range", 0) or 0),
+                        str(spec.get("keyword", "") or "").strip().upper(),
+                        str(spec.get("name", "") or "").strip().lower(),
+                    )
+                    if (
+                        not str(spec.get("source_model_id", "") or "").strip()
+                        and base_key in base_with_source
+                    ):
+                        continue
+                    filtered_specs.append(spec)
+                if filtered_specs:
+                    sr["stratagem_target_cp_refund_aura"] = filtered_specs
 
         self.special_rules = sr
 
@@ -2651,6 +2783,7 @@ class RulesParsingMixin:
                 for key in (
                     "bearer_unit_fnp",
                     "bearer_unit_keyword_fnp_entries",
+                    "fight_phase_destroy_enemy_fnp_upgrade_entries",
                     "attached_character_fnp_entries",
                     "unit_contains_character_fnp_entries",
                     "same_unit_keyword_fnp_entries",
@@ -2708,6 +2841,7 @@ class RulesParsingMixin:
         contains_oc_mods: list[tuple[int, str]] = []
         fnp_entries: list[dict] = []
         bearer_unit_keyword_fnp_entries: list[dict] = []
+        fight_phase_destroy_enemy_fnp_upgrade_entries: list[dict] = []
         attached_character_fnp_entries: list[dict] = []
         unit_contains_character_fnp_entries: list[dict] = []
         same_unit_keyword_fnp_entries: list[dict] = []
@@ -3071,8 +3205,9 @@ class RulesParsingMixin:
                             )
                             bearer_unit_keyword_fnp_matched = True
 
+                    upgrade_fnp_match = self._FIGHT_PHASE_DESTROY_ENEMY_FNP_UPGRADE_RE.search(sentence.lower())
                     m = self._BEARER_UNIT_FNP_RE.search(sentence)
-                    if m and not attached_character_fnp_matched and not bearer_unit_keyword_fnp_matched:
+                    if m and not upgrade_fnp_match and not attached_character_fnp_matched and not bearer_unit_keyword_fnp_matched:
                         try:
                             val = int(m.group(1))
                         except Exception:
@@ -3092,6 +3227,20 @@ class RulesParsingMixin:
                                 cond = None
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                             fnp_entries.append({"value": int(val), "condition": cond, "source": source})
+
+                    if upgrade_fnp_match:
+                        try:
+                            val = int(upgrade_fnp_match.group("val"))
+                        except Exception:
+                            val = None
+                        if val:
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            fight_phase_destroy_enemy_fnp_upgrade_entries.append(
+                                {
+                                    "value": int(val),
+                                    "source": source,
+                                }
+                            )
 
                     m = self._UNIT_CONTAINS_CHARACTER_FNP_RE.search(sentence)
                     if m:
@@ -3387,6 +3536,28 @@ class RulesParsingMixin:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_fnp"] = list(fnp_entries)
+                u.special_rules = sr
+        if fight_phase_destroy_enemy_fnp_upgrade_entries:
+            deduped_entries = []
+            seen_entries: set[tuple[int, str]] = set()
+            for entry in fight_phase_destroy_enemy_fnp_upgrade_entries:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    val = int(entry.get("value"))
+                except Exception:
+                    continue
+                source = str(entry.get("source", "") or "").strip() or "Bearer unit ability"
+                key = (int(val), source.lower())
+                if key in seen_entries:
+                    continue
+                seen_entries.add(key)
+                deduped_entries.append({"value": int(val), "source": source})
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["fight_phase_destroy_enemy_fnp_upgrade_entries"] = list(deduped_entries)
                 u.special_rules = sr
         if bearer_unit_keyword_fnp_entries:
             for u in members:

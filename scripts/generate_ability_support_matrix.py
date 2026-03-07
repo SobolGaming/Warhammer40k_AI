@@ -5707,6 +5707,9 @@ def _classify_ability_base(
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
     ds8_support_turret_support = _ds8_support_turret_support(description)
     tau_crack_shot_support = _tau_crack_shot_support(description)
+    tau_precise_targeting_support = _tau_precise_targeting_support(description)
+    tau_hunting_hounds_support = _tau_hunting_hounds_support(description)
+    tau_rites_of_feasting_support = _tau_rites_of_feasting_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
     movement_phase_end_mortal_table_support = _movement_phase_end_enemy_within_range_mortal_table_support(description)
     movement_phase_end_mortal_threshold_support = _movement_phase_end_enemy_within_range_mortal_threshold_support(description)
@@ -5833,6 +5836,10 @@ def _classify_ability_base(
         return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
     if fid == "DRU" and "(pain)" in str(name or "").lower():
         return ("Supported", "Power from Pain ability effects implemented.")
+    if tau_rites_of_feasting_support:
+        return tau_rites_of_feasting_support
+    if tau_hunting_hounds_support:
+        return tau_hunting_hounds_support
     if closest_m_veh_support:
         return closest_m_veh_support
     if monster_vehicle_reroll_support:
@@ -6072,6 +6079,12 @@ def _classify_ability_base(
         return ds8_support_turret_support
     if tau_crack_shot_support:
         return tau_crack_shot_support
+    if tau_precise_targeting_support:
+        return tau_precise_targeting_support
+    if tau_hunting_hounds_support:
+        return tau_hunting_hounds_support
+    if tau_rites_of_feasting_support:
+        return tau_rites_of_feasting_support
     if movement_phase_speed_mortal_support:
         return movement_phase_speed_mortal_support
     if movement_phase_end_mortal_table_support:
@@ -7406,7 +7419,7 @@ def _weapon_keyword_grant_support(description: str) -> Optional[Tuple[str, str]]
 
     patterns = [
         (
-            rf"{lead_prefix}(?:(?P<scope>melee|ranged) )?weapons equipped by models in "
+            rf"{lead_prefix}(?:(?P<scope>melee|ranged) )?weapons equipped by (?:models in )?"
             r"(?:the bearers unit|that unit|this unit) (?:have|gain) (?:the )?(?P<kw_section>[a-z0-9 \-]+?) abil(?:ity|ities)",
             "unit",
         ),
@@ -8296,6 +8309,64 @@ def _tau_crack_shot_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         "Critical wounds from this model's ranged attacks set that attack's AP characteristic to -3.",
+    )
+
+
+def _tau_precise_targeting_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time a model in this unit makes an attack that targets a spotted unit "
+        r"you can reroll the hit roll"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Guided attacks from this unit against Spotted targets can re-roll the Hit roll (optional).",
+    )
+
+
+def _tau_hunting_hounds_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while this unit is within (?P<range>\d+) of one or more friendly kroot character models "
+        r"the objective control characteristic of models in this unit is (?P<value>\d+)",
+        norm,
+    )
+    if not m:
+        return None
+    range_value = str(m.group("range") or "12").strip()
+    oc_value = str(m.group("value") or "1").strip()
+    return (
+        "Supported",
+        f"While this unit is within {range_value}\" of one or more friendly KROOT CHARACTER models, its models' Objective Control is set to {oc_value}.",
+    )
+
+
+def _tau_rites_of_feasting_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this model is leading a unit models in that unit have the feel no pain 6 ability "
+        r"if that unit destroys one or more enemy units? in the fight phase until the end of the battle "
+        r"models in that unit have the feel no pain 5 ability instead"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Leading: Feel No Pain 6+; after this unit destroys an enemy unit in the Fight phase, it upgrades to Feel No Pain 5+ for the rest of the battle.",
     )
 
 

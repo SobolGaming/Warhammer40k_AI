@@ -812,6 +812,43 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertTrue(attack_instance.get("ignores_cover", False))
 
+    def test_bearer_unit_ignores_cover_applies_without_models_in_phrase(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Pech'ra",
+            "description": "Ranged weapons equipped by the bearer's unit have the [Ignores Cover] ability.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Kroot Farstalkers", abilities=[ability])
+        unit._refresh_bearer_unit_common_modifiers()
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+        target = SimpleNamespace(
+            toughness=4,
+            models=[SimpleNamespace(is_alive=True)],
+            has_keyword=lambda _k: False,
+        )
+        attack_instance = {"_aura_attack_mods": self._aura_stub()}
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
+            profile._hit_target_with_tracking(target, unit.models[0], attack_instance)
+
+        self.assertTrue(attack_instance.get("ignores_cover", False))
+
     def test_unit_ignores_cover_applies(self):
         from warhammer40k_ai.units.wargear import WargearProfile
 
