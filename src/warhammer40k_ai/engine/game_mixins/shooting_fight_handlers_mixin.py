@@ -3464,6 +3464,122 @@ class GameShootingFightHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_unit_shooting_resolved_tau_advanced_scouting(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Advanced Scouting requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        owner_id = str(get_entity_id(attacker_player) or "") or str(getattr(attacker_player, "id", "") or "")
+        by_target = hit_models_by_target if isinstance(hit_models_by_target, dict) else {}
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _model_hit_target(model, target_unit, target_root) -> bool:
+            if not by_target:
+                return True
+            hit_models = by_target.get(target_unit)
+            if hit_models is None:
+                hit_models = by_target.get(target_root)
+            if not hit_models:
+                return False
+            model_id = str(get_entity_id(model) or "")
+            for hit_model in list(hit_models):
+                if hit_model is model:
+                    return True
+                if model_id and str(get_entity_id(hit_model) or "") == model_id:
+                    return True
+            return False
+
+        for model in list(attacker_unit.models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_tau_advanced_scouting_specs(model) or []
+            if not specs:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if not model_id:
+                continue
+
+            for target_unit, hits in (hits_by_target or {}).items():
+                if target_unit is None or int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(target_unit):
+                    continue
+                try:
+                    target_root = target_unit.get_attached_unit_root()
+                except Exception:
+                    target_root = target_unit
+                if target_root is None:
+                    continue
+                if not _model_hit_target(model, target_unit, target_root):
+                    continue
+                sr = getattr(target_root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                marks = list(sr.get("tau_advanced_scouting_marks", []) or [])
+                changed = False
+                for spec in specs:
+                    source = str(spec.get("source", "") or "Advanced Scouting").strip() or "Advanced Scouting"
+                    keyword_phrase = str(spec.get("keyword_phrase", "") or "kroot").strip() or "kroot"
+                    key = (
+                        source.lower(),
+                        keyword_phrase.lower(),
+                        owner_id,
+                        int(turn or 0),
+                        model_id,
+                    )
+                    exists = False
+                    for entry in marks:
+                        if not isinstance(entry, dict):
+                            continue
+                        existing_key = (
+                            str(entry.get("source", "") or "").strip().lower(),
+                            str(entry.get("keyword_phrase", "") or "").strip().lower(),
+                            str(entry.get("owner_id", "") or ""),
+                            int(entry.get("turn", 0) or 0),
+                            str(entry.get("source_model_id", "") or ""),
+                        )
+                        if existing_key == key:
+                            exists = True
+                            break
+                    if exists:
+                        continue
+                    marks.append(
+                        {
+                            "source": source,
+                            "keyword_phrase": keyword_phrase,
+                            "owner_id": owner_id,
+                            "turn": int(turn or 0),
+                            "source_model_id": model_id,
+                        }
+                    )
+                    changed = True
+                if changed:
+                    sr["tau_advanced_scouting_marks"] = marks
+                    target_root.special_rules = sr
+
     def _on_unit_shooting_resolved_post_shoot_crit_hit_threshold(
         self,
         attacker_unit=None,

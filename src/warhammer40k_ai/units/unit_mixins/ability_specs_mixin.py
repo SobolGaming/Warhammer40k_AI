@@ -2792,6 +2792,57 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_tau_advanced_scouting_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific T'au rule: after this model scores a ranged hit on an enemy unit,
+        other friendly keyword models can re-roll Hit rolls against that unit until end of turn.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - keyword_phrase: str (normalized keyword phrase)
+        """
+        if model is None:
+            return []
+        cache_key = f"model_tau_advanced_scouting:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._TAU_ADVANCED_SCOUTING_RE.fullmatch(normalized)
+            if not m:
+                continue
+            keyword_raw = str(m.group("keyword") or "").strip()
+            keyword_phrase = self._normalize_keyword_phrase(keyword_raw) if keyword_raw else ""
+            if not keyword_phrase:
+                keyword_phrase = "kroot"
+            source = str(name or "Advanced Scouting").strip() or "Advanced Scouting"
+            key = (source.lower(), keyword_phrase)
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "keyword_phrase": keyword_phrase,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_sonic_destruction_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model/unit-specific rule: vibro cannon attacks gain +S/AP/D per other friendly platform that targeted the unit.

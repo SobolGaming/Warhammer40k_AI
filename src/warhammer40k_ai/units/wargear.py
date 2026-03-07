@@ -2487,6 +2487,83 @@ class WargearProfile:
             "reroll_full": False,
         }
 
+    def _tau_advanced_scouting_hit_reroll_rule(self, attacker: 'Model', target: 'Unit') -> Optional[dict]:
+        if attacker is None or target is None:
+            return None
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        if attacker_unit is None:
+            return None
+        try:
+            target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+        except Exception:
+            target_root = target
+        if target_root is None:
+            return None
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        marks = list(sr.get("tau_advanced_scouting_marks", []) or [])
+        if not marks:
+            return None
+
+        attacker_player = None
+        attacker_owner_id = ""
+        current_turn = 0
+        try:
+            attacker_army = attacker_unit.get_parent_army()
+        except Exception:
+            attacker_army = None
+        if attacker_army is not None:
+            attacker_player = getattr(attacker_army, "player", None)
+        if attacker_player is not None:
+            attacker_owner_id = str(get_entity_id(attacker_player) or "") or str(getattr(attacker_player, "id", "") or "")
+            game = getattr(attacker_player, "game", None)
+            if game is not None:
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+
+        attacker_model_id = str(get_entity_id(attacker) or "")
+        active_marks: list[dict] = []
+        matched_source = ""
+        for entry in marks:
+            if not isinstance(entry, dict):
+                continue
+            entry_turn = int(entry.get("turn", 0) or 0)
+            if current_turn and entry_turn and current_turn != entry_turn:
+                continue
+            active_marks.append(entry)
+            owner_id = str(entry.get("owner_id", "") or "")
+            if owner_id and attacker_owner_id and owner_id != attacker_owner_id:
+                continue
+            keyword_phrase = str(entry.get("keyword_phrase", "") or "").strip()
+            if keyword_phrase:
+                try:
+                    if not attacker_unit._unit_matches_keyword_phrase(attacker_unit, keyword_phrase, use_effective=True):
+                        continue
+                except Exception:
+                    continue
+            source_model_id = str(entry.get("source_model_id", "") or "")
+            if source_model_id and attacker_model_id and source_model_id == attacker_model_id:
+                continue
+            matched_source = str(entry.get("source", "") or "Advanced Scouting").strip() or "Advanced Scouting"
+            break
+
+        if len(active_marks) != len(marks):
+            if active_marks:
+                sr["tau_advanced_scouting_marks"] = active_marks
+            else:
+                sr.pop("tau_advanced_scouting_marks", None)
+            target_root.special_rules = sr
+        if not matched_source:
+            return None
+        return {
+            "source": matched_source,
+            "reroll_full": True,
+            "reroll_values": (),
+        }
+
     def _ranged_afflicted_strength_ap_bonus(self, attacker: 'Model', target: 'Unit') -> tuple[int, int, tuple[str, ...]]:
         if attacker is None or target is None:
             return (0, 0, ())
@@ -10925,6 +11002,13 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source}: re-roll Hit rolls of {shown}")
                 if bool(rule.get("reroll_full", False)):
                     reroll_full_reasons.append(f"{source}: re-roll Hit roll")
+        except Exception:
+            pass
+        try:
+            rule = self._tau_advanced_scouting_hit_reroll_rule(attacker, target)
+            if isinstance(rule, dict) and bool(rule.get("reroll_full", False)):
+                source = str(rule.get("source", "") or "Advanced Scouting").strip() or "Advanced Scouting"
+                reroll_full_reasons.append(f"{source}: re-roll Hit roll")
         except Exception:
             pass
         # T'au Empire: Precise Targeting (guided attacks vs Spotted unit).

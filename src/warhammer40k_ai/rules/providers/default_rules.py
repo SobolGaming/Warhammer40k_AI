@@ -109,6 +109,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_keyword_strength_bonus"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_keyword_hit_bonus"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_keyword_wound_reroll"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_tau_advanced_scouting"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_shoot_again"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_leadership_debuff"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_thousand_sons_psychic_hit_markers"),

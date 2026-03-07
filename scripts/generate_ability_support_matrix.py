@@ -5707,6 +5707,7 @@ def _classify_ability_base(
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
     ds8_support_turret_support = _ds8_support_turret_support(description)
     tau_crack_shot_support = _tau_crack_shot_support(description)
+    tau_advanced_scouting_support = _tau_advanced_scouting_support(description)
     tau_precise_targeting_support = _tau_precise_targeting_support(description)
     tau_hunting_hounds_support = _tau_hunting_hounds_support(description)
     tau_rites_of_feasting_support = _tau_rites_of_feasting_support(description)
@@ -5836,6 +5837,8 @@ def _classify_ability_base(
         return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
     if fid == "DRU" and "(pain)" in str(name or "").lower():
         return ("Supported", "Power from Pain ability effects implemented.")
+    if tau_advanced_scouting_support:
+        return tau_advanced_scouting_support
     if tau_rites_of_feasting_support:
         return tau_rites_of_feasting_support
     if tau_hunting_hounds_support:
@@ -6079,6 +6082,8 @@ def _classify_ability_base(
         return ds8_support_turret_support
     if tau_crack_shot_support:
         return tau_crack_shot_support
+    if tau_advanced_scouting_support:
+        return tau_advanced_scouting_support
     if tau_precise_targeting_support:
         return tau_precise_targeting_support
     if tau_hunting_hounds_support:
@@ -8309,6 +8314,27 @@ def _tau_crack_shot_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         "Critical wounds from this model's ranged attacks set that attack's AP characteristic to -3.",
+    )
+
+
+def _tau_advanced_scouting_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"each time this model makes a ranged attack that hits an enemy unit "
+        r"until the end of the turn each time another (?P<keyword>[a-z0-9 ]+) model from your army "
+        r"makes an attack that targets that enemy unit you can reroll the hit roll",
+        norm,
+    )
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper() or "KROOT"
+    return (
+        "Supported",
+        f"After this model scores a ranged hit on an enemy unit, until end of turn other friendly {keyword} models can re-roll Hit rolls when attacking that unit.",
     )
 
 
