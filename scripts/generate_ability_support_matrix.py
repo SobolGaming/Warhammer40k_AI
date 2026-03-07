@@ -5630,6 +5630,7 @@ def _classify_ability_base(
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     unit_wound_reroll_support = _unit_wound_reroll_ones_support(description)
     target_hit_penalty_support = _target_hit_roll_penalty_support(description)
+    defensive_ap_worsen_support = _defensive_ap_worsen_support(description)
     defensive_wound_penalty_support = _defensive_wound_penalty_support(description)
     strength_gt_toughness_wound_penalty_support = _defensive_strength_gt_toughness_wound_penalty_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
@@ -5920,6 +5921,8 @@ def _classify_ability_base(
         return unit_wound_reroll_support
     if target_hit_penalty_support:
         return target_hit_penalty_support
+    if defensive_ap_worsen_support:
+        return defensive_ap_worsen_support
     if defensive_wound_penalty_support:
         return defensive_wound_penalty_support
     if strength_gt_toughness_wound_penalty_support:
@@ -8059,6 +8062,33 @@ def _defensive_wound_penalty_support(description: str) -> Optional[Tuple[str, st
     else:
         attack_scope = "all"
     return ("Supported", f"{scope_text} targeted: -{val} to wound vs {attack_scope} attacks.")
+
+
+def _defensive_ap_worsen_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:while (?:(?:a|an|the) [a-z0-9 ]+|this)(?: model)? is leading (?:this|a) unit )?"
+        r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
+        r"(?:targets|target) "
+        r"(?P<scope>this model|this unit|this model s unit|that unit|the bearer|the bearer s unit) "
+        r"worsen the armou?r penetration characteristic of that attack by (?P<val>\d+)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    val = m.group("val")
+    atype = (m.group("atype") or "").strip().lower()
+    if atype == "melee":
+        attack_scope = "melee"
+    elif atype == "ranged":
+        attack_scope = "ranged"
+    else:
+        attack_scope = "all"
+    return ("Supported", f"Attacks targeting this unit/model have AP worsened by {val} vs {attack_scope} attacks.")
 
 
 def _defensive_strength_gt_toughness_wound_penalty_support(description: str) -> Optional[Tuple[str, str]]:
