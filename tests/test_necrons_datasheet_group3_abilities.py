@@ -517,6 +517,161 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
         objective_point.controlling_player = player_one
         self.assertTrue(game.can_place_unit_arriving_from_reserves(arriving, blocked_position))
 
+    def test_eternity_gate_parses_reinforcements_setup_spec(self):
+        ability = {
+            "name": "Eternity Gate",
+            "description": (
+                "In the Reinforcements step of your Movement phase, you can select one NECRONS INFANTRY unit from your "
+                "army either in Reserves or on the battlefield. If that unit is on the battlefield, remove that unit "
+                "from the battlefield and place it into Reserves. Set up that unit wholly within 6\" of this model and "
+                "not within Engagement Range of any enemy models. That unit cannot declare a charge this turn."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Monolith", abilities=[ability], keywords=["NECRONS", "VEHICLE"])
+        specs = unit.unit_eternity_gate_specs()
+        self.assertEqual(len(specs), 1)
+        spec = dict(specs[0] or {})
+        self.assertEqual(int(spec.get("range", 0) or 0), 6)
+        self.assertTrue(bool(spec.get("allow_target_in_reserves", False)))
+        self.assertTrue(bool(spec.get("allow_target_on_battlefield", False)))
+        self.assertTrue(bool(spec.get("no_charge_this_turn", False)))
+
+    def test_eternity_gate_queues_target_and_constrains_arrival(self):
+        from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_MOVE_UNIT
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        ability = {
+            "name": "Eternity Gate",
+            "description": (
+                "In the Reinforcements step of your Movement phase, you can select one NECRONS INFANTRY unit from your "
+                "army either in Reserves or on the battlefield. If that unit is on the battlefield, remove that unit "
+                "from the battlefield and place it into Reserves. Set up that unit wholly within 6\" of this model and "
+                "not within Engagement Range of any enemy models. That unit cannot declare a charge this turn."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        monolith = _make_unit("Monolith", abilities=[ability], keywords=["NECRONS", "VEHICLE"])
+        infantry = _make_unit("Necron Warriors", keywords=["NECRONS", "INFANTRY"])
+        enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+
+        battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(battlefield)
+        army_one = Army("A1", detachment_type="Test")
+        army_two = Army("A2", detachment_type="Test")
+        player_one = Player("P1", control=PlayerControl.LOCAL, army=army_one)
+        player_two = Player("P2", control=PlayerControl.REMOTE, army=army_two)
+        game.add_player(player_one)
+        game.add_player(player_two)
+
+        army_one.add_unit(monolith)
+        army_one.add_unit(infantry)
+        army_two.add_unit(enemy)
+
+        monolith.deployed = True
+        monolith.reserve_status = "deployed"
+        infantry.deployed = True
+        infantry.reserve_status = "reserves"
+        enemy.deployed = True
+        enemy.reserve_status = "deployed"
+
+        monolith.models[0].set_location(20.0, 20.0, 0.0, 0.0)
+        enemy.models[0].set_location(28.0, 20.0, 0.0, 0.0)
+        game.map.units = [monolith, enemy]
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 0
+        game.turn = 2
+        game.rebuild_entity_registry()
+
+        game.process_player_reserves_arrivals(player_one)
+
+        choose_req = None
+        for req in list(game.decision_queue.list() or []):
+            if req.decision_type != DECISION_CHOOSE_QUARRY:
+                continue
+            if str((req.context or {}).get("ability", "") or "") != "eternity_gate_target":
+                continue
+            choose_req = req
+            break
+        self.assertIsNotNone(choose_req)
+
+        infantry_id = str(get_entity_id(infantry) or "")
+        target_option = None
+        for option in list(choose_req.options or []):
+            if str((option.payload or {}).get("target_unit_id", "") or "") == infantry_id:
+                target_option = option
+                break
+        self.assertIsNotNone(target_option)
+
+        selected = resolve_decision_command(
+            game,
+            choose_req,
+            target_option.option_id,
+            player_id=player_one.id,
+        )
+        self.assertTrue(bool(getattr(selected, "ok", False)))
+
+        move_req = None
+        for req in list(game.decision_queue.list() or []):
+            if req.decision_type != DECISION_MOVE_UNIT:
+                continue
+            ctx = dict(req.context or {})
+            if str(ctx.get("placement_kind", "") or "") != "reserves_arrival":
+                continue
+            if str(ctx.get("unit_id", "") or "") != infantry_id:
+                continue
+            if str(ctx.get("reserves_arrival_source_ability", "") or "") != "eternity_gate":
+                continue
+            move_req = req
+            break
+        self.assertIsNotNone(move_req)
+        move_ctx = dict(move_req.context or {})
+        self.assertEqual(str(move_ctx.get("reserves_arrival_anchor_unit_id", "") or ""), str(get_entity_id(monolith) or ""))
+        self.assertTrue(bool(move_ctx.get("reserves_arrival_anchor_wholly_within", False)))
+        self.assertTrue(bool(move_ctx.get("reserves_arrival_require_not_engagement", False)))
+        self.assertEqual(float(move_ctx.get("reserves_arrival_min_enemy_distance_override", 9.0)), 0.0)
+
+        confirm_option = list(move_req.options or [None])[0]
+        self.assertIsNotNone(confirm_option)
+
+        model_id = str(get_entity_id(infantry.models[0]) or "")
+        too_far = resolve_decision_command(
+            game,
+            move_req,
+            confirm_option.option_id,
+            result_payload={
+                "model_positions": [
+                    {"model_id": model_id, "position": [27.5, 20.0, 0.0], "facing": 0.0},
+                ]
+            },
+            player_id=player_one.id,
+        )
+        self.assertFalse(bool(getattr(too_far, "ok", False)))
+
+        legal_near_enemy = resolve_decision_command(
+            game,
+            move_req,
+            confirm_option.option_id,
+            result_payload={
+                "model_positions": [
+                    {"model_id": model_id, "position": [24.0, 20.0, 0.0], "facing": 0.0},
+                ]
+            },
+            player_id=player_one.id,
+        )
+        self.assertTrue(bool(getattr(legal_near_enemy, "ok", False)))
+        self.assertEqual(str(getattr(infantry, "reserve_status", "") or ""), "deployed")
+        self.assertTrue(bool(getattr(infantry, "arrived_from_reserves_this_turn", False)))
+        sr = dict(getattr(infantry, "special_rules", {}) or {})
+        self.assertEqual(str(sr.get("eternity_gate_no_charge_turn_owner", "") or ""), player_one.id)
+        self.assertEqual(int(sr.get("eternity_gate_no_charge_turn", 0) or 0), 2)
+
     def test_living_lightning_parses_dice_pool_mortals(self):
         ability = {
             "name": "Living Lightning",

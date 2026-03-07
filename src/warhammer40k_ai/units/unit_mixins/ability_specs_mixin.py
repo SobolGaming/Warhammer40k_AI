@@ -3049,6 +3049,83 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_eternity_gate_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: Eternity Gate (Reinforcements-step setup of friendly NECRONS INFANTRY).
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - no_charge_this_turn: bool
+            - target_keywords_any: list[str]
+            - allow_target_in_reserves: bool
+            - allow_target_on_battlefield: bool
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_eternity_gate_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "reinforcements step of your movement phase" not in normalized:
+                    continue
+                if "select one necrons infantry unit" not in normalized:
+                    continue
+                if "either in reserves or on the battlefield" not in normalized:
+                    continue
+                if "remove that unit from the battlefield and place it into reserves" not in normalized:
+                    continue
+                if "wholly within 6 of this model" not in normalized:
+                    continue
+                if "not within engagement range of any enemy models" not in normalized:
+                    continue
+                if "cannot declare a charge this turn" not in normalized:
+                    continue
+                source = str(name or "Eternity Gate").strip() or "Eternity Gate"
+                key = (source.lower(), 6)
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": 6,
+                        "no_charge_this_turn": True,
+                        "target_keywords_any": ["NECRONS", "INFANTRY"],
+                        "allow_target_in_reserves": True,
+                        "allow_target_on_battlefield": True,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_post_shoot_leadership_debuff_specs(self) -> List[dict]:
         """
         Unit-specific rule: after this unit has shot, select a hit enemy unit; that unit suffers -1 to

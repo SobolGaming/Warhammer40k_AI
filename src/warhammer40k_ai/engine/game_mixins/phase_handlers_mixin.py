@@ -15239,6 +15239,13 @@ class GamePhaseHandlersMixin:
                             "cloudstrider_source",
                         ):
                             sr.pop(k, None)
+                    if str(sr.get("eternity_gate_no_charge_turn_owner", "") or "") == owner_id:
+                        for k in (
+                            "eternity_gate_no_charge_turn_owner",
+                            "eternity_gate_no_charge_turn",
+                            "eternity_gate_no_charge_source",
+                        ):
+                            sr.pop(k, None)
                     if str(sr.get("cosmic_precision_no_charge_turn_owner", "") or "") == owner_id:
                         for k in (
                             "cosmic_precision_no_charge_turn_owner",

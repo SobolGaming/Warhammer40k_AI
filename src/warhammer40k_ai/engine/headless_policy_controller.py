@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import time
 from dataclasses import dataclass
 from typing import Any, Iterable
@@ -186,7 +187,11 @@ class HeadlessPolicyDecisionController(DecisionController):
         started = time.perf_counter()
         deadline = started + float(self._max_reserves_arrival_seconds)
         attempted = 0
-        for x, y in self._reserves_arrival_anchor_points(game, unit):
+        try:
+            anchors = self._reserves_arrival_anchor_points(game, unit, context=context)
+        except TypeError:
+            anchors = self._reserves_arrival_anchor_points(game, unit)
+        for x, y in anchors:
             now = time.perf_counter()
             if now >= deadline:
                 break
@@ -253,9 +258,16 @@ class HeadlessPolicyDecisionController(DecisionController):
                     return unit
         return None
 
-    def _reserves_arrival_anchor_points(self, game: object, unit: object) -> list[tuple[float, float]]:
+    def _reserves_arrival_anchor_points(
+        self,
+        game: object,
+        unit: object,
+        *,
+        context: dict | None = None,
+    ) -> list[tuple[float, float]]:
         width, height = self._board_dimensions(game)
         unit_id = str(get_entity_id(unit) or "")
+        ctx = dict(context or {})
         points: list[tuple[float, float]] = []
         seen: set[tuple[float, float]] = set()
 
@@ -265,6 +277,45 @@ class HeadlessPolicyDecisionController(DecisionController):
                 return
             seen.add(key)
             points.append((float(x), float(y)))
+
+        anchor_unit_id = str(ctx.get("reserves_arrival_anchor_unit_id", "") or "").strip()
+        try:
+            anchor_range = float(ctx.get("reserves_arrival_anchor_range", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            anchor_range = 0.0
+        if anchor_unit_id and anchor_range > 0.0:
+            anchor_unit = self._resolve_unit_by_id(game, anchor_unit_id)
+            if anchor_unit is not None:
+                get_root = getattr(anchor_unit, "get_attached_unit_root", None)
+                anchor_root = get_root() if callable(get_root) else anchor_unit
+                anchor_pos = getattr(anchor_root, "position", None)
+                if not (isinstance(anchor_pos, (tuple, list)) and len(anchor_pos) >= 2):
+                    anchor_pos = None
+                    models = list(getattr(anchor_root, "models", []) or [])
+                    for model in models:
+                        if not getattr(model, "is_alive", True):
+                            continue
+                        try:
+                            loc = model.get_location()
+                        except Exception:
+                            continue
+                        if isinstance(loc, (tuple, list)) and len(loc) >= 2:
+                            anchor_pos = loc
+                            break
+                if isinstance(anchor_pos, (tuple, list)) and len(anchor_pos) >= 2:
+                    ax = float(anchor_pos[0])
+                    ay = float(anchor_pos[1])
+                    _add(ax, ay)
+                    radius_steps = (
+                        max(0.5, float(anchor_range) * 0.25),
+                        max(0.5, float(anchor_range) * 0.5),
+                        max(0.5, float(anchor_range) * 0.75),
+                        float(anchor_range),
+                    )
+                    for radius in radius_steps:
+                        for deg in range(0, 360, 30):
+                            rad = math.radians(float(deg))
+                            _add(ax + math.cos(rad) * float(radius), ay + math.sin(rad) * float(radius))
 
         in_strategic_fn = getattr(unit, "is_in_strategic_reserves", None)
         in_strategic = bool(in_strategic_fn()) if callable(in_strategic_fn) else False

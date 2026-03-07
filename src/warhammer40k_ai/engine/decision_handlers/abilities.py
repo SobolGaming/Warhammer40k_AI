@@ -39,6 +39,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_PLAGUE,
     DECISION_CHOOSE_PLEDGE,
     DECISION_CHOOSE_QUARRY,
+    DECISION_MOVE_UNIT,
     DECISION_CHOOSE_HYSTERICAL_FRENZY_PSYKER,
     DECISION_CHOOSE_GIFT_OF_CHAOS_TARGET,
     DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
@@ -3890,6 +3891,78 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         }
         if target_model_id not in live_ids:
             return ("Soul Link selected model is no longer eligible.",)
+        return ()
+    if ability == "eternity_gate_target":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Eternity Gate source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return ("Eternity Gate source unit is not on the battlefield.",)
+        get_specs = getattr(source_root, "unit_eternity_gate_specs", None)
+        specs = list(get_specs() or []) if callable(get_specs) else []
+        if not specs:
+            return ("Eternity Gate is not active for the selected source unit.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Eternity Gate target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Eternity Gate target unit was not found.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is not target_army:
+            return ("Eternity Gate target must be a friendly unit.",)
+        has_any_keyword = getattr(target_root, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            if not (bool(has_any_keyword("NECRONS")) and bool(has_any_keyword("INFANTRY"))):
+                return ("Eternity Gate target must be a friendly NECRONS INFANTRY unit.",)
+        candidate_ids = {str(v) for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v)}
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Eternity Gate target is not an eligible candidate.",)
+        allow_in_reserves = bool(ctx.get("allow_target_in_reserves", True))
+        allow_on_battlefield = bool(ctx.get("allow_target_on_battlefield", True))
+        in_reserves_fn = getattr(target_root, "is_in_reserves", None)
+        is_in_reserves = bool(in_reserves_fn()) if callable(in_reserves_fn) else (
+            str(getattr(target_root, "reserve_status", "") or "") in {"reserves", "strategic_reserves"}
+        )
+        on_battlefield = _resurrection_orb_unit_on_battlefield(target_root)
+        if is_in_reserves:
+            if not allow_in_reserves:
+                return ("Eternity Gate cannot target units in reserves.",)
+            can_arrive = getattr(target_root, "can_arrive_from_reserves", None)
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if callable(can_arrive) and not bool(can_arrive(int(current_turn))):
+                return ("Eternity Gate target cannot arrive from reserves this turn.",)
+        elif on_battlefield:
+            if not allow_on_battlefield:
+                return ("Eternity Gate cannot target units on the battlefield.",)
+        else:
+            return ("Eternity Gate target must be in reserves or on the battlefield.",)
         return ()
     if ability == "soulforged_warpack_forges_blessing_target":
         if is_skip_choice(request, result):
@@ -8467,6 +8540,178 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"{ability_name}: copied datasheet abilities from {target_model_name} ({target_unit_name}).",
             )
         return dict(outcome)
+    if ability == "eternity_gate_target":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return None
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+
+        get_specs = getattr(source_root, "unit_eternity_gate_specs", None)
+        specs = list(get_specs() or []) if callable(get_specs) else []
+        if not specs:
+            return None
+        spec = dict(specs[0] or {})
+        ability_name = str(ctx.get("ability_name", "") or spec.get("source", "") or "Eternity Gate").strip()
+        if not ability_name:
+            ability_name = "Eternity Gate"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {"skipped": True, "source": ability_name}
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+        target_id = str(get_entity_id(target_root) or "")
+        if not target_id:
+            return None
+        candidate_ids = {str(v) for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v)}
+        if candidate_ids and target_id not in candidate_ids:
+            return None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is not target_army:
+            return None
+
+        has_any_keyword = getattr(target_root, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            if not (bool(has_any_keyword("NECRONS")) and bool(has_any_keyword("INFANTRY"))):
+                return None
+
+        try:
+            range_inches = float(ctx.get("range", spec.get("range", 6)) or 6)
+        except (TypeError, ValueError):
+            range_inches = 6.0
+        if range_inches <= 0.0:
+            range_inches = 6.0
+        no_charge_this_turn = bool(ctx.get("no_charge_this_turn", spec.get("no_charge_this_turn", True)))
+        source_id = str(get_entity_id(source_root) or "")
+
+        in_reserves_fn = getattr(target_root, "is_in_reserves", None)
+        target_in_reserves = bool(in_reserves_fn()) if callable(in_reserves_fn) else (
+            str(getattr(target_root, "reserve_status", "") or "") in {"reserves", "strategic_reserves"}
+        )
+        target_on_battlefield = _resurrection_orb_unit_on_battlefield(target_root)
+        if not target_in_reserves and not target_on_battlefield:
+            return None
+
+        game_map = getattr(game, "map", None)
+        if target_on_battlefield:
+            set_reserve_status = getattr(target_root, "set_reserve_status", None)
+            if callable(set_reserve_status):
+                set_reserve_status("reserves")
+            else:
+                target_root.reserve_status = "reserves"
+            target_root.deployed = True
+            target_root.reserve_turn_deployed = None
+            target_root.arrived_from_reserves_this_turn = False
+            mark_entered_reserves = getattr(target_root, "mark_entered_reserves_midgame", None)
+            if callable(mark_entered_reserves):
+                mark_entered_reserves(game=game)
+            if isinstance(getattr(game_map, "units", None), list) and target_root in game_map.units:
+                game_map.units.remove(target_root)
+
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list") and hasattr(queue, "pop"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_MOVE_UNIT:
+                    continue
+                pending_ctx = dict(getattr(req, "context", {}) or {})
+                if str(pending_ctx.get("placement_kind", "") or "") != "reserves_arrival":
+                    continue
+                if str(pending_ctx.get("unit_id", "") or "") != target_id:
+                    continue
+                queue.pop(getattr(req, "decision_id", None))
+
+        from ..decisions import DecisionOption as _DecisionOption
+        from ..decisions import DecisionRequest as _DecisionRequest
+
+        allowed_model_ids = [
+            str(get_entity_id(model) or "")
+            for model in list(getattr(target_root, "models", []) or [])
+            if model is not None and str(get_entity_id(model) or "")
+        ]
+        try:
+            turn_value = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn_value = int(getattr(game, "turn", 0) or 0)
+        owner_id = str(ctx.get("turn_owner_id", "") or getattr(player, "id", "") or "")
+        move_context = {
+            "unit_id": target_id,
+            "movement_type": "deploy",
+            "placement_kind": "reserves_arrival",
+            "allowed_model_ids": allowed_model_ids,
+            "allow_skip": False,
+            "battle_round": int(turn_value),
+            "reserve_status": "reserves",
+            "reserves_arrival_anchor_unit_id": source_id,
+            "reserves_arrival_anchor_range": float(range_inches),
+            "reserves_arrival_anchor_wholly_within": True,
+            "reserves_arrival_anchor_source": ability_name,
+            "reserves_arrival_require_not_engagement": True,
+            "reserves_arrival_min_enemy_distance_override": 0.0,
+            "reserves_arrival_ignore_turn_requirement": bool(target_on_battlefield),
+            "reserves_arrival_source_ability": "eternity_gate",
+            "reserves_arrival_source_name": ability_name,
+        }
+        if no_charge_this_turn:
+            move_context["reserves_arrival_no_charge_turn_owner"] = owner_id
+            move_context["reserves_arrival_no_charge_turn"] = int(turn_value)
+            move_context["reserves_arrival_no_charge_source"] = ability_name
+        request_obj = _DecisionRequest.create(
+            DECISION_MOVE_UNIT,
+            f"{ability_name}: set up {getattr(target_root, 'name', 'Unit')} within {int(range_inches)}\" of {getattr(source_root, 'name', 'Unit')}.",
+            player_id=getattr(player, "id", None),
+            options=[
+                _DecisionOption.create(
+                    "Confirm",
+                    payload={"unit_id": target_id, "movement_type": "deploy", "action": "confirm"},
+                )
+            ],
+            context=move_context,
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request_obj)
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: selected {getattr(target_root, 'name', 'Unit')}. "
+                f"Set it up wholly within {int(range_inches)}\" of {getattr(source_root, 'name', 'Unit')}."
+            ),
+        )
+        return {
+            "source_unit_id": source_id,
+            "target_unit_id": target_id,
+            "queued_move_decision": True,
+            "source": ability_name,
+        }
     if ability == "soulforged_warpack_forges_blessing_target":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

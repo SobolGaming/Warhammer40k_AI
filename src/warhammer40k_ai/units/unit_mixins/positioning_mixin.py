@@ -6485,6 +6485,18 @@ class PositioningMixin:
         except Exception:
             pass
 
+        # Eternity Gate: cannot charge until end of turn after setup.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("eternity_gate_no_charge_turn_owner"):
+                owner = str(sr.get("eternity_gate_no_charge_turn_owner") or "")
+                turn = int(sr.get("eternity_gate_no_charge_turn", 0) or 0)
+                if owner and game is not None:
+                    if game.get_current_player().id == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                        return False
+        except Exception:
+            pass
+
         # Cosmic Precision: cannot charge until end of turn after 6" Deep Strike option.
         try:
             sr = getattr(self, "special_rules", None)

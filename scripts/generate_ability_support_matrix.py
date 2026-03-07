@@ -5396,6 +5396,22 @@ def _necrons_named_datasheet_support(name: str, description: str, *, faction_id:
                 "Supported",
                 "While this model is within range of an objective marker you control, enemy units arriving from Reserves cannot be set up within 12\" of this model.",
             )
+    if name_norm == "eternity gate":
+        if (
+            "in the reinforcements step of your movement phase" in norm
+            and "select one necrons infantry unit from your army" in norm
+            and (
+                "that is either in reserves or on the battlefield" in norm
+                or "either in reserves or on the battlefield" in norm
+            )
+            and "remove that unit from the battlefield and place it into reserves" in norm
+            and "wholly within 6 of this model and not within engagement range of any enemy models" in norm
+            and "that unit cannot declare a charge this turn" in norm
+        ):
+            return (
+                "Supported",
+                "Reinforcements step: optional selection of a friendly NECRONS INFANTRY unit (in reserves or on battlefield), with setup constrained to wholly within 6\" of this model and outside Engagement Range of enemy models; selected unit cannot charge this turn.",
+            )
     if name_norm == "multi threat eliminator":
         if (
             "once per turn in your opponents shooting phase" in norm

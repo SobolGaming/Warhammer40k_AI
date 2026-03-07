@@ -1667,6 +1667,8 @@ class GameSetupDeploymentReservesMixin:
                 if not bool(excludes_standard_arrival(unit, game=self, player=player))
             ]
 
+        self._queue_necrons_eternity_gate_requests(player)
+
         player_name = getattr(player, "name", "Player")
         logger.info("INFO: %s has %d units that can arrive from reserves", player_name, len(units_that_can_arrive))
         if units_that_must_arrive:
@@ -1805,6 +1807,222 @@ class GameSetupDeploymentReservesMixin:
                     pass
 
         return units_arrived
+
+    def _pending_choose_quarry_request(
+        self,
+        *,
+        ability: str,
+        player_id: str = "",
+        source_unit_id: str = "",
+    ) -> bool:
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        ability_key = str(ability or "").strip().lower()
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            req_player_id = str(getattr(req, "player_id", "") or "")
+            if player_id and req_player_id and req_player_id != str(player_id):
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != ability_key:
+                continue
+            if source_unit_id and str(ctx.get("source_unit_id", "") or "") != str(source_unit_id):
+                continue
+            return True
+        return False
+
+    def _queue_necrons_eternity_gate_requests(self, player: Player) -> None:
+        if player is None:
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        if player is not self.get_current_player():
+            return
+
+        army = player.get_army()
+        if army is None:
+            return
+
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        def _unit_sort_key(unit_obj):
+            return str(get_entity_id(unit_obj) or "")
+
+        def _root_from_unit(unit_obj):
+            if unit_obj is None:
+                return None
+            get_root = getattr(unit_obj, "get_attached_unit_root", None)
+            return get_root() if callable(get_root) else unit_obj
+
+        def _on_battlefield(root) -> bool:
+            if root is None:
+                return False
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive):
+                if not bool(is_alive()):
+                    return False
+            elif getattr(root, "is_alive", True) is False:
+                return False
+            if not bool(getattr(root, "deployed", True)):
+                return False
+            if str(getattr(root, "reserve_status", "deployed") or "deployed") != "deployed":
+                return False
+            if bool(getattr(root, "embarked_in", None)) or bool(getattr(root, "is_embarked", False)):
+                return False
+            is_in_reserves = getattr(root, "is_in_reserves", None)
+            if callable(is_in_reserves) and bool(is_in_reserves()):
+                return False
+            return True
+
+        def _is_in_reserves(root) -> bool:
+            if root is None:
+                return False
+            is_in_reserves = getattr(root, "is_in_reserves", None)
+            if callable(is_in_reserves):
+                return bool(is_in_reserves())
+            status = str(getattr(root, "reserve_status", "") or "")
+            return status in {"reserves", "strategic_reserves"}
+
+        def _has_keywords(root, *keywords: str) -> bool:
+            has_any_keyword = getattr(root, "has_any_keyword", None)
+            if callable(has_any_keyword):
+                for keyword in keywords:
+                    if not bool(has_any_keyword(keyword)):
+                        return False
+                return True
+            values = [str(v or "").strip().upper() for v in list(getattr(root, "keywords", []) or []) if str(v or "").strip()]
+            values.extend(
+                str(v or "").strip().upper()
+                for v in list(getattr(root, "faction_keywords", []) or [])
+                if str(v or "").strip()
+            )
+            pool = set(values)
+            return all(str(keyword or "").strip().upper() in pool for keyword in keywords)
+
+        source_roots: list[tuple[object, dict]] = []
+        seen_sources: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            root = _root_from_unit(unit)
+            if root is None:
+                continue
+            source_id = str(get_entity_id(root) or "")
+            if not source_id or source_id in seen_sources:
+                continue
+            seen_sources.add(source_id)
+            if not _on_battlefield(root):
+                continue
+            get_specs = getattr(root, "unit_eternity_gate_specs", None)
+            specs = list(get_specs() or []) if callable(get_specs) else []
+            if not specs:
+                continue
+            source_roots.append((root, dict(specs[0] or {})))
+
+        if not source_roots:
+            return
+
+        candidate_roots: list[object] = []
+        seen_candidates: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            root = _root_from_unit(unit)
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_candidates:
+                continue
+            seen_candidates.add(root_id)
+            if not _has_keywords(root, "NECRONS", "INFANTRY"):
+                continue
+            if bool(getattr(root, "embarked_in", None)) or bool(getattr(root, "is_embarked", False)):
+                continue
+            candidate_roots.append(root)
+
+        if not candidate_roots:
+            return
+
+        for source_root, spec in source_roots:
+            source_id = str(get_entity_id(source_root) or "")
+            if not source_id:
+                continue
+            if self._pending_choose_quarry_request(
+                ability="eternity_gate_target",
+                player_id=owner_id,
+                source_unit_id=source_id,
+            ):
+                continue
+
+            try:
+                selection_range = float(spec.get("range", 6) or 6)
+            except (TypeError, ValueError):
+                selection_range = 6.0
+            if selection_range <= 0.0:
+                selection_range = 6.0
+            allow_target_in_reserves = bool(spec.get("allow_target_in_reserves", True))
+            allow_target_on_battlefield = bool(spec.get("allow_target_on_battlefield", True))
+            ability_name = str(spec.get("source", "") or "Eternity Gate").strip() or "Eternity Gate"
+            no_charge_this_turn = bool(spec.get("no_charge_this_turn", True))
+
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            candidate_ids: list[str] = []
+            for target_root in list(candidate_roots or []):
+                target_id = str(get_entity_id(target_root) or "")
+                if not target_id or target_id == source_id:
+                    continue
+                target_in_reserves = _is_in_reserves(target_root)
+                target_on_battlefield = _on_battlefield(target_root)
+                if target_in_reserves:
+                    if not allow_target_in_reserves:
+                        continue
+                    can_arrive = getattr(target_root, "can_arrive_from_reserves", None)
+                    if callable(can_arrive) and not bool(can_arrive(current_turn)):
+                        continue
+                elif target_on_battlefield:
+                    if not allow_target_on_battlefield:
+                        continue
+                else:
+                    continue
+
+                candidate_ids.append(target_id)
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(target_root, "name", "Unit") or "Unit"),
+                        payload={
+                            "source_unit_id": source_id,
+                            "target_unit_id": target_id,
+                        },
+                    )
+                )
+
+            if not candidate_ids:
+                continue
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select one friendly NECRONS INFANTRY unit (or None).",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "eternity_gate_target",
+                    "ability_name": ability_name,
+                    "phase": "Reinforcements step (Movement phase)",
+                    "source_unit_id": source_id,
+                    "unit_id": source_id,
+                    "candidate_unit_ids": sorted(set(candidate_ids)),
+                    "range": float(selection_range),
+                    "allow_target_in_reserves": bool(allow_target_in_reserves),
+                    "allow_target_on_battlefield": bool(allow_target_on_battlefield),
+                    "no_charge_this_turn": bool(no_charge_this_turn),
+                    "turn_owner_id": owner_id,
+                    "turn": int(current_turn),
+                    "optional": True,
+                },
+            )
+            self.request_decision(request)
 
     def find_valid_reserves_position(self, unit: 'Unit') -> Optional[Tuple[float, float, float]]:
         """Return None unless a controller provides an explicit placement."""

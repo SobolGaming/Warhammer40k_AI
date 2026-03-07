@@ -39,6 +39,7 @@ from ...utility.deployment_special_rules import (
 )
 from ...utility.dice import get_roll
 from ...utility.entity_ids import get_entity_id
+from ...utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 
 
 def _movement_members(unit) -> list:
@@ -587,6 +588,7 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
             model_positions,
             allowed_ids=allowed_ids,
             placement_kind=placement_kind,
+            ctx=ctx,
         )
         if placement_errors:
             return placement_errors
@@ -908,6 +910,7 @@ def _validate_placement_positions(
     *,
     allowed_ids: object = None,
     placement_kind: str | None = None,
+    ctx: dict | None = None,
 ) -> Sequence[str]:
     if not isinstance(model_positions, list) or not model_positions:
         return ("Move unit: placement requires model_positions.",)
@@ -1057,7 +1060,7 @@ def _validate_placement_positions(
         if deployment_errors:
             return deployment_errors
     if str(placement_kind or "") == "reserves_arrival":
-        reserves_errors = _validate_reserves_arrival_positions(game, unit, model_positions)
+        reserves_errors = _validate_reserves_arrival_positions(game, unit, model_positions, ctx=ctx)
         if reserves_errors:
             return reserves_errors
     if str(placement_kind or "") in ("aeldari_unshrouded_truth", "advance_redeploy_9h"):
@@ -1458,8 +1461,10 @@ def _validate_reserves_arrival_positions(
     game: object,
     unit: object,
     model_positions: object,
+    *,
+    ctx: dict | None = None,
 ) -> Sequence[str]:
-    evaluation = _evaluate_reserves_arrival_positions(game, unit, model_positions)
+    evaluation = _evaluate_reserves_arrival_positions(game, unit, model_positions, ctx=ctx)
     if evaluation.get("errors"):
         return tuple(evaluation.get("errors") or [])
     return ()
@@ -1469,17 +1474,22 @@ def _evaluate_reserves_arrival_positions(
     game: object,
     unit: object,
     model_positions: object,
+    *,
+    ctx: dict | None = None,
 ) -> dict:
     errors: list[str] = []
+    context = dict(ctx or {})
     if unit is None:
         return {"errors": ["Reserves arrival requires a unit."]}
     if not bool(getattr(unit, "is_in_reserves", lambda: False)()):
         return {"errors": ["Unit is not in reserves."]}
-    try:
-        if not unit.can_arrive_from_reserves(getattr(game, "turn", 0)):
-            return {"errors": ["Unit cannot arrive from reserves this turn."]}
-    except Exception:
-        return {"errors": ["Reserves arrival eligibility check failed."]}
+    ignore_turn_requirement = bool(context.get("reserves_arrival_ignore_turn_requirement", False))
+    if not ignore_turn_requirement:
+        try:
+            if not unit.can_arrive_from_reserves(getattr(game, "turn", 0)):
+                return {"errors": ["Unit cannot arrive from reserves this turn."]}
+        except Exception:
+            return {"errors": ["Reserves arrival eligibility check failed."]}
 
     if not isinstance(model_positions, list) or not model_positions:
         return {"errors": ["Reserves arrival requires model positions."]}
@@ -1655,12 +1665,92 @@ def _evaluate_reserves_arrival_positions(
 
     battlefield_edge = selected_edge if strategic_ok else None
 
+    anchor_unit_id = str(context.get("reserves_arrival_anchor_unit_id", "") or "").strip()
+    anchor_source_name = str(context.get("reserves_arrival_anchor_source", "") or "").strip()
+    try:
+        anchor_range = float(context.get("reserves_arrival_anchor_range", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        anchor_range = 0.0
+    anchor_wholly_within = bool(context.get("reserves_arrival_anchor_wholly_within", False))
+    if anchor_unit_id and anchor_range > 0.0:
+        anchor_unit = get_unit(game, anchor_unit_id)
+        anchor_root = (
+            anchor_unit.get_attached_unit_root()
+            if anchor_unit is not None and hasattr(anchor_unit, "get_attached_unit_root")
+            else anchor_unit
+        )
+        if anchor_root is None:
+            return {"errors": ["Reserves arrival anchor unit was not found."]}
+        if not bool(getattr(anchor_root, "deployed", True)):
+            return {"errors": ["Reserves arrival anchor unit is not on the battlefield."]}
+        if str(getattr(anchor_root, "reserve_status", "deployed") or "deployed") != "deployed":
+            return {"errors": ["Reserves arrival anchor unit is not on the battlefield."]}
+        if bool(getattr(anchor_root, "embarked_in", None)) or bool(getattr(anchor_root, "is_embarked", False)):
+            return {"errors": ["Reserves arrival anchor unit is not on the battlefield."]}
+        try:
+            from ...utility.aura_utils import model_wholly_within_range_of_unit, model_within_range_of_unit
+        except Exception:
+            model_wholly_within_range_of_unit = None
+            model_within_range_of_unit = None
+        if not callable(model_wholly_within_range_of_unit) or not callable(model_within_range_of_unit):
+            return {"errors": ["Reserves arrival anchor validation is unavailable."]}
+        create_base = getattr(unit, "_create_potential_base", None)
+        for model, (x, y, z, facing) in zip(list(getattr(unit, "models", []) or []), prospective):
+            if not getattr(model, "is_alive", True):
+                continue
+            candidate_base = None
+            if callable(create_base):
+                try:
+                    candidate_base = create_base(x, y, z, facing, model=model)
+                except Exception:
+                    candidate_base = None
+            if candidate_base is None:
+                continue
+            proxy_model = SimpleNamespace(model_base=candidate_base, is_alive=True)
+            if anchor_wholly_within:
+                in_range = bool(
+                    model_wholly_within_range_of_unit(
+                        anchor_root,
+                        proxy_model,
+                        float(anchor_range),
+                        use_attached_aggregate=True,
+                    )
+                )
+            else:
+                in_range = bool(
+                    model_within_range_of_unit(
+                        proxy_model,
+                        anchor_root,
+                        float(anchor_range),
+                        use_attached_aggregate=True,
+                    )
+                )
+            if not in_range:
+                source_label = anchor_source_name or "Anchor ability"
+                if anchor_wholly_within:
+                    return {
+                        "errors": [
+                            f"{source_label}: reserves arrival must be wholly within {int(anchor_range)}\" of the source unit."
+                        ]
+                    }
+                return {
+                    "errors": [
+                        f"{source_label}: reserves arrival must be within {int(anchor_range)}\" of the source unit."
+                    ]
+                }
+
     try:
         min_enemy_distance = float(getattr(game, "_warp_rifts_min_distance")(unit) or 9.0)
     except Exception:
         min_enemy_distance = 9.0
     if tunnel_marker is not None:
         min_enemy_distance = 6.0
+    min_enemy_distance_override = context.get("reserves_arrival_min_enemy_distance_override")
+    if min_enemy_distance_override is not None:
+        try:
+            min_enemy_distance = max(0.0, float(min_enemy_distance_override))
+        except (TypeError, ValueError):
+            min_enemy_distance = 0.0
 
     if battlefield_edge is None and tunnel_marker is None:
         try:
@@ -1695,9 +1785,10 @@ def _evaluate_reserves_arrival_positions(
             }
 
     try:
-        from ...utility.aura_utils import horizontal_distance_between_bases_2d
+        from ...utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
     except Exception:
         horizontal_distance_between_bases_2d = None
+        vertical_distance_between_bases = None
     enemy_units = []
     try:
         player = unit.get_parent_army().player
@@ -1745,7 +1836,11 @@ def _evaluate_reserves_arrival_positions(
                 except Exception:
                     continue
                 required_distance = float(min_enemy_distance)
-                if battlefield_edge is None and tunnel_marker is None:
+                if (
+                    min_enemy_distance_override is None
+                    and battlefield_edge is None
+                    and tunnel_marker is None
+                ):
                     try:
                         per_enemy = None
                         if hasattr(unit, "get_deep_strike_min_distance_vs_enemy"):
@@ -1758,8 +1853,17 @@ def _evaluate_reserves_arrival_positions(
                         per_enemy = None
                     if per_enemy:
                         required_distance = float(per_enemy)
-                if dist < float(required_distance):
+                if required_distance > 0.0 and dist < float(required_distance):
                     return {"errors": [f"Reserves arrival must be more than {int(required_distance)}\" from enemy models."]}
+                if bool(context.get("reserves_arrival_require_not_engagement", False)):
+                    if not callable(vertical_distance_between_bases):
+                        return {"errors": ["Reserves arrival engagement-range validation is unavailable."]}
+                    try:
+                        vert = float(vertical_distance_between_bases(base, em.model_base))
+                    except Exception:
+                        continue
+                    if dist <= float(ENGAGEMENT_RANGE_HORIZONTAL) and vert <= float(ENGAGEMENT_RANGE_VERTICAL):
+                        return {"errors": ["Reserves arrival must not be within Engagement Range of enemy models."]}
 
     try:
         if bool(getattr(game, "_reserves_denial_violated")(unit, prospective)):
@@ -1826,6 +1930,9 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 "cosmic_precision_no_charge_turn_owner",
                 "cosmic_precision_no_charge_turn",
                 "cosmic_precision_source",
+                "eternity_gate_no_charge_turn_owner",
+                "eternity_gate_no_charge_turn",
+                "eternity_gate_no_charge_source",
             ):
                 sr.pop(k, None)
             unit.special_rules = sr
@@ -1854,7 +1961,7 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
     if placement_kind == "deployment":
         _finalize_deployment_move(game, unit, model_positions)
     if placement_kind == "reserves_arrival":
-        _finalize_reserves_arrival_move(game, unit, model_positions)
+        _finalize_reserves_arrival_move(game, unit, model_positions, ctx=ctx)
     if bool(ctx.get("redeploy_followup", False)):
         try:
             unit_id = str(ctx.get("redeploy_unit_id", "") or unit_id)
@@ -2114,10 +2221,17 @@ def _queue_drop_pod_assault_disembark_requests(
         request_decision(request)
 
 
-def _finalize_reserves_arrival_move(game: object, unit: object, model_positions: list[dict]) -> None:
+def _finalize_reserves_arrival_move(
+    game: object,
+    unit: object,
+    model_positions: list[dict],
+    *,
+    ctx: dict | None = None,
+) -> None:
     if unit is None:
         return
-    evaluation = _evaluate_reserves_arrival_positions(game, unit, model_positions)
+    context = dict(ctx or {})
+    evaluation = _evaluate_reserves_arrival_positions(game, unit, model_positions, ctx=context)
     errors = list(evaluation.get("errors") or [])
     if errors:
         raise RuntimeError("; ".join(str(e) for e in errors if e))
@@ -2179,6 +2293,23 @@ def _finalize_reserves_arrival_move(game: object, unit: object, model_positions:
         unit._finalize_reserves_arrival(turn, game_map)
     except Exception as exc:
         raise RuntimeError(f"Reserves arrival finalize failed: {exc}") from exc
+
+    owner_id = str(context.get("reserves_arrival_no_charge_turn_owner", "") or "")
+    source = str(context.get("reserves_arrival_no_charge_source", "") or "")
+    turn_raw = context.get("reserves_arrival_no_charge_turn", None)
+    if owner_id:
+        try:
+            no_charge_turn = int(turn_raw or 0)
+        except (TypeError, ValueError):
+            no_charge_turn = 0
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["eternity_gate_no_charge_turn_owner"] = owner_id
+        sr["eternity_gate_no_charge_turn"] = int(no_charge_turn)
+        if source:
+            sr["eternity_gate_no_charge_source"] = source
+        unit.special_rules = sr
 
     get_drop_pod_rule = getattr(unit, "get_drop_pod_assault_rule", None)
     drop_pod_rule = get_drop_pod_rule() if callable(get_drop_pod_rule) else None
