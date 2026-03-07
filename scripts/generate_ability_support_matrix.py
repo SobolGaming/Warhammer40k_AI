@@ -4746,6 +4746,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("NEC", "Relentless Combatants"): ("Supported", "Re-roll Charge rolls. Charge-after-Fall-Back eligibility."),
         ("NEC", "Shadowloom"): ("Supported", "Stealth."),
+        ("NEC", "Shieldvanes"): ("Supported", "Bearer characteristic overrides: Save 3+ and Move 8\"."),
         ("NEC", "Powers of the C'tan"): (
             "Supported",
             "When selected to shoot, C'tan Power weapon declarations are capped to two distinct weapons (one while in the damaged bracket).",

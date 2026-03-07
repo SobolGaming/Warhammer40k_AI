@@ -232,6 +232,23 @@ class TestNecronsDatasheetGroup2Abilities(unittest.TestCase):
         self.assertTrue(bool(bonuses.get("ignores_cover", False)))
         self.assertIn("Nebuloscope", " ".join(list(bonuses.get("sources", []))))
 
+    def test_shieldvanes_sets_bearer_save_and_move_characteristics(self):
+        ability = {
+            "name": "Shieldvanes",
+            "description": "The bearer has a 3+ Save characteristic and a Move characteristic of 8\".",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Tomb Blades", abilities=[ability])
+        model = unit.models[0]
+
+        save_value, save_source = unit.get_model_save_characteristic_override(model)
+        effective_move = unit.get_effective_model_characteristic(model, "movement")
+
+        self.assertEqual(int(save_value or 0), 3)
+        self.assertEqual(str(save_source or ""), "Shieldvanes")
+        self.assertEqual(int(effective_move), 8)
+
     def test_optimised_for_slaughter_enmitic_rerolls_wound_ones_vs_non_monster_vehicle(self):
         from warhammer40k_ai.units import wargear as wargear_mod
         from warhammer40k_ai.units.wargear import WargearProfile

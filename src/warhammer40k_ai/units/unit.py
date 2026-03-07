@@ -1900,6 +1900,20 @@ class Unit(
             game_map=game_map,
         )
 
+        if ckey == "movement":
+            try:
+                move_override, move_source = self.get_model_move_characteristic_override(model)
+            except Exception:
+                move_override, move_source = (None, None)
+            if move_override is not None:
+                mods.append(
+                    Modifier(
+                        ModifierOp.SET,
+                        int(move_override),
+                        source=str(move_source or "Bearer move characteristic"),
+                    )
+                )
+
         # Emperor's Children: Internal Rivalries (Slaanesh's Chosen) - optional ignore Move modifiers.
         try:
             if ckey == "movement":
@@ -4469,6 +4483,14 @@ class Unit(
     )
     _BEARER_SAVE_CHARACTERISTIC_RE = re.compile(
         r"^the bearer has a save characteristic of (\d)\+\.?$",
+        re.IGNORECASE,
+    )
+    _BEARER_MOVE_CHARACTERISTIC_RE = re.compile(
+        r"^the bearer has (?:a )?move characteristic of (\d+)\"?\.?$",
+        re.IGNORECASE,
+    )
+    _BEARER_SAVE_AND_MOVE_CHARACTERISTICS_RE = re.compile(
+        r"^the bearer has a (?P<save>\d)\+ save characteristic and a move characteristic of (?P<move>\d+)\"?\.?$",
         re.IGNORECASE,
     )
     _FORTIFICATION_COVER_RE = re.compile(
