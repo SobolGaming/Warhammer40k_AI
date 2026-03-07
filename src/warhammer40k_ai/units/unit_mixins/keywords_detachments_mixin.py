@@ -2561,20 +2561,39 @@ class KeywordsDetachmentsMixin:
                 seen.add(key)
                 if "once per turn in your opponent s shooting phase" not in norm:
                     continue
-                if "when an enemy unit makes a ranged attack that targets a friendly " not in norm:
+                trigger_enemy_attack = "when an enemy unit makes a ranged attack that targets a friendly " in norm
+                trigger_friendly_targeted = (
+                    "when a friendly " in norm
+                    and "is selected as the target of an attack" in norm
+                )
+                if not (trigger_enemy_attack or trigger_friendly_targeted):
                     continue
-                if "after that enemy unit has shot" not in norm:
+                if not (
+                    "after that enemy unit has shot" in norm
+                    or "after that enemy unit has finished making its attacks" in norm
+                ):
                     continue
                 if "shoot as if it were your shooting phase" not in norm:
                     continue
-                if "must target only that enemy unit" not in norm:
+                if not (
+                    "must target only that enemy unit" in norm
+                    or "can only target that enemy unit" in norm
+                ):
                     continue
-                if "can only do so if that enemy unit is an eligible target" not in norm:
+                if not (
+                    "can only do so if that enemy unit is an eligible target" in norm
+                    or "only if it is an eligible target" in norm
+                ):
                     continue
                 m = re.search(
-                    r"targets a friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of (?:this model|a model with this ability)",
+                    r"targets a friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of (?:this model|this unit|a model with this ability)",
                     norm,
                 )
+                if not m:
+                    m = re.search(
+                        r"when a friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of this unit is selected as the target of an attack",
+                        norm,
+                    )
                 if not m:
                     continue
                 keyword = str(m.group("keyword") or "").strip().upper()

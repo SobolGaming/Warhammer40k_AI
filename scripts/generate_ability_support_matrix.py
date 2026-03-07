@@ -5835,6 +5835,20 @@ def _classify_ability_base(
                 break
     if name_norm and (not ambiguous_name) and (fid, name_norm) in ABILITY_SUPPORT_BY_NAME_FACTION:
         return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
+    if fid == "TAU" and name_norm == "kroot packmates":
+        tau_norm = _norm_rules_text(description)
+        if (
+            "once per turn in your opponents shooting phase" in tau_norm
+            and "when a friendly kroot infantry unit within 6 of this unit is selected as the target of an attack" in tau_norm
+            and "after that enemy unit has finished making its attacks" in tau_norm
+            and "shoot as if it were your shooting phase" in tau_norm
+            and "can only target that enemy unit" in tau_norm
+            and "only if it is an eligible target" in tau_norm
+        ):
+            return (
+                "Supported",
+                "Once per turn in your opponent's Shooting phase, when a nearby friendly KROOT INFANTRY unit is targeted, one unit with this ability can make a reactive shooting attack against that enemy unit (if eligible).",
+            )
     if fid == "DRU" and "(pain)" in str(name or "").lower():
         return ("Supported", "Power from Pain ability effects implemented.")
     if tau_advanced_scouting_support:
