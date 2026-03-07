@@ -8044,6 +8044,130 @@ class Game(
                         roll=int(roll),
                     )
 
+        # Necrons: Prophet of Destruction (Nekrosor Ammentar).
+        # Each time this model destroys an enemy unit, select one other friendly DESTROYER CULT unit
+        # within 9"; that unit re-rolls Wound rolls of 1 until end of phase.
+        if bool(getattr(self, "is_authoritative", True)) and attacker_root is not None:
+            get_specs = getattr(attacker_root, "unit_prophet_of_destruction_specs", None)
+            prophet_specs = list(get_specs() or []) if callable(get_specs) else []
+            attacker_army = attacker_root.get_parent_army() if hasattr(attacker_root, "get_parent_army") else None
+            attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+            if prophet_specs and attacker_army is not None and attacker_player is not None:
+                try:
+                    phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+                except Exception:
+                    phase_name = ""
+                try:
+                    turn_value = int(getattr(self, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    turn_value = 0
+                current_player = getattr(self, "get_current_player", lambda: None)()
+                turn_owner_id = str(getattr(current_player, "id", "") or "")
+                source_id = str(get_entity_id(attacker_root) or "")
+                queue = getattr(self, "decision_queue", None)
+
+                from ..utility.aura_utils import unit_within_range_of_unit
+
+                for spec in list(prophet_specs or []):
+                    try:
+                        range_inches = float(spec.get("range", 9) or 9)
+                    except (TypeError, ValueError):
+                        range_inches = 9.0
+                    if range_inches <= 0.0:
+                        range_inches = 9.0
+                    ability_name = str(spec.get("source", "") or "Prophet of Destruction").strip() or "Prophet of Destruction"
+
+                    seen_ids: set[str] = set()
+                    candidates: list[object] = []
+                    for maybe_unit in list(getattr(attacker_army, "units", []) or []):
+                        if maybe_unit is None:
+                            continue
+                        try:
+                            candidate_root = maybe_unit.get_attached_unit_root()
+                        except Exception:
+                            candidate_root = maybe_unit
+                        if candidate_root is None:
+                            continue
+                        candidate_id = str(get_entity_id(candidate_root) or "")
+                        if not candidate_id or candidate_id in seen_ids:
+                            continue
+                        seen_ids.add(candidate_id)
+                        if source_id and candidate_id == source_id:
+                            continue
+                        if not bool(getattr(self, "_unit_on_battlefield_for_reposition", lambda _u: False)(candidate_root)):
+                            continue
+                        has_any_keyword = getattr(candidate_root, "has_any_keyword", None)
+                        if not callable(has_any_keyword) or not bool(has_any_keyword("DESTROYER CULT")):
+                            continue
+                        if not bool(
+                            unit_within_range_of_unit(
+                                attacker_root,
+                                candidate_root,
+                                float(range_inches),
+                                use_attached_aggregate=True,
+                            )
+                        ):
+                            continue
+                        candidates.append(candidate_root)
+                    if not candidates:
+                        continue
+
+                    candidates = sorted(candidates, key=lambda value: str(get_entity_id(value) or ""))
+                    candidate_ids = [str(get_entity_id(value) or "") for value in list(candidates or []) if str(get_entity_id(value) or "")]
+                    if not candidate_ids:
+                        continue
+
+                    has_pending = False
+                    if queue is not None and hasattr(queue, "list"):
+                        for req in list(queue.list() or []):
+                            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                                continue
+                            req_ctx = dict(getattr(req, "context", {}) or {})
+                            if str(req_ctx.get("ability", "") or "") != "prophet_of_destruction_target":
+                                continue
+                            if str(req_ctx.get("source_unit_id", "") or "") != source_id:
+                                continue
+                            if str(req_ctx.get("destroyed_unit_id", "") or "") != destroyed_unit_id:
+                                continue
+                            if int(req_ctx.get("turn", turn_value) or turn_value) != int(turn_value):
+                                continue
+                            if str(req_ctx.get("expires_phase", "") or "") != phase_name:
+                                continue
+                            has_pending = True
+                            break
+                    if has_pending:
+                        continue
+
+                    options = [
+                        DecisionOption.create(
+                            str(getattr(candidate, "name", "Unit") or "Unit"),
+                            payload={
+                                "source_unit_id": source_id,
+                                "target_unit_id": str(get_entity_id(candidate) or ""),
+                            },
+                        )
+                        for candidate in list(candidates or [])
+                    ]
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select one other friendly DESTROYER CULT unit within {int(range_inches)}\".",
+                        player_id=getattr(attacker_player, "id", None),
+                        options=options,
+                        context={
+                            "ability": "prophet_of_destruction_target",
+                            "ability_name": ability_name,
+                            "phase": phase_name or "Current phase",
+                            "source_unit_id": source_id,
+                            "destroyed_unit_id": destroyed_unit_id,
+                            "candidate_unit_ids": list(candidate_ids),
+                            "range": float(range_inches),
+                            "turn_owner_id": str(turn_owner_id or ""),
+                            "turn": int(turn_value),
+                            "expires_phase": phase_name,
+                        },
+                    )
+                    self.request_decision(request)
+
         specs = destroyed_by_unit.get_kill_reward_specs(model=destroyed_by_model) or []
         target_keywords = {str(k).upper() for k in getattr(unit, "keywords", []) or []}
 

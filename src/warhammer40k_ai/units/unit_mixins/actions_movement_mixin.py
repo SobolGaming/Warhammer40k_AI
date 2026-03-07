@@ -5887,6 +5887,49 @@ class ActionsMovementMixin:
                     reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of 1 vs CHARACTER target")
         except Exception:
             pass
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("necrons_prophet_of_destruction_active")):
+            source_name = (
+                str(sr.get("necrons_prophet_of_destruction_source", "") or "Prophet of Destruction").strip()
+                or "Prophet of Destruction"
+            )
+            active = True
+            owner_id = str(sr.get("necrons_prophet_of_destruction_turn_owner", "") or "")
+            if owner_id and army is not None:
+                attacker_owner_id = str(getattr(getattr(army, "player", None), "id", "") or "")
+                if attacker_owner_id and attacker_owner_id != owner_id:
+                    active = False
+            try:
+                effect_turn = int(sr.get("necrons_prophet_of_destruction_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            if active and effect_turn and game is not None:
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    current_turn = 0
+                if current_turn and current_turn != effect_turn:
+                    active = False
+            expires_phase = str(sr.get("necrons_prophet_of_destruction_expires_phase", "") or "").strip().upper()
+            if active and expires_phase and game is not None:
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if phase_name and phase_name != expires_phase:
+                    active = False
+            if active:
+                reroll_wound_values.add(1)
+                reroll_wound_reasons.append(f"{source_name}: re-roll Wound rolls of 1")
+            else:
+                cleaned_sr = dict(sr)
+                for key in (
+                    "necrons_prophet_of_destruction_active",
+                    "necrons_prophet_of_destruction_turn_owner",
+                    "necrons_prophet_of_destruction_turn",
+                    "necrons_prophet_of_destruction_expires_phase",
+                    "necrons_prophet_of_destruction_source",
+                    "necrons_prophet_of_destruction_source_unit_id",
+                ):
+                    cleaned_sr.pop(key, None)
+                root.special_rules = cleaned_sr
 
         # Host of Ascension: Coordinated Trap (+1 to wound, target locked to marked enemy).
         try:

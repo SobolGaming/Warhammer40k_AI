@@ -2506,6 +2506,37 @@ def _parse_melee_weapon_sustained_hits_aura(ability) -> Optional[dict]:
     }
 
 
+def _parse_conditional_sustained_hits_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_conditional_sustained_hits_aura")
+    """
+    Strict parser for conditional [SUSTAINED HITS X] aura patterns, e.g.:
+      "While a friendly X unit (excluding Y) is within N\" of this model, each time a model in that unit
+       makes an attack, if that model has the Z keyword or that enemy unit is the closest eligible target,
+       that attack has the [SUSTAINED HITS X] ability."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        rf'While a friendly (?P<faction_kw>.+?) unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
+        r"each time a model in that unit makes an attack, if that model has the (?P<model_kw>.+?) keyword "
+        r"or that enemy unit is the closest eligible target, that attack has the \[SUSTAINED HITS (?P<val>\d+)\] ability",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "value": int(m.group("val")),
+        "model_keyword": str(m.group("model_kw") or "").strip(),
+        "excluded_keywords": _parse_excluded_keywords(desc),
+    }
+
+
 def get_aura_melee_attacks_bonus(attacker_unit, weapon_profile, *, game_map=None) -> tuple[int, tuple[str, ...]]:
     _count_regex_hotspot("get_aura_melee_attacks_bonus")
     """
@@ -2548,7 +2579,14 @@ def get_aura_melee_attacks_bonus(attacker_unit, weapon_profile, *, game_map=None
     return int(total), tuple(reasons)
 
 
-def get_aura_weapon_keyword_bonuses(attacker_unit, weapon_profile, *, game_map=None) -> list[dict]:
+def get_aura_weapon_keyword_bonuses(
+    attacker_unit,
+    weapon_profile,
+    *,
+    target_unit=None,
+    attacker_model=None,
+    game_map=None,
+) -> list[dict]:
     _count_regex_hotspot("get_aura_weapon_keyword_bonuses")
     """
     Return aura-granted weapon keyword bonuses (e.g., Sustained Hits) affecting attacker_unit.
@@ -2556,7 +2594,11 @@ def get_aura_weapon_keyword_bonuses(attacker_unit, weapon_profile, *, game_map=N
     if attacker_unit is None or weapon_profile is None:
         return []
     pw = getattr(weapon_profile, "parent_wargear", None)
-    if pw is None or not bool(pw.is_melee()):
+    if pw is None:
+        return []
+    is_melee_attack = bool(pw.is_melee())
+    is_ranged_attack = bool(getattr(pw, "is_ranged", lambda: False)())
+    if not is_melee_attack and not is_ranged_attack:
         return []
     if game_map is None:
         game_map = _get_map_from_attacker_unit(attacker_unit)
@@ -2568,7 +2610,11 @@ def get_aura_weapon_keyword_bonuses(attacker_unit, weapon_profile, *, game_map=N
 
     for source in list(game_map.get_friendly_units(attacker_unit)):
         source_sr = getattr(source, "special_rules", None)
-        if isinstance(source_sr, dict) and bool(source_sr.get("enhancement_slaughterthirst_aura")):
+        if (
+            is_melee_attack
+            and isinstance(source_sr, dict)
+            and bool(source_sr.get("enhancement_slaughterthirst_aura"))
+        ):
             aura_key = _norm_name("Slaughterthirst (Aura)")
             if not aura_key or aura_key not in applied_aura_names:
                 try:
@@ -2590,8 +2636,92 @@ def get_aura_weapon_keyword_bonuses(attacker_unit, weapon_profile, *, game_map=N
                         }
                     )
         for ab in _iter_possible_abilities(source):
+            conditional_sustained = _cached_parse_aura_spec(
+                "_parse_conditional_sustained_hits_aura",
+                ab,
+                _parse_conditional_sustained_hits_aura,
+            )
+            if conditional_sustained:
+                ab_name = str(getattr(ab, "name", "") or "")
+                aura_key = _norm_name(ab_name)
+                if aura_key:
+                    if aura_key in applied_aura_names:
+                        continue
+                    applied_aura_names.add(aura_key)
+                faction_keyword = str(conditional_sustained.get("faction_keyword", "") or "").strip()
+                if faction_keyword:
+                    matches = _unit_matches_keyword_phrase(attacker_unit, faction_keyword)
+                    if not matches:
+                        try:
+                            matches = bool(attacker_unit.has_any_keyword(faction_keyword))
+                        except Exception:
+                            matches = False
+                    if not matches:
+                        continue
+                excluded_keywords = tuple(conditional_sustained.get("excluded_keywords", ()) or ())
+                if excluded_keywords and _excluded_by_unit_keywords(attacker_unit, excluded_keywords):
+                    continue
+                if not _unit_within_aura_range(source, attacker_unit, float(conditional_sustained["range"]), ability=ab):
+                    continue
+
+                model_keyword = str(conditional_sustained.get("model_keyword", "") or "").strip()
+                has_model_keyword = False
+                if model_keyword:
+                    if attacker_model is not None:
+                        try:
+                            has_model_keyword = bool(attacker_model.has_any_keyword(model_keyword))
+                        except Exception:
+                            has_model_keyword = False
+                    if not has_model_keyword:
+                        has_model_keyword = _unit_matches_keyword_phrase(attacker_unit, model_keyword)
+                    if not has_model_keyword:
+                        try:
+                            has_model_keyword = bool(attacker_unit.has_any_keyword(model_keyword))
+                        except Exception:
+                            has_model_keyword = False
+
+                target_is_closest = False
+                if target_unit is not None:
+                    if (
+                        is_ranged_attack
+                        and attacker_model is not None
+                        and hasattr(attacker_unit, "is_target_closest_eligible")
+                    ):
+                        try:
+                            target_is_closest = bool(
+                                attacker_unit.is_target_closest_eligible(
+                                    attacker_model,
+                                    weapon_profile,
+                                    target_unit,
+                                    game_map,
+                                )
+                            )
+                        except Exception:
+                            target_is_closest = False
+                    if not target_is_closest:
+                        target_is_closest = _target_is_closest_enemy_unit(attacker_unit, target_unit, game_map)
+
+                if not (has_model_keyword or target_is_closest):
+                    continue
+                try:
+                    val = int(conditional_sustained.get("value", 0) or 0)
+                except Exception:
+                    val = 0
+                if val <= 0:
+                    continue
+                rules.append(
+                    {
+                        "attack_type": "any",
+                        "keyword": f"SUSTAINED HITS {int(val)}",
+                        "source": ab_name or "Aura",
+                    }
+                )
+                continue
+
             spec = _cached_parse_aura_spec("_parse_melee_weapon_sustained_hits_aura", ab, _parse_melee_weapon_sustained_hits_aura)
             if not spec:
+                continue
+            if not is_melee_attack:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
             aura_key = _norm_name(ab_name)

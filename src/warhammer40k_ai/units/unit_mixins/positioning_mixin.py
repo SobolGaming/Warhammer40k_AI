@@ -3886,7 +3886,12 @@ class PositioningMixin:
         try:
             if weapon_profile is not None:
                 from ...utility.aura_effects import get_aura_weapon_keyword_bonuses
-                aura_rules = get_aura_weapon_keyword_bonuses(self, weapon_profile)
+                aura_rules = get_aura_weapon_keyword_bonuses(
+                    self,
+                    weapon_profile,
+                    target_unit=target,
+                    attacker_model=model,
+                )
                 if aura_rules:
                     rules = list(rules or []) + list(aura_rules or [])
         except Exception:

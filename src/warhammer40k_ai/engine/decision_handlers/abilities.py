@@ -3964,6 +3964,87 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         else:
             return ("Eternity Gate target must be in reserves or on the battlefield.",)
         return ()
+    if ability == "prophet_of_destruction_target":
+        if is_skip_choice(request, result):
+            return ("Prophet of Destruction selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or ctx.get("source_unit_id") or payload.get("unit_id") or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Prophet of Destruction source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return ("Prophet of Destruction source unit must be on the battlefield.",)
+        get_specs = getattr(source_root, "unit_prophet_of_destruction_specs", None)
+        specs = list(get_specs() or []) if callable(get_specs) else []
+        if not specs:
+            return ("Prophet of Destruction is not active for the selected source unit.",)
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Prophet of Destruction target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None or not _resurrection_orb_unit_on_battlefield(target_root):
+            return ("Prophet of Destruction target unit must be on the battlefield.",)
+
+        source_id = str(get_entity_id(source_root) or "")
+        target_id = str(get_entity_id(target_root) or "")
+        if source_id and target_id and source_id == target_id:
+            return ("Prophet of Destruction target must be another unit.",)
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Prophet of Destruction selected unit is not an eligible candidate.",)
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is not target_army:
+            return ("Prophet of Destruction target must be a friendly unit.",)
+        has_any_keyword = getattr(target_root, "has_any_keyword", None)
+        if not callable(has_any_keyword) or not bool(has_any_keyword("DESTROYER CULT")):
+            return ("Prophet of Destruction target must have the DESTROYER CULT keyword.",)
+
+        try:
+            range_inches = float(ctx.get("range", specs[0].get("range", 9)) or 9)
+        except (TypeError, ValueError):
+            range_inches = 9.0
+        if range_inches <= 0.0:
+            range_inches = 9.0
+        from ...utility.aura_utils import unit_within_range_of_unit
+
+        if not bool(unit_within_range_of_unit(source_root, target_root, float(range_inches), use_attached_aggregate=True)):
+            return (f"Prophet of Destruction target must be within {int(range_inches)}\" of the source unit.",)
+
+        expires_phase = str(ctx.get("expires_phase", "") or "").strip().upper()
+        if expires_phase:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_name and phase_name != expires_phase:
+                return ("Prophet of Destruction phase context no longer matches.",)
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or "")
+        if turn_owner_id:
+            active_player = getattr(game, "get_current_player", lambda: None)()
+            active_player_id = str(getattr(active_player, "id", "") or "")
+            if active_player_id and active_player_id != turn_owner_id:
+                return ("Prophet of Destruction turn ownership context no longer matches.",)
+        try:
+            turn_ctx = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn_ctx = 0
+        if turn_ctx and int(getattr(game, "turn", 0) or 0) != turn_ctx:
+            return ("Prophet of Destruction turn context no longer matches.",)
+        return ()
     if ability == "soulforged_warpack_forges_blessing_target":
         if is_skip_choice(request, result):
             return ("Forge's Blessing target selection cannot be skipped.",)
@@ -8711,6 +8792,105 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "target_unit_id": target_id,
             "queued_move_decision": True,
             "source": ability_name,
+        }
+    if ability == "prophet_of_destruction_target":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or ctx.get("source_unit_id") or payload.get("unit_id") or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return None
+        get_specs = getattr(source_root, "unit_prophet_of_destruction_specs", None)
+        specs = list(get_specs() or []) if callable(get_specs) else []
+        if not specs:
+            return None
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None or not _resurrection_orb_unit_on_battlefield(target_root):
+            return None
+        source_id = str(get_entity_id(source_root) or "")
+        target_id = str(get_entity_id(target_root) or "")
+        if source_id and target_id and source_id == target_id:
+            return None
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        if candidate_ids and target_id not in candidate_ids:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is not target_army:
+            return None
+        has_any_keyword = getattr(target_root, "has_any_keyword", None)
+        if not callable(has_any_keyword) or not bool(has_any_keyword("DESTROYER CULT")):
+            return None
+        try:
+            range_inches = float(ctx.get("range", specs[0].get("range", 9)) or 9)
+        except (TypeError, ValueError):
+            range_inches = 9.0
+        if range_inches <= 0.0:
+            range_inches = 9.0
+        from ...utility.aura_utils import unit_within_range_of_unit
+
+        if not bool(unit_within_range_of_unit(source_root, target_root, float(range_inches), use_attached_aggregate=True)):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or specs[0].get("source", "") or "Prophet of Destruction").strip()
+        if not ability_name:
+            ability_name = "Prophet of Destruction"
+        expires_phase = str(ctx.get("expires_phase", "") or getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        owner_id = str(ctx.get("turn_owner_id", "") or getattr(current_player, "id", "") or "")
+        try:
+            turn_value = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn_value = int(getattr(game, "turn", 0) or 0)
+
+        target_sr = getattr(target_root, "special_rules", None)
+        if not isinstance(target_sr, dict):
+            target_sr = {}
+        target_sr = dict(target_sr)
+        target_sr["necrons_prophet_of_destruction_active"] = True
+        target_sr["necrons_prophet_of_destruction_turn_owner"] = owner_id
+        target_sr["necrons_prophet_of_destruction_turn"] = int(turn_value)
+        target_sr["necrons_prophet_of_destruction_expires_phase"] = expires_phase
+        target_sr["necrons_prophet_of_destruction_source"] = ability_name
+        target_sr["necrons_prophet_of_destruction_source_unit_id"] = source_id
+        target_root.special_rules = target_sr
+
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: {getattr(target_root, 'name', 'Unit')} "
+                "re-rolls Wound rolls of 1 until end of phase."
+            ),
+        )
+        return {
+            "source_unit_id": source_id,
+            "target_unit_id": target_id,
+            "source": ability_name,
+            "expires_phase": expires_phase,
         }
     if ability == "soulforged_warpack_forges_blessing_target":
         payload = _option_payload(request, result)

@@ -672,6 +672,189 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
         self.assertEqual(str(sr.get("eternity_gate_no_charge_turn_owner", "") or ""), player_one.id)
         self.assertEqual(int(sr.get("eternity_gate_no_charge_turn", 0) or 0), 2)
 
+    def test_infectious_murder_madness_aura_grants_conditional_sustained_hits(self):
+        from types import SimpleNamespace
+
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Infectious Murder-madness (Aura)",
+            "description": (
+                "While a friendly NECRONS unit (excluding Titanic units) is within 6\" of this model, each time a model "
+                "in that unit makes an attack, if that model has the Destroyer Cult keyword or that enemy unit is the "
+                "closest eligible target, that attack has the [SUSTAINED HITS 1] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        nekrosor = _make_unit("Nekrosor Ammentar", abilities=[ability], keywords=["NECRONS", "CHARACTER", "INFANTRY"])
+        necron_unit = _make_unit("Necron Unit", keywords=["NECRONS", "INFANTRY"])
+        destroyer_unit = _make_unit("Destroyer Unit", keywords=["NECRONS", "INFANTRY", "DESTROYER CULT"])
+        close_enemy = _make_unit("Close Enemy", keywords=["INFANTRY"])
+        far_enemy = _make_unit("Far Enemy", keywords=["INFANTRY"])
+
+        battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(battlefield)
+        army_one = Army("A1", detachment_type="Test")
+        army_two = Army("A2", detachment_type="Test")
+        player_one = Player("P1", control=PlayerControl.LOCAL, army=army_one)
+        player_two = Player("P2", control=PlayerControl.REMOTE, army=army_two)
+        game.add_player(player_one)
+        game.add_player(player_two)
+
+        for unit in (nekrosor, necron_unit, destroyer_unit):
+            army_one.add_unit(unit)
+        for unit in (close_enemy, far_enemy):
+            army_two.add_unit(unit)
+
+        for unit in (nekrosor, necron_unit, destroyer_unit, close_enemy, far_enemy):
+            unit.deployed = True
+            unit.reserve_status = "deployed"
+
+        nekrosor.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        necron_unit.models[0].set_location(3.0, 0.0, 0.0, 0.0)
+        destroyer_unit.models[0].set_location(4.0, 0.0, 0.0, 0.0)
+        close_enemy.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        far_enemy.models[0].set_location(18.0, 0.0, 0.0, 0.0)
+        game.map.units = [nekrosor, necron_unit, destroyer_unit, close_enemy, far_enemy]
+        game.current_player_index = 0
+        game.rebuild_entity_registry()
+
+        parent = SimpleNamespace(name="Test Carbine", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
+            closest_attack = {"_aura_attack_mods": SimpleNamespace(hit=0, hit_reasons=())}
+            profile._hit_target_with_tracking(close_enemy, necron_unit.models[0], closest_attack, log_roll=False)
+            self.assertEqual(int(closest_attack.get("sustained_hit", 0) or 0), 1)
+
+            far_attack = {"_aura_attack_mods": SimpleNamespace(hit=0, hit_reasons=())}
+            profile._hit_target_with_tracking(far_enemy, necron_unit.models[0], far_attack, log_roll=False)
+            self.assertEqual(int(far_attack.get("sustained_hit", 0) or 0), 0)
+
+            destroyer_attack = {"_aura_attack_mods": SimpleNamespace(hit=0, hit_reasons=())}
+            profile._hit_target_with_tracking(far_enemy, destroyer_unit.models[0], destroyer_attack, log_roll=False)
+            self.assertEqual(int(destroyer_attack.get("sustained_hit", 0) or 0), 1)
+
+    def test_prophet_of_destruction_queues_target_and_applies_wound_reroll_ones_until_phase_end(self):
+        from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        ability = {
+            "name": "Prophet of Destruction",
+            "description": (
+                "Each time this model destroys an enemy unit, select one other friendly Destroyer Cult unit within 9\" "
+                "of it. Until the end of the phase, each time a model in that unit makes an attack, re-roll a Wound roll of 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        nekrosor = _make_unit(
+            "Nekrosor Ammentar",
+            abilities=[ability],
+            keywords=["NECRONS", "DESTROYER CULT", "CHARACTER", "INFANTRY"],
+        )
+        candidate_one = _make_unit("Destroyer One", keywords=["NECRONS", "DESTROYER CULT", "INFANTRY"])
+        candidate_two = _make_unit("Destroyer Two", keywords=["NECRONS", "DESTROYER CULT", "INFANTRY"])
+        destroyed_enemy = _make_unit("Destroyed Enemy", keywords=["INFANTRY"])
+        target_enemy = _make_unit("Target Enemy", keywords=["INFANTRY"])
+
+        battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(battlefield)
+        army_one = Army("A1", detachment_type="Test")
+        army_two = Army("A2", detachment_type="Test")
+        player_one = Player("P1", control=PlayerControl.LOCAL, army=army_one)
+        player_two = Player("P2", control=PlayerControl.REMOTE, army=army_two)
+        game.add_player(player_one)
+        game.add_player(player_two)
+
+        for unit in (nekrosor, candidate_one, candidate_two):
+            army_one.add_unit(unit)
+        for unit in (destroyed_enemy, target_enemy):
+            army_two.add_unit(unit)
+
+        for unit in (nekrosor, candidate_one, candidate_two, destroyed_enemy, target_enemy):
+            unit.deployed = True
+            unit.reserve_status = "deployed"
+
+        nekrosor.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        candidate_one.models[0].set_location(6.0, 0.0, 0.0, 0.0)
+        candidate_two.models[0].set_location(8.0, 0.0, 0.0, 0.0)
+        destroyed_enemy.models[0].set_location(12.0, 0.0, 0.0, 0.0)
+        target_enemy.models[0].set_location(16.0, 0.0, 0.0, 0.0)
+
+        game.map.units = [nekrosor, candidate_one, candidate_two, destroyed_enemy, target_enemy]
+        game.current_player_index = 0
+        game.turn = 2
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.rebuild_entity_registry()
+
+        game._on_unit_destroyed_rules(
+            unit=destroyed_enemy,
+            destroyed_by_unit=nekrosor,
+            destroyed_by_model=nekrosor.models[0],
+        )
+
+        choose_req = None
+        for req in list(game.decision_queue.list() or []):
+            if req.decision_type != DECISION_CHOOSE_QUARRY:
+                continue
+            if str((req.context or {}).get("ability", "") or "") != "prophet_of_destruction_target":
+                continue
+            choose_req = req
+            break
+        self.assertIsNotNone(choose_req)
+
+        candidate_id = str(get_entity_id(candidate_one) or "")
+        option = None
+        for entry in list(choose_req.options or []):
+            if str((entry.payload or {}).get("target_unit_id", "") or "") == candidate_id:
+                option = entry
+                break
+        self.assertIsNotNone(option)
+
+        decision_result = resolve_decision_command(
+            game,
+            choose_req,
+            option.option_id,
+            player_id=player_one.id,
+        )
+        self.assertTrue(bool(getattr(decision_result, "ok", False)))
+
+        active_mods = candidate_one.get_unit_wound_reroll_modifiers("ranged", target=target_enemy)
+        self.assertTrue(bool(active_mods.get("reroll_wound_ones", False)))
+        self.assertTrue(
+            any(
+                "Prophet of Destruction" in str(reason)
+                for reason in list(active_mods.get("reroll_wound_reasons", ()) or [])
+            )
+        )
+
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        expired_mods = candidate_one.get_unit_wound_reroll_modifiers("ranged", target=target_enemy)
+        self.assertFalse(bool(expired_mods.get("reroll_wound_ones", False)))
+        remaining_sr = dict(getattr(candidate_one, "special_rules", {}) or {})
+        self.assertNotIn("necrons_prophet_of_destruction_active", remaining_sr)
+
     def test_living_lightning_parses_dice_pool_mortals(self):
         ability = {
             "name": "Living Lightning",

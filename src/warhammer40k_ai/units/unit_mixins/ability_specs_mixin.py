@@ -3126,6 +3126,86 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_prophet_of_destruction_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: each time this model destroys an enemy unit, select one other friendly
+        DESTROYER CULT unit within range; selected unit re-rolls Wound rolls of 1 until phase end.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - target_keyword_phrase: str
+            - reroll_wound_values: list[int]
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_prophet_of_destruction_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "each time this model destroys an enemy unit" not in normalized:
+                    continue
+                if "select one other friendly destroyer cult unit within" not in normalized:
+                    continue
+                if "until the end of the phase" not in normalized:
+                    continue
+                if "reroll a wound roll of 1" not in normalized and "re roll a wound roll of 1" not in normalized:
+                    continue
+                match = re.search(
+                    r"select one other friendly destroyer cult unit within (?P<range>\d+)",
+                    normalized,
+                )
+                if not match:
+                    continue
+                try:
+                    range_value = int(match.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                source = str(name or "Prophet of Destruction").strip() or "Prophet of Destruction"
+                key = (source.lower(), int(range_value))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "target_keyword_phrase": "DESTROYER CULT",
+                        "reroll_wound_values": [1],
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_post_shoot_leadership_debuff_specs(self) -> List[dict]:
         """
         Unit-specific rule: after this unit has shot, select a hit enemy unit; that unit suffers -1 to

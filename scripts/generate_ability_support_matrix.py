@@ -5412,6 +5412,27 @@ def _necrons_named_datasheet_support(name: str, description: str, *, faction_id:
                 "Supported",
                 "Reinforcements step: optional selection of a friendly NECRONS INFANTRY unit (in reserves or on battlefield), with setup constrained to wholly within 6\" of this model and outside Engagement Range of enemy models; selected unit cannot charge this turn.",
             )
+    if name_norm == "infectious murder madness aura":
+        if (
+            "while a friendly necrons unit excluding titanic units is within 6 of this model" in norm
+            and "each time a model in that unit makes an attack" in norm
+            and "if that model has the destroyer cult keyword or that enemy unit is the closest eligible target" in norm
+            and "that attack has the sustained hits 1 ability" in norm
+        ):
+            return (
+                "Supported",
+                "Aura: friendly NECRONS units (excluding TITANIC) within 6\" gain [SUSTAINED HITS 1] on attacks when the attacking model has DESTROYER CULT or when targeting the closest eligible target.",
+            )
+    if name_norm == "prophet of destruction":
+        if (
+            "each time this model destroys an enemy unit" in norm
+            and "select one other friendly destroyer cult unit within 9 of it" in norm
+            and "until the end of the phase each time a model in that unit makes an attack reroll a wound roll of 1" in norm
+        ):
+            return (
+                "Supported",
+                "On each enemy-unit destruction by this model, select one other friendly DESTROYER CULT unit within 9\"; the selected unit re-rolls Wound rolls of 1 until end of phase.",
+            )
     if name_norm == "multi threat eliminator":
         if (
             "once per turn in your opponents shooting phase" in norm
