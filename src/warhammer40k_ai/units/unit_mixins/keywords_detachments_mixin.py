@@ -7080,7 +7080,12 @@ class KeywordsDetachmentsMixin:
                 normalized = normalized.lower()
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
-                if "drop pod assault" not in normalized and "drop pod assault" not in str(name or "").strip().lower():
+                normalized_name = str(name or "").strip().lower()
+                is_named_transport_assault = (
+                    "drop pod assault" in normalized_name
+                    or "aerial seeding" in normalized_name
+                )
+                if not is_named_transport_assault and "drop pod assault" not in normalized:
                     continue
                 if "reinforcements step" not in normalized:
                     continue

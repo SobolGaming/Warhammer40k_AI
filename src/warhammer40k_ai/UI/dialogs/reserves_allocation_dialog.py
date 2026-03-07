@@ -104,6 +104,18 @@ class ReservesAllocationDialog(BaseDialog):
         except Exception:
             return False
 
+    def _counts_towards_reserve_unit_cap(self, unit, decision: str) -> bool:
+        status = str(decision or "").strip().lower()
+        if status not in ("reserves", "strategic_reserves"):
+            return False
+        get_rule = getattr(unit, "get_drop_pod_assault_rule", None)
+        if not callable(get_rule):
+            return True
+        rule = get_rule()
+        if not isinstance(rule, dict):
+            return True
+        return not bool(rule.get("counts_not_towards_reserves_limit", False))
+
     def _compute_roots(self) -> List:
         if self.army is None:
             return []
@@ -210,7 +222,8 @@ class ReservesAllocationDialog(BaseDialog):
             if self._must_start_in_reserves(u):
                 decision = "reserves"
             if decision in ("reserves", "strategic_reserves"):
-                reserve_units += 1
+                if self._counts_towards_reserve_unit_cap(u, decision):
+                    reserve_units += 1
                 pts = self._group_points(u)
                 reserve_points += pts
                 if decision == "strategic_reserves" and not self._must_start_in_reserves(u):
@@ -231,12 +244,12 @@ class ReservesAllocationDialog(BaseDialog):
         must_reserves = self._must_start_in_reserves(unit)
 
         if must_reserves and decision == "deploy":
-            return False, "AIRCRAFT must start in Reserves"
+            return False, "This unit must start in Reserves"
 
         # Fortifications cannot be placed into Strategic Reserves.
         if decision == "strategic_reserves":
             if must_reserves:
-                return False, "AIRCRAFT start in Reserves"
+                return False, "This unit must start in Reserves"
             try:
                 if bool(getattr(unit, "is_fortification", False)):
                     return False, "FORTIFICATIONS cannot be placed in Strategic Reserves"

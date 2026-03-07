@@ -2562,6 +2562,10 @@ def _ability_id_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Supported",
             "Must-start-in-Reserves and turn 1-3 Reinforcements arrival are enforced; immediate passenger disembark requests use >9\" enemy placement constraints.",
         ),
+        "Aerial Seeding": (
+            "Supported",
+            "Must-start-in-Reserves and turn 1-3 Reinforcements arrival are enforced; exempt from reserves unit-count cap; immediate passenger disembark requests use >9\" enemy placement constraints; embark is locked after setup.",
+        ),
         "Deployment Complete": (
             "Supported",
             "After setup and passenger disembark completion, the transport is embark-locked for the remainder of the battle.",
@@ -3435,6 +3439,10 @@ def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
         "Drop Pod Assault": (
             "Supported",
             "Must-start-in-Reserves and turn 1-3 Reinforcements arrival are enforced; immediate passenger disembark requests use >9\" enemy placement constraints.",
+        ),
+        "Aerial Seeding": (
+            "Supported",
+            "Must-start-in-Reserves and turn 1-3 Reinforcements arrival are enforced; exempt from reserves unit-count cap; immediate passenger disembark requests use >9\" enemy placement constraints; embark is locked after setup.",
         ),
         "Deployment Complete": (
             "Supported",
@@ -5655,6 +5663,7 @@ def _classify_ability_base(
     charge_phase_bodyguard_loss_support = _charge_phase_bodyguard_loss_support(description)
     opponent_turn_reserves_support = _opponent_turn_strategic_reserves_support(description)
     strategic_reserves_early_arrival_support = _strategic_reserves_early_arrival_support(description)
+    transport_assault_reserves_support = _transport_assault_reserves_support(description)
     opponent_turn_destroyed_reposition_support = _opponent_turn_destroyed_reposition_support(description)
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
@@ -6006,6 +6015,8 @@ def _classify_ability_base(
         return charge_phase_bodyguard_loss_support
     if opponent_turn_reserves_support:
         return opponent_turn_reserves_support
+    if transport_assault_reserves_support:
+        return transport_assault_reserves_support
     if strategic_reserves_early_arrival_support:
         return strategic_reserves_early_arrival_support
     if opponent_turn_destroyed_reposition_support:
@@ -10173,6 +10184,47 @@ def _strategic_reserves_early_arrival_support(description: str) -> Optional[Tupl
             "Reserves arrivals: may be set up in battle rounds 1-3 regardless of mission restrictions.",
         )
     return None
+
+
+def _transport_assault_reserves_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "must start the battle in reserves" not in norm:
+        return None
+    if "reinforcements step" not in norm:
+        return None
+    if "first second or third movement phase" not in norm:
+        return None
+    immediate_disembark = (
+        "must immediately disembark after it has been set up on the battlefield" in norm
+        or "must immediately disembark after this model has been set up on the battlefield" in norm
+        or "must immediately disembark after it has been set up" in norm
+        or "must immediately disembark after this model has been set up" in norm
+    )
+    if not immediate_disembark:
+        return None
+    m = re.search(r"set up more than (?P<dist>\d+) horizontally away from all enemy models", norm)
+    if not m:
+        m = re.search(r"set up more than (?P<dist>\d+) away from all enemy models", norm)
+    if not m:
+        return None
+    notes = [
+        "Must-start-in-Reserves transport can arrive in battle rounds 1-3 regardless of mission restrictions.",
+    ]
+    if (
+        "not counted towards any limits placed on the maximum number of reserves units" in norm
+        or "neither it nor any units embarked within it are counted towards any limits" in norm
+    ):
+        notes.append("Does not count towards reserves unit-count cap.")
+    notes.append(
+        f"Embarked units must immediately disembark after setup and be placed more than {m.group('dist')}\" from enemy models."
+    )
+    if "after this model has been set up on the battlefield no units can embark within it" in norm:
+        notes.append("After setup, no units can embark within this transport.")
+    return ("Supported", " ".join(notes))
 
 
 def _opponent_turn_destroyed_reposition_support(description: str) -> Optional[Tuple[str, str]]:

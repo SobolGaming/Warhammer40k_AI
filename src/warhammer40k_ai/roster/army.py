@@ -652,6 +652,25 @@ class Army:
             total += int(u.get_unit_cost())
         return int(total)
 
+    def _reserve_group_exempt_from_unit_cap(self, root: Unit) -> bool:
+        if root is None:
+            return False
+        get_rule = getattr(root, "get_drop_pod_assault_rule", None)
+        if not callable(get_rule):
+            return False
+        rule = get_rule()
+        if not isinstance(rule, dict):
+            return False
+        return bool(rule.get("counts_not_towards_reserves_limit", False))
+
+    def _reserve_group_counts_towards_unit_cap(self, root: Unit, *, decision: str) -> bool:
+        status = str(decision or "").strip().lower()
+        if status not in ("reserves", "strategic_reserves"):
+            return False
+        if self._reserve_group_exempt_from_unit_cap(root):
+            return False
+        return True
+
     def get_reserve_limits(self) -> dict:
         """
         Calculate the reserve limits for this army.
@@ -702,9 +721,12 @@ class Army:
         limits = self.get_reserve_limits()
         # Treat `unit` as a reserve-group root for counting purposes.
         unit_points = self._reserve_group_points(unit)
-        
+
+        # Some transport assault abilities are exempt from the reserves unit-count cap.
+        counts_towards_units = self._reserve_group_counts_towards_unit_cap(unit, decision="reserves")
+
         # Check both unit count and points limits
-        can_add_units = current_reserve_units < limits['max_units']
+        can_add_units = (current_reserve_units < limits['max_units']) if counts_towards_units else True
         can_add_points = current_reserve_points + unit_points <= limits['max_points']
         
         return can_add_units and can_add_points
@@ -736,14 +758,15 @@ class Army:
             decision = reserves_decisions.get(rid, "deploy")
             if _must_start_in_reserves(root):
                 if decision == "deploy":
-                    errors.append(f"{getattr(root, 'name', 'Unit')} must start in Reserves (AIRCRAFT)")
+                    errors.append(f"{getattr(root, 'name', 'Unit')} must start in Reserves")
                 decision = "reserves"
             if decision == "strategic_reserves":
                 if bool(getattr(root, "is_fortification", False)):
                     errors.append(f"FORTIFICATIONS cannot be placed in Strategic Reserves: {getattr(root, 'name', 'Unit')}")
                     continue
             if decision in ["reserves", "strategic_reserves"]:
-                reserve_units += 1
+                if self._reserve_group_counts_towards_unit_cap(root, decision=decision):
+                    reserve_units += 1
                 pts = self._reserve_group_points(root)
                 reserve_points += pts
                 if decision == "strategic_reserves":
@@ -903,12 +926,14 @@ class Army:
             if _must_start_in_reserves(root):
                 decision = "reserves"
             if decision == "reserves":
-                reserve_units += 1
+                if self._reserve_group_counts_towards_unit_cap(root, decision=decision):
+                    reserve_units += 1
                 pts = self._reserve_group_points(root)
                 reserve_points += pts
                 reserve_unit_names.append(getattr(root, "name", "Unit"))
             elif decision == "strategic_reserves":
-                reserve_units += 1
+                if self._reserve_group_counts_towards_unit_cap(root, decision=decision):
+                    reserve_units += 1
                 pts = self._reserve_group_points(root)
                 reserve_points += pts
                 strategic_points += int(
