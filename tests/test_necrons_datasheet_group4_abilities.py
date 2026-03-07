@@ -1,9 +1,13 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
-from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 from warhammer40k_ai.utility.aura_effects import get_aura_attack_modifiers, get_aura_strength_bonus
 
 
@@ -74,6 +78,109 @@ def _deploy_pair(game, army1, army2, friendly, enemy, *, friendly_xy=(0.0, 0.0),
 
 
 class TestNecronsDatasheetGroup4Abilities(unittest.TestCase):
+    def test_technomancer_parses_end_movement_phase_model_repair_rule(self):
+        ability = {
+            "name": "Technomancer",
+            "description": (
+                "At the end of your Movement phase, you can select one friendly NECRONS model within 6\" of the bearer. "
+                "That model regains up to D3 lost wounds. Each model can only be selected for this ability once per turn."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        source = _make_unit(
+            "Technomancer",
+            abilities=[ability],
+            keywords=["NECRONS", "INFANTRY", "CHARACTER"],
+        )
+        rule = source.get_command_phase_vehicle_repair_hit_bonus_rule()
+
+        self.assertIsNotNone(rule)
+        self.assertEqual(str(rule.get("source", "")), "Technomancer")
+        self.assertEqual(str(rule.get("phase", "")), "MOVEMENT_PHASE")
+        self.assertEqual(str(rule.get("selection_kind", "")), "model")
+        self.assertEqual(str(rule.get("limit_scope", "")), "model")
+        self.assertTrue(bool(rule.get("limit_once_per_turn", False)))
+        self.assertEqual(str(rule.get("target_keyword", "")), "NECRONS")
+        self.assertEqual(int(rule.get("range", 0) or 0), 6)
+        self.assertEqual(str(rule.get("heal_roll", "")).upper(), "D3")
+
+    def test_technomancer_queues_and_applies_model_heal_once_per_turn(self):
+        ability = {
+            "name": "Technomancer",
+            "description": (
+                "At the end of your Movement phase, you can select one friendly NECRONS model within 6\" of the bearer. "
+                "That model regains up to D3 lost wounds. Each model can only be selected for this ability once per turn."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        source = _make_unit(
+            "Technomancer",
+            abilities=[ability],
+            keywords=["NECRONS", "INFANTRY", "CHARACTER"],
+        )
+        target = _make_unit("Necron Warriors", keywords=["NECRONS", "INFANTRY"])
+        enemy = _make_unit("Enemy")
+
+        army1.add_unit(source)
+        army1.add_unit(target)
+        army2.add_unit(enemy)
+        source.deployed = True
+        target.deployed = True
+        enemy.deployed = True
+        source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        target.models[0].set_location(4.0, 0.0, 0.0, 0.0)
+        enemy.models[0].set_location(20.0, 0.0, 0.0, 0.0)
+        game.map.units = [source, target, enemy]
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 0
+        game.turn = 2
+        game.rebuild_entity_registry()
+
+        before = int(target.models[0].wounds)
+        target.models[0].wounds = before - 1
+
+        player = game.players[0]
+        game._on_phase_start_master_of_mechanisms(player=player, phase=game.phase)
+
+        req = next(
+            r
+            for r in list(game.decision_queue.list() or [])
+            if str((r.context or {}).get("ability", "")) == "master_of_mechanisms"
+        )
+        self.assertEqual(req.decision_type, DECISION_CHOOSE_QUARRY)
+        self.assertEqual(str((req.context or {}).get("phase", "")), "Movement phase")
+        self.assertEqual(str((req.context or {}).get("selection_kind", "")), "model")
+        self.assertEqual(str((req.context or {}).get("limit_scope", "")), "model")
+
+        target_unit_id = str(get_entity_id(target) or "")
+        option = next(
+            opt
+            for opt in list(req.options or [])
+            if str((opt.payload or {}).get("target_unit_id", "")) == target_unit_id
+        )
+        target_model_id = str((option.payload or {}).get("target_model_id", "") or "")
+        self.assertTrue(bool(target_model_id))
+        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=2):
+            result = resolve_decision_command(game, req, option.option_id, player_id=player.id)
+        self.assertTrue(bool(getattr(result, "ok", False)))
+        self.assertEqual(int(target.models[0].wounds), before)
+
+        msr = getattr(target.models[0], "special_rules", {}) or {}
+        self.assertEqual(str(msr.get("master_of_mechanisms_selected_turn_owner", "")), str(player.id))
+        self.assertEqual(int(msr.get("master_of_mechanisms_selected_turn", 0) or 0), 2)
+
+        game._on_phase_start_master_of_mechanisms(player=player, phase=game.phase)
+        next_req = next(
+            r
+            for r in list(game.decision_queue.list() or [])
+            if str((r.context or {}).get("ability", "")) == "master_of_mechanisms"
+        )
+        payload_ids = [str((opt.payload or {}).get("target_model_id", "")) for opt in list(next_req.options or [])]
+        self.assertNotIn(target_model_id, payload_ids)
+
     def test_fabricator_claw_array_aura_grants_vehicle_fnp(self):
         ability = {
             "name": "Fabricator Claw Array (Aura)",

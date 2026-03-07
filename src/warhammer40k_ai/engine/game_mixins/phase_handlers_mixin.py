@@ -9193,7 +9193,7 @@ class GamePhaseHandlersMixin:
 
     def _on_phase_start_master_of_mechanisms(self, player=None, phase=None, **_kwargs) -> None:
         pname = str(getattr(phase, "name", "") or "").strip().upper()
-        if pname != "COMMAND_PHASE":
+        if pname not in ("COMMAND_PHASE", "MOVEMENT_PHASE"):
             return
         if player is None or player is not self.get_current_player():
             return
@@ -9205,7 +9205,7 @@ class GamePhaseHandlersMixin:
         game_map = self.map
         if game_map is None:
             return
-        from ...utility.aura_utils import model_within_range_of_unit
+        from ...utility.aura_utils import distance_between_models_bases_3d, model_within_range_of_unit
 
         owner_id = str(getattr(player, "id", "") or "")
         turn = int(getattr(self, "turn", 0) or 0)
@@ -9228,6 +9228,12 @@ class GamePhaseHandlersMixin:
                 return str(get_entity_id(u))
             except Exception:
                 return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
 
         seen_sources: set[str] = set()
         for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
@@ -9257,6 +9263,7 @@ class GamePhaseHandlersMixin:
                     continue
                 rule = {
                     "source": "Master of Mechanisms",
+                    "phase": "COMMAND_PHASE",
                     "range": 3,
                     "heal_roll": "D3",
                     "heal_flat": 0,
@@ -9266,7 +9273,13 @@ class GamePhaseHandlersMixin:
                     "target_requires_vehicle": True,
                     "target_keyword": "",
                     "allow_self_target": False,
+                    "selection_kind": "unit",
+                    "limit_once_per_turn": False,
+                    "limit_scope": "unit",
                 }
+            rule_phase = str(rule.get("phase", "COMMAND_PHASE") or "COMMAND_PHASE").strip().upper()
+            if rule_phase != pname:
+                continue
             try:
                 selection_range = float(rule.get("range", 3) or 3)
             except Exception:
@@ -9286,6 +9299,13 @@ class GamePhaseHandlersMixin:
             target_requires_vehicle = bool(rule.get("target_requires_vehicle", False))
             target_keyword = str(rule.get("target_keyword", "") or "").strip().upper()
             allow_self_target = bool(rule.get("allow_self_target", False))
+            selection_kind = str(rule.get("selection_kind", "unit") or "unit").strip().lower()
+            if selection_kind not in ("unit", "model"):
+                selection_kind = "unit"
+            limit_once_per_turn = bool(rule.get("limit_once_per_turn", False))
+            limit_scope = str(rule.get("limit_scope", "unit") or "unit").strip().lower()
+            if limit_scope not in ("unit", "model"):
+                limit_scope = "model" if selection_kind == "model" else "unit"
             heal_roll = str(rule.get("heal_roll", "") or "").strip().upper()
             try:
                 heal_flat = int(rule.get("heal_flat", 0) or 0)
@@ -9293,7 +9313,7 @@ class GamePhaseHandlersMixin:
                 heal_flat = 0
             if not heal_roll and heal_flat <= 0:
                 heal_roll = "D3"
-            if hit_bonus <= 0 and fnp_value <= 0:
+            if hit_bonus <= 0 and fnp_value <= 0 and not heal_roll and heal_flat <= 0:
                 continue
             try:
                 models = list(root.get_attached_unit_models() or [])
@@ -9309,7 +9329,8 @@ class GamePhaseHandlersMixin:
             if bearer is None:
                 continue
 
-            candidates = []
+            candidates_units = []
+            candidates_models = []
             seen_targets: set[str] = set()
             for cand in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
                 if cand is None:
@@ -9343,33 +9364,88 @@ class GamePhaseHandlersMixin:
                             continue
                     except Exception:
                         continue
-                if not model_within_range_of_unit(bearer, target_root, selection_range):
-                    continue
-                tsr = getattr(target_root, "special_rules", None)
-                if isinstance(tsr, dict):
-                    if (
-                        str(tsr.get("master_of_mechanisms_selected_turn_owner", "") or "") == owner_id
-                        and int(tsr.get("master_of_mechanisms_selected_turn", 0) or 0) == int(turn or 0)
-                    ):
-                        continue
-                candidates.append(target_root)
 
-            if not candidates:
+                if selection_kind == "model":
+                    try:
+                        target_models = list(target_root.get_attached_unit_models() or [])
+                    except Exception:
+                        target_models = list(getattr(target_root, "models", []) or [])
+                    for target_model in sorted(list(target_models or []), key=_model_sort_key):
+                        if target_model is None:
+                            continue
+                        try:
+                            alive_attr = getattr(target_model, "is_alive", False)
+                            target_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                        except Exception:
+                            target_alive = False
+                        if not target_alive:
+                            continue
+                        if limit_once_per_turn and limit_scope == "model":
+                            msr = getattr(target_model, "special_rules", None)
+                            if isinstance(msr, dict):
+                                if (
+                                    str(msr.get("master_of_mechanisms_selected_turn_owner", "") or "") == owner_id
+                                    and int(msr.get("master_of_mechanisms_selected_turn", 0) or 0) == int(turn or 0)
+                                ):
+                                    continue
+                        try:
+                            if float(distance_between_models_bases_3d(bearer, target_model)) > float(selection_range) + 1e-6:
+                                continue
+                        except Exception:
+                            continue
+                        candidates_models.append((target_root, target_model))
+                else:
+                    if not model_within_range_of_unit(bearer, target_root, selection_range):
+                        continue
+                    if limit_once_per_turn and limit_scope == "unit":
+                        tsr = getattr(target_root, "special_rules", None)
+                        if isinstance(tsr, dict):
+                            if (
+                                str(tsr.get("master_of_mechanisms_selected_turn_owner", "") or "") == owner_id
+                                and int(tsr.get("master_of_mechanisms_selected_turn", 0) or 0) == int(turn or 0)
+                            ):
+                                continue
+                    candidates_units.append(target_root)
+
+            if selection_kind == "model" and not candidates_models:
+                continue
+            if selection_kind != "model" and not candidates_units:
                 continue
 
             options = [DecisionOption.create("None", payload={"action": "skip"})]
-            options.extend(
-                DecisionOption.create(
-                    str(getattr(c, "name", "Unit") or "Unit"),
-                    payload={"target_unit_id": get_entity_id(c)},
+            if selection_kind == "model":
+                options.extend(
+                    DecisionOption.create(
+                        f"{str(getattr(tm, 'name', 'Model') or 'Model')} ({str(getattr(tu, 'name', 'Unit') or 'Unit')})",
+                        payload={
+                            "target_unit_id": get_entity_id(tu),
+                            "target_model_id": get_entity_id(tm),
+                        },
+                    )
+                    for tu, tm in sorted(
+                        list(candidates_models),
+                        key=lambda item: (_unit_sort_key(item[0]), _model_sort_key(item[1])),
+                    )
                 )
-                for c in sorted(list(candidates), key=_unit_sort_key)
-            )
+            else:
+                options.extend(
+                    DecisionOption.create(
+                        str(getattr(c, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(c)},
+                    )
+                    for c in sorted(list(candidates_units), key=_unit_sort_key)
+                )
             if not options:
                 continue
-            prompt_target = "friendly VEHICLE unit" if target_requires_vehicle else "friendly unit"
-            if target_keyword and not target_requires_vehicle:
-                prompt_target = f"friendly {target_keyword} unit"
+            if selection_kind == "model":
+                prompt_target = "friendly model"
+                if target_keyword:
+                    prompt_target = f"friendly {target_keyword} model"
+            else:
+                prompt_target = "friendly VEHICLE unit" if target_requires_vehicle else "friendly unit"
+                if target_keyword and not target_requires_vehicle:
+                    prompt_target = f"friendly {target_keyword} unit"
+            phase_label = "Command phase" if pname == "COMMAND_PHASE" else "Movement phase"
             request = DecisionRequest.create(
                 DECISION_CHOOSE_QUARRY,
                 f"{ability_name}: select a {prompt_target} within {int(selection_range)}\" (or None).",
@@ -9378,7 +9454,7 @@ class GamePhaseHandlersMixin:
                 context={
                     "ability": "master_of_mechanisms",
                     "ability_name": ability_name,
-                    "phase": "Command phase",
+                    "phase": phase_label,
                     "optional": True,
                     "source_unit_id": source_id,
                     "unit_id": source_id,
@@ -9390,6 +9466,9 @@ class GamePhaseHandlersMixin:
                     "target_requires_vehicle": bool(target_requires_vehicle),
                     "target_keyword": str(target_keyword or ""),
                     "allow_self_target": bool(allow_self_target),
+                    "selection_kind": str(selection_kind),
+                    "limit_once_per_turn": bool(limit_once_per_turn),
+                    "limit_scope": str(limit_scope),
                     "heal_roll": heal_roll,
                     "heal_flat": int(heal_flat),
                     "turn_owner": owner_id,

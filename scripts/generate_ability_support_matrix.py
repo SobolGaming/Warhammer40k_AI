@@ -4724,6 +4724,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Command phase: optional CHOOSE_QUARRY target selection (with None) for a friendly CANOPTEK SCARAB SWARM unit within 6\"; returns one destroyed model per alive SPYDER model in the source unit.",
         ),
+        ("NEC", "Technomancer"): (
+            "Supported",
+            "End of Movement phase: optional CHOOSE_QUARRY selection (with None) of a friendly NECRONS model within 6\"; selected model regains D3 lost wounds and each model can only be selected once per turn.",
+        ),
         ("AM", "DEPLOYMENT"): (
             "Supported",
             "Aegis Defence Line deployment enforces section composition limits and connectivity, including the broken-shield 1/2\" middle-pair exception, while treating all sections as one model.",

@@ -1823,13 +1823,12 @@ class KeywordsDetachmentsMixin:
 
     def get_command_phase_vehicle_repair_hit_bonus_rule(self) -> Optional[dict]:
         """
-        Return rule info for command-phase abilities that:
-        - select one friendly target within X"
-        - heal it (typically D3)
-        - optionally grant +Hit until the start of your next Command phase
-        - optionally grant Feel No Pain until the start of your next Command phase
+        Return parsed support-repair rule info for attached-unit abilities.
 
-        Covers wording variants such as Master of Mechanisms and Blessing of the Omnissiah.
+        Supported wording families:
+        - Command phase repair with optional +Hit / temporary Feel No Pain rider
+          (Master of Mechanisms / Blessing of the Omnissiah variants).
+        - End of Movement phase NECRONS model repair (Technomancer).
         """
         try:
             root = self.get_attached_unit_root()
@@ -1866,11 +1865,17 @@ class KeywordsDetachmentsMixin:
                 norm = re.sub(r"'s\b", "s", norm)
                 norm = re.sub(r"[^a-z0-9]+", " ", norm)
                 norm = re.sub(r"\s+", " ", norm).strip()
-                if "command phase" not in norm:
-                    continue
                 if "select one friendly" not in norm:
                     continue
                 if "regains" not in norm or "lost wounds" not in norm:
+                    continue
+
+                phase_name = ""
+                if "end of your movement phase" in norm:
+                    phase_name = "MOVEMENT_PHASE"
+                elif "command phase" in norm:
+                    phase_name = "COMMAND_PHASE"
+                if not phase_name:
                     continue
 
                 target_phrase = ""
@@ -1885,11 +1890,19 @@ class KeywordsDetachmentsMixin:
                     target_keyword = "GREY KNIGHTS"
                 elif "heretic astartes" in norm:
                     target_keyword = "HERETIC ASTARTES"
+                elif "necrons" in norm:
+                    target_keyword = "NECRONS"
 
                 has_next_command_phase_duration = "until the start of your next command phase" in norm
                 has_hit_bonus_clause = bool(has_next_command_phase_duration and "hit roll" in norm)
                 has_fnp_clause = bool(has_next_command_phase_duration and "feel no pain" in norm)
-                if not has_hit_bonus_clause and not has_fnp_clause:
+                source_name = str(name or "").strip().lower()
+                is_technomancer_rule = bool(
+                    "technomancer" in source_name
+                    and "end of your movement phase" in norm
+                    and "friendly necrons model" in norm
+                )
+                if not has_hit_bonus_clause and not has_fnp_clause and not is_technomancer_rule:
                     continue
                 range_value = 3
                 m_range = re.search(r"within\s+(\d+)", norm)
@@ -1942,16 +1955,24 @@ class KeywordsDetachmentsMixin:
                         except Exception:
                             fnp_value = 0
 
-                if hit_bonus <= 0 and fnp_value <= 0:
-                    continue
-
                 allow_self_target = (
-                    "select one friendly adeptus mechanicus model within" in norm
+                    "select one friendly" in norm
                     and "other friendly" not in norm
                 )
+                selection_kind = "model" if is_technomancer_rule else "unit"
+                limit_once_per_turn = (
+                    "only be selected for this ability once per turn" in norm
+                    or "only be selected for this ability once per command phase" in norm
+                )
+                limit_scope = "unit"
+                if "each model can only be selected for this ability once per turn" in norm:
+                    limit_scope = "model"
+                elif selection_kind == "model":
+                    limit_scope = "model"
                 source = str(name or "Master of Mechanisms").strip() or "Master of Mechanisms"
                 rule = {
                     "source": source,
+                    "phase": str(phase_name or "COMMAND_PHASE"),
                     "range": int(range_value),
                     "heal_roll": str(heal_roll or ""),
                     "heal_flat": int(heal_flat or 0),
@@ -1961,10 +1982,9 @@ class KeywordsDetachmentsMixin:
                     "target_requires_vehicle": bool(target_requires_vehicle),
                     "target_keyword": str(target_keyword or "").strip().upper(),
                     "allow_self_target": bool(allow_self_target),
-                    "limit_once_per_turn": (
-                        "only be selected for this ability once per turn" in norm
-                        or "only be selected for this ability once per command phase" in norm
-                    ),
+                    "selection_kind": str(selection_kind),
+                    "limit_once_per_turn": bool(limit_once_per_turn),
+                    "limit_scope": str(limit_scope),
                 }
                 break
             if rule is not None:

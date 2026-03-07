@@ -6428,10 +6428,19 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is None:
             return ("Master of Mechanisms source unit was not found.",)
+        selection_kind = str(ctx.get("selection_kind", "unit") or "unit").strip().lower()
+        if selection_kind not in ("unit", "model"):
+            selection_kind = "unit"
+        target_model = None
+        if selection_kind == "model":
+            target_model = resolve_model(game, payload.get("target_model_id") or ctx.get("target_model_id"))
+            if target_model is None:
+                return ("Master of Mechanisms target model was not found.",)
         target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None and target_model is not None:
+            target_unit = getattr(target_model, "parent_unit", None)
         if target_unit is None:
             return ("Master of Mechanisms target unit was not found.",)
-
         source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
         target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
         if source_root is None or target_root is None:
@@ -6449,6 +6458,10 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
                 return ("Master of Mechanisms target must be on the battlefield.",)
         except Exception:
             pass
+        if selection_kind == "model":
+            alive_attr = getattr(target_model, "is_alive", False)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                return ("Master of Mechanisms target model must be alive.",)
 
         source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
         target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
@@ -6489,32 +6502,55 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if model is None:
             return ("Master of Mechanisms bearer model was not found.",)
         in_range = True
-        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
-        if callable(in_range_fn):
-            in_range = bool(in_range_fn(model, target_root, range_value=float(range_inches)))
-        else:
+        if selection_kind == "model":
             try:
-                from ...utility.aura_utils import model_within_range_of_unit
+                from ...utility.aura_utils import distance_between_models_bases_3d
 
-                in_range = bool(model_within_range_of_unit(model, target_root, float(range_inches)))
+                in_range = bool(float(distance_between_models_bases_3d(model, target_model)) <= float(range_inches) + 1e-6)
             except Exception:
                 in_range = True
+        else:
+            in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+            if callable(in_range_fn):
+                in_range = bool(in_range_fn(model, target_root, range_value=float(range_inches)))
+            else:
+                try:
+                    from ...utility.aura_utils import model_within_range_of_unit
+
+                    in_range = bool(model_within_range_of_unit(model, target_root, float(range_inches)))
+                except Exception:
+                    in_range = True
         if not in_range:
             return ("Master of Mechanisms target is out of range.",)
 
-        target_sr = getattr(target_root, "special_rules", None)
-        if isinstance(target_sr, dict):
+        limit_once_per_turn = bool(ctx.get("limit_once_per_turn", False))
+        limit_scope = str(ctx.get("limit_scope", "unit") or "unit").strip().lower()
+        if limit_scope not in ("unit", "model"):
+            limit_scope = "model" if selection_kind == "model" else "unit"
+        if limit_once_per_turn:
             owner_id = str(ctx.get("turn_owner", "") or "")
             try:
                 turn = int(ctx.get("turn", 0) or 0)
             except Exception:
                 turn = 0
-            if (
-                owner_id
-                and str(target_sr.get("master_of_mechanisms_selected_turn_owner", "") or "") == owner_id
-                and int(target_sr.get("master_of_mechanisms_selected_turn", 0) or 0) == turn
-            ):
-                return ("Master of Mechanisms target has already been selected this Command phase.",)
+            if limit_scope == "model" and target_model is not None:
+                target_msr = getattr(target_model, "special_rules", None)
+                if isinstance(target_msr, dict):
+                    if (
+                        owner_id
+                        and str(target_msr.get("master_of_mechanisms_selected_turn_owner", "") or "") == owner_id
+                        and int(target_msr.get("master_of_mechanisms_selected_turn", 0) or 0) == turn
+                    ):
+                        return ("Master of Mechanisms target model has already been selected this turn.",)
+            else:
+                target_sr = getattr(target_root, "special_rules", None)
+                if isinstance(target_sr, dict):
+                    if (
+                        owner_id
+                        and str(target_sr.get("master_of_mechanisms_selected_turn_owner", "") or "") == owner_id
+                        and int(target_sr.get("master_of_mechanisms_selected_turn", 0) or 0) == turn
+                    ):
+                        return ("Master of Mechanisms target has already been selected this turn.",)
         return ()
     if ability == "data_psalm_benediction":
         if is_skip_choice(request, result):
@@ -16398,8 +16434,16 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if is_skip_choice(request, result):
             return None
         payload = _option_payload(request, result)
+        selection_kind = str(ctx.get("selection_kind", "unit") or "unit").strip().lower()
+        if selection_kind not in ("unit", "model"):
+            selection_kind = "unit"
+        target_model = None
+        if selection_kind == "model":
+            target_model = resolve_model(game, payload.get("target_model_id") or ctx.get("target_model_id"))
         target_val = payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id")
         target_unit = resolve_unit(game, target_val)
+        if target_unit is None and target_model is not None:
+            target_unit = getattr(target_model, "parent_unit", None)
         if target_unit is None:
             return None
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
@@ -16445,22 +16489,42 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             base = getattr(m, "_base_wounds", getattr(m, "wounds", 0))
             if int(getattr(m, "wounds", 0) or 0) < int(base or 0):
                 wounded.append(m)
-        if wounded and heal > 0:
+        if selection_kind == "model" and target_model is not None:
+            chosen = target_model
+            try:
+                alive_attr = getattr(chosen, "is_alive", False)
+                if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    chosen = None
+            except Exception:
+                chosen = None
+            if chosen is not None:
+                target_model = chosen
+            elif wounded:
+                target_model = wounded[0]
+        elif wounded:
             try:
                 wounded.sort(key=lambda m: str(getattr(m, "id", getattr(m, "_id", "")) or ""))
             except Exception:
                 wounded = list(wounded)
             target_model = wounded[0]
+        if target_model is not None and heal > 0:
             heal_fn = getattr(target_model, "heal", None)
             if callable(heal_fn):
                 heal_fn(int(heal))
+
+        limit_once_per_turn = bool(ctx.get("limit_once_per_turn", False))
+        limit_scope = str(ctx.get("limit_scope", "unit") or "unit").strip().lower()
+        if limit_scope not in ("unit", "model"):
+            limit_scope = "model" if selection_kind == "model" else "unit"
+
         tsr = getattr(target_root, "special_rules", None)
         if not isinstance(tsr, dict):
             tsr = {}
         owner_id = str(getattr(player, "id", "") or "")
         turn = int(getattr(game, "turn", 0) or 0)
-        tsr["master_of_mechanisms_selected_turn_owner"] = owner_id
-        tsr["master_of_mechanisms_selected_turn"] = int(turn or 0)
+        if limit_once_per_turn and limit_scope == "unit":
+            tsr["master_of_mechanisms_selected_turn_owner"] = owner_id
+            tsr["master_of_mechanisms_selected_turn"] = int(turn or 0)
         if hit_bonus > 0:
             tsr["master_of_mechanisms_hit_bonus_active"] = True
             tsr["master_of_mechanisms_hit_bonus"] = int(hit_bonus)
@@ -16503,7 +16567,16 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             tsr.pop("master_of_mechanisms_fnp_owner", None)
         tsr["master_of_mechanisms_source"] = ability_name
         target_root.special_rules = tsr
+        if limit_once_per_turn and limit_scope == "model" and target_model is not None:
+            target_msr = getattr(target_model, "special_rules", None)
+            if not isinstance(target_msr, dict):
+                target_msr = {}
+            target_msr["master_of_mechanisms_selected_turn_owner"] = owner_id
+            target_msr["master_of_mechanisms_selected_turn"] = int(turn or 0)
+            target_model.special_rules = target_msr
         tname = str(getattr(target_root, "name", "Unit") or "Unit")
+        if target_model is not None and selection_kind == "model":
+            tname = f"{str(getattr(target_model, 'name', 'Model') or 'Model')} ({tname})"
         summary_parts = [f"regains up to {int(heal)} wounds"]
         if hit_bonus > 0:
             summary_parts.append(f"gets +{int(hit_bonus)} to hit until next Command phase")
