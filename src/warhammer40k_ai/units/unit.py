@@ -2953,7 +2953,7 @@ class Unit(
         re.IGNORECASE,
     )
     _BEARER_WOUNDS_SET_RE = re.compile(
-        r"(?:the\s+bearer|this\s+model)\s+has\s+a\s+wounds?\s+characteristic\s+of\s+(\d+)",
+        r"(?:the\s+bearer|this\s+model|this\s+fortification)\s+has\s+a\s+wounds?\s+characteristic\s+of\s+(\d+)",
         re.IGNORECASE,
     )
     _BEARER_UNIT_AGILE_MANEUVER_REROLL_RE = re.compile(

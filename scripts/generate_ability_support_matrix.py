@@ -5711,6 +5711,7 @@ def _classify_ability_base(
     tau_precise_targeting_support = _tau_precise_targeting_support(description)
     tau_forward_observers_support = _tau_forward_observers_support(description)
     tau_droneport_support = _tau_droneport_support(description)
+    tau_tidewall_defence_platform_support = _tau_tidewall_defence_platform_support(description)
     tau_hunting_hounds_support = _tau_hunting_hounds_support(description)
     tau_rites_of_feasting_support = _tau_rites_of_feasting_support(description)
     tau_nova_charge_support = _tau_nova_charge_support(description)
@@ -5861,6 +5862,8 @@ def _classify_ability_base(
         return tau_forward_observers_support
     if tau_droneport_support:
         return tau_droneport_support
+    if tau_tidewall_defence_platform_support:
+        return tau_tidewall_defence_platform_support
     if tau_rites_of_feasting_support:
         return tau_rites_of_feasting_support
     if tau_nova_charge_support:
@@ -8422,6 +8425,25 @@ def _tau_droneport_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         "When this FORTIFICATION is selected to shoot, its Drone defenders weapon profile resolves against every eligible enemy target.",
+    )
+
+
+def _tau_tidewall_defence_platform_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"if equipped with a tidewall defence platform this fortification has a wounds characteristic of (?P<wounds>\d+)",
+        norm,
+    )
+    if not m:
+        return None
+    wounds_value = str(m.group("wounds") or "15").strip()
+    return (
+        "Supported",
+        f"If equipped with a Tidewall defence platform, this FORTIFICATION has a Wounds characteristic of {wounds_value}.",
     )
 
 
