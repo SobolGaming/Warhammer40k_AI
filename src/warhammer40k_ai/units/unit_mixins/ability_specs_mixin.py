@@ -3049,6 +3049,83 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_surrogate_hosts_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: Surrogate Hosts (start of Command phase model replacement).
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - required_keywords_all: list[str]
+            - excluded_unit_names: list[str]
+            - exclude_epic_hero: bool
+            - attach_if_target_was_leading: bool
+        """
+        if model is None:
+            return []
+        cache_key = f"model_surrogate_hosts:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, tuple[str, ...], tuple[str, ...], bool, bool]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not normalized:
+                continue
+            required_phrases = (
+                "at the start of your command phase",
+                "if this model is on the battlefield",
+                "you can select one other friendly necrons infantry character model on the battlefield",
+                "the selected model is destroyed",
+                "ignoring any rules that are triggered when a model is destroyed",
+                "this model is put in its place",
+                "with all of its wounds remaining",
+                "if the selected model was leading a unit this model now attaches to that unit as its leader",
+            )
+            if any(phrase not in normalized for phrase in required_phrases):
+                continue
+            if "excluding skorpekh lord" not in normalized:
+                continue
+            if "epic hero" not in normalized:
+                continue
+
+            source = str(name or "Surrogate Hosts").strip() or "Surrogate Hosts"
+            required_keywords_all = ("NECRONS", "INFANTRY", "CHARACTER")
+            excluded_unit_names = ("Skorpekh Lord",)
+            exclude_epic_hero = True
+            attach_if_target_was_leading = True
+            key = (
+                source.lower(),
+                required_keywords_all,
+                excluded_unit_names,
+                bool(exclude_epic_hero),
+                bool(attach_if_target_was_leading),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "required_keywords_all": list(required_keywords_all),
+                    "excluded_unit_names": list(excluded_unit_names),
+                    "exclude_epic_hero": bool(exclude_epic_hero),
+                    "attach_if_target_was_leading": bool(attach_if_target_was_leading),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_eternity_gate_specs(self) -> List[dict]:
         """
         Unit-specific rule: Eternity Gate (Reinforcements-step setup of friendly NECRONS INFANTRY).

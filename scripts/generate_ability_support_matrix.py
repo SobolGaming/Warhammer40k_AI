@@ -4728,6 +4728,14 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "End of Movement phase: optional CHOOSE_QUARRY selection (with None) of a friendly NECRONS model within 6\"; selected model regains D3 lost wounds and each model can only be selected once per turn.",
         ),
+        ("NEC", "Ancient Collector"): (
+            "Supported",
+            "While leading, end of Command phase: objective becomes sticky while you controlled it.",
+        ),
+        ("NEC", "Surrogate Hosts"): (
+            "Supported",
+            "Start of Command phase: optional CHOOSE_QUARRY selection (with None) of one other friendly NECRONS INFANTRY CHARACTER model on the battlefield (excluding EPIC HERO and Skorpekh Lord); selected model is removed without destruction-trigger effects, this model is placed in its position with current wounds, and if the selected model was leading a unit this model attaches to that bodyguard as Leader.",
+        ),
         ("AM", "DEPLOYMENT"): (
             "Supported",
             "Aegis Defence Line deployment enforces section composition limits and connectivity, including the broken-shield 1/2\" middle-pair exception, while treating all sections as one model.",
@@ -9661,6 +9669,11 @@ def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:
         r"that objective marker remains under your control even if you have no models within range of it "
         r"until your opponent controls it at (?:the )?start or end of any turn"
     )
+    leading_timed_it = (
+        r"while this model is leading a unit at the end of your command phase if that unit is within range of an objective marker you control "
+        r"it remains under your control even if you have no models within range of it "
+        r"until your opponent controls it at (?:the )?start or end of any turn"
+    )
     loc = (
         r"at the end of your command phase if this unit is within range of an objective marker you control "
         r"that objective marker remains under your control until your opponents level of control over that "
@@ -9675,10 +9688,13 @@ def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:
         re.fullmatch(legacy, norm)
         or re.fullmatch(legacy_timed, norm)
         or re.fullmatch(legacy_timed_control, norm)
+        or re.fullmatch(leading_timed_it, norm)
         or re.fullmatch(loc, norm)
         or re.fullmatch(loc_control, norm)
     ):
         return None
+    if re.fullmatch(leading_timed_it, norm):
+        return ("Supported", "While leading, end of Command phase: objective becomes sticky while you controlled it.")
     return ("Supported", "End of Command phase: objective becomes sticky while you controlled it.")
 
 

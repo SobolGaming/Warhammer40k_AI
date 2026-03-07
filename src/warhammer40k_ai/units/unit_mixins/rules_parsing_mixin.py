@@ -372,6 +372,7 @@ class RulesParsingMixin:
         allow_transport = False
         requires_embarked_keyword = ""
         requires_vanguard_mode = ""
+        requires_leading_unit = False
         for ab in self._iter_active_abilities():
             try:
                 if isinstance(ab, str):
@@ -389,7 +390,10 @@ class RulesParsingMixin:
             low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
             if "end of your command phase" not in low:
                 continue
-            if "objective marker remains under your control" not in low:
+            if (
+                "objective marker remains under your control" not in low
+                and "it remains under your control" not in low
+            ):
                 continue
             if ("objective marker you control" not in low) and ("control an objective marker" not in low):
                 continue
@@ -406,6 +410,8 @@ class RulesParsingMixin:
                 requires_embarked_keyword = "KABALITE WARRIORS"
                 if "masters of the shadowed sky" in str(name or "").lower():
                     requires_vanguard_mode = "masters_of_the_shadowed_sky"
+            if "while this model is leading a unit" in low:
+                requires_leading_unit = True
 
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
@@ -422,6 +428,10 @@ class RulesParsingMixin:
             sr["sticky_objectives_requires_vanguard_mode"] = str(requires_vanguard_mode)
         else:
             sr.pop("sticky_objectives_requires_vanguard_mode", None)
+        if found and requires_leading_unit:
+            sr["sticky_objectives_requires_leading_unit"] = True
+        else:
+            sr.pop("sticky_objectives_requires_leading_unit", None)
         self.special_rules = sr
         return bool(found)
 
@@ -1259,6 +1269,8 @@ class RulesParsingMixin:
                 del sr["command_phase_bonus_cp_roll_specs"]
             if "sticky_objectives" in sr:
                 del sr["sticky_objectives"]
+            if "sticky_objectives_requires_leading_unit" in sr:
+                del sr["sticky_objectives_requires_leading_unit"]
         except Exception:
             pass
         try:

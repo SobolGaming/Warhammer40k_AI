@@ -2853,12 +2853,22 @@ class PositioningMixin:
 
     def attached_unit_has_command_phase_sticky_objective(self) -> bool:
         """Attached unit eligibility: true if any attached member has sticky objective ability."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
         for u in self.get_attached_unit_members():
             try:
                 sr = getattr(u, "special_rules", None)
-                if isinstance(sr, dict) and sr.get("sticky_objectives"):
+                has_sticky = bool(isinstance(sr, dict) and sr.get("sticky_objectives"))
+                if not has_sticky:
+                    has_sticky = bool(u.has_command_phase_sticky_objective())
+                if not has_sticky:
+                    continue
+                requires_leading = bool(isinstance(sr, dict) and sr.get("sticky_objectives_requires_leading_unit"))
+                if not requires_leading:
                     return True
-                if u.has_command_phase_sticky_objective():
+                if bool(getattr(u, "is_leader", False)) and getattr(u, "attached_to", None) is root:
                     return True
             except Exception:
                 continue

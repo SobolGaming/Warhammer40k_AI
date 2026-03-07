@@ -12147,6 +12147,268 @@ class GamePhaseHandlersMixin:
                 self.request_decision(request)
                 break
 
+    def _on_phase_start_surrogate_hosts(self, player=None, phase=None, **_kwargs) -> None:
+        """Trazyn the Infinite: Surrogate Hosts target selection at start of Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError(f"Surrogate Hosts requires an army for {player.name}.")
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            raise RuntimeError("Surrogate Hosts requires a game map.")
+
+        queue = getattr(self, "decision_queue", None)
+        pending_source_model_ids: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "surrogate_hosts":
+                    continue
+                source_model_id = str(ctx.get("source_model_id", "") or ctx.get("model_id", "") or "")
+                if source_model_id:
+                    pending_source_model_ids.add(source_model_id)
+
+        def _unit_has_keyword(unit_obj, keyword: str) -> bool:
+            if unit_obj is None or not keyword:
+                return False
+            has_any = getattr(unit_obj, "has_any_keyword", None)
+            if callable(has_any) and bool(has_any(keyword)):
+                return True
+            has_one = getattr(unit_obj, "has_keyword", None)
+            if callable(has_one) and bool(has_one(keyword)):
+                return True
+            kw = str(keyword or "").strip().upper()
+            if not kw:
+                return False
+            values = list(getattr(unit_obj, "keywords", []) or []) + list(getattr(unit_obj, "faction_keywords", []) or [])
+            return any(str(v or "").strip().upper() == kw for v in values)
+
+        def _model_has_keyword(model_obj, keyword: str) -> bool:
+            if model_obj is None or not keyword:
+                return False
+            has_any = getattr(model_obj, "has_any_keyword", None)
+            if callable(has_any) and bool(has_any(keyword)):
+                return True
+            has_one = getattr(model_obj, "has_keyword", None)
+            if callable(has_one) and bool(has_one(keyword)):
+                return True
+            parent = getattr(model_obj, "parent_unit", None)
+            if parent is not None and _unit_has_keyword(parent, keyword):
+                return True
+            kw = str(keyword or "").strip().upper()
+            values = list(getattr(model_obj, "keywords", []) or []) + list(getattr(model_obj, "faction_keywords", []) or [])
+            return any(str(v or "").strip().upper() == kw for v in values)
+
+        def _model_is_alive(model_obj) -> bool:
+            alive_attr = getattr(model_obj, "is_alive", True)
+            return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+        def _unit_on_battlefield(unit_obj) -> bool:
+            if unit_obj is None:
+                return False
+            if not bool(getattr(unit_obj, "deployed", True)):
+                return False
+            if str(getattr(unit_obj, "reserve_status", "deployed") or "deployed") != "deployed":
+                return False
+            in_reserves_fn = getattr(unit_obj, "is_in_reserves", None)
+            if callable(in_reserves_fn) and bool(in_reserves_fn()):
+                return False
+            if bool(getattr(unit_obj, "embarked_in", None)) or bool(getattr(unit_obj, "is_embarked", False)):
+                return False
+            alive_fn = getattr(unit_obj, "is_alive", None)
+            if callable(alive_fn) and not bool(alive_fn()):
+                return False
+            return True
+
+        def _unit_root(unit_obj):
+            if unit_obj is None:
+                return None
+            get_root = getattr(unit_obj, "get_attached_unit_root", None)
+            if callable(get_root):
+                return get_root()
+            return unit_obj
+
+        def _safe_entity_id(entity_obj) -> str:
+            if entity_obj is None:
+                return ""
+            try:
+                return str(get_entity_id(entity_obj) or "")
+            except ValueError:
+                value = getattr(entity_obj, "id", None)
+                if value:
+                    return str(value)
+                value = getattr(entity_obj, "_id", None)
+                if value:
+                    return str(value)
+                return ""
+
+        try:
+            turn_value = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn_value = 0
+        turn_owner = str(getattr(player, "id", "") or "")
+
+        seen_source_model_ids: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            if not _unit_on_battlefield(unit):
+                continue
+            for model in list(getattr(unit, "models", []) or []):
+                if model is None or not _model_is_alive(model):
+                    continue
+                source_model_id = _safe_entity_id(model)
+                if not source_model_id:
+                    continue
+                if source_model_id in seen_source_model_ids:
+                    continue
+                seen_source_model_ids.add(source_model_id)
+                if source_model_id in pending_source_model_ids:
+                    continue
+
+                specs = list(unit.model_surrogate_hosts_specs(model) or [])
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or unit
+                source_root = _unit_root(source_unit)
+                if source_root is None or not _unit_on_battlefield(source_root):
+                    continue
+                source_unit_id = _safe_entity_id(source_unit)
+                if not source_unit_id:
+                    continue
+
+                queued_for_source_model = False
+                for spec in specs:
+                    ability_name = str(spec.get("source", "") or "Surrogate Hosts").strip() or "Surrogate Hosts"
+                    required_keywords_all = [
+                        str(value or "").strip().upper()
+                        for value in list(spec.get("required_keywords_all", []) or [])
+                        if str(value or "").strip()
+                    ]
+                    excluded_unit_names = {
+                        str(value or "").strip().lower()
+                        for value in list(spec.get("excluded_unit_names", []) or [])
+                        if str(value or "").strip()
+                    }
+                    exclude_epic_hero = bool(spec.get("exclude_epic_hero", False))
+                    attach_if_target_was_leading = bool(spec.get("attach_if_target_was_leading", True))
+
+                    candidates: list[dict] = []
+                    seen_target_model_ids: set[str] = set()
+                    seen_target_root_ids: set[str] = set()
+                    for candidate_unit in list(getattr(army, "units", []) or []):
+                        candidate_root = _unit_root(candidate_unit)
+                        candidate_root_id = _safe_entity_id(candidate_root) if candidate_root is not None else ""
+                        if candidate_root_id and candidate_root_id in seen_target_root_ids:
+                            continue
+                        if candidate_root_id:
+                            seen_target_root_ids.add(candidate_root_id)
+                        if candidate_root is None or not _unit_on_battlefield(candidate_root):
+                            continue
+                        get_members = getattr(candidate_root, "get_attached_unit_members", None)
+                        members = list(get_members() or []) if callable(get_members) else [candidate_root]
+                        for member in members:
+                            if member is None:
+                                continue
+                            for target_model in list(getattr(member, "models", []) or []):
+                                if target_model is None or not _model_is_alive(target_model):
+                                    continue
+                                target_model_id = _safe_entity_id(target_model)
+                                if not target_model_id or target_model_id in seen_target_model_ids:
+                                    continue
+                                seen_target_model_ids.add(target_model_id)
+                                if target_model_id == source_model_id:
+                                    continue
+                                target_unit = getattr(target_model, "parent_unit", None) or member
+                                target_unit_id = _safe_entity_id(target_unit)
+                                if not target_unit_id:
+                                    continue
+                                target_root = _unit_root(target_unit)
+                                if target_root is None or not _unit_on_battlefield(target_root):
+                                    continue
+                                if target_unit is source_unit:
+                                    continue
+                                if required_keywords_all and not all(
+                                    _unit_has_keyword(target_unit, keyword)
+                                    or _model_has_keyword(target_model, keyword)
+                                    for keyword in required_keywords_all
+                                ):
+                                    continue
+                                if exclude_epic_hero and (
+                                    _unit_has_keyword(target_unit, "EPIC HERO")
+                                    or _model_has_keyword(target_model, "EPIC HERO")
+                                ):
+                                    continue
+                                if excluded_unit_names:
+                                    unit_name = str(getattr(target_unit, "name", "") or "").strip().lower()
+                                    if unit_name in excluded_unit_names:
+                                        continue
+                                if attach_if_target_was_leading and bool(getattr(target_unit, "is_leader", False)):
+                                    destination = getattr(target_unit, "attached_to", None)
+                                    if destination is None:
+                                        continue
+                                candidates.append(
+                                    {
+                                        "target_unit_id": target_unit_id,
+                                        "target_unit_name": str(getattr(target_unit, "name", "Unit") or "Unit"),
+                                        "target_model_id": target_model_id,
+                                        "target_model_name": str(getattr(target_model, "name", "Model") or "Model"),
+                                    }
+                                )
+
+                    if not candidates:
+                        continue
+                    candidates.sort(key=lambda entry: (entry["target_unit_id"], entry["target_model_id"]))
+
+                    options = [DecisionOption.create("None", payload={"action": "skip"})]
+                    for candidate in candidates:
+                        options.append(
+                            DecisionOption.create(
+                                f"{candidate['target_model_name']} ({candidate['target_unit_name']})",
+                                payload={
+                                    "source_unit_id": source_unit_id,
+                                    "source_model_id": source_model_id,
+                                    "target_unit_id": candidate["target_unit_id"],
+                                    "target_model_id": candidate["target_model_id"],
+                                },
+                            )
+                        )
+
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select one other friendly model (or None).",
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context={
+                            "ability": "surrogate_hosts",
+                            "ability_name": ability_name,
+                            "phase": "Command phase",
+                            "unit": str(getattr(source_unit, "name", "") or ""),
+                            "unit_id": source_unit_id,
+                            "source_unit_id": source_unit_id,
+                            "source_model_id": source_model_id,
+                            "candidate_model_ids": [str(entry["target_model_id"]) for entry in candidates],
+                            "required_keywords_all": list(required_keywords_all),
+                            "excluded_unit_names": sorted(excluded_unit_names),
+                            "exclude_epic_hero": bool(exclude_epic_hero),
+                            "attach_if_target_was_leading": bool(attach_if_target_was_leading),
+                            "turn_owner": turn_owner,
+                            "turn": int(turn_value),
+                            "optional": True,
+                        },
+                    )
+                    self.request_decision(request)
+                    queued_for_source_model = True
+                    break
+                if queued_for_source_model:
+                    continue
+
     def _on_phase_start_tears_of_isha(self, player=None, phase=None, **_kwargs) -> None:
         """Spiritseer: Tears of Isha selection at start of Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

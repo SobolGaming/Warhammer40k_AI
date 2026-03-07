@@ -10647,6 +10647,8 @@ class Game(
         if mgr is not None and hasattr(mgr, "on_command_phase_start"):
             mgr.on_command_phase_start(game=self, player=current_player)
             self.event_system.publish("necrons_command_phase_enhancement_prompt", player=current_player, game=self)
+        # Necrons datasheets: command-phase optional model replacement (Surrogate Hosts).
+        self._on_phase_start_surrogate_hosts(player=current_player, phase=self.phase)
 
         # Adeptus Custodes detachments: command-phase target selection (e.g. Auric Champions).
         mgr = getattr(army, "adeptus_custodes_detachments", None)

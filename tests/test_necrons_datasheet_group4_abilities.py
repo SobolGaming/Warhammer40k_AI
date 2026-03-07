@@ -12,13 +12,24 @@ from warhammer40k_ai.utility.aura_effects import get_aura_attack_modifiers, get_
 
 
 class _MockDatasheet:
-    def __init__(self, name, *, abilities=None, keywords=None, faction_keywords=None):
+    def __init__(
+        self,
+        name,
+        *,
+        datasheet_id=None,
+        abilities=None,
+        keywords=None,
+        faction_keywords=None,
+        model_count=1,
+        attached_to=None,
+    ):
+        self.id = str(datasheet_id or f"ds_{name.lower().replace(' ', '_')}")
         self.name = name
         self.faction_data = {"name": "Necrons"}
         self.keywords = list(keywords or [])
         self.faction_keywords = list(faction_keywords or [])
-        self.datasheets_unit_composition = [{"description": "1 Test Model"}]
-        self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
+        self.datasheets_unit_composition = [{"description": f"{int(model_count)} Test Model"}]
+        self.datasheets_models_cost = [{"description": f"{int(model_count)} model", "cost": 100}]
         self.datasheets_models = [
             {
                 "M": "6",
@@ -37,16 +48,30 @@ class _MockDatasheet:
         self.datasheets_abilities = list(abilities or [])
         self.loadout = "This model is equipped with: nothing"
         self.transport = ""
+        self.attached_to = list(attached_to or [])
+        self.attached_to_names = []
 
 
-def _make_unit(name, *, abilities=None, keywords=None, faction_keywords=None):
+def _make_unit(
+    name,
+    *,
+    datasheet_id=None,
+    abilities=None,
+    keywords=None,
+    faction_keywords=None,
+    model_count=1,
+    attached_to=None,
+):
     from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
         name,
+        datasheet_id=datasheet_id,
         abilities=abilities,
         keywords=keywords,
         faction_keywords=faction_keywords,
+        model_count=model_count,
+        attached_to=attached_to,
     )
     return Unit(datasheet)
 
@@ -180,6 +205,178 @@ class TestNecronsDatasheetGroup4Abilities(unittest.TestCase):
         )
         payload_ids = [str((opt.payload or {}).get("target_model_id", "")) for opt in list(next_req.options or [])]
         self.assertNotIn(target_model_id, payload_ids)
+
+    def test_ancient_collector_sticky_objective_requires_leading(self):
+        from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
+
+        ability = {
+            "name": "Ancient Collector",
+            "description": (
+                "While this model is leading a unit, at the end of your Command phase, if that unit is within range of an "
+                "objective marker you control, it remains under your control, even if you have no models within range of it, "
+                "until your opponent controls it at start or end of any turn."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, _army2 = _build_game()
+        trazyn = _make_unit(
+            "Trazyn The Infinite",
+            datasheet_id="trazyn_ds",
+            abilities=[ability],
+            keywords=["NECRONS", "INFANTRY", "CHARACTER"],
+            attached_to=["warriors_ds"],
+        )
+        bodyguard = _make_unit(
+            "Necron Warriors",
+            datasheet_id="warriors_ds",
+            keywords=["NECRONS", "INFANTRY"],
+            model_count=2,
+        )
+        army1.add_unit(trazyn)
+        army1.add_unit(bodyguard)
+        trazyn.deployed = True
+        bodyguard.deployed = True
+        bodyguard.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        trazyn.models[0].set_location(0.5, 0.0, 0.0, 0.0)
+        trazyn.attach_to_unit(bodyguard)
+
+        objective_while_leading = Objective(
+            name="Obj Lead",
+            category=ObjectiveCategory.PRIMARY,
+            points=0,
+            description="",
+            conditions=lambda _g: False,
+            location=ObjectivePoint(0.0, 0.0, 0.0, control_radius=3.0),
+        )
+        game.map.objectives = [objective_while_leading]
+        game.map.units = [trazyn, bodyguard]
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        game.current_player_index = 0
+        game.turn = 1
+
+        player = game.players[0]
+        game.event_system.publish("phase_end", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+        self.assertIs(objective_while_leading.location.sticky_controller, player)
+
+        trazyn.detach_from_unit()
+        trazyn.models[0].set_location(30.0, 30.0, 0.0, 0.0)
+        objective_not_leading = Objective(
+            name="Obj Solo",
+            category=ObjectiveCategory.PRIMARY,
+            points=0,
+            description="",
+            conditions=lambda _g: False,
+            location=ObjectivePoint(5.0, 0.0, 0.0, control_radius=3.0),
+        )
+        game.map.objectives = [objective_not_leading]
+
+        game.event_system.publish("phase_end", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+        self.assertIsNone(objective_not_leading.location.sticky_controller)
+
+    def test_surrogate_hosts_replaces_model_and_transfers_leader(self):
+        ability = {
+            "name": "Surrogate Hosts",
+            "description": (
+                "At the start of your Command phase, if this model is on the battlefield, you can select one other friendly "
+                "Necrons Infantry Character model on the battlefield (excluding Skorpekh Lord or Epic Hero models). "
+                "The selected model is destroyed (ignoring any rules that are triggered when a model is destroyed) and this model "
+                "is put in its place, with all of its wounds remaining (if the selected model was leading a unit, this model now "
+                "attaches to that unit as its Leader)."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        game.current_player_index = 0
+        game.turn = 2
+
+        source_bodyguard = _make_unit(
+            "Lychguard",
+            datasheet_id="lychguard_ds",
+            keywords=["NECRONS", "INFANTRY"],
+            model_count=3,
+        )
+        trazyn = _make_unit(
+            "Trazyn The Infinite",
+            datasheet_id="trazyn_ds",
+            abilities=[ability],
+            keywords=["NECRONS", "INFANTRY", "CHARACTER"],
+            attached_to=["lychguard_ds", "immortals_ds"],
+        )
+        target_bodyguard = _make_unit(
+            "Immortals",
+            datasheet_id="immortals_ds",
+            keywords=["NECRONS", "INFANTRY"],
+            model_count=3,
+        )
+        target_leader = _make_unit(
+            "Overlord",
+            datasheet_id="overlord_ds",
+            keywords=["NECRONS", "INFANTRY", "CHARACTER"],
+            attached_to=["immortals_ds"],
+        )
+        enemy = _make_unit("Enemy")
+
+        army1.add_unit(source_bodyguard)
+        army1.add_unit(trazyn)
+        army1.add_unit(target_bodyguard)
+        army1.add_unit(target_leader)
+        army2.add_unit(enemy)
+
+        for unit in [source_bodyguard, trazyn, target_bodyguard, target_leader, enemy]:
+            unit.deployed = True
+            unit.reserve_status = "deployed"
+            unit.embarked_in = None
+
+        source_bodyguard.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        trazyn.models[0].set_location(0.2, 0.0, 0.0, 0.0)
+        target_bodyguard.models[0].set_location(8.0, 0.0, 0.0, 0.0)
+        target_leader.models[0].set_location(8.2, 0.0, 0.0, 0.0)
+        enemy.models[0].set_location(40.0, 0.0, 0.0, 0.0)
+
+        trazyn.attach_to_unit(source_bodyguard)
+        target_leader.attach_to_unit(target_bodyguard)
+
+        game.map.units = [source_bodyguard, trazyn, target_bodyguard, target_leader, enemy]
+        game.rebuild_entity_registry()
+
+        target_model = target_leader.models[0]
+        target_model_id = str(get_entity_id(target_model) or "")
+        target_location = target_model.get_location()
+
+        game.start_command_phase()
+        req = next(
+            r
+            for r in list(game.decision_queue.list() or [])
+            if str((r.context or {}).get("ability", "")) == "surrogate_hosts"
+        )
+        self.assertEqual(req.decision_type, DECISION_CHOOSE_QUARRY)
+        self.assertEqual(str((req.context or {}).get("ability_name", "")), "Surrogate Hosts")
+
+        none_option = next(
+            opt for opt in list(req.options or []) if str((opt.payload or {}).get("action", "") or "") == "skip"
+        )
+        self.assertIsNotNone(none_option)
+
+        selected_option = next(
+            opt
+            for opt in list(req.options or [])
+            if str((opt.payload or {}).get("target_model_id", "") or "") == target_model_id
+        )
+        result = resolve_decision_command(game, req, selected_option.option_id, player_id=game.players[0].id)
+        self.assertTrue(bool(getattr(result, "ok", False)))
+
+        self.assertEqual(len(list(target_leader.models or [])), 0)
+        self.assertNotIn(target_leader, list(getattr(target_bodyguard, "attached_leaders", []) or []))
+        self.assertIn(trazyn, list(getattr(target_bodyguard, "attached_leaders", []) or []))
+        self.assertIs(trazyn.attached_to, target_bodyguard)
+        self.assertNotIn(trazyn, list(getattr(source_bodyguard, "attached_leaders", []) or []))
+
+        moved_location = trazyn.models[0].get_location()
+        self.assertAlmostEqual(float(moved_location[0]), float(target_location[0]), places=4)
+        self.assertAlmostEqual(float(moved_location[1]), float(target_location[1]), places=4)
 
     def test_fabricator_claw_array_aura_grants_vehicle_fnp(self):
         ability = {

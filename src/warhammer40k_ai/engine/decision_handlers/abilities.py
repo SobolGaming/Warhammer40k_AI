@@ -3892,6 +3892,127 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if target_model_id not in live_ids:
             return ("Soul Link selected model is no longer eligible.",)
         return ()
+    if ability == "surrogate_hosts":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Surrogate Hosts source unit was not found.",)
+        source_model = resolve_model(
+            game,
+            payload.get("source_model_id")
+            or payload.get("model_id")
+            or ctx.get("source_model_id")
+            or ctx.get("model_id"),
+        )
+        if source_model is None:
+            return ("Surrogate Hosts source model was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return ("Surrogate Hosts source model must be on the battlefield.",)
+        source_alive = getattr(source_model, "is_alive", True)
+        if not bool(source_alive() if callable(source_alive) else source_alive):
+            return ("Surrogate Hosts source model must be alive.",)
+        source_parent = getattr(source_model, "parent_unit", None)
+        if source_parent is None:
+            return ("Surrogate Hosts source model has no parent unit.",)
+        if source_parent is not source_unit:
+            return ("Surrogate Hosts source model does not belong to the selected source unit.",)
+        get_specs = getattr(source_unit, "model_surrogate_hosts_specs", None)
+        specs = list(get_specs(source_model) or []) if callable(get_specs) else []
+        if not specs:
+            return ("Surrogate Hosts is not active for the selected model.",)
+        spec = dict(specs[0] or {})
+        required_keywords_all = [
+            str(value or "").strip().upper()
+            for value in list(ctx.get("required_keywords_all", spec.get("required_keywords_all", [])) or [])
+            if str(value or "").strip()
+        ]
+        excluded_unit_names = {
+            str(value or "").strip().lower()
+            for value in list(ctx.get("excluded_unit_names", spec.get("excluded_unit_names", [])) or [])
+            if str(value or "").strip()
+        }
+        exclude_epic_hero = bool(ctx.get("exclude_epic_hero", spec.get("exclude_epic_hero", True)))
+
+        if is_skip_choice(request, result):
+            return ()
+
+        target_model_id = str(payload.get("target_model_id") or payload.get("model_id") or "").strip()
+        if not target_model_id:
+            return ("Surrogate Hosts selection requires target_model_id.",)
+        candidate_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_model_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if candidate_ids and target_model_id not in candidate_ids:
+            return ("Surrogate Hosts selection contains an ineligible model.",)
+        target_model = resolve_model(game, target_model_id)
+        if target_model is None:
+            return ("Surrogate Hosts target model was not found.",)
+        if str(get_entity_id(target_model) or "") == str(get_entity_id(source_model) or ""):
+            return ("Surrogate Hosts target must be another model.",)
+        target_alive = getattr(target_model, "is_alive", True)
+        if not bool(target_alive() if callable(target_alive) else target_alive):
+            return ("Surrogate Hosts target model must be alive.",)
+        target_unit = getattr(target_model, "parent_unit", None)
+        if target_unit is None:
+            return ("Surrogate Hosts target model has no parent unit.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None or not _resurrection_orb_unit_on_battlefield(target_root):
+            return ("Surrogate Hosts target model must be on the battlefield.",)
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is not target_army:
+            return ("Surrogate Hosts target must be a friendly model.",)
+
+        def _unit_or_model_has_keyword(unit_obj, model_obj, keyword: str) -> bool:
+            kw = str(keyword or "").strip()
+            if not kw:
+                return True
+            has_any_unit = getattr(unit_obj, "has_any_keyword", None)
+            if callable(has_any_unit) and bool(has_any_unit(kw)):
+                return True
+            has_unit = getattr(unit_obj, "has_keyword", None)
+            if callable(has_unit) and bool(has_unit(kw)):
+                return True
+            has_any_model = getattr(model_obj, "has_any_keyword", None)
+            if callable(has_any_model) and bool(has_any_model(kw)):
+                return True
+            has_model = getattr(model_obj, "has_keyword", None)
+            if callable(has_model) and bool(has_model(kw)):
+                return True
+            return False
+
+        for keyword in required_keywords_all:
+            if not _unit_or_model_has_keyword(target_unit, target_model, keyword):
+                return (f"Surrogate Hosts target must have the {keyword} keyword.",)
+        if exclude_epic_hero and _unit_or_model_has_keyword(target_unit, target_model, "EPIC HERO"):
+            return ("Surrogate Hosts cannot target EPIC HERO models.",)
+        target_name = str(getattr(target_unit, "name", "") or "").strip().lower()
+        if target_name and target_name in excluded_unit_names:
+            return ("Surrogate Hosts target is excluded.",)
+
+        if bool(getattr(target_unit, "is_leader", False)) and getattr(target_unit, "attached_to", None) is not None:
+            destination = getattr(target_unit, "attached_to", None)
+            if destination is None:
+                return ("Surrogate Hosts selected Leader has no bodyguard unit.",)
+        return ()
     if ability == "eternity_gate_target":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(
@@ -8788,6 +8909,235 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"{ability_name}: copied datasheet abilities from {target_model_name} ({target_unit_name}).",
             )
         return dict(outcome)
+    if ability == "surrogate_hosts":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        source_model = resolve_model(
+            game,
+            payload.get("source_model_id")
+            or payload.get("model_id")
+            or ctx.get("source_model_id")
+            or ctx.get("model_id"),
+        )
+        if source_unit is None or source_model is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return None
+        source_alive = getattr(source_model, "is_alive", True)
+        if not bool(source_alive() if callable(source_alive) else source_alive):
+            return None
+        if getattr(source_model, "parent_unit", None) is not source_unit:
+            return None
+
+        get_specs = getattr(source_unit, "model_surrogate_hosts_specs", None)
+        specs = list(get_specs(source_model) or []) if callable(get_specs) else []
+        if not specs:
+            return None
+        spec = dict(specs[0] or {})
+        required_keywords_all = [
+            str(value or "").strip().upper()
+            for value in list(ctx.get("required_keywords_all", spec.get("required_keywords_all", [])) or [])
+            if str(value or "").strip()
+        ]
+        excluded_unit_names = {
+            str(value or "").strip().lower()
+            for value in list(ctx.get("excluded_unit_names", spec.get("excluded_unit_names", [])) or [])
+            if str(value or "").strip()
+        }
+        exclude_epic_hero = bool(ctx.get("exclude_epic_hero", spec.get("exclude_epic_hero", True)))
+        attach_if_target_was_leading = bool(
+            ctx.get("attach_if_target_was_leading", spec.get("attach_if_target_was_leading", True))
+        )
+        ability_name = str(ctx.get("ability_name", "") or spec.get("source", "") or "Surrogate Hosts").strip()
+        if not ability_name:
+            ability_name = "Surrogate Hosts"
+
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            player = getattr(source_army, "player", None) if source_army is not None else None
+
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {
+                "ok": True,
+                "skipped": True,
+                "source_unit_id": str(get_entity_id(source_unit) or ""),
+                "source_model_id": str(get_entity_id(source_model) or ""),
+                "source": ability_name,
+            }
+
+        target_model_id = str(payload.get("target_model_id") or payload.get("model_id") or "").strip()
+        if not target_model_id:
+            return None
+        target_model = resolve_model(game, target_model_id)
+        if target_model is None:
+            return None
+        if str(get_entity_id(target_model) or "") == str(get_entity_id(source_model) or ""):
+            return None
+        target_alive = getattr(target_model, "is_alive", True)
+        if not bool(target_alive() if callable(target_alive) else target_alive):
+            return None
+        target_unit = getattr(target_model, "parent_unit", None)
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None or not _resurrection_orb_unit_on_battlefield(target_root):
+            return None
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is not target_army:
+            return None
+
+        def _unit_or_model_has_keyword(unit_obj, model_obj, keyword: str) -> bool:
+            kw = str(keyword or "").strip()
+            if not kw:
+                return True
+            has_any_unit = getattr(unit_obj, "has_any_keyword", None)
+            if callable(has_any_unit) and bool(has_any_unit(kw)):
+                return True
+            has_unit = getattr(unit_obj, "has_keyword", None)
+            if callable(has_unit) and bool(has_unit(kw)):
+                return True
+            has_any_model = getattr(model_obj, "has_any_keyword", None)
+            if callable(has_any_model) and bool(has_any_model(kw)):
+                return True
+            has_model = getattr(model_obj, "has_keyword", None)
+            if callable(has_model) and bool(has_model(kw)):
+                return True
+            return False
+
+        for keyword in required_keywords_all:
+            if not _unit_or_model_has_keyword(target_unit, target_model, keyword):
+                return None
+        if exclude_epic_hero and _unit_or_model_has_keyword(target_unit, target_model, "EPIC HERO"):
+            return None
+        target_name = str(getattr(target_unit, "name", "") or "").strip().lower()
+        if target_name and target_name in excluded_unit_names:
+            return None
+
+        target_destination = None
+        target_was_leading = bool(getattr(target_unit, "is_leader", False)) and getattr(target_unit, "attached_to", None) is not None
+        if target_was_leading:
+            target_destination = getattr(target_unit, "attached_to", None)
+
+        get_target_location = getattr(target_model, "get_location", None)
+        if not callable(get_target_location):
+            return None
+        target_location = get_target_location()
+        if not target_location:
+            return None
+
+        game_map = getattr(game, "map", None)
+        if target_was_leading:
+            detach_target = getattr(target_unit, "detach_from_unit", None)
+            if callable(detach_target):
+                detach_target()
+        remove_model = getattr(target_unit, "remove_model", None)
+        if not callable(remove_model):
+            return None
+        remove_model(target_model, fleed=True, game_map=game_map)
+        if len(list(getattr(target_unit, "models", []) or [])) == 0:
+            if isinstance(getattr(game_map, "units", None), list) and target_unit in game_map.units:
+                game_map.units.remove(target_unit)
+
+        detach_source = getattr(source_unit, "detach_from_unit", None)
+        if not (target_was_leading and attach_if_target_was_leading and target_destination is not None):
+            if callable(detach_source):
+                detach_source()
+
+        try:
+            facing = float(target_location[3]) if len(target_location) >= 4 else float(
+                getattr(getattr(source_model, "model_base", None), "facing", 0.0) or 0.0
+            )
+        except (TypeError, ValueError):
+            facing = 0.0
+        source_model.set_location(
+            float(target_location[0]),
+            float(target_location[1]),
+            float(target_location[2]),
+            float(facing),
+        )
+        source_unit.position = (float(target_location[0]), float(target_location[1]), float(target_location[2]))
+        source_unit.deployed = True
+        set_reserve_status = getattr(source_unit, "set_reserve_status", None)
+        if callable(set_reserve_status):
+            set_reserve_status("deployed")
+        else:
+            source_unit.reserve_status = "deployed"
+        if isinstance(getattr(game_map, "units", None), list) and source_unit not in game_map.units:
+            game_map.units.append(source_unit)
+
+        attached_to_unit_id = ""
+        attached_to_unit_name = ""
+        if target_was_leading and attach_if_target_was_leading and target_destination is not None:
+            attach_to = getattr(source_unit, "attach_to_unit", None)
+            if not callable(attach_to):
+                return None
+            try:
+                attach_to(target_destination)
+            except ValueError:
+                return None
+            attached_to_unit_id = str(get_entity_id(target_destination) or "")
+            attached_to_unit_name = str(getattr(target_destination, "name", "Unit") or "Unit")
+
+        invalidate = getattr(source_unit, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+        invalidate_target = getattr(target_unit, "_invalidate_ability_cache", None)
+        if callable(invalidate_target):
+            invalidate_target()
+        invalidate_root = getattr(source_root, "_invalidate_ability_cache", None)
+        if callable(invalidate_root):
+            invalidate_root()
+        if target_destination is not None:
+            invalidate_destination = getattr(target_destination, "_invalidate_ability_cache", None)
+            if callable(invalidate_destination):
+                invalidate_destination()
+
+        source_name = str(getattr(source_model, "name", "Model") or "Model")
+        target_model_name = str(getattr(target_model, "name", "Model") or "Model")
+        target_unit_name = str(getattr(target_unit, "name", "Unit") or "Unit")
+        if attached_to_unit_name:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {source_name} replaced {target_model_name} ({target_unit_name}) and attached to {attached_to_unit_name}.",
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {source_name} replaced {target_model_name} ({target_unit_name}).",
+            )
+        return {
+            "ok": True,
+            "source": ability_name,
+            "source_unit_id": str(get_entity_id(source_unit) or ""),
+            "source_model_id": str(get_entity_id(source_model) or ""),
+            "target_unit_id": str(get_entity_id(target_unit) or ""),
+            "target_model_id": str(get_entity_id(target_model) or ""),
+            "target_unit_name": target_unit_name,
+            "target_model_name": target_model_name,
+            "attached_to_unit_id": attached_to_unit_id,
+            "attached_to_unit_name": attached_to_unit_name,
+        }
     if ability == "eternity_gate_target":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(
