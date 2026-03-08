@@ -5487,6 +5487,36 @@ class WargearProfile:
         except Exception:
             pass
 
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+            if is_melee and isinstance(sr, dict) and bool(sr.get("paroxysm_attacks_penalty_active")):
+                expires_phase = str(sr.get("paroxysm_attacks_penalty_expires_phase", "") or "").strip().upper()
+                current_phase = ""
+                if unit is not None:
+                    try:
+                        army = unit.get_parent_army()
+                    except Exception:
+                        army = None
+                    player = getattr(army, "player", None) if army is not None else None
+                    game = getattr(player, "game", None) if player is not None else None
+                    current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if (not expires_phase) or (not current_phase) or (expires_phase == current_phase):
+                    penalty = int(sr.get("paroxysm_attacks_penalty", 0) or 0)
+                    if penalty > 0:
+                        source = str(sr.get("paroxysm_attacks_penalty_source", "") or "Paroxysm").strip() or "Paroxysm"
+                        atk_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                -int(penalty),
+                                source="ability:paroxysm_attacks_penalty",
+                            )
+                        )
+                        attack_result.attacks_special_modifiers.append(f"{source}: -{int(penalty)}A (melee)")
+        except Exception:
+            pass
+
         effective_range_max = self._effective_range_max(attacker)
         try:
             half_range = float(effective_range_max) / 2.0

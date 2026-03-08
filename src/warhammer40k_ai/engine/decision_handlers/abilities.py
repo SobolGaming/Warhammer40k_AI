@@ -6695,6 +6695,87 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not in_engagement:
             return ("Data-spike target must be within Engagement Range of the source unit.",)
         return ()
+    if ability == "paroxysm":
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("attacker_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Paroxysm source unit was not found.",)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Paroxysm target unit was not found.",)
+
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if source_root is None or target_root is None:
+            return ("Paroxysm source/target unit root was not found.",)
+        if source_root is target_root:
+            return ("Paroxysm target must be an enemy visible unit within range.",)
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is target_army:
+            return ("Paroxysm target must be an enemy visible unit within range.",)
+
+        if not bool(getattr(target_root, "is_alive", lambda: False)()):
+            return ("Paroxysm target must be alive.",)
+        if not bool(getattr(target_root, "deployed", True)):
+            return ("Paroxysm target must be on the battlefield.",)
+        in_reserves_fn = getattr(target_root, "is_in_reserves", None)
+        if callable(in_reserves_fn) and bool(in_reserves_fn()):
+            return ("Paroxysm target must be on the battlefield.",)
+        if bool(getattr(target_root, "is_embarked", False)):
+            return ("Paroxysm target must be on the battlefield.",)
+
+        model = resolve_model(game, ctx.get("model_id"))
+        if model is None:
+            source_models = (
+                list(source_root.get_attached_unit_models() or [])
+                if hasattr(source_root, "get_attached_unit_models")
+                else list(getattr(source_root, "models", []) or [])
+            )
+            for src_model in list(source_models or []):
+                alive_attr = getattr(src_model, "is_alive", False)
+                if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    model = src_model
+                    break
+        if model is None:
+            return ("Paroxysm source model was not found.",)
+
+        try:
+            range_inches = float(ctx.get("range", 12) or 12)
+        except (TypeError, ValueError):
+            range_inches = 12.0
+        try:
+            from ...utility.aura_utils import model_within_range_of_unit
+        except ImportError:
+            return ("Paroxysm range helper is unavailable.",)
+        if not bool(model_within_range_of_unit(model, target_root, float(range_inches))):
+            return ("Paroxysm target must be within range of the source model.",)
+
+        game_map = getattr(game, "map", None)
+        can_see_fn = getattr(game_map, "can_model_see_model", None) if game_map is not None else None
+        if callable(can_see_fn):
+            visible = False
+            target_models = (
+                list(target_root.get_attached_unit_models() or [])
+                if hasattr(target_root, "get_attached_unit_models")
+                else list(getattr(target_root, "models", []) or [])
+            )
+            for target_model in list(target_models or []):
+                if target_model is None:
+                    continue
+                alive_attr = getattr(target_model, "is_alive", False)
+                target_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not target_alive:
+                    continue
+                if bool(can_see_fn(model, target_model)):
+                    visible = True
+                    break
+            if not visible:
+                return ("Paroxysm target must be visible to the source model.",)
+        return ()
     if ability == "master_of_mechanisms":
         if is_skip_choice(request, result):
             return ()
@@ -20394,6 +20475,101 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 append_action(
                     player,
                     f"{ability_name}: {getattr(target_root, 'name', 'Unit')} suffers {int(total_mw)} mortal wounds and melee Weapon Skill is worsened by {int(ws_penalty)} until end of phase.",
+                )
+            return target_root
+    if str(ctx.get("ability", "") or "") == "paroxysm":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("attacker_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+            target_root = chosen.get_attached_unit_root() if hasattr(chosen, "get_attached_unit_root") else chosen
+            if source_root is None or target_root is None:
+                return None
+            payload = _option_payload(request, result)
+            player = _resolve_player(game, request, payload)
+            if player is None:
+                try:
+                    player = source_root.get_parent_army().player
+                except Exception:
+                    player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Paroxysm").strip() or "Paroxysm"
+            try:
+                success_threshold = int(ctx.get("success_threshold", 2) or 2)
+            except Exception:
+                success_threshold = 2
+            success_threshold = max(2, min(6, int(success_threshold)))
+            try:
+                attacks_penalty = int(ctx.get("attacks_penalty", 1) or 1)
+            except Exception:
+                attacks_penalty = 1
+            attacks_penalty = max(1, int(attacks_penalty))
+            self_mw_spec = str(ctx.get("self_mortal_wounds", "D3") or "D3").strip().upper() or "D3"
+
+            try:
+                from ...utility.dice import get_roll
+                from ...utility.event_bus import append_action, append_dice
+            except Exception:
+                get_roll = None
+                append_action = None
+                append_dice = None
+            roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+            if callable(append_dice) and player is not None:
+                append_dice(player, f"{ability_name} roll: {int(roll)}")
+
+            if int(roll) == 1:
+                self_mw = 0
+                if self_mw_spec == "D3":
+                    self_mw = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                elif self_mw_spec == "D6":
+                    self_mw = int(get_roll("D6") or 0) if callable(get_roll) else 0
+                else:
+                    try:
+                        self_mw = int(self_mw_spec or 0)
+                    except Exception:
+                        self_mw = 0
+                if int(self_mw) > 0:
+                    source_root._apply_mortal_wounds_to_unit(
+                        source_root,
+                        int(self_mw),
+                        game_map=getattr(game, "map", None),
+                    )
+                if callable(append_action) and player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: roll 1, {getattr(source_root, 'name', 'Unit')} suffers {int(self_mw)} mortal wounds.",
+                    )
+                return source_root
+
+            if int(roll) < int(success_threshold):
+                if callable(append_action) and player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(target_root, 'name', 'Unit')} not affected (roll {int(roll)}, need {int(success_threshold)}+).",
+                    )
+                return target_root
+
+            tsr = getattr(target_root, "special_rules", None)
+            if not isinstance(tsr, dict):
+                tsr = {}
+            try:
+                existing_penalty = int(tsr.get("paroxysm_attacks_penalty", 0) or 0)
+            except Exception:
+                existing_penalty = 0
+            tsr["paroxysm_attacks_penalty_active"] = True
+            tsr["paroxysm_attacks_penalty"] = int(max(abs(existing_penalty), int(attacks_penalty)))
+            tsr["paroxysm_attacks_penalty_owner"] = owner_id
+            tsr["paroxysm_attacks_penalty_turn"] = int(turn or 0)
+            tsr["paroxysm_attacks_penalty_source"] = ability_name
+            tsr["paroxysm_attacks_penalty_expires_phase"] = "FIGHT_PHASE"
+            target_root.special_rules = tsr
+            if callable(append_action) and player is not None:
+                append_action(
+                    player,
+                    f"{ability_name}: {getattr(target_root, 'name', 'Unit')} has -{int(attacks_penalty)} Attacks for melee weapons until end of phase.",
                 )
             return target_root
     if str(ctx.get("ability", "") or "") == "boon_of_death":

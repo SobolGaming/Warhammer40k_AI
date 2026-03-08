@@ -4889,6 +4889,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "After ending a Normal move, choose one moved-over enemy unit for six D6 mortal-wound rolls on 3+, or spawn D3 Spore Mines wholly within 6\" and more than 9\" horizontally from enemies (spawn option limited to one model per turn).",
         ),
+        ("TYR", "Paroxysm (Psychic)"): (
+            "Supported",
+            "Start of Fight phase: optional visible enemy unit selection within 12\"; roll D6 (on 1 this PSYKER suffers D3 mortal wounds, on 2+ subtract 1 from that unit's melee weapon Attacks characteristic until end of phase).",
+        ),
         ("TYR", "Unnatural Resilience"): ("Supported", "Feel No Pain 4+ against mortal wounds."),
         ("TYR", "Grasping Tendrils"): ("Supported", "Enemy non-TITANIC units within Engagement Range selected to Fall Back roll D6; on 3+ they cannot Fall Back and must remain stationary."),
         ("TYR", "Stasis Bomb"): ("Supported", "After ending a Normal move over enemies (excluding AIRCRAFT), one model per army per turn and once per battle per model can inflict D3 mortal wounds, then apply no Advance/Fall Back on 1-3 or Remain Stationary on 4-6 in the target's next Movement phase."),
@@ -5757,6 +5761,9 @@ def _classify_ability_base(
     failed_battleshock_aura_mortal_heal_support = _failed_battleshock_aura_mortal_heal_support(description)
     fight_phase_select_engagement_battleshock_support = _fight_phase_select_engagement_battleshock_support(description)
     fight_phase_select_enemy_melee_hit_penalty_support = _fight_phase_select_enemy_melee_hit_penalty_support(description)
+    fight_phase_visible_select_enemy_roll_self_mortal_attacks_penalty_support = (
+        _fight_phase_visible_select_enemy_roll_self_mortal_attacks_penalty_support(description)
+    )
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
     fight_phase_aura_battleshock_support = _fight_phase_aura_battleshock_support(description)
     post_fight_destroyed_aura_battleshock_support = _post_fight_destroyed_aura_battleshock_support(description)
@@ -6183,6 +6190,8 @@ def _classify_ability_base(
         return aura_battleshock_leadership_penalty_support
     if failed_battleshock_aura_mortal_heal_support:
         return failed_battleshock_aura_mortal_heal_support
+    if fight_phase_visible_select_enemy_roll_self_mortal_attacks_penalty_support:
+        return fight_phase_visible_select_enemy_roll_self_mortal_attacks_penalty_support
     if fight_phase_select_enemy_melee_hit_penalty_support:
         return fight_phase_select_enemy_melee_hit_penalty_support
     if fight_phase_select_engagement_battleshock_support:
@@ -12073,6 +12082,51 @@ def _fight_phase_select_enemy_melee_hit_penalty_support(description: str) -> Opt
         (
             f"{prefix}Start of Fight phase: select one enemy unit in Engagement Range; until phase end, "
             f"that unit suffers -{int(penalty)} to Hit rolls for melee attacks."
+        ),
+    )
+
+
+def _fight_phase_visible_select_enemy_roll_self_mortal_attacks_penalty_support(
+    description: str,
+) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:at the )?start of the fight phase "
+        r"(?P<optional>you can )?select one enemy unit within (?P<range>\d+) of and visible to this model "
+        r"and roll (?:one|1) d6 on a 1 this psyker suffers (?P<self_mw>d3|d6|\d+) mortal wounds? "
+        r"on a (?P<success>\d) until the end of the phase subtract (?P<penalty>\d+) from the attacks characteristic "
+        r"of weapons equipped by models in that unit"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        range_value = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        range_value = 0
+    try:
+        success = int(m.group("success") or 0)
+    except (TypeError, ValueError):
+        success = 0
+    try:
+        penalty = int(m.group("penalty") or 0)
+    except (TypeError, ValueError):
+        penalty = 0
+    self_mw = str(m.group("self_mw") or "").strip().upper()
+    if range_value <= 0 or success <= 0 or penalty <= 0 or not self_mw:
+        return None
+    optional = bool(str(m.group("optional") or "").strip())
+    prefix = "Optional: " if optional else ""
+    return (
+        "Supported",
+        (
+            f"{prefix}Start of Fight phase: select one visible enemy unit within {int(range_value)}\"; roll D6 "
+            f"(on 1 this PSYKER suffers {self_mw} mortal wounds, on {int(success)}+ that unit suffers "
+            f"-{int(penalty)} Attacks for melee weapons until end of phase)."
         ),
     )
 

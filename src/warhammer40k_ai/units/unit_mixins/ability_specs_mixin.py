@@ -4885,6 +4885,85 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_fight_phase_paroxysm_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: at the start of the Fight phase, optionally select one visible enemy
+        unit within range; roll one D6, on a 1 the source PSYKER suffers self mortal wounds, and on
+        a success threshold apply an attacks-characteristic penalty to the selected enemy until phase end.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - range: int
+            - success_threshold: int
+            - self_mortal_wounds: str
+            - attacks_penalty: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_fight_phase_paroxysm:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int, str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._FIGHT_PHASE_PAROXYSM_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            try:
+                success_threshold = int(m.group("success") or 0)
+            except Exception:
+                success_threshold = 0
+            success_threshold = max(2, min(6, int(success_threshold or 0)))
+            self_mw_value = str(m.group("self_mw") or "").strip().upper()
+            if not self_mw_value:
+                self_mw_value = "D3"
+            try:
+                attacks_penalty = int(m.group("penalty") or 0)
+            except Exception:
+                attacks_penalty = 0
+            if range_value <= 0 or success_threshold <= 0 or attacks_penalty <= 0:
+                continue
+            source = str(name or "Paroxysm").strip() or "Paroxysm"
+            key = (
+                source.lower(),
+                int(range_value),
+                int(success_threshold),
+                str(self_mw_value),
+                int(attacks_penalty),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "success_threshold": int(success_threshold),
+                    "self_mortal_wounds": str(self_mw_value),
+                    "attacks_penalty": int(attacks_penalty),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_fight_phase_friendly_melee_ws_bonus_specs(
         self,
         model: Optional['Model'] = None,

@@ -4041,6 +4041,12 @@ class Unit(
         r"and until the end of the phase the weapon skill characteristic of melee weapons equipped by that enemy unit is worsened by (?P<pen>\d+)",
         re.IGNORECASE,
     )
+    _FIGHT_PHASE_PAROXYSM_RE = re.compile(
+        r"at the start of the fight phase you can select one enemy unit within (?P<range>\d+)\s*\"?\s*of(?: and visible to)? this model "
+        r"and roll one d6 on a 1 this psyker suffers (?P<self_mw>d3|d6|\d+) mortal wounds? on a (?P<success>\d)\+? "
+        r"until the end of the phase subtract (?P<penalty>\d+) from the attacks characteristic of weapons equipped by models in that unit",
+        re.IGNORECASE,
+    )
     _FIGHT_PHASE_FRIENDLY_MELEE_WS_BONUS_RE = re.compile(
         r"at the start of the fight phase select one friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+)\s*\"?\s*of "
         r"(?:the bearer s unit|this model s unit|this models unit|this unit) until the end of the phase improve the weapon skill "

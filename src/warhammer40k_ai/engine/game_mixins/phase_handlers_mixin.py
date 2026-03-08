@@ -7441,6 +7441,189 @@ class GamePhaseHandlersMixin:
                     if model_id:
                         pending_models.add(model_id)
 
+    def _on_phase_start_paroxysm(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase start: optional Paroxysm target selection."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ...utility.aura_utils import model_within_range_of_unit
+
+        pending_models = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "paroxysm":
+                        continue
+                    mid = str(ctx.get("model_id", "") or "")
+                    if mid:
+                        pending_models.add(mid)
+        except Exception:
+            pending_models = set()
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        can_see_fn = getattr(game_map, "can_model_see_model", None)
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            for unit in sorted(list(army.units or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+                try:
+                    if unit.is_in_reserves() or unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not root.is_alive():
+                    continue
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                if not models:
+                    continue
+
+                for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                    model_id = str(get_entity_id(model) or "")
+                    if model_id and model_id in pending_models:
+                        continue
+                    spec_fn = getattr(root, "model_start_fight_phase_paroxysm_specs", None)
+                    if not callable(spec_fn):
+                        continue
+                    specs = list(spec_fn(model) or [])
+                    if not specs:
+                        continue
+                    spec = dict(specs[0] or {})
+                    ability_name = str(spec.get("source", "") or "Paroxysm").strip() or "Paroxysm"
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    try:
+                        success_threshold = int(spec.get("success_threshold", 2) or 2)
+                    except Exception:
+                        success_threshold = 2
+                    success_threshold = max(2, min(6, int(success_threshold)))
+                    self_mw = str(spec.get("self_mortal_wounds", "D3") or "D3").strip().upper() or "D3"
+                    try:
+                        attacks_penalty = int(spec.get("attacks_penalty", 1) or 1)
+                    except Exception:
+                        attacks_penalty = 1
+                    attacks_penalty = max(1, int(attacks_penalty))
+
+                    candidates = []
+                    seen_enemy = set()
+                    for enemy in list(game_map.get_enemy_units(root) or []):
+                        if enemy is None:
+                            continue
+                        try:
+                            enemy_root = enemy.get_attached_unit_root()
+                        except Exception:
+                            enemy_root = enemy
+                        if enemy_root is None or not enemy_root.is_alive():
+                            continue
+                        try:
+                            if not getattr(enemy_root, "deployed", True):
+                                continue
+                            if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                                continue
+                        except Exception:
+                            pass
+                        eid = str(get_entity_id(enemy_root) or "")
+                        if not eid or eid in seen_enemy:
+                            continue
+                        seen_enemy.add(eid)
+                        if not model_within_range_of_unit(model, enemy_root, float(range_value)):
+                            continue
+                        if callable(can_see_fn):
+                            visible = False
+                            try:
+                                enemy_models = list(enemy_root.get_attached_unit_models() or [])
+                            except Exception:
+                                enemy_models = list(getattr(enemy_root, "models", []) or [])
+                            for enemy_model in list(enemy_models or []):
+                                if enemy_model is None:
+                                    continue
+                                alive_attr = getattr(enemy_model, "is_alive", True)
+                                enemy_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                                if not enemy_alive:
+                                    continue
+                                if can_see_fn(model, enemy_model):
+                                    visible = True
+                                    break
+                            if not visible:
+                                continue
+                        candidates.append(enemy_root)
+                    if not candidates:
+                        continue
+                    try:
+                        candidates = sorted(candidates, key=_unit_sort_key)
+                    except Exception:
+                        pass
+
+                    options = [
+                        DecisionOption.create("None", payload={"action": "skip"}),
+                    ]
+                    for cand in candidates:
+                        options.append(
+                            DecisionOption.create(
+                                str(getattr(cand, "name", "Unit") or "Unit"),
+                                payload={"target_unit_id": get_entity_id(cand)},
+                            )
+                        )
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select one visible enemy unit within {int(range_value)}\" (or None).",
+                        player_id=getattr(p, "id", None),
+                        options=options,
+                        context={
+                            "ability": "paroxysm",
+                            "ability_name": ability_name,
+                            "source_unit_id": get_entity_id(root),
+                            "attacker_unit_id": get_entity_id(root),
+                            "model_id": model_id,
+                            "range": int(range_value),
+                            "success_threshold": int(success_threshold),
+                            "self_mortal_wounds": str(self_mw),
+                            "attacks_penalty": int(attacks_penalty),
+                            "optional": True,
+                        },
+                    )
+                    self.request_decision(request)
+                    if model_id:
+                        pending_models.add(model_id)
+
     def _on_phase_start_accelerator_mandible(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase start: optional Accelerator Mandible target selection for a nearby friendly CANOPTEK unit."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -16231,6 +16414,17 @@ class GamePhaseHandlersMixin:
                         "data_spike_ws_penalty_turn",
                         "data_spike_ws_penalty_source",
                         "data_spike_ws_penalty_expires_phase",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("paroxysm_attacks_penalty_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "paroxysm_attacks_penalty_active",
+                        "paroxysm_attacks_penalty",
+                        "paroxysm_attacks_penalty_owner",
+                        "paroxysm_attacks_penalty_turn",
+                        "paroxysm_attacks_penalty_source",
+                        "paroxysm_attacks_penalty_expires_phase",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("accelerator_mandible_ws_bonus_expires_phase", "") or "").strip().upper()
