@@ -2805,6 +2805,7 @@ class RulesParsingMixin:
                         del sr["advance_roll_modifiers"]
                 for key in (
                     "bearer_unit_fnp",
+                    "waaagh_bearer_unit_fnp_entries",
                     "bearer_unit_keyword_fnp_entries",
                     "fight_phase_destroy_enemy_fnp_upgrade_entries",
                     "attached_character_fnp_entries",
@@ -2819,6 +2820,7 @@ class RulesParsingMixin:
                     "bearer_unit_sustained_hits_value_melee",
                     "bearer_unit_sustained_hits_value_ranged",
                     "bearer_unit_sustained_hits_value_ranged_non_torrent",
+                    "waaagh_bearer_unit_movement_bonus_entries",
                     "bearer_unit_ignores_cover",
                     "bearer_unit_benefit_of_cover",
                     "bearer_unit_target_hit_penalties",
@@ -2860,9 +2862,11 @@ class RulesParsingMixin:
         leadership_controlled_objective_mods: list[tuple[int, str]] = []
         movement_sets: list[tuple[int, str]] = []
         movement_bonus_mods: list[tuple[int, str]] = []
+        waaagh_movement_bonus_entries: list[dict] = []
         oc_mods: list[tuple[int, str]] = []
         contains_oc_mods: list[tuple[int, str]] = []
         fnp_entries: list[dict] = []
+        waaagh_fnp_entries: list[dict] = []
         bearer_unit_keyword_fnp_entries: list[dict] = []
         fight_phase_destroy_enemy_fnp_upgrade_entries: list[dict] = []
         attached_character_fnp_entries: list[dict] = []
@@ -2984,6 +2988,13 @@ class RulesParsingMixin:
                         continue
                     source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                     sentence_lower = sentence.lower()
+                    waaagh_active_clause = bool(
+                        re.search(
+                            r"while\s+the\s+waaagh!?\s+is\s+active\s+for\s+your\s+army",
+                            sentence_lower,
+                            flags=re.IGNORECASE,
+                        )
+                    )
                     is_battleline_instead_clause = bool(
                         re.search(
                             r"while\s+this\s+unit\s+is\s+within\s+\d+\s*\"?\s*of\s+one\s+or\s+more\s+friendly\s+adeptus\s+mechanicus\s+battleline\s+units.*\binstead\b",
@@ -3124,7 +3135,15 @@ class RulesParsingMixin:
                             val = None
                         if val:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
-                            movement_bonus_mods.append((val, source))
+                            if waaagh_active_clause:
+                                waaagh_movement_bonus_entries.append(
+                                    {
+                                        "value": int(val),
+                                        "source": source,
+                                    }
+                                )
+                            else:
+                                movement_bonus_mods.append((val, source))
 
                     m = self._BEARER_UNIT_OC_BONUS_RE.search(sentence)
                     if m:
@@ -3249,7 +3268,11 @@ class RulesParsingMixin:
                             except Exception:
                                 cond = None
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
-                            fnp_entries.append({"value": int(val), "condition": cond, "source": source})
+                            entry = {"value": int(val), "condition": cond, "source": source}
+                            if waaagh_active_clause:
+                                waaagh_fnp_entries.append(dict(entry))
+                            else:
+                                fnp_entries.append(entry)
 
                     if upgrade_fnp_match:
                         try:
@@ -3533,6 +3556,29 @@ class RulesParsingMixin:
                         Modifier(ModifierOp.ADD, ival, source=f"ability:bearer_unit_movement_bonus:{label}"),
                     )
 
+        if waaagh_movement_bonus_entries:
+            deduped_entries = []
+            seen_entries: set[tuple[int, str]] = set()
+            for entry in waaagh_movement_bonus_entries:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    value = int(entry.get("value"))
+                except Exception:
+                    continue
+                source = str(entry.get("source", "") or "").strip() or "Bearer unit ability"
+                key = (int(value), source.lower())
+                if key in seen_entries:
+                    continue
+                seen_entries.add(key)
+                deduped_entries.append({"value": int(value), "source": source})
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["waaagh_bearer_unit_movement_bonus_entries"] = list(deduped_entries)
+                u.special_rules = sr
+
         if oc_mods:
             from ...utility.modifiers import Modifier, ModifierOp
 
@@ -3559,6 +3605,35 @@ class RulesParsingMixin:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_fnp"] = list(fnp_entries)
+                u.special_rules = sr
+        if waaagh_fnp_entries:
+            deduped_entries = []
+            seen_entries: set[tuple[int, str, str]] = set()
+            for entry in waaagh_fnp_entries:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    value = int(entry.get("value"))
+                except Exception:
+                    continue
+                condition = str(entry.get("condition", "") or "").strip()
+                source = str(entry.get("source", "") or "").strip() or "Bearer unit ability"
+                key = (int(value), condition.lower(), source.lower())
+                if key in seen_entries:
+                    continue
+                seen_entries.add(key)
+                deduped_entries.append(
+                    {
+                        "value": int(value),
+                        "condition": condition or None,
+                        "source": source,
+                    }
+                )
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["waaagh_bearer_unit_fnp_entries"] = list(deduped_entries)
                 u.special_rules = sr
         if fight_phase_destroy_enemy_fnp_upgrade_entries:
             deduped_entries = []

@@ -448,6 +448,41 @@ class Unit(
                         return True
             return False
 
+        # Waaagh!-conditional bearer-unit move bonuses parsed from datasheet text.
+        if ckey == "movement":
+            sr = getattr(self, "special_rules", None)
+            waaagh_entries = sr.get("waaagh_bearer_unit_movement_bonus_entries") if isinstance(sr, dict) else None
+            if isinstance(waaagh_entries, list) and waaagh_entries:
+                try:
+                    army = self.get_parent_army()
+                except Exception:
+                    army = None
+                mgr = getattr(army, "waaagh", None) if army is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr is not None and bool(mgr.unit_is_affected(self, game=game)):
+                    seen_w = set()
+                    for entry in waaagh_entries:
+                        if not isinstance(entry, dict):
+                            continue
+                        try:
+                            value = int(entry.get("value"))
+                        except Exception:
+                            continue
+                        if value == 0:
+                            continue
+                        source_name = str(entry.get("source", "") or "").strip() or "Bearer unit ability"
+                        key = (int(value), source_name.lower())
+                        if key in seen_w:
+                            continue
+                        seen_w.add(key)
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(value),
+                                source=f"ability:waaagh_bearer_unit_movement_bonus:{source_name}",
+                            )
+                        )
+
         # Eager to Prove (Slaanesh's Chosen): while the bearer's unit is Favoured Champions,
         # add to the Move characteristic of models in that unit.
         if ckey == "movement":

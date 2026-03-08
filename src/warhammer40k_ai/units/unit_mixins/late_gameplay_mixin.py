@@ -1126,6 +1126,16 @@ class LateGameplayMixin:
             List[Tuple[int, Optional[str]]]: List of (dice_value, condition) tuples
         """
         found_abilities = []
+
+        def _is_waaagh_conditional_text(value: str) -> bool:
+            normalized = self._normalize_rules_text(value or "").lower()
+            return bool(
+                re.search(
+                    r"while\s+the\s+waaagh!?\s+is\s+active\s+for\s+your\s+army",
+                    normalized,
+                    flags=re.IGNORECASE,
+                )
+            )
         
         # Check keywords first
         for keyword in self.keywords:
@@ -1144,6 +1154,8 @@ class LateGameplayMixin:
             if isinstance(ability, str):
                 for pattern in patterns:
                     if pattern.lower() in ability.lower():
+                        if _is_waaagh_conditional_text(ability):
+                            continue
                         match = re.search(value_pattern, ability.lower())
                         if match:
                             dice_value = int(match.group(1))
@@ -1178,6 +1190,8 @@ class LateGameplayMixin:
                 # Only check description if ability name didn't match
                 if not ability_name_matched and hasattr(ability, 'description') and ability.description:
                     desc_text = self._normalize_rules_text(ability.description)
+                    if _is_waaagh_conditional_text(desc_text):
+                        continue
                     for pattern in patterns:
                         if pattern.lower() in desc_text.lower():
                             match = re.search(value_pattern, desc_text.lower())
@@ -1198,6 +1212,8 @@ class LateGameplayMixin:
             if isinstance(ability, str):
                 for pattern in patterns:
                     if pattern.lower() in ability.lower():
+                        if _is_waaagh_conditional_text(ability):
+                            continue
                         match = re.search(value_pattern, ability.lower())
                         if match:
                             dice_value = int(match.group(1))
@@ -1232,6 +1248,8 @@ class LateGameplayMixin:
                 # Only check description if ability name didn't match
                 if not ability_name_matched and hasattr(ability, 'description') and ability.description:
                     desc_text = self._normalize_rules_text(ability.description)
+                    if _is_waaagh_conditional_text(desc_text):
+                        continue
                     for pattern in patterns:
                         if pattern.lower() in desc_text.lower():
                             match = re.search(value_pattern, desc_text.lower())
@@ -1298,6 +1316,79 @@ class LateGameplayMixin:
                         continue
                     seen.add(key)
                     result.append((int(val), cond))
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            entries = sr.get("waaagh_bearer_unit_fnp_entries") if isinstance(sr, dict) else None
+            if isinstance(entries, list) and entries:
+                army = self.get_parent_army()
+                mgr = getattr(army, "waaagh", None) if army is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr is not None and bool(mgr.unit_is_affected(self, game=game)):
+                    seen = set((int(v), (c or "")) for v, c in result)
+                    for entry in entries:
+                        if isinstance(entry, dict):
+                            val = entry.get("value")
+                            cond = entry.get("condition")
+                        elif isinstance(entry, (list, tuple)):
+                            val = entry[0] if entry else None
+                            cond = entry[1] if len(entry) > 1 else None
+                        else:
+                            continue
+                        try:
+                            val = int(val)
+                        except Exception:
+                            continue
+                        key = (int(val), str(cond or ""))
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        result.append((int(val), cond))
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "waaagh", None) if army is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if mgr is not None and bool(mgr.unit_is_affected(self, game=game)):
+                seen = set((int(v), (c or "")) for v, c in result)
+                iter_entries = getattr(self, "_iter_ability_entries_for_rules", None)
+                if callable(iter_entries):
+                    entries_iter = iter_entries(model=None)
+                else:
+                    entries_iter = (
+                        (
+                            getattr(ability, "name", "") if not isinstance(ability, str) else ability,
+                            getattr(ability, "description", "") if not isinstance(ability, str) else ability,
+                        )
+                        for ability in list(getattr(self, "possible_abilities", []) or [])
+                    )
+                for name, desc in entries_iter:
+                    text_src = str(desc or name or "")
+                    strip_prefix = getattr(self, "_strip_eligibility_prefix", None)
+                    if callable(strip_prefix):
+                        text_src = str(strip_prefix(text_src) or "")
+                    normalized = self._normalize_rules_text(text_src).lower()
+                    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                    normalized = re.sub(r"\s+", " ", normalized).strip()
+                    m = re.fullmatch(
+                        r"while the waaagh is active for your army models in this unit have the feel no pain (?P<value>[1-6])(?: ability)?",
+                        normalized,
+                    )
+                    if not m:
+                        continue
+                    try:
+                        value = int(m.group("value") or 0)
+                    except Exception:
+                        continue
+                    if value <= 0:
+                        continue
+                    key = (int(value), "")
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    result.append((int(value), None))
         except Exception:
             pass
         try:

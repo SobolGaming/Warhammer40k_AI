@@ -42,7 +42,16 @@ class _MockDatasheet:
         self.attached_to = list(attached_to or [])
 
 
-def _make_unit(name, *, ds_id="", abilities=None, attached_to=None, leadership="7"):
+def _make_unit(
+    name,
+    *,
+    ds_id="",
+    abilities=None,
+    attached_to=None,
+    leadership="7",
+    faction_name="Chaos Daemons",
+    faction_keywords=None,
+):
     from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
@@ -51,6 +60,8 @@ def _make_unit(name, *, ds_id="", abilities=None, attached_to=None, leadership="
         abilities=abilities,
         attached_to=attached_to,
         leadership=leadership,
+        faction_name=faction_name,
+        faction_keywords=faction_keywords,
     )
     return Unit(datasheet)
 
@@ -161,6 +172,169 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         unit._refresh_bearer_unit_common_modifiers()
 
         self.assertIn((5, None), unit.has_feel_no_pain())
+
+    def test_waaagh_conditional_unit_fnp_applies_only_while_active(self):
+        from warhammer40k_ai.roster.army import Army
+
+        abilities = [
+            {"name": "Waaagh!", "description": "", "type": "Datasheet", "parameter": ""},
+            {
+                "name": "Krumpin' Time",
+                "description": "While the Waaagh! is active for your army, models in this unit have the Feel No Pain 5+ ability.",
+                "type": "Datasheet",
+                "parameter": "",
+            },
+        ]
+        unit = _make_unit("Warboss", abilities=abilities, faction_name="Orks")
+        unit._refresh_bearer_unit_common_modifiers()
+
+        army = Army("Orks", "Waaagh!")
+        army.faction_id = "ORK"
+        army.add_unit(unit)
+
+        self.assertNotIn((5, None), unit.has_feel_no_pain(target_model=unit.models[0]))
+
+        army.waaagh.active = True
+        army.waaagh.used_this_battle = True
+        army.waaagh.calls_this_battle = 1
+
+        self.assertIn((5, None), unit.has_feel_no_pain(target_model=unit.models[0]))
+
+    def test_waaagh_conditional_unit_move_bonus_applies_only_while_active(self):
+        from warhammer40k_ai.roster.army import Army
+
+        abilities = [
+            {"name": "Waaagh!", "description": "", "type": "Datasheet", "parameter": ""},
+            {
+                "name": "Special Dose",
+                "description": "While the Waaagh! is active for your army, add 6\" to the Move characteristic of models in this model's unit.",
+                "type": "Datasheet",
+                "parameter": "",
+            },
+        ]
+        unit = _make_unit("Zodgrod Wortsnagga", abilities=abilities, faction_name="Orks")
+        unit._refresh_bearer_unit_common_modifiers()
+
+        army = Army("Orks", "Waaagh!")
+        army.faction_id = "ORK"
+        army.add_unit(unit)
+
+        base_move = int(unit.get_effective_model_characteristic(unit.models[0], "movement"))
+        self.assertEqual(base_move, 6)
+
+        army.waaagh.active = True
+        army.waaagh.used_this_battle = True
+        army.waaagh.calls_this_battle = 1
+
+        boosted_move = int(unit.get_effective_model_characteristic(unit.models[0], "movement"))
+        self.assertEqual(boosted_move, 12)
+
+    def test_waaagh_conditional_model_melee_attacks_bonus_applies(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        attacker = _make_unit(
+            "Warboss",
+            abilities=[
+                {"name": "Waaagh!", "description": "", "type": "Datasheet", "parameter": ""},
+                {
+                    "name": "Da Biggest and da Best",
+                    "description": "While the Waaagh! is active for your army, add 4 to the Attacks characteristic of this model's melee weapons.",
+                    "type": "Datasheet",
+                    "parameter": "",
+                },
+            ],
+            faction_name="Orks",
+        )
+        target = _make_unit("Target", faction_name="Orks")
+
+        army = Army("Orks", "Waaagh!")
+        army.faction_id = "ORK"
+        army.add_unit(attacker)
+        army.add_unit(target)
+        army.waaagh.active = True
+        army.waaagh.used_this_battle = True
+        army.waaagh.calls_this_battle = 1
+
+        melee_parent = SimpleNamespace(name="Power Klaw", is_melee=lambda: True, is_ranged=lambda: False)
+        profile = WargearProfile(
+            profile_name="Melee",
+            wargear_data={
+                "range": "Melee",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=melee_parent,
+        )
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
+            attack_result = profile.attack(target, attacker.models[0], game_map=None)
+
+        self.assertEqual(int(attack_result.attacks_rolled), 6)
+
+    def test_waaagh_conditional_uge_choppa_damage_set_applies(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        attacker = _make_unit(
+            "Warboss In Mega Armour",
+            abilities=[
+                {"name": "Waaagh!", "description": "", "type": "Datasheet", "parameter": ""},
+                {
+                    "name": "Dead Brutal",
+                    "description": "While the Waaagh! is active for your army, this model's 'uge choppa has a Damage characteristic of 3.",
+                    "type": "Datasheet",
+                    "parameter": "",
+                },
+            ],
+            faction_name="Orks",
+        )
+        target = _make_unit("Target", faction_name="Orks")
+
+        army = Army("Orks", "Waaagh!")
+        army.faction_id = "ORK"
+        army.add_unit(attacker)
+        army.add_unit(target)
+
+        melee_parent = SimpleNamespace(name="'Uge Choppa", is_melee=lambda: True, is_ranged=lambda: False)
+        profile = WargearProfile(
+            profile_name="Melee",
+            wargear_data={
+                "range": "Melee",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=melee_parent,
+        )
+
+        no_waaagh_result = profile._damage_target_with_tracking(
+            target.models[0],
+            attacker.models[0],
+            {},
+            game_map=None,
+        )
+        self.assertEqual(int(no_waaagh_result.get("damage_rolled", 0)), 1)
+
+        army.waaagh.active = True
+        army.waaagh.used_this_battle = True
+        army.waaagh.calls_this_battle = 1
+
+        target_active = _make_unit("Target Active", faction_name="Orks")
+        army.add_unit(target_active)
+        waaagh_result = profile._damage_target_with_tracking(
+            target_active.models[0],
+            attacker.models[0],
+            {},
+            game_map=None,
+        )
+        self.assertEqual(int(waaagh_result.get("damage_rolled", 0)), 3)
 
     def test_bearer_unit_invulnerable_save_applies(self):
         ability = {

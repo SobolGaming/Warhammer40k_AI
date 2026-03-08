@@ -5684,6 +5684,7 @@ def _classify_ability_base(
     floating_death_support = _floating_death_support(description)
     parasitic_infection_support = _parasitic_infection_support(description)
     hazardous_test_modifier_support = _hazardous_test_modifier_support(description)
+    orks_waaagh_conditional_support = _orks_waaagh_conditional_model_and_unit_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
@@ -6032,6 +6033,8 @@ def _classify_ability_base(
         return unit_contains_character_fnp_support
     if leading_unit_contains_invuln_support:
         return leading_unit_contains_invuln_support
+    if orks_waaagh_conditional_support:
+        return orks_waaagh_conditional_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -7012,6 +7015,60 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if notes:
         status = "Supported" if not unsupported else "Partial"
         return (status, " ".join(notes))
+    return None
+
+
+def _orks_waaagh_conditional_model_and_unit_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+
+    m = re.fullmatch(
+        r"while the waaagh is active for your army add (?P<value>\d+) to the attacks characteristic of this models melee weapons",
+        norm,
+    )
+    if m:
+        return (
+            "Supported",
+            f"Waaagh-active: this model's melee weapons gain +{m.group('value')} Attacks.",
+        )
+
+    m = re.fullmatch(
+        r"while the waaagh is active for your army this models (?P<weapon>[a-z0-9][a-z0-9 \-']+) has a damage characteristic of (?P<value>\d+)",
+        norm,
+    )
+    if m:
+        weapon = str(m.group("weapon") or "").strip()
+        value = str(m.group("value") or "").strip()
+        if weapon and value:
+            return (
+                "Supported",
+                f"Waaagh-active: this model's {weapon} is set to Damage {value}.",
+            )
+        return None
+
+    m = re.fullmatch(
+        r"while the waaagh is active for your army models in this unit have the feel no pain (?P<value>[1-6])(?: ability)?",
+        norm,
+    )
+    if m:
+        return (
+            "Supported",
+            f"Waaagh-active: models in this unit gain Feel No Pain {m.group('value')}+.",
+        )
+
+    m = re.fullmatch(
+        r"while the waaagh is active for your army add (?P<value>\d+) to the move characteristic of models in this models unit",
+        norm,
+    )
+    if m:
+        return (
+            "Supported",
+            f"Waaagh-active: models in this model's unit gain +{m.group('value')}\" Move.",
+        )
+
     return None
 
 

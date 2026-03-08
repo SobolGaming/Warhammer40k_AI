@@ -629,6 +629,120 @@ class WargearProfile:
             return bool(unit._weapon_name_matches([target_name], candidate))
         return self._normalize_weapon_name_key(candidate) == self._normalize_weapon_name_key(target_name)
 
+    def _iter_model_specific_ability_entries_for_attacker(self, attacker: 'Model'):
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return
+
+        iter_entries = getattr(unit, "_iter_model_specific_ability_entries", None)
+        if callable(iter_entries):
+            for name, desc in iter_entries(attacker):
+                yield name, desc
+            return
+
+        try:
+            unit_models = list(getattr(unit, "models", []) or [])
+        except Exception:
+            unit_models = []
+        if len(unit_models) <= 1:
+            for ability in list(getattr(unit, "possible_abilities", []) or []):
+                if isinstance(ability, str):
+                    yield ability, ability
+                else:
+                    yield getattr(ability, "name", "") or "", getattr(ability, "description", "") or ""
+
+        abilities = getattr(attacker, "abilities", None)
+        if isinstance(abilities, dict):
+            for ability in list(abilities.values() or []):
+                if isinstance(ability, str):
+                    yield ability, ability
+                else:
+                    yield getattr(ability, "name", "") or "", getattr(ability, "description", "") or ""
+
+    @staticmethod
+    def _normalize_rules_text_for_matching(text: str) -> str:
+        value = str(text or "").replace("\u2019", "'").replace("\u0192?T", "'")
+        value = re.sub(r"'s\b", " s", value, flags=re.IGNORECASE)
+        value = value.lower()
+        value = re.sub(r"[^a-z0-9]+", " ", value)
+        return re.sub(r"\s+", " ", value).strip()
+
+    def _waaagh_unit_is_affected(self, unit: Optional['Unit']) -> bool:
+        if unit is None:
+            return False
+        get_parent_army = getattr(unit, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        mgr = getattr(army, "waaagh", None) if army is not None else None
+        if mgr is None:
+            return False
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        return bool(mgr.unit_is_affected(unit, game=game))
+
+    def _orks_waaagh_model_melee_attacks_bonus(self, attacker: 'Model') -> tuple[int, str]:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None or not self._waaagh_unit_is_affected(unit):
+            return (0, "")
+
+        best_bonus = 0
+        best_source = ""
+        for name, desc in self._iter_model_specific_ability_entries_for_attacker(attacker):
+            text_src = str(desc or name or "")
+            strip_prefix = getattr(unit, "_strip_eligibility_prefix", None)
+            if callable(strip_prefix):
+                text_src = str(strip_prefix(text_src) or "")
+            normalized = self._normalize_rules_text_for_matching(text_src)
+            m = re.fullmatch(
+                r"while the waaagh is active for your army add (?P<value>\d+) to the attacks characteristic of this model s melee weapons",
+                normalized,
+            )
+            if not m:
+                continue
+            try:
+                value = int(m.group("value") or 0)
+            except (TypeError, ValueError):
+                continue
+            if value <= 0:
+                continue
+            if int(value) > int(best_bonus):
+                best_bonus = int(value)
+                best_source = str(name or "Waaagh! ability").strip() or "Waaagh! ability"
+        return (int(best_bonus), best_source)
+
+    def _orks_waaagh_model_weapon_damage_set(self, attacker: 'Model') -> tuple[int, str]:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None or not self._waaagh_unit_is_affected(unit):
+            return (0, "")
+
+        best_value = 0
+        best_source = ""
+        for name, desc in self._iter_model_specific_ability_entries_for_attacker(attacker):
+            text_src = str(desc or name or "")
+            strip_prefix = getattr(unit, "_strip_eligibility_prefix", None)
+            if callable(strip_prefix):
+                text_src = str(strip_prefix(text_src) or "")
+            normalized = self._normalize_rules_text_for_matching(text_src)
+            m = re.fullmatch(
+                r"while the waaagh is active for your army this model s (?P<weapon>[a-z0-9][a-z0-9 \-']+) has a damage characteristic of (?P<value>\d+)",
+                normalized,
+            )
+            if not m:
+                continue
+            weapon_name = str(m.group("weapon") or "").strip()
+            if not weapon_name:
+                continue
+            if not self._weapon_name_matches_for_attacker(attacker, weapon_name):
+                continue
+            try:
+                value = int(m.group("value") or 0)
+            except (TypeError, ValueError):
+                continue
+            if value <= 0:
+                continue
+            if int(value) > int(best_value):
+                best_value = int(value)
+                best_source = str(name or "Waaagh! ability").strip() or "Waaagh! ability"
+        return (int(best_value), best_source)
+
     def _target_has_any_keyword(self, target: Optional['Unit'], keywords: tuple[str, ...]) -> bool:
         if target is None:
             return False
@@ -5234,6 +5348,20 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append("Waaagh! +1A (melee)")
         except Exception:
             pass
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            extra_waaagh_attacks, extra_waaagh_source = self._orks_waaagh_model_melee_attacks_bonus(attacker)
+            if extra_waaagh_attacks > 0:
+                atk_mods.append(
+                    Modifier(
+                        ModifierOp.ADD,
+                        int(extra_waaagh_attacks),
+                        source="ability:waaagh_model_melee_attacks_add",
+                    )
+                )
+                source_name = str(extra_waaagh_source or "Waaagh!").strip() or "Waaagh!"
+                attack_result.attacks_special_modifiers.append(
+                    f"{source_name} +{int(extra_waaagh_attacks)}A (Waaagh!)"
+                )
 
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -20411,6 +20539,11 @@ class WargearProfile:
         except Exception:
             damage_override = 0
             damage_override_source = ""
+
+        waaagh_damage_set = 0
+        waaagh_damage_source = ""
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            waaagh_damage_set, waaagh_damage_source = self._orks_waaagh_model_weapon_damage_set(attacker)
         
         # Calculate base Damage characteristic with detailed tracking
         if damage_taken_override:
@@ -20432,6 +20565,14 @@ class WargearProfile:
             damage_result["damage_rolled"] = int(damage_value)
             if damage_override_source:
                 damage_result["special_effects"].append(f"{damage_override_source}: Damage {int(damage_value)}")
+            rerolls_allowed = False
+        elif waaagh_damage_set:
+            damage_value = int(waaagh_damage_set)
+            damage_result["damage_expression"] = str(waaagh_damage_set)
+            damage_result["damage_rolled"] = int(damage_value)
+            damage_result["damage_dice_rolls"] = []
+            if waaagh_damage_source:
+                damage_result["special_effects"].append(f"{waaagh_damage_source}: Damage {int(damage_value)}")
             rerolls_allowed = False
         elif isinstance(self.damage, DiceCollection):
             # Provide reroll callback for damage
