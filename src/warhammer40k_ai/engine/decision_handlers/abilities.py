@@ -16503,6 +16503,97 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname}.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "fight_phase_select_enemy_melee_hit_penalty":
+        payload = _option_payload(request, result)
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return None
+        if is_skip_choice(request, result):
+            if bool(ctx.get("optional", False)):
+                get_parent_army = getattr(source_unit, "get_parent_army", None)
+                source_army = get_parent_army() if callable(get_parent_army) else getattr(source_unit, "parent_army", None)
+                player = getattr(source_army, "player", None) if source_army is not None else None
+                ability_name = str(ctx.get("ability_name", "") or "Fight phase enemy hit penalty").strip() or "Fight phase enemy hit penalty"
+                _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return None
+        if chosen is None:
+            return None
+        target_root = chosen.get_attached_unit_root() if hasattr(chosen, "get_attached_unit_root") else chosen
+        if target_root is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        source_army = source_root.get_parent_army() if source_root is not None and hasattr(source_root, "get_parent_army") else None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Fight phase enemy hit penalty").strip() or "Fight phase enemy hit penalty"
+        ability_key = str(ctx.get("ability_key", "") or payload.get("ability_key", "") or "").strip().lower()
+        once_per_turn = bool(ctx.get("once_per_turn", False))
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if once_per_turn and model is not None and ability_key and current_turn > 0:
+            has_used = getattr(model, "has_used_once_per_battle_round", None)
+            if callable(has_used) and bool(has_used(ability_key, battle_round=int(current_turn))):
+                return None
+        try:
+            hit_penalty = int(ctx.get("hit_penalty", payload.get("hit_penalty", 1)) or 1)
+        except (TypeError, ValueError):
+            hit_penalty = 1
+        hit_penalty = abs(int(hit_penalty or 1))
+        if hit_penalty <= 0:
+            hit_penalty = 1
+        get_members = getattr(target_root, "get_attached_unit_members", None)
+        target_members = list(get_members() or []) if callable(get_members) else [target_root]
+        if not target_members:
+            target_members = [target_root]
+        for member in list(target_members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sources = [str(s) for s in list(sr.get("fight_selected_enemy_melee_hit_penalty_sources", []) or []) if str(s or "").strip()]
+            normalized_sources = {str(s).strip().lower() for s in sources}
+            if ability_name.lower() not in normalized_sources:
+                sources.append(ability_name)
+            try:
+                existing_penalty = int(sr.get("fight_selected_enemy_melee_hit_penalty_value", 1) or 1)
+            except (TypeError, ValueError):
+                existing_penalty = 1
+            sr["fight_selected_enemy_melee_hit_penalty_active"] = True
+            sr["fight_selected_enemy_melee_hit_penalty_expires_phase"] = "FIGHT_PHASE"
+            sr["fight_selected_enemy_melee_hit_penalty_sources"] = sorted(list({str(s).strip() for s in sources if str(s).strip()}))
+            sr["fight_selected_enemy_melee_hit_penalty_value"] = int(max(abs(existing_penalty), int(hit_penalty)))
+            member.special_rules = sr
+        if once_per_turn and model is not None and ability_key and current_turn > 0:
+            mark_used = getattr(model, "mark_used_once_per_battle_round", None)
+            if callable(mark_used):
+                mark_used(
+                    ability_key,
+                    battle_round=int(current_turn),
+                    ability_name=ability_name,
+                    source="datasheet",
+                )
+        source_name = str(getattr(source_root, "name", "Unit") or "Unit")
+        target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: {source_name} selected {target_name}. "
+                f"That unit suffers -{int(hit_penalty)} to Hit rolls for melee attacks until end of Fight phase."
+            ),
+        )
+        return target_root
     if str(ctx.get("ability", "") or "") == "malign_sacrifice":
         if chosen is None:
             return None

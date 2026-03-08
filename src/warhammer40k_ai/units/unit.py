@@ -3904,6 +3904,14 @@ class Unit(
         r"(?:a )?melee attack(?:s)? subtract 1 from the hit roll",
         re.IGNORECASE,
     )
+    _FIGHT_PHASE_SELECT_ENGAGEMENT_MELEE_HIT_PENALTY_RE = re.compile(
+        r"(?:at the )?start of the fight phase "
+        r"(?P<optional>you can )?select one enemy unit within engagement range of "
+        r"(?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) "
+        r"until the end of the phase each time a model in that(?: enemy)? unit makes "
+        r"(?:an? )?(?:melee )?attack(?:s)? subtract (?P<penalty>\d+) from the hit roll",
+        re.IGNORECASE,
+    )
     _NO_ADVANCE_START_OR_END_WITHIN_RE = re.compile(
         r"enemy (?P<enemy_subject>models|units) cannot start or end an advance move within (?P<range>\d+) "
         r"of this (?P<source_subject>model|unit)",

@@ -217,6 +217,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_spirit_mark_cleanup"),
                 ("phase_start", "_on_phase_start_engagement_battleshock"),
                 ("phase_start", "_on_phase_start_fight_phase_select_engagement_battleshock"),
+                ("phase_start", "_on_phase_start_fight_phase_select_enemy_melee_hit_penalty"),
                 ("phase_start", "_on_phase_start_tocsin_of_misery"),
                 ("phase_start", "_on_phase_start_imperial_agents_psychic_veil_cleanup"),
                 ("phase_start", "_on_phase_start_soulless_horror"),

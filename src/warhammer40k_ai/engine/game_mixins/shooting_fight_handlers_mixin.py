@@ -7602,6 +7602,7 @@ class GameShootingFightHandlersMixin:
             sr["fight_selected_enemy_melee_hit_penalty_active"] = True
             sr["fight_selected_enemy_melee_hit_penalty_expires_phase"] = "FIGHT_PHASE"
             sr["fight_selected_enemy_melee_hit_penalty_sources"] = list(sources_sorted)
+            sr["fight_selected_enemy_melee_hit_penalty_value"] = 1
             member.special_rules = sr
 
     def _on_fight_unit_selected_selected_to_fight_reroll_choice(self, unit=None, **_kwargs) -> None:

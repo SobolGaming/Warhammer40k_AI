@@ -5708,6 +5708,7 @@ def _classify_ability_base(
     aura_battleshock_leadership_penalty_support = _aura_battleshock_leadership_penalty_support(description)
     failed_battleshock_aura_mortal_heal_support = _failed_battleshock_aura_mortal_heal_support(description)
     fight_phase_select_engagement_battleshock_support = _fight_phase_select_engagement_battleshock_support(description)
+    fight_phase_select_enemy_melee_hit_penalty_support = _fight_phase_select_enemy_melee_hit_penalty_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
     fight_phase_aura_battleshock_support = _fight_phase_aura_battleshock_support(description)
     charge_end_engagement_battleshock_support = _charge_end_engagement_battleshock_support(description)
@@ -6099,6 +6100,8 @@ def _classify_ability_base(
         return aura_battleshock_leadership_penalty_support
     if failed_battleshock_aura_mortal_heal_support:
         return failed_battleshock_aura_mortal_heal_support
+    if fight_phase_select_enemy_melee_hit_penalty_support:
+        return fight_phase_select_enemy_melee_hit_penalty_support
     if fight_phase_select_engagement_battleshock_support:
         return fight_phase_select_engagement_battleshock_support
     if fight_phase_engagement_battleshock_support:
@@ -11419,6 +11422,39 @@ def _fight_phase_select_engagement_battleshock_support(description: str) -> Opti
     return (
         "Supported",
         f"{prefix_text}Start of Fight phase: select one enemy unit in Engagement Range to take a Battle-shock test.",
+    )
+
+
+def _fight_phase_select_enemy_melee_hit_penalty_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:at the )?start of the fight phase "
+        r"(?P<optional>you can )?select one enemy unit within engagement range of "
+        r"(?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) "
+        r"until the end of the phase each time a model in that(?: enemy)? unit makes "
+        r"(?:an? )?(?:melee )?attack(?:s)? subtract (?P<penalty>\d+) from the hit roll"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        penalty = int(m.group("penalty") or 0)
+    except Exception:
+        penalty = 0
+    if penalty <= 0:
+        return None
+    optional = bool(str(m.group("optional") or "").strip())
+    prefix = "Optional: " if optional else ""
+    return (
+        "Supported",
+        (
+            f"{prefix}Start of Fight phase: select one enemy unit in Engagement Range; until phase end, "
+            f"that unit suffers -{int(penalty)} to Hit rolls for melee attacks."
+        ),
     )
 
 

@@ -4010,6 +4010,76 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_fight_phase_select_enemy_melee_hit_penalty_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: at the start of the Fight phase, select one enemy unit within
+        Engagement Range; until phase end, models in that unit suffer a Hit roll penalty
+        when making attacks in the Fight phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - ability_key: str
+            - optional: bool
+            - once_per_turn: bool
+            - engagement_only: bool
+            - hit_penalty: int
+            - context_ability: str
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_fight_phase_select_enemy_melee_hit_penalty:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, bool]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._FIGHT_PHASE_SELECT_ENGAGEMENT_MELEE_HIT_PENALTY_RE.fullmatch(normalized)
+            if not m:
+                continue
+            optional = bool(str(m.group("optional") or "").strip())
+            try:
+                hit_penalty = int(m.group("penalty") or 0)
+            except (TypeError, ValueError):
+                hit_penalty = 0
+            if hit_penalty <= 0:
+                continue
+            source = str(name or "Fight phase select enemy hit penalty").strip() or "Fight phase select enemy hit penalty"
+            source_key = self._normalize_keyword_phrase(source) or re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_")
+            if not source_key:
+                source_key = "fight_phase_select_enemy_melee_hit_penalty"
+            ability_key = f"fight_phase_select_enemy_melee_hit_penalty:{source_key}"
+            dedupe_key = (source.lower(), ability_key, int(hit_penalty), bool(optional))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "ability_key": ability_key,
+                    "optional": bool(optional),
+                    "once_per_turn": False,
+                    "engagement_only": True,
+                    "hit_penalty": int(hit_penalty),
+                    "context_ability": "fight_phase_select_enemy_melee_hit_penalty",
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_fight_phase_engagement_wound_reroll_ones_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: at the start of the Fight phase, select an engaged enemy unit;

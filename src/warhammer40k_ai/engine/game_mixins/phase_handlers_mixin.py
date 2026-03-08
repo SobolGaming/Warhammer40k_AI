@@ -4500,6 +4500,115 @@ class GamePhaseHandlersMixin:
                             phase_name=pname,
                         )
 
+    def _on_phase_start_fight_phase_select_enemy_melee_hit_penalty(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase: select one enemy unit in Engagement Range to suffer a melee hit-roll penalty."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        queue_fn = getattr(self, "_queue_start_fight_phase_select_enemy_melee_hit_penalty", None)
+        if not callable(queue_fn):
+            return
+
+        from ...utility.aura_utils import model_within_engagement_range_of_unit
+
+        def _unit_sort_key(unit):
+            unit_id = str(get_entity_id(unit) or "").strip()
+            if unit_id:
+                return unit_id
+            return str(getattr(unit, "name", "") or "")
+
+        def _model_sort_key(model):
+            model_id = str(get_entity_id(model) or "").strip()
+            if model_id:
+                return model_id
+            return str(getattr(model, "name", "") or "")
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            enemy_roots = list(self._collect_enemy_unit_roots(p) or [])
+            if not enemy_roots:
+                continue
+
+            seen_roots: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "").strip()
+                if not root_id or root_id in seen_roots:
+                    continue
+                seen_roots.add(root_id)
+                root_is_alive_fn = getattr(root, "is_alive", None)
+                root_alive = bool(root_is_alive_fn()) if callable(root_is_alive_fn) else bool(root_is_alive_fn)
+                if not root_alive:
+                    continue
+                if not bool(getattr(root, "deployed", False)):
+                    continue
+                root_is_in_reserves_fn = getattr(root, "is_in_reserves", None)
+                if callable(root_is_in_reserves_fn) and bool(root_is_in_reserves_fn()):
+                    continue
+                if bool(getattr(root, "is_embarked", False)):
+                    continue
+
+                spec_fn = getattr(root, "model_start_fight_phase_select_enemy_melee_hit_penalty_specs", None)
+                if not callable(spec_fn):
+                    continue
+                models = (
+                    list(root.get_attached_unit_models() or [])
+                    if hasattr(root, "get_attached_unit_models")
+                    else list(getattr(root, "models", []) or [])
+                )
+                if not models:
+                    continue
+
+                for model in sorted(list(models or []), key=_model_sort_key):
+                    model_is_alive_attr = getattr(model, "is_alive", True)
+                    model_alive = bool(model_is_alive_attr() if callable(model_is_alive_attr) else model_is_alive_attr)
+                    if not model_alive:
+                        continue
+                    specs = list(spec_fn(model) or [])
+                    if not specs:
+                        continue
+                    source_unit = getattr(model, "parent_unit", None) or root
+                    for spec in list(specs or []):
+                        ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+                        once_per_turn = bool(spec.get("once_per_turn", False))
+                        if once_per_turn and ability_key and current_turn > 0:
+                            has_used_fn = getattr(model, "has_used_once_per_battle_round", None)
+                            if callable(has_used_fn) and bool(has_used_fn(ability_key, battle_round=int(current_turn))):
+                                continue
+
+                        candidates: list = []
+                        for enemy_root in list(enemy_roots or []):
+                            if enemy_root is None:
+                                continue
+                            if model_within_engagement_range_of_unit(model, enemy_root):
+                                candidates.append(enemy_root)
+                        if not candidates:
+                            continue
+                        queue_fn(
+                            player=p,
+                            source_unit=source_unit,
+                            model=model,
+                            candidates=list(candidates),
+                            spec=dict(spec),
+                            phase_name=pname,
+                        )
+
     def _on_phase_start_paragon_of_sanctity(self, player=None, phase=None, **_kwargs) -> None:
         """Warpbane Task Force: optional once-per-battle Hallowed Ground proxy selection."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -15411,6 +15520,7 @@ class GamePhaseHandlersMixin:
                         "fight_selected_enemy_melee_hit_penalty_active",
                         "fight_selected_enemy_melee_hit_penalty_expires_phase",
                         "fight_selected_enemy_melee_hit_penalty_sources",
+                        "fight_selected_enemy_melee_hit_penalty_value",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("plasmacyte_expires_phase", "") or "").strip().upper()
