@@ -3258,10 +3258,10 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_BATTLESHOCK_PENALTY_RE = re.compile(
-        r"in your shooting phase after this (?P<subject>model|unit) has shot select one enemy unit "
+        r"in your shooting phase after this (?P<subject>model|unit) has shot select one (?:enemy )?unit "
         r"(?:excluding monsters and vehicles )?hit by one or more of those attacks "
         r"(?:made with (?:a|an|the|its) [a-z0-9 ]+ )?"
-        r"that (?:enemy )?unit must take a battle shock test subtracting (?P<pen>\d+) from the result",
+        r"that (?:enemy )?unit must take a battle shock test subtracting (?P<pen>\d+) from (?:(?:the )?result|that test)",
         re.IGNORECASE,
     )
     _POST_SHOOT_BATTLESHOCK_ON_KILL_RE = re.compile(

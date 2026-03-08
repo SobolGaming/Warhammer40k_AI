@@ -11281,15 +11281,24 @@ def _post_shoot_battleshock_support(description: str) -> Optional[Tuple[str, str
     if not norm:
         return None
     pattern = (
-        r"in your shooting phase after this (?:model|unit) has shot select one enemy "
+        r"in your shooting phase after this (?:model|unit) has shot select one (?:enemy )?"
         r"(?:(?P<infantry>infantry) )?unit (?:that was )?hit by one or more of those attacks "
         r"that (?:enemy )?unit must take a battle shock test"
+        r"(?: subtracting (?P<pen>\d+) from (?:(?:the )?result|that test))?"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
+    try:
+        penalty = int(m.group("pen") or 0)
+    except (TypeError, ValueError):
+        penalty = 0
     if m.group("infantry"):
+        if penalty > 0:
+            return ("Supported", f"After shooting, pick a hit enemy INFANTRY unit to take a Battle-shock test at -{int(penalty)}.")
         return ("Supported", "After shooting, pick a hit enemy INFANTRY unit to take a Battle-shock test.")
+    if penalty > 0:
+        return ("Supported", f"After shooting, pick a hit enemy unit to take a Battle-shock test at -{int(penalty)}.")
     return ("Supported", "After shooting, pick a hit enemy unit to take a Battle-shock test.")
 
 
