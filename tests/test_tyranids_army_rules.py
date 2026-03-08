@@ -332,6 +332,59 @@ class TestTyranidsArmyRules(unittest.TestCase):
         self.assertNotIn(candidate_neurogaunts, sources)
         self.assertFalse(mgr.unit_in_synapse_range(candidate_neurogaunts))
 
+    def test_domination_of_hive_mind_extends_synapse_range_to_9(self):
+        from warhammer40k_ai.rules.synapse import SynapseManager
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+
+        def _mk_model(name: str, x: float, y: float) -> Model:
+            model = Model(
+                name=name,
+                movement=6,
+                toughness=4,
+                save=3,
+                wounds=2,
+                leadership=7,
+                objective_control=1,
+                model_base=Base(BaseType.CIRCULAR, 1.0),
+            )
+            model.model_base.set_position(float(x), float(y), 0.0)
+            return model
+
+        domination_desc = (
+            "While a friendly TYRANIDS unit is within 9\" of this model, "
+            "that unit is within your army's Synapse Range."
+        )
+
+        army = _ArmyStub(units=[], faction_id="TYR")
+        swarmlord = _UnitStub(
+            name="The Swarmlord",
+            models=[_mk_model("The Swarmlord", 0.0, 0.0)],
+            keywords=["SYNAPSE"],
+            faction_keywords=["TYRANIDS"],
+            army=army,
+            abilities=[SimpleNamespace(name="Domination of the Hive Mind (Aura)", description=domination_desc)],
+        )
+        near_unit = _UnitStub(
+            name="Near Unit",
+            models=[_mk_model("Near", 9.0, 0.0)],
+            keywords=["INFANTRY"],
+            faction_keywords=["TYRANIDS"],
+            army=army,
+        )
+        far_unit = _UnitStub(
+            name="Far Unit",
+            models=[_mk_model("Far", 12.0, 0.0)],
+            keywords=["INFANTRY"],
+            faction_keywords=["TYRANIDS"],
+            army=army,
+        )
+        army.units = [swarmlord, near_unit, far_unit]
+
+        mgr = SynapseManager(army)
+        self.assertTrue(mgr.unit_in_synapse_range(near_unit))
+        self.assertFalse(mgr.unit_in_synapse_range(far_unit))
+
     def test_shadow_in_the_warp_once_per_battle_and_modifier(self):
         from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType

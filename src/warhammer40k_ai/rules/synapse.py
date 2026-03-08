@@ -9,6 +9,9 @@ from ..utility.aura_utils import model_within_range_of_unit, unit_within_range_o
 _NEUROCYTES_RULE_RE = re.compile(
     r"while this unit is within synapse range of a friendly tyranids unit excluding neurogaunt units it has the synapse keyword"
 )
+_DOMINATION_OF_HIVE_MIND_RULE_RE = re.compile(
+    r"while a friendly tyranids unit is within (?P<range>\d+) of this model that unit is within your army s synapse range"
+)
 
 
 class SynapseManager:
@@ -184,6 +187,52 @@ class SynapseManager:
             if marker_owner and army_owner and marker_owner != army_owner:
                 continue
             return True
+        return False
+
+    def _unit_domination_of_hive_mind_range(self, unit) -> Optional[float]:
+        if unit is None:
+            return None
+        if not self._unit_is_tyranids(unit):
+            return None
+        if not self._unit_on_battlefield(unit):
+            return None
+        for _ability_name, ability_desc in self._iter_unit_ability_entries(unit):
+            desc_norm = self._normalize_rules_text(ability_desc)
+            if not desc_norm:
+                continue
+            m = _DOMINATION_OF_HIVE_MIND_RULE_RE.fullmatch(desc_norm)
+            if not m:
+                continue
+            try:
+                range_value = float(m.group("range") or 0)
+            except Exception:
+                range_value = 0.0
+            if range_value > 0.0:
+                return float(range_value)
+        return None
+
+    def _unit_within_domination_of_hive_mind_aura(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not self._unit_is_tyranids(unit):
+            return False
+        if not self._unit_on_battlefield(unit):
+            return False
+        for source in list(getattr(self.army, "units", []) or []):
+            if source is None:
+                continue
+            if not self._unit_is_tyranids(source):
+                continue
+            if not self._unit_on_battlefield(source):
+                continue
+            aura_range = self._unit_domination_of_hive_mind_range(source)
+            if aura_range is None:
+                continue
+            try:
+                if unit_within_range_of_unit(source, unit, float(aura_range), use_attached_aggregate=True):
+                    return True
+            except Exception:
+                continue
         return False
 
     @staticmethod
@@ -403,6 +452,8 @@ class SynapseManager:
         if not self._unit_on_battlefield(unit):
             return False
         if self._unit_has_neuroloids_synapse_marker(unit):
+            return True
+        if self._unit_within_domination_of_hive_mind_aura(unit):
             return True
         if self.unit_within_synapse_sources(unit, game=game, game_map=game_map):
             return True

@@ -5702,6 +5702,7 @@ def _classify_ability_base(
         description
     )
     synapse_keyword_grant_support = _within_synapse_range_grants_synapse_keyword_support(description)
+    friendly_count_as_synapse_support = _friendly_tyranids_within_range_count_as_synapse_support(description)
     post_deployment_redeploy_support = _post_deployment_redeploy_support(description)
     sticky_support = _sticky_objective_support(description)
     command_phase_unit_return_support = _command_phase_unit_return_support(description)
@@ -6078,6 +6079,8 @@ def _classify_ability_base(
         return deep_strike_setup_mortal_battleshock_support
     if synapse_keyword_grant_support:
         return synapse_keyword_grant_support
+    if friendly_count_as_synapse_support:
+        return friendly_count_as_synapse_support
     if post_deployment_redeploy_support:
         return post_deployment_redeploy_support
     if sticky_support:
@@ -10287,6 +10290,31 @@ def _within_synapse_range_grants_synapse_keyword_support(description: str) -> Op
     return (
         "Supported",
         "While this unit is within Synapse Range of a friendly TYRANIDS non-NEUROGAUNT unit, it gains the SYNAPSE keyword and is treated as a Synapse source.",
+    )
+
+
+def _friendly_tyranids_within_range_count_as_synapse_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while a friendly tyranids unit is within (?P<range>\d+) of this model "
+        r"that unit is within your army(?: s|s) synapse range"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        range_value = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        range_value = 0
+    if range_value <= 0:
+        return None
+    return (
+        "Supported",
+        f"Aura: friendly TYRANIDS units within {int(range_value)}\" of this model count as being within your army's Synapse Range.",
     )
 
 
