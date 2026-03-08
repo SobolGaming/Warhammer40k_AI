@@ -4115,6 +4115,7 @@ class GameReactiveDecisionsMixin:
                 "brazen_fury",
                 "horde_move",
                 "unhinged_vengeance",
+                "blistering_assault",
                 "librarius_prescience",
                 "gleaming_pinions",
                 "martial_philosopher",
@@ -4355,6 +4356,25 @@ class GameReactiveDecisionsMixin:
                     max_distance=max_distance,
                     kind=kind,
                     movement_type=movement_type or "unhinged_vengeance",
+                    source=source,
+                    allow_engagement_range=True,
+                )
+                return
+            if kind == "blistering_assault":
+                if not unit.can_blistering_assault(game=self, game_map=getattr(self, "map", None)):
+                    return
+                max_distance = int(self.roll_blistering_assault_distance(unit) or 0)
+                if max_distance <= 0:
+                    return
+                attacker_unit_id = str(ctx.get("reactive_move_attacker_unit_id") or "")
+                attacker_unit = self._resolve_unit_by_id(attacker_unit_id)
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    attacker_unit=attacker_unit,
+                    max_distance=max_distance,
+                    kind=kind,
+                    movement_type=movement_type or "blistering_assault",
                     source=source,
                     allow_engagement_range=True,
                 )

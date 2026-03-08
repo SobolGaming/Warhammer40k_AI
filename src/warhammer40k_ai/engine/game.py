@@ -244,6 +244,8 @@ class Game(
         self._horde_move_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         # Leagues of Votann: Unhinged Vengeance snapshots (attacker -> {target: tracked_model_wounds})
         self._unhinged_vengeance_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
+        # Tyranids: Blistering Assault snapshots (attacker -> {target: total_alive_wounds_before_attacks})
+        self._blistering_assault_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         # CSM: Guns Blazing trigger snapshots (attacker -> [reactive shooters])
         self._guns_blazing_shooting_targets: Dict['Unit', List['Unit']] = {}
         # World Eaters: Frenzy (Helbrute) target snapshots (attacker -> [targets])
@@ -9089,6 +9091,28 @@ class Game(
                 count += 1
         return int(count)
 
+    def _alive_model_wounds_total(self, unit) -> int:
+        if unit is None:
+            return 0
+        try:
+            models = list(unit.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(unit, "models", []) or [])
+        total = 0
+        for model in list(models or []):
+            if model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not alive:
+                continue
+            try:
+                wounds = int(getattr(model, "wounds", 0) or 0)
+            except Exception:
+                wounds = 0
+            total += max(0, int(wounds))
+        return int(total)
+
     def _count_enemy_models_in_engagement_range(self, unit, model) -> int:
         if unit is None or model is None:
             return 0
@@ -11452,6 +11476,19 @@ class Game(
         player = getattr(unit.get_parent_army(), "player", None)
         if player is not None:
             append_dice(player, f"Unhinged Vengeance roll: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
+        return int(max_distance)
+
+    def roll_blistering_assault_distance(self, unit: 'Unit') -> int:
+        """Roll Blistering Assault distance (D6+2)."""
+        if unit is None:
+            return 0
+        from ..utility.dice import get_roll
+        base_roll = int(get_roll("D6") or 0)
+        max_distance = int(base_roll + 2)
+        from ..utility.event_bus import append_dice
+        player = getattr(unit.get_parent_army(), "player", None)
+        if player is not None:
+            append_dice(player, f"Blistering Assault roll: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
         return int(max_distance)
 
     def roll_brazen_fury_distance(self, unit: 'Unit') -> int:

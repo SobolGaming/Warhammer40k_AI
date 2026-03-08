@@ -12836,6 +12836,104 @@ class GameShootingFightHandlersMixin:
                 attacker_unit=attacker_unit,
             )
 
+    def _on_shooting_targets_selected_blistering_assault(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        attacker_army = attacker_root.get_parent_army() if attacker_root is not None else None
+        snapshot = dict(getattr(self, "_blistering_assault_shooting_snapshot", {}).get(attacking_unit, {}) or {})
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                root = target.get_attached_unit_root()
+            except Exception:
+                root = target
+            if root is None:
+                continue
+            if attacker_army is not None and root.get_parent_army() is attacker_army:
+                continue
+            try:
+                if not root.has_blistering_assault():
+                    continue
+            except Exception:
+                continue
+            before = int(self._alive_model_wounds_total(root) or 0)
+            if before <= 0:
+                continue
+            snapshot[root] = int(before)
+        if snapshot:
+            if not hasattr(self, "_blistering_assault_shooting_snapshot") or not isinstance(
+                getattr(self, "_blistering_assault_shooting_snapshot", None), dict
+            ):
+                self._blistering_assault_shooting_snapshot = {}
+            self._blistering_assault_shooting_snapshot[attacking_unit] = snapshot
+
+    def _on_unit_shooting_resolved_blistering_assault(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        snapshots = getattr(self, "_blistering_assault_shooting_snapshot", None)
+        if not isinstance(snapshots, dict):
+            return
+        snapshot = snapshots.pop(attacker_unit, {})
+        if not snapshot:
+            return
+        if not self.is_shooting_phase():
+            return
+        current_player = self.get_current_player()
+        for target, before in snapshot.items():
+            if target is None:
+                continue
+            try:
+                target_player = target.get_parent_army().player
+            except Exception:
+                target_player = None
+            if target_player is None or target_player is current_player:
+                continue
+            after = int(self._alive_model_wounds_total(target) or 0)
+            if after >= int(before or 0):
+                continue
+            can_fn = getattr(target, "can_blistering_assault", None)
+            if callable(can_fn):
+                if not can_fn(game=self, game_map=getattr(self, "map", None)):
+                    continue
+            player = target_player
+            is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+            es = getattr(self, "event_system", None)
+            subs = getattr(es, "subscribers", None) if es is not None else None
+            has_sub = bool(isinstance(subs, dict) and subs.get("blistering_assault_prompt"))
+            if is_human and es is not None:
+                es.publish(
+                    "blistering_assault_prompt",
+                    player=player,
+                    unit=target,
+                    attacker_unit=attacker_unit,
+                    game=self,
+                )
+                if has_sub:
+                    continue
+            msg = (
+                "Blistering Assault: Move D6+2\" as close as possible to the closest enemy unit.\n"
+                "This unit can end this move within Engagement Range of that enemy unit."
+            )
+            self._queue_reactive_move_confirmation(
+                player=player,
+                unit=target,
+                kind="blistering_assault",
+                movement_type="blistering_assault",
+                source="Blistering Assault",
+                message=msg,
+                attacker_unit=attacker_unit,
+                allow_engagement_range=True,
+            )
+
     def _on_shooting_targets_selected_frenzy(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return

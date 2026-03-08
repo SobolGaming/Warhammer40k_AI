@@ -1344,6 +1344,7 @@ class IndividualModelMovementDialog(BaseDialog):
             'blood_surge': MovementType.BLOOD_SURGE,
             'brazen_fury': MovementType.BRAZEN_FURY,
             'horde_move': MovementType.HORDE_MOVE,
+            'blistering_assault': MovementType.BLISTERING_ASSAULT,
             'scout': MovementType.SCOUT,
             'pile_in': MovementType.PILE_IN,
             'consolidate': MovementType.CONSOLIDATE,

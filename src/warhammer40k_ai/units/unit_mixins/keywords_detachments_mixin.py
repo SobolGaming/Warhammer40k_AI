@@ -2284,6 +2284,12 @@ class KeywordsDetachmentsMixin:
             patterns=["unhinged vengeance"],
         )
 
+    def has_blistering_assault(self) -> bool:
+        return self._attached_unit_has_ability_patterns(
+            cache_key="blistering_assault",
+            patterns=["blistering assault"],
+        )
+
     def get_resource_transmutation_model(self):
         models = list(self._iter_attached_models_with_ability_patterns(["resource transmutation"]) or [])
         if not models:
@@ -9857,6 +9863,9 @@ class KeywordsDetachmentsMixin:
     def _unhinged_vengeance_phase_key(self, game=None) -> str:
         return self._blood_surge_phase_key(game)
 
+    def _blistering_assault_phase_key(self, game=None) -> str:
+        return self._blood_surge_phase_key(game)
+
     def _guns_blazing_turn_key(self, game=None) -> str:
         if game is None:
             try:
@@ -9930,6 +9939,20 @@ class KeywordsDetachmentsMixin:
         if not isinstance(sr, dict):
             sr = {}
         sr["unhinged_vengeance_used_phase_key"] = self._unhinged_vengeance_phase_key(game)
+        self.special_rules = sr
+
+    def blistering_assault_used_this_phase(self, game=None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._blistering_assault_phase_key(game)
+        return str(sr.get("blistering_assault_used_phase_key", "")) == key
+
+    def mark_blistering_assault_used(self, game=None) -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["blistering_assault_used_phase_key"] = self._blistering_assault_phase_key(game)
         self.special_rules = sr
 
     def geomantic_hunters_uses(self) -> int:
@@ -10045,6 +10068,25 @@ class KeywordsDetachmentsMixin:
                         return False
             except Exception:
                 pass
+        return True
+
+    def can_blistering_assault(self, game=None, game_map=None) -> bool:
+        if not self.has_blistering_assault():
+            return False
+        if not self.is_alive() or not getattr(self, "deployed", False):
+            return False
+        if self.blistering_assault_used_this_phase(game):
+            return False
+        try:
+            if self.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(self, "is_embarked", False)) or bool(getattr(self, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
         return True
 
     def can_horde_move(self, game=None, game_map=None) -> bool:

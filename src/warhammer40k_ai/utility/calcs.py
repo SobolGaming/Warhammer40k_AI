@@ -749,6 +749,7 @@ class MovementType(Enum):
     BLOOD_SURGE = "blood_surge"
     BRAZEN_FURY = "brazen_fury"
     HORDE_MOVE = "horde_move"
+    BLISTERING_ASSAULT = "blistering_assault"
     CAREEN = "careen"
     PILE_IN = "pile_in"
     CONSOLIDATE = "consolidate"
@@ -839,7 +840,12 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
 
     # Get validation rules for this movement type
     validation_rules = get_validation_rules(movement_type, target_unit, moving_unit=moving_unit, target_units=target_units)
-    if movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY, MovementType.HORDE_MOVE):
+    if movement_type in (
+        MovementType.BLOOD_SURGE,
+        MovementType.BRAZEN_FURY,
+        MovementType.HORDE_MOVE,
+        MovementType.BLISTERING_ASSAULT,
+    ):
         try:
             validation_rules["blood_surge_max_distance"] = float(max_distance)
         except Exception:
@@ -944,6 +950,7 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
         MovementType.BLOOD_SURGE,
         MovementType.BRAZEN_FURY,
         MovementType.HORDE_MOVE,
+        MovementType.BLISTERING_ASSAULT,
     ]:
         # Calculate the actual maximum possible movement distance for this movement type
         actual_max_movement = max_distance
@@ -1369,11 +1376,18 @@ def get_validation_rules(
             base_rules['cannot_move_within_engagement_range'] = True
             base_rules['cannot_end_in_engagement_range'] = True
 
-    elif movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY, MovementType.HORDE_MOVE):
+    elif movement_type in (
+        MovementType.BLOOD_SURGE,
+        MovementType.BRAZEN_FURY,
+        MovementType.HORDE_MOVE,
+        MovementType.BLISTERING_ASSAULT,
+    ):
         if movement_type == MovementType.BLOOD_SURGE:
             reason = "Blood Surge"
         elif movement_type == MovementType.BRAZEN_FURY:
             reason = "Brazen Fury"
+        elif movement_type == MovementType.BLISTERING_ASSAULT:
+            reason = "Blistering Assault"
         else:
             reason = "Horde Move"
             has_righteous_zeal = False
@@ -1388,11 +1402,12 @@ def get_validation_rules(
         base_rules.update({
             'allow_engagement_range_movement': True,
             'must_end_as_close_as_possible_to_closest_enemy_unit': True,
-            'closest_enemy_unit_exclude_keywords': {"AIRCRAFT"},
             'closest_enemy_unit_reason': reason,
             # Pathfinding discretization can drift a touch; allow a tiny epsilon.
             'distance_tolerance': 0.05,
         })
+        if movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY, MovementType.HORDE_MOVE):
+            base_rules['closest_enemy_unit_exclude_keywords'] = {"AIRCRAFT"}
         if movement_type == MovementType.HORDE_MOVE and moving_unit is not None:
             sm_mgr = None
             try:

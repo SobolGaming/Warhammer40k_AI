@@ -5664,6 +5664,7 @@ def _classify_ability_base(
     end_of_fight_embark_support = _end_of_fight_embark_support(description)
     enemy_move_reactive_d6_support = _enemy_move_reactive_d6_support(description)
     horde_move_support = _horde_move_support(description)
+    blistering_assault_support = _blistering_assault_support(description)
     setup_reactive_shoot_charge_support = _setup_reactive_shoot_or_charge_support(description)
     post_deployment_redeploy_support = _post_deployment_redeploy_support(description)
     sticky_support = _sticky_objective_support(description)
@@ -6016,6 +6017,8 @@ def _classify_ability_base(
         return enemy_move_reactive_d6_support
     if horde_move_support:
         return horde_move_support
+    if blistering_assault_support:
+        return blistering_assault_support
     if setup_reactive_shoot_charge_support:
         return setup_reactive_shoot_charge_support
     if post_deployment_redeploy_support:
@@ -9983,6 +9986,34 @@ def _horde_move_support(description: str) -> Optional[Tuple[str, str]]:
         "(excluding AIRCRAFT) and can enter Engagement Range; blocked while Battle-shocked."
     )
     return ("Supported", note)
+
+
+def _blistering_assault_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm or "blistering assault" not in norm:
+        return None
+    if "enemy unit is selected to shoot" not in norm:
+        return None
+    if "after that unit has shot" not in norm:
+        return None
+    if "lost one or more wounds" not in norm:
+        return None
+    if "roll one d6" not in norm and "roll a d6" not in norm:
+        return None
+    if "adding 2" not in norm:
+        return None
+    if "as close as possible to the closest enemy unit" not in norm:
+        return None
+    if "within engagement range of that enemy unit" not in norm:
+        return None
+    if "one blistering assault move per phase" not in norm:
+        return None
+    return (
+        "Supported",
+        "Opponent Shooting phase reaction: if this unit loses one or more wounds after enemy shooting, optional D6+2 reactive move toward the closest enemy unit (can end in Engagement Range), once per phase.",
+    )
 
 
 def _setup_reactive_shoot_or_charge_support(description: str) -> Optional[Tuple[str, str]]:
