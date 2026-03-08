@@ -5639,6 +5639,7 @@ def _classify_ability_base(
     aura_oc_support = _aura_objective_control_support(description)
     aura_benefit_of_cover_support = _aura_benefit_of_cover_support(description)
     enemy_aura_oc_penalty_support = _enemy_aura_objective_control_penalty_support(description)
+    enemy_engagement_oc_halve_support = _enemy_engagement_objective_control_halve_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
     aura_hit_support = _aura_hit_bonus_support(description)
     enemy_aura_attack_hit_wound_penalty_support = _enemy_aura_attack_hit_wound_penalty_support(description)
@@ -5956,6 +5957,8 @@ def _classify_ability_base(
         return aura_benefit_of_cover_support
     if enemy_aura_oc_penalty_support:
         return enemy_aura_oc_penalty_support
+    if enemy_engagement_oc_halve_support:
+        return enemy_engagement_oc_halve_support
     if aura_adv_charge_support:
         return aura_adv_charge_support
     if aura_hit_support:
@@ -7163,6 +7166,24 @@ def _enemy_aura_objective_control_penalty_support(description: str) -> Optional[
             f"While this unit is within {self_rng}\" of friendly {self_kw} models, its models' Objective Control is set to {self_oc}."
         )
     return ("Supported", " ".join(bits))
+
+
+def _enemy_engagement_objective_control_halve_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while an enemy unit is within engagement range of "
+        r"(?P<src>this model|this unit|the bearer|one or more units with this ability) "
+        r"halve the objective control characteristic of models in that enemy unit",
+        norm,
+    )
+    if not m:
+        return None
+    src = str(m.group("src") or "this unit").strip()
+    return ("Supported", f"Enemy units within Engagement Range of {src} have their Objective Control halved.")
 
 
 def _aura_advance_charge_roll_support(description: str) -> Optional[Tuple[str, str]]:
