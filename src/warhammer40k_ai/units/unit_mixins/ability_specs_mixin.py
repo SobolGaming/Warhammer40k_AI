@@ -3753,6 +3753,68 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_post_shoot_keyword_hit_reroll_ones_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: after this unit has shot, select a hit enemy unit; friendly keyword models re-roll Hit rolls of 1 vs that unit.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - keyword_phrase: str
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_post_shoot_keyword_hit_reroll_ones_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._POST_SHOOT_KEYWORD_HIT_REROLL_ONES_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                keyword_raw = str(m.group("keyword") or "").strip()
+                keyword_raw = re.sub(r"^(?:a|an)\s+", "", keyword_raw)
+                keyword_phrase = unit._normalize_keyword_phrase(keyword_raw) if keyword_raw else ""
+                if not keyword_phrase:
+                    keyword_phrase = "friendly"
+                source = str(name or "Post-shoot Hit reroll").strip() or "Post-shoot Hit reroll"
+                key = (source.lower(), keyword_phrase.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "keyword_phrase": keyword_phrase,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_fight_phase_engagement_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: at the start of the Fight phase, enemies in engagement range test Battle-shock.

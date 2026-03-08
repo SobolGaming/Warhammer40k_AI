@@ -5706,6 +5706,7 @@ def _classify_ability_base(
     post_shoot_no_cover_support = _post_shoot_no_cover_support(description)
     post_shoot_snare_support = _post_shoot_snare_support(description)
     post_shoot_leadership_debuff_support = _post_shoot_leadership_debuff_support(description)
+    post_shoot_keyword_hit_reroll_ones_support = _post_shoot_keyword_hit_reroll_ones_support(description)
     aura_battleshock_leadership_penalty_support = _aura_battleshock_leadership_penalty_support(description)
     failed_battleshock_aura_mortal_heal_support = _failed_battleshock_aura_mortal_heal_support(description)
     fight_phase_select_engagement_battleshock_support = _fight_phase_select_engagement_battleshock_support(description)
@@ -6099,6 +6100,8 @@ def _classify_ability_base(
         return post_shoot_snare_support
     if post_shoot_leadership_debuff_support:
         return post_shoot_leadership_debuff_support
+    if post_shoot_keyword_hit_reroll_ones_support:
+        return post_shoot_keyword_hit_reroll_ones_support
     if aura_battleshock_leadership_penalty_support:
         return aura_battleshock_leadership_penalty_support
     if failed_battleshock_aura_mortal_heal_support:
@@ -11359,6 +11362,29 @@ def _post_shoot_leadership_debuff_support(description: str) -> Optional[Tuple[st
     return (
         "Supported",
         "After shooting, pick a hit enemy unit; until your next Shooting phase, it suffers -1 to Battle-shock/Leadership tests (stacking with repeated applications).",
+    )
+
+
+def _post_shoot_keyword_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit hit by one or more of those attacks "
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) model makes an attack that targets that unit "
+        r"(?:you can )?re ?roll a hit roll of 1"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper()
+    if not keyword:
+        keyword = "FRIENDLY"
+    return (
+        "Supported",
+        f"After shooting: select a hit enemy unit; friendly {keyword} models re-roll Hit rolls of 1 when attacking that unit until phase end.",
     )
 
 

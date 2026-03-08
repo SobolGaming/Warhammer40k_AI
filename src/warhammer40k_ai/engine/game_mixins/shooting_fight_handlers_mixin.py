@@ -3494,6 +3494,78 @@ class GameShootingFightHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_unit_shooting_resolved_post_shoot_keyword_hit_reroll_ones(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot keyword hit reroll requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        specs = attacker_unit.unit_post_shoot_keyword_hit_reroll_ones_specs() or []
+        if not specs:
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for spec in specs:
+            candidates: list[Any] = []
+            for target_unit, hits in (hits_by_target or {}).items():
+                if target_unit is None:
+                    continue
+                if int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(target_unit):
+                    continue
+                candidates.append(target_unit)
+            if not candidates:
+                continue
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            ability_name = str(spec.get("source", "") or "Post-shoot Hit reroll").strip() or "Post-shoot Hit reroll"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a unit.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "ability": "post_shoot_keyword_hit_reroll_ones",
+                    "ability_name": ability_name,
+                    "keyword_phrase": str(spec.get("keyword_phrase", "") or "").strip(),
+                },
+            )
+            self.request_decision(request)
+
     def _on_unit_shooting_resolved_tau_advanced_scouting(
         self,
         attacker_unit=None,

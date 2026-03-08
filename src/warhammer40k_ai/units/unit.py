@@ -3745,6 +3745,12 @@ class Unit(
         r"you can re ?roll the wound roll",
         re.IGNORECASE,
     )
+    _POST_SHOOT_KEYWORD_HIT_REROLL_ONES_RE = re.compile(
+        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit hit by one or more of those attacks "
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+) model makes an attack that targets that unit "
+        r"(?:you can )?re ?roll a hit roll of 1",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_KEYWORD_HIT_BONUS_RE = re.compile(
         r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks "
         r"until the end of the phase each time a (?:(?:friendly )?(?P<keyword>[a-z0-9 ]+) model(?: from your army)?|model from your army) makes an attack that targets that unit "

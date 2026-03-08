@@ -15639,6 +15639,17 @@ class GamePhaseHandlersMixin:
                         "post_shoot_keyword_hit_bonus_expires_phase",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("post_shoot_keyword_hit_reroll_ones_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "post_shoot_keyword_hit_reroll_ones_active",
+                        "post_shoot_keyword_hit_reroll_ones_owner",
+                        "post_shoot_keyword_hit_reroll_ones_turn",
+                        "post_shoot_keyword_hit_reroll_ones_source",
+                        "post_shoot_keyword_hit_reroll_ones_phrase",
+                        "post_shoot_keyword_hit_reroll_ones_expires_phase",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("start_shooting_phase_visible_hit_bonus_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (

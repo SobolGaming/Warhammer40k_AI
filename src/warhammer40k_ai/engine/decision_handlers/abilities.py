@@ -19195,6 +19195,39 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {tname} marked for Wound re-rolls.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "post_shoot_keyword_hit_reroll_ones":
+        if chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Post-shoot Hit reroll").strip() or "Post-shoot Hit reroll"
+            phrase = str(ctx.get("keyword_phrase", "") or "").strip()
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["post_shoot_keyword_hit_reroll_ones_active"] = True
+            sr["post_shoot_keyword_hit_reroll_ones_owner"] = owner_id
+            sr["post_shoot_keyword_hit_reroll_ones_turn"] = int(turn or 0)
+            sr["post_shoot_keyword_hit_reroll_ones_source"] = ability_name
+            sr["post_shoot_keyword_hit_reroll_ones_phrase"] = phrase
+            sr["post_shoot_keyword_hit_reroll_ones_expires_phase"] = "SHOOTING_PHASE"
+            target_root.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {tname} marked for Hit re-rolls of 1.")
+            except Exception:
+                pass
     if str(ctx.get("ability", "") or "") == "post_shoot_keyword_strength_bonus":
         if chosen is not None:
             try:
