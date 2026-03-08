@@ -10893,6 +10893,38 @@ class GameShootingFightHandlersMixin:
                 return True
         return False
 
+    def _parasitic_infection_candidate_violates_enemy_exclusion_range(
+        self,
+        candidate_base,
+        enemy_models: list,
+        *,
+        exclusion_range_horizontal: float,
+    ) -> bool:
+        if candidate_base is None:
+            return True
+        try:
+            threshold = float(exclusion_range_horizontal)
+        except (TypeError, ValueError):
+            threshold = 0.0
+        if threshold <= 0:
+            return False
+        if not enemy_models:
+            return False
+
+        from ...utility.aura_utils import horizontal_distance_between_bases_2d
+
+        for enemy_model in list(enemy_models or []):
+            enemy_base = getattr(enemy_model, "model_base", None)
+            if enemy_base is None:
+                continue
+            try:
+                horizontal = float(horizontal_distance_between_bases_2d(candidate_base, enemy_base))
+            except Exception:
+                continue
+            if horizontal <= float(threshold) + 1e-6:
+                return True
+        return False
+
     def _parasitic_infection_candidate_valid(
         self,
         *,
@@ -10907,6 +10939,7 @@ class GameShootingFightHandlersMixin:
         setup_range: float,
         disallowed_enemy_models: list,
         disallow_other_enemy_engagement: bool,
+        enemy_exclusion_range_horizontal: float,
         game_map,
     ) -> bool:
         if spawn_unit is None or model is None or source_model is None or game_map is None:
@@ -10938,6 +10971,12 @@ class GameShootingFightHandlersMixin:
         if disallow_other_enemy_engagement and self._parasitic_infection_candidate_in_disallowed_engagement(
             candidate_base,
             disallowed_enemy_models,
+        ):
+            return False
+        if self._parasitic_infection_candidate_violates_enemy_exclusion_range(
+            candidate_base,
+            disallowed_enemy_models,
+            exclusion_range_horizontal=float(enemy_exclusion_range_horizontal or 0.0),
         ):
             return False
         return True
@@ -10999,6 +11038,10 @@ class GameShootingFightHandlersMixin:
 
         allow_target_engagement = bool(trigger.get("allow_target_engagement", True))
         disallow_other = bool(trigger.get("disallow_other_enemy_engagement", True))
+        try:
+            enemy_exclusion_range_horizontal = float(trigger.get("enemy_exclusion_range_horizontal", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            enemy_exclusion_range_horizontal = 0.0
         allowed_target_unit_id = str(trigger.get("target_unit_id", "") or "") if allow_target_engagement else ""
         disallowed_enemy_models = self._collect_parasitic_infection_disallowed_enemy_models(
             source_unit=source_unit,
@@ -11038,6 +11081,7 @@ class GameShootingFightHandlersMixin:
             setup_range=float(setup_range),
             disallowed_enemy_models=list(disallowed_enemy_models),
             disallow_other_enemy_engagement=bool(disallow_other),
+            enemy_exclusion_range_horizontal=float(enemy_exclusion_range_horizontal),
             game_map=game_map,
         ):
             return (
@@ -11092,6 +11136,7 @@ class GameShootingFightHandlersMixin:
                         setup_range=float(setup_range),
                         disallowed_enemy_models=list(disallowed_enemy_models),
                         disallow_other_enemy_engagement=bool(disallow_other),
+                        enemy_exclusion_range_horizontal=float(enemy_exclusion_range_horizontal),
                         game_map=game_map,
                     ):
                         found_position = (x, y, float(z), 0.0)
@@ -11157,6 +11202,12 @@ class GameShootingFightHandlersMixin:
         models = list(getattr(spawned, "models", []) or [])
         if len(models) < len(placements):
             return None
+        models = list(models[: len(placements)])
+        spawned.models = list(models)
+        try:
+            spawned.starting_model_count = int(len(models))
+        except Exception:
+            pass
         for model, position in zip(models, placements):
             model.set_location(
                 float(position[0]),
@@ -11349,6 +11400,161 @@ class GameShootingFightHandlersMixin:
             source_root,
             phase_name=str(ctx.get("phase", "") or "Shooting phase"),
         )
+
+    def _seed_spore_mines_selection_request_exists(self, *, owner_id: str, turn: int) -> bool:
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "seed_spore_mines_select_source":
+                continue
+            if str(ctx.get("owner_id", "") or "") != str(owner_id or ""):
+                continue
+            try:
+                req_turn = int(ctx.get("turn", 0) or 0)
+            except (TypeError, ValueError):
+                req_turn = 0
+            if int(req_turn or 0) != int(turn or 0):
+                continue
+            return True
+        return False
+
+    def _seed_spore_mines_used_this_turn(self, *, army, owner_id: str, turn: int) -> bool:
+        if army is None:
+            return False
+        for root in list(self._iter_unique_army_roots(army) or []):
+            if root is None:
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("seed_spore_mines_used_this_turn")):
+                continue
+            if str(sr.get("seed_spore_mines_turn_owner", "") or "") != str(owner_id or ""):
+                continue
+            try:
+                used_turn = int(sr.get("seed_spore_mines_turn", 0) or 0)
+            except (TypeError, ValueError):
+                used_turn = 0
+            if int(used_turn or 0) == int(turn or 0):
+                return True
+        return False
+
+    def _on_phase_start_seed_spore_mines(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None:
+            return
+        current_player = self.get_current_player()
+        if current_player is not player:
+            return
+        army = player.get_army()
+        if army is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        if turn <= 0:
+            return
+
+        if self._seed_spore_mines_used_this_turn(army=army, owner_id=owner_id, turn=int(turn)):
+            return
+        if self._seed_spore_mines_selection_request_exists(owner_id=owner_id, turn=int(turn)):
+            return
+
+        candidates: list[tuple[Any, dict]] = []
+        seen: set[str] = set()
+        for root in list(self._iter_unique_army_roots(army) or []):
+            if root is None:
+                continue
+            unit_id = str(get_entity_id(root) or "")
+            if not unit_id or unit_id in seen:
+                continue
+            seen.add(unit_id)
+            if not self._unit_is_active_for_reactive_trigger(root):
+                continue
+            try:
+                if bool(getattr(root.round_state, "shot_this_round", False)):
+                    continue
+            except Exception:
+                pass
+            ineligible_fn = getattr(root, "is_shooting_phase_ineligible", None)
+            if callable(ineligible_fn):
+                try:
+                    if bool(ineligible_fn(self)):
+                        continue
+                except Exception:
+                    pass
+            specs_fn = getattr(root, "unit_seed_spore_mines_specs", None)
+            specs = list(specs_fn() or []) if callable(specs_fn) else []
+            if not specs:
+                continue
+            spec = dict(specs[0])
+            candidates.append((root, spec))
+
+        if not candidates:
+            return
+        candidates = sorted(
+            candidates,
+            key=lambda item: str(get_entity_id(item[0]) or ""),
+        )
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        spec_by_unit: dict[str, dict] = {}
+        for root, spec in list(candidates):
+            unit_id = str(get_entity_id(root) or "")
+            if not unit_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(root, "name", "Unit") or "Unit"),
+                    payload={"unit_id": unit_id},
+                )
+            )
+            spec_by_unit[unit_id] = {
+                "source": str(spec.get("source", "") or "Seed Spore Mines"),
+                "spawn_unit_name": str(spec.get("spawn_unit_name", "") or "Spore Mines"),
+                "setup_range": int(spec.get("setup_range", 48) or 48),
+                "source_scope": str(spec.get("source_scope", "unit") or "unit").strip().lower() or "unit",
+                "enemy_exclusion_range_horizontal": int(spec.get("enemy_exclusion_range_horizontal", 9) or 9),
+                "count_mode": str(spec.get("count_mode", "fixed") or "fixed").strip().lower() or "fixed",
+                "spawn_model_count": int(spec.get("spawn_model_count", 1) or 1),
+                "spawn_model_count_roll": str(spec.get("spawn_model_count_roll", "") or "").strip().upper(),
+                "count_per_source_model": int(spec.get("count_per_source_model", 1) or 1),
+                "allow_target_engagement": bool(spec.get("allow_target_engagement", False)),
+                "disallow_other_enemy_engagement": bool(spec.get("disallow_other_enemy_engagement", True)),
+            }
+
+        if len(options) <= 1:
+            return
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Seed Spore Mines: select one unit with this ability to seed mines now (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "seed_spore_mines_select_source",
+                "ability_name": "Seed Spore Mines",
+                "phase": "Shooting phase",
+                "owner_id": str(owner_id),
+                "turn": int(turn),
+                "spec_by_unit": dict(spec_by_unit),
+            },
+        )
+        self.request_decision(request)
 
     def _on_model_destroyed_parasitic_infection(
         self,

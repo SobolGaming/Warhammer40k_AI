@@ -189,6 +189,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_malice_made_manifest"),
                 ("phase_start", "_on_phase_start_to_slay_the_warmaster"),
                 ("phase_start", "_on_phase_start_dark_ritual"),
+                ("phase_start", "_on_phase_start_seed_spore_mines"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_tracking"),
                 ("charge_declared", "_on_charge_declared_tracking"),
                 ("charge_declared", "_on_charge_declared_shock_and_awe"),

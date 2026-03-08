@@ -5694,6 +5694,7 @@ def _classify_ability_base(
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
     post_shoot_afflicted_support = _post_shoot_afflicted_support(description)
     post_shoot_shocked_support = _post_shoot_shocked_support(description)
+    seed_spore_mines_support = _seed_spore_mines_support(description)
     post_shoot_shoot_again_support = _post_shoot_shoot_again_support(description)
     post_shoot_disembark_wound_reroll_support = _post_shoot_disembark_wound_reroll_support(description)
     post_shoot_ap_bonus_support = _post_shoot_ap_bonus_support(description)
@@ -6072,6 +6073,8 @@ def _classify_ability_base(
         return post_shoot_afflicted_support
     if post_shoot_shocked_support:
         return post_shoot_shocked_support
+    if seed_spore_mines_support:
+        return seed_spore_mines_support
     if post_shoot_shoot_again_support:
         return post_shoot_shoot_again_support
     if post_shoot_disembark_wound_reroll_support:
@@ -11166,6 +11169,56 @@ def _post_shoot_shocked_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         f"After shooting: select a hit enemy unit; it is {state} until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls.",
+    )
+
+
+def _seed_spore_mines_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per turn in your shooting phase when selected to shoot one unit with this ability can use it instead of making any attacks with its ranged weapons "
+        r"if it does you can add one new (?P<spawn>[a-z0-9 ]+?) unit(?: containing (?P<count_expr>d\d+|\d+) models?)? to your army "
+        r"and set it up anywhere on the battlefield that is wholly within (?P<setup>\d+) of this (?P<scope>model|unit) "
+        r"and more than (?P<enemy>\d+) horizontally away from all enemy units"
+        r"(?: that [a-z0-9 ]+)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+
+    spawn_name = " ".join(str(m.group("spawn") or "").strip().split())
+    if not spawn_name:
+        return None
+    try:
+        setup_range = int(m.group("setup") or 0)
+    except (TypeError, ValueError):
+        setup_range = 0
+    try:
+        enemy_range = int(m.group("enemy") or 0)
+    except (TypeError, ValueError):
+        enemy_range = 0
+    if setup_range <= 0 or enemy_range <= 0:
+        return None
+    scope = str(m.group("scope") or "unit").strip().lower() or "unit"
+
+    count_expr = str(m.group("count_expr") or "").strip().upper()
+    if "contains 1 model for each model in this unit" in norm:
+        count_note = "with 1 spawned model per source-unit model"
+    elif count_expr:
+        count_note = f"containing {count_expr} model(s)"
+    else:
+        count_note = "with parsed model count"
+
+    return (
+        "Supported",
+        (
+            f"Shooting phase optional replacement: select one unit with this ability to spawn a new {spawn_name} unit {count_note}; "
+            f"setup enforces wholly within {int(setup_range)}\" of the source {scope} and more than {int(enemy_range)}\" horizontally from enemy units, "
+            "with deterministic setup-point decisions and spawned-unit placement validation."
+        ),
     )
 
 

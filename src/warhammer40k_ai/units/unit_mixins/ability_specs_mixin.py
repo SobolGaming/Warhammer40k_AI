@@ -9644,6 +9644,168 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_seed_spore_mines_specs(self) -> List[dict]:
+        """
+        Unit-level Tyranid rule: one unit with this ability can seed a spawned mine unit instead of shooting.
+
+        Returns specs with keys:
+            - source: ability name
+            - spawn_unit_name: spawned datasheet name
+            - setup_range: setup distance from the source model/unit
+            - source_scope: "model" or "unit"
+            - enemy_exclusion_range_horizontal: minimum horizontal distance from enemy units
+            - count_mode: "fixed", "roll", or "per_source_model"
+            - spawn_model_count: fixed count when count_mode == "fixed"
+            - spawn_model_count_roll: die expression when count_mode == "roll"
+            - count_per_source_model: multiplier when count_mode == "per_source_model"
+            - once_per_turn_shared: bool
+            - instead_of_shooting: bool
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_seed_spore_mines_specs"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, str, int, str, int, str, int]] = set()
+
+        for unit in list(members):
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"'s\b", " s", normalized)
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+
+                required = (
+                    "once per turn",
+                    "in your shooting phase",
+                    "when selected to shoot",
+                    "one unit with this ability can use it instead of making any attacks with its ranged weapons",
+                    "you can add one new",
+                    "set it up anywhere on the battlefield",
+                    "wholly within",
+                    "more than",
+                    "horizontally away from all enemy units",
+                )
+                if not all(fragment in normalized for fragment in required):
+                    continue
+
+                spawn_match = re.search(r"you can add one new (?P<spawn>[a-z0-9 ]+?) unit", normalized)
+                if spawn_match is None:
+                    continue
+                spawn_name_raw = str(spawn_match.group("spawn") or "").strip()
+                if not spawn_name_raw:
+                    continue
+                spawn_unit_name = " ".join(token.capitalize() for token in spawn_name_raw.split())
+
+                range_match = re.search(r"wholly within (?P<range>\d+) of this (?P<scope>model|unit)", normalized)
+                if range_match is None:
+                    continue
+                try:
+                    setup_range = int(range_match.group("range") or 0)
+                except (TypeError, ValueError):
+                    setup_range = 0
+                if setup_range <= 0:
+                    continue
+                source_scope = str(range_match.group("scope") or "unit").strip().lower()
+                if source_scope not in ("model", "unit"):
+                    source_scope = "unit"
+
+                enemy_match = re.search(r"more than (?P<enemy>\d+) horizontally away from all enemy units", normalized)
+                if enemy_match is None:
+                    continue
+                try:
+                    enemy_exclusion = int(enemy_match.group("enemy") or 0)
+                except (TypeError, ValueError):
+                    enemy_exclusion = 0
+                if enemy_exclusion <= 0:
+                    continue
+
+                count_mode = "fixed"
+                spawn_model_count = 1
+                spawn_model_count_roll = ""
+                count_per_source_model = 0
+                if "contains 1 model for each model in this unit" in normalized:
+                    count_mode = "per_source_model"
+                    spawn_model_count = 0
+                    count_per_source_model = 1
+                else:
+                    count_match = re.search(
+                        r"unit (?:containing|contains) (?P<count_expr>d\d+|\d+) models?",
+                        normalized,
+                    )
+                    if count_match is not None:
+                        count_expr = str(count_match.group("count_expr") or "").strip().upper()
+                        if count_expr.startswith("D"):
+                            count_mode = "roll"
+                            spawn_model_count = 0
+                            spawn_model_count_roll = count_expr
+                        else:
+                            try:
+                                spawn_model_count = int(count_expr or 0)
+                            except (TypeError, ValueError):
+                                spawn_model_count = 0
+                            if spawn_model_count <= 0:
+                                continue
+
+                source = str(name or "Seed Spore Mines").strip() or "Seed Spore Mines"
+                key = (
+                    source.lower(),
+                    spawn_unit_name.lower(),
+                    int(setup_range),
+                    str(source_scope),
+                    int(enemy_exclusion),
+                    str(count_mode),
+                    int(spawn_model_count),
+                    str(spawn_model_count_roll),
+                    int(count_per_source_model),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "spawn_unit_name": spawn_unit_name,
+                        "setup_range": int(setup_range),
+                        "source_scope": str(source_scope),
+                        "enemy_exclusion_range_horizontal": int(enemy_exclusion),
+                        "count_mode": str(count_mode),
+                        "spawn_model_count": int(spawn_model_count),
+                        "spawn_model_count_roll": str(spawn_model_count_roll),
+                        "count_per_source_model": int(count_per_source_model),
+                        "once_per_turn_shared": True,
+                        "instead_of_shooting": True,
+                        "allow_target_engagement": False,
+                        "disallow_other_enemy_engagement": True,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def move_over_mortal_wounds_reroll_count(self) -> int:
         """Count models that can re-roll their move-over mortal wound die (e.g., Cluster Caltrops)."""
         try:
