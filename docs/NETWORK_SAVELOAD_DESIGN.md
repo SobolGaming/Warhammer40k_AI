@@ -542,7 +542,7 @@ Faction / Detachment / Ability choices:
 - modifier_ignore_dialog: CHOOSE_MOVE_MODIFIER_IGNORES {choice} (context `unit_id`, `action_type`, `ability_name`)
 - modifier_ignore_dialog: CHOOSE_ADVANCE_MODIFIER_IGNORES {choice} (context `unit_id`, `ability_name`)
 - modifier_ignore_dialog: CHOOSE_CHARGE_MODIFIER_IGNORES {choice} (context `unit_id`, `target_unit_ids`, `ability_name`)
-Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage, Internal Rivalries, and Tears of the Phoenix. They are only requested when applicable modifiers exist, and their options are pruned to the relevant modifier signs.
+Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage, Internal Rivalries, Siege Crawler, and Tears of the Phoenix. They are only requested when applicable modifiers exist, and their options are pruned to the relevant modifier signs.
 - quarry_selection_dialog: CHOOSE_LIMB_FROM_LIMB {choice} (context `unit_id`)
 - quarry_selection_dialog: CHOOSE_RED_WRATH {mode} (context `unit_id`)
 - quarry_selection_dialog: CHOOSE_IMPOSSIBLE_ECLIPSE_ZONE {zone | skip} (context `ability="impossible_eclipse"`, `unit_id`, `ability_name`)

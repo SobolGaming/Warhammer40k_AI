@@ -2301,9 +2301,13 @@ class Unit(
         except Exception:
             pass
 
-        # Siege Crawler: ignore all Move characteristic modifiers.
-        if ckey == "movement" and bool(getattr(self, "has_siege_crawler", lambda: False)()):
-            mods = []
+        if ckey == "movement":
+            try:
+                filt = getattr(self, "_filter_move_advance_charge_characteristic_modifiers", None)
+                if callable(filt):
+                    mods = list(filt(mods, kind="move", base_val=int(base_val or 0)))
+            except Exception:
+                pass
 
         # Apply core ordering + rounding.
         interim, dbg = apply_numeric_modifiers(int(base_val), mods, base_raw=base_raw)

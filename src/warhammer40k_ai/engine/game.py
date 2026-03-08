@@ -12050,13 +12050,6 @@ class Game(
         *,
         target_unit: Optional['Unit'] = None,
     ) -> list[tuple[int, str]]:
-        has_siege_crawler = getattr(charging_unit, "has_siege_crawler", None)
-        if callable(has_siege_crawler):
-            try:
-                if bool(has_siege_crawler()):
-                    return []
-            except Exception:
-                pass
         modifiers: list[tuple[int, str]] = []
 
         # Check for charge modifiers from abilities/enhancements.
@@ -12335,6 +12328,9 @@ class Game(
         if callable(filt):
             modifiers = filt(modifiers, kind="charge")
         filt = getattr(charging_unit, "_filter_firestorm_champion_of_humanity_roll_modifiers", None)
+        if callable(filt):
+            modifiers = filt(modifiers, kind="charge")
+        filt = getattr(charging_unit, "_filter_move_advance_charge_roll_modifiers", None)
         if callable(filt):
             modifiers = filt(modifiers, kind="charge")
 

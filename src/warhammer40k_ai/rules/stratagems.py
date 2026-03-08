@@ -12886,6 +12886,14 @@ class StratagemManager(
             shooter_unit = kwargs.get("shooter_unit") or kwargs.get("target_unit") or kwargs.get("unit")
             if self._is_overwatch_shooter_blocked_this_turn(shooter_unit):
                 return False
+            enemy_unit = kwargs.get("enemy_unit")
+            blocked_fn = getattr(enemy_unit, "is_overwatch_prevented_against", None)
+            if callable(blocked_fn):
+                try:
+                    if blocked_fn(shooter_unit, game=self.game):
+                        return False
+                except Exception:
+                    raise
         return s.can_use(self.player, self.game, **kwargs)
 
     def use(self, name: str, **kwargs) -> bool:
@@ -13691,6 +13699,9 @@ class StratagemManager(
                         # Core rule: Overwatch targets the shooter; battle-shocked units cannot be targeted.
                         if _unit_cannot_be_target_of_stratagem(unit):
                             continue
+                        if hasattr(enemy_unit, "is_overwatch_prevented_against"):
+                            if enemy_unit.is_overwatch_prevented_against(unit, game=self.game):
+                                continue
                         dist = None
                         try:
                             if hasattr(self.game, 'map') and hasattr(self.game.map, 'get_distance_between_units'):
@@ -13714,6 +13725,14 @@ class StratagemManager(
             if _unit_cannot_be_target_of_stratagem(shooter):
                 logger.error("ERROR: Overwatch: cannot target a Battle-shocked unit")
                 return False
+            blocked_fn = getattr(enemy_unit, "is_overwatch_prevented_against", None)
+            if callable(blocked_fn):
+                try:
+                    if blocked_fn(shooter, game=self.game):
+                        logger.error("ERROR: Overwatch: target cannot be overwatched")
+                        return False
+                except Exception:
+                    raise
             eff_cost = s.cp_cost
             apply_info = {}
             try:

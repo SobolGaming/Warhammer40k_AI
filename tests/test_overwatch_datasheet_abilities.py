@@ -273,6 +273,91 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
             5,
         )
 
+    def test_datasheet_static_no_fire_overwatch_rule_blocks_enemy_only(self):
+        ability_desc = "Enemy units cannot use the Fire Overwatch Stratagem to shoot at this unit."
+        ability = Ability("Sneaky Surprise", "ORK", ability_desc, "Datasheet", "")
+
+        ork_army = Army("Orks", detachment_type="Other")
+        ork_army.faction_id = "ORK"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "EN"
+
+        unit = self._make_unit("Kommandos", ork_army, abilities=[ability])
+        enemy = self._make_unit("Enemy Shooter", enemy_army)
+        ally = self._make_unit("Friendly Shooter", ork_army)
+
+        rule = unit.get_datasheet_no_fire_overwatch_rule()
+        self.assertIsNotNone(rule)
+        self.assertEqual(str(rule.get("ability_key", "")), "datasheet_no_fire_overwatch")
+        self.assertTrue(bool(unit.is_overwatch_prevented_against(enemy)))
+        self.assertFalse(bool(unit.is_overwatch_prevented_against(ally)))
+
+    def test_overwatch_queue_skips_unit_with_static_no_fire_overwatch_rule(self):
+        from warhammer40k_ai.rules.stratagems import Stratagem, StratagemManager
+
+        ability_desc = "Enemy units cannot use the Fire Overwatch Stratagem to shoot at this unit."
+        ability = Ability("Sneaky Surprise", "ORK", ability_desc, "Datasheet", "")
+
+        moving_army = Army("Orks", detachment_type="Other")
+        moving_army.faction_id = "ORK"
+        defending_army = Army("Enemy", detachment_type="Other")
+        defending_army.faction_id = "EN"
+
+        moving_player = SimpleNamespace(name="Mover", id="p-move")
+        defending_player = SimpleNamespace(
+            name="Defender",
+            id="p-defend",
+            command_points=1,
+            get_army=lambda: defending_army,
+        )
+        moving_army.player = moving_player
+        defending_army.player = defending_player
+
+        moving_unit = self._make_unit("Kommandos", moving_army, abilities=[ability])
+        shooter = self._make_unit("Overwatch Unit", defending_army)
+        defending_army.units = [shooter]
+
+        game = SimpleNamespace(
+            get_current_player=lambda: moving_player,
+            turn=1,
+            map=SimpleNamespace(get_distance_between_units=lambda _a, _b: 12.0),
+        )
+
+        manager = StratagemManager.__new__(StratagemManager)
+        manager.player = defending_player
+        manager.game = game
+        manager.available = [
+            Stratagem(
+                id="core_overwatch",
+                name="FIRE OVERWATCH",
+                type="Stratagem",
+                description="",
+                cp_cost=1,
+                turn="Opponent's turn",
+                phase="Movement phase",
+                detachment="",
+                faction_id="",
+            )
+        ]
+        manager._used_this_turn = {"OVERWATCH": False}
+        manager._used_stratagems_this_phase = set()
+        manager._current_phase_name = "Movement phase"
+        manager._pending_reactions = []
+        manager._queue_reaction = lambda payload: manager._pending_reactions.append(payload)
+
+        manager._maybe_queue_overwatch(moving_unit, action="move", when="start")
+        self.assertEqual(manager._pending_reactions, [])
+        self.assertFalse(
+            bool(
+                manager.can_use(
+                    "FIRE OVERWATCH",
+                    phase_name="Movement phase",
+                    shooter_unit=shooter,
+                    enemy_unit=moving_unit,
+                )
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

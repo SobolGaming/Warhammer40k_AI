@@ -585,6 +585,17 @@ def handle_advance_roll(game: object, state: DiceRollState):
             champion_of_humanity = bool(active_fn(kind="advance"))
     except Exception:
         champion_of_humanity = False
+    move_advance_charge_ignore = False
+    move_advance_charge_source = ""
+    try:
+        rule_fn = getattr(unit, "get_move_advance_charge_modifier_ignore_rule", None)
+        rule = rule_fn() if callable(rule_fn) else None
+        if isinstance(rule, dict):
+            move_advance_charge_ignore = True
+            move_advance_charge_source = str(rule.get("source", "") or "").strip()
+    except Exception:
+        move_advance_charge_ignore = False
+        move_advance_charge_source = ""
     if internal_rivalries:
         ability_name = INTERNAL_RIVALRIES_NAME
     elif driven_by_rage:
@@ -595,6 +606,8 @@ def handle_advance_roll(game: object, state: DiceRollState):
         ability_name = "Diabolical Resilience"
     elif champion_of_humanity:
         ability_name = "Champion of Humanity"
+    elif move_advance_charge_ignore:
+        ability_name = move_advance_charge_source or "Move/Advance/Charge modifier ignore"
     else:
         ability_name = "Avatar of Perfection"
 
@@ -607,6 +620,7 @@ def handle_advance_roll(game: object, state: DiceRollState):
             or diabolical_resilience
             or champion_of_humanity
             or avatar_of_perfection
+            or move_advance_charge_ignore
         )
         and options_for_signed_pairs is not None
     ):
@@ -745,6 +759,17 @@ def handle_charge_roll(game: object, state: DiceRollState):
             champion_of_humanity = bool(active_fn(kind="charge"))
     except Exception:
         champion_of_humanity = False
+    move_advance_charge_ignore = False
+    move_advance_charge_source = ""
+    try:
+        rule_fn = getattr(unit, "get_move_advance_charge_modifier_ignore_rule", None)
+        rule = rule_fn() if callable(rule_fn) else None
+        if isinstance(rule, dict):
+            move_advance_charge_ignore = True
+            move_advance_charge_source = str(rule.get("source", "") or "").strip()
+    except Exception:
+        move_advance_charge_ignore = False
+        move_advance_charge_source = ""
     if internal_rivalries:
         ability_name = INTERNAL_RIVALRIES_NAME
     elif driven_by_rage:
@@ -753,12 +778,21 @@ def handle_charge_roll(game: object, state: DiceRollState):
         ability_name = "Diabolical Resilience"
     elif champion_of_humanity:
         ability_name = "Champion of Humanity"
+    elif move_advance_charge_ignore:
+        ability_name = move_advance_charge_source or "Move/Advance/Charge modifier ignore"
     else:
         ability_name = "Avatar of Perfection"
 
     if (
         bool(getattr(game, "is_authoritative", True))
-        and (internal_rivalries or driven_by_rage or diabolical_resilience or champion_of_humanity or avatar_of_perfection)
+        and (
+            internal_rivalries
+            or driven_by_rage
+            or diabolical_resilience
+            or champion_of_humanity
+            or avatar_of_perfection
+            or move_advance_charge_ignore
+        )
         and options_for_signed_pairs is not None
     ):
         target_ids = list(spec.get("target_unit_ids", []) or [])

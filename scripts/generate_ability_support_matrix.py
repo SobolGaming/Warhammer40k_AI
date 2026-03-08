@@ -3949,7 +3949,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("ADM", "Mechanicus Bodyguard"): ("Supported", "Conditional Lone Operative within 3\" of friendly ADEPTUS MECHANICUS units."),
         ("ADM", "Shroudpsalm (Aura)"): ("Supported", "When selected via Canticles, friendly ADEPTUS MECHANICUS units within 6\" gain Stealth."),
         ("AM", "Alchemyk Counteragents"): ("Supported", "Feel No Pain 6+ against mortal wounds."),
-        ("AM", "Desert Riders"): ("Partial", "Shoot and charge after Falling Back; ignores Move/Advance/Charge modifiers not handled."),
+        ("AM", "Desert Riders"): (
+            "Supported",
+            "Shoot and charge after Falling Back; Move/Advance/Charge modifier-ignore choices are supported.",
+        ),
         ("AM", "Deathstrike Missile"): (
             "Supported",
             "Shooting phase action support: optional Designate/Adjust/None flow places or moves a unique Deathstrike marker for the unit, with phase-use and ONE SHOT constraints enforced.",
@@ -4448,7 +4451,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("CSM", "Siege Crawler"): (
             "Supported",
-            "Ignores modifiers to Move characteristic and Advance/Charge roll modifiers.",
+            "Move/Advance/Charge modifier-ignore choices are supported.",
         ),
         ("CSM", "Siege Shield"): (
             "Supported",
@@ -4801,6 +4804,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("ORK", "Snagged"): (
             "Supported",
             "Implemented via wargear keyword support: hits against MONSTER/VEHICLE targets grant +2 charge and prevent Fire Overwatch against the bearer until end of turn.",
+        ),
+        ("ORK", "Splat!"): (
+            "Supported",
+            "Ranged attacks re-roll Hit rolls of 1 vs targets at Starting Strength, excluding MONSTER/VEHICLE targets.",
         ),
         ("TAU", "BODYGUARD"): (
             "Supported",
@@ -5860,6 +5867,7 @@ def _classify_ability_base(
     datasheet_overwatch_discount_support = _datasheet_overwatch_discount_support(description)
     overwatch_hit_threshold_support = _overwatch_hit_threshold_support(description)
     brutal_example_overwatch_support = _brutal_example_overwatch_support(description)
+    datasheet_no_fire_overwatch_support = _datasheet_no_fire_overwatch_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
     start_fight_phase_self_destruction_support = _start_fight_phase_self_destruction_support(description)
     shooting_target_arcing_mortals_support = _shooting_target_arcing_mortals_support(description)
@@ -6363,6 +6371,8 @@ def _classify_ability_base(
         return overwatch_hit_threshold_support
     if brutal_example_overwatch_support:
         return brutal_example_overwatch_support
+    if datasheet_no_fire_overwatch_support:
+        return datasheet_no_fire_overwatch_support
     if shooting_target_arcing_mortals_support:
         return shooting_target_arcing_mortals_support
     if charge_end_mortal_support:
@@ -9514,6 +9524,28 @@ def _datasheet_overwatch_discount_support(description: str) -> Optional[Tuple[st
             f"This {subject} can be targeted with Fire Overwatch for 0CP even if already used on another unit this turn; that benefit is limited to once per turn for this {subject}.",
         )
     return None
+
+
+def _datasheet_no_fire_overwatch_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    direct = re.fullmatch(
+        r"enemy units cannot use the fire overwatch stratagem to shoot at this (?:unit|model)",
+        norm,
+    )
+    equipped = re.fullmatch(
+        r"if this model is equipped with [a-z0-9 ]+ enemy units cannot use the fire overwatch stratagem to shoot at this model",
+        norm,
+    )
+    if not direct and not equipped:
+        return None
+    return (
+        "Supported",
+        "Enemy units cannot target this unit with Fire Overwatch.",
+    )
 
 
 def _brutal_example_overwatch_support(description: str) -> Optional[Tuple[str, str]]:

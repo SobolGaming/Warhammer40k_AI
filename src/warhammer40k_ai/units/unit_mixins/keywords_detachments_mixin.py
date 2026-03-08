@@ -3954,6 +3954,70 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_datasheet_no_fire_overwatch_rule(self) -> Optional[dict]:
+        """
+        Return rule info for static datasheet abilities like:
+        - "Enemy units cannot use the Fire Overwatch Stratagem to shoot at this unit."
+        - "Enemy units cannot use the Fire Overwatch Stratagem to shoot at this model."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except (AttributeError, TypeError, ValueError):
+            root = self
+        cache_key = "datasheet_no_fire_overwatch_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        direct_pattern = re.compile(
+            r"enemy units cannot use the fire overwatch stratagem to shoot at this (?:unit|model)"
+        )
+        equipped_pattern = re.compile(
+            r"if this model is equipped with [a-z0-9 ]+ enemy units cannot use the fire overwatch stratagem to shoot at this model"
+        )
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except (AttributeError, TypeError, ValueError):
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), unit._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = unit._normalize_rules_text(unit._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not normalized:
+                    continue
+                if not direct_pattern.fullmatch(normalized) and not equipped_pattern.fullmatch(normalized):
+                    continue
+                source = str(name or "No Overwatch").strip() or "No Overwatch"
+                rule = {
+                    "source": source,
+                    "ability_key": "datasheet_no_fire_overwatch",
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def get_traitor_enforcer_overwatch_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:
@@ -10717,7 +10781,7 @@ class KeywordsDetachmentsMixin:
             return False
 
     def get_eradicate_the_foe_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
-        """Parse Eradicate the Foe hit reroll mode against targets at Starting Strength."""
+        """Parse hit reroll modes against targets at Starting Strength."""
         if model is None:
             return None
         cache_key = f"eradicate_the_foe_rule:{get_entity_id(model)}"
@@ -10736,21 +10800,39 @@ class KeywordsDetachmentsMixin:
             low = normalized.lower().replace("reroll", "re roll")
             low = re.sub(r"[^a-z0-9]+", " ", low)
             low = re.sub(r"\s+", " ", low).strip()
-            if source_key != "eradicate the foe" and "at its starting strength" not in low:
+            at_starting_strength = bool(re.search(r"\bat (?:its|their) starting strength\b", low))
+            if source_key != "eradicate the foe" and not at_starting_strength:
                 return None
-            if "at its starting strength" not in low:
+            if not at_starting_strength:
                 return None
+
+            attack_type = "any"
+            has_ranged = "ranged attack" in low
+            has_melee = "melee attack" in low
+            if has_ranged and not has_melee:
+                attack_type = "ranged"
+            elif has_melee and not has_ranged:
+                attack_type = "melee"
+
+            target_exclude_keywords_any: tuple[str, ...] = ()
+            if re.search(r"\bexcluding(?: attacks? that targets?)? monsters? and vehicles?\b", low):
+                target_exclude_keywords_any = ("monster", "vehicle")
+
             has_reroll_ones = "re roll a hit roll of 1" in low
             has_reroll_full = "re roll the hit roll" in low
             if has_reroll_full:
                 return {
                     "source": source or "Eradicate the Foe",
                     "mode": "full",
+                    "attack_type": attack_type,
+                    "target_exclude_keywords_any": target_exclude_keywords_any,
                 }
             if has_reroll_ones:
                 return {
                     "source": source or "Eradicate the Foe",
                     "mode": "ones",
+                    "attack_type": attack_type,
+                    "target_exclude_keywords_any": target_exclude_keywords_any,
                 }
             return None
 
@@ -10935,6 +11017,9 @@ class KeywordsDetachmentsMixin:
 
     def get_model_hit_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None) -> dict:
         mods = self._get_model_reroll_modifiers(model, attack_type=attack_type, target=target, roll="hit")
+        attack_scope = str(attack_type or "").strip().lower()
+        if attack_scope not in {"melee", "ranged"}:
+            attack_scope = "any"
         reroll_values = set(mods.get("reroll_values", ()) or ())
         reroll_reasons = list(mods.get("reroll_reasons", ()) or ())
         reroll_full_reasons = list(mods.get("reroll_full_reasons", ()) or ())
@@ -10969,14 +11054,23 @@ class KeywordsDetachmentsMixin:
                     reroll_reasons.append(f"{source}: re-roll Hit rolls of 1 vs CHARACTER targets")
         eradicate = self.get_eradicate_the_foe_rule(model)
         if eradicate and target is not None and self._target_at_starting_strength(target):
-            source = str(eradicate.get("source", "") or "Eradicate the Foe").strip() or "Eradicate the Foe"
-            mode = str(eradicate.get("mode", "") or "").strip().lower()
-            if mode == "full":
-                reroll_full = True
-                reroll_full_reasons.append(f"{source}: re-roll Hit roll vs targets at Starting Strength")
-            elif mode == "ones":
-                reroll_values.add(1)
-                reroll_reasons.append(f"{source}: re-roll Hit rolls of 1 vs targets at Starting Strength")
+            required_attack_type = str(eradicate.get("attack_type", "any") or "any").strip().lower()
+            excluded = tuple(
+                str(v or "").strip().upper()
+                for v in list(eradicate.get("target_exclude_keywords_any", ()) or ())
+                if str(v or "").strip()
+            )
+            attack_type_ok = required_attack_type not in {"melee", "ranged"} or attack_scope in {"any", required_attack_type}
+            excluded_target = any(self._target_has_keyword(target, keyword) for keyword in excluded)
+            if attack_type_ok and not excluded_target:
+                source = str(eradicate.get("source", "") or "Eradicate the Foe").strip() or "Eradicate the Foe"
+                mode = str(eradicate.get("mode", "") or "").strip().lower()
+                if mode == "full":
+                    reroll_full = True
+                    reroll_full_reasons.append(f"{source}: re-roll Hit roll vs targets at Starting Strength")
+                elif mode == "ones":
+                    reroll_values.add(1)
+                    reroll_reasons.append(f"{source}: re-roll Hit rolls of 1 vs targets at Starting Strength")
         silent_source = self.get_silent_executioner_source(model)
         if silent_source and target is not None:
             try:
@@ -10989,9 +11083,6 @@ class KeywordsDetachmentsMixin:
                     f"{silent_source}: re-roll Hit roll vs targets below Starting Strength"
                 )
         if model is not None:
-            attack_scope = str(attack_type or "").strip().lower()
-            if attack_scope not in {"melee", "ranged"}:
-                attack_scope = "any"
             army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
             sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             apply_fn = getattr(

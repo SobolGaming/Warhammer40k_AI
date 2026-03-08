@@ -365,6 +365,17 @@ def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_ty
             champion_of_humanity = bool(active_fn(kind="move"))
     except Exception:
         champion_of_humanity = False
+    move_advance_charge_ignore = False
+    move_advance_charge_source = ""
+    try:
+        rule_fn = getattr(unit, "get_move_advance_charge_modifier_ignore_rule", None)
+        rule = rule_fn() if callable(rule_fn) else None
+        if isinstance(rule, dict):
+            move_advance_charge_ignore = True
+            move_advance_charge_source = str(rule.get("source", "") or "").strip()
+    except Exception:
+        move_advance_charge_ignore = False
+        move_advance_charge_source = ""
     if (
         not internal_rivalries
         and not driven_by_rage
@@ -372,6 +383,7 @@ def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_ty
         and not diabolical_resilience
         and not champion_of_humanity
         and not avatar_of_perfection
+        and not move_advance_charge_ignore
     ):
         return
     if internal_rivalries:
@@ -384,6 +396,8 @@ def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_ty
         ability_name = "Diabolical Resilience"
     elif champion_of_humanity:
         ability_name = "Champion of Humanity"
+    elif move_advance_charge_ignore:
+        ability_name = move_advance_charge_source or "Move/Advance/Charge modifier ignore"
     else:
         ability_name = "Avatar of Perfection"
     try:

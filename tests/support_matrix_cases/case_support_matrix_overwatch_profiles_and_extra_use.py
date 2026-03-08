@@ -45,6 +45,11 @@ import pytest
             ),
             "SM",
         ),
+        (
+            "Sneaky Surprise",
+            "Enemy units cannot use the Fire Overwatch Stratagem to shoot at this unit.",
+            "ORK",
+        ),
     ],
 )
 def test_support_matrix_overwatch_profiles_and_extra_use_supported(name, description, faction_id):
@@ -52,4 +57,3 @@ def test_support_matrix_overwatch_profiles_and_extra_use_supported(name, descrip
 
     status, _notes = gsm._classify_ability(name, description, faction_id=faction_id)
     assert status == "Supported"
-

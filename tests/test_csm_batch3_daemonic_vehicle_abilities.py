@@ -1,10 +1,24 @@
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES,
+    DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
+    DECISION_CHOOSE_MOVE_MODIFIER_IGNORES,
+    DECISION_CHOOSE_QUARRY,
+    DECISION_CONFIRM_YES_NO,
+)
+from warhammer40k_ai.engine.dice_rolls import DiceRollState
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.engine.roll_handlers import handle_advance_roll, handle_charge_roll
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.utility.modifier_choice import (
+    CHOICE_IGNORE_ALL,
+    CHOICE_IGNORE_NEGATIVE,
+    CHOICE_IGNORE_POSITIVE,
+    CHOICE_KEEP_ALL,
+)
 from warhammer40k_ai.utility.modifiers import Modifier, ModifierOp
 from warhammer40k_ai.units.ability import Ability
 from warhammer40k_ai.units.unit import Unit
@@ -368,11 +382,11 @@ def test_bringers_of_change_applies_wound_rerolls_with_objective_upgrade():
     assert not bool(mods_controlled.get("reroll_wound_full"))
 
 
-def test_siege_crawler_ignores_move_advance_and_charge_modifiers():
+def test_siege_crawler_modifier_choices_apply_to_move_advance_and_charge_modifiers():
     ability = Ability(
         "Siege Crawler",
         "CSM",
-        "Ignore modifiers to Move characteristic and to Advance and Charge rolls.",
+        "You can ignore any or all modifiers to this model's Move characteristic and to Advance and Charge rolls made for it.",
         "Datasheet",
         "",
     )
@@ -389,14 +403,130 @@ def test_siege_crawler_ignores_move_advance_and_charge_modifiers():
 
     assert source.has_siege_crawler()
     source.add_characteristic_modifier("movement", Modifier(ModifierOp.SUB, 3, source="test:slow"))
-    move_val = source.get_effective_model_characteristic(source.models[0], "movement")
-    assert int(move_val) == 8
+    source.add_characteristic_modifier("movement", Modifier(ModifierOp.ADD, 1, source="test:fast"))
+    model = source.models[0]
 
-    source.special_rules["code_chivalric_advance_bonus"] = 2
-    assert source._collect_advance_roll_modifiers() == []
+    source.round_state.move_modifier_choice = CHOICE_KEEP_ALL
+    move_keep = source.get_effective_model_characteristic(model, "movement")
+    assert int(move_keep) == 6
 
-    source.special_rules["charge_roll_modifier"] = 2
-    assert game._collect_charge_modifiers(source, target_unit=target) == []
+    source.round_state.move_modifier_choice = CHOICE_IGNORE_NEGATIVE
+    move_ignore_negative = source.get_effective_model_characteristic(model, "movement")
+    assert int(move_ignore_negative) == 9
+
+    source.round_state.move_modifier_choice = CHOICE_IGNORE_POSITIVE
+    move_ignore_positive = source.get_effective_model_characteristic(model, "movement")
+    assert int(move_ignore_positive) == 5
+
+    source.round_state.move_modifier_choice = CHOICE_IGNORE_ALL
+    move_ignore_all = source.get_effective_model_characteristic(model, "movement")
+    assert int(move_ignore_all) == 8
+
+    source.special_rules["advance_roll_modifiers"] = [
+        {"value": -2, "source": "test:slow"},
+        {"value": 1, "source": "test:fast"},
+    ]
+    source.round_state.advance_modifier_choice = CHOICE_KEEP_ALL
+    assert int(source._apply_advance_roll_modifiers(4)) == 3
+    source.round_state.advance_modifier_choice = CHOICE_IGNORE_NEGATIVE
+    assert int(source._apply_advance_roll_modifiers(4)) == 5
+    source.round_state.advance_modifier_choice = CHOICE_IGNORE_ALL
+    assert int(source._apply_advance_roll_modifiers(4)) == 4
+
+    source.special_rules["charge_roll_modifiers"] = [
+        {"value": -2, "source": "test:slow"},
+        {"value": 1, "source": "test:fast"},
+    ]
+    source.round_state.charge_modifier_choice = CHOICE_KEEP_ALL
+    keep_mods = game._collect_charge_modifiers(source, target_unit=target)
+    assert sorted(keep_mods) == [(-2, "test:slow"), (1, "test:fast")]
+
+    source.round_state.charge_modifier_choice = CHOICE_IGNORE_NEGATIVE
+    ignore_negative_mods = game._collect_charge_modifiers(source, target_unit=target)
+    assert ignore_negative_mods == [(1, "test:fast")]
+
+    source.round_state.charge_modifier_choice = CHOICE_IGNORE_ALL
+    ignore_all_mods = game._collect_charge_modifiers(source, target_unit=target)
+    assert ignore_all_mods == []
+
+
+def test_siege_crawler_queues_move_advance_and_charge_modifier_ignore_decisions():
+    from warhammer40k_ai.engine.decision_handlers.movement import _maybe_request_move_modifier_choice
+
+    ability = Ability(
+        "Siege Crawler",
+        "CSM",
+        "You can ignore any or all modifiers to this model's Move characteristic and to Advance and Charge rolls made for it.",
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Forgefiend", abilities=[ability], keywords=["VEHICLE"])
+    target = _make_unit("Enemy Unit")
+
+    game, army, enemy_army, p1, _p2 = _build_game()
+    army.add_unit(source)
+    enemy_army.add_unit(target)
+    game.map.units = [source, target]
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    source.add_characteristic_modifier("movement", Modifier(ModifierOp.SUB, 2, source="test:slow"))
+    source.add_characteristic_modifier("movement", Modifier(ModifierOp.ADD, 1, source="test:fast"))
+    _maybe_request_move_modifier_choice(game, source, action_type="move")
+    move_requests = [
+        req for req in list(game.decision_queue.list() or []) if req.decision_type == DECISION_CHOOSE_MOVE_MODIFIER_IGNORES
+    ]
+    assert len(move_requests) == 1
+    move_ctx = dict(move_requests[0].context or {})
+    assert str(move_ctx.get("ability_name", "")) == "Siege Crawler"
+    game.decision_queue.pop(move_requests[0].decision_id)
+
+    source.special_rules["advance_roll_modifiers"] = [
+        {"value": -2, "source": "test:slow"},
+        {"value": 1, "source": "test:fast"},
+    ]
+    advance_state = DiceRollState(
+        roll_id=101,
+        player_id=p1.id,
+        spec={"unit_id": get_entity_id(source)},
+        status="rolled",
+        dice=[{"die_id": "101:0", "value": 4}],
+        total=4,
+    )
+    result = handle_advance_roll(game, advance_state)
+    assert result is None
+    adv_requests = [
+        req for req in list(game.decision_queue.list() or []) if req.decision_type == DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES
+    ]
+    assert len(adv_requests) == 1
+    adv_ctx = dict(adv_requests[0].context or {})
+    assert str(adv_ctx.get("ability_name", "")) == "Siege Crawler"
+    game.decision_queue.pop(adv_requests[0].decision_id)
+
+    source.special_rules["charge_roll_modifiers"] = [
+        {"value": -2, "source": "test:slow"},
+        {"value": 1, "source": "test:fast"},
+    ]
+    game.phase = BattleRoundPhases.CHARGE_PHASE
+    charge_state = DiceRollState(
+        roll_id=102,
+        player_id=p1.id,
+        spec={
+            "unit_id": get_entity_id(source),
+            "charge_spec": {"dice_count": 2, "keep_highest": 2},
+            "target_unit_ids": [get_entity_id(target)],
+        },
+        status="rolled",
+        dice=[{"die_id": "102:0", "value": 4}, {"die_id": "102:1", "value": 2}],
+        total=6,
+    )
+    handle_charge_roll(game, charge_state)
+    charge_requests = [
+        req for req in list(game.decision_queue.list() or []) if req.decision_type == DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES
+    ]
+    assert len(charge_requests) == 1
+    charge_ctx = dict(charge_requests[0].context or {})
+    assert str(charge_ctx.get("ability_name", "")) == "Siege Crawler"
 
 
 def test_reorder_reality_marks_attacker_and_applies_hazardous_and_hit_penalty():

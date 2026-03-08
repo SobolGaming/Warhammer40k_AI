@@ -205,6 +205,61 @@ class TestUnitHitRerollOnes(unittest.TestCase):
         self.assertEqual(int(result["roll"]), 4)
         self.assertEqual(int(result.get("reroll_of_one", 0)), 1)
 
+    def test_starting_strength_ranged_reroll_ones_excluding_monster_vehicle(self):
+        ability = {
+            "name": "Splat!",
+            "description": (
+                "Each time a model in this unit makes a ranged attack that targets a unit that is at its Starting Strength "
+                "(excluding MONSTERS and VEHICLES), re-roll a Hit roll of 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        attacker = _make_unit("Mek Gunz", abilities=[ability])
+        target = _make_unit("Target")
+
+        mods = attacker.get_model_hit_reroll_modifiers(attacker.models[0], attack_type="ranged", target=target)
+
+        self.assertFalse(bool(mods.get("reroll_hit_full", False)))
+        self.assertIn(1, tuple(mods.get("reroll_hit_values", ()) or ()))
+
+    def test_starting_strength_ranged_reroll_ones_exclusion_blocks_monster_vehicle(self):
+        ability = {
+            "name": "Splat!",
+            "description": (
+                "Each time a model in this unit makes a ranged attack that targets a unit that is at its Starting Strength "
+                "(excluding MONSTERS and VEHICLES), re-roll a Hit roll of 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        attacker = _make_unit("Mek Gunz", abilities=[ability])
+        target = _make_unit("Target")
+        target.keywords = list(getattr(target, "keywords", []) or []) + ["MONSTER"]
+
+        mods = attacker.get_model_hit_reroll_modifiers(attacker.models[0], attack_type="ranged", target=target)
+
+        self.assertFalse(bool(mods.get("reroll_hit_full", False)))
+        self.assertNotIn(1, tuple(mods.get("reroll_hit_values", ()) or ()))
+
+    def test_starting_strength_reroll_ones_does_not_apply_to_melee_attacks(self):
+        ability = {
+            "name": "Splat!",
+            "description": (
+                "Each time a model in this unit makes a ranged attack that targets a unit that is at its Starting Strength "
+                "(excluding MONSTERS and VEHICLES), re-roll a Hit roll of 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        attacker = _make_unit("Mek Gunz", abilities=[ability])
+        target = _make_unit("Target")
+
+        mods = attacker.get_model_hit_reroll_modifiers(attacker.models[0], attack_type="melee", target=target)
+
+        self.assertFalse(bool(mods.get("reroll_hit_full", False)))
+        self.assertNotIn(1, tuple(mods.get("reroll_hit_values", ()) or ()))
+
     def test_objective_full_hit_reroll(self):
         from warhammer40k_ai.units.wargear import WargearProfile
         from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint

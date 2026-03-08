@@ -7358,6 +7358,215 @@ class ActionsMovementMixin:
                 return False
         return True
 
+    def get_move_advance_charge_modifier_ignore_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities that allow selecting ignored Move/Advance/Charge modifiers.
+
+        Example wording:
+        "You can ignore any or all modifiers to this unit's Move characteristic and
+         to Advance and Charge rolls made for this unit."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "move_advance_charge_modifier_ignore_rule"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return cache.get(cache_key)
+
+        rule = None
+        seen: set[tuple[str, str]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        indexed_members = list(enumerate(members))
+        indexed_members.sort(
+            key=lambda pair: (
+                0
+                if (getattr(pair[1], "id", None) or getattr(pair[1], "_id", None))
+                else 1,
+                str(getattr(pair[1], "id", None) or getattr(pair[1], "_id", None) or ""),
+                pair[0],
+            )
+        )
+        members = [member for _, member in indexed_members]
+
+        for member in members:
+            if member is None:
+                continue
+            iter_entries = getattr(member, "_iter_ability_entries_for_rules", None)
+            if not callable(iter_entries):
+                continue
+            for name, desc in iter_entries(model=None):
+                text_src = member._strip_eligibility_prefix(desc or name or "")
+                normalized = member._normalize_rules_text(text_src or "")
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not normalized:
+                    continue
+                signature = (str(name or "").strip().lower(), normalized)
+                if signature in seen:
+                    continue
+                seen.add(signature)
+                if "ignore any or all modifiers" not in normalized:
+                    continue
+                if "move characteristic" not in normalized:
+                    continue
+                has_advance_and_charge = "advance and charge rolls" in normalized or (
+                    "advance rolls" in normalized and "charge rolls" in normalized
+                )
+                if not has_advance_and_charge:
+                    continue
+                source = str(name or "Move/Advance/Charge modifier ignore").strip() or "Move/Advance/Charge modifier ignore"
+                rule = {"source": source}
+                break
+            if rule is not None:
+                break
+
+        if not isinstance(getattr(root, "_ability_cache", None), dict):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _move_advance_charge_modifier_ignore_active(self, *, kind: str) -> tuple[bool, str]:
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {"move", "advance", "charge"}:
+            return (False, "")
+        rule = self.get_move_advance_charge_modifier_ignore_rule()
+        if not isinstance(rule, dict):
+            return (False, "")
+        source = str(rule.get("source", "") or "Move/Advance/Charge modifier ignore").strip() or "Move/Advance/Charge modifier ignore"
+        return (True, source)
+
+    def _filter_move_advance_charge_characteristic_modifiers(
+        self,
+        modifiers,
+        *,
+        kind: str,
+        base_val: int,
+    ):
+        if not modifiers:
+            return list(modifiers or [])
+        kind_key = str(kind or "").strip().lower()
+        if kind_key != "move":
+            return list(modifiers or [])
+        active, source_name = self._move_advance_charge_modifier_ignore_active(kind=kind_key)
+        if not active:
+            return list(modifiers or [])
+        from ...utility.modifier_choice import (
+            CHOICE_KEEP_ALL,
+            CHOICE_IGNORE_NEGATIVE,
+            CHOICE_IGNORE_POSITIVE,
+            CHOICE_IGNORE_ALL,
+            filter_numeric_modifiers,
+        )
+        try:
+            choice = str(getattr(self.round_state, "move_modifier_choice", "") or "").strip()
+        except Exception:
+            choice = ""
+        if not choice:
+            choice = CHOICE_KEEP_ALL
+        if choice == CHOICE_KEEP_ALL:
+            return list(modifiers or [])
+
+        kept, ignored = filter_numeric_modifiers(modifiers, str(choice), base_val=int(base_val or 0))
+        if ignored:
+            try:
+                sr = getattr(self, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                ignored_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in ignored))
+                kept_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in kept))
+                sig = (ignored_sources, kept_sources, str(choice))
+                key = "move_advance_charge_ignore_move_mod_signature"
+                if sr.get(key) != sig:
+                    sr[key] = sig
+                    self.special_rules = sr
+                    from ...utility.event_bus import append_action
+
+                    pn = self.get_parent_army().player
+                    ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                    tag = (
+                        "negative"
+                        if choice == CHOICE_IGNORE_NEGATIVE
+                        else "positive"
+                        if choice == CHOICE_IGNORE_POSITIVE
+                        else "all"
+                    )
+                    append_action(pn, f"{source_name}: ignored {tag} Move modifiers ({ignored_text}).")
+                    if kept_sources:
+                        kept_text = ", ".join(s for s in kept_sources if s)
+                        if kept_text:
+                            append_action(pn, f"{source_name}: applied Move modifiers ({kept_text}).")
+            except Exception:
+                pass
+        return kept
+
+    def _filter_move_advance_charge_roll_modifiers(self, modifiers, *, kind: str) -> list[tuple[int, str]]:
+        if not modifiers:
+            return list(modifiers or [])
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in ("advance", "charge"):
+            return list(modifiers or [])
+        active, source_name = self._move_advance_charge_modifier_ignore_active(kind=kind_key)
+        if not active:
+            return list(modifiers or [])
+        from ...utility.modifier_choice import (
+            CHOICE_KEEP_ALL,
+            CHOICE_IGNORE_NEGATIVE,
+            CHOICE_IGNORE_POSITIVE,
+            CHOICE_IGNORE_ALL,
+            filter_signed_modifiers,
+        )
+        try:
+            choice = getattr(self.round_state, f"{kind_key}_modifier_choice", None)
+        except Exception:
+            choice = None
+        if not choice:
+            choice = CHOICE_KEEP_ALL
+        if choice == CHOICE_KEEP_ALL:
+            return list(modifiers or [])
+
+        kept, ignored = filter_signed_modifiers(modifiers, str(choice))
+        if ignored:
+            try:
+                sr = getattr(self, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                ignored_sources = tuple(sorted(str(s or "") for _v, s in ignored if str(s or "").strip()))
+                kept_sources = tuple(sorted(str(s or "") for _v, s in kept if str(s or "").strip()))
+                sig = (ignored_sources, kept_sources, str(choice))
+                key = f"move_advance_charge_ignore_{kind_key}_mod_signature"
+                if sr.get(key) != sig:
+                    sr[key] = sig
+                    self.special_rules = sr
+                    from ...utility.event_bus import append_action
+
+                    pn = self.get_parent_army().player
+                    label = "Advance roll" if kind_key == "advance" else "Charge roll"
+                    ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                    tag = (
+                        "negative"
+                        if choice == CHOICE_IGNORE_NEGATIVE
+                        else "positive"
+                        if choice == CHOICE_IGNORE_POSITIVE
+                        else "all"
+                    )
+                    append_action(pn, f"{source_name}: ignored {tag} {label} modifiers ({ignored_text}).")
+                    if kept_sources:
+                        kept_text = ", ".join(s for s in kept_sources if s)
+                        if kept_text:
+                            append_action(pn, f"{source_name}: applied {label} modifiers ({kept_text}).")
+            except Exception:
+                pass
+        return kept
+
     def _filter_internal_rivalries_roll_modifiers(self, modifiers, *, kind: str) -> list[tuple[int, str]]:
         if not modifiers:
             return list(modifiers or [])
@@ -7786,8 +7995,6 @@ class ActionsMovementMixin:
         return kept
 
     def _collect_advance_roll_modifiers(self) -> list[tuple[int, str]]:
-        if bool(getattr(self, "has_siege_crawler", lambda: False)()):
-            return []
         mods: list[tuple[int, str]] = []
         sr = getattr(self, "special_rules", None)
         try:
@@ -8022,6 +8229,7 @@ class ActionsMovementMixin:
         mods = self._filter_avatar_of_perfection_roll_modifiers(mods, kind="advance")
         mods = self._filter_diabolical_resilience_roll_modifiers(mods, kind="advance")
         mods = self._filter_firestorm_champion_of_humanity_roll_modifiers(mods, kind="advance")
+        mods = self._filter_move_advance_charge_roll_modifiers(mods, kind="advance")
         for val, source in mods:
             if not val:
                 continue
@@ -9808,6 +10016,33 @@ class ActionsMovementMixin:
         except Exception:
             return False
 
+    def _datasheet_no_fire_overwatch_active(self, *, target_unit: Optional['Unit'] = None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except (AttributeError, TypeError, ValueError):
+            root = self
+        if root is None:
+            return False
+        getter = getattr(root, "get_datasheet_no_fire_overwatch_rule", None)
+        if not callable(getter):
+            return False
+        rule = getter()
+        if not isinstance(rule, dict):
+            return False
+        if target_unit is None:
+            return True
+        try:
+            my_army = root.get_parent_army()
+        except (AttributeError, TypeError, ValueError):
+            my_army = None
+        try:
+            target_army = target_unit.get_parent_army()
+        except (AttributeError, TypeError, ValueError):
+            target_army = None
+        if my_army is None or target_army is None:
+            return True
+        return my_army is not target_army
+
     def is_overwatch_prevented_against(self, target_unit: 'Unit', *, game: Optional['Game'] = None) -> bool:
         if self._post_shoot_no_overwatch_active(game=game):
             return True
@@ -9828,6 +10063,8 @@ class ActionsMovementMixin:
         if self._shroud_projector_no_overwatch_active(target_unit=target_unit):
             return True
         if self._librarius_obfuscation_no_overwatch_active(target_unit=target_unit):
+            return True
+        if self._datasheet_no_fire_overwatch_active(target_unit=target_unit):
             return True
         entry = self._get_wargear_charge_keyword_effects(target_unit, game=game)
         if not entry:
