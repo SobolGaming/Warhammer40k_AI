@@ -2500,34 +2500,66 @@ class AbilitySpecsMixin:
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
             m = self._START_SELECTED_PHASES_ENEMY_RANGE_BATTLESHOCK_RE.fullmatch(normalized)
-            if not m:
-                continue
-            try:
-                range_value = int(m.group("range") or 0)
-            except (TypeError, ValueError):
-                range_value = 0
-            try:
-                test_penalty = int(m.group("pen") or 0)
-            except (TypeError, ValueError):
-                test_penalty = 0
-            if range_value <= 0 or test_penalty <= 0:
-                continue
-            phases_raw = str(m.group("phases") or "").strip().lower()
-            if not phases_raw:
-                continue
-            phase_names = [
-                phase_name
-                for token, phase_name in phase_token_order
-                if re.search(rf"\b{re.escape(token)}\b", phases_raw)
-            ]
-            if not phase_names:
-                continue
             source = str(name or "Start phase Battle-shock selection").strip() or "Start phase Battle-shock selection"
             source_key = self._normalize_keyword_phrase(source) or re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_")
             if not source_key:
                 source_key = "start_phase_battleshock"
-            ability_key = f"start_phase_select_battleshock:{source_key}"
-            dedupe_key = (source.lower(), int(range_value), int(test_penalty), tuple(phase_names))
+            if m:
+                try:
+                    range_value = int(m.group("range") or 0)
+                except (TypeError, ValueError):
+                    range_value = 0
+                try:
+                    test_penalty = int(m.group("pen") or 0)
+                except (TypeError, ValueError):
+                    test_penalty = 0
+                if range_value <= 0 or test_penalty <= 0:
+                    continue
+                phases_raw = str(m.group("phases") or "").strip().lower()
+                if not phases_raw:
+                    continue
+                phase_names = [
+                    phase_name
+                    for token, phase_name in phase_token_order
+                    if re.search(rf"\b{re.escape(token)}\b", phases_raw)
+                ]
+                if not phase_names:
+                    continue
+                ability_key = f"start_phase_select_battleshock:{source_key}"
+                dedupe_key = (source.lower(), int(range_value), int(test_penalty), tuple(phase_names))
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "test_penalty": int(test_penalty),
+                        "phase_names": list(phase_names),
+                        "ability_key": ability_key,
+                        "optional": True,
+                        "once_per_turn": True,
+                    }
+                )
+                continue
+
+            command_phase_no_penalty = re.fullmatch(
+                r"in your command phase (?P<optional>you can )?select one enemy unit within (?P<range>\d+) of "
+                r"(?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) that(?: enemy)? unit must take a battle shock test",
+                normalized,
+            )
+            if not command_phase_no_penalty:
+                continue
+            try:
+                range_value = int(command_phase_no_penalty.group("range") or 0)
+            except (TypeError, ValueError):
+                range_value = 0
+            if range_value <= 0:
+                continue
+            optional = bool(str(command_phase_no_penalty.group("optional") or "").strip())
+            phase_names = ["COMMAND_PHASE"]
+            ability_key = f"command_phase_select_enemy_battleshock:{source_key}"
+            dedupe_key = (source.lower(), int(range_value), 0, tuple(phase_names))
             if dedupe_key in seen:
                 continue
             seen.add(dedupe_key)
@@ -2535,11 +2567,12 @@ class AbilitySpecsMixin:
                 {
                     "source": source,
                     "range": int(range_value),
-                    "test_penalty": int(test_penalty),
+                    "test_penalty": 0,
                     "phase_names": list(phase_names),
                     "ability_key": ability_key,
-                    "optional": True,
-                    "once_per_turn": True,
+                    "optional": bool(optional),
+                    "once_per_turn": False,
+                    "context_ability": "command_phase_select_enemy_battleshock",
                 }
             )
 

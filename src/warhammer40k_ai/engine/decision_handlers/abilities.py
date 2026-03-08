@@ -7893,7 +7893,11 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
                 if not bool(can_see_fn(model, target_root, game_map=getattr(game, "map", None))):
                     return ("Gravitic Pulse target must be visible to the source model.",)
         return ()
-    if ability in {"harbinger_of_despair_battleshock", "fight_phase_select_engagement_battleshock"}:
+    if ability in {
+        "harbinger_of_despair_battleshock",
+        "fight_phase_select_engagement_battleshock",
+        "command_phase_select_enemy_battleshock",
+    }:
         payload = _option_payload(request, result)
         error_prefix = "Harbinger of Despair"
         if ability != "harbinger_of_despair_battleshock":
@@ -15675,7 +15679,11 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"{ability_name}: no wounds were regained.",
             )
         return model
-    if ability in {"harbinger_of_despair_battleshock", "fight_phase_select_engagement_battleshock"}:
+    if ability in {
+        "harbinger_of_despair_battleshock",
+        "fight_phase_select_engagement_battleshock",
+        "command_phase_select_enemy_battleshock",
+    }:
         payload = _option_payload(request, result)
         model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
         source_unit = resolve_unit(

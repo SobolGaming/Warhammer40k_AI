@@ -4873,6 +4873,14 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "While this unit is within Synapse Range of a friendly TYRANIDS non-NEUROGAUNT unit, it gains the SYNAPSE keyword and counts as a Synapse source.",
         ),
+        ("TYR", "Neural Disruption"): (
+            "Supported",
+            "Command phase: select one enemy unit within 12\" of this model to take a Battle-shock test.",
+        ),
+        ("TYR", "Psychological Saboteur (Aura)"): (
+            "Supported",
+            "Enemy units within 12\" that are Battle-shocked suffer -1 to Hit rolls, and friendly TYRANIDS models gain +1 to Wound rolls when targeting those units.",
+        ),
         ("TYR", "Foul Spores (Aura)"): ("Partial", "Stealth aura within 6\" for non-MONSTER TYRANIDS units; Benefit of Cover aura not implemented."),
         ("TYR", "Spore Mine Cysts"): (
             "Supported",
@@ -5715,6 +5723,7 @@ def _classify_ability_base(
     start_any_command_phase_enemy_range_battleshock_support = _start_any_command_phase_enemy_range_battleshock_support(description)
     start_any_command_phase_objective_battleshock_support = _start_any_command_phase_objective_battleshock_support(description)
     start_selected_phases_enemy_range_battleshock_support = _start_selected_phases_enemy_range_battleshock_support(description)
+    command_phase_enemy_range_battleshock_support = _command_phase_enemy_range_battleshock_support(description)
     command_phase_enemy_no_cover_support = _command_phase_enemy_no_cover_support(description)
     command_phase_psychic_veil_support = _command_phase_psychic_veil_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
@@ -6105,6 +6114,8 @@ def _classify_ability_base(
         return start_any_command_phase_objective_battleshock_support
     if start_selected_phases_enemy_range_battleshock_support:
         return start_selected_phases_enemy_range_battleshock_support
+    if command_phase_enemy_range_battleshock_support:
+        return command_phase_enemy_range_battleshock_support
     if command_phase_enemy_no_cover_support:
         return command_phase_enemy_no_cover_support
     if command_phase_psychic_veil_support:
@@ -9889,6 +9900,22 @@ def _enemy_aura_attack_hit_wound_penalty_support(description: str) -> Optional[T
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    m_psychological = re.fullmatch(
+        r"while an enemy unit is within (?P<range>\d+) of this model if that unit is battle shocked "
+        r"each time a model in that unit makes an attack subtract (?P<hit>\d+) from the hit roll "
+        r"each time a friendly (?P<friendly>[a-z0-9 ]+) model makes an attack that targets that unit add (?P<wound>\d+) to the wound roll",
+        norm,
+    )
+    if m_psychological:
+        rng = m_psychological.group("range") or "?"
+        hit = m_psychological.group("hit") or "1"
+        wound = m_psychological.group("wound") or "1"
+        friendly = str(m_psychological.group("friendly") or "friendly").strip().upper()
+        return (
+            "Supported",
+            f"Enemy units within {rng}\" that are Battle-shocked suffer -{hit} to Hit rolls, and friendly {friendly} models gain +{wound} to Wound rolls when targeting those units.",
+        )
+
     m = re.fullmatch(
         r"while an enemy unit is within (?P<range>\d+) of this model each time a model in that unit makes an attack "
         r"subtract (?P<hit>\d+) from the hit roll"
@@ -11106,6 +11133,32 @@ def _start_selected_phases_enemy_range_battleshock_support(description: str) -> 
     return (
         "Supported",
         f"Once per turn at the start of your {phase_text} phase: select one enemy unit within {rng}\" to take a Battle-shock test at -{pen}.",
+    )
+
+
+def _command_phase_enemy_range_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your command phase (?:you can )?select one enemy unit within (?P<range>\d+) of "
+        r"(?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) "
+        r"that(?: enemy)? unit must take a battle shock test"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        rng = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        rng = 0
+    if rng <= 0:
+        return None
+    return (
+        "Supported",
+        f"Command phase: select one enemy unit within {rng}\" of the source model to take a Battle-shock test.",
     )
 
 

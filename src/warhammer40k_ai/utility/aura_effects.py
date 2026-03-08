@@ -1316,27 +1316,79 @@ def _parse_enemy_attack_hit_penalty_aura(ability) -> Optional[dict]:
         desc,
         flags=re.IGNORECASE,
     )
-    if not m:
-        return None
-    try:
-        rng = float(m.group("rng"))
-        hit_penalty = int(m.group("hit"))
-    except Exception:
-        return None
-    wound_penalty = 0
-    try:
-        wound_raw = m.group("wound")
-        if wound_raw is not None:
-            wound_penalty = int(wound_raw)
-    except Exception:
+    if m:
+        try:
+            rng = float(m.group("rng"))
+            hit_penalty = int(m.group("hit"))
+        except Exception:
+            return None
         wound_penalty = 0
+        try:
+            wound_raw = m.group("wound")
+            if wound_raw is not None:
+                wound_penalty = int(wound_raw)
+        except Exception:
+            wound_penalty = 0
+        if rng <= 0 or hit_penalty <= 0:
+            return None
+        return {
+            "range": float(rng),
+            "hit": -abs(int(hit_penalty)),
+            "below_half_wound": -abs(int(wound_penalty)) if int(wound_penalty) > 0 else 0,
+            "excluded_keywords": _parse_excluded_keywords(desc),
+            "requires_attacker_battle_shocked": False,
+            "target_battle_shocked_wound_bonus": 0,
+            "friendly_attacker_keyword": "",
+        }
+
+    # Neurolictor-style composite aura:
+    # - battle-shocked enemy attackers in range suffer a Hit penalty
+    # - friendly keyworded attacks into those battle-shocked targets gain a Wound bonus
+    text = re.sub(r"[^a-zA-Z0-9]+", " ", desc).strip().lower()
+    if not text:
+        return None
+    m_range = re.search(
+        r"while an enemy unit(?: excluding [a-z0-9 ]+)? is within (?P<rng>\d+) of "
+        r"(?:this model|this unit|the bearer|one or more units with this ability)",
+        text,
+    )
+    m_hit = re.search(
+        r"each time a model in that unit makes an attack subtract (?P<hit>\d+) from the hit roll",
+        text,
+    )
+    if not m_range or not m_hit:
+        return None
+    if "if that unit is battle shocked" not in text and "if that unit is battleshocked" not in text:
+        return None
+    try:
+        rng = float(m_range.group("rng"))
+        hit_penalty = int(m_hit.group("hit"))
+    except Exception:
+        return None
     if rng <= 0 or hit_penalty <= 0:
         return None
+
+    friendly_attacker_keyword = ""
+    target_battle_shocked_wound_bonus = 0
+    m_friendly_wound = re.search(
+        r"each time a friendly (?P<keyword>[a-z0-9 ]+) model makes an attack that targets that unit "
+        r"add (?P<wound>\d+) to the wound roll",
+        text,
+    )
+    if m_friendly_wound:
+        friendly_attacker_keyword = str(m_friendly_wound.group("keyword") or "").strip()
+        try:
+            target_battle_shocked_wound_bonus = int(m_friendly_wound.group("wound") or 0)
+        except Exception:
+            target_battle_shocked_wound_bonus = 0
     return {
         "range": float(rng),
         "hit": -abs(int(hit_penalty)),
-        "below_half_wound": -abs(int(wound_penalty)) if int(wound_penalty) > 0 else 0,
+        "below_half_wound": 0,
         "excluded_keywords": _parse_excluded_keywords(desc),
+        "requires_attacker_battle_shocked": True,
+        "target_battle_shocked_wound_bonus": max(0, int(target_battle_shocked_wound_bonus)),
+        "friendly_attacker_keyword": str(friendly_attacker_keyword or "").strip(),
     }
 
 
@@ -1734,6 +1786,54 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                     )
                 )
 
+            enemy_hit_penalty = _cached_parse_aura_spec(
+                "_parse_enemy_attack_hit_penalty_aura",
+                ab,
+                _parse_enemy_attack_hit_penalty_aura,
+            )
+            if enemy_hit_penalty:
+                try:
+                    target_battle_shocked_wound_bonus = int(
+                        enemy_hit_penalty.get("target_battle_shocked_wound_bonus", 0) or 0
+                    )
+                except Exception:
+                    target_battle_shocked_wound_bonus = 0
+                if target_battle_shocked_wound_bonus > 0:
+                    if not _unit_within_aura_range(source, target_unit, float(enemy_hit_penalty["range"]), ability=ab):
+                        continue
+                    target_is_battle_shocked = False
+                    is_target_battle_shocked_fn = getattr(target_unit, "is_battle_shocked", None)
+                    if callable(is_target_battle_shocked_fn):
+                        try:
+                            target_is_battle_shocked = bool(is_target_battle_shocked_fn())
+                        except Exception:
+                            target_is_battle_shocked = False
+                    if not target_is_battle_shocked:
+                        try:
+                            target_is_battle_shocked = bool(getattr(target_unit, "battle_shocked", False))
+                        except Exception:
+                            target_is_battle_shocked = False
+                    if not target_is_battle_shocked:
+                        continue
+                    friendly_attacker_keyword = str(enemy_hit_penalty.get("friendly_attacker_keyword", "") or "").strip()
+                    if friendly_attacker_keyword:
+                        matches = _unit_matches_keyword_phrase(attacker_unit, friendly_attacker_keyword)
+                        if not matches:
+                            has_any_keyword = getattr(attacker_unit, "has_any_keyword", None)
+                            if callable(has_any_keyword):
+                                matches = bool(has_any_keyword(friendly_attacker_keyword))
+                        if not matches:
+                            continue
+                    source_name = str(getattr(ab, "name", "") or "Enemy Aura").strip() or "Enemy Aura"
+                    out = out.merge(
+                        AuraAttackModifiers(
+                            wound=int(target_battle_shocked_wound_bonus),
+                            wound_reasons=(
+                                f"+{int(target_battle_shocked_wound_bonus)} to wound from {source_name} vs Battle-shocked target",
+                            ),
+                        )
+                    )
+
     # Enemy attack-hit penalty auras (e.g. Harassment Swarm).
     enemy_units: list = []
     try:
@@ -1776,6 +1876,18 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                 hit_penalty.get("excluded_keywords", ()),
             ):
                 continue
+            if bool(hit_penalty.get("requires_attacker_battle_shocked", False)):
+                attacker_is_battle_shocked = False
+                is_battle_shocked_fn = getattr(attacker_unit, "is_battle_shocked", None)
+                if callable(is_battle_shocked_fn):
+                    try:
+                        attacker_is_battle_shocked = bool(is_battle_shocked_fn())
+                    except Exception:
+                        attacker_is_battle_shocked = False
+                if not attacker_is_battle_shocked:
+                    attacker_is_battle_shocked = bool(getattr(attacker_unit, "battle_shocked", False))
+                if not attacker_is_battle_shocked:
+                    continue
             try:
                 hit_value = int(hit_penalty.get("hit", 0) or 0)
             except Exception:

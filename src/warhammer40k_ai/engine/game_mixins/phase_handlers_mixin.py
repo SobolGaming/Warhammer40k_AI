@@ -6470,8 +6470,10 @@ class GamePhaseHandlersMixin:
                         test_penalty = int(spec.get("test_penalty", 0) or 0)
                     except (TypeError, ValueError):
                         test_penalty = 0
-                    if range_value <= 0 or test_penalty <= 0:
+                    if range_value <= 0:
                         continue
+                    if test_penalty < 0:
+                        test_penalty = abs(int(test_penalty))
                     ability_key = str(spec.get("ability_key", "") or "").strip().lower()
                     if not ability_key:
                         ability_key = "start_phase_select_battleshock"
