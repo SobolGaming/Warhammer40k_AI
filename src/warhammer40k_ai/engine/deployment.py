@@ -31,6 +31,14 @@ class DeploymentDecisionMaker(ABC):
     def choose_deployment_zone(self, available_zones: List[dict]) -> dict:
         """Choose deployment zone as the defender."""
         pass
+
+    def choose_deployment_zone_option(
+        self,
+        request: DecisionRequest,
+        available_zones: List[dict],
+    ) -> Optional[str]:
+        del request, available_zones
+        return None
     
     @abstractmethod
     def declare_reserves(self, player: Player) -> dict:
@@ -53,6 +61,16 @@ class DeploymentDecisionMaker(ABC):
         if not deployable_units:
             raise ValueError("No deployable units provided.")
         return deployable_units[0]
+
+    def choose_next_deploy_unit_option(
+        self,
+        request: DecisionRequest,
+        deployable_units: List['Unit'],
+        deployment_zone: dict,
+        already_deployed: List['Unit'],
+    ) -> Optional[str]:
+        del request, deployable_units, deployment_zone, already_deployed
+        return None
 
     def build_deployment_intent(
         self,
@@ -313,17 +331,40 @@ class DeploymentManager:
             extra_context=extra_context,
             queue_requests=True,
         )
-        chosen_zone = decision_maker.choose_deployment_zone(list(available_zones))
-        if not isinstance(chosen_zone, dict):
-            raise RuntimeError(
-                f"Deployment zone choice for {player.name} must return a zone dict."
-            )
+        selected_option: Optional[DecisionOption] = None
         if request is None:
+            chosen_zone = decision_maker.choose_deployment_zone(list(available_zones))
+            if not isinstance(chosen_zone, dict):
+                raise RuntimeError(
+                    f"Deployment zone choice for {player.name} must return a zone dict."
+                )
             for zone in available_zones:
                 if zone == chosen_zone:
                     return zone
             raise RuntimeError(f"Deployment zone choice for {player.name} did not match any available zone.")
-        selected_option = self._matching_zone_option(request, chosen_zone, available_zones)
+        option_id = str(
+            decision_maker.choose_deployment_zone_option(
+                request,
+                list(available_zones),
+            )
+            or ""
+        )
+        if option_id:
+            for option in list(getattr(request, "options", []) or []):
+                if str(getattr(option, "option_id", "") or "") == option_id:
+                    selected_option = option
+                    break
+            if selected_option is None:
+                raise RuntimeError(
+                    f"Deployment zone option selection for {player.name} returned unknown option id: {option_id}"
+                )
+        if selected_option is None:
+            chosen_zone = decision_maker.choose_deployment_zone(list(available_zones))
+            if not isinstance(chosen_zone, dict):
+                raise RuntimeError(
+                    f"Deployment zone choice for {player.name} must return a zone dict."
+                )
+            selected_option = self._matching_zone_option(request, chosen_zone, available_zones)
         if selected_option is None:
             raise RuntimeError(
                 f"Deployment zone choice for {player.name} did not match any request option."
@@ -412,28 +453,59 @@ class DeploymentManager:
             ),
             queue_requests=True,
         )
-        chosen_unit = decision_maker.choose_next_deploy_unit(
-            list(deployable_units),
-            deployment_zone,
-            list(already_deployed),
-        )
-        try:
-            chosen_unit_id = str(get_entity_id(chosen_unit) or "")
-        except ValueError as exc:
-            raise RuntimeError("Deployment unit selection returned an unknown unit.") from exc
-        if not chosen_unit_id:
-            raise RuntimeError("Deployment unit selection returned an invalid unit id.")
+        selected_option = None
+        chosen_unit_id = ""
         if request is not None:
-            selected_option = None
-            for option in list(getattr(request, "options", []) or []):
-                payload = dict(getattr(option, "payload", {}) or {})
-                if str(payload.get("unit_id", "") or "") == chosen_unit_id:
-                    selected_option = option
-                    break
-            if selected_option is None:
-                raise RuntimeError(
-                    f"Deployment unit selection for {player.name} returned unknown unit id: {chosen_unit_id}"
+            option_id = str(
+                decision_maker.choose_next_deploy_unit_option(
+                    request,
+                    list(deployable_units),
+                    deployment_zone,
+                    list(already_deployed),
                 )
+                or ""
+            )
+            if option_id:
+                for option in list(getattr(request, "options", []) or []):
+                    if str(getattr(option, "option_id", "") or "") == option_id:
+                        selected_option = option
+                        break
+                if selected_option is None:
+                    raise RuntimeError(
+                        f"Deployment unit option selection for {player.name} returned unknown option id: {option_id}"
+                    )
+
+        if selected_option is None:
+            chosen_unit = decision_maker.choose_next_deploy_unit(
+                list(deployable_units),
+                deployment_zone,
+                list(already_deployed),
+            )
+            try:
+                chosen_unit_id = str(get_entity_id(chosen_unit) or "")
+            except ValueError as exc:
+                raise RuntimeError("Deployment unit selection returned an unknown unit.") from exc
+            if not chosen_unit_id:
+                raise RuntimeError("Deployment unit selection returned an invalid unit id.")
+            if request is not None:
+                for option in list(getattr(request, "options", []) or []):
+                    payload = dict(getattr(option, "payload", {}) or {})
+                    if str(payload.get("unit_id", "") or "") == chosen_unit_id:
+                        selected_option = option
+                        break
+                if selected_option is None:
+                    raise RuntimeError(
+                        f"Deployment unit selection for {player.name} returned unknown unit id: {chosen_unit_id}"
+                    )
+        elif request is not None:
+            payload = dict(getattr(selected_option, "payload", {}) or {})
+            chosen_unit_id = str(payload.get("unit_id", "") or "")
+            if not chosen_unit_id:
+                raise RuntimeError(
+                    f"Deployment unit option selection for {player.name} did not provide unit_id."
+                )
+
+        if request is not None and selected_option is not None:
             queue = getattr(self.game, "decision_queue", None)
             pending = queue.get(request.decision_id) if queue is not None and hasattr(queue, "get") else request
             if pending is not None:

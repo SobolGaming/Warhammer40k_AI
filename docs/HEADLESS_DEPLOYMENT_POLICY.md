@@ -13,6 +13,10 @@ This document describes deterministic headless placement behavior for deployment
     - `board_affordances`
     - tuned deployment weights/affordances for the current player and zone.
 - Reserve choices in `balanced` mode still obey reserve limits and validation, but candidate ranking now includes teacher reserve preference scoring.
+- Optional imitation/ranking model integration:
+  - `DeterministicDeploymentDecisionMaker(..., ranker_model_path=...)` can load a linear deployment ranker model.
+  - When loaded, zone and next-unit choices can be selected directly from request candidates via ranker scores.
+  - If model scoring is unavailable for a request, deterministic heuristic fallback remains active.
 - Standard units:
   - Candidate anchors are searched inside the assigned deployment zone.
   - Teacher semantic anchors are evaluated first, then lattice fallback scanning.

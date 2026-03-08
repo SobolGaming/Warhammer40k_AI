@@ -71,6 +71,14 @@ def _parse_args() -> argparse.Namespace:
         default=10.0,
         help="Hard wall-clock cap per reserves-arrival placement decision (default: 10.0).",
     )
+    parser.add_argument(
+        "--deployment-ranker-model",
+        default="",
+        help=(
+            "Optional path to a deployment ranking model JSON. "
+            "When provided, zone/next-unit deployment choices are ranked from candidate metadata."
+        ),
+    )
     parser.add_argument("--max-phase-steps", type=int, default=80)
     parser.add_argument(
         "--output",
@@ -129,6 +137,7 @@ def _run_single_game(
     game_seed: int | None = None,
     reserve_policy: str = "forced_only",
     max_reserves_arrival_seconds: float = 10.0,
+    deployment_ranker_model: str | None = None,
 ) -> dict[str, Any]:
     player1 = Player("Player 1", control=PlayerControl.REMOTE)
     player2 = Player("Player 2", control=PlayerControl.REMOTE)
@@ -145,8 +154,16 @@ def _run_single_game(
     )
 
     deployment_decision_makers = {
-        player1.id: DeterministicDeploymentDecisionMaker(game, reserve_policy=str(reserve_policy or "forced_only")),
-        player2.id: DeterministicDeploymentDecisionMaker(game, reserve_policy=str(reserve_policy or "forced_only")),
+        player1.id: DeterministicDeploymentDecisionMaker(
+            game,
+            reserve_policy=str(reserve_policy or "forced_only"),
+            ranker_model_path=str(deployment_ranker_model or ""),
+        ),
+        player2.id: DeterministicDeploymentDecisionMaker(
+            game,
+            reserve_policy=str(reserve_policy or "forced_only"),
+            ranker_model_path=str(deployment_ranker_model or ""),
+        ),
     }
 
     while game.is_in_setup_phase():
@@ -189,6 +206,7 @@ def _run_single_game_job(
     seed_base: int | None = None,
     reserve_policy: str = "forced_only",
     max_reserves_arrival_seconds: float = 10.0,
+    deployment_ranker_model: str | None = None,
 ) -> dict[str, Any]:
     game_seed = None
     if seed_base is not None:
@@ -201,6 +219,7 @@ def _run_single_game_job(
         game_seed=game_seed,
         reserve_policy=str(reserve_policy or "forced_only"),
         max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
+        deployment_ranker_model=str(deployment_ranker_model or ""),
     )
     serialized_result = {
         "records": _json_safe(list(result.get("records", []) or [])),
@@ -239,6 +258,7 @@ def main() -> int:
                 seed_base=seed_base,
                 reserve_policy=str(args.reserve_policy),
                 max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
+                deployment_ranker_model=str(args.deployment_ranker_model),
             )
             per_game_outputs.append(payload)
             result = dict(payload.get("result", {}) or {})
@@ -261,6 +281,7 @@ def main() -> int:
                     seed_base=seed_base,
                     reserve_policy=str(args.reserve_policy),
                     max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
+                    deployment_ranker_model=str(args.deployment_ranker_model),
                 )
                 for game_index in range(games)
             ]

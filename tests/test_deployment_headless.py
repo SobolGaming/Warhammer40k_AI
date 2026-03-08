@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from shapely.geometry import Point
 
 from warhammer40k_ai.battlefield.map import Map, TerrainFactory
+from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_DEPLOYMENT_ZONE
+from warhammer40k_ai.engine.deployment_ranker import DEFAULT_DEPLOYMENT_RANKER_FEATURE_KEYS
 from warhammer40k_ai.engine.deployment_headless import DeterministicDeploymentDecisionMaker
 
 
@@ -347,3 +353,56 @@ def test_semantic_anchor_candidates_are_used_for_placement(
     x, y = maker.choose_unit_deployment_position(unit, zone, already_deployed=[])
     assert x == pytest.approx(24.0, abs=0.2)
     assert y == pytest.approx(12.0, abs=0.2)
+
+
+def test_deployment_headless_uses_ranker_model_for_option_selection(tmp_path: Path) -> None:
+    class _StubGame:
+        players: list[object] = []
+
+    feature_keys = list(DEFAULT_DEPLOYMENT_RANKER_FEATURE_KEYS)
+    model_payload = {
+        "model_type": "deployment_linear_ranker_v1",
+        "feature_keys": feature_keys,
+        "weights": [1.0] + [0.0 for _ in feature_keys[1:]],
+        "bias": 0.0,
+        "normalization": {
+            "mean": [0.0 for _ in feature_keys],
+            "scale": [1.0 for _ in feature_keys],
+        },
+        "decision_types": [DECISION_CHOOSE_DEPLOYMENT_ZONE],
+        "candidate_kinds": ["deployment_zone"],
+        "created_at_utc": "2026-03-08T00:00:00Z",
+        "training_metrics": {},
+    }
+    model_path = tmp_path / "deployment_ranker_model.json"
+    model_path.write_text(json.dumps(model_payload, sort_keys=True), encoding="utf-8")
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame(), ranker_model_path=str(model_path))
+
+    request = DecisionRequest.create(
+        DECISION_CHOOSE_DEPLOYMENT_ZONE,
+        "Choose deployment zone",
+        player_id="player:test",
+        options=[
+            DecisionOption.create("Zone A", payload={"zone_name": "A"}),
+            DecisionOption.create("Zone B", payload={"zone_name": "B"}),
+        ],
+        context={},
+    )
+    assert request is not None
+    action_a = request.action_id_for_option_id(request.options[0].option_id)
+    action_b = request.action_id_for_option_id(request.options[1].option_id)
+    low = {
+        "candidate_kind": "deployment_zone",
+        "projected_score_delta_next_window": 0.1,
+    }
+    high = {
+        "candidate_kind": "deployment_zone",
+        "projected_score_delta_next_window": 1.2,
+    }
+    request.candidates = [
+        CandidateAction(action_id=action_a, params={}, metadata=low),
+        CandidateAction(action_id=action_b, params={}, metadata=high),
+    ]
+    request.mask = [True, True]
+    option_id = maker.choose_deployment_zone_option(request, [])
+    assert str(option_id or "") == str(request.options[1].option_id)

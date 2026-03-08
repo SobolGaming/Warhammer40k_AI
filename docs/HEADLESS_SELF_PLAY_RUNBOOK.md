@@ -5,6 +5,7 @@ This runbook shows how to generate headless AI-vs-AI DecisionRecords from army l
 Related docs:
 - `docs/TRAINING_DATA_SPEC.md`
 - `docs/TRAINING_REWARD_PROFILES.md`
+- `docs/DEPLOYMENT_RANKING_PIPELINE.md`
 
 ## Prerequisites
 
@@ -125,3 +126,30 @@ python -c "import json; m=json.load(open('data/training_manifest.json', encoding
 Interpretation:
 - `gate_requirements.meets_gate_profile == true`: dataset is acceptable for baseline pre-ML training use.
 - any `meets_* == false`: treat as a data-generation quality issue and regenerate/retune self-play settings.
+
+## 7) Build and train deployment ranking policy
+
+Extract deployment decision groups for imitation/ranking:
+
+```bash
+python scripts/build_deployment_ranking_dataset.py \
+  --input data/headless_self_play_decision_records_rewarded.json \
+  --output data/deployment_ranking_dataset.json
+```
+
+Train a linear ranker:
+
+```bash
+python scripts/train_deployment_ranker.py \
+  --input data/deployment_ranking_dataset.json \
+  --output data/deployment_ranker_model.json
+```
+
+Use trained deployment ranker in headless play:
+
+```bash
+python scripts/run_headless_self_play.py \
+  --games 50 \
+  --deployment-ranker-model data/deployment_ranker_model.json \
+  --output data/headless_self_play_ranked.json
+```

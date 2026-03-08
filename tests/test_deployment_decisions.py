@@ -40,6 +40,37 @@ class _ScriptedDecisionMaker(DeploymentDecisionMaker):
         return (0.0, 0.0)
 
 
+class _OptionSelectingDecisionMaker(_ScriptedDecisionMaker):
+    def __init__(self, *, zone_name: str, next_unit_id: str) -> None:
+        super().__init__(zone_name=zone_name, next_unit_id=next_unit_id)
+        self.zone_fallback_calls = 0
+        self.unit_fallback_calls = 0
+
+    def choose_deployment_zone(self, available_zones: list[dict]) -> dict:
+        self.zone_fallback_calls += 1
+        return super().choose_deployment_zone(available_zones)
+
+    def choose_next_deploy_unit(self, deployable_units: list[_StubUnit], deployment_zone: dict, already_deployed: list[_StubUnit]):
+        self.unit_fallback_calls += 1
+        return super().choose_next_deploy_unit(deployable_units, deployment_zone, already_deployed)
+
+    def choose_deployment_zone_option(self, request, available_zones: list[dict]):
+        del available_zones
+        for option in list(getattr(request, "options", []) or []):
+            payload = dict(getattr(option, "payload", {}) or {})
+            if str(payload.get("zone_name", "") or "") == self._zone_name:
+                return str(getattr(option, "option_id", "") or "")
+        return None
+
+    def choose_next_deploy_unit_option(self, request, deployable_units: list[_StubUnit], deployment_zone: dict, already_deployed: list[_StubUnit]):
+        del deployable_units, deployment_zone, already_deployed
+        for option in list(getattr(request, "options", []) or []):
+            payload = dict(getattr(option, "payload", {}) or {})
+            if str(payload.get("unit_id", "") or "") == self._next_unit_id:
+                return str(getattr(option, "option_id", "") or "")
+        return None
+
+
 def _build_game() -> tuple[Game, Player, Player]:
     player_one = Player("P1", PlayerControl.LOCAL, None)
     player_two = Player("P2", PlayerControl.LOCAL, None)
@@ -119,3 +150,27 @@ def test_deployment_manager_resolves_zone_and_next_unit_choices_via_requests() -
     assert str(getattr(selected_unit, "id", "") or "") == "unit:b"
     manager._pop_selected_deploy_unit(deployable, selected_unit)
     assert [str(getattr(unit, "id", "") or "") for unit in deployable] == ["unit:a"]
+
+
+def test_deployment_manager_prefers_option_selection_hooks_when_available() -> None:
+    game, player, _other = _build_game()
+    manager = DeploymentManager(game)
+    decision_maker = _OptionSelectingDecisionMaker(zone_name="Zone B", next_unit_id="unit:b")
+    zones = [
+        {"name": "Zone A", "zone_type": "defender"},
+        {"name": "Zone B", "zone_type": "attacker"},
+    ]
+    selected_zone = manager._resolve_deployment_zone_decision(player, decision_maker, zones)
+    assert str(selected_zone.get("name", "") or "") == "Zone B"
+    assert int(decision_maker.zone_fallback_calls) == 0
+
+    deployable = [_StubUnit("unit:a", "Alpha"), _StubUnit("unit:b", "Beta")]
+    selected_unit = manager._resolve_next_deploy_unit_choice(
+        player,
+        decision_maker,
+        deployable,
+        selected_zone,
+        already_deployed=[],
+    )
+    assert str(getattr(selected_unit, "id", "") or "") == "unit:b"
+    assert int(decision_maker.unit_fallback_calls) == 0

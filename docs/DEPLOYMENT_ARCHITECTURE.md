@@ -20,6 +20,9 @@ Key goals:
   `src/warhammer40k_ai/engine/deployment_intent.py` and
   `src/warhammer40k_ai/engine/deployment_solver.py` produce deterministic candidates with
   semantic metadata and time-budget fallback support.
+- `DeploymentDecisionMaker` can optionally select by queued request option id
+  (`choose_deployment_zone_option` / `choose_next_deploy_unit_option`) so learned rankers
+  can consume engine-generated candidate metadata directly.
 - `HumanDeploymentDecisionMaker` delegates to `src/warhammer40k_ai/UI/human_interface.py`
   (or console fallback if no UI is available).
 

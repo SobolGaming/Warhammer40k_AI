@@ -6,6 +6,8 @@ Manifest module:
 CLI:
 - `scripts/build_training_manifest.py`
 - `scripts/annotate_decision_rewards.py`
+- `scripts/build_deployment_ranking_dataset.py`
+- `scripts/train_deployment_ranker.py`
 
 Operational runbook:
 - `docs/HEADLESS_SELF_PLAY_RUNBOOK.md`
@@ -137,3 +139,30 @@ Purpose before ML libraries:
 - prevent silent regressions in candidate-semantic coverage
 - prevent low-information self-play corpora (for example repeated no-progression/near-0-0 games) from entering training
 - keep reward shaping explicit and profile-versioned (`docs/TRAINING_REWARD_PROFILES.md`)
+
+## Deployment imitation/ranking artifacts
+
+Dataset build example:
+
+```bash
+python scripts/build_deployment_ranking_dataset.py \
+  --input data/headless_self_play_decision_records_rewarded.json \
+  --output data/deployment_ranking_dataset.json
+```
+
+Model training example:
+
+```bash
+python scripts/train_deployment_ranker.py \
+  --input data/deployment_ranking_dataset.json \
+  --output data/deployment_ranker_model.json
+```
+
+Runtime usage (headless self-play):
+
+```bash
+python scripts/run_headless_self_play.py \
+  --games 50 \
+  --deployment-ranker-model data/deployment_ranker_model.json \
+  --output data/headless_self_play_ranked.json
+```

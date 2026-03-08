@@ -7,6 +7,7 @@ from .decision_dispatcher import validate_decision
 from .decision_kinds import DECISION_MOVE_UNIT
 from .decisions import DecisionOption, DecisionRequest, DecisionResult
 from .deployment import DeploymentDecisionMaker
+from .deployment_ranker import DeploymentCandidateRanker
 from .pregame_deployment_agent import PregameDeploymentAgent
 from ..roster.player import Player
 from ..utility.entity_ids import get_entity_id
@@ -30,12 +31,18 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         exhaustive_lattice_step: float = 1.0,
         reserve_policy: str = "forced_only",
         use_pregame_teacher: bool = True,
+        ranker_model_path: str | None = None,
     ) -> None:
         self.game = game
         self.lattice_step = float(max(0.5, lattice_step))
         self.exhaustive_lattice_step = float(max(0.25, exhaustive_lattice_step))
         self.reserve_policy = self._normalize_reserve_policy(reserve_policy)
         self._pregame_agent = PregameDeploymentAgent(game) if bool(use_pregame_teacher) else None
+        self._deployment_ranker = (
+            DeploymentCandidateRanker.from_json_file(ranker_model_path)
+            if str(ranker_model_path or "").strip()
+            else None
+        )
         self._active_player_id: str = ""
         self._selected_payload_by_unit_id: dict[str, tuple[tuple[float, float], list[dict]]] = {}
 
@@ -79,6 +86,24 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             if ordered:
                 return ordered[0]
         return deployable_units[0]
+
+    def choose_deployment_zone_option(
+        self,
+        request: DecisionRequest,
+        available_zones: list[dict],
+    ) -> Optional[str]:
+        del available_zones
+        return self._ranked_option_id(request)
+
+    def choose_next_deploy_unit_option(
+        self,
+        request: DecisionRequest,
+        deployable_units: list[object],
+        deployment_zone: dict,
+        already_deployed: list[object],
+    ) -> Optional[str]:
+        del deployable_units, deployment_zone, already_deployed
+        return self._ranked_option_id(request)
 
     def declare_reserves(self, player: Player) -> dict:
         army = player.get_army() if player is not None else None
@@ -938,3 +963,23 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                         continue
                     candidates.append((x, y))
         return candidates
+
+    def _ranked_option_id(self, request: DecisionRequest) -> Optional[str]:
+        if self._deployment_ranker is None:
+            return None
+        action_id = str(self._deployment_ranker.choose_action_id(request) or "")
+        if not action_id:
+            return None
+        return self._option_id_for_action_id(request, action_id)
+
+    @staticmethod
+    def _option_id_for_action_id(request: DecisionRequest, action_id: str) -> Optional[str]:
+        if not action_id:
+            return None
+        for option in list(getattr(request, "options", []) or []):
+            option_id = str(getattr(option, "option_id", "") or "")
+            if not option_id:
+                continue
+            if request.action_id_for_option_id(option_id) == action_id:
+                return option_id
+        return None
