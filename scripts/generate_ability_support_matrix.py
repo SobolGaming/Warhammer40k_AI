@@ -5698,6 +5698,7 @@ def _classify_ability_base(
     horde_move_support = _horde_move_support(description)
     blistering_assault_support = _blistering_assault_support(description)
     setup_reactive_shoot_charge_support = _setup_reactive_shoot_or_charge_support(description)
+    deep_strike_setup_range_no_charge_support = _deep_strike_setup_range_no_charge_support(description)
     deep_strike_setup_mortal_battleshock_support = _deep_strike_setup_enemy_range_mortal_wounds_battleshock_support(
         description
     )
@@ -6075,6 +6076,8 @@ def _classify_ability_base(
         return blistering_assault_support
     if setup_reactive_shoot_charge_support:
         return setup_reactive_shoot_charge_support
+    if deep_strike_setup_range_no_charge_support:
+        return deep_strike_setup_range_no_charge_support
     if deep_strike_setup_mortal_battleshock_support:
         return deep_strike_setup_mortal_battleshock_support
     if synapse_keyword_grant_support:
@@ -10241,6 +10244,37 @@ def _setup_reactive_shoot_or_charge_support(description: str) -> Optional[Tuple[
     return (
         "Supported",
         f"End of opponent Movement phase: select enemy set up within {rng}\" to shoot (if eligible) or charge without charge bonus.",
+    )
+
+
+def _deep_strike_setup_range_no_charge_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "in your movement phase" not in norm:
+        return None
+    if "using the deep strike ability" not in norm:
+        return None
+    if "not eligible to declare a charge" not in norm:
+        return None
+    pattern = (
+        r"in your movement phase when this (?:model|unit) is set up on the battlefield using the deep strike ability "
+        r"(?:it can (?:perform|use) [a-z0-9 ]+ )?(?:if it does )?"
+        r"(?:this|that|the) (?:model|unit) can be set up anywhere on the battlefield that is more than (?P<range>\d+) "
+        r"(?:horizontally )?away from all enemy units "
+        r"but until the end of the turn (?:it|this (?:model|unit)|that unit) is not eligible to declare a charge"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    rng = str(m.group("range") or "").strip()
+    if not rng:
+        return None
+    return (
+        "Supported",
+        f"Deep Strike setup: optional closer arrival more than {rng}\" horizontally from enemy units; if used, this unit cannot declare a charge this turn.",
     )
 
 

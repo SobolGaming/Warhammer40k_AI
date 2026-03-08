@@ -133,3 +133,22 @@ def test_meteoric_descent_three_inch_variant_is_detected():
     rule = unit.get_cloudstrider_deep_strike_rule()
     assert isinstance(rule, dict)
     assert float(rule.get("deep_strike_min_distance", 0.0) or 0.0) == 3.0
+
+
+def test_subterranean_tunnels_trygon_variant_is_detected():
+    ability_desc = (
+        "In your Movement phase, when this model is set up on the battlefield using the Deep Strike ability, it can "
+        "use a subterranean tunnel. If it does, this model can be set up anywhere on the battlefield that is more "
+        "than 6\" horizontally away from all enemy units, but until the end of the turn, it is not eligible to "
+        "declare a charge."
+    )
+    unit = _make_unit(
+        "Trygon",
+        ability_name="Subterranean Tunnels",
+        ability_desc=ability_desc,
+    )
+    source = unit.get_cloudstrider_deep_strike_source()
+    assert "subterranean tunnels" in str(source or "").lower()
+    rule = unit.get_cloudstrider_deep_strike_rule()
+    assert isinstance(rule, dict)
+    assert float(rule.get("deep_strike_min_distance", 0.0) or 0.0) == 6.0
