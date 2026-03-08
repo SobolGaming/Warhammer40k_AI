@@ -570,6 +570,7 @@ class FightPhaseManager:
                             hits_by_target=attack_summary.get("hits_by_target"),
                             hit_models_by_target=attack_summary.get("hit_models_by_target"),
                             hit_models_by_target_psychic=attack_summary.get("hit_models_by_target_psychic"),
+                            killing_models_by_target=attack_summary.get("killing_models_by_target"),
                         )
                 except Exception:
                     pass
@@ -654,6 +655,7 @@ class FightPhaseManager:
                         hits_by_target=attack_summary.get("hits_by_target"),
                         hit_models_by_target=attack_summary.get("hit_models_by_target"),
                         hit_models_by_target_psychic=attack_summary.get("hit_models_by_target_psychic"),
+                        killing_models_by_target=attack_summary.get("killing_models_by_target"),
                     )
             except Exception:
                 pass
@@ -700,6 +702,7 @@ class FightPhaseManager:
             hits_by_target_total = {}
             hit_models_by_target_total = {}
             hit_models_by_target_psychic_total = {}
+            killing_models_by_target_total = {}
             for target_unit, attacking_models in target_declarations.items():
                 logger.info(f"  {len(attacking_models)} models attacking {target_unit.name}")
                 decls = list(auto_decls or [])
@@ -720,6 +723,13 @@ class FightPhaseManager:
                         hit_models_by_target_psychic_total[unit] = set()
                     try:
                         hit_models_by_target_psychic_total[unit].update(set(models or []))
+                    except Exception:
+                        pass
+                for unit, models in (attack_summary.get("killing_models_by_target") or {}).items():
+                    if unit not in killing_models_by_target_total:
+                        killing_models_by_target_total[unit] = set()
+                    try:
+                        killing_models_by_target_total[unit].update(set(models or []))
                     except Exception:
                         pass
             if hits_by_target_total:
@@ -746,6 +756,7 @@ class FightPhaseManager:
                         hits_by_target=hits_by_target_total,
                         hit_models_by_target=hit_models_by_target_total,
                         hit_models_by_target_psychic=hit_models_by_target_psychic_total,
+                        killing_models_by_target=killing_models_by_target_total,
                     )
             except Exception:
                 pass
@@ -884,12 +895,14 @@ class FightPhaseManager:
         hit_tracker = {}
         hit_models_by_target = {}
         hit_models_by_target_psychic = {}
+        killing_models_by_target = {}
         attack_context = {
             "pending_mortal_wounds": {},
             "defer_mortal_wounds": True,
             "hit_tracker": hit_tracker,
             "hit_models_by_target": hit_models_by_target,
             "hit_models_by_target_psychic": hit_models_by_target_psychic,
+            "killing_models_by_target": killing_models_by_target,
         }
         base_provider = None
         if game_map is not None:
@@ -957,6 +970,7 @@ class FightPhaseManager:
             "hits_by_target": hit_tracker,
             "hit_models_by_target": hit_models_by_target,
             "hit_models_by_target_psychic": hit_models_by_target_psychic,
+            "killing_models_by_target": killing_models_by_target,
         }
 
     def get_stage_info(self, current_player: Player, opponent_player: Player) -> Dict:

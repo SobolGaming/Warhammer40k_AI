@@ -858,6 +858,7 @@ class GameShootingFightHandlersMixin:
         target_unit=None,
         hits_by_target=None,
         hit_models_by_target=None,
+        killing_models_by_target=None,
         **_kwargs,
     ) -> None:
         attacker_unit = attacker_unit if attacker_unit is not None else unit
@@ -938,6 +939,101 @@ class GameShootingFightHandlersMixin:
                 return False
             return model in hit_models
 
+        def _model_destroyed_any_enemy_unit(model) -> bool:
+            if isinstance(killing_models_by_target, dict):
+                model_id = str(get_entity_id(model) or "")
+                try:
+                    attacker_model_count = len(list(attacker_unit.models or []))
+                except Exception:
+                    attacker_model_count = 0
+                for target, killing_models in list((killing_models_by_target or {}).items()):
+                    if target is None:
+                        continue
+                    try:
+                        target_root = target.get_attached_unit_root()
+                    except Exception:
+                        target_root = target
+                    if target_root is None:
+                        continue
+                    try:
+                        if target_root.get_parent_army() == attacker_unit.get_parent_army():
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        target_destroyed = not bool(target_root.is_alive())
+                    except Exception:
+                        target_destroyed = False
+                    if not target_destroyed:
+                        continue
+                    if not killing_models:
+                        return True
+                    if model in killing_models:
+                        return True
+                    if model_id:
+                        for killer in list(killing_models or []):
+                            if str(get_entity_id(killer) or "") == model_id:
+                                return True
+                            if str(killer or "") == model_id:
+                                return True
+                    if attacker_model_count == 1:
+                        return True
+            if target_unit is None:
+                return False
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            if target_root is None:
+                return False
+            try:
+                if target_root.get_parent_army() == attacker_unit.get_parent_army():
+                    return False
+            except Exception:
+                return False
+            try:
+                if bool(target_root.is_alive()):
+                    return False
+            except Exception:
+                return False
+            return _model_hit_target(model, target_root) or _model_hit_target(model, target_unit)
+
+        def _collect_enemy_roots_for_aura() -> list[Any]:
+            game_map = getattr(self, "map", None)
+            if game_map is None:
+                return []
+            try:
+                enemies = list(game_map.get_enemy_units(attacker_unit) or [])
+            except Exception:
+                enemies = []
+            roots: list[Any] = []
+            seen_ids: set[str] = set()
+            for enemy in enemies:
+                if enemy is None:
+                    continue
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None:
+                    continue
+                try:
+                    if not bool(enemy_root.is_alive()):
+                        continue
+                    if not bool(getattr(enemy_root, "deployed", True)):
+                        continue
+                    if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                        continue
+                except Exception:
+                    continue
+                eid = str(get_entity_id(enemy_root) or "")
+                if eid and eid in seen_ids:
+                    continue
+                if eid:
+                    seen_ids.add(eid)
+                roots.append(enemy_root)
+            return roots
+
         def _willbreaker_applies_for_model(model) -> tuple[bool, str]:
             sr = getattr(attacker_unit, "special_rules", None)
             if not isinstance(sr, dict):
@@ -1009,11 +1105,46 @@ class GameShootingFightHandlersMixin:
                     continue
             return False
 
+        enemy_roots_for_aura = _collect_enemy_roots_for_aura()
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 1)
+        except Exception:
+            current_turn = 1
+
         from ..decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
 
         for model in list(attacker_unit.models or []):
             if not getattr(model, "is_alive", False):
                 continue
+            aura_specs = attacker_unit.model_post_fight_destroyed_aura_battleshock_specs(model) or []
+            if aura_specs and enemy_roots_for_aura and _model_destroyed_any_enemy_unit(model):
+                already_tested_enemy_ids: set[str] = set()
+                for aura_spec in aura_specs:
+                    try:
+                        aura_range = float(aura_spec.get("range", 0) or 0.0)
+                    except Exception:
+                        aura_range = 0.0
+                    if aura_range <= 0:
+                        continue
+                    for enemy_root in enemy_roots_for_aura:
+                        enemy_id = str(get_entity_id(enemy_root) or "")
+                        if enemy_id and enemy_id in already_tested_enemy_ids:
+                            continue
+                        try:
+                            in_range = bool(
+                                self._unit_within_range_of_model(
+                                    model,
+                                    enemy_root,
+                                    range_value=aura_range,
+                                )
+                            )
+                        except Exception:
+                            in_range = False
+                        if not in_range:
+                            continue
+                        enemy_root.take_battle_shock_test(current_turn)
+                        if enemy_id:
+                            already_tested_enemy_ids.add(enemy_id)
             specs = attacker_unit.model_post_fight_battleshock_specs(model) or []
             willbreaker_applies, willbreaker_source = _willbreaker_applies_for_model(model)
             if willbreaker_applies:

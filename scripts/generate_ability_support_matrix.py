@@ -5718,6 +5718,7 @@ def _classify_ability_base(
     fight_phase_select_enemy_melee_hit_penalty_support = _fight_phase_select_enemy_melee_hit_penalty_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
     fight_phase_aura_battleshock_support = _fight_phase_aura_battleshock_support(description)
+    post_fight_destroyed_aura_battleshock_support = _post_fight_destroyed_aura_battleshock_support(description)
     charge_end_engagement_battleshock_support = _charge_end_engagement_battleshock_support(description)
     start_any_phase_tome_skull_support = _start_any_phase_tome_skull_support(description)
     start_any_phase_battleshock_clear_support = _start_any_phase_battleshock_clear_support(description)
@@ -6121,6 +6122,8 @@ def _classify_ability_base(
         return fight_phase_engagement_battleshock_support
     if fight_phase_aura_battleshock_support:
         return fight_phase_aura_battleshock_support
+    if post_fight_destroyed_aura_battleshock_support:
+        return post_fight_destroyed_aura_battleshock_support
     if charge_end_engagement_battleshock_support:
         return charge_end_engagement_battleshock_support
     if start_any_phase_tome_skull_support:
@@ -11626,6 +11629,31 @@ def _fight_phase_aura_battleshock_support(description: str) -> Optional[Tuple[st
         if tokens:
             note = f"Start of Fight phase: enemy units within {rng}\" (excluding {', '.join(tokens)}) take a Battle-shock test."
     return ("Supported", note)
+
+
+def _post_fight_destroyed_aura_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time this model is selected to fight after resolving its attacks if one or more enemy units were destroyed by those attacks "
+        r"each enemy unit within (?P<range>\d+) of this model must take a battle shock test"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        rng = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        rng = 0
+    if rng <= 0:
+        return None
+    return (
+        "Supported",
+        f"After this model fights, if its attacks destroyed one or more enemy units, each enemy unit within {rng}\" takes a Battle-shock test.",
+    )
 
 
 def _charge_end_engagement_battleshock_support(description: str) -> Optional[Tuple[str, str]]:

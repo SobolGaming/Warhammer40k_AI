@@ -2035,6 +2035,65 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_post_fight_destroyed_aura_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: when selected to fight, if one or more enemy units were destroyed by
+        this model's attacks, each enemy unit within range must take a Battle-shock test.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_post_fight_destroyed_aura_battleshock:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            required = (
+                "each time this model is selected to fight",
+                "after resolving its attacks",
+                "if one or more enemy units were destroyed by those attacks",
+                "each enemy unit within",
+                "of this model must take a battle shock test",
+            )
+            if not all(fragment in normalized for fragment in required):
+                continue
+            match = re.search(
+                r"each enemy unit within (?P<range>\d+) of this model must take a battle shock test",
+                normalized,
+            )
+            if match is None:
+                continue
+            try:
+                range_value = int(match.group("range") or 0)
+            except (TypeError, ValueError):
+                range_value = 0
+            if range_value <= 0:
+                continue
+            source = str(name or "Post-fight destroyed aura Battle-shock").strip() or "Post-fight destroyed aura Battle-shock"
+            key = (source.lower(), int(range_value))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source, "range": int(range_value)})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_any_command_phase_battleshock_specs(
         self,
         model: Optional['Model'] = None,
