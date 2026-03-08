@@ -5,7 +5,12 @@ from abc import ABC, abstractmethod
 from .game import Game
 from .decision_kinds import DECISION_MOVE_UNIT
 from .decisions import DecisionOption, DecisionRequest
-from .decision_requests import build_reserves_allocation_request
+from .decision_requests import (
+    build_deployment_zone_request,
+    build_reserves_allocation_request,
+    build_select_next_deploy_unit_request,
+    canonical_deployment_zone_key,
+)
 from ..roster.player import Player
 from ..utility.calcs import get_dist
 from ..utility.decision_utils import resolve_decision_command
@@ -37,6 +42,17 @@ class DeploymentDecisionMaker(ABC):
                                        already_deployed: List['Unit']) -> Tuple[float, float]:
         """Choose where to deploy a specific unit within the deployment zone."""
         pass
+
+    def choose_next_deploy_unit(
+        self,
+        deployable_units: List['Unit'],
+        deployment_zone: dict,
+        already_deployed: List['Unit'],
+    ) -> 'Unit':
+        """Choose which unit to deploy next when multiple are available."""
+        if not deployable_units:
+            raise ValueError("No deployable units provided.")
+        return deployable_units[0]
 
 
 class DeploymentManager:
@@ -89,11 +105,12 @@ class DeploymentManager:
             
             # Assign zones - defender chooses first
             defender_decision_maker = decision_makers[self.defender.id]
-            chosen_zone = defender_decision_maker.choose_deployment_zone(available_zones)
-            
-            # Find which zone was chosen and assign accordingly
-            defender_zone = chosen_zone
-            attacker_zone = next(zone for zone in available_zones if zone != chosen_zone)
+            defender_zone = self._resolve_deployment_zone_decision(
+                self.defender,
+                defender_decision_maker,
+                available_zones,
+            )
+            attacker_zone = next(zone for zone in available_zones if zone is not defender_zone)
             
             deployment_results['deployment_zones'][self.defender.id] = defender_zone
             deployment_results['deployment_zones'][self.attacker.id] = attacker_zone
@@ -108,11 +125,12 @@ class DeploymentManager:
             logger.warning("No pre-configured zones found, creating standard zones")
             available_zones = self.create_deployment_zones()
             defender_decision_maker = decision_makers[self.defender.id]
-            chosen_zone = defender_decision_maker.choose_deployment_zone(available_zones)
-            
-            # Assign zones
-            defender_zone = chosen_zone
-            attacker_zone = next(zone for zone in available_zones if zone != chosen_zone)
+            defender_zone = self._resolve_deployment_zone_decision(
+                self.defender,
+                defender_decision_maker,
+                available_zones,
+            )
+            attacker_zone = next(zone for zone in available_zones if zone is not defender_zone)
             
             deployment_results['deployment_zones'][self.defender.id] = defender_zone
             deployment_results['deployment_zones'][self.attacker.id] = attacker_zone
@@ -242,6 +260,153 @@ class DeploymentManager:
                     f"Reserves allocation decision rejected for player {getattr(player, 'name', 'Player')}: {list(errors)}"
                 )
         return decisions
+
+    def _resolve_deployment_zone_decision(
+        self,
+        player: Player,
+        decision_maker: DeploymentDecisionMaker,
+        available_zones: List[dict],
+    ) -> dict:
+        if not available_zones:
+            raise RuntimeError("Deployment zone choice requires at least one available zone.")
+        request = build_deployment_zone_request(self.game, player, available_zones, queue_requests=True)
+        chosen_zone = decision_maker.choose_deployment_zone(list(available_zones))
+        if not isinstance(chosen_zone, dict):
+            raise RuntimeError(
+                f"Deployment zone choice for {player.name} must return a zone dict."
+            )
+        if request is None:
+            for zone in available_zones:
+                if zone == chosen_zone:
+                    return zone
+            raise RuntimeError(f"Deployment zone choice for {player.name} did not match any available zone.")
+        selected_option = self._matching_zone_option(request, chosen_zone, available_zones)
+        if selected_option is None:
+            raise RuntimeError(
+                f"Deployment zone choice for {player.name} did not match any request option."
+            )
+        queue = getattr(self.game, "decision_queue", None)
+        pending = queue.get(request.decision_id) if queue is not None and hasattr(queue, "get") else request
+        if pending is not None:
+            apply_result = resolve_decision_command(
+                self.game,
+                request,
+                selected_option.option_id,
+                result_payload={},
+                player_id=getattr(player, "id", None),
+            )
+            if not bool(getattr(apply_result, "ok", False)):
+                errors = tuple(getattr(apply_result, "errors", ()) or ())
+                raise RuntimeError(
+                    f"Deployment zone decision rejected for player {getattr(player, 'name', 'Player')}: {list(errors)}"
+                )
+        return self._zone_from_option(selected_option, available_zones)
+
+    def _matching_zone_option(
+        self,
+        request: DecisionRequest,
+        chosen_zone: dict,
+        available_zones: List[dict],
+    ) -> Optional[DecisionOption]:
+        chosen_key = canonical_deployment_zone_key(dict(chosen_zone or {}))
+        for option in list(getattr(request, "options", []) or []):
+            payload = dict(getattr(option, "payload", {}) or {})
+            option_key = str(payload.get("zone_key", "") or "")
+            if option_key and option_key != chosen_key:
+                continue
+            option_zone = self._zone_from_option(option, available_zones)
+            if option_zone is chosen_zone:
+                return option
+            if option_zone == chosen_zone:
+                return option
+        return None
+
+    def _zone_from_option(self, option: DecisionOption, available_zones: List[dict]) -> dict:
+        payload = dict(getattr(option, "payload", {}) or {})
+        zone_index = payload.get("zone_index", None)
+        try:
+            idx = int(zone_index)
+        except (TypeError, ValueError):
+            idx = -1
+        if 0 <= idx < len(available_zones):
+            return available_zones[idx]
+        zone_key = str(payload.get("zone_key", "") or "")
+        if zone_key:
+            for zone in available_zones:
+                if canonical_deployment_zone_key(dict(zone or {})) == zone_key:
+                    return zone
+        raise RuntimeError("Deployment zone option did not map to an available zone.")
+
+    def _resolve_next_deploy_unit_choice(
+        self,
+        player: Player,
+        decision_maker: DeploymentDecisionMaker,
+        deployable_units: List['Unit'],
+        deployment_zone: dict,
+        already_deployed: List['Unit'],
+    ) -> 'Unit':
+        if not deployable_units:
+            raise RuntimeError("Cannot select next deployment unit from an empty list.")
+        request = build_select_next_deploy_unit_request(
+            self.game,
+            player,
+            deployable_units,
+            deployment_zone=deployment_zone,
+            queue_requests=True,
+        )
+        chosen_unit = decision_maker.choose_next_deploy_unit(
+            list(deployable_units),
+            deployment_zone,
+            list(already_deployed),
+        )
+        try:
+            chosen_unit_id = str(get_entity_id(chosen_unit) or "")
+        except ValueError as exc:
+            raise RuntimeError("Deployment unit selection returned an unknown unit.") from exc
+        if not chosen_unit_id:
+            raise RuntimeError("Deployment unit selection returned an invalid unit id.")
+        if request is not None:
+            selected_option = None
+            for option in list(getattr(request, "options", []) or []):
+                payload = dict(getattr(option, "payload", {}) or {})
+                if str(payload.get("unit_id", "") or "") == chosen_unit_id:
+                    selected_option = option
+                    break
+            if selected_option is None:
+                raise RuntimeError(
+                    f"Deployment unit selection for {player.name} returned unknown unit id: {chosen_unit_id}"
+                )
+            queue = getattr(self.game, "decision_queue", None)
+            pending = queue.get(request.decision_id) if queue is not None and hasattr(queue, "get") else request
+            if pending is not None:
+                apply_result = resolve_decision_command(
+                    self.game,
+                    request,
+                    selected_option.option_id,
+                    result_payload={},
+                    player_id=getattr(player, "id", None),
+                )
+                if not bool(getattr(apply_result, "ok", False)):
+                    errors = tuple(getattr(apply_result, "errors", ()) or ())
+                    raise RuntimeError(
+                        f"Deployment unit selection rejected for {getattr(player, 'name', 'Player')}: {list(errors)}"
+                    )
+        for unit in list(deployable_units or []):
+            if str(get_entity_id(unit) or "") == chosen_unit_id:
+                return unit
+        raise RuntimeError(f"Deployment unit selection resolved to unknown unit id: {chosen_unit_id}")
+
+    def _pop_selected_deploy_unit(self, deployable_units: List['Unit'], selected_unit: 'Unit') -> None:
+        for idx, candidate in enumerate(list(deployable_units or [])):
+            if candidate is selected_unit:
+                deployable_units.pop(idx)
+                return
+        selected_id = str(get_entity_id(selected_unit) or "")
+        for idx, candidate in enumerate(list(deployable_units or [])):
+            if str(get_entity_id(candidate) or "") == selected_id:
+                deployable_units.pop(idx)
+                return
+        raise RuntimeError(f"Selected deployment unit not found in deployable list: {selected_id}")
 
     def _build_deployment_move_request(self, unit: 'Unit') -> DecisionRequest:
         unit_id = get_entity_id(unit)
@@ -390,8 +555,15 @@ class DeploymentManager:
         turn_count = 0
         while defender_units or attacker_units:
             if current_units:
-                # Deploy next unit
-                unit = current_units.pop(0)
+                # Select and deploy next unit through the decision API.
+                unit = self._resolve_next_deploy_unit_choice(
+                    current_player,
+                    current_decision_maker,
+                    current_units,
+                    current_zone,
+                    current_deployed,
+                )
+                self._pop_selected_deploy_unit(current_units, unit)
                 position = current_decision_maker.choose_unit_deployment_position(unit, current_zone, current_deployed)
 
                 # Route deployment placement through DecisionRequest/Command API.
@@ -665,6 +837,16 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
             # Default: choose first zone
             logger.warning("No UI interface available for human deployment zone selection, using first zone")
             return available_zones[0]
+
+    def choose_next_deploy_unit(
+        self,
+        deployable_units: List['Unit'],
+        deployment_zone: dict,
+        already_deployed: List['Unit'],
+    ) -> 'Unit':
+        if not deployable_units:
+            raise ValueError("No deployable units available.")
+        return deployable_units[0]
     
     def declare_reserves(self, player: Player) -> dict:
         """Human declares reserves via UI."""

@@ -16,6 +16,8 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `ATTACH_LEADER` — Attach leader to bodyguard (or none).
 - `ATTACH_SUPPORT_ARTILLERY` — Attach joined support/retinue unit to bodyguard (or none).
 - `DECLARE_RESERVES` — Declare units in reserve.
+- `CHOOSE_DEPLOYMENT_ZONE` — Choose deployment zone during pre-battle setup.
+- `SELECT_NEXT_DEPLOY_UNIT` — Choose which eligible unit to commit next during alternating deployment.
 - `ASSIGN_TRANSPORT` — Assign transport to a unit (or none).
 - `SHADOW_ASSIGNMENT` — Replace an eligible OFFICIO ASSASSINORUM unit with another valid assassin option (or None).
 - `SCOUT_MOVE` — Resolve pre-game scout move.

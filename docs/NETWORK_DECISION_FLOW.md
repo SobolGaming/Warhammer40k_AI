@@ -105,8 +105,9 @@ driven by client decisions and explicit setup commands.
 
 ### 4.1) DEPLOY_ARMIES (Sequential by deployment turn)
 
-1. Server waits for the active deployment player to submit placement decisions
-   (e.g., `MOVE_UNIT`, `SELECT_FLOOR`).
+1. Server waits for deployment decisions in order:
+   `CHOOSE_DEPLOYMENT_ZONE` (defender only), `SELECT_NEXT_DEPLOY_UNIT`, then
+   placement (`MOVE_UNIT`, `SELECT_FLOOR`).
 2. Deployment alternates by the current deployment turn (attacker/defender order).
 3. When all units are deployed, the next setup phase can be executed and advanced
    by client command (`CMD_EXECUTE_SETUP_PHASE` / `CMD_ADVANCE_SETUP_PHASE`).

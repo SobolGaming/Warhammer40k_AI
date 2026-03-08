@@ -45,6 +45,16 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         zones.sort(key=self._zone_sort_key)
         return zones[0]
 
+    def choose_next_deploy_unit(
+        self,
+        deployable_units: list[object],
+        deployment_zone: dict,
+        already_deployed: list[object],
+    ) -> object:
+        if not deployable_units:
+            raise ValueError("No deployable units were provided.")
+        return deployable_units[0]
+
     def declare_reserves(self, player: Player) -> dict:
         army = player.get_army() if player is not None else None
         if army is None:

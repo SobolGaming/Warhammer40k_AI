@@ -6,8 +6,10 @@ from ..decision_dispatcher import _validate_choice_from_options, register_decisi
 from ..decision_kinds import (
     DECISION_ATTACH_LEADER,
     DECISION_ATTACH_SUPPORT_ARTILLERY,
+    DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_DECLARE_RESERVES,
     DECISION_ASSIGN_TRANSPORT,
+    DECISION_SELECT_NEXT_DEPLOY_UNIT,
     DECISION_SHADOW_ASSIGNMENT,
     DECISION_SCOUT_MOVE,
 )
@@ -34,6 +36,67 @@ def _get_unit(game: object, unit_id: str):
     if registry is None:
         return None
     return registry.get(unit_id, kind="unit")
+
+
+def _validate_choose_deployment_zone(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(_validate_choice_from_options(request, result))
+    if errors:
+        return errors
+    opt = _find_option(request, result.option_id)
+    payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    zone_choice_id = str(payload.get("zone_choice_id", "") or "")
+    zone_key = str(payload.get("zone_key", "") or "")
+    zone_index = payload.get("zone_index", None)
+    if not zone_choice_id:
+        return ("Deployment zone choice requires zone_choice_id.",)
+    if not zone_key:
+        return ("Deployment zone choice requires zone_key.",)
+    try:
+        zone_index_int = int(zone_index)
+    except (TypeError, ValueError):
+        return ("Deployment zone choice requires numeric zone_index.",)
+    if zone_index_int < 0:
+        return ("Deployment zone choice zone_index must be >= 0.",)
+    allowed_ids = {str(value) for value in list(request.context.get("available_zone_choice_ids", []) or [])}
+    if allowed_ids and zone_choice_id not in allowed_ids:
+        return ("Selected deployment zone is not available.",)
+    allowed_keys = {str(value) for value in list(request.context.get("available_zone_keys", []) or [])}
+    if allowed_keys and zone_key not in allowed_keys:
+        return ("Selected deployment zone key is not available.",)
+    return ()
+
+
+def _apply_choose_deployment_zone(game: object, request: DecisionRequest, result: DecisionResult) -> dict[str, object]:
+    opt = _find_option(request, result.option_id)
+    payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    return {
+        "zone_choice_id": str(payload.get("zone_choice_id", "") or ""),
+        "zone_key": str(payload.get("zone_key", "") or ""),
+        "zone_index": int(payload.get("zone_index", 0) or 0),
+    }
+
+
+def _validate_select_next_deploy_unit(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(_validate_choice_from_options(request, result))
+    if errors:
+        return errors
+    opt = _find_option(request, result.option_id)
+    payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    unit_id = str(payload.get("unit_id", "") or "")
+    if not unit_id:
+        return ("Deployment unit selection requires unit_id.",)
+    allowed_ids = {str(value) for value in list(request.context.get("unit_ids", []) or [])}
+    if allowed_ids and unit_id not in allowed_ids:
+        return ("Selected unit is not available to deploy.",)
+    return ()
+
+
+def _apply_select_next_deploy_unit(game: object, request: DecisionRequest, result: DecisionResult) -> dict[str, object]:
+    opt = _find_option(request, result.option_id)
+    payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    return {
+        "unit_id": str(payload.get("unit_id", "") or ""),
+    }
 
 
 def _validate_attach_leader(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -467,7 +530,17 @@ register_decision_handler(
     validate=_validate_attach_support_artillery,
     apply=_apply_attach_support_artillery,
 )
+register_decision_handler(
+    DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    validate=_validate_choose_deployment_zone,
+    apply=_apply_choose_deployment_zone,
+)
 register_decision_handler(DECISION_DECLARE_RESERVES, validate=_validate_declare_reserves, apply=_apply_declare_reserves)
 register_decision_handler(DECISION_ASSIGN_TRANSPORT, validate=_validate_assign_transport, apply=_apply_assign_transport)
+register_decision_handler(
+    DECISION_SELECT_NEXT_DEPLOY_UNIT,
+    validate=_validate_select_next_deploy_unit,
+    apply=_apply_select_next_deploy_unit,
+)
 register_decision_handler(DECISION_SHADOW_ASSIGNMENT, validate=_validate_shadow_assignment, apply=_apply_shadow_assignment)
 register_decision_handler(DECISION_SCOUT_MOVE, validate=_validate_scout_move, apply=_apply_scout_move)

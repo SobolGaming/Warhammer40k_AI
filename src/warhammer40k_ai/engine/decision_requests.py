@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import colorsys
+import hashlib
 from itertools import combinations
+import json
 import re
 from typing import Iterable, List, Optional
 
@@ -10,10 +12,12 @@ from .decision_kinds import (
     DECISION_ATTACH_LEADER,
     DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_ASSIGN_TRANSPORT,
+    DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CHOOSE_PLAYER_COLOR,
     DECISION_CHOOSE_QUARRY,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
+    DECISION_SELECT_NEXT_DEPLOY_UNIT,
     DECISION_SHADOW_ASSIGNMENT,
     DECISION_SCOUT_MOVE,
 )
@@ -22,7 +26,7 @@ from ..rules.imperial_agents_shadow_assignment import (
     shadow_assignment_options_for_unit,
     unit_has_shadow_assignment,
 )
-from ..utility.entity_ids import get_entity_id
+from ..utility.entity_ids import get_entity_id, maybe_entity_id
 
 PLAYER_COLOR_HUE_STEP_DEGREES = 15
 PLAYER_COLOR_SATURATION = 0.85
@@ -556,6 +560,181 @@ def build_shadow_assignment_requests(
                 game.request_decision(request)
 
     return requests
+
+
+def _safe_float(value: object) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _normalized_zone_vertices(zone: dict) -> list[list[list[float]]]:
+    mission_zones = list(zone.get("mission_zones", []) or [])
+    normalized: list[list[list[float]]] = []
+    for mission_zone in mission_zones:
+        vertices: list[list[float]] = []
+        for vertex in list(getattr(mission_zone, "vertices", []) or []):
+            if not isinstance(vertex, (list, tuple)) or len(vertex) < 2:
+                continue
+            x = round(_safe_float(vertex[0]), 3)
+            y = round(_safe_float(vertex[1]), 3)
+            vertices.append([x, y])
+        if vertices:
+            normalized.append(vertices)
+    normalized.sort(key=lambda verts: json.dumps(verts, sort_keys=True, separators=(",", ":"), ensure_ascii=True))
+    return normalized
+
+
+def _normalized_range_pair(value: object) -> list[float]:
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        return []
+    first = _safe_float(value[0])
+    second = _safe_float(value[1])
+    lo = round(min(first, second), 3)
+    hi = round(max(first, second), 3)
+    return [lo, hi]
+
+
+def canonical_deployment_zone_key(zone: dict) -> str:
+    zone_data = dict(zone or {})
+    payload = {
+        "name": str(zone_data.get("name", "") or ""),
+        "zone_type": str(zone_data.get("zone_type", "") or ""),
+        "x_range": _normalized_range_pair(zone_data.get("x_range")),
+        "y_range": _normalized_range_pair(zone_data.get("y_range")),
+        "mission_zone_vertices": _normalized_zone_vertices(zone_data),
+    }
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    digest = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+    return f"zone:{digest}"
+
+
+def build_deployment_zone_request(
+    game: object,
+    player: object,
+    available_zones: Iterable[dict] | None,
+    *,
+    queue_requests: bool = True,
+) -> Optional[DecisionRequest]:
+    zone_entries: list[tuple[str, str, str, int, dict]] = []
+    for idx, zone in enumerate(list(available_zones or [])):
+        if not isinstance(zone, dict):
+            continue
+        zone_data = dict(zone or {})
+        zone_key = canonical_deployment_zone_key(zone_data)
+        zone_type = str(zone_data.get("zone_type", "") or "")
+        zone_name = str(zone_data.get("name", "") or "")
+        zone_entries.append((zone_type, zone_name, zone_key, int(idx), zone_data))
+    if not zone_entries:
+        return None
+
+    zone_entries.sort(key=lambda entry: (entry[0], entry[1], entry[2], entry[3]))
+    player_id = getattr(player, "id", None) if player is not None else None
+    options: list[DecisionOption] = []
+    choice_refs: list[dict[str, object]] = []
+    for order_idx, (zone_type, zone_name, zone_key, source_index, _zone_data) in enumerate(zone_entries):
+        zone_choice_id = f"{zone_key}:{int(source_index)}"
+        label = str(zone_name or "").strip()
+        if not label:
+            label = f"{zone_type.title()} Zone" if zone_type else f"Zone {int(order_idx) + 1}"
+        options.append(
+            DecisionOption.create(
+                label,
+                payload={
+                    "zone_choice_id": zone_choice_id,
+                    "zone_key": zone_key,
+                    "zone_index": int(source_index),
+                    "zone_type": zone_type,
+                    "zone_name": zone_name,
+                    "action_id": f"{DECISION_CHOOSE_DEPLOYMENT_ZONE}:{str(player_id or '')}:{zone_choice_id}",
+                },
+            )
+        )
+        choice_refs.append(
+            {
+                "zone_choice_id": zone_choice_id,
+                "zone_key": zone_key,
+                "zone_index": int(source_index),
+                "zone_type": zone_type,
+                "zone_name": zone_name,
+            }
+        )
+
+    request = DecisionRequest.create(
+        DECISION_CHOOSE_DEPLOYMENT_ZONE,
+        "Choose deployment zone.",
+        player_id=player_id,
+        options=options,
+        context={
+            "selection_kind": "deployment_zone",
+            "phase": "deploy_armies",
+            "available_zone_choice_ids": [str(ref["zone_choice_id"]) for ref in choice_refs],
+            "available_zone_keys": [str(ref["zone_key"]) for ref in choice_refs],
+            "available_zone_choices": choice_refs,
+        },
+    )
+    if queue_requests and hasattr(game, "request_decision"):
+        game.request_decision(request)
+    return request
+
+
+def build_select_next_deploy_unit_request(
+    game: object,
+    player: object,
+    units: Iterable[object] | None,
+    *,
+    deployment_zone: Optional[dict] = None,
+    queue_requests: bool = True,
+) -> Optional[DecisionRequest]:
+    unit_entries: list[tuple[str, object]] = []
+    for unit in _iter_units(units):
+        unit_id = str(maybe_entity_id(unit) or "")
+        if not unit_id:
+            continue
+        unit_entries.append((unit_id, unit))
+    if not unit_entries:
+        return None
+
+    unit_entries.sort(key=lambda entry: entry[0])
+    player_id = getattr(player, "id", None) if player is not None else None
+    options: list[DecisionOption] = []
+    for unit_id, unit in unit_entries:
+        unit_name = str(getattr(unit, "name", "Unit") or "Unit")
+        options.append(
+            DecisionOption.create(
+                unit_name,
+                payload={
+                    "unit_id": unit_id,
+                    "unit_name": unit_name,
+                    "action_id": f"{DECISION_SELECT_NEXT_DEPLOY_UNIT}:{str(player_id or '')}:{unit_id}",
+                },
+            )
+        )
+
+    context: dict[str, object] = {
+        "selection_kind": "deployment_next_unit",
+        "phase": "deploy_armies",
+        "unit_ids": [unit_id for unit_id, _unit in unit_entries],
+    }
+    if isinstance(deployment_zone, dict):
+        zone_data = dict(deployment_zone or {})
+        context["deployment_zone_key"] = canonical_deployment_zone_key(zone_data)
+        context["deployment_zone_type"] = str(zone_data.get("zone_type", "") or "")
+        zone_name = str(zone_data.get("name", "") or "")
+        if zone_name:
+            context["deployment_zone_name"] = zone_name
+
+    request = DecisionRequest.create(
+        DECISION_SELECT_NEXT_DEPLOY_UNIT,
+        "Select next unit to deploy.",
+        player_id=player_id,
+        options=options,
+        context=context,
+    )
+    if queue_requests and hasattr(game, "request_decision"):
+        game.request_decision(request)
+    return request
 
 
 def build_reserves_allocation_request(

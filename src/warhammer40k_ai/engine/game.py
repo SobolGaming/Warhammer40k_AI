@@ -10452,10 +10452,19 @@ class Game(
                     if self.is_in_setup_phase():
                         phase = self.get_current_setup_phase()
                         if getattr(phase, "name", None) == "DEPLOY_ARMIES":
-                            from .decision_kinds import DECISION_MOVE_UNIT
-                            if getattr(req, "decision_type", None) != DECISION_MOVE_UNIT:
+                            from .decision_kinds import (
+                                DECISION_CHOOSE_DEPLOYMENT_ZONE,
+                                DECISION_MOVE_UNIT,
+                                DECISION_SELECT_NEXT_DEPLOY_UNIT,
+                            )
+                            decision_type = getattr(req, "decision_type", None)
+                            if decision_type not in (
+                                DECISION_MOVE_UNIT,
+                                DECISION_CHOOSE_DEPLOYMENT_ZONE,
+                                DECISION_SELECT_NEXT_DEPLOY_UNIT,
+                            ):
                                 pid = None
-                            else:
+                            elif decision_type == DECISION_MOVE_UNIT:
                                 ctx = dict(getattr(req, "context", {}) or {})
                                 placement_kind = str(ctx.get("placement_kind", "") or "")
                                 if placement_kind not in ("deployment", "reserves_arrival"):

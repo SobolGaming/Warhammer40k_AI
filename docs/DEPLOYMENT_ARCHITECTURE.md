@@ -12,7 +12,10 @@ Key goals:
 ## Core components
 - `DeploymentManager` in `src/warhammer40k_ai/engine/deployment.py` runs the official sequence.
 - `DeploymentDecisionMaker` defines `choose_deployment_zone`, `declare_reserves`, and
-  `choose_unit_deployment_position`.
+  `choose_next_deploy_unit` / `choose_unit_deployment_position`.
+- Strategic pregame choices are explicit decisions routed through the engine stack:
+  `CHOOSE_DEPLOYMENT_ZONE`, `DECLARE_RESERVES`, `SELECT_NEXT_DEPLOY_UNIT`, and deployment
+  placement via `MOVE_UNIT` with `placement_kind="deployment"`.
 - `HumanDeploymentDecisionMaker` delegates to `src/warhammer40k_ai/UI/human_interface.py`
   (or console fallback if no UI is available).
 
