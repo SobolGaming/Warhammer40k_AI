@@ -5646,6 +5646,7 @@ def _classify_ability_base(
     aura_oc_support = _aura_objective_control_support(description)
     aura_benefit_of_cover_support = _aura_benefit_of_cover_support(description)
     foul_spores_support = _foul_spores_aura_support(description)
+    friendly_tyranids_invuln_aura_support = _friendly_tyranids_invulnerable_aura_support(description)
     enemy_aura_oc_penalty_support = _enemy_aura_objective_control_penalty_support(description)
     enemy_engagement_oc_halve_support = _enemy_engagement_objective_control_halve_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
@@ -5971,6 +5972,8 @@ def _classify_ability_base(
         return aura_benefit_of_cover_support
     if foul_spores_support:
         return foul_spores_support
+    if friendly_tyranids_invuln_aura_support:
+        return friendly_tyranids_invuln_aura_support
     if enemy_aura_oc_penalty_support:
         return enemy_aura_oc_penalty_support
     if enemy_engagement_oc_halve_support:
@@ -7162,6 +7165,32 @@ def _foul_spores_aura_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         f"Aura: friendly TYRANIDS units within {cover_rng}\" gain Benefit of Cover against ranged attacks; friendly TYRANIDS non-MONSTER units within {stealth_rng}\" gain Stealth.",
+    )
+
+
+def _friendly_tyranids_invulnerable_aura_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while a friendly tyranids unit is within (?P<range>\d+) of this (?:unit|model) "
+        r"models in that unit have a (?P<inv>[1-6]) invulnerable save"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        range_value = int(m.group("range") or 0)
+        inv_value = int(m.group("inv") or 0)
+    except (TypeError, ValueError):
+        return None
+    if range_value <= 0 or inv_value <= 0:
+        return None
+    return (
+        "Supported",
+        f'Aura: friendly TYRANIDS units within {int(range_value)}" gain a {int(inv_value)}+ invulnerable save.',
     )
 
 

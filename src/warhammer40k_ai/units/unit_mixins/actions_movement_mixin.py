@@ -1515,6 +1515,70 @@ class ActionsMovementMixin:
                 synaptic_dynamic = active_synaptic_fn(game=game) is not None
             except Exception:
                 synaptic_dynamic = False
+
+        warp_field_specs: list[tuple['Unit', int, int, str]] = []
+        warp_field_dynamic = False
+        unit_is_tyranids = bool(getattr(self, "has_any_keyword", lambda _k: False)("TYRANIDS"))
+        if unit_is_tyranids and army is not None:
+            warp_field_pattern = re.compile(
+                r"while a friendly tyranids unit is within (?P<range>\d+) of this (?:unit|model) "
+                r"models in that unit have a (?P<inv>[1-6]) invulnerable save"
+            )
+            for candidate in list(getattr(army, "units", []) or []):
+                if candidate is None:
+                    continue
+                try:
+                    source_root = candidate.get_attached_unit_root()
+                except Exception:
+                    source_root = candidate
+                if source_root is None or not bool(getattr(source_root, "is_alive", lambda: False)()):
+                    continue
+                if not bool(getattr(source_root, "deployed", True)):
+                    continue
+                in_reserves_fn = getattr(source_root, "is_in_reserves", None)
+                if callable(in_reserves_fn) and bool(in_reserves_fn()):
+                    continue
+                if bool(getattr(source_root, "is_embarked", False)):
+                    continue
+
+                iter_active = getattr(source_root, "_iter_active_possible_abilities", None)
+                if callable(iter_active):
+                    active_abilities = list(iter_active() or [])
+                else:
+                    active_abilities = list(getattr(source_root, "possible_abilities", []) or [])
+                for ab in list(active_abilities or []):
+                    if isinstance(ab, str):
+                        desc = str(ab or "")
+                        source_name = str(ab or "Warp Field (Aura, Psychic)")
+                    else:
+                        desc = str(getattr(ab, "description", "") or "")
+                        source_name = str(getattr(ab, "name", "") or "Warp Field (Aura, Psychic)")
+                    if not desc:
+                        continue
+                    norm = str(getattr(source_root, "_normalize_rules_text", lambda t: t)(desc) or "")
+                    norm = norm.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                    norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                    norm = re.sub(r"\s+", " ", norm).strip()
+                    m = warp_field_pattern.fullmatch(norm)
+                    if not m:
+                        continue
+                    try:
+                        range_value = int(m.group("range") or 0)
+                        inv_value = int(m.group("inv") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if range_value <= 0 or inv_value <= 0:
+                        continue
+                    warp_field_specs.append(
+                        (
+                            source_root,
+                            int(range_value),
+                            int(inv_value),
+                            source_name.strip() or "Warp Field (Aura, Psychic)",
+                        )
+                    )
+                    break
+            warp_field_dynamic = bool(warp_field_specs)
         try:
             temp_val, temp_source = getattr(model, "get_temporary_invulnerable_save", lambda: (0, ""))()
             if temp_val:
@@ -1527,6 +1591,7 @@ class ActionsMovementMixin:
             and not archons_dynamic
             and not synaptic_dynamic
             and not refrain_dynamic
+            and not warp_field_dynamic
             and cache_key in getattr(self, "_ability_cache", {})
         ):
             return self._ability_cache[cache_key]
@@ -1758,9 +1823,22 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        if warp_field_specs:
+            try:
+                from ...utility.aura_utils import model_within_range_of_unit
+            except ImportError:
+                model_within_range_of_unit = None
+            if callable(model_within_range_of_unit):
+                for source_root, range_value, inv_value, source_name in list(warp_field_specs or []):
+                    if not bool(model_within_range_of_unit(model, source_root, float(range_value))):
+                        continue
+                    if best_value is None or int(inv_value) < best_value:
+                        best_value = int(inv_value)
+                        best_source = str(source_name or "Warp Field (Aura, Psychic)").strip() or "Warp Field (Aura, Psychic)"
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
-        if not aegis_active and not archons_dynamic and not synaptic_dynamic and not refrain_dynamic:
+        if not aegis_active and not archons_dynamic and not synaptic_dynamic and not refrain_dynamic and not warp_field_dynamic:
             self._ability_cache[cache_key] = (best_value, best_source)
         return best_value, best_source
 
