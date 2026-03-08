@@ -69,6 +69,36 @@ class TestAuraStealthHasStealth(unittest.TestCase):
         with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
             self.assertTrue(target.has_stealth())
 
+    def test_foul_spores_stealth_aura_excludes_monsters(self):
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE))
+        p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
+        game.add_player(p1)
+
+        aura = Ability(
+            name="Foul Spores (Aura)",
+            faction_id="",
+            description=(
+                'While a friendly TYRANIDS unit is within 6" of this unit, each time a ranged attack targets that unit, '
+                "models in that unit have the Benefit of Cover against that attack. In addition, while a friendly TYRANIDS "
+                'unit (excluding Monsters) is within 6" of this unit, models in that unit have the Stealth ability.'
+            ),
+            type="Datasheet",
+            parameter="",
+        )
+
+        source = _make_unit("Venomthropes", keywords=["TYRANIDS"], abilities=[aura])
+        infantry_target = _make_unit("Termagants", keywords=["TYRANIDS", "INFANTRY"])
+        monster_target = _make_unit("Carnifexes", keywords=["TYRANIDS", "MONSTER"])
+
+        p1.army.add_unit(source)
+        p1.army.add_unit(infantry_target)
+        p1.army.add_unit(monster_target)
+        game.map.units = [source, infantry_target, monster_target]
+
+        with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
+            self.assertTrue(infantry_target.has_stealth())
+            self.assertFalse(monster_target.has_stealth())
+
 
 if __name__ == "__main__":
     unittest.main()

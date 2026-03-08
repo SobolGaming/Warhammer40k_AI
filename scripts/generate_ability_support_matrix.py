@@ -4881,7 +4881,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Enemy units within 12\" that are Battle-shocked suffer -1 to Hit rolls, and friendly TYRANIDS models gain +1 to Wound rolls when targeting those units.",
         ),
-        ("TYR", "Foul Spores (Aura)"): ("Partial", "Stealth aura within 6\" for non-MONSTER TYRANIDS units; Benefit of Cover aura not implemented."),
+        ("TYR", "Foul Spores (Aura)"): (
+            "Supported",
+            "Aura: friendly TYRANIDS units within 6\" gain Benefit of Cover against ranged attacks; friendly TYRANIDS non-MONSTER units within 6\" gain Stealth.",
+        ),
         ("TYR", "Spore Mine Cysts"): (
             "Supported",
             "After ending a Normal move, choose one moved-over enemy unit for six D6 mortal-wound rolls on 3+, or spawn D3 Spore Mines wholly within 6\" and more than 9\" horizontally from enemies (spawn option limited to one model per turn).",
@@ -5638,6 +5641,7 @@ def _classify_ability_base(
     unit_contains_action_support = _unit_contains_model_action_support(description)
     aura_oc_support = _aura_objective_control_support(description)
     aura_benefit_of_cover_support = _aura_benefit_of_cover_support(description)
+    foul_spores_support = _foul_spores_aura_support(description)
     enemy_aura_oc_penalty_support = _enemy_aura_objective_control_penalty_support(description)
     enemy_engagement_oc_halve_support = _enemy_engagement_objective_control_halve_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
@@ -5957,6 +5961,8 @@ def _classify_ability_base(
         return aura_oc_support
     if aura_benefit_of_cover_support:
         return aura_benefit_of_cover_support
+    if foul_spores_support:
+        return foul_spores_support
     if enemy_aura_oc_penalty_support:
         return enemy_aura_oc_penalty_support
     if enemy_engagement_oc_halve_support:
@@ -7115,6 +7121,36 @@ def _aura_benefit_of_cover_support(description: str) -> Optional[Tuple[str, str]
     target = str(match.group("target") or "").strip()
     rng = str(match.group("rng") or "").strip()
     return ("Supported", f"Aura: friendly {target} within {rng}\" gain Benefit of Cover against ranged attacks.")
+
+
+def _foul_spores_aura_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while a friendly tyranids unit is within (?P<cover_rng>\d+) of this (?:model|unit) "
+        r"each time a ranged attack targets that unit models in that unit have the benefit of cover against that attack "
+        r"in addition while a friendly tyranids unit excluding monsters? is within (?P<stealth_rng>\d+) of this (?:model|unit) "
+        r"models in that unit have the stealth ability"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    cover_rng = str(m.group("cover_rng") or "").strip()
+    stealth_rng = str(m.group("stealth_rng") or "").strip()
+    if not cover_rng or not stealth_rng:
+        return None
+    if cover_rng == stealth_rng:
+        return (
+            "Supported",
+            f"Aura: friendly TYRANIDS units within {cover_rng}\" gain Benefit of Cover against ranged attacks; friendly TYRANIDS non-MONSTER units within {stealth_rng}\" gain Stealth.",
+        )
+    return (
+        "Supported",
+        f"Aura: friendly TYRANIDS units within {cover_rng}\" gain Benefit of Cover against ranged attacks; friendly TYRANIDS non-MONSTER units within {stealth_rng}\" gain Stealth.",
+    )
 
 
 def _enemy_aura_objective_control_penalty_support(description: str) -> Optional[Tuple[str, str]]:

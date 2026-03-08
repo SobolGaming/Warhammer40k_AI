@@ -2994,7 +2994,8 @@ def _parse_stealth_aura(ability) -> Optional[dict]:
     if not desc:
         return None
     m = re.search(
-        r"While a friendly (?P<faction_kw>.+?) unit(?: \(excluding (?P<exclude_kw>.+?)\))? is within (?P<rng>\d+)\" "
+        r"While a friendly (?P<faction_kw>[a-z0-9][a-z0-9 '\-]*) unit"
+        r"(?: \(excluding (?P<exclude_kw>[a-z0-9][a-z0-9 '\-]*)\))? is within (?P<rng>\d+)\" "
         r"of this (?:model|unit|fortification), (?:models in that unit|that unit) (?:has|have) (?:the )?Stealth ability",
         desc,
         flags=re.IGNORECASE,
