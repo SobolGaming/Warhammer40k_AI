@@ -11139,26 +11139,33 @@ def _post_shoot_shocked_support(description: str) -> Optional[Tuple[str, str]]:
     if not norm:
         return None
     pattern = (
-        r"in your shooting phase after this unit has shot select one enemy unit "
+        r"in your shooting phase after this unit has shot select one enemy (?:(?P<infantry>infantry) )?unit "
         r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
-        r"until the end of your opponent(?: s|s) next turn that enemy unit is shocked "
-        r"while a unit is shocked subtract (?P<move>\d+) from (?:its|that unit s) move characteristic "
+        r"until the end of your opponent(?: s|s) next turn that enemy unit is (?P<state>shocked|disrupted) "
+        r"while a unit is (?P=state) subtract (?P<move>\d+) from (?:its|that unit s) move characteristic "
         r"and subtract (?P<advance>\d+) from advance and charge rolls made for it"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
+    infantry_only = bool(str(m.group("infantry") or "").strip())
     excluded_mv = bool(str(m.group("exclude") or "").strip()) or ("excluding monsters and vehicles" in norm)
+    state = str(m.group("state") or "shocked").strip().lower()
     move_pen = str(m.group("move") or "2")
     adv_pen = str(m.group("advance") or "2")
+    if infantry_only:
+        return (
+            "Supported",
+            f"After shooting: select a hit enemy INFANTRY unit; it is {state} until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls.",
+        )
     if excluded_mv:
         return (
             "Supported",
-            f"After shooting: select a hit enemy non-MONSTER/non-VEHICLE unit; it is shocked until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls.",
+            f"After shooting: select a hit enemy non-MONSTER/non-VEHICLE unit; it is {state} until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls.",
         )
     return (
         "Supported",
-        f"After shooting: select a hit enemy unit; it is shocked until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls.",
+        f"After shooting: select a hit enemy unit; it is {state} until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls.",
     )
 
 

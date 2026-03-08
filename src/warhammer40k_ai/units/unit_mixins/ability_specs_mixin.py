@@ -6237,7 +6237,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, int, int, bool]] = set()
+        seen: set[tuple[str, int, int, int, bool, tuple[str, ...]]] = set()
 
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
@@ -7016,12 +7016,16 @@ class AbilitySpecsMixin:
                     advance_penalty = -2
                 charge_penalty = int(advance_penalty)
                 exclude_mv = bool(m.group("exclude")) or ("excluding monsters and vehicles" in normalized)
+                include_keywords_any: list[str] = []
+                if str(m.group("infantry") or "").strip():
+                    include_keywords_any = ["INFANTRY"]
                 key = (
                     source.lower(),
                     int(move_penalty),
                     int(advance_penalty),
                     int(charge_penalty),
                     bool(exclude_mv),
+                    tuple(include_keywords_any),
                 )
                 if key in seen:
                     continue
@@ -7033,6 +7037,7 @@ class AbilitySpecsMixin:
                         "advance_penalty": int(advance_penalty),
                         "charge_penalty": int(charge_penalty),
                         "exclude_monster_vehicle": bool(exclude_mv),
+                        "include_keywords_any": list(include_keywords_any),
                     }
                 )
 

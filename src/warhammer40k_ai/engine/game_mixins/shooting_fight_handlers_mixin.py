@@ -2322,6 +2322,29 @@ class GameShootingFightHandlersMixin:
             except Exception:
                 return False
 
+        def _matches_any_keyword(unit, keywords: list[str]) -> bool:
+            if unit is None:
+                return False
+            wanted = [
+                str(kw or "").strip().upper()
+                for kw in list(keywords or [])
+                if str(kw or "").strip()
+            ]
+            if not wanted:
+                return True
+            for keyword in wanted:
+                try:
+                    if unit.has_keyword(keyword):
+                        return True
+                except Exception:
+                    pass
+                try:
+                    if unit.has_any_keyword(keyword):
+                        return True
+                except Exception:
+                    pass
+            return False
+
         specs = attacker_unit.unit_post_shoot_shocked_specs() or []
         if not specs:
             return
@@ -2342,6 +2365,11 @@ class GameShootingFightHandlersMixin:
                 charge_penalty = int(spec.get("charge_penalty", advance_penalty) or advance_penalty)
             except Exception:
                 charge_penalty = int(advance_penalty)
+            include_keywords_any = [
+                str(kw or "").strip().upper()
+                for kw in list(spec.get("include_keywords_any", []) or [])
+                if str(kw or "").strip()
+            ]
 
             candidates: list[Any] = []
             for target_unit, hits in (hits_by_target or {}).items():
@@ -2352,6 +2380,8 @@ class GameShootingFightHandlersMixin:
                 if not _is_enemy_unit(target_unit):
                     continue
                 if exclude_mv and _is_monster_or_vehicle(target_unit):
+                    continue
+                if include_keywords_any and not _matches_any_keyword(target_unit, include_keywords_any):
                     continue
                 candidates.append(target_unit)
             if not candidates:
