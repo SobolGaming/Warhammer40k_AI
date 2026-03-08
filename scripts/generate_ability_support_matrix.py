@@ -9512,6 +9512,14 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
         re.IGNORECASE,
     )
+    objective_wound_ones_clause_re = re.compile(
+        r"^if (?:that attack targets|the target of that attack is|the target is) "
+        r"(?:(?:a|an) (?:enemy )?unit )?(?:that is )?"
+        r"within range of (?:an|one or more) objective marker(?:s)?"
+        r"(?: you do not control| your opponent controls)?"
+        r"\s*[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*wound roll(?:s)? of 1(?: as well)?$",
+        re.IGNORECASE,
+    )
     closest_clause_re = re.compile(
         r"^if (?:that attack targets|the target of that attack is) the closest (?:eligible )?(?:enemy )?(?:unit|target)"
         r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
@@ -9562,6 +9570,7 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
 
     notes = [f"Unit attacks re-roll Hit rolls of 1 for {attack_scope} attacks."]
     objective_sentences = [s for s in sentences if objective_clause_re.match(s.lower())]
+    objective_wound_ones_sentences = [s for s in sentences if objective_wound_ones_clause_re.match(s.lower())]
     closest_sentences = [s for s in sentences if closest_clause_re.match(s.lower())]
     charge_sentences = [s for s in sentences if charge_clause_re.match(s.lower())]
     battleline_sentences = [s for s in sentences if battleline_clause_re.match(s.lower())]
@@ -9570,6 +9579,7 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         for s in sentences
         if s not in base_sentences
         and not objective_clause_re.match(s.lower())
+        and not objective_wound_ones_clause_re.match(s.lower())
         and not closest_clause_re.match(s.lower())
         and not charge_clause_re.match(s.lower())
         and not battleline_clause_re.match(s.lower())
@@ -9577,6 +9587,8 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
 
     if objective_sentences:
         notes.append("If the target is within range of an objective marker, the Hit roll can be re-rolled instead (optional).")
+    if objective_wound_ones_sentences:
+        notes.append("If the target is within range of an objective marker, attacks can also re-roll Wound rolls of 1.")
     if closest_sentences:
         notes.append("If the target is the closest eligible target, the Hit roll can be re-rolled instead (optional).")
     if charge_sentences:
