@@ -28,28 +28,118 @@ This pattern enables:
 - network play (server validates commands, broadcasts events)
 - future AI control without special UI-only code paths
 
-## System overview diagram
+## System overview diagrams
+
+### 1) Common authoritative pipeline (all modes)
 
 ```mermaid
 flowchart LR
   Data["Wahapedia data<br/>(wahapedia_data/)"] --> Roster["Roster builder<br/>(roster/)"]
   Army["Army list files<br/>(army_lists/)"] --> Roster
-  Roster --> Engine["Game engine<br/>(engine/)"]
+  Roster --> Engine["Authoritative Game engine<br/>(engine/)"]
 
-  Engine --> Decisions[DecisionRequests]
-  Decisions --> LocalUI["Local UI<br/>(UI/)"]
-  Decisions --> Clients["Network clients<br/>(network/)"]
-
-  LocalUI --> Commands[Commands / DecisionResults]
-  Clients --> Commands
+  Engine --> Decisions["DecisionRequests"]
+  Decisions --> Controllers["Controllers<br/>(UI, headless, or network)"]
+  Controllers --> Commands["Commands / DecisionResults"]
   Commands --> Engine
 
   Engine --> Events["Deterministic Events<br/>(event_log.py)"]
-  Events --> LocalUI
-  Events --> Clients
+  Events --> Controllers
 
   Engine <--> Snapshot["Snapshot + replay<br/>(snapshot.py / replay.py)"]
 ```
+
+### 2) Local + non-headless (interactive pygame)
+
+```mermaid
+flowchart LR
+  UI["Pygame UI<br/>(UI/)"] --> UIDC["UIDecisionController"]
+  UIDC --> Hub["DecisionControllerHub"]
+  Hub --> Game["Authoritative Game"]
+  Game --> Hub
+  Game --> Runtime["LocalAuthoritativeRuntime<br/>+ AuthoritativeSessionDriver"]
+  Runtime --> Channel["InProcessCommandChannel"]
+  Channel --> UI
+```
+
+Use case:
+- Human vs Human on one machine (`scripts/main.py` default local interactive path).
+
+### 3) Local + headless (no UI)
+
+```mermaid
+flowchart LR
+  Policy["HeadlessPolicyDecisionController<br/>(AI/policy)"] --> Hub["DecisionControllerHub"]
+  Hub --> Game["Authoritative Game"]
+  Game --> Hub
+  Game --> Records["DecisionRecord store / replay artifacts"]
+```
+
+Use case:
+- AI vs AI self-play (`scripts/run_headless_self_play.py`).
+
+### 4) Remote + non-headless (server authoritative, UI clients)
+
+```mermaid
+flowchart LR
+  subgraph Server["Server process"]
+    SGame["Authoritative Game"]
+    SDriver["AuthoritativeSessionDriver"]
+    SGame --> SDriver
+  end
+
+  subgraph Client1["Client UI (player/spectator)"]
+    CUI1["pygame_client / UI"]
+  end
+
+  subgraph Client2["Client UI (player/spectator)"]
+    CUI2["pygame_client / UI"]
+  end
+
+  SGame <-->|"DecisionRequests / Commands / Events (WebSocket)"| CUI1
+  SGame <-->|"DecisionRequests / Commands / Events (WebSocket)"| CUI2
+```
+
+Use case:
+- Human vs Human over network (two `client-ui` players).
+
+### 5) Remote + headless controller(s)
+
+```mermaid
+flowchart LR
+  subgraph Server["Server process (authoritative)"]
+    SGame["Authoritative Game"]
+    SHub["DecisionControllerHub"]
+    SGame --> SHub
+  end
+
+  subgraph HeadlessClient["Headless network client/controller"]
+    HC["Network client + policy/controller"]
+  end
+
+  subgraph UIClient["UI network client"]
+    UI["client-ui"]
+  end
+
+  SGame <-->|"DecisionRequests / Commands / Events"| HC
+  SGame <-->|"DecisionRequests / Commands / Events"| UI
+```
+
+Use cases:
+- AI vs Human (one UI client, one headless controller/client).
+- AI vs AI (two headless controllers/clients).
+
+Notes:
+- In network mode, default auto-resolution is dice-only unless a full policy controller is explicitly attached.
+- Server remains authoritative in all remote combinations.
+
+### Matchup matrix (who controls each side)
+
+| Matchup | Local non-headless | Local headless | Remote non-headless | Remote headless/hybrid |
+|---|---|---|---|---|
+| Human vs Human | Yes (`scripts/main.py`) | No | Yes (`server` + 2x `client-ui`) | N/A |
+| AI vs AI | Possible via custom local composition, but primary path is headless | Yes (`scripts/run_headless_self_play.py`) | Possible with 2 headless controllers/clients | Yes |
+| AI vs Human | Possible via custom mixed controller composition | Yes (mixed controller composition) | Yes (1x `client-ui`, 1x headless controller/client) | Yes |
 
 ## Major components
 
