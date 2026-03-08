@@ -4865,6 +4865,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Enemy units within 6\" suffer -1 to Hit rolls, and while those enemy units are Below Half-strength they also suffer -1 to Wound rolls.",
         ),
+        ("TYR", "Terror From The Deep"): (
+            "Supported",
+            "Deep Strike setup trigger: for each enemy unit within 12\", roll D6; on 2-4 that unit suffers D3 mortal wounds, and on 5+ it suffers 3 mortal wounds and takes a Battle-shock test.",
+        ),
         ("TYR", "Foul Spores (Aura)"): ("Partial", "Stealth aura within 6\" for non-MONSTER TYRANIDS units; Benefit of Cover aura not implemented."),
         ("TYR", "Spore Mine Cysts"): (
             "Supported",
@@ -5681,6 +5685,9 @@ def _classify_ability_base(
     horde_move_support = _horde_move_support(description)
     blistering_assault_support = _blistering_assault_support(description)
     setup_reactive_shoot_charge_support = _setup_reactive_shoot_or_charge_support(description)
+    deep_strike_setup_mortal_battleshock_support = _deep_strike_setup_enemy_range_mortal_wounds_battleshock_support(
+        description
+    )
     post_deployment_redeploy_support = _post_deployment_redeploy_support(description)
     sticky_support = _sticky_objective_support(description)
     command_phase_unit_return_support = _command_phase_unit_return_support(description)
@@ -6047,6 +6054,8 @@ def _classify_ability_base(
         return blistering_assault_support
     if setup_reactive_shoot_charge_support:
         return setup_reactive_shoot_charge_support
+    if deep_strike_setup_mortal_battleshock_support:
+        return deep_strike_setup_mortal_battleshock_support
     if post_deployment_redeploy_support:
         return post_deployment_redeploy_support
     if sticky_support:
@@ -10165,6 +10174,37 @@ def _setup_reactive_shoot_or_charge_support(description: str) -> Optional[Tuple[
     return (
         "Supported",
         f"End of opponent Movement phase: select enemy set up within {rng}\" to shoot (if eligible) or charge without charge bonus.",
+    )
+
+
+def _deep_strike_setup_enemy_range_mortal_wounds_battleshock_support(
+    description: str,
+) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time this model is set up on the battlefield using the deep strike ability "
+        r"roll (?:one|1) d6 for each enemy unit within (?P<range>\d+) of this model "
+        r"on a (?P<low_min>\d) (?P<low_max>\d) that unit suffers (?P<low_mw>d3|d6|\d+) mortal wounds "
+        r"on a (?P<high_threshold>\d)\+? that unit suffers (?P<high_mw>d3|d6|\d+) mortal wounds and must take a battle shock test"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    rng = str(m.group("range") or "").strip()
+    low_min = str(m.group("low_min") or "").strip()
+    low_max = str(m.group("low_max") or "").strip()
+    low_mw = str(m.group("low_mw") or "").strip().upper()
+    high_threshold = str(m.group("high_threshold") or "").strip()
+    high_mw = str(m.group("high_mw") or "").strip().upper()
+    if not (rng and low_min and low_max and low_mw and high_threshold and high_mw):
+        return None
+    return (
+        "Supported",
+        f"Deep Strike setup trigger: for each enemy unit within {rng}\", roll D6; on {low_min}-{low_max} it suffers {low_mw} mortal wounds, and on {high_threshold}+ it suffers {high_mw} mortal wounds then takes a Battle-shock test.",
     )
 
 

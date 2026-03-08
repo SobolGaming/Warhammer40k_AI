@@ -6830,6 +6830,183 @@ class Game(
                 spec=spec,
             )
 
+    def _on_unit_set_up_deep_strike_enemy_range_mortal_wounds_battleshock(
+        self,
+        unit=None,
+        set_up_as_reinforcements: bool = False,
+        used_deep_strike: bool = False,
+        **_kwargs,
+    ) -> None:
+        if unit is None:
+            return
+        if not bool(set_up_as_reinforcements) or not bool(used_deep_strike):
+            return
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return
+
+        game_map = self.map
+        if game_map is None:
+            return
+
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", False)):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+
+        try:
+            owner = root.get_parent_army().player
+        except Exception:
+            owner = None
+        if owner is None:
+            return
+        if owner is not self.get_current_player():
+            return
+
+        spec_fn = getattr(root, "model_deep_strike_setup_enemy_within_range_mortal_table_battleshock_specs", None)
+        if not callable(spec_fn):
+            return
+
+        def _resolve_mortal(raw_value):
+            token = str(raw_value or "").strip().lower()
+            if token == "d3":
+                return int(get_roll("D3") or 0), "D3"
+            if token == "d6":
+                return int(get_roll("D6") or 0), "D6"
+            try:
+                val = int(raw_value or 0)
+            except (TypeError, ValueError):
+                val = 0
+            if val <= 0:
+                return 0, ""
+            return int(val), str(int(val))
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        from ..utility.event_bus import append_action, append_dice
+
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        alive_models = [m for m in list(models or []) if getattr(m, "is_alive", False)]
+        if not alive_models:
+            return
+
+        seen_enemy_ids: set[str] = set()
+        enemy_roots = []
+        for enemy in sorted(list(game_map.get_enemy_units(root) or []), key=_unit_sort_key):
+            if enemy is None:
+                continue
+            try:
+                enemy_root = enemy.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy
+            if enemy_root is None:
+                continue
+            enemy_id = str(get_entity_id(enemy_root) or "")
+            if not enemy_id or enemy_id in seen_enemy_ids:
+                continue
+            seen_enemy_ids.add(enemy_id)
+            if not bool(getattr(enemy_root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(enemy_root, "deployed", False)):
+                continue
+            try:
+                if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            enemy_roots.append(enemy_root)
+        if not enemy_roots:
+            return
+
+        for model in sorted(alive_models, key=lambda m: str(get_entity_id(m) or "")):
+            specs = list(spec_fn(model) or [])
+            if not specs:
+                continue
+            for spec in specs:
+                try:
+                    range_value = float(spec.get("range", 0) or 0)
+                    threshold_low_min = int(spec.get("threshold_low_min", 0) or 0)
+                    threshold_low_max = int(spec.get("threshold_low_max", 0) or 0)
+                    threshold_high = int(spec.get("threshold_high", 0) or 0)
+                except (TypeError, ValueError):
+                    continue
+                if (
+                    range_value <= 0.0
+                    or threshold_low_min <= 0
+                    or threshold_low_max < threshold_low_min
+                    or threshold_high <= 0
+                ):
+                    continue
+                source_name = str(spec.get("source", "") or "Deep Strike mortals").strip() or "Deep Strike mortals"
+                mortal_low = spec.get("mortal_low")
+                mortal_high = spec.get("mortal_high")
+                high_triggers_battleshock = bool(spec.get("high_triggers_battleshock", False))
+
+                for enemy_root in enemy_roots:
+                    try:
+                        in_range = bool(root._model_within_range_of_unit(model, enemy_root, float(range_value)))
+                    except Exception:
+                        in_range = False
+                    if not in_range:
+                        continue
+
+                    trigger_roll = int(get_roll("D6") or 0)
+                    mortal_wounds = 0
+                    mortal_note = ""
+                    forced_battleshock = False
+
+                    if threshold_low_min <= trigger_roll <= threshold_low_max:
+                        mortal_wounds, mortal_note = _resolve_mortal(mortal_low)
+                    elif trigger_roll >= threshold_high:
+                        mortal_wounds, mortal_note = _resolve_mortal(mortal_high)
+                        forced_battleshock = bool(high_triggers_battleshock)
+
+                    if mortal_wounds > 0:
+                        apply_mw = getattr(root, "_apply_mortal_wounds_to_unit", None)
+                        if callable(apply_mw):
+                            apply_mw(enemy_root, int(mortal_wounds), game_map=game_map)
+
+                    tname = str(getattr(enemy_root, "name", "Unit") or "Unit")
+                    if mortal_wounds > 0 and mortal_note:
+                        append_dice(
+                            owner,
+                            f"{source_name}: {tname} roll {int(trigger_roll)} -> {mortal_note} = {int(mortal_wounds)} mortal wounds.",
+                        )
+                    elif mortal_wounds > 0:
+                        append_dice(
+                            owner,
+                            f"{source_name}: {tname} roll {int(trigger_roll)} -> {int(mortal_wounds)} mortal wounds.",
+                        )
+                    else:
+                        append_dice(owner, f"{source_name}: {tname} roll {int(trigger_roll)} -> no effect.")
+
+                    if mortal_wounds > 0:
+                        append_action(owner, f"{source_name}: {tname} suffers {int(mortal_wounds)} mortal wounds.")
+                    else:
+                        append_action(owner, f"{source_name}: {tname} suffers no mortal wounds.")
+
+                    if forced_battleshock and bool(getattr(enemy_root, "is_alive", lambda: False)()):
+                        enemy_root.take_battle_shock_test(int(getattr(self, "turn", 0) or 1))
+                        append_action(owner, f"{source_name}: {tname} takes a Battle-shock test.")
+
     def _on_unit_set_up_cry_of_the_wind(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return

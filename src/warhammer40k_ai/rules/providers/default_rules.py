@@ -76,6 +76,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_move_ended", "_on_unit_move_ended_transport_reactive_disembark"),
                 ("unit_set_up", "_on_unit_set_up_transport_reactive_disembark"),
                 ("unit_set_up", "_on_unit_set_up_grenade_pack_flyover"),
+                ("unit_set_up", "_on_unit_set_up_deep_strike_enemy_range_mortal_wounds_battleshock"),
                 ("unit_set_up", "_on_unit_set_up_cry_of_the_wind"),
                 ("unit_set_up", "_on_unit_set_up_a_foot_in_the_future"),
                 ("unit_set_up", "_on_unit_set_up_drukhari_detachments"),

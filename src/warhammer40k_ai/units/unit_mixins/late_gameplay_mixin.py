@@ -11,6 +11,12 @@ _COMMAND_PHASE_END_ENEMY_WITHIN_RANGE_MORTAL_TABLE_RE = re.compile(
     r"on a 2 5 that enemy unit suffers d3 mortal wounds? "
     r"on a 6 that enemy unit suffers d3 3 mortal wounds?"
 )
+_DEEP_STRIKE_SETUP_ENEMY_WITHIN_RANGE_MORTAL_TABLE_BATTLESHOCK_RE = re.compile(
+    r"each time this model is set up on the battlefield using the deep strike ability "
+    r"roll (?:one|1) d6 for each enemy unit within (?P<range>\d+) of this model "
+    r"on a (?P<low_min>\d) (?P<low_max>\d) that unit suffers (?P<low_mw>d3|d6|\d+) mortal wounds? "
+    r"on a (?P<high_threshold>\d)\+? that unit suffers (?P<high_mw>d3|d6|\d+) mortal wounds? and must take a battle shock test"
+)
 _REANIMATION_DICE_REROLL_RE = re.compile(
     r"each time this unit s reanimation protocols activate you can re roll the dice to see how many wounds are reanimated"
 )
@@ -172,6 +178,110 @@ class LateGameplayMixin:
                     "source": source,
                     "range": int(range_value),
                     "ability_key": ability_key,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_deep_strike_setup_enemy_within_range_mortal_table_battleshock_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific Deep Strike setup rule: for each enemy unit within range, roll D6 and apply
+        a mortal-wound table where the high band also forces a Battle-shock test.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - threshold_low_min: int
+            - threshold_low_max: int
+            - mortal_low: str | int
+            - threshold_high: int
+            - mortal_high: str | int
+            - high_triggers_battleshock: bool
+        """
+        if model is None:
+            return []
+        cache_key = (
+            f"model_deep_strike_setup_enemy_within_range_mortal_table_battleshock:{get_entity_id(model)}"
+        )
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: List[dict] = []
+        seen: set[tuple[str, int, int, int, str, int, str]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = _DEEP_STRIKE_SETUP_ENEMY_WITHIN_RANGE_MORTAL_TABLE_BATTLESHOCK_RE.fullmatch(normalized)
+            if not m:
+                continue
+
+            try:
+                range_value = int(m.group("range") or 0)
+                low_min = int(m.group("low_min") or 0)
+                low_max = int(m.group("low_max") or 0)
+                high_threshold = int(m.group("high_threshold") or 0)
+            except (TypeError, ValueError):
+                continue
+            if range_value <= 0 or low_min <= 0 or low_max < low_min or high_threshold <= 0:
+                continue
+
+            low_mw_raw = str(m.group("low_mw") or "").strip().lower()
+            high_mw_raw = str(m.group("high_mw") or "").strip().lower()
+            if not low_mw_raw or not high_mw_raw:
+                continue
+
+            low_mw: str | int
+            if low_mw_raw in ("d3", "d6"):
+                low_mw = low_mw_raw
+            elif low_mw_raw.isdigit() and int(low_mw_raw) > 0:
+                low_mw = int(low_mw_raw)
+            else:
+                continue
+
+            high_mw: str | int
+            if high_mw_raw in ("d3", "d6"):
+                high_mw = high_mw_raw
+            elif high_mw_raw.isdigit() and int(high_mw_raw) > 0:
+                high_mw = int(high_mw_raw)
+            else:
+                continue
+
+            source = str(name or "Deep Strike setup mortals").strip() or "Deep Strike setup mortals"
+            key = (
+                source.lower(),
+                int(range_value),
+                int(low_min),
+                int(low_max),
+                str(low_mw),
+                int(high_threshold),
+                str(high_mw),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "threshold_low_min": int(low_min),
+                    "threshold_low_max": int(low_max),
+                    "mortal_low": low_mw,
+                    "threshold_high": int(high_threshold),
+                    "mortal_high": high_mw,
+                    "high_triggers_battleshock": True,
                 }
             )
 
