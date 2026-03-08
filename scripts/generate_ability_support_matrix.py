@@ -5705,6 +5705,8 @@ def _classify_ability_base(
     post_shoot_snare_support = _post_shoot_snare_support(description)
     post_shoot_leadership_debuff_support = _post_shoot_leadership_debuff_support(description)
     aura_battleshock_leadership_penalty_support = _aura_battleshock_leadership_penalty_support(description)
+    failed_battleshock_aura_mortal_heal_support = _failed_battleshock_aura_mortal_heal_support(description)
+    fight_phase_select_engagement_battleshock_support = _fight_phase_select_engagement_battleshock_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
     fight_phase_aura_battleshock_support = _fight_phase_aura_battleshock_support(description)
     charge_end_engagement_battleshock_support = _charge_end_engagement_battleshock_support(description)
@@ -6092,6 +6094,10 @@ def _classify_ability_base(
         return post_shoot_leadership_debuff_support
     if aura_battleshock_leadership_penalty_support:
         return aura_battleshock_leadership_penalty_support
+    if failed_battleshock_aura_mortal_heal_support:
+        return failed_battleshock_aura_mortal_heal_support
+    if fight_phase_select_engagement_battleshock_support:
+        return fight_phase_select_engagement_battleshock_support
     if fight_phase_engagement_battleshock_support:
         return fight_phase_engagement_battleshock_support
     if fight_phase_aura_battleshock_support:
@@ -11309,6 +11315,88 @@ def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tu
             f"Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test; Below Half-strength suffers -{m.group('penalty')}.",
         )
     return ("Supported", "Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test.")
+
+
+def _fight_phase_select_engagement_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:(?P<once>once per turn) )?"
+        r"(?:at the )?start of the fight phase "
+        r"(?P<optional>you can )?select one enemy unit within engagement range of "
+        r"(?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) "
+        r"that(?: enemy)? unit must take a battle shock test"
+        r"(?: subtracting (?P<penalty>\d+) from (?:that test|the result)(?: when it does so)?)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        penalty = int(m.group("penalty") or 0)
+    except Exception:
+        penalty = 0
+    optional = bool(str(m.group("optional") or "").strip())
+    once_per_turn = bool(str(m.group("once") or "").strip())
+    prefixes: list[str] = []
+    if once_per_turn:
+        prefixes.append("Once per turn")
+    if optional:
+        prefixes.append("Optional")
+    prefix_text = ""
+    if prefixes:
+        prefix_text = f"{', '.join(prefixes)}: "
+    if penalty > 0:
+        return (
+            "Supported",
+            (
+                f"{prefix_text}Start of Fight phase: select one enemy unit in Engagement Range to take a "
+                f"Battle-shock test at -{int(penalty)}."
+            ),
+        )
+    return (
+        "Supported",
+        f"{prefix_text}Start of Fight phase: select one enemy unit in Engagement Range to take a Battle-shock test.",
+    )
+
+
+def _failed_battleshock_aura_mortal_heal_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while an enemy unit is within (?P<range>\d+) of this unit "
+        r"if this unit contains an? (?P<model>[a-z0-9 '\-]+?)(?: model)? "
+        r"each time that enemy unit fails a battle shock test it suffers (?P<mortal>d3|d6|\d+) mortal wounds? "
+        r"and one model in this unit regains up to (?P<heal>d3|d6|\d+) lost wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        range_value = int(m.group("range") or 0)
+    except Exception:
+        range_value = 0
+    if range_value <= 0:
+        return None
+    required_model = str(m.group("model") or "").strip()
+    if not required_model:
+        return None
+    mortal_roll = str(m.group("mortal") or "").strip().upper()
+    heal_roll = str(m.group("heal") or "").strip().upper()
+    if not mortal_roll or not heal_roll:
+        return None
+    return (
+        "Supported",
+        (
+            f'While an enemy unit is within {int(range_value)}", if this unit contains a {required_model.upper()} model, '
+            f"each failed Battle-shock test deals {mortal_roll} mortal wounds to that enemy and one model in this unit regains up to {heal_roll} lost wounds."
+        ),
+    )
 
 
 def _fight_phase_aura_battleshock_support(description: str) -> Optional[Tuple[str, str]]:

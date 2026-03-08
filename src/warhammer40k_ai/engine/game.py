@@ -1035,6 +1035,165 @@ class Game(
                     f"{ability_name}: {getattr(unit, 'name', 'Unit')} suffers no mortal wounds.",
                 )
 
+    def _on_battle_shock_test_resolved_enemy_failed_battleshock_aura(self, unit=None, passed: bool = False, **_kwargs) -> None:
+        if unit is None or passed:
+            return
+
+        from ..utility.aura_utils import unit_within_range_of_unit
+        from ..utility.event_bus import append_action, append_dice
+
+        root_fn = getattr(unit, "get_attached_unit_root", None)
+        target_root = root_fn() if callable(root_fn) else unit
+        if target_root is None:
+            return
+        target_army_fn = getattr(target_root, "get_parent_army", None)
+        target_army = target_army_fn() if callable(target_army_fn) else getattr(target_root, "parent_army", None)
+
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            source_army = self._get_player_army(player)
+            if source_army is None or source_army is target_army:
+                continue
+            seen_source_ids: set[str] = set()
+            for source in list(getattr(source_army, "units", []) or []):
+                if source is None:
+                    continue
+                source_root_fn = getattr(source, "get_attached_unit_root", None)
+                source_root = source_root_fn() if callable(source_root_fn) else source
+                if source_root is None:
+                    continue
+                source_id = str(get_entity_id(source_root) or "") or str(id(source_root))
+                if source_id in seen_source_ids:
+                    continue
+                seen_source_ids.add(source_id)
+                if not bool(getattr(source_root, "deployed", True)):
+                    continue
+                if str(getattr(source_root, "reserve_status", "deployed") or "deployed") != "deployed":
+                    continue
+                in_reserves_fn = getattr(source_root, "is_in_reserves", None)
+                if callable(in_reserves_fn) and bool(in_reserves_fn()):
+                    continue
+                is_alive_fn = getattr(source_root, "is_alive", None)
+                if callable(is_alive_fn) and not bool(is_alive_fn()):
+                    continue
+                specs_fn = getattr(source_root, "unit_enemy_failed_battleshock_mortal_heal_aura_specs", None)
+                if not callable(specs_fn):
+                    continue
+                specs = list(specs_fn() or [])
+                if not specs:
+                    continue
+
+                for spec in specs:
+                    required_model_name = str(spec.get("required_model_name", "") or "").strip()
+                    if required_model_name:
+                        contains_fn = getattr(source_root, "_attached_unit_contains_model_named", None)
+                        if callable(contains_fn):
+                            if not bool(contains_fn(required_model_name)):
+                                continue
+                        else:
+                            fallback_contains_fn = getattr(source_root, "_unit_contains_model_named", None)
+                            if not callable(fallback_contains_fn):
+                                continue
+                            if not bool(fallback_contains_fn(required_model_name)):
+                                continue
+                    try:
+                        range_value = float(spec.get("range", 0.0) or 0.0)
+                    except (TypeError, ValueError):
+                        range_value = 0.0
+                    if range_value <= 0.0:
+                        continue
+                    if not unit_within_range_of_unit(
+                        source_root,
+                        target_root,
+                        range_value,
+                        use_attached_aggregate=True,
+                    ):
+                        continue
+
+                    mortal_expr = str(spec.get("mortal_wounds_roll", "") or "").strip().upper()
+                    heal_expr = str(spec.get("heal_roll", "") or "").strip().upper()
+                    if not mortal_expr or not heal_expr:
+                        continue
+
+                    mortal = int(get_roll(mortal_expr) or 0)
+                    if mortal > 0:
+                        apply_mortal_fn = getattr(target_root, "_apply_mortal_wounds_to_unit", None)
+                        if callable(apply_mortal_fn):
+                            apply_mortal_fn(target_root, mortal, game_map=getattr(self, "map", None))
+
+                    heal_roll = int(get_roll(heal_expr) or 0)
+                    healed = 0
+                    healed_model_name = ""
+                    if heal_roll > 0:
+                        get_models_fn = getattr(source_root, "get_attached_unit_models", None)
+                        if callable(get_models_fn):
+                            source_models = list(get_models_fn() or [])
+                        else:
+                            source_models = list(getattr(source_root, "models", []) or [])
+
+                        candidates: list[tuple[int, str, str, object, int, int]] = []
+                        for model in source_models:
+                            if not bool(getattr(model, "is_alive", True)):
+                                continue
+                            base_wounds = int(
+                                getattr(
+                                    model,
+                                    "_base_wounds",
+                                    getattr(model, "base_wounds", getattr(model, "wounds", 0)),
+                                )
+                                or 0
+                            )
+                            current_wounds = int(getattr(model, "wounds", 0) or 0)
+                            missing = int(base_wounds - current_wounds)
+                            if missing <= 0:
+                                continue
+                            candidates.append(
+                                (
+                                    missing,
+                                    str(get_entity_id(model) or ""),
+                                    str(getattr(model, "name", "") or ""),
+                                    model,
+                                    base_wounds,
+                                    current_wounds,
+                                )
+                            )
+
+                        if candidates:
+                            candidates.sort(key=lambda item: (-int(item[0]), item[1], item[2]))
+                            _missing, _model_id, _model_name, heal_model, base_wounds, current_wounds = candidates[0]
+                            healed_model_name = str(getattr(heal_model, "name", "Model") or "Model")
+                            before = int(getattr(heal_model, "wounds", 0) or 0)
+                            heal_fn = getattr(heal_model, "heal", None)
+                            if callable(heal_fn):
+                                heal_fn(int(heal_roll))
+                            else:
+                                heal_model.wounds = int(min(int(base_wounds), int(current_wounds + heal_roll)))
+                                check_profile_fn = getattr(heal_model, "_check_damaged_profile", None)
+                                if callable(check_profile_fn):
+                                    check_profile_fn()
+                            after = int(getattr(heal_model, "wounds", 0) or 0)
+                            healed = max(0, int(after - before))
+
+                    ability_name = str(spec.get("source", "") or "Failed Battle-shock aura").strip() or "Failed Battle-shock aura"
+                    append_dice(
+                        player,
+                        (
+                            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} failed Battle-shock; "
+                            f"{mortal_expr}={int(mortal)}, {heal_expr}={int(heal_roll)}."
+                        ),
+                    )
+                    outcome_parts: list[str] = []
+                    if mortal > 0:
+                        outcome_parts.append(f"{getattr(target_root, 'name', 'Unit')} suffers {int(mortal)} mortal wounds")
+                    else:
+                        outcome_parts.append(f"{getattr(target_root, 'name', 'Unit')} suffers no mortal wounds")
+                    if healed > 0:
+                        outcome_parts.append(f"{healed_model_name} regains {int(healed)} wound(s)")
+                    else:
+                        outcome_parts.append("no wounds are regained")
+                    append_action(player, f"{ability_name}: {'; '.join(outcome_parts)}.")
+
     def _on_battle_shock_test_resolved_acts_of_faith(self, unit=None, passed: bool = False, **_kwargs) -> None:
         if unit is None:
             return

@@ -3925,6 +3925,91 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_fight_phase_select_engagement_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: at the start of the Fight phase, select one enemy unit
+        within Engagement Range of this model; that enemy unit takes a Battle-shock test.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - ability_key: str
+            - optional: bool
+            - once_per_turn: bool
+            - engagement_only: bool
+            - test_penalty: int (optional)
+            - context_ability: str
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_phase_select_engagement_battleshock:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, bool, bool, int]] = set()
+        pattern = (
+            r"(?:(?P<once>once per turn) )?"
+            r"(?:at the )?start of the fight phase "
+            r"(?P<optional>you can )?select one enemy unit within engagement range of "
+            r"(?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) "
+            r"that(?: enemy)? unit must take a battle shock test"
+            r"(?: subtracting (?P<penalty>\d+) from (?:that test|the result)(?: when it does so)?)?"
+        )
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = re.fullmatch(pattern, normalized)
+            if not m:
+                continue
+            optional = bool(str(m.group("optional") or "").strip())
+            once_per_turn = bool(str(m.group("once") or "").strip())
+            try:
+                test_penalty = int(m.group("penalty") or 0)
+            except (TypeError, ValueError):
+                test_penalty = 0
+            if test_penalty < 0:
+                test_penalty = abs(int(test_penalty))
+            source = str(name or "Fight phase select Engagement Battle-shock").strip()
+            source = source or "Fight phase select Engagement Battle-shock"
+            source_key = self._normalize_keyword_phrase(source) or re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_")
+            if not source_key:
+                source_key = "fight_phase_select_engagement_battleshock"
+            ability_key = f"fight_phase_select_engagement_battleshock:{source_key}"
+            dedupe_key = (
+                source.lower(),
+                ability_key,
+                bool(optional),
+                bool(once_per_turn),
+                int(test_penalty),
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "ability_key": ability_key,
+                    "optional": bool(optional),
+                    "once_per_turn": bool(once_per_turn),
+                    "engagement_only": True,
+                    "test_penalty": int(test_penalty),
+                    "context_ability": "fight_phase_select_engagement_battleshock",
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_fight_phase_engagement_wound_reroll_ones_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: at the start of the Fight phase, select an engaged enemy unit;
@@ -7878,6 +7963,96 @@ class AbilitySpecsMixin:
                     continue
                 seen.add(key)
                 specs.append({"source": source, "penalty": penalty})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_enemy_failed_battleshock_mortal_heal_aura_specs(self) -> List[dict]:
+        """
+        Unit-specific aura: while an enemy unit is within range, if this unit contains a named model,
+        each failed Battle-shock test for that enemy causes mortal wounds and heals one model in this unit.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - required_model_name: str
+            - mortal_wounds_roll: str (e.g. D3)
+            - heal_roll: str (e.g. D3)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_enemy_failed_battleshock_mortal_heal_aura_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, str, str, str]] = set()
+        pattern = (
+            r"while an enemy unit is within (?P<range>\d+) of this unit "
+            r"if this unit contains an? (?P<model>[a-z0-9 '\-]+?)(?: model)? "
+            r"each time that enemy unit fails a battle shock test "
+            r"it suffers (?P<mortal>d3|d6|\d+) mortal wounds? and one model in this unit regains up to (?P<heal>d3|d6|\d+) lost wounds?"
+        )
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = re.fullmatch(pattern, normalized)
+                if not m:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                required_model_name = " ".join(str(m.group("model") or "").strip().split())
+                if not required_model_name:
+                    continue
+                mortal_expr = str(m.group("mortal") or "").strip().upper()
+                heal_expr = str(m.group("heal") or "").strip().upper()
+                if not mortal_expr or not heal_expr:
+                    continue
+                source = str(name or "Failed Battle-shock aura").strip() or "Failed Battle-shock aura"
+                key = (
+                    source.lower(),
+                    int(range_value),
+                    required_model_name.lower(),
+                    mortal_expr,
+                    heal_expr,
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "required_model_name": required_model_name,
+                        "mortal_wounds_roll": mortal_expr,
+                        "heal_roll": heal_expr,
+                    }
+                )
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}

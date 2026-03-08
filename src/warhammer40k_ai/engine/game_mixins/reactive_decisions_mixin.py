@@ -1393,13 +1393,22 @@ class GameReactiveDecisionsMixin:
         if not model_id or not unit_id:
             return None
 
-        ability_name = str(spec.get("source", "") or "Harbinger of Despair").strip() or "Harbinger of Despair"
+        ability_name = str(spec.get("source", "") or "Start phase Battle-shock selection").strip()
+        ability_name = ability_name or "Start phase Battle-shock selection"
+        ability_context = str(
+            spec.get("context_ability", "") or spec.get("ability", "") or "harbinger_of_despair_battleshock"
+        ).strip().lower()
+        if not ability_context:
+            ability_context = "harbinger_of_despair_battleshock"
         ability_key = str(spec.get("ability_key", "") or "").strip().lower()
         if not ability_key:
             source_key = re.sub(r"[^a-z0-9]+", "_", ability_name.lower()).strip("_")
             if not source_key:
-                source_key = "harbinger_of_despair"
+                source_key = "start_phase_battleshock"
             ability_key = f"start_phase_select_battleshock:{source_key}"
+        optional = bool(spec.get("optional", True))
+        once_per_turn = bool(spec.get("once_per_turn", True))
+        engagement_only = bool(spec.get("engagement_only", False))
         phase_key = str(phase_name or "").strip().upper()
         if not phase_key:
             return None
@@ -1414,7 +1423,7 @@ class GameReactiveDecisionsMixin:
                 if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
                     continue
                 ctx = dict(getattr(req, "context", {}) or {})
-                if str(ctx.get("ability", "") or "") != "harbinger_of_despair_battleshock":
+                if str(ctx.get("ability", "") or "").strip().lower() != ability_context:
                     continue
                 if str(ctx.get("model_id", "") or "") != model_id:
                     continue
@@ -1436,7 +1445,9 @@ class GameReactiveDecisionsMixin:
             except (AttributeError, TypeError, ValueError):
                 return str(getattr(unit, "name", "") or "")
 
-        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        options = []
+        if optional:
+            options.append(DecisionOption.create("None", payload={"action": "skip"}))
         candidate_ids: list[str] = []
         for cand in sorted(list(candidates), key=_cand_sort_key):
             cand_id = str(get_entity_id(cand) or "").strip()
@@ -1453,20 +1464,26 @@ class GameReactiveDecisionsMixin:
                     },
                 )
             )
-        if len(options) <= 1:
+        if optional and len(options) <= 1:
+            return None
+        if (not optional) and not options:
             return None
         try:
             range_value = int(spec.get("range", 0) or 0)
         except (TypeError, ValueError):
             range_value = 0
+        if range_value < 0:
+            range_value = 0
         try:
             test_penalty = int(spec.get("test_penalty", 0) or 0)
         except (TypeError, ValueError):
             test_penalty = 0
-        if range_value <= 0 or test_penalty <= 0:
+        if test_penalty < 0:
+            test_penalty = abs(int(test_penalty))
+        if not engagement_only and range_value <= 0:
             return None
         ctx = {
-            "ability": "harbinger_of_despair_battleshock",
+            "ability": ability_context,
             "ability_name": ability_name,
             "ability_key": ability_key,
             "phase_name": phase_key,
@@ -1478,15 +1495,23 @@ class GameReactiveDecisionsMixin:
             "model_id": model_id,
             "range": int(range_value),
             "test_penalty": int(test_penalty),
+            "engagement_only": bool(engagement_only),
             "candidate_unit_ids": list(candidate_ids),
-            "optional": True,
-            "once_per_turn": bool(spec.get("once_per_turn", True)),
+            "optional": bool(optional),
+            "once_per_turn": bool(once_per_turn),
             "turn": int(current_turn or 0),
         }
         phase_label = phase_key.replace("_", " ").title()
+        target_label = "within Engagement Range" if engagement_only else f"within {int(range_value)}\""
+        penalty_clause = ""
+        if test_penalty > 0:
+            penalty_clause = f", subtracting {int(test_penalty)} from the test"
         request = DecisionRequest.create(
             DECISION_CHOOSE_QUARRY,
-            f"{ability_name}: select one enemy unit within {int(range_value)}\" to take a Battle-shock test ({phase_label}).",
+            (
+                f"{ability_name}: select one enemy unit {target_label} to take a Battle-shock test"
+                f"{penalty_clause} ({phase_label})."
+            ),
             player_id=getattr(player, "id", None),
             options=options,
             context=ctx,

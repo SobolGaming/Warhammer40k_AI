@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from typing import Sequence
 
 from ..decision_dispatcher import register_decision_handler
@@ -7891,8 +7893,13 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
                 if not bool(can_see_fn(model, target_root, game_map=getattr(game, "map", None))):
                     return ("Gravitic Pulse target must be visible to the source model.",)
         return ()
-    if ability == "harbinger_of_despair_battleshock":
+    if ability in {"harbinger_of_despair_battleshock", "fight_phase_select_engagement_battleshock"}:
         payload = _option_payload(request, result)
+        error_prefix = "Harbinger of Despair"
+        if ability != "harbinger_of_despair_battleshock":
+            resolved_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "").strip()
+            if resolved_name:
+                error_prefix = resolved_name
         source_unit = resolve_unit(
             game,
             payload.get("source_unit_id")
@@ -7902,18 +7909,18 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         )
         model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
         if model is None:
-            return ("Harbinger of Despair source model was not found.",)
+            return (f"{error_prefix} source model was not found.",)
         if source_unit is None:
             source_unit = getattr(model, "parent_unit", None)
         if source_unit is None:
-            return ("Harbinger of Despair source unit was not found.",)
+            return (f"{error_prefix} source unit was not found.",)
         source_root = (
             source_unit.get_attached_unit_root()
             if hasattr(source_unit, "get_attached_unit_root")
             else source_unit
         )
         if source_root is None:
-            return ("Harbinger of Despair source unit was not found.",)
+            return (f"{error_prefix} source unit was not found.",)
         model_parent = getattr(model, "parent_unit", None)
         model_parent_root = (
             model_parent.get_attached_unit_root()
@@ -7921,14 +7928,14 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             else model_parent
         )
         if model_parent_root is not None and model_parent_root is not source_root:
-            return ("Harbinger of Despair source model does not belong to the source unit.",)
+            return (f"{error_prefix} source model does not belong to the source unit.",)
         ability_key = str(payload.get("ability_key") or ctx.get("ability_key") or "").strip().lower()
         if not ability_key:
-            return ("Harbinger of Despair ability_key is required.",)
+            return (f"{error_prefix} ability_key is required.",)
         phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
         current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
         if phase_name and current_phase and current_phase != phase_name:
-            return ("Harbinger of Despair can only be resolved in the queued phase.",)
+            return (f"{error_prefix} can only be resolved in the queued phase.",)
         try:
             queued_turn = int(ctx.get("turn", 0) or 0)
         except (TypeError, ValueError):
@@ -7938,26 +7945,30 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         except (TypeError, ValueError):
             current_turn = 0
         if queued_turn > 0 and current_turn > 0 and queued_turn != current_turn:
-            return ("Harbinger of Despair decision is no longer valid this turn.",)
+            return (f"{error_prefix} decision is no longer valid this turn.",)
+        optional = bool(ctx.get("optional", ability == "harbinger_of_despair_battleshock"))
         if is_skip_choice(request, result):
+            if not optional:
+                return (f"{error_prefix} requires selecting an enemy target.",)
             return ()
+        once_per_turn = bool(ctx.get("once_per_turn", ability == "harbinger_of_despair_battleshock"))
         used_fn = getattr(model, "has_used_once_per_battle_round", None)
-        if callable(used_fn) and current_turn > 0:
+        if once_per_turn and callable(used_fn) and current_turn > 0:
             if bool(used_fn(ability_key, battle_round=int(current_turn))):
-                return ("Harbinger of Despair has already been used this turn.",)
+                return (f"{error_prefix} has already been used this turn.",)
         target_unit = resolve_unit(
             game,
             payload.get("target_unit_id") or ctx.get("target_unit_id"),
         )
         if target_unit is None:
-            return ("Harbinger of Despair target unit was not found.",)
+            return (f"{error_prefix} target unit was not found.",)
         target_root = (
             target_unit.get_attached_unit_root()
             if hasattr(target_unit, "get_attached_unit_root")
             else target_unit
         )
         if target_root is None:
-            return ("Harbinger of Despair target unit was not found.",)
+            return (f"{error_prefix} target unit was not found.",)
         target_id = str(get_entity_id(target_root) or "")
         candidate_ids = {
             str(v or "").strip()
@@ -7965,27 +7976,36 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if str(v or "").strip()
         }
         if candidate_ids and target_id not in candidate_ids:
-            return ("Harbinger of Despair target is not an eligible candidate.",)
+            return (f"{error_prefix} target is not an eligible candidate.",)
         source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
         target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
         if source_army is not None and target_army is not None and source_army is target_army:
-            return ("Harbinger of Despair target must be an enemy unit.",)
+            return (f"{error_prefix} target must be an enemy unit.",)
+        engagement_only = bool(ctx.get("engagement_only", False))
         try:
             range_value = float(ctx.get("range", payload.get("range", 0)) or 0)
         except (TypeError, ValueError):
             range_value = 0.0
-        if range_value <= 0:
-            return ("Harbinger of Despair range is invalid.",)
         try:
             test_penalty = int(ctx.get("test_penalty", payload.get("test_penalty", 0)) or 0)
         except (TypeError, ValueError):
             test_penalty = 0
-        if test_penalty <= 0:
-            return ("Harbinger of Despair test_penalty is invalid.",)
-        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
-        if callable(in_range_fn):
-            if not bool(in_range_fn(model, target_root, range_value=float(range_value))):
-                return ("Harbinger of Despair target is out of range.",)
+        if ability == "harbinger_of_despair_battleshock" and test_penalty <= 0:
+            return (f"{error_prefix} test_penalty is invalid.",)
+        if test_penalty < 0:
+            return (f"{error_prefix} test_penalty is invalid.",)
+        if engagement_only:
+            from ...utility.aura_utils import model_within_engagement_range_of_unit
+
+            if not bool(model_within_engagement_range_of_unit(model, target_root)):
+                return (f"{error_prefix} target must be within Engagement Range.",)
+        else:
+            if range_value <= 0:
+                return (f"{error_prefix} range is invalid.",)
+            in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+            if callable(in_range_fn):
+                if not bool(in_range_fn(model, target_root, range_value=float(range_value))):
+                    return (f"{error_prefix} target is out of range.",)
         return ()
     if ability == "start_any_command_phase_objective_battleshock":
         payload = _option_payload(request, result)
@@ -15655,7 +15675,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"{ability_name}: no wounds were regained.",
             )
         return model
-    if ability == "harbinger_of_despair_battleshock":
+    if ability in {"harbinger_of_despair_battleshock", "fight_phase_select_engagement_battleshock"}:
         payload = _option_payload(request, result)
         model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
         source_unit = resolve_unit(
@@ -15680,21 +15700,30 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         player = _resolve_player(game, request, payload)
         if player is None and source_army is not None:
             player = getattr(source_army, "player", None)
-        ability_name = str(ctx.get("ability_name", "") or "Harbinger of Despair").strip() or "Harbinger of Despair"
+        default_name = "Harbinger of Despair" if ability == "harbinger_of_despair_battleshock" else "Start phase Battle-shock selection"
+        ability_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or default_name).strip() or default_name
         ability_key = str(ctx.get("ability_key", "") or payload.get("ability_key", "") or "").strip().lower()
+        if not ability_key:
+            source_key = re.sub(r"[^a-z0-9]+", "_", ability_name.lower()).strip("_")
+            if not source_key:
+                source_key = "start_phase_battleshock"
+            ability_key = f"start_phase_select_battleshock:{source_key}"
+        optional = bool(ctx.get("optional", ability == "harbinger_of_despair_battleshock"))
+        once_per_turn = bool(ctx.get("once_per_turn", ability == "harbinger_of_despair_battleshock"))
         try:
             current_turn = int(getattr(game, "turn", 0) or 0)
         except (TypeError, ValueError):
             current_turn = 0
         if is_skip_choice(request, result):
-            _log_action_for_players(
-                game,
-                player,
-                f"{ability_name}: selected none.",
-            )
+            if optional:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: selected none.",
+                )
             return None
         has_used = getattr(model, "has_used_once_per_battle_round", None)
-        if callable(has_used) and ability_key and current_turn > 0:
+        if once_per_turn and callable(has_used) and ability_key and current_turn > 0:
             if bool(has_used(ability_key, battle_round=int(current_turn))):
                 return None
         target_unit = resolve_unit(
@@ -15714,20 +15743,21 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             test_penalty = int(ctx.get("test_penalty", payload.get("test_penalty", 0)) or 0)
         except (TypeError, ValueError):
             test_penalty = 0
-        if test_penalty <= 0:
-            return None
-        modifier = -abs(int(test_penalty))
-        sr = getattr(target_root, "special_rules", None)
-        if not isinstance(sr, dict):
-            sr = {}
-        current_modifier = int(sr.get("battle_shock_test_modifier", 0) or 0)
-        sr["battle_shock_test_modifier"] = int(current_modifier + modifier)
-        reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
-        reasons.append(f"{ability_name}: {int(modifier)}")
-        sr["battle_shock_test_modifier_reasons"] = reasons
-        target_root.special_rules = sr
+        if test_penalty < 0:
+            test_penalty = abs(int(test_penalty))
+        modifier = -abs(int(test_penalty)) if test_penalty > 0 else 0
+        if modifier:
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            current_modifier = int(sr.get("battle_shock_test_modifier", 0) or 0)
+            sr["battle_shock_test_modifier"] = int(current_modifier + modifier)
+            reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+            reasons.append(f"{ability_name}: {int(modifier)}")
+            sr["battle_shock_test_modifier_reasons"] = reasons
+            target_root.special_rules = sr
         mark_used = getattr(model, "mark_used_once_per_battle_round", None)
-        if callable(mark_used) and ability_key and current_turn > 0:
+        if once_per_turn and callable(mark_used) and ability_key and current_turn > 0:
             mark_used(
                 ability_key,
                 battle_round=int(current_turn),
@@ -15737,10 +15767,14 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         take_test = getattr(target_root, "take_battle_shock_test", None)
         if callable(take_test):
             take_test(int(current_turn or 1))
+        if modifier:
+            message = f"{ability_name}: {getattr(target_root, 'name', 'Unit')} takes a Battle-shock test at {int(modifier)}."
+        else:
+            message = f"{ability_name}: {getattr(target_root, 'name', 'Unit')} takes a Battle-shock test."
         _log_action_for_players(
             game,
             player,
-            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} takes a Battle-shock test at {int(modifier)}.",
+            message,
         )
         return target_root
     if ability == "start_any_command_phase_objective_battleshock":
