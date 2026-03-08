@@ -5618,6 +5618,7 @@ def _classify_ability_base(
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
     aura_hit_support = _aura_hit_bonus_support(description)
     aura_hit_reroll_ones_support = _aura_hit_reroll_ones_support(description)
+    aura_ranged_weapon_keywords_support = _aura_ranged_weapon_keywords_support(description)
     aura_strength_support = _aura_strength_support(description)
     aura_toughness_support = _aura_toughness_support(description)
     aura_melee_ap_support = _aura_melee_ap_support(description)
@@ -5925,6 +5926,8 @@ def _classify_ability_base(
         return aura_hit_support
     if aura_hit_reroll_ones_support:
         return aura_hit_reroll_ones_support
+    if aura_ranged_weapon_keywords_support:
+        return aura_ranged_weapon_keywords_support
     if aura_strength_support:
         return aura_strength_support
     if aura_toughness_support:
@@ -7165,6 +7168,41 @@ def _aura_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
     rng = m.group("rng")
     atype = m.group("atype").strip().lower()
     return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" re-roll Hit rolls of 1 for {atype} attacks.")
+
+
+def _aura_ranged_weapon_keywords_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while a friendly (?P<kw>.+?) unit is within (?P<rng>\d+) of this (?:model|unit|bearer) "
+        r"ranged weapons equipped by models in that unit have the (?P<keywords>.+?) abilit(?:y|ies)",
+        norm,
+    )
+    if not m:
+        return None
+    faction_kw = str(m.group("kw") or "").strip()
+    rng = str(m.group("rng") or "").strip()
+    keywords_raw = str(m.group("keywords") or "").strip()
+    if not faction_kw or not rng or not keywords_raw:
+        return None
+    parsed_keywords: list[str] = []
+    for token in re.split(r"\s+and\s+|,\s*", keywords_raw):
+        kw = str(token or "").strip().upper()
+        kw = re.sub(r"\s+", " ", kw).strip()
+        if not kw:
+            continue
+        if kw not in parsed_keywords:
+            parsed_keywords.append(kw)
+    if not parsed_keywords:
+        return None
+    keywords_note = ", ".join(f"[{kw}]" for kw in parsed_keywords)
+    return (
+        "Supported",
+        f"Aura: friendly {faction_kw} within {rng}\" gain {keywords_note} on ranged weapons.",
+    )
 
 
 def _aura_strength_support(description: str) -> Optional[Tuple[str, str]]:

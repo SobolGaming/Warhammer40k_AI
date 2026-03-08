@@ -3711,6 +3711,7 @@ class PositioningMixin:
         bonuses = {
             "ignores_cover": False,
             "lethal_hits": False,
+            "assault": False,
             "sustained_hits_value": 0,
             "sustained_hits_dice": "",
             "devastating_wounds": False,
@@ -3737,6 +3738,9 @@ class PositioningMixin:
             if kw == "IGNORES COVER":
                 bonuses["ignores_cover"] = True
                 sources.append(f"Ignores Cover ({source})")
+            elif kw == "ASSAULT":
+                bonuses["assault"] = True
+                sources.append(f"Assault ({source})")
             elif kw == "LETHAL HITS":
                 bonuses["lethal_hits"] = True
                 sources.append(f"Lethal Hits ({source})")
@@ -3783,6 +3787,7 @@ class PositioningMixin:
         if (
             bonuses["ignores_cover"]
             or bonuses["lethal_hits"]
+            or bonuses["assault"]
             or bonuses["devastating_wounds"]
             or bonuses["twin_linked"]
             or bonuses["heavy"]

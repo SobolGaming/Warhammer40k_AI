@@ -14017,6 +14017,25 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        try:
+            parent_wargear = getattr(profile, "parent_wargear", None)
+            is_ranged_fn = getattr(parent_wargear, "is_ranged", None) if parent_wargear is not None else None
+            if callable(is_ranged_fn) and bool(is_ranged_fn()):
+                from ...utility.aura_effects import get_aura_weapon_keyword_bonuses
+
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                game_map = getattr(game, "map", None) if game is not None else None
+                aura_rules = get_aura_weapon_keyword_bonuses(
+                    self,
+                    profile,
+                    game_map=game_map,
+                )
+                for rule in list(aura_rules or []):
+                    if str(rule.get("keyword", "") or "").strip().upper() == "ASSAULT":
+                        return True
+        except Exception:
+            pass
         # Check for Assault weapons
         if profile.is_assault():
             return True

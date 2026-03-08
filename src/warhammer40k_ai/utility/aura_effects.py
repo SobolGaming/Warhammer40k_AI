@@ -2537,6 +2537,56 @@ def _parse_conditional_sustained_hits_aura(ability) -> Optional[dict]:
     }
 
 
+def _parse_ranged_weapon_keyword_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_ranged_weapon_keyword_aura")
+    """
+    Strict parser for:
+      "While a friendly X unit is within N\" of this model, ranged weapons equipped by models in that unit
+       have the [KEYWORD] and [KEYWORD] abilities."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        rf'While a friendly (?P<faction_kw>.+?) unit(?: \(excluding (?P<exclude_kw>.+?)\))? is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
+        r"ranged weapons equipped by models in that unit have (?P<keywords>.+?) abiliti(?:es|y)",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+
+    keyword_blob = str(m.group("keywords") or "").strip()
+    keyword_matches = re.findall(r"\[([A-Za-z0-9 +\-]+)\]", keyword_blob, flags=re.IGNORECASE)
+    keywords: list[str] = []
+    seen_keywords: set[str] = set()
+    for raw in keyword_matches:
+        norm = re.sub(r"\s+", " ", str(raw or "").strip()).upper()
+        if not norm:
+            continue
+        key = norm.lower()
+        if key in seen_keywords:
+            continue
+        seen_keywords.add(key)
+        keywords.append(norm)
+    if not keywords:
+        return None
+
+    excluded = list(_parse_excluded_keywords(desc))
+    raw_excluded = str(m.group("exclude_kw") or "").strip()
+    if raw_excluded:
+        excluded.extend(list(_parse_excluded_keywords(f"(excluding {raw_excluded})")))
+
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "keywords": tuple(keywords),
+        "excluded_keywords": tuple(dict.fromkeys(excluded)),
+    }
+
+
 def get_aura_melee_attacks_bonus(attacker_unit, weapon_profile, *, game_map=None) -> tuple[int, tuple[str, ...]]:
     _count_regex_hotspot("get_aura_melee_attacks_bonus")
     """
@@ -2636,6 +2686,48 @@ def get_aura_weapon_keyword_bonuses(
                         }
                     )
         for ab in _iter_possible_abilities(source):
+            ranged_keywords = _cached_parse_aura_spec(
+                "_parse_ranged_weapon_keyword_aura",
+                ab,
+                _parse_ranged_weapon_keyword_aura,
+            )
+            if ranged_keywords:
+                if not is_ranged_attack:
+                    continue
+                ab_name = str(getattr(ab, "name", "") or "")
+                aura_key = _norm_name(ab_name)
+                if aura_key:
+                    if aura_key in applied_aura_names:
+                        continue
+                    applied_aura_names.add(aura_key)
+                faction_keyword = str(ranged_keywords.get("faction_keyword", "") or "").strip()
+                if faction_keyword:
+                    matches = _unit_matches_keyword_phrase(attacker_unit, faction_keyword)
+                    if not matches:
+                        try:
+                            matches = bool(attacker_unit.has_any_keyword(faction_keyword))
+                        except Exception:
+                            matches = False
+                    if not matches:
+                        continue
+                excluded_keywords = tuple(ranged_keywords.get("excluded_keywords", ()) or ())
+                if excluded_keywords and _excluded_by_unit_keywords(attacker_unit, excluded_keywords):
+                    continue
+                if not _unit_within_aura_range(source, attacker_unit, float(ranged_keywords["range"]), ability=ab):
+                    continue
+                for keyword in list(ranged_keywords.get("keywords", ()) or ()):
+                    kw = re.sub(r"\s+", " ", str(keyword or "").strip()).upper()
+                    if not kw:
+                        continue
+                    rules.append(
+                        {
+                            "attack_type": "ranged",
+                            "keyword": kw,
+                            "source": ab_name or "Aura",
+                        }
+                    )
+                continue
+
             conditional_sustained = _cached_parse_aura_spec(
                 "_parse_conditional_sustained_hits_aura",
                 ab,
