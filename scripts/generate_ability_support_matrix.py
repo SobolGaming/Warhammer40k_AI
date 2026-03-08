@@ -11628,7 +11628,7 @@ def _post_shoot_ap_bonus_support(description: str) -> Optional[Tuple[str, str]]:
     pattern = (
         r"in your shooting phase after this (?:model|unit) has shot select one enemy unit "
         r"(?:excluding monsters and vehicles )?hit by one or more of those attacks "
-        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) unit makes (?:a|an) "
+        r"until the end of the (?P<duration>phase|turn) each time a friendly (?P<keyword>[a-z0-9 ]+?) unit makes (?:a|an) "
         r"(?:(?P<atype>ranged|melee) )?attack that targets that enemy unit improve the armour penetration characteristic "
         r"of that attack by (?P<val>\d+)(?: the same enemy unit can only be affected by this ability once per (?:turn|phase)"
         r"| each unit can only be selected for this ability once per turn)?"
@@ -11644,14 +11644,16 @@ def _post_shoot_ap_bonus_support(description: str) -> Optional[Tuple[str, str]]:
         val = 0
     if val <= 0:
         return None
+    duration = str(m.group("duration") or "phase").strip().lower() or "phase"
     scope = "attacks"
     if atype == "ranged":
         scope = "ranged attacks"
     elif atype == "melee":
         scope = "melee attacks"
-    note = f"After shooting: select a hit enemy unit; friendly {keyword} {scope} against it gain AP +{val} until phase end."
+    duration_note = "until phase end" if duration == "phase" else "until turn end"
+    note = f"After shooting: select a hit enemy unit; friendly {keyword} {scope} against it gain AP +{val} {duration_note}."
     if "excluding monsters and vehicles" in norm:
-        note = f"After shooting: select a hit enemy unit (not MONSTER/VEHICLE); friendly {keyword} {scope} against it gain AP +{val} until phase end."
+        note = f"After shooting: select a hit enemy unit (not MONSTER/VEHICLE); friendly {keyword} {scope} against it gain AP +{val} {duration_note}."
     if "once per turn" in norm:
         note += " Target limit: once per turn."
     elif "once per phase" in norm:

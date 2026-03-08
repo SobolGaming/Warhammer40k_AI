@@ -19843,6 +19843,9 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             ability_name = str(ctx.get("ability_name", "") or "AP Bonus").strip() or "AP Bonus"
             keyword = str(ctx.get("keyword", "") or "").strip()
             attack_type = str(ctx.get("attack_type", "") or "any").strip().lower() or "any"
+            duration = str(ctx.get("duration", "") or "phase_end").strip().lower() or "phase_end"
+            if duration not in ("phase_end", "turn_end"):
+                duration = "phase_end"
             try:
                 ap_bonus = int(ctx.get("ap_bonus", 0) or 0)
             except Exception:
@@ -19852,7 +19855,12 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             if not isinstance(sr, dict):
                 sr = {}
             sr["post_shoot_ap_bonus_active"] = True
-            sr["post_shoot_ap_bonus_expires_phase"] = "SHOOTING_PHASE"
+            if duration == "turn_end":
+                sr.pop("post_shoot_ap_bonus_expires_phase", None)
+                sr["post_shoot_ap_bonus_expires_timing"] = "TURN_END"
+            else:
+                sr["post_shoot_ap_bonus_expires_phase"] = "SHOOTING_PHASE"
+                sr.pop("post_shoot_ap_bonus_expires_timing", None)
             sr["post_shoot_ap_bonus_source"] = ability_name
             sr["post_shoot_ap_bonus_value"] = int(ap_bonus)
             sr["post_shoot_ap_bonus_keyword"] = keyword
@@ -19871,10 +19879,11 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             try:
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
                 display_keyword = keyword.upper() if keyword else "friendly"
+                duration_label = "this turn" if duration == "turn_end" else "this phase"
                 _log_action_for_players(
                     game,
                     player,
-                    f"{ability_name}: {tname} marked ({display_keyword} AP +{int(ap_bonus)} this phase).",
+                    f"{ability_name}: {tname} marked ({display_keyword} AP +{int(ap_bonus)} {duration_label}).",
                 )
             except Exception:
                 pass

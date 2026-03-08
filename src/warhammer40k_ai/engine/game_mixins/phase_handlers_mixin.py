@@ -15881,6 +15881,7 @@ class GamePhaseHandlersMixin:
                     for k in (
                         "post_shoot_ap_bonus_active",
                         "post_shoot_ap_bonus_expires_phase",
+                        "post_shoot_ap_bonus_expires_timing",
                         "post_shoot_ap_bonus_source",
                         "post_shoot_ap_bonus_value",
                         "post_shoot_ap_bonus_keyword",
@@ -15894,6 +15895,27 @@ class GamePhaseHandlersMixin:
                         selected_phase = str(sr.get("post_shoot_ap_bonus_selected_phase", "") or "").strip().upper()
                         if not selected_phase or selected_phase == pname:
                             for k in (
+                                "post_shoot_ap_bonus_selected_owner",
+                                "post_shoot_ap_bonus_selected_turn",
+                                "post_shoot_ap_bonus_selected_scope",
+                                "post_shoot_ap_bonus_selected_phase",
+                            ):
+                                sr.pop(k, None)
+                if pname == "FIGHT_PHASE":
+                    timing = str(sr.get("post_shoot_ap_bonus_expires_timing", "") or "").strip().upper()
+                    if timing == "TURN_END":
+                        effect_owner = str(sr.get("post_shoot_ap_bonus_owner", "") or "")
+                        if (not effect_owner) or (not active_name) or effect_owner == active_name:
+                            for k in (
+                                "post_shoot_ap_bonus_active",
+                                "post_shoot_ap_bonus_expires_phase",
+                                "post_shoot_ap_bonus_expires_timing",
+                                "post_shoot_ap_bonus_source",
+                                "post_shoot_ap_bonus_value",
+                                "post_shoot_ap_bonus_keyword",
+                                "post_shoot_ap_bonus_attack_type",
+                                "post_shoot_ap_bonus_owner",
+                                "post_shoot_ap_bonus_turn",
                                 "post_shoot_ap_bonus_selected_owner",
                                 "post_shoot_ap_bonus_selected_turn",
                                 "post_shoot_ap_bonus_selected_scope",

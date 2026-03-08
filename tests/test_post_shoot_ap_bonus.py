@@ -109,6 +109,7 @@ class TestPostShootApBonus(unittest.TestCase):
         self.assertEqual(ctx.get("ability"), "post_shoot_ap_bonus")
         self.assertEqual(ctx.get("keyword"), "aeldari")
         self.assertEqual(ctx.get("attack_type"), "any")
+        self.assertEqual(ctx.get("duration"), "phase_end")
         self.assertEqual(ctx.get("limit_scope"), "turn")
 
         resolve_decision_command(game, request, request.options[0].option_id, player_id=player.id)
@@ -144,6 +145,93 @@ class TestPostShootApBonus(unittest.TestCase):
             hits_by_target=hits_by_target,
         )
         self.assertEqual(len(game.decision_queue.list()), 0)
+
+    def test_post_shoot_ap_bonus_turn_end_melee_only(self):
+        army = Army("Tyranids", detachment_type="Other")
+        army.faction_id = "TYR"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "In your Shooting phase, after this model has shot, select one enemy unit hit by one or more of those attacks. "
+            "Until the end of the turn, each time a friendly TYRANIDS unit makes a melee attack that targets that enemy unit, "
+            "improve the Armour Penetration characteristic of that attack by 1. "
+            "The same enemy unit can only be affected by this ability once per turn."
+        )
+        ability = Ability("Bio-stimulus", "TYR", ability_desc, "Datasheet", "")
+
+        attacker_unit = self._make_unit("Psychophage", army, abilities=[ability], faction_keywords=["TYRANIDS"])
+        attacker_model = self._make_model("Psychophage", attacker_unit)
+        attacker_unit.models = [attacker_model]
+
+        ally_unit = self._make_unit("Hormagaunts", army, faction_keywords=["TYRANIDS"])
+        ally_model = self._make_model("Hormagaunt", ally_unit)
+        ally_unit.models = [ally_model]
+        army.units = [attacker_unit, ally_unit]
+
+        target_unit = self._make_unit("Target", enemy_army)
+        target_model = self._make_model("Target", target_unit)
+        target_model.set_location(6.0, 0.0, 0.0, 0.0)
+        target_unit.models = [target_model]
+        enemy_army.units = [target_unit]
+
+        game.rebuild_entity_registry()
+
+        hits_by_target = {target_unit: 1}
+        game._on_unit_shooting_resolved_post_shoot_ap_bonus(
+            attacker_unit=attacker_unit,
+            hits_by_target=hits_by_target,
+        )
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        ctx = request.context or {}
+        self.assertEqual(request.decision_type, DECISION_CHOOSE_QUARRY)
+        self.assertEqual(ctx.get("attack_type"), "melee")
+        self.assertEqual(ctx.get("duration"), "turn_end")
+        self.assertEqual(ctx.get("limit_scope"), "turn")
+
+        resolve_decision_command(game, request, request.options[0].option_id, player_id=player.id)
+
+        sr = getattr(target_unit, "special_rules", {}) or {}
+        self.assertTrue(sr.get("post_shoot_ap_bonus_active"))
+        self.assertEqual(str(sr.get("post_shoot_ap_bonus_expires_timing", "")), "TURN_END")
+        self.assertIsNone(sr.get("post_shoot_ap_bonus_expires_phase"))
+
+        game._on_unit_shooting_resolved_post_shoot_ap_bonus(
+            attacker_unit=attacker_unit,
+            hits_by_target=hits_by_target,
+        )
+        self.assertEqual(len(game.decision_queue.list()), 0)
+
+        melee_parent = SimpleNamespace(name="Talons", is_ranged=lambda: False, is_melee=lambda: True)
+        ranged_parent = SimpleNamespace(name="Sprayer", is_ranged=lambda: True, is_melee=lambda: False)
+        melee_profile = WargearProfile(
+            profile_name="Melee",
+            wargear_data={"range": "Melee", "A": "1", "BS_WS": "4+", "S": "4", "AP": "0", "D": "1", "description": ""},
+            parent_wargear=melee_parent,
+        )
+        ranged_profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={"range": "18", "A": "1", "BS_WS": "4+", "S": "4", "AP": "0", "D": "1", "description": ""},
+            parent_wargear=ranged_parent,
+        )
+
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game.current_player_index = 0
+        self.assertEqual(melee_profile.get_effective_ap(ally_model, target_unit), -1)
+        self.assertEqual(ranged_profile.get_effective_ap(ally_model, target_unit), 0)
+
+        game.current_player_index = 1
+        self.assertEqual(melee_profile.get_effective_ap(ally_model, target_unit), 0)
 
     def test_post_shoot_ap_bonus_excludes_monster_vehicle_candidates(self):
         army = Army("Death Guard", detachment_type="Other")

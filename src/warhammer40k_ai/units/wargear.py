@@ -3719,10 +3719,27 @@ class WargearProfile:
             sr = getattr(target_root, "special_rules", None)
             if isinstance(sr, dict) and sr.get("post_shoot_ap_bonus_active"):
                 apply_bonus = True
+                expires_timing = str(sr.get("post_shoot_ap_bonus_expires_timing", "") or "").strip().upper()
                 exp = str(sr.get("post_shoot_ap_bonus_expires_phase", "") or "").strip().upper()
                 if exp:
                     phase_key = self._resolve_phase_key(attacker_unit=attacker_unit, target_unit=target_root)
                     if phase_key and phase_key != exp:
+                        apply_bonus = False
+                if apply_bonus and expires_timing == "TURN_END":
+                    game = None
+                    try:
+                        army = attacker_unit.get_parent_army()
+                        game = getattr(getattr(army, "player", None), "game", None)
+                    except Exception:
+                        game = None
+                    current_player_id = ""
+                    try:
+                        current_player = game.get_current_player() if game is not None else None
+                        current_player_id = str(get_entity_id(current_player) or getattr(current_player, "id", "")) if current_player is not None else ""
+                    except Exception:
+                        current_player_id = ""
+                    owner_for_turn = str(sr.get("post_shoot_ap_bonus_owner", "") or "")
+                    if owner_for_turn and current_player_id and owner_for_turn != current_player_id:
                         apply_bonus = False
                 if apply_bonus:
                     owner_id = str(sr.get("post_shoot_ap_bonus_owner", "") or "")

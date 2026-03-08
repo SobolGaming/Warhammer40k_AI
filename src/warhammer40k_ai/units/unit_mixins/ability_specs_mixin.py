@@ -3752,6 +3752,7 @@ class AbilitySpecsMixin:
             - keyword: str (normalized)
             - attack_type: str (any|ranged|melee)
             - value: int (AP improvement)
+            - duration: str ("phase_end"|"turn_end")
             - limit_scope: Optional[str] ("turn"|"phase")
             - exclude_monster_vehicle: bool
         """
@@ -3771,7 +3772,7 @@ class AbilitySpecsMixin:
             members = [root]
 
         specs: list[dict] = []
-        seen: set[tuple[str, str, str, int, bool]] = set()
+        seen: set[tuple[str, str, str, int, bool, str]] = set()
         for unit in members:
             if unit is None:
                 continue
@@ -3792,6 +3793,11 @@ class AbilitySpecsMixin:
                     continue
                 keyword = unit._normalize_keyword_phrase(keyword_raw) or keyword_raw.lower()
                 attack_type = str(m.group("atype") or "any").strip().lower() or "any"
+                duration = str(m.group("duration") or "phase").strip().lower()
+                if duration == "turn":
+                    duration_key = "turn_end"
+                else:
+                    duration_key = "phase_end"
                 try:
                     value = int(m.group("val") or 0)
                 except Exception:
@@ -3805,7 +3811,7 @@ class AbilitySpecsMixin:
                 elif "once per phase" in normalized:
                     limit_scope = "phase"
                 source = str(name or "Post-shoot AP bonus").strip() or "Post-shoot AP bonus"
-                key = (source.lower(), keyword, attack_type, int(value), bool(exclude_mv))
+                key = (source.lower(), keyword, attack_type, int(value), bool(exclude_mv), duration_key)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -3815,6 +3821,7 @@ class AbilitySpecsMixin:
                         "keyword": keyword,
                         "attack_type": attack_type,
                         "value": int(value),
+                        "duration": duration_key,
                         "limit_scope": limit_scope,
                         "exclude_monster_vehicle": bool(exclude_mv),
                     }

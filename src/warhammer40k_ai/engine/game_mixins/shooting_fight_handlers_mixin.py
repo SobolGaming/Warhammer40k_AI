@@ -3207,6 +3207,9 @@ class GameShootingFightHandlersMixin:
         for spec in specs:
             keyword = str(spec.get("keyword", "") or "").strip()
             attack_type = str(spec.get("attack_type", "") or "any").strip().lower() or "any"
+            duration = str(spec.get("duration", "") or "phase_end").strip().lower() or "phase_end"
+            if duration not in {"phase_end", "turn_end"}:
+                duration = "phase_end"
             try:
                 ap_bonus = int(spec.get("value", 0) or 0)
             except Exception:
@@ -3257,6 +3260,7 @@ class GameShootingFightHandlersMixin:
                     "keyword": keyword,
                     "attack_type": attack_type,
                     "ap_bonus": int(ap_bonus),
+                    "duration": duration,
                     "limit_scope": limit_scope,
                 },
             )
