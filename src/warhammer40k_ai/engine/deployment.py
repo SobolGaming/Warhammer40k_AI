@@ -54,6 +54,30 @@ class DeploymentDecisionMaker(ABC):
             raise ValueError("No deployable units provided.")
         return deployable_units[0]
 
+    def build_deployment_intent(
+        self,
+        *,
+        decision_kind: str,
+        player: Optional[Player] = None,
+        deployment_zone: Optional[dict] = None,
+        unit: Optional['Unit'] = None,
+        deployable_units: Optional[List['Unit']] = None,
+        already_deployed: Optional[List['Unit']] = None,
+    ) -> dict:
+        return {}
+
+    def build_deployment_decision_context(
+        self,
+        *,
+        decision_kind: str,
+        player: Optional[Player] = None,
+        deployment_zone: Optional[dict] = None,
+        unit: Optional['Unit'] = None,
+        deployable_units: Optional[List['Unit']] = None,
+        already_deployed: Optional[List['Unit']] = None,
+    ) -> dict:
+        return {}
+
 
 class DeploymentManager:
     """Manages the official Warhammer 40k 10th Edition deployment sequence."""
@@ -269,7 +293,26 @@ class DeploymentManager:
     ) -> dict:
         if not available_zones:
             raise RuntimeError("Deployment zone choice requires at least one available zone.")
-        request = build_deployment_zone_request(self.game, player, available_zones, queue_requests=True)
+        deployment_intent = decision_maker.build_deployment_intent(
+            decision_kind="zone_choice",
+            player=player,
+            deployable_units=[],
+            already_deployed=[],
+        )
+        extra_context = decision_maker.build_deployment_decision_context(
+            decision_kind="zone_choice",
+            player=player,
+            deployable_units=[],
+            already_deployed=[],
+        )
+        request = build_deployment_zone_request(
+            self.game,
+            player,
+            available_zones,
+            deployment_intent=deployment_intent,
+            extra_context=extra_context,
+            queue_requests=True,
+        )
         chosen_zone = decision_maker.choose_deployment_zone(list(available_zones))
         if not isinstance(chosen_zone, dict):
             raise RuntimeError(
@@ -353,6 +396,20 @@ class DeploymentManager:
             deployable_units,
             deployment_zone=deployment_zone,
             already_deployed_units=already_deployed,
+            deployment_intent=decision_maker.build_deployment_intent(
+                decision_kind="next_unit",
+                player=player,
+                deployment_zone=deployment_zone,
+                deployable_units=deployable_units,
+                already_deployed=already_deployed,
+            ),
+            extra_context=decision_maker.build_deployment_decision_context(
+                decision_kind="next_unit",
+                player=player,
+                deployment_zone=deployment_zone,
+                deployable_units=deployable_units,
+                already_deployed=already_deployed,
+            ),
             queue_requests=True,
         )
         chosen_unit = decision_maker.choose_next_deploy_unit(
@@ -417,6 +474,8 @@ class DeploymentManager:
         deployment_model_positions: Optional[List[dict]] = None,
         deployment_zone: Optional[dict] = None,
         already_deployed: Optional[List['Unit']] = None,
+        deployment_intent: Optional[dict] = None,
+        extra_context: Optional[dict] = None,
     ) -> DecisionRequest:
         unit_id = get_entity_id(unit)
         options = [
@@ -463,9 +522,9 @@ class DeploymentManager:
             if deployed_ids:
                 context["already_deployed_unit_ids"] = sorted(set(deployed_ids))
                 context["already_deployed_count"] = int(len(set(deployed_ids)))
-        context.setdefault(
-            "deployment_intent",
-            {
+        context["deployment_intent"] = dict(
+            deployment_intent
+            or {
                 "desired_affordances": [
                     "SAFE_STAGING",
                     "SCREEN_DEPTH",
@@ -484,8 +543,13 @@ class DeploymentManager:
                     "los": 0.12,
                     "aura": 0.12,
                 },
-            },
+            }
         )
+        if isinstance(extra_context, dict):
+            for key, value in dict(extra_context or {}).items():
+                if key in context:
+                    continue
+                context[str(key)] = value
         return DecisionRequest.create(
             DECISION_MOVE_UNIT,
             f"Deploy {getattr(unit, 'name', 'Unit')}",
@@ -622,6 +686,22 @@ class DeploymentManager:
                     position,
                     decision_maker=current_decision_maker,
                 )
+                deployment_intent = current_decision_maker.build_deployment_intent(
+                    decision_kind="placement",
+                    player=current_player,
+                    deployment_zone=current_zone,
+                    unit=unit,
+                    deployable_units=current_units,
+                    already_deployed=current_deployed,
+                )
+                extra_context = current_decision_maker.build_deployment_decision_context(
+                    decision_kind="placement",
+                    player=current_player,
+                    deployment_zone=current_zone,
+                    unit=unit,
+                    deployable_units=current_units,
+                    already_deployed=current_deployed,
+                )
 
                 # Route deployment placement through DecisionRequest/Command API.
                 request = self._build_deployment_move_request(
@@ -630,6 +710,8 @@ class DeploymentManager:
                     deployment_model_positions=model_positions,
                     deployment_zone=current_zone,
                     already_deployed=current_deployed,
+                    deployment_intent=deployment_intent,
+                    extra_context=extra_context,
                 )
                 self.game.request_decision(request)
                 option_id = request.options[0].option_id if getattr(request, "options", None) else ""

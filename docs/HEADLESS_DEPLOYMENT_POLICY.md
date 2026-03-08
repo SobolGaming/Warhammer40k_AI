@@ -5,8 +5,17 @@ This document describes deterministic headless placement behavior for deployment
 ## Deployment (Headless Decision Maker)
 
 - `DeterministicDeploymentDecisionMaker` remains legality-first and deterministic.
+- The headless decision maker now uses a deterministic heuristic pregame teacher (`PregameDeploymentAgent`) when player context is available.
+  - Deployment zone choice is teacher-scored from army-role inference and board affordances.
+  - `SELECT_NEXT_DEPLOY_UNIT` order is teacher-scored instead of implicit roster order.
+  - Deployment intent/context payloads are enriched with:
+    - `army_role_summary`
+    - `board_affordances`
+    - tuned deployment weights/affordances for the current player and zone.
+- Reserve choices in `balanced` mode still obey reserve limits and validation, but candidate ranking now includes teacher reserve preference scoring.
 - Standard units:
   - Candidate anchors are searched inside the assigned deployment zone.
+  - Teacher semantic anchors are evaluated first, then lattice fallback scanning.
 - Units with `Infiltrators`:
   - Candidate anchors are searched in-zone first, then expanded to board-wide candidates.
   - Final legality is still enforced by deployment validation (`enemy zone`, `9"` enemy zone buffer, `9"` enemy model buffer, terrain legality).

@@ -72,7 +72,9 @@ class _StubArmy:
 
 
 class _StubPlayer:
-    def __init__(self, army) -> None:
+    def __init__(self, army, *, player_id: str = "player:1", name: str = "Player One") -> None:
+        self.id = player_id
+        self.name = name
         self._army = army
 
     def get_army(self):
@@ -207,3 +209,141 @@ def test_chosen_floor_payload_is_cached_for_deployment_manager_consumption(
     pos = list(payload[0].get("position", []) or [])
     assert len(pos) >= 3
     assert float(pos[2]) >= 4.12
+
+
+def test_zone_choice_uses_pregame_teacher_when_player_context_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _StubGame:
+        def __init__(self, players: list[_StubPlayer]) -> None:
+            self.players = list(players)
+
+    army = _StubArmy([])
+    player = _StubPlayer(army, player_id="player:test")
+    game = _StubGame([player])
+    maker = DeterministicDeploymentDecisionMaker(game=game)
+    maker.build_deployment_intent(decision_kind="zone_choice", player=player)
+
+    zones = [
+        {"name": "A", "zone_type": "attacker", "x_range": [0.0, 10.0], "y_range": [0.0, 10.0]},
+        {"name": "B", "zone_type": "defender", "x_range": [10.0, 20.0], "y_range": [0.0, 10.0]},
+    ]
+    preferred = dict(zones[0])
+
+    monkeypatch.setattr(
+        maker._pregame_agent,  # type: ignore[arg-type]
+        "choose_deployment_zone",
+        lambda **_kwargs: dict(preferred),
+    )
+
+    chosen = maker.choose_deployment_zone(list(zones))
+    assert chosen == preferred
+
+
+def test_next_deploy_unit_uses_teacher_ordering(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _StubGame:
+        def __init__(self, players: list[_StubPlayer]) -> None:
+            self.players = list(players)
+
+    unit_a = _StubUnit("unit:a", must_start_in_reserves=False)
+    unit_b = _StubUnit("unit:b", must_start_in_reserves=False)
+    army = _StubArmy([unit_a, unit_b])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit_a._army = army
+    unit_b._army = army
+
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame([player]))
+
+    monkeypatch.setattr(
+        maker._pregame_agent,  # type: ignore[arg-type]
+        "ordered_deploy_units",
+        lambda **_kwargs: [unit_b, unit_a],
+    )
+
+    chosen = maker.choose_next_deploy_unit(
+        [unit_a, unit_b],
+        {"name": "zone", "x_range": [0.0, 10.0], "y_range": [0.0, 10.0]},
+        [],
+    )
+    assert chosen is unit_b
+
+
+def test_build_deployment_context_includes_teacher_features() -> None:
+    class _FlatMap:
+        width = 60.0
+        height = 44.0
+        terrain_features: list[object] = []
+
+    class _StubGame:
+        def __init__(self, players: list[_StubPlayer]) -> None:
+            self.players = list(players)
+            self.map = _FlatMap()
+            self.objectives = []
+
+    unit = _StubUnit("unit:ctx", must_start_in_reserves=False)
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame([player]))
+
+    zone = {"name": "zone", "zone_type": "defender", "x_range": [0.0, 20.0], "y_range": [0.0, 22.0]}
+    intent = maker.build_deployment_intent(
+        decision_kind="placement",
+        player=player,
+        deployment_zone=zone,
+        unit=unit,
+        deployable_units=[unit],
+        already_deployed=[],
+    )
+    context = maker.build_deployment_decision_context(
+        decision_kind="placement",
+        player=player,
+        deployment_zone=zone,
+        unit=unit,
+        deployable_units=[unit],
+        already_deployed=[],
+    )
+
+    assert "desired_affordances" in intent
+    assert "weights" in intent
+    assert "board_affordances" in context
+    assert "army_role_summary" in context
+
+
+def test_semantic_anchor_candidates_are_used_for_placement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FlatMap:
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+    class _StubGame:
+        def __init__(self, players: list[_StubPlayer]) -> None:
+            self.players = list(players)
+            self.map = _FlatMap()
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def is_valid_deployment_position(self, _unit, x: float, y: float, _player_id: str) -> bool:
+            return abs(float(x) - 24.0) < 0.2 and abs(float(y) - 12.0) < 0.2
+
+    unit = _StubUnit("unit:anchor", must_start_in_reserves=False, map_obj=_FlatMap())
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame([player]))
+
+    monkeypatch.setattr(
+        maker._pregame_agent,  # type: ignore[arg-type]
+        "anchor_candidates_for_unit",
+        lambda **_kwargs: [(24.0, 12.0)],
+    )
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", lambda *_args, **_kwargs: ())
+
+    zone = {"name": "zone", "x_range": [0.0, 30.0], "y_range": [0.0, 20.0]}
+    x, y = maker.choose_unit_deployment_position(unit, zone, already_deployed=[])
+    assert x == pytest.approx(24.0, abs=0.2)
+    assert y == pytest.approx(12.0, abs=0.2)

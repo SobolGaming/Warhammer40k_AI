@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Iterable
+from typing import Iterable, Optional
 
 from .decision_dispatcher import validate_decision
 from .decision_kinds import DECISION_MOVE_UNIT
 from .decisions import DecisionOption, DecisionRequest, DecisionResult
 from .deployment import DeploymentDecisionMaker
+from .pregame_deployment_agent import PregameDeploymentAgent
 from ..roster.player import Player
 from ..utility.entity_ids import get_entity_id
 
@@ -28,17 +29,29 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         lattice_step: float = 2.0,
         exhaustive_lattice_step: float = 1.0,
         reserve_policy: str = "forced_only",
+        use_pregame_teacher: bool = True,
     ) -> None:
         self.game = game
         self.lattice_step = float(max(0.5, lattice_step))
         self.exhaustive_lattice_step = float(max(0.25, exhaustive_lattice_step))
         self.reserve_policy = self._normalize_reserve_policy(reserve_policy)
+        self._pregame_agent = PregameDeploymentAgent(game) if bool(use_pregame_teacher) else None
+        self._active_player_id: str = ""
         self._selected_payload_by_unit_id: dict[str, tuple[tuple[float, float], list[dict]]] = {}
 
     def choose_deployment_zone(self, available_zones: list[dict]) -> dict:
         zones = [dict(zone or {}) for zone in list(available_zones or [])]
         if not zones:
             raise ValueError("No deployment zones were provided.")
+        player = self._resolve_player_by_id(self._active_player_id)
+        if self._pregame_agent is not None and player is not None:
+            chosen = self._pregame_agent.choose_deployment_zone(
+                player=player,
+                available_zones=zones,
+            )
+            matched = self._match_zone_choice(chosen, zones)
+            if matched is not None:
+                return matched
         for zone in zones:
             if str(zone.get("zone_type", "") or "").strip().lower() == "defender":
                 return zone
@@ -53,6 +66,18 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
     ) -> object:
         if not deployable_units:
             raise ValueError("No deployable units were provided.")
+        player = self._resolve_player_for_units(deployable_units)
+        if player is None and self._active_player_id:
+            player = self._resolve_player_by_id(self._active_player_id)
+        if self._pregame_agent is not None and player is not None:
+            ordered = self._pregame_agent.ordered_deploy_units(
+                player=player,
+                deployable_units=list(deployable_units),
+                deployment_zone=dict(deployment_zone or {}),
+                already_deployed=list(already_deployed or []),
+            )
+            if ordered:
+                return ordered[0]
         return deployable_units[0]
 
     def declare_reserves(self, player: Player) -> dict:
@@ -93,7 +118,11 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                 reserve_status = self._preferred_reserve_status(army, unit)
                 if not reserve_status:
                     continue
-                score = self._reserve_candidate_score(unit, reserve_status=reserve_status)
+                score = self._reserve_candidate_score(
+                    unit,
+                    reserve_status=reserve_status,
+                    player=player,
+                )
                 candidates.append((float(score), unit_id, unit, reserve_status))
             candidates.sort(key=lambda item: (-float(item[0]), str(item[1])))
 
@@ -143,7 +172,13 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         ride_the_wind_ok = bool(ride_the_wind_fn(unit)) if callable(ride_the_wind_fn) else False
         return "reserves" if (has_deep_strike or ride_the_wind_ok) else "strategic_reserves"
 
-    def _reserve_candidate_score(self, unit: object, *, reserve_status: str) -> float:
+    def _reserve_candidate_score(
+        self,
+        unit: object,
+        *,
+        reserve_status: str,
+        player: Optional[Player] = None,
+    ) -> float:
         base = 0.0
         if str(reserve_status or "") == "reserves":
             base += 10000.0
@@ -151,6 +186,13 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         points = float(cost_fn()) if callable(cost_fn) else 0.0
         base += points
         base += 20.0 * self._unit_footprint_score(unit)
+        if self._pregame_agent is not None and player is not None:
+            preference = self._pregame_agent.reserve_preference_score(
+                player=player,
+                unit=unit,
+                reserve_status=str(reserve_status or ""),
+            )
+            base += 200.0 * float(preference)
         return float(base)
 
     def _unit_footprint_score(self, unit: object) -> float:
@@ -190,7 +232,14 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         if unit_id:
             self._selected_payload_by_unit_id.pop(unit_id, None)
 
+        player = self._resolve_player_for_unit(unit)
         candidate_groups: list[list[tuple[float, float]]] = [
+            self._semantic_anchor_candidates(
+                unit,
+                deployment_zone,
+                already_deployed=already_deployed,
+                player=player,
+            ),
             self._candidate_positions(unit, deployment_zone, already_deployed),
             self._candidate_positions_exhaustive(unit, deployment_zone),
         ]
@@ -528,6 +577,60 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         has_infiltrate = getattr(unit, "has_infiltrate", None)
         return bool(has_infiltrate()) if callable(has_infiltrate) else False
 
+    def build_deployment_intent(
+        self,
+        *,
+        decision_kind: str,
+        player: Optional[Player] = None,
+        deployment_zone: Optional[dict] = None,
+        unit: Optional[object] = None,
+        deployable_units: Optional[list[object]] = None,
+        already_deployed: Optional[list[object]] = None,
+    ) -> dict:
+        resolved_player = player
+        if resolved_player is None:
+            resolved_player = self._resolve_player_for_unit(unit) if unit is not None else None
+        if resolved_player is None:
+            resolved_player = self._resolve_player_for_units(deployable_units or [])
+        if resolved_player is None and self._active_player_id:
+            resolved_player = self._resolve_player_by_id(self._active_player_id)
+        if resolved_player is not None:
+            player_id = str(getattr(resolved_player, "id", "") or "")
+            if player_id:
+                self._active_player_id = player_id
+
+        if self._pregame_agent is None or resolved_player is None:
+            return {}
+        return self._pregame_agent.deployment_intent(
+            player=resolved_player,
+            decision_kind=str(decision_kind or ""),
+            deployment_zone=dict(deployment_zone or {}) if isinstance(deployment_zone, dict) else None,
+            unit=unit,
+            deployable_units=list(deployable_units or []),
+            already_deployed=list(already_deployed or []),
+        )
+
+    def build_deployment_decision_context(
+        self,
+        *,
+        decision_kind: str,
+        player: Optional[Player] = None,
+        deployment_zone: Optional[dict] = None,
+        unit: Optional[object] = None,
+        deployable_units: Optional[list[object]] = None,
+        already_deployed: Optional[list[object]] = None,
+    ) -> dict:
+        del decision_kind, unit, deployable_units, already_deployed
+        resolved_player = player
+        if resolved_player is None and self._active_player_id:
+            resolved_player = self._resolve_player_by_id(self._active_player_id)
+        if self._pregame_agent is None or resolved_player is None:
+            return {}
+        return self._pregame_agent.decision_context(
+            player=resolved_player,
+            deployment_zone=dict(deployment_zone or {}) if isinstance(deployment_zone, dict) else None,
+        )
+
     def build_deployment_model_positions(self, unit: object, position: tuple[float, float]) -> list[dict]:
         unit_id = str(get_entity_id(unit) or "")
         if unit_id:
@@ -755,3 +858,83 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
         rotate_by = int(digest[:8], 16) % max(1, len(base))
         return base[rotate_by:] + base[:rotate_by]
+
+    def _resolve_player_by_id(self, player_id: str) -> Optional[Player]:
+        player_key = str(player_id or "")
+        if not player_key:
+            return None
+        for player in list(getattr(self.game, "players", []) or []):
+            if player is None:
+                continue
+            if str(getattr(player, "id", "") or "") == player_key:
+                return player
+        return None
+
+    def _resolve_player_for_unit(self, unit: Optional[object]) -> Optional[Player]:
+        if unit is None:
+            return None
+        player_id = self._player_id_for_unit(unit)
+        if player_id:
+            return self._resolve_player_by_id(player_id)
+        return None
+
+    def _resolve_player_for_units(self, units: Iterable[object]) -> Optional[Player]:
+        candidates: list[tuple[str, Player]] = []
+        for unit in list(units or []):
+            player = self._resolve_player_for_unit(unit)
+            if player is None:
+                continue
+            player_id = str(getattr(player, "id", "") or "")
+            if not player_id:
+                continue
+            candidates.append((player_id, player))
+        if not candidates:
+            return None
+        candidates.sort(key=lambda entry: entry[0])
+        return candidates[0][1]
+
+    @staticmethod
+    def _match_zone_choice(chosen_zone: dict, available_zones: list[dict]) -> Optional[dict]:
+        if not isinstance(chosen_zone, dict):
+            return None
+        for zone in list(available_zones or []):
+            if zone is chosen_zone:
+                return zone
+            if dict(zone or {}) == dict(chosen_zone or {}):
+                return zone
+        return None
+
+    def _semantic_anchor_candidates(
+        self,
+        unit: object,
+        deployment_zone: dict,
+        *,
+        already_deployed: Iterable[object],
+        player: Optional[Player],
+    ) -> list[tuple[float, float]]:
+        if self._pregame_agent is None or player is None:
+            return []
+        anchors = self._pregame_agent.anchor_candidates_for_unit(
+            player=player,
+            unit=unit,
+            deployment_zone=dict(deployment_zone or {}),
+            already_deployed=list(already_deployed or []),
+        )
+        if not anchors:
+            return []
+        offsets = [0.0, self.lattice_step, -self.lattice_step, self.lattice_step * 0.5, -self.lattice_step * 0.5]
+        candidates: list[tuple[float, float]] = []
+        seen: set[tuple[float, float]] = set()
+        for anchor_x, anchor_y in list(anchors or []):
+            for dx in offsets:
+                for dy in offsets:
+                    x = float(anchor_x) + float(dx)
+                    y = float(anchor_y) + float(dy)
+                    key = (round(x, 3), round(y, 3))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    if not self._point_in_zone(deployment_zone, x, y):
+                        continue
+                    candidates.append((x, y))
+        return candidates

@@ -691,6 +691,8 @@ def build_deployment_zone_request(
     player: object,
     available_zones: Iterable[dict] | None,
     *,
+    deployment_intent: Optional[dict] = None,
+    extra_context: Optional[dict] = None,
     queue_requests: bool = True,
 ) -> Optional[DecisionRequest]:
     zone_entries: list[tuple[str, str, str, int, dict]] = []
@@ -749,19 +751,26 @@ def build_deployment_zone_request(
     zone_types = sorted({str(ref.get("zone_type", "") or "") for ref in choice_refs if str(ref.get("zone_type", "") or "")})
     if len(zone_types) == 1:
         inferred_zone_type = zone_types[0]
+    context: dict[str, object] = {
+        "selection_kind": "deployment_zone",
+        "phase": "deploy_armies",
+        "available_zone_choice_ids": [str(ref["zone_choice_id"]) for ref in choice_refs],
+        "available_zone_keys": [str(ref["zone_key"]) for ref in choice_refs],
+        "available_zone_choices": choice_refs,
+        "deployment_intent": dict(deployment_intent or _default_deployment_intent(zone_type=inferred_zone_type)),
+    }
+    if isinstance(extra_context, dict):
+        for key, value in dict(extra_context or {}).items():
+            if key in context:
+                continue
+            context[str(key)] = value
+
     request = DecisionRequest.create(
         DECISION_CHOOSE_DEPLOYMENT_ZONE,
         "Choose deployment zone.",
         player_id=player_id,
         options=options,
-        context={
-            "selection_kind": "deployment_zone",
-            "phase": "deploy_armies",
-            "available_zone_choice_ids": [str(ref["zone_choice_id"]) for ref in choice_refs],
-            "available_zone_keys": [str(ref["zone_key"]) for ref in choice_refs],
-            "available_zone_choices": choice_refs,
-            "deployment_intent": _default_deployment_intent(zone_type=inferred_zone_type),
-        },
+        context=context,
     )
     if queue_requests and hasattr(game, "request_decision"):
         game.request_decision(request)
@@ -775,6 +784,8 @@ def build_select_next_deploy_unit_request(
     *,
     deployment_zone: Optional[dict] = None,
     already_deployed_units: Iterable[object] | None = None,
+    deployment_intent: Optional[dict] = None,
+    extra_context: Optional[dict] = None,
     queue_requests: bool = True,
 ) -> Optional[DecisionRequest]:
     unit_entries: list[tuple[str, object]] = []
@@ -825,9 +836,15 @@ def build_select_next_deploy_unit_request(
         zone_name = str(zone_data.get("name", "") or "")
         if zone_name:
             context["deployment_zone_name"] = zone_name
-        context["deployment_intent"] = _default_deployment_intent(zone_type=zone_type)
+        default_intent = _default_deployment_intent(zone_type=zone_type)
     else:
-        context["deployment_intent"] = _default_deployment_intent()
+        default_intent = _default_deployment_intent()
+    context["deployment_intent"] = dict(deployment_intent or default_intent)
+    if isinstance(extra_context, dict):
+        for key, value in dict(extra_context or {}).items():
+            if key in context:
+                continue
+            context[str(key)] = value
 
     request = DecisionRequest.create(
         DECISION_SELECT_NEXT_DEPLOY_UNIT,
