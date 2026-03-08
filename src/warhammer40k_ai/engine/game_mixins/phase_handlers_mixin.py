@@ -6171,6 +6171,277 @@ class GamePhaseHandlersMixin:
                         spec=dict(spec),
                     )
 
+    def _on_phase_start_neuroloids_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Start of the owner's Command phase: clear Neuroloids Synapse-range markers."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        owner_id = str(getattr(player, "id", "") or "").strip()
+        if not owner_id:
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        def _unit_sort_key(unit):
+            try:
+                return str(get_entity_id(unit))
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("neuroloids_synapse_active", False)):
+                continue
+            marker_owner = str(sr.get("neuroloids_synapse_owner", "") or "").strip()
+            if marker_owner and marker_owner != owner_id:
+                continue
+            for key in (
+                "neuroloids_synapse_active",
+                "neuroloids_synapse_owner",
+                "neuroloids_synapse_turn",
+                "neuroloids_synapse_source_unit_id",
+                "neuroloids_synapse_source",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
+    def _on_phase_start_neuroloids(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase: Neuroloids selection of up to two friendly TYRANIDS units to count as in Synapse Range."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        try:
+            from ..decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..decisions import DecisionOption, DecisionRequest
+        except Exception:
+            return
+        from itertools import combinations
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        queue = getattr(self, "decision_queue", None)
+
+        def _unit_sort_key(unit):
+            try:
+                return str(get_entity_id(unit))
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        def _model_sort_key(model):
+            try:
+                return str(get_entity_id(model))
+            except Exception:
+                return str(getattr(model, "name", "") or "")
+
+        def _on_battlefield(unit) -> bool:
+            if unit is None:
+                return False
+            if not bool(getattr(unit, "is_alive", lambda: False)()):
+                return False
+            if not bool(getattr(unit, "deployed", False)):
+                return False
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    return False
+            except Exception:
+                pass
+            return True
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if not _on_battlefield(root):
+                continue
+
+            spec_fn = getattr(root, "model_command_phase_select_friendly_synapse_units_specs", None)
+            if not callable(spec_fn):
+                continue
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            for model in sorted(list(models or []), key=_model_sort_key):
+                is_alive_attr = getattr(model, "is_alive", True)
+                model_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+                if not model_alive:
+                    continue
+                specs = list(spec_fn(model) or [])
+                if not specs:
+                    continue
+                for spec in list(specs or []):
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except (TypeError, ValueError):
+                        range_value = 0
+                    try:
+                        max_targets = int(spec.get("max_targets", 0) or 0)
+                    except (TypeError, ValueError):
+                        max_targets = 0
+                    if range_value <= 0 or max_targets <= 0:
+                        continue
+                    friendly_keyword_phrase = str(spec.get("friendly_keyword_phrase", "") or "").strip()
+                    ability_name = str(spec.get("source", "") or "Neuroloids").strip() or "Neuroloids"
+                    ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+                    if not ability_key:
+                        ability_key = "command_phase_select_friendly_synapse_units:neuroloids"
+                    model_id = str(get_entity_id(model) or "")
+                    source_unit = getattr(model, "parent_unit", None) or root
+                    source_root = (
+                        source_unit.get_attached_unit_root()
+                        if hasattr(source_unit, "get_attached_unit_root")
+                        else source_unit
+                    )
+                    if source_root is None:
+                        continue
+                    source_root_id = str(get_entity_id(source_root) or "")
+                    if not model_id or not source_root_id:
+                        continue
+
+                    if queue is not None and hasattr(queue, "list"):
+                        duplicate = False
+                        for req in list(queue.list() or []):
+                            if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                                continue
+                            ctx = dict(getattr(req, "context", {}) or {})
+                            if str(ctx.get("ability", "") or "").strip().lower() != "neuroloids":
+                                continue
+                            if str(ctx.get("model_id", "") or "") != model_id:
+                                continue
+                            if str(ctx.get("ability_key", "") or "").strip().lower() != ability_key:
+                                continue
+                            try:
+                                queued_turn = int(ctx.get("turn", 0) or 0)
+                            except (TypeError, ValueError):
+                                queued_turn = 0
+                            if queued_turn and current_turn and queued_turn != current_turn:
+                                continue
+                            duplicate = True
+                            break
+                        if duplicate:
+                            continue
+
+                    candidates: list[object] = []
+                    candidate_ids: list[str] = []
+                    candidate_name_by_id: dict[str, str] = {}
+                    seen_candidate_ids: set[str] = set()
+                    for candidate in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                        if candidate is None:
+                            continue
+                        try:
+                            candidate_root = candidate.get_attached_unit_root()
+                        except Exception:
+                            candidate_root = candidate
+                        if candidate_root is None:
+                            continue
+                        candidate_id = str(get_entity_id(candidate_root) or "")
+                        if not candidate_id or candidate_id in seen_candidate_ids:
+                            continue
+                        if not _on_battlefield(candidate_root):
+                            continue
+                        if friendly_keyword_phrase:
+                            has_any_keyword = getattr(candidate_root, "has_any_keyword", None)
+                            if not callable(has_any_keyword) or not bool(has_any_keyword(friendly_keyword_phrase)):
+                                continue
+                        in_range_fn = getattr(self, "_unit_within_range_of_model", None)
+                        if callable(in_range_fn):
+                            if not bool(in_range_fn(model, candidate_root, range_value=float(range_value))):
+                                continue
+                        else:
+                            local_in_range = getattr(source_root, "_model_within_range_of_unit", None)
+                            if not callable(local_in_range):
+                                continue
+                            if not bool(local_in_range(model, candidate_root, float(range_value))):
+                                continue
+                        candidates.append(candidate_root)
+                        candidate_ids.append(candidate_id)
+                        candidate_name_by_id[candidate_id] = str(getattr(candidate_root, "name", "Unit") or "Unit")
+                        seen_candidate_ids.add(candidate_id)
+
+                    if not candidate_ids:
+                        continue
+
+                    max_select = min(int(max_targets), len(candidate_ids))
+                    if max_select <= 0:
+                        continue
+                    options = [DecisionOption.create("None", payload={"action": "skip", "selected_unit_ids": []})]
+                    for count in range(1, max_select + 1):
+                        for combo_ids in combinations(candidate_ids, count):
+                            labels = [candidate_name_by_id.get(unit_id, unit_id) for unit_id in combo_ids]
+                            label = " + ".join(labels) if labels else ", ".join(combo_ids)
+                            payload = {
+                                "selected_unit_ids": list(combo_ids),
+                                "unit_id": source_root_id,
+                                "source_unit_id": source_root_id,
+                                "model_id": model_id,
+                                "ability_key": ability_key,
+                            }
+                            options.append(DecisionOption.create(label, payload=payload))
+
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        (
+                            f"{ability_name}: select up to {int(max_targets)} friendly {friendly_keyword_phrase.upper()} unit(s) "
+                            f"within {int(range_value)}\" to count as within Synapse Range until your next Command phase."
+                        ),
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context={
+                            "ability": "neuroloids",
+                            "ability_name": ability_name,
+                            "ability_key": ability_key,
+                            "phase": "Command phase",
+                            "source_unit_id": source_root_id,
+                            "unit_id": source_root_id,
+                            "model_id": model_id,
+                            "range": int(range_value),
+                            "max_targets": int(max_targets),
+                            "friendly_keyword_phrase": friendly_keyword_phrase,
+                            "candidate_unit_ids": list(candidate_ids),
+                            "optional": True,
+                            "turn": int(current_turn or 0),
+                            "expires_timing": str(spec.get("expires_timing", "owner_next_command_start") or "owner_next_command_start"),
+                        },
+                    )
+                    self.request_decision(request)
+
     def _on_phase_start_imperial_agents_psychic_veil_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Start of Command phase: clear prior Psychic Veil effects for the active player."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

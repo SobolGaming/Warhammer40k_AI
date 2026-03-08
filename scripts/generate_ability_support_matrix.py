@@ -5724,6 +5724,8 @@ def _classify_ability_base(
     start_any_command_phase_objective_battleshock_support = _start_any_command_phase_objective_battleshock_support(description)
     start_selected_phases_enemy_range_battleshock_support = _start_selected_phases_enemy_range_battleshock_support(description)
     command_phase_enemy_range_battleshock_support = _command_phase_enemy_range_battleshock_support(description)
+    command_phase_select_friendly_synapse_units_support = _command_phase_select_friendly_synapse_units_support(description)
+    shadow_in_the_warp_enemy_battleshock_penalty_support = _shadow_in_the_warp_enemy_battleshock_penalty_support(description)
     command_phase_enemy_no_cover_support = _command_phase_enemy_no_cover_support(description)
     command_phase_psychic_veil_support = _command_phase_psychic_veil_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
@@ -6116,6 +6118,10 @@ def _classify_ability_base(
         return start_selected_phases_enemy_range_battleshock_support
     if command_phase_enemy_range_battleshock_support:
         return command_phase_enemy_range_battleshock_support
+    if command_phase_select_friendly_synapse_units_support:
+        return command_phase_select_friendly_synapse_units_support
+    if shadow_in_the_warp_enemy_battleshock_penalty_support:
+        return shadow_in_the_warp_enemy_battleshock_penalty_support
     if command_phase_enemy_no_cover_support:
         return command_phase_enemy_no_cover_support
     if command_phase_psychic_veil_support:
@@ -9568,7 +9574,7 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}add \d+ to the hit roll if that unit is below (?:its )?starting strength",
         rf"{lead_prefix}add \d+ to the wound roll(?: as well)? if that unit is below half strength",
         rf"{lead_prefix}add \d+ to the wound roll(?: as well)? if the target is battle shocked",
-        rf"{lead_prefix}if the target is battle shocked add \d+ to the wound roll",
+        rf"{lead_prefix}if the target is battle shocked add \d+ to the wound roll(?: as well)?",
         rf"{lead_prefix}models in that unit have (?:a|the)?\s*\d+ invulnerable save,?\s*and\s*(?:a|the)?\s*\d+ invulnerable save against psychic attacks and attacks made by daemon models",
         rf"{lead_prefix}models in that unit have (?:a|the)?\s*\d+ invulnerable save",
         rf"{lead_prefix}(?:in addition )?each time a model in that unit makes an attack a critical hit is scored on an unmodified hit roll of \d\+?(?: instead of only a 6)?",
@@ -11159,6 +11165,65 @@ def _command_phase_enemy_range_battleshock_support(description: str) -> Optional
     return (
         "Supported",
         f"Command phase: select one enemy unit within {rng}\" of the source model to take a Battle-shock test.",
+    )
+
+
+def _command_phase_select_friendly_synapse_units_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your command phase (?:you can )?select up to (?P<count>\d+|one|two|three) friendly "
+        r"(?P<keyword>[a-z0-9 ]+?) units within (?P<range>\d+) of this model(?: s|s) unit "
+        r"until the start of your next command phase the selected units are always considered to be within synapse range of your army"
+        r"(?: designer(?:s| s)? note .+)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    count_token = str(m.group("count") or "").strip().lower()
+    count_map = {"one": 1, "two": 2, "three": 3}
+    if count_token.isdigit():
+        max_targets = int(count_token)
+    else:
+        max_targets = int(count_map.get(count_token, 0) or 0)
+    try:
+        range_value = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        range_value = 0
+    keyword_phrase = str(m.group("keyword") or "").strip().upper()
+    if max_targets <= 0 or range_value <= 0 or not keyword_phrase:
+        return None
+    return (
+        "Supported",
+        f"Command phase: select up to {int(max_targets)} friendly {keyword_phrase} unit(s) within {int(range_value)}\"; selected units count as within Synapse Range until your next Command phase.",
+    )
+
+
+def _shadow_in_the_warp_enemy_battleshock_penalty_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"if one or more models from your army with this ability are on the battlefield when you unleash the shadow in the warp "
+        r"subtract (?P<pen>\d+) from the battle shock test each enemy unit on the battlefield must take as a result"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        penalty = int(m.group("pen") or 0)
+    except (TypeError, ValueError):
+        penalty = 0
+    if penalty <= 0:
+        return None
+    return (
+        "Supported",
+        f"Shadow in the Warp modifier: while one or more sources are on the battlefield, each enemy unit takes that Battle-shock test at -{int(penalty)}.",
     )
 
 

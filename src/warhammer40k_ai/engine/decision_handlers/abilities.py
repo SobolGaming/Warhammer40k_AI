@@ -5491,6 +5491,106 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not callable(option_is_valid) or not bool(option_is_valid(selected_ids, game=game)):
             return ("Rapid-drop Deployment selection does not match the required unit count.",)
         return ()
+    if ability == "neuroloids":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if model is None:
+            return ("Neuroloids source model was not found.",)
+        if source_unit is None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return ("Neuroloids source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Neuroloids source unit was not found.",)
+        if not bool(getattr(source_root, "is_alive", lambda: False)()):
+            return ("Neuroloids source unit is not alive.",)
+        if not bool(getattr(source_root, "deployed", False)):
+            return ("Neuroloids source unit is not deployed.",)
+        is_in_reserves_fn = getattr(source_root, "is_in_reserves", None)
+        if callable(is_in_reserves_fn) and bool(is_in_reserves_fn()):
+            return ("Neuroloids source unit is in Reserves.",)
+        if bool(getattr(source_root, "is_embarked", False)):
+            return ("Neuroloids source unit is embarked.",)
+        model_parent = getattr(model, "parent_unit", None)
+        model_parent_root = (
+            model_parent.get_attached_unit_root()
+            if model_parent is not None and hasattr(model_parent, "get_attached_unit_root")
+            else model_parent
+        )
+        if model_parent_root is not None and model_parent_root is not source_root:
+            return ("Neuroloids source model does not belong to the source unit.",)
+        model_is_alive = getattr(model, "is_alive", True)
+        if not bool(model_is_alive() if callable(model_is_alive) else model_is_alive):
+            return ("Neuroloids source model is not alive.",)
+        if is_skip_choice(request, result):
+            return ()
+        selected_vals = payload.get("selected_unit_ids")
+        selected_ids = [
+            str(value or "").strip()
+            for value in list(selected_vals or [])
+            if str(value or "").strip()
+        ]
+        selected_ids = list(dict.fromkeys(selected_ids))
+        try:
+            max_targets = int(ctx.get("max_targets", 2) or 2)
+        except (TypeError, ValueError):
+            max_targets = 2
+        max_targets = max(1, int(max_targets))
+        if not selected_ids:
+            return ("Neuroloids requires selecting at least one unit or choosing None.",)
+        if len(selected_ids) > max_targets:
+            return (f"Neuroloids can select at most {max_targets} unit(s).",)
+        candidate_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if candidate_ids and any(unit_id not in candidate_ids for unit_id in list(selected_ids or [])):
+            return ("Neuroloids selection contains a non-candidate unit.",)
+        try:
+            range_value = float(ctx.get("range", payload.get("range", 0)) or 0.0)
+        except (TypeError, ValueError):
+            range_value = 0.0
+        if range_value <= 0.0:
+            return ("Neuroloids range is invalid.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        friendly_keyword_phrase = str(ctx.get("friendly_keyword_phrase", "") or "").strip()
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        for unit_id in list(selected_ids or []):
+            unit = resolve_unit(game, unit_id)
+            if unit is None:
+                return ("Neuroloids selected unit was not found.",)
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            if root is None:
+                return ("Neuroloids selected unit was not found.",)
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                return ("Neuroloids selected unit is not alive.",)
+            if not bool(getattr(root, "deployed", False)):
+                return ("Neuroloids selected unit is not deployed.",)
+            is_in_reserves_fn = getattr(root, "is_in_reserves", None)
+            if callable(is_in_reserves_fn) and bool(is_in_reserves_fn()):
+                return ("Neuroloids selected unit is in Reserves.",)
+            if bool(getattr(root, "is_embarked", False)):
+                return ("Neuroloids selected unit is embarked.",)
+            target_army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            if source_army is not None and target_army is not None and source_army is not target_army:
+                return ("Neuroloids can only target friendly units.",)
+            if friendly_keyword_phrase:
+                has_any_keyword = getattr(root, "has_any_keyword", None)
+                if not callable(has_any_keyword) or not bool(has_any_keyword(friendly_keyword_phrase)):
+                    return (f"Neuroloids selected unit must have {friendly_keyword_phrase}.",)
+            if callable(in_range_fn):
+                if not bool(in_range_fn(model, root, range_value=float(range_value))):
+                    return ("Neuroloids selected unit is out of range.",)
+        return ()
     if ability == "resurrection_orb":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(
@@ -11471,6 +11571,123 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             )
         return {
             "selected_unit_ids": [str(get_entity_id(unit) or "") for unit in list(selected_units or []) if str(get_entity_id(unit) or "")],
+            "source": ability_name,
+        }
+    if ability == "neuroloids":
+        payload = _option_payload(request, result)
+        player = _resolve_player(game, request, payload)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if model is None:
+            return None
+        if source_unit is None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        model_is_alive = getattr(model, "is_alive", True)
+        if not bool(model_is_alive() if callable(model_is_alive) else model_is_alive):
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        ability_name = str(ctx.get("ability_name", "") or "Neuroloids").strip() or "Neuroloids"
+        if is_skip_choice(request, result):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: selected none.",
+            )
+            return {"selected_unit_ids": [], "source": ability_name}
+
+        selected_vals = payload.get("selected_unit_ids")
+        selected_ids = [
+            str(value or "").strip()
+            for value in list(selected_vals or [])
+            if str(value or "").strip()
+        ]
+        selected_ids = list(dict.fromkeys(selected_ids))
+        try:
+            max_targets = int(ctx.get("max_targets", 2) or 2)
+        except (TypeError, ValueError):
+            max_targets = 2
+        max_targets = max(1, int(max_targets))
+        if not selected_ids or len(selected_ids) > max_targets:
+            return None
+        candidate_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if candidate_ids and any(unit_id not in candidate_ids for unit_id in list(selected_ids or [])):
+            return None
+        try:
+            range_value = float(ctx.get("range", payload.get("range", 0)) or 0.0)
+        except (TypeError, ValueError):
+            range_value = 0.0
+        if range_value <= 0.0:
+            return None
+        friendly_keyword_phrase = str(ctx.get("friendly_keyword_phrase", "") or "").strip()
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        owner_id = str(getattr(player, "id", "") or "").strip()
+        if not owner_id and source_army is not None:
+            owner_id = str(getattr(getattr(source_army, "player", None), "id", "") or "").strip()
+
+        applied_roots = []
+        applied_ids: list[str] = []
+        for unit_id in list(selected_ids or []):
+            target_unit = resolve_unit(game, unit_id)
+            if target_unit is None:
+                continue
+            target_root = (
+                target_unit.get_attached_unit_root()
+                if hasattr(target_unit, "get_attached_unit_root")
+                else target_unit
+            )
+            if target_root is None:
+                continue
+            target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+            if source_army is not None and target_army is not None and source_army is not target_army:
+                continue
+            if friendly_keyword_phrase:
+                has_any_keyword = getattr(target_root, "has_any_keyword", None)
+                if not callable(has_any_keyword) or not bool(has_any_keyword(friendly_keyword_phrase)):
+                    continue
+            if callable(in_range_fn):
+                if not bool(in_range_fn(model, target_root, range_value=float(range_value))):
+                    continue
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["neuroloids_synapse_active"] = True
+            sr["neuroloids_synapse_owner"] = owner_id
+            sr["neuroloids_synapse_turn"] = int(current_turn or 0)
+            sr["neuroloids_synapse_source_unit_id"] = str(get_entity_id(source_root) or "")
+            sr["neuroloids_synapse_source"] = ability_name
+            target_root.special_rules = sr
+            applied_roots.append(target_root)
+            applied_ids.append(str(get_entity_id(target_root) or ""))
+
+        if not applied_roots:
+            return None
+        selected_names = [str(getattr(unit, "name", "Unit") or "Unit") for unit in list(applied_roots or [])]
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: selected {', '.join(selected_names)} to count as within Synapse Range until your next Command phase.",
+        )
+        return {
+            "selected_unit_ids": [uid for uid in list(applied_ids or []) if uid],
             "source": ability_name,
         }
     if ability == "a_foot_in_the_future":

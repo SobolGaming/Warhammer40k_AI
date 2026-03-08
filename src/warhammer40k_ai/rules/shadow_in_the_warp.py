@@ -78,6 +78,27 @@ class ShadowInTheWarpManager:
             pass
         return self._unit_is_tyranids(unit)
 
+    @staticmethod
+    def _unit_has_psychic_terror(unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            for ab in (getattr(unit, "possible_abilities", []) or []):
+                name = str(getattr(ab, "name", "") or "").strip().lower()
+                if name in {"psychic terror", "psychic terror (psychic)"}:
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _has_psychic_terror_source_on_battlefield(self) -> bool:
+        for unit in list(getattr(self.army, "units", []) or []):
+            if not self._unit_on_battlefield(unit):
+                continue
+            if self._unit_has_psychic_terror(unit):
+                return True
+        return False
+
     def _eligible_shadow_sources(self) -> list:
         out = []
         for unit in list(getattr(self.army, "units", []) or []):
@@ -102,10 +123,18 @@ class ShadowInTheWarpManager:
     def _unit_id(self, unit) -> str:
         return get_entity_id(unit)
 
-    def _apply_shadow_test_modifier(self, unit, *, game=None, game_map=None) -> None:
+    def _apply_shadow_test_modifier(
+        self,
+        unit,
+        *,
+        game=None,
+        game_map=None,
+        psychic_terror_active: bool = False,
+    ) -> None:
         if unit is None:
             return
         mod = 0
+        reasons_to_add: list[str] = []
         try:
             synapse_mgr = getattr(self.army, "synapse", None)
         except Exception:
@@ -114,15 +143,19 @@ class ShadowInTheWarpManager:
             try:
                 if synapse_mgr.unit_within_synapse_sources(unit, game=game, game_map=game_map):
                     mod -= 1
+                    reasons_to_add.append("Shadow in the Warp")
             except Exception:
                 mod = mod
+        if psychic_terror_active:
+            mod -= 1
+            reasons_to_add.append("Psychic Terror")
         sr = getattr(unit, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
         if mod:
             sr["battle_shock_test_modifier"] = int(sr.get("battle_shock_test_modifier", 0) or 0) + int(mod)
             reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
-            reasons.append("Shadow in the Warp")
+            reasons.extend([str(reason) for reason in list(reasons_to_add or []) if str(reason)])
             sr["battle_shock_test_modifier_reasons"] = reasons
         sr["shadow_in_the_warp_battleshock"] = True
         unit.special_rules = sr
@@ -158,6 +191,7 @@ class ShadowInTheWarpManager:
             return True
 
         game_map = getattr(game, "map", None)
+        psychic_terror_active = self._has_psychic_terror_source_on_battlefield()
         seen: set[str] = set()
         for unit in enemy_units:
             if unit is None:
@@ -178,7 +212,12 @@ class ShadowInTheWarpManager:
             except Exception:
                 pass
 
-            self._apply_shadow_test_modifier(root, game=game, game_map=game_map)
+            self._apply_shadow_test_modifier(
+                root,
+                game=game,
+                game_map=game_map,
+                psychic_terror_active=bool(psychic_terror_active),
+            )
             try:
                 root.take_battle_shock_test(getattr(game, "turn", 1))
             finally:

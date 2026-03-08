@@ -163,6 +163,29 @@ class SynapseManager:
                 return True
         return False
 
+    def _unit_has_neuroloids_synapse_marker(self, unit) -> bool:
+        if unit is None:
+            return False
+        candidates = [unit]
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is not None and root is not unit:
+            candidates.insert(0, root)
+        army_owner = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        for candidate in candidates:
+            sr = getattr(candidate, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("neuroloids_synapse_active", False)):
+                continue
+            marker_owner = str(sr.get("neuroloids_synapse_owner", "") or "").strip()
+            if marker_owner and army_owner and marker_owner != army_owner:
+                continue
+            return True
+        return False
+
     @staticmethod
     def _units_within_range(source_unit, target_unit, range_inches: float) -> bool:
         try:
@@ -379,6 +402,8 @@ class SynapseManager:
             return False
         if not self._unit_on_battlefield(unit):
             return False
+        if self._unit_has_neuroloids_synapse_marker(unit):
+            return True
         if self.unit_within_synapse_sources(unit, game=game, game_map=game_map):
             return True
         return self.unit_within_synaptic_linchpin_sources(unit, game=game, game_map=game_map)

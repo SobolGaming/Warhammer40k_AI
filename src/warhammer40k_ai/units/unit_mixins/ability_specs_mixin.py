@@ -2315,6 +2315,96 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_command_phase_select_friendly_synapse_units_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: in your Command phase, select up to N friendly units in range;
+        selected units are treated as within Synapse Range until your next Command phase.
+
+        Returns specs with keys:
+            - source: ability name
+            - range: int
+            - max_targets: int
+            - friendly_keyword_phrase: str
+            - ability_key: str
+            - optional: bool
+            - expires_timing: str ("owner_next_command_start")
+        """
+        if model is None:
+            return []
+        cache_key = f"model_command_phase_select_friendly_synapse_units:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int, str]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = re.fullmatch(
+                r"in your command phase (?P<optional>you can )?select up to (?P<count>\d+|one|two|three) friendly "
+                r"(?P<keyword>[a-z0-9 ]+?) units within (?P<range>\d+) of this model s unit until the start of your next command phase "
+                r"the selected units are always considered to be within synapse range of your army(?: designer s note .+)?",
+                normalized,
+            )
+            if not m:
+                continue
+            count_raw = str(m.group("count") or "").strip().lower()
+            max_targets = 0
+            if count_raw.isdigit():
+                max_targets = int(count_raw)
+            else:
+                max_targets = int(self._NUMBER_WORDS.get(count_raw, 0) or 0)
+            try:
+                range_value = int(m.group("range") or 0)
+            except (TypeError, ValueError):
+                range_value = 0
+            friendly_keyword_phrase = str(m.group("keyword") or "").strip()
+            if max_targets <= 0 or range_value <= 0 or not friendly_keyword_phrase:
+                continue
+            source = str(name or "Command phase Synapse selection").strip() or "Command phase Synapse selection"
+            source_key = self._normalize_keyword_phrase(source) or re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_")
+            if not source_key:
+                source_key = "command_phase_synapse_selection"
+            ability_key = f"command_phase_select_friendly_synapse_units:{source_key}"
+            dedupe_key = (
+                source.lower(),
+                int(range_value),
+                int(max_targets),
+                self._normalize_keyword_phrase(friendly_keyword_phrase) or friendly_keyword_phrase.lower(),
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            optional = bool(str(m.group("optional") or "").strip()) or "up to" in normalized
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "max_targets": int(max_targets),
+                    "friendly_keyword_phrase": str(friendly_keyword_phrase),
+                    "ability_key": ability_key,
+                    "optional": bool(optional),
+                    "expires_timing": "owner_next_command_start",
+                    "context_ability": "neuroloids",
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_command_phase_psychic_veil_specs(
         self,
         model: Optional['Model'] = None,
