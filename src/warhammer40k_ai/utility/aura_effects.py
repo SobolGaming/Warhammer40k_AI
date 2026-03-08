@@ -1300,6 +1300,7 @@ def _parse_enemy_attack_hit_penalty_aura(ability) -> Optional[dict]:
     Strict parser for enemy attack-hit auras like:
       "While an enemy unit (excluding MONSTERS and VEHICLES) is within 3\" of this unit,
        each time a model in that unit makes an attack, subtract 1 from the Hit roll."
+      "..., and, if that enemy unit is Below Half-strength, subtract 1 from the Wound roll as well."
     """
     if not _is_aura_ability(ability):
         return None
@@ -1309,7 +1310,9 @@ def _parse_enemy_attack_hit_penalty_aura(ability) -> Optional[dict]:
     m = re.search(
         r'While an enemy unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" '
         r"of (?:(?:this model|this unit|the bearer)|one or more units with this ability), "
-        r"each time a model in that unit makes an attack, subtract (?P<hit>\d+) from the Hit roll",
+        r"each time a model in that unit makes an attack, subtract (?P<hit>\d+) from the Hit roll"
+        r"(?:,?\s*and,?\s*if that enemy unit is Below Half-strength, "
+        r"subtract (?P<wound>\d+) from the Wound roll as well)?",
         desc,
         flags=re.IGNORECASE,
     )
@@ -1320,11 +1323,19 @@ def _parse_enemy_attack_hit_penalty_aura(ability) -> Optional[dict]:
         hit_penalty = int(m.group("hit"))
     except Exception:
         return None
+    wound_penalty = 0
+    try:
+        wound_raw = m.group("wound")
+        if wound_raw is not None:
+            wound_penalty = int(wound_raw)
+    except Exception:
+        wound_penalty = 0
     if rng <= 0 or hit_penalty <= 0:
         return None
     return {
         "range": float(rng),
         "hit": -abs(int(hit_penalty)),
+        "below_half_wound": -abs(int(wound_penalty)) if int(wound_penalty) > 0 else 0,
         "excluded_keywords": _parse_excluded_keywords(desc),
     }
 
@@ -1778,6 +1789,22 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                     hit_reasons=(f"{int(hit_value)} to hit from {source_name}",),
                 )
             )
+            try:
+                wound_value = int(hit_penalty.get("below_half_wound", 0) or 0)
+            except Exception:
+                wound_value = 0
+            if wound_value:
+                try:
+                    below_half = bool(attacker_unit.is_below_half_strength())
+                except Exception:
+                    below_half = False
+                if below_half:
+                    out = out.merge(
+                        AuraAttackModifiers(
+                            wound=int(wound_value),
+                            wound_reasons=(f"{int(wound_value)} to wound from {source_name} (Below Half-strength)",),
+                        )
+                    )
             if aura_key:
                 applied_enemy_aura_names.add(aura_key)
 

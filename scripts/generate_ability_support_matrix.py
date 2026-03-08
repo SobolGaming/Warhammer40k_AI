@@ -4861,6 +4861,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Once per battle round, one unit with this ability can be targeted with Rapid Ingress or Heroic Intervention for 0CP, including repeat-use bypass for those Stratagems.",
         ),
+        ("TYR", "Encephalic Diffusion (Aura, Psychic)"): (
+            "Supported",
+            "Enemy units within 6\" suffer -1 to Hit rolls, and while those enemy units are Below Half-strength they also suffer -1 to Wound rolls.",
+        ),
         ("TYR", "Foul Spores (Aura)"): ("Partial", "Stealth aura within 6\" for non-MONSTER TYRANIDS units; Benefit of Cover aura not implemented."),
         ("TYR", "Spore Mine Cysts"): (
             "Supported",
@@ -5621,6 +5625,7 @@ def _classify_ability_base(
     enemy_aura_oc_penalty_support = _enemy_aura_objective_control_penalty_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
     aura_hit_support = _aura_hit_bonus_support(description)
+    enemy_aura_attack_hit_wound_penalty_support = _enemy_aura_attack_hit_wound_penalty_support(description)
     aura_hit_reroll_ones_support = _aura_hit_reroll_ones_support(description)
     aura_ranged_weapon_keywords_support = _aura_ranged_weapon_keywords_support(description)
     aura_strength_support = _aura_strength_support(description)
@@ -5931,6 +5936,8 @@ def _classify_ability_base(
         return aura_adv_charge_support
     if aura_hit_support:
         return aura_hit_support
+    if enemy_aura_attack_hit_wound_penalty_support:
+        return enemy_aura_attack_hit_wound_penalty_support
     if aura_hit_reroll_ones_support:
         return aura_hit_reroll_ones_support
     if aura_ranged_weapon_keywords_support:
@@ -9858,6 +9865,31 @@ def _target_hit_roll_penalty_support(description: str) -> Optional[Tuple[str, st
 
     status = "Partial" if partial else "Supported"
     return (status, " ".join(notes) if notes else "-1 to hit when targeted.")
+
+
+def _enemy_aura_attack_hit_wound_penalty_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while an enemy unit is within (?P<range>\d+) of this model each time a model in that unit makes an attack "
+        r"subtract (?P<hit>\d+) from the hit roll"
+        r"(?: and if that enemy unit is below half strength subtract (?P<wound>\d+) from the wound roll as well)?",
+        norm,
+    )
+    if not m:
+        return None
+    rng = m.group("range") or "?"
+    hit = m.group("hit") or "1"
+    wound = m.group("wound")
+    if wound:
+        return (
+            "Supported",
+            f"Enemy units within {rng}\" suffer -{hit} to Hit rolls, and if those enemy units are Below Half-strength they also suffer -{wound} to Wound rolls.",
+        )
+    return ("Supported", f"Enemy units within {rng}\" suffer -{hit} to Hit rolls.")
 
 
 def _melee_damage_bonus_support(description: str) -> Optional[Tuple[str, str]]:
