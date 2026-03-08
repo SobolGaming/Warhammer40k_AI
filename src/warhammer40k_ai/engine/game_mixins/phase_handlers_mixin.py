@@ -13206,6 +13206,188 @@ class GamePhaseHandlersMixin:
                     )
                     self.request_decision(request)
 
+    def _on_phase_start_spawn_termagants(self, player=None, phase=None, **_kwargs) -> None:
+        """Tervigon: Spawn Termagants target selection at start of Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError(f"Spawn Termagants requires an army for {player.name}.")
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            raise RuntimeError("Spawn Termagants requires a game map.")
+
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+
+        queue = getattr(self, "decision_queue", None)
+        pending_model_ids = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "spawn_termagants_target":
+                    continue
+                mid = str(ctx.get("model_id", "") or "")
+                if mid:
+                    pending_model_ids.add(mid)
+
+        def _unit_has_keyword(root, keyword: str) -> bool:
+            if not keyword:
+                return True
+            try:
+                return bool(root.has_any_keyword(keyword) or root.has_keyword(keyword))
+            except Exception:
+                pass
+            try:
+                keys = list(getattr(root, "keywords", []) or []) + list(getattr(root, "faction_keywords", []) or [])
+            except Exception:
+                keys = []
+            wanted = str(keyword).strip().upper()
+            return any(str(k or "").strip().upper() == wanted for k in keys)
+
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                if not getattr(unit, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            for model in list(getattr(unit, "models", []) or []):
+                if model is None:
+                    continue
+                try:
+                    if not getattr(model, "is_alive", True):
+                        continue
+                except Exception:
+                    continue
+                mid = str(get_entity_id(model) or "")
+                if mid and mid in pending_model_ids:
+                    continue
+                specs = unit.model_spawn_termagants_specs(model) or []
+                if not specs:
+                    continue
+                seen_specs = set()
+                for spec in list(specs or []):
+                    ability_name = str(spec.get("source", "") or "Spawn Termagants").strip() or "Spawn Termagants"
+                    key = (mid, ability_name.lower())
+                    if key in seen_specs:
+                        continue
+                    seen_specs.add(key)
+                    target_keyword = str(spec.get("target_keyword", "") or "").strip()
+                    try:
+                        rng = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        rng = 0
+                    try:
+                        max_return = int(spec.get("max_return", 0) or 0)
+                    except Exception:
+                        max_return = 0
+                    amount_roll = str(spec.get("amount_roll", "") or "").strip().upper()
+                    once_per_phase = bool(spec.get("once_per_phase_per_target", False))
+                    if rng <= 0 or max_return <= 0 or not target_keyword:
+                        continue
+                    candidates = []
+                    seen_units = set()
+                    for cand in list(getattr(army, "units", []) or []):
+                        if cand is None:
+                            continue
+                        try:
+                            root = cand.get_attached_unit_root()
+                        except Exception:
+                            root = cand
+                        rid = str(get_entity_id(root) or "")
+                        if not rid or rid in seen_units:
+                            continue
+                        seen_units.add(rid)
+                        try:
+                            if not getattr(root, "is_alive", lambda: False)():
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if not getattr(root, "deployed", True):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if root.is_in_reserves() or root.is_embarked:
+                                continue
+                        except Exception:
+                            pass
+                        if not _unit_has_keyword(root, target_keyword):
+                            continue
+                        if not list(getattr(root, "models_lost", []) or []):
+                            continue
+                        if once_per_phase:
+                            sr = getattr(root, "special_rules", None)
+                            if isinstance(sr, dict):
+                                if str(sr.get("spawn_termagants_selected_turn_owner", "") or "") == owner_id:
+                                    try:
+                                        selected_turn = int(sr.get("spawn_termagants_selected_turn", 0) or 0)
+                                    except Exception:
+                                        selected_turn = 0
+                                    if selected_turn == int(turn or 0):
+                                        continue
+                        if not self._unit_within_range_of_model(model, root, range_value=float(rng)):
+                            continue
+                        candidates.append(root)
+                    if not candidates:
+                        continue
+                    try:
+                        candidates = sorted(candidates, key=lambda u: str(get_entity_id(u) or ""))
+                    except Exception:
+                        candidates = list(candidates)
+                    options = [DecisionOption.create("None", payload={"action": "skip"})]
+                    options.extend(
+                        [
+                            DecisionOption.create(
+                                str(getattr(cand, "name", "Unit") or "Unit"),
+                                payload={"target_unit_id": get_entity_id(cand)},
+                            )
+                            for cand in list(candidates)
+                        ]
+                    )
+                    if not options:
+                        continue
+                    keyword_label = str(target_keyword or "friendly").strip().upper()
+                    ctx = {
+                        "ability": "spawn_termagants_target",
+                        "ability_name": ability_name,
+                        "phase": "Command phase",
+                        "unit": getattr(unit, "name", "") or "",
+                        "unit_id": get_entity_id(unit),
+                        "source_unit_id": get_entity_id(unit),
+                        "model": getattr(model, "name", "") or "",
+                        "model_id": mid,
+                        "range": int(rng),
+                        "target_keyword": target_keyword,
+                        "amount_roll": amount_roll,
+                        "max_return": int(max_return),
+                        "once_per_phase_per_target": bool(once_per_phase),
+                    }
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select a friendly {keyword_label} unit to return models to (or None).",
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context=ctx,
+                    )
+                    self.request_decision(request)
+
     def _on_phase_start_word_of_phoenix(self, player=None, phase=None, **_kwargs) -> None:
         """Word of the Phoenix (Psychic): return destroyed bodyguard models on a 2+."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

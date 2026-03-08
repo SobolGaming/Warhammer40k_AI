@@ -236,6 +236,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_hallowed_ground"),
                 ("phase_start", "_on_phase_start_prescient_redeployment"),
                 ("phase_start", "_on_phase_start_dance_of_death"),
+                ("phase_start", "_on_phase_start_spawn_termagants"),
                 ("phase_start", "_on_phase_start_tears_of_isha"),
                 ("phase_start", "_on_phase_start_word_of_phoenix"),
                 ("phase_end", "_on_phase_end_fight_phase_mortal_wounds"),

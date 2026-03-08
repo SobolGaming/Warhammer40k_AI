@@ -3614,6 +3614,12 @@ class Unit(
         r"otherwise one model in that unit regains up to d3 lost wounds each unit can only be selected for this ability once per turn",
         re.IGNORECASE,
     )
+    _SPAWN_TERMAGANTS_RE = re.compile(
+        r"in your command phase (?P<optional>you can )?select one friendly (?P<target_keyword>[a-z0-9 ]+) unit "
+        r"within (?P<range>\d+)\s*\"?\s*of this model and return (?P<up_to>up to )?(?P<amount>(?:\d+)?d\d+(?:\+\d+)?|\d+|one|a) "
+        r"destroyed models? to that unit(?: a (?P<limit_keyword>[a-z0-9 ]+) unit cannot be selected for this ability more than once per phase)?",
+        re.IGNORECASE,
+    )
     _CANOPTEK_SWARM_RE = re.compile(
         r"in your command phase select one friendly (?P<target_keyword>[a-z0-9 ]+) unit within (?P<range>\d+)\s*\"?\s*of this unit "
         r"one destroyed model is returned to that (?P=target_keyword) unit for each (?P<count_keyword>[a-z0-9 ]+) model in this unit",

@@ -10693,6 +10693,47 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    amount_token = r"(one|a|\d+|(?:\d+)?d\d+(?:\s+\d+)?)"
+
+    def _amount_label(token: str) -> str:
+        token_l = str(token or "").strip().lower()
+        if token_l in {"one", "a"}:
+            return "1"
+        if token_l.isdigit():
+            return str(int(token_l))
+        m_dice = re.fullmatch(r"(?:(?P<count>\d+))?d(?P<faces>\d+)(?:\s+(?P<modifier>\d+))?", token_l)
+        if not m_dice:
+            return token_l.upper()
+        count = int(m_dice.group("count") or 1)
+        faces = int(m_dice.group("faces") or 0)
+        modifier = int(m_dice.group("modifier") or 0)
+        if faces <= 0:
+            return token_l.upper()
+        label = f"{count}D{faces}" if count != 1 else f"D{faces}"
+        if modifier > 0:
+            label = f"{label}+{modifier}"
+        return label
+    targeted_model_pattern = (
+        r"(?:in your command phase|(?:at the )?(?:start|end) of your command phase) "
+        r"(?P<optional>you can )?select one friendly (?P<target_keyword>[a-z0-9 ]+) unit within (?P<range>\d+) of this model "
+        r"and return(?: (?P<up_to>up to))? (?P<amt>"
+        + amount_token
+        + r") destroyed models? to that unit"
+        r"(?: a (?P<limit_keyword>[a-z0-9 ]+) unit cannot be selected for this ability more than once per phase)?"
+    )
+    targeted_model = re.fullmatch(targeted_model_pattern, norm)
+    if targeted_model:
+        target_keyword = str(targeted_model.group("target_keyword") or "friendly").strip().upper()
+        range_value = str(targeted_model.group("range") or "0")
+        amount_label = _amount_label(str(targeted_model.group("amt") or ""))
+        up_to_prefix = "up to " if targeted_model.group("up_to") else ""
+        note = (
+            f"Command phase: select one friendly {target_keyword} unit within {range_value}\"; "
+            f"return {up_to_prefix}{amount_label} destroyed model(s) to that unit."
+        )
+        if bool(str(targeted_model.group("limit_keyword") or "").strip()):
+            note = f"{note} Affected target units can only be selected once per phase."
+        return ("Supported", note)
     targeted_unit_pattern = (
         r"(?:in your command phase|(?:at the )?(?:start|end) of your command phase) "
         r"select one friendly (?P<target_keyword>[a-z0-9 ]+) unit within (?P<range>\d+) of this unit "
@@ -10713,7 +10754,6 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
         return None
     if "objective marker" in norm and "instead" in norm:
         return None
-    amount_token = r"(one|a|\d+|(?:\d+)?d\d+(?:\+\d+)?)"
     target_unit_re = r"(?:this unit|the bearer s unit|the bearers unit|that unit)"
     pattern = (
         r"(?:in your command phase|(?:at the )?(?:start|end) of your command phase)"
@@ -10732,13 +10772,7 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
         timing_label = "Start of Command phase"
     elif "end of your command phase" in norm:
         timing_label = "End of Command phase"
-    token = str(m.group("amt") or "").strip().lower()
-    if token in {"one", "a"}:
-        amount_label = "1"
-    elif token.isdigit():
-        amount_label = str(int(token))
-    else:
-        amount_label = token.upper()
+    amount_label = _amount_label(str(m.group("amt") or ""))
     up_to_prefix = "up to " if m.group("up_to") else ""
     returned_phrase = str(m.group("returned") or "").strip()
     note = f"{timing_label}: return {up_to_prefix}{amount_label} destroyed model(s) to this/bearer's unit."

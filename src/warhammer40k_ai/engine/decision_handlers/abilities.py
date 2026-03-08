@@ -19120,6 +19120,83 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {tname} regains up to {int(heal)} wounds.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "spawn_termagants_target":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None:
+            player = _resolve_player(game, request, payload)
+            if player is None:
+                try:
+                    player = source_unit.get_parent_army().player
+                except Exception:
+                    player = None
+            ability_name = str(ctx.get("ability_name", "") or "Spawn Termagants").strip() or "Spawn Termagants"
+            if is_skip_choice(request, result):
+                _log_action_for_players(game, player, f"{ability_name}: selected none.")
+                return None
+            if chosen is None:
+                return None
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+
+            target_sr = getattr(target_root, "special_rules", None)
+            if not isinstance(target_sr, dict):
+                target_sr = {}
+            if bool(ctx.get("once_per_phase_per_target", False)):
+                if str(target_sr.get("spawn_termagants_selected_turn_owner", "") or "") == owner_id:
+                    try:
+                        selected_turn = int(target_sr.get("spawn_termagants_selected_turn", 0) or 0)
+                    except Exception:
+                        selected_turn = 0
+                    if selected_turn == int(turn or 0):
+                        return chosen
+            target_sr["spawn_termagants_selected_turn_owner"] = owner_id
+            target_sr["spawn_termagants_selected_turn"] = int(turn or 0)
+            target_sr["spawn_termagants_selected_source"] = ability_name
+            target_root.special_rules = target_sr
+
+            amount_roll = str(ctx.get("amount_roll", "") or "").strip().upper()
+            try:
+                return_count = int(ctx.get("max_return", 0) or 0)
+            except Exception:
+                return_count = 0
+            if amount_roll:
+                try:
+                    from ...utility.dice import get_roll
+
+                    return_count = int(get_roll(amount_roll) or 0)
+                except Exception:
+                    return_count = 0
+            return_count = max(0, int(return_count))
+            if return_count <= 0:
+                return chosen
+
+            destroyed = list(getattr(target_root, "models_lost", []) or [])
+            if not destroyed:
+                return chosen
+
+            queue_fn = getattr(game, "_queue_bodyguard_return_decision", None)
+            if callable(queue_fn):
+                queue_fn(
+                    player=player,
+                    leader_unit=source_root,
+                    bodyguard_unit=target_root,
+                    ability={"name": ability_name},
+                    remaining=int(return_count),
+                    allow_skip=True,
+                )
+            return chosen
     if str(ctx.get("ability", "") or "") == "canoptek_swarm_target":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is not None and chosen is not None:

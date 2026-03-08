@@ -3280,6 +3280,85 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_spawn_termagants_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: Spawn Termagants (Command phase targeted model return).
+
+        Returns a list of specs with keys:
+            - target_keyword: str
+            - range: int
+            - max_return: int
+            - amount_roll: str
+            - once_per_phase_per_target: bool
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_spawn_termagants:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int, str, bool]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9+]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._SPAWN_TERMAGANTS_RE.fullmatch(normalized)
+            if not m:
+                continue
+            target_keyword_raw = str(m.group("target_keyword") or "").strip()
+            target_keyword = self._normalize_keyword_phrase(target_keyword_raw) or target_keyword_raw.lower()
+            try:
+                rng = int(m.group("range") or 0)
+            except Exception:
+                rng = 0
+            amount_token = str(m.group("amount") or "").strip().lower()
+            max_return = 0
+            amount_roll = ""
+            parse_amount = getattr(self, "_parse_command_phase_return_amount_token", None)
+            if callable(parse_amount):
+                try:
+                    max_return, amount_roll = parse_amount(amount_token)
+                except Exception:
+                    max_return, amount_roll = 0, ""
+            once_per_phase_per_target = bool(str(m.group("limit_keyword") or "").strip())
+            if rng <= 0 or max_return <= 0 or not target_keyword:
+                continue
+            source = str(name or "Spawn Termagants").strip() or "Spawn Termagants"
+            key = (
+                source.lower(),
+                target_keyword,
+                int(rng),
+                int(max_return),
+                str(amount_roll or "").upper(),
+                bool(once_per_phase_per_target),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "target_keyword": target_keyword,
+                    "range": int(rng),
+                    "max_return": int(max_return),
+                    "amount_roll": str(amount_roll or "").upper(),
+                    "once_per_phase_per_target": bool(once_per_phase_per_target),
+                    "source": source,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_canoptek_swarm_specs(self) -> List[dict]:
         """
         Unit-specific rule: Canoptek Swarm (Command phase target selection + model return count).
