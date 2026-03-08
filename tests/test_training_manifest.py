@@ -20,6 +20,12 @@ def _record(decision_id: str, decision_type: str, *, relabel_status: str = "upda
         "cover_delta": 0.0,
         "los_delta": 0.0,
         "resource_delta": 0.0,
+        "reserve_denial_delta": 0.0,
+        "screen_integrity_delta": 0.0,
+        "countercharge_coverage_delta": 0.0,
+        "aura_connectivity_delta": 0.0,
+        "projected_exposure_delta_if_enemy_goes_first": 0.0,
+        "projected_melee_staging_delta": 0.0,
         "rules_provenance_refs": ["rules_bundle:test"],
     }
     return {
@@ -117,3 +123,26 @@ def test_validate_gate_profile_compliance_passes_with_full_baseline_dataset() ->
     manifest = build_training_manifest(records, source_tag="self_play", min_tier3_records=10000).to_dict()
     assert manifest["gate_requirements"]["meets_gate_profile"] is True
     assert validate_gate_profile_compliance(manifest) == []
+
+
+def test_build_training_manifest_tracks_deployment_surface_coverage() -> None:
+    deployment_move = _record("d5", "MOVE_UNIT")
+    deployment_move["context"] = {"placement_kind": "deployment"}
+    records = [
+        _record("d1", "CHOOSE_DEPLOYMENT_ZONE"),
+        _record("d2", "DECLARE_RESERVES"),
+        _record("d3", "SELECT_NEXT_DEPLOY_UNIT"),
+        _record("d4", "SCOUT_MOVE"),
+        deployment_move,
+    ]
+    manifest = build_training_manifest(records, source_tag="heuristic", min_tier3_records=1).to_dict()
+    coverage = dict(manifest.get("coverage", {}) or {})
+    assert int(coverage.get("deployment_related_records", 0) or 0) == 5
+    assert int(coverage.get("deployment_zone_choice_records", 0) or 0) == 1
+    assert int(coverage.get("declare_reserves_records", 0) or 0) == 1
+    assert int(coverage.get("select_next_deploy_unit_records", 0) or 0) == 1
+    assert int(coverage.get("scout_move_records", 0) or 0) == 1
+    assert int(coverage.get("deployment_move_records", 0) or 0) == 1
+    assert float(coverage.get("deployment_semantic_metadata_ratio", 0.0) or 0.0) == 1.0
+    gate = dict(manifest.get("gate_requirements", {}) or {})
+    assert bool(gate.get("meets_required_deployment_semantic_metadata_ratio", False)) is True

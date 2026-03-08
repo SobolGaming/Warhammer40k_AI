@@ -101,6 +101,7 @@ The canonical gate profile (`pre_ml_baseline_v1`) currently enforces:
 - minimum records: `10000`
 - semantic candidate metadata ratio: `1.0`
 - relabel status ratio: `1.0`
+- deployment semantic metadata ratio (deployment-related records): `1.0`
 - minimum games observed: `20`
 - records-with-`game_id` ratio: `1.0`
 - minimum tactical decisions per game: `25`

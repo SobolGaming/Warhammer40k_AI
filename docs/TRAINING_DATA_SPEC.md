@@ -29,6 +29,19 @@ Coverage metrics:
 - `semantic_candidate_metadata_ratio`
 - `records_with_relabel_status`
 - `relabel_status_ratio`
+- `deployment_related_records`
+- `deployment_zone_choice_records`
+- `declare_reserves_records`
+- `select_next_deploy_unit_records`
+- `scout_move_records`
+- `deployment_move_records`
+- `deployment_records_with_semantic_metadata`
+- `deployment_semantic_metadata_ratio`
+- `has_deployment_zone_choice_coverage`
+- `has_declare_reserves_coverage`
+- `has_select_next_deploy_unit_coverage`
+- `has_scout_move_coverage`
+- `has_deployment_move_coverage`
 
 Gameplay-quality metrics:
 - `games_observed`
@@ -55,10 +68,13 @@ Gate requirements:
 - `meets_minimum_tier3_pretraining_records`
 - `semantic_candidate_metadata_required`
 - `semantic_candidate_metadata_complete`
+- `deployment_semantic_metadata_required`
+- `deployment_semantic_metadata_complete`
 - `gate_profile_id`
 - `gate_profile_minimum_tier3_pretraining_records`
 - `required_semantic_candidate_metadata_ratio`
 - `required_relabel_status_ratio`
+- `required_deployment_semantic_metadata_ratio`
 - `gate_profile_minimum_games_observed`
 - `required_records_with_game_id_ratio`
 - `gate_profile_minimum_tactical_decisions_per_game`
@@ -69,6 +85,7 @@ Gate requirements:
 - `meets_gate_profile_minimum_tier3_pretraining_records`
 - `meets_required_semantic_candidate_metadata_ratio`
 - `meets_required_relabel_status_ratio`
+- `meets_required_deployment_semantic_metadata_ratio`
 - `meets_gate_profile_minimum_games_observed`
 - `meets_required_records_with_game_id_ratio`
 - `meets_gate_profile_minimum_tactical_decisions_per_game`

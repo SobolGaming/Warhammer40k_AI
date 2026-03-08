@@ -7,7 +7,7 @@ import json
 from typing import Any
 
 
-MANIFEST_VERSION = "1.2.0"
+MANIFEST_VERSION = "1.3.0"
 PRE_ML_BASELINE_GATE_PROFILE_ID = "pre_ml_baseline_v1"
 _RATIO_PRECISION = 6
 
@@ -24,6 +24,22 @@ _SEMANTIC_METADATA_KEYS = (
     "resource_delta",
     "rules_provenance_refs",
 )
+
+_DEPLOYMENT_SEMANTIC_METADATA_KEYS = (
+    "reserve_denial_delta",
+    "screen_integrity_delta",
+    "countercharge_coverage_delta",
+    "aura_connectivity_delta",
+    "projected_exposure_delta_if_enemy_goes_first",
+    "projected_melee_staging_delta",
+)
+
+_DEPLOYMENT_DECISION_TYPES = {
+    "CHOOSE_DEPLOYMENT_ZONE",
+    "DECLARE_RESERVES",
+    "SELECT_NEXT_DEPLOY_UNIT",
+    "SCOUT_MOVE",
+}
 
 _TACTICAL_DECISION_TYPES = {
     "MOVE_UNIT",
@@ -179,22 +195,90 @@ def _candidates_have_semantic_metadata(record: dict[str, Any]) -> bool:
     return True
 
 
+def _is_deployment_move_record(record: dict[str, Any]) -> bool:
+    if str(record.get("decision_type", "") or "") != "MOVE_UNIT":
+        return False
+    context = dict(record.get("context", {}) or {})
+    return str(context.get("placement_kind", "") or "").strip().lower() == "deployment"
+
+
+def _is_deployment_related_record(record: dict[str, Any]) -> bool:
+    decision_type = str(record.get("decision_type", "") or "")
+    if decision_type in _DEPLOYMENT_DECISION_TYPES:
+        return True
+    return _is_deployment_move_record(record)
+
+
+def _candidates_have_deployment_semantic_metadata(record: dict[str, Any]) -> bool:
+    if not _is_deployment_related_record(record):
+        return False
+    for candidate in list(record.get("candidates", []) or []):
+        metadata = dict(candidate.get("metadata", {}) or {})
+        for key in _DEPLOYMENT_SEMANTIC_METADATA_KEYS:
+            if key not in metadata:
+                return False
+    return True
+
+
 def _coverage(records: list[dict[str, Any]]) -> dict[str, Any]:
     total = int(len(records or []))
     with_semantics = 0
     relabeled = 0
+    deployment_related = 0
+    deployment_zone_choice_records = 0
+    declare_reserves_records = 0
+    select_next_deploy_unit_records = 0
+    scout_move_records = 0
+    deployment_move_records = 0
+    deployment_semantic_records = 0
     for record in list(records or []):
+        item = dict(record or {})
         if _candidates_have_semantic_metadata(record):
             with_semantics += 1
-        if str(record.get("relabel_status", "") or ""):
+        if str(item.get("relabel_status", "") or ""):
             relabeled += 1
+        decision_type = str(item.get("decision_type", "") or "")
+        is_deployment_move = _is_deployment_move_record(item)
+        is_deployment_related = decision_type in _DEPLOYMENT_DECISION_TYPES or is_deployment_move
+        if is_deployment_related:
+            deployment_related += 1
+            if _candidates_have_deployment_semantic_metadata(item):
+                deployment_semantic_records += 1
+        if decision_type == "CHOOSE_DEPLOYMENT_ZONE":
+            deployment_zone_choice_records += 1
+        if decision_type == "DECLARE_RESERVES":
+            declare_reserves_records += 1
+        if decision_type == "SELECT_NEXT_DEPLOY_UNIT":
+            select_next_deploy_unit_records += 1
+        if decision_type == "SCOUT_MOVE":
+            scout_move_records += 1
+        if is_deployment_move:
+            deployment_move_records += 1
     semantic_ratio = _ratio(with_semantics, total)
     relabel_ratio = _ratio(relabeled, total)
+    deployment_semantic_ratio = (
+        1.0
+        if deployment_related <= 0
+        else _ratio(deployment_semantic_records, deployment_related)
+    )
     return {
         "records_with_semantic_candidate_metadata": int(with_semantics),
         "semantic_candidate_metadata_ratio": semantic_ratio,
         "records_with_relabel_status": int(relabeled),
         "relabel_status_ratio": relabel_ratio,
+        "deployment_related_records": int(deployment_related),
+        "deployment_zone_choice_records": int(deployment_zone_choice_records),
+        "declare_reserves_records": int(declare_reserves_records),
+        "select_next_deploy_unit_records": int(select_next_deploy_unit_records),
+        "scout_move_records": int(scout_move_records),
+        "deployment_move_records": int(deployment_move_records),
+        "deployment_records_with_semantic_metadata": int(deployment_semantic_records),
+        "deployment_semantic_metadata_ratio": float(deployment_semantic_ratio),
+        "has_deployment_zone_choice_coverage": bool(deployment_zone_choice_records > 0),
+        "has_declare_reserves_coverage": bool(declare_reserves_records > 0),
+        "has_select_next_deploy_unit_coverage": bool(select_next_deploy_unit_records > 0),
+        "has_scout_move_coverage": bool(scout_move_records > 0),
+        "has_deployment_move_coverage": bool(deployment_move_records > 0),
     }
 
 
@@ -392,9 +476,13 @@ def build_training_manifest(
     gameplay_quality = _gameplay_quality(record_list, gate_profile=gate_profile)
     semantic_ratio = float(coverage.get("semantic_candidate_metadata_ratio", 0.0) or 0.0)
     relabel_ratio = float(coverage.get("relabel_status_ratio", 0.0) or 0.0)
+    deployment_semantic_ratio = float(coverage.get("deployment_semantic_metadata_ratio", 1.0) or 0.0)
+    deployment_related_records = int(coverage.get("deployment_related_records", 0) or 0)
+    deployment_semantic_records = int(coverage.get("deployment_records_with_semantic_metadata", 0) or 0)
     profile_min_records = int(gate_profile.minimum_tier3_pretraining_records)
     profile_semantic_ratio = float(gate_profile.required_semantic_candidate_metadata_ratio)
     profile_relabel_ratio = float(gate_profile.required_relabel_status_ratio)
+    required_deployment_semantic_ratio = 1.0
     profile_min_games = int(gate_profile.minimum_games_observed)
     profile_game_id_ratio = float(gate_profile.required_records_with_game_id_ratio)
     profile_min_tactical = int(gate_profile.minimum_tactical_decisions_per_game)
@@ -405,6 +493,7 @@ def build_training_manifest(
     meets_profile_minimum = bool(total_records >= profile_min_records)
     meets_profile_semantic = bool(semantic_ratio >= profile_semantic_ratio)
     meets_profile_relabel = bool(relabel_ratio >= profile_relabel_ratio)
+    meets_deployment_semantic = bool(deployment_semantic_ratio >= required_deployment_semantic_ratio)
     games_observed = int(gameplay_quality.get("games_observed", 0) or 0)
     records_with_game_id_ratio = float(gameplay_quality.get("records_with_game_id_ratio", 0.0) or 0.0)
     min_tactical_decisions = int(gameplay_quality.get("minimum_tactical_decisions_per_game", 0) or 0)
@@ -426,10 +515,15 @@ def build_training_manifest(
         "semantic_candidate_metadata_complete": bool(
             coverage.get("records_with_semantic_candidate_metadata", 0) == total_records
         ),
+        "deployment_semantic_metadata_required": True,
+        "deployment_semantic_metadata_complete": bool(
+            deployment_semantic_records == deployment_related_records
+        ),
         "gate_profile_id": str(gate_profile.gate_profile_id),
         "gate_profile_minimum_tier3_pretraining_records": profile_min_records,
         "required_semantic_candidate_metadata_ratio": profile_semantic_ratio,
         "required_relabel_status_ratio": profile_relabel_ratio,
+        "required_deployment_semantic_metadata_ratio": float(required_deployment_semantic_ratio),
         "gate_profile_minimum_games_observed": profile_min_games,
         "required_records_with_game_id_ratio": profile_game_id_ratio,
         "gate_profile_minimum_tactical_decisions_per_game": profile_min_tactical,
@@ -440,6 +534,7 @@ def build_training_manifest(
         "meets_gate_profile_minimum_tier3_pretraining_records": meets_profile_minimum,
         "meets_required_semantic_candidate_metadata_ratio": meets_profile_semantic,
         "meets_required_relabel_status_ratio": meets_profile_relabel,
+        "meets_required_deployment_semantic_metadata_ratio": meets_deployment_semantic,
         "meets_gate_profile_minimum_games_observed": meets_profile_games_observed,
         "meets_required_records_with_game_id_ratio": meets_profile_game_id_ratio,
         "meets_gate_profile_minimum_tactical_decisions_per_game": meets_profile_tactical,
@@ -450,6 +545,7 @@ def build_training_manifest(
             meets_profile_minimum
             and meets_profile_semantic
             and meets_profile_relabel
+            and meets_deployment_semantic
             and meets_profile_games_observed
             and meets_profile_game_id_ratio
             and meets_profile_tactical
@@ -529,6 +625,62 @@ def validate_training_manifest(manifest: dict[str, Any]) -> list[str]:
         )
     if relabel_ratio != _ratio(relabel_count, total_records):
         errors.append("coverage.relabel_status_ratio must match records_with_relabel_status")
+
+    deployment_related_records = int(coverage.get("deployment_related_records", 0) or 0)
+    deployment_zone_choice_records = int(coverage.get("deployment_zone_choice_records", 0) or 0)
+    declare_reserves_records = int(coverage.get("declare_reserves_records", 0) or 0)
+    select_next_deploy_unit_records = int(coverage.get("select_next_deploy_unit_records", 0) or 0)
+    scout_move_records = int(coverage.get("scout_move_records", 0) or 0)
+    deployment_move_records = int(coverage.get("deployment_move_records", 0) or 0)
+    deployment_semantic_records = int(coverage.get("deployment_records_with_semantic_metadata", 0) or 0)
+    deployment_semantic_ratio = float(coverage.get("deployment_semantic_metadata_ratio", 1.0) or 0.0)
+    if deployment_related_records < 0 or deployment_related_records > total_records:
+        errors.append("coverage.deployment_related_records must be in [0, total_records]")
+    deployment_count_fields = (
+        ("coverage.deployment_zone_choice_records", deployment_zone_choice_records),
+        ("coverage.declare_reserves_records", declare_reserves_records),
+        ("coverage.select_next_deploy_unit_records", select_next_deploy_unit_records),
+        ("coverage.scout_move_records", scout_move_records),
+        ("coverage.deployment_move_records", deployment_move_records),
+    )
+    for label, value in deployment_count_fields:
+        if value < 0 or value > total_records:
+            errors.append(f"{label} must be in [0, total_records]")
+    if deployment_semantic_records < 0 or deployment_semantic_records > deployment_related_records:
+        errors.append(
+            "coverage.deployment_records_with_semantic_metadata must be in [0, deployment_related_records]"
+        )
+    if deployment_semantic_ratio < 0.0 or deployment_semantic_ratio > 1.0:
+        errors.append("coverage.deployment_semantic_metadata_ratio must be in [0, 1]")
+    expected_deployment_ratio = (
+        1.0
+        if deployment_related_records <= 0
+        else _ratio(deployment_semantic_records, deployment_related_records)
+    )
+    if deployment_semantic_ratio != expected_deployment_ratio:
+        errors.append(
+            "coverage.deployment_semantic_metadata_ratio must match deployment_records_with_semantic_metadata"
+        )
+    if bool(coverage.get("has_deployment_zone_choice_coverage", False)) != bool(deployment_zone_choice_records > 0):
+        errors.append(
+            "coverage.has_deployment_zone_choice_coverage must match deployment_zone_choice_records > 0"
+        )
+    if bool(coverage.get("has_declare_reserves_coverage", False)) != bool(declare_reserves_records > 0):
+        errors.append(
+            "coverage.has_declare_reserves_coverage must match declare_reserves_records > 0"
+        )
+    if bool(coverage.get("has_select_next_deploy_unit_coverage", False)) != bool(select_next_deploy_unit_records > 0):
+        errors.append(
+            "coverage.has_select_next_deploy_unit_coverage must match select_next_deploy_unit_records > 0"
+        )
+    if bool(coverage.get("has_scout_move_coverage", False)) != bool(scout_move_records > 0):
+        errors.append(
+            "coverage.has_scout_move_coverage must match scout_move_records > 0"
+        )
+    if bool(coverage.get("has_deployment_move_coverage", False)) != bool(deployment_move_records > 0):
+        errors.append(
+            "coverage.has_deployment_move_coverage must match deployment_move_records > 0"
+        )
 
     gameplay_quality = dict(payload.get("gameplay_quality", {}) or {})
     games_observed = int(gameplay_quality.get("games_observed", 0) or 0)
@@ -628,6 +780,14 @@ def validate_training_manifest(manifest: dict[str, Any]) -> list[str]:
         errors.append(
             "gate_requirements.semantic_candidate_metadata_complete must match semantic coverage completeness"
         )
+    if bool(gate_requirements.get("deployment_semantic_metadata_complete", False)) != bool(
+        deployment_semantic_records == deployment_related_records
+    ):
+        errors.append(
+            "gate_requirements.deployment_semantic_metadata_complete must match deployment semantic completeness"
+        )
+    if not bool(gate_requirements.get("deployment_semantic_metadata_required", False)):
+        errors.append("gate_requirements.deployment_semantic_metadata_required must be true")
 
     gate_profile_id = str(gate_requirements.get("gate_profile_id", "") or "")
     if not gate_profile_id:
@@ -642,6 +802,9 @@ def validate_training_manifest(manifest: dict[str, Any]) -> list[str]:
     profile_min_records = int(gate_requirements.get("gate_profile_minimum_tier3_pretraining_records", 0) or 0)
     required_semantic_ratio = float(gate_requirements.get("required_semantic_candidate_metadata_ratio", 0.0) or 0.0)
     required_relabel_ratio = float(gate_requirements.get("required_relabel_status_ratio", 0.0) or 0.0)
+    required_deployment_semantic_ratio = float(
+        gate_requirements.get("required_deployment_semantic_metadata_ratio", 0.0) or 0.0
+    )
     profile_min_games = int(gate_requirements.get("gate_profile_minimum_games_observed", 0) or 0)
     required_game_id_ratio = float(gate_requirements.get("required_records_with_game_id_ratio", 0.0) or 0.0)
     profile_min_tactical = int(
@@ -663,6 +826,10 @@ def validate_training_manifest(manifest: dict[str, Any]) -> list[str]:
         )
     if required_relabel_ratio != float(gate_profile.required_relabel_status_ratio):
         errors.append("gate_requirements.required_relabel_status_ratio must match canonical gate profile")
+    if required_deployment_semantic_ratio != 1.0:
+        errors.append(
+            "gate_requirements.required_deployment_semantic_metadata_ratio must match canonical gate profile"
+        )
     if profile_min_games != int(gate_profile.minimum_games_observed):
         errors.append("gate_requirements.gate_profile_minimum_games_observed must match canonical gate profile")
     if required_game_id_ratio != float(gate_profile.required_records_with_game_id_ratio):
@@ -685,6 +852,8 @@ def validate_training_manifest(manifest: dict[str, Any]) -> list[str]:
         errors.append("gate_requirements.required_semantic_candidate_metadata_ratio must be in [0, 1]")
     if required_relabel_ratio < 0.0 or required_relabel_ratio > 1.0:
         errors.append("gate_requirements.required_relabel_status_ratio must be in [0, 1]")
+    if required_deployment_semantic_ratio < 0.0 or required_deployment_semantic_ratio > 1.0:
+        errors.append("gate_requirements.required_deployment_semantic_metadata_ratio must be in [0, 1]")
     if required_game_id_ratio < 0.0 or required_game_id_ratio > 1.0:
         errors.append("gate_requirements.required_records_with_game_id_ratio must be in [0, 1]")
     if required_activity_ratio < 0.0 or required_activity_ratio > 1.0:
@@ -699,6 +868,9 @@ def validate_training_manifest(manifest: dict[str, Any]) -> list[str]:
     meets_profile_minimum = bool(gate_requirements.get("meets_gate_profile_minimum_tier3_pretraining_records", False))
     meets_profile_semantic = bool(gate_requirements.get("meets_required_semantic_candidate_metadata_ratio", False))
     meets_profile_relabel = bool(gate_requirements.get("meets_required_relabel_status_ratio", False))
+    meets_profile_deployment_semantic = bool(
+        gate_requirements.get("meets_required_deployment_semantic_metadata_ratio", False)
+    )
     meets_profile_games = bool(gate_requirements.get("meets_gate_profile_minimum_games_observed", False))
     meets_profile_game_id = bool(gate_requirements.get("meets_required_records_with_game_id_ratio", False))
     meets_profile_tactical = bool(
@@ -720,6 +892,12 @@ def validate_training_manifest(manifest: dict[str, Any]) -> list[str]:
     if meets_profile_relabel != bool(relabel_ratio >= required_relabel_ratio):
         errors.append(
             "gate_requirements.meets_required_relabel_status_ratio must match profile relabel ratio evaluation"
+        )
+    if meets_profile_deployment_semantic != bool(
+        deployment_semantic_ratio >= required_deployment_semantic_ratio
+    ):
+        errors.append(
+            "gate_requirements.meets_required_deployment_semantic_metadata_ratio must match deployment semantic ratio evaluation"
         )
     if meets_profile_games != bool(games_observed >= profile_min_games):
         errors.append("gate_requirements.meets_gate_profile_minimum_games_observed must match game count evaluation")
@@ -747,6 +925,7 @@ def validate_training_manifest(manifest: dict[str, Any]) -> list[str]:
         meets_profile_minimum
         and meets_profile_semantic
         and meets_profile_relabel
+        and meets_profile_deployment_semantic
         and meets_profile_games
         and meets_profile_game_id
         and meets_profile_tactical
@@ -775,6 +954,8 @@ def validate_gate_profile_compliance(manifest: dict[str, Any]) -> list[str]:
         failures.append("Gate profile semantic metadata coverage threshold not met")
     if not bool(gate_requirements.get("meets_required_relabel_status_ratio", False)):
         failures.append("Gate profile relabel coverage threshold not met")
+    if not bool(gate_requirements.get("meets_required_deployment_semantic_metadata_ratio", False)):
+        failures.append("Gate profile deployment semantic metadata coverage threshold not met")
     if not bool(gate_requirements.get("meets_gate_profile_minimum_games_observed", False)):
         failures.append("Gate profile minimum games-observed threshold not met")
     if not bool(gate_requirements.get("meets_required_records_with_game_id_ratio", False)):
