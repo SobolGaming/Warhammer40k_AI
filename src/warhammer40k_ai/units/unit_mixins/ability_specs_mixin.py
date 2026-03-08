@@ -9559,6 +9559,166 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_spore_mine_cysts_specs(self) -> List[dict]:
+        """
+        Unit-level Tyranid rule: after ending a Normal move, choose one of:
+          - Select a moved-over enemy unit and roll 6D6; each 3+ inflicts 1 mortal wound.
+          - Spawn one Spore Mines unit of D3 models within 6" and >9" horizontally from enemies.
+            This spawn option can only be selected for one model per turn.
+
+        Returns specs with keys:
+            - source: ability name
+            - move_types: list[str]
+            - dice: int
+            - threshold: int
+            - mortal_per_success: int
+            - spawn_unit_name: str
+            - spawn_model_count_roll: str
+            - setup_range: int
+            - enemy_exclusion_range_horizontal: int
+            - spawn_once_per_turn_shared: bool
+            - ability_key: str
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_spore_mine_cysts_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(unit._strip_eligibility_prefix(text_src))
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9+]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+
+                name_low = str(name or "").strip().lower()
+                if "spore mine cysts" not in name_low and "spore mine cysts" not in normalized:
+                    continue
+                required = (
+                    "each time this model ends a normal move",
+                    "select one of the following",
+                    "moved over during that move",
+                    "roll six d6",
+                    "for each 3",
+                    "that unit suffers 1 mortal wound",
+                    "add one new spore mines unit containing d3 models to your army",
+                    "wholly within 6 of this model",
+                    "more than 9 horizontally away from all enemy units",
+                    "cannot select this option for more than one model per turn",
+                )
+                if not all(fragment in normalized for fragment in required):
+                    continue
+
+                mortal_match = re.search(
+                    r"roll (?P<dice>six|\d+) d6 for each (?P<threshold>\d)\+? that unit suffers (?P<mortal>\d+) mortal wounds?",
+                    normalized,
+                )
+                if mortal_match is None:
+                    continue
+                dice_raw = str(mortal_match.group("dice") or "").strip().lower()
+                if dice_raw.isdigit():
+                    dice_count = int(dice_raw)
+                else:
+                    dice_count = int(self._NUMBER_WORDS.get(dice_raw, 0) or 0)
+                try:
+                    threshold = int(mortal_match.group("threshold") or 0)
+                except Exception:
+                    threshold = 0
+                try:
+                    mortal_per = int(mortal_match.group("mortal") or 0)
+                except Exception:
+                    mortal_per = 0
+                if dice_count <= 0 or threshold <= 0 or mortal_per <= 0:
+                    continue
+
+                spawn_match = re.search(
+                    r"add one new (?P<spawn>[a-z0-9 ]+?) unit containing (?P<count>d\d+|\d+) models? to your army",
+                    normalized,
+                )
+                if spawn_match is None:
+                    continue
+                spawn_raw = str(spawn_match.group("spawn") or "").strip()
+                if not spawn_raw:
+                    continue
+                spawn_unit_name = " ".join(token.capitalize() for token in spawn_raw.split())
+                if spawn_unit_name.lower() != "spore mines":
+                    continue
+                count_roll = str(spawn_match.group("count") or "").strip().upper()
+                if count_roll != "D3":
+                    continue
+
+                setup_match = re.search(r"wholly within (?P<range>\d+) of this model", normalized)
+                enemy_match = re.search(r"more than (?P<range>\d+) horizontally away from all enemy units", normalized)
+                if setup_match is None or enemy_match is None:
+                    continue
+                try:
+                    setup_range = int(setup_match.group("range") or 0)
+                except Exception:
+                    setup_range = 0
+                try:
+                    enemy_exclusion = int(enemy_match.group("range") or 0)
+                except Exception:
+                    enemy_exclusion = 0
+                if setup_range <= 0 or enemy_exclusion <= 0:
+                    continue
+
+                source = str(name or "Spore Mine Cysts").strip() or "Spore Mine Cysts"
+                ability_key_seed = self._normalize_keyword_phrase(source) or "spore_mine_cysts"
+                ability_key = f"spore_mine_cysts:{ability_key_seed}"
+                key = (
+                    source.lower(),
+                    int(dice_count),
+                    int(threshold),
+                    int(mortal_per),
+                    spawn_unit_name.lower(),
+                    count_roll,
+                    int(setup_range),
+                    int(enemy_exclusion),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "move_types": ["move"],
+                        "dice": int(dice_count),
+                        "threshold": int(threshold),
+                        "mortal_per_success": int(mortal_per),
+                        "spawn_unit_name": spawn_unit_name,
+                        "spawn_model_count_roll": count_roll,
+                        "setup_range": int(setup_range),
+                        "enemy_exclusion_range_horizontal": int(enemy_exclusion),
+                        "spawn_once_per_turn_shared": True,
+                        "ability_key": ability_key,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_floating_death_specs(self) -> List[dict]:
         """
         Unit-level rule: after this unit or an enemy unit ends a move, each model within range

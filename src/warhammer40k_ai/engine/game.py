@@ -6070,6 +6070,135 @@ class Game(
                             )
                             break
 
+        # Spore Mine Cysts (Harpy): after a Normal move, choose one moved-over enemy unit
+        # for six D6 mortal-wound rolls, or spawn Spore Mines (once per turn shared option).
+        if action_key == "move":
+            try:
+                spore_specs = list(root.unit_spore_mine_cysts_specs() or [])
+            except Exception:
+                spore_specs = []
+            if spore_specs:
+                try:
+                    player = root.get_parent_army().player
+                except Exception:
+                    player = None
+                if player is not None:
+                    try:
+                        owner_id = str(getattr(player, "id", "") or "")
+                    except Exception:
+                        owner_id = ""
+                    try:
+                        turn = int(getattr(self, "turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    root_id = str(get_entity_id(root) or "")
+                    pending = False
+                    queue = getattr(self, "decision_queue", None)
+                    if queue is not None and hasattr(queue, "list"):
+                        for req in list(queue.list() or []):
+                            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                                continue
+                            ctx = dict(getattr(req, "context", {}) or {})
+                            if str(ctx.get("ability", "") or "").strip().lower() != "spore_mine_cysts":
+                                continue
+                            if str(ctx.get("unit_id", "") or "") != root_id:
+                                continue
+                            try:
+                                req_turn = int(ctx.get("turn", 0) or 0)
+                            except Exception:
+                                req_turn = 0
+                            if req_turn != int(turn or 0):
+                                continue
+                            pending = True
+                            break
+                    if not pending:
+                        source_model = next((m for m in list(models or []) if bool(getattr(m, "is_alive", False))), None)
+                        source_model_id = str(get_entity_id(source_model) or "") if source_model is not None else ""
+                        target_by_id: dict[str, Any] = {}
+                        from ..utility.calcs import get_enemy_units_moved_over
+
+                        for model in list(models or []):
+                            if not getattr(model, "is_alive", False):
+                                continue
+                            path = getattr(model, "last_move_path", None)
+                            moved_over = get_enemy_units_moved_over(model, path, game_map, require_vertical_overlap=True)
+                            for cand in list(moved_over or []):
+                                if cand is None:
+                                    continue
+                                cid = str(get_entity_id(cand) or "")
+                                if not cid:
+                                    continue
+                                target_by_id[cid] = cand
+
+                        for spec in list(spore_specs or []):
+                            move_types = set(spec.get("move_types") or [])
+                            if action_key not in move_types:
+                                continue
+
+                            spawn_available = True
+                            if bool(spec.get("spawn_once_per_turn_shared", False)):
+                                spawn_available = False
+                                army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                                if army is not None:
+                                    iter_roots = getattr(self, "_iter_unique_army_roots", None)
+                                    army_roots = list(iter_roots(army) or []) if callable(iter_roots) else list(getattr(army, "units", []) or [])
+                                    already_used = False
+                                    for army_root in list(army_roots or []):
+                                        if army_root is None:
+                                            continue
+                                        sr_army_root = getattr(army_root, "special_rules", None)
+                                        if not isinstance(sr_army_root, dict):
+                                            continue
+                                        if not bool(sr_army_root.get("spore_mine_cysts_spawn_used_this_turn", False)):
+                                            continue
+                                        if str(sr_army_root.get("spore_mine_cysts_spawn_turn_owner", "") or "") != str(owner_id or ""):
+                                            continue
+                                        try:
+                                            used_turn = int(sr_army_root.get("spore_mine_cysts_spawn_turn", 0) or 0)
+                                        except Exception:
+                                            used_turn = 0
+                                        if int(used_turn or 0) == int(turn or 0):
+                                            already_used = True
+                                            break
+                                    spawn_available = not bool(already_used)
+
+                            options = [DecisionOption.create("None", payload={"action": "skip"})]
+                            for cid in sorted(target_by_id.keys()):
+                                target_unit = target_by_id[cid]
+                                label = str(getattr(target_unit, "name", "") or "Enemy unit")
+                                options.append(
+                                    DecisionOption.create(
+                                        label,
+                                        payload={"action": "mortal_target", "target_unit_id": str(cid)},
+                                    )
+                                )
+                            if spawn_available and source_model_id:
+                                options.append(DecisionOption.create("Spawn Spore Mines", payload={"action": "spawn_spore_mines"}))
+
+                            if len(options) <= 1:
+                                continue
+
+                            ability_name = str(spec.get("source", "") or "Spore Mine Cysts").strip() or "Spore Mine Cysts"
+                            request = DecisionRequest.create(
+                                DECISION_CHOOSE_QUARRY,
+                                f"{ability_name}: choose a moved-over target, spawn Spore Mines, or None.",
+                                player_id=getattr(player, "id", None),
+                                options=options,
+                                context={
+                                    "ability": "spore_mine_cysts",
+                                    "ability_name": ability_name,
+                                    "phase": "Movement phase",
+                                    "unit_id": root_id,
+                                    "source_unit_id": root_id,
+                                    "source_model_id": source_model_id,
+                                    "owner_id": str(owner_id or ""),
+                                    "turn": int(turn or 0),
+                                    "spec": dict(spec or {}),
+                                },
+                            )
+                            self.request_decision(request)
+                            break
+
         for model in models:
             if not getattr(model, "is_alive", False):
                 continue

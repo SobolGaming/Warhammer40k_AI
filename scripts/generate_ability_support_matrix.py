@@ -4858,6 +4858,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Once per battle round, this unit can be targeted with Rapid Ingress for 0CP.",
         ),
         ("TYR", "Foul Spores (Aura)"): ("Partial", "Stealth aura within 6\" for non-MONSTER TYRANIDS units; Benefit of Cover aura not implemented."),
+        ("TYR", "Spore Mine Cysts"): (
+            "Supported",
+            "After ending a Normal move, choose one moved-over enemy unit for six D6 mortal-wound rolls on 3+, or spawn D3 Spore Mines wholly within 6\" and more than 9\" horizontally from enemies (spawn option limited to one model per turn).",
+        ),
         ("TYR", "Unnatural Resilience"): ("Supported", "Feel No Pain 4+ against mortal wounds."),
         ("TYR", "Grasping Tendrils"): ("Supported", "Enemy non-TITANIC units within Engagement Range selected to Fall Back roll D6; on 3+ they cannot Fall Back and must remain stationary."),
         ("TYR", "Stasis Bomb"): ("Supported", "After ending a Normal move over enemies (excluding AIRCRAFT), one model per army per turn and once per battle per model can inflict D3 mortal wounds, then apply no Advance/Fall Back on 1-3 or Remain Stationary on 4-6 in the target's next Movement phase."),
@@ -5633,6 +5637,7 @@ def _classify_ability_base(
     move_over_low_terrain_support = _move_over_low_terrain_support(description)
     titanic_move_through_support = _titanic_move_through_support(description)
     move_over_mortal_support = _move_over_mortal_wounds_support(description)
+    spore_mine_cysts_support = _spore_mine_cysts_support(description)
     floating_death_support = _floating_death_support(description)
     parasitic_infection_support = _parasitic_infection_support(description)
     hazardous_test_modifier_support = _hazardous_test_modifier_support(description)
@@ -5827,6 +5832,8 @@ def _classify_ability_base(
         return move_over_low_terrain_support
     if titanic_move_through_support:
         return titanic_move_through_support
+    if spore_mine_cysts_support:
+        return spore_mine_cysts_support
     if move_over_mortal_support:
         return move_over_mortal_support
     if floating_death_support:
@@ -13053,6 +13060,31 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
     return (
         "Supported",
         f"{type_label}: select a moved-over enemy; roll {dice_count}D6{fly_note}, each {threshold}+ inflicts {mortal_text} mortal wounds.",
+    )
+
+
+def _spore_mine_cysts_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    required_phrases = (
+        "each time this model ends a normal move",
+        "select one of the following",
+        "select one enemy unit it moved over during that move",
+        "roll six d6",
+        "for each 3 that unit suffers 1 mortal wound",
+        "add one new spore mines unit containing d3 models to your army",
+        "wholly within 6 of this model",
+        "more than 9 horizontally away from all enemy units",
+        "cannot select this option for more than one model per turn",
+    )
+    if not all(phrase in norm for phrase in required_phrases):
+        return None
+    return (
+        "Supported",
+        "After ending a Normal move, choose one moved-over enemy unit for six D6 mortal-wound rolls on 3+, or spawn D3 Spore Mines wholly within 6\" and more than 9\" horizontally from enemies (spawn option limited to one model per turn).",
     )
 
 

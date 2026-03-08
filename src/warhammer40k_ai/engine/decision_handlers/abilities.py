@@ -17048,6 +17048,206 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname} to take a Battle-shock test.")
         except Exception:
             pass
+    if str(ctx.get("ability", "") or "") == "spore_mine_cysts":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_root.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Spore Mine Cysts").strip() or "Spore Mine Cysts"
+        action = str(payload.get("action", "") or "").strip().lower()
+        if is_skip_choice(request, result) or action == "skip":
+            try:
+                _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            except Exception:
+                pass
+            return None
+
+        spec = dict(ctx.get("spec", {}) or {})
+        if action == "spawn_spore_mines":
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            owner_id = str(getattr(player, "id", "") or ctx.get("owner_id", "") or "")
+
+            if bool(spec.get("spawn_once_per_turn_shared", False)):
+                army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+                iter_roots = getattr(game, "_iter_unique_army_roots", None)
+                army_roots = list(iter_roots(army) or []) if callable(iter_roots) else list(getattr(army, "units", []) or [])
+                for army_root in list(army_roots or []):
+                    if army_root is None:
+                        continue
+                    sr_army_root = getattr(army_root, "special_rules", None)
+                    if not isinstance(sr_army_root, dict):
+                        continue
+                    if not bool(sr_army_root.get("spore_mine_cysts_spawn_used_this_turn", False)):
+                        continue
+                    if str(sr_army_root.get("spore_mine_cysts_spawn_turn_owner", "") or "") != str(owner_id or ""):
+                        continue
+                    try:
+                        used_turn = int(sr_army_root.get("spore_mine_cysts_spawn_turn", 0) or 0)
+                    except Exception:
+                        used_turn = 0
+                    if int(used_turn or 0) == int(turn or 0):
+                        return None
+
+            source_model = resolve_model(game, ctx.get("source_model_id"))
+            if source_model is None:
+                try:
+                    source_model = next(
+                        (
+                            model
+                            for model in list(source_root.get_attached_unit_models() or [])
+                            if bool(getattr(model, "is_alive", False))
+                        ),
+                        None,
+                    )
+                except Exception:
+                    source_model = None
+            if source_model is None:
+                return None
+
+            try:
+                from ...utility.dice import get_roll
+            except Exception:
+                return None
+            spawn_roll = str(spec.get("spawn_model_count_roll", "") or "D3").strip().upper() or "D3"
+            try:
+                spawn_count = int(get_roll(spawn_roll) or 0)
+            except Exception:
+                spawn_count = 0
+            spawn_count = max(1, int(spawn_count or 0))
+
+            get_pending = getattr(game, "_get_parasitic_infection_pending_triggers", None)
+            set_pending = getattr(game, "_set_parasitic_infection_pending_triggers", None)
+            queue_spawn = getattr(game, "_queue_next_parasitic_infection_spawn_decision", None)
+            if not callable(get_pending) or not callable(set_pending) or not callable(queue_spawn):
+                return None
+
+            sr = getattr(source_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                next_trigger_id = int(sr.get("parasitic_infection_next_trigger_id", 1) or 1)
+            except Exception:
+                next_trigger_id = 1
+            next_trigger_id = max(1, int(next_trigger_id))
+
+            try:
+                setup_range = int(spec.get("setup_range", 6) or 6)
+            except Exception:
+                setup_range = 6
+            try:
+                exclusion = int(spec.get("enemy_exclusion_range_horizontal", 9) or 9)
+            except Exception:
+                exclusion = 9
+            spawn_unit_name = str(spec.get("spawn_unit_name", "") or "Spore Mines").strip() or "Spore Mines"
+
+            pending = list(get_pending(source_root) or [])
+            pending.append(
+                {
+                    "trigger_id": int(next_trigger_id),
+                    "turn": int(turn or 0),
+                    "turn_owner_id": str(owner_id or ""),
+                    "owner_id": str(owner_id or ""),
+                    "source_unit_id": str(get_entity_id(source_root) or ""),
+                    "source_model_id": str(get_entity_id(source_model) or ""),
+                    "source_model_name": str(getattr(source_model, "name", "") or getattr(source_root, "name", "") or "Model"),
+                    "target_unit_id": "",
+                    "target_unit_name": "",
+                    "ability_name": ability_name,
+                    "spawn_unit_name": spawn_unit_name,
+                    "spawn_model_count_roll": spawn_roll,
+                    "spawn_model_count": int(spawn_count),
+                    "setup_range": int(max(1, setup_range)),
+                    "allow_target_engagement": False,
+                    "disallow_other_enemy_engagement": True,
+                    "enemy_exclusion_range_horizontal": int(max(0, exclusion)),
+                }
+            )
+            set_pending(source_root, pending)
+
+            sr = getattr(source_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["parasitic_infection_next_trigger_id"] = int(next_trigger_id + 1)
+            sr["spore_mine_cysts_spawn_used_this_turn"] = True
+            sr["spore_mine_cysts_spawn_turn_owner"] = str(owner_id or "")
+            sr["spore_mine_cysts_spawn_turn"] = int(turn or 0)
+            sr["spore_mine_cysts_spawn_source"] = ability_name
+            source_root.special_rules = sr
+
+            queue_spawn(source_root, phase_name="Movement phase")
+            try:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: selected to spawn {spawn_unit_name} ({int(spawn_count)} model(s)).",
+                )
+            except Exception:
+                pass
+            return {"action": "spawn_spore_mines", "spawn_model_count": int(spawn_count)}
+
+        target_val = payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id")
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        source_model = resolve_model(game, ctx.get("source_model_id"))
+        if source_model is None:
+            try:
+                source_model = next(
+                    (
+                        model
+                        for model in list(source_root.get_attached_unit_models() or [])
+                        if bool(getattr(model, "is_alive", False))
+                    ),
+                    None,
+                )
+            except Exception:
+                source_model = None
+        try:
+            dice_count = int(spec.get("dice", 6) or 6)
+        except Exception:
+            dice_count = 6
+        try:
+            threshold = int(spec.get("threshold", 3) or 3)
+        except Exception:
+            threshold = 3
+        try:
+            mortal_per_success = int(spec.get("mortal_per_success", 1) or 1)
+        except Exception:
+            mortal_per_success = 1
+        resolve_fn = getattr(game, "resolve_move_over_mortal_wounds", None)
+        if callable(resolve_fn):
+            resolve_fn(
+                source_root,
+                source_model,
+                target_unit,
+                {
+                    "source": ability_name,
+                    "dice": int(max(1, dice_count)),
+                    "threshold": int(max(2, threshold)),
+                    "mortal_per_success": int(max(1, mortal_per_success)),
+                    "move_types": ["move"],
+                    "dice_per_model": False,
+                },
+            )
+        try:
+            sname = str(getattr(source_root, "name", "Model") or "Model")
+            tname = str(getattr(target_unit, "name", "Unit") or "Unit")
+            _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname} for bombing run.")
+        except Exception:
+            pass
+        return target_unit
     if str(ctx.get("ability", "") or "") == "master_of_mechanisms":
         if is_skip_choice(request, result):
             return None
