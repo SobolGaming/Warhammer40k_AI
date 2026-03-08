@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+
 
 class _MockDatasheet:
     def __init__(self, name: str, datasheet_id: str, *, model_count: int = 1, abilities=None):
@@ -52,6 +54,20 @@ def _build_game_with_player(unit):
     army = Army("Test Faction", "Other")
     army.faction_id = "TF"
     army.add_unit(unit)
+    player = Player("P1", control=PlayerControl.REMOTE, army=army)
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
+    return game, player
+
+
+def _build_game_with_units(units):
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.roster.army import Army
+    from warhammer40k_ai.roster.player import Player, PlayerControl
+
+    army = Army("Test Faction", "Other")
+    army.faction_id = "TF"
+    for unit in list(units or []):
+        army.add_unit(unit)
     player = Player("P1", control=PlayerControl.REMOTE, army=army)
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
     return game, player
@@ -158,6 +174,95 @@ def test_command_phase_unit_return_with_live_bearer_queues_d3_return_decision():
         if (opt.payload or {}).get("model_id") not in (None, "")
     ]
     assert option_model_ids == [returned_model_id]
+
+
+def test_command_phase_bodyguard_return_parses_once_per_battle_and_key():
+    ability = {
+        "name": "Grot Orderly",
+        "description": (
+            "Once per battle, in your Command phase, if the bearer is leading a unit that is below its Starting "
+            "Strength, you can return up to D3 destroyed Bodyguard models to that unit."
+        ),
+        "type": "Wargear",
+        "parameter": "",
+    }
+    leader = _make_unit(name="Painboy", datasheet_id="ork_painboy", model_count=1, abilities=[ability])
+    bodyguard = _make_unit(name="Boyz", datasheet_id="ork_boyz", model_count=3, abilities=[])
+    leader.can_be_attached_to = [bodyguard.get_datasheet_id()]
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
+
+    parsed = leader.get_command_phase_bodyguard_return_ability()
+    assert parsed is not None
+    assert bool(parsed.get("once_per_battle", False))
+    assert str(parsed.get("ability_key", "") or "").startswith("command_phase_bodyguard_return:")
+
+
+def test_command_phase_bodyguard_return_once_per_battle_consumes_after_use():
+    from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+    from warhammer40k_ai.engine.game import BattleRoundPhases
+
+    ability = {
+        "name": "Grot Orderly",
+        "description": (
+            "Once per battle, in your Command phase, if the bearer is leading a unit that is below its Starting "
+            "Strength, you can return up to D3 destroyed Bodyguard models to that unit."
+        ),
+        "type": "Wargear",
+        "parameter": "",
+    }
+    leader = _make_unit(name="Painboy", datasheet_id="ork_painboy", model_count=1, abilities=[ability])
+    bodyguard = _make_unit(name="Boyz", datasheet_id="ork_boyz", model_count=4, abilities=[])
+    leader.can_be_attached_to = [bodyguard.get_datasheet_id()]
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
+
+    removed_a = bodyguard.models[0]
+    removed_b = bodyguard.models[1]
+    bodyguard.remove_model(removed_a)
+    bodyguard.remove_model(removed_b)
+
+    spec = leader.get_command_phase_bodyguard_return_ability()
+    assert spec is not None
+
+    game, player = _build_game_with_units([bodyguard, leader])
+    game.map.units = [bodyguard, leader]
+
+    with patch("warhammer40k_ai.utility.dice.get_roll", return_value=1):
+        game.event_system.publish("phase_start", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    pending = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_ALLOCATE_DAMAGE
+        and str((req.context or {}).get("selection_kind", "") or "") == "bodyguard_return"
+    ]
+    assert len(pending) == 1
+    req = pending[0]
+    model_option = next(
+        (
+            option
+            for option in list(req.options or [])
+            if (option.payload or {}).get("model_id") not in (None, "")
+        ),
+        None,
+    )
+    assert model_option is not None
+    result = resolve_decision_command(game, req, model_option.option_id, player_id=player.id)
+    assert result.ok is True
+    assert bool(bodyguard.has_used_unit_once_per_battle(str(spec.get("ability_key", "") or "")))
+    assert len(list(bodyguard.models_lost or [])) == 1
+
+    with patch("warhammer40k_ai.utility.dice.get_roll", return_value=1):
+        game.event_system.publish("phase_start", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    pending_after = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_ALLOCATE_DAMAGE
+        and str((req.context or {}).get("selection_kind", "") or "") == "bodyguard_return"
+    ]
+    assert pending_after == []
 
 
 def test_command_phase_unit_return_parses_below_starting_strength_and_named_model_filter():

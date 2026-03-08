@@ -29,3 +29,21 @@ def test_support_matrix_classifies_healing_serum_style_below_starting_strength_r
     note_l = str(notes or "").lower()
     assert "return up to d3 destroyed model(s)" in note_l
     assert "below starting strength" in note_l
+
+
+def test_support_matrix_classifies_grot_orderly_bodyguard_return_as_supported():
+    import scripts.generate_ability_support_matrix as support_matrix
+
+    status, notes = support_matrix._classify_ability(
+        "Grot Orderly",
+        (
+            "Once per battle, in your Command phase, if the bearer is leading a unit that is below its Starting "
+            "Strength, you can return up to D3 destroyed Bodyguard models to that unit."
+        ),
+        faction_id="ORK",
+    )
+    assert status == "Supported"
+    note_l = str(notes or "").lower()
+    assert "return up to d3 destroyed bodyguard model(s)" in note_l
+    assert "below starting strength" in note_l
+    assert "once per battle" in note_l

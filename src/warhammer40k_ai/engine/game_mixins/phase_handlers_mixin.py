@@ -2182,6 +2182,11 @@ class GamePhaseHandlersMixin:
                 continue
             if len(bodyguard.models or []) <= 0:
                 continue
+            ability_key = str(ability.get("ability_key", "") or "").strip().lower()
+            if bool(ability.get("once_per_battle", False)) and ability_key:
+                has_used_once = getattr(bodyguard, "has_used_unit_once_per_battle", None)
+                if callable(has_used_once) and bool(has_used_once(ability_key)):
+                    continue
 
             table_roll = str(ability.get("table_roll", "") or "").strip().upper()
             if table_roll == "D6":

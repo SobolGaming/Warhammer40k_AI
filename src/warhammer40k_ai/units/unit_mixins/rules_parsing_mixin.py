@@ -471,6 +471,15 @@ class RulesParsingMixin:
                 and "bearer is leading a unit" not in low
             ):
                 continue
+            once_per_battle = bool(re.search(r"\bonce per battle\b", low)) and "once per battle round" not in low
+            source_name = str(name or "Bodyguard Return").strip() or "Bodyguard Return"
+            normalize = getattr(self, "_normalize_keyword_phrase", None)
+            source_key = ""
+            if callable(normalize):
+                source_key = str(normalize(source_name) or "").strip().lower()
+            if not source_key:
+                source_key = re.sub(r"[^a-z0-9]+", "_", source_name.lower()).strip("_")
+            ability_key = f"command_phase_bodyguard_return:{source_key}" if source_key else "command_phase_bodyguard_return"
             # Rebind Rubricae-style D6 table:
             # 1 = D3 mortals, 2-5 = return 1, 6 = return up to 2.
             if (
@@ -490,6 +499,8 @@ class RulesParsingMixin:
                     "amount_on_2_5": 1,
                     "amount_on_6": 2,
                     "allow_skip": True,
+                    "once_per_battle": bool(once_per_battle),
+                    "ability_key": ability_key,
                 }
             if "can return" not in low:
                 continue
@@ -508,6 +519,8 @@ class RulesParsingMixin:
                 "amount_roll": amount_roll,
                 "name": name or "Bodyguard Return",
                 "description": desc or "",
+                "once_per_battle": bool(once_per_battle),
+                "ability_key": ability_key,
             }
         return None
 

@@ -257,6 +257,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ORKS IS NEVER BEATEN",
     "ERE WE GO",
     "MOB RULE",
+    "COME ON LADZ!",
     "RUN THEM THROUGH!",
     "CAREEN!",
     "'ARD AS NAILS",
@@ -4230,6 +4231,16 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires one ENDLESS MULTITUDE unit with destroyed models, or up to two such units if both are within Synapse Range"
             return result
+        if name_u == "COME ON LADZ!":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_green_tide_come_on_ladz_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase and a friendly BOYZ unit with destroyed non-CHARACTER models"
+            return result
         if name_u == "RAPID REGENERATION":
             attacking_unit = (
                 context.get("attacking_unit")
@@ -4846,6 +4857,7 @@ class StratagemManager(
             "ORKS IS NEVER BEATEN": "Target: ORKS unit (fight on death)",
             "ERE WE GO": "Target: ORKS INFANTRY unit",
             "MOB RULE": "Target: ORKS MOB unit (10+ models) at end of your Command phase",
+            "COME ON LADZ!": "Target: BOYZ unit with destroyed non-CHARACTER models; return up to D3+2",
             "CAREEN!": "Target: destroyed ORKS VEHICLE (Deadly Demise 6)",
             "'ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
             "\u2019ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
@@ -15590,6 +15602,9 @@ class StratagemManager(
         tyranids_result = self._use_tyranids_invasion_fleet_stratagem(s, **kwargs)
         if tyranids_result is not None:
             return tyranids_result
+        orks_result = self._use_orks_stratagem(s, **kwargs)
+        if orks_result is not None:
+            return orks_result
         genestealer_cults_result = self._use_genestealer_cults_stratagem(s, **kwargs)
         if genestealer_cults_result is not None:
             return genestealer_cults_result

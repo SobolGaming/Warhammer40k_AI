@@ -620,6 +620,27 @@ _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_GREEN_TIDE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008882005": StratagemToolDescriptor(
+        stratagem_id="000008882005",
+        name="COME ON LADZ!",
+        timing="command_phase",
+        target="orks_boyz_unit",
+        duration="immediate",
+        effect="return_destroyed_models",
+        cp_cost=1,
+        effect_params={
+            "return_roll": "D3+2",
+            "required_keyword": "BOYZ",
+            "exclude_character": True,
+        },
+    ),
+}
+
+_GREEN_TIDE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GREEN_TIDE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _POSSESSED_SLAUGHTERBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010083002": StratagemToolDescriptor(
         stratagem_id="000010083002",
@@ -3607,6 +3628,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _GREEN_TIDE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _POSSESSED_SLAUGHTERBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3766,6 +3790,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SHADOW_LEGION_STRATAGEM_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
+        or _GREEN_TIDE_STRATAGEM_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME.get(key)
         or _HOST_OF_ASCENSION_STRATAGEM_BY_NAME.get(key)
         or _BROOD_BROTHER_AUXILIA_STRATAGEM_BY_NAME.get(key)

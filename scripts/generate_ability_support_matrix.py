@@ -10548,22 +10548,64 @@ def _command_phase_bodyguard_return_support(description: str) -> Optional[Tuple[
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    pattern = (
-        r"while this model is leading (?:a|this) unit in your command phase you can return (?:up to )?(one|a|\d+) destroyed bodyguard models? to that unit"
+    if "command phase" not in norm:
+        return None
+    if "bodyguard model" not in norm and "bodyguard models" not in norm:
+        return None
+    if "return" not in norm or "destroyed" not in norm:
+        return None
+    if "not leading a unit" in norm:
+        return None
+    if (
+        "leading a unit" not in norm
+        and "leading this unit" not in norm
+        and "bearer is leading a unit" not in norm
+    ):
+        return None
+    if "can return" not in norm:
+        return None
+
+    amount_match = re.search(
+        r"return(?: up to)? (?P<amt>one|a|\d+|(?:\d+)?d\d+(?: \d+)?) destroyed bodyguard models?",
+        norm,
     )
-    m = re.fullmatch(pattern, norm)
-    if not m:
+    if amount_match is None:
         return None
-    token = m.group(1)
-    try:
-        amount = int(token)
-    except Exception:
-        amount = 1 if token in ("one", "a") else 0
-    if amount <= 0:
+    token = str(amount_match.group("amt") or "").strip().lower()
+    up_to = "up to " if "up to" in str(amount_match.group(0) or "").lower() else ""
+
+    amount_label = ""
+    if token in {"one", "a"}:
+        amount_label = "1"
+    elif token.isdigit():
+        amount_label = str(int(token))
+    else:
+        dice_match = re.fullmatch(r"(?:(?P<count>\d+))?d(?P<faces>\d+)(?: (?P<modifier>\d+))?", token)
+        if dice_match is None:
+            amount_label = token.upper()
+        else:
+            count = int(dice_match.group("count") or 1)
+            faces = int(dice_match.group("faces") or 0)
+            modifier = int(dice_match.group("modifier") or 0)
+            if faces <= 0:
+                return None
+            amount_label = f"{count}D{faces}" if count != 1 else f"D{faces}"
+            if modifier > 0:
+                amount_label = f"{amount_label}+{modifier}"
+    if not amount_label:
         return None
+
+    note = (
+        f"Command phase while leading: return {up_to}{amount_label} destroyed Bodyguard model(s) "
+        f"(capped at starting strength)."
+    )
+    if "below starting strength" in norm or "below its starting strength" in norm:
+        note = f"{note} Requires bearer/unit below Starting Strength."
+    if bool(re.search(r"\bonce per battle\b", norm)) and "once per battle round" not in norm:
+        note = f"{note} Once per battle."
     return (
         "Supported",
-        f"Command phase: return {amount} destroyed Bodyguard model(s) while leading (capped at starting strength).",
+        note,
     )
 
 

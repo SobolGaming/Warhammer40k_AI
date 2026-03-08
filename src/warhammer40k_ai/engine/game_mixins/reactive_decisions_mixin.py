@@ -3748,6 +3748,8 @@ class GameReactiveDecisionsMixin:
         except Exception:
             destroyed_sorted = list(destroyed)
         ability_name = str(ability.get("name", "") or "Bodyguard Return")
+        ability_key = str(ability.get("ability_key", "") or "").strip().lower()
+        once_per_battle = bool(ability.get("once_per_battle", False))
         options = []
         if allow_skip:
             options.append(DecisionOption.create("None", payload={"model_id": None, "action": "skip"}))
@@ -3774,6 +3776,8 @@ class GameReactiveDecisionsMixin:
             "reason": f"{ability_name}: Return bodyguard model",
             "allowed_model_ids": allowed_ids,
             "allow_skip": bool(allow_skip),
+            "ability_key": ability_key,
+            "once_per_battle": bool(once_per_battle),
         }
         request = DecisionRequest.create(
             DECISION_ALLOCATE_DAMAGE,
@@ -8441,6 +8445,8 @@ class GameReactiveDecisionsMixin:
             chosen_models=[model],
         )
         ability_name = str(ctx.get("ability_name", "") or "Bodyguard Return")
+        ability_key = str(ctx.get("ability_key", "") or "").strip().lower()
+        once_per_battle = bool(ctx.get("once_per_battle", False))
         if returned > 0:
             try:
                 from ...utility.event_bus import append_action
@@ -8452,6 +8458,14 @@ class GameReactiveDecisionsMixin:
                     )
             except Exception:
                 pass
+            if once_per_battle and ability_key:
+                root = bodyguard
+                if root is None:
+                    get_root = getattr(caller, "get_attached_unit_root", None)
+                    root = get_root() if callable(get_root) else caller
+                mark_once = getattr(root, "mark_unit_once_per_battle_used", None) if root is not None else None
+                if callable(mark_once):
+                    mark_once(ability_key, ability_name=ability_name)
         if returned <= 0:
             return
 
@@ -8467,7 +8481,11 @@ class GameReactiveDecisionsMixin:
             player=self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None)),
             leader_unit=leader if leader is not None else caller,
             bodyguard_unit=bodyguard,
-            ability={"name": ability_name},
+            ability={
+                "name": ability_name,
+                "ability_key": ability_key,
+                "once_per_battle": bool(once_per_battle),
+            },
             remaining=remaining,
             allowed_model_ids=list(ctx.get("allowed_model_ids") or []),
             allow_skip=bool(ctx.get("allow_skip", True)),
