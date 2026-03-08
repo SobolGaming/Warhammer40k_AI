@@ -7477,7 +7477,7 @@ def _attached_character_fnp_support(description: str) -> Optional[Tuple[str, str
     m = re.fullmatch(other_character_pattern, norm)
     if not m:
         specific_model_pattern = (
-            r"while a (?P<model>.+?) model is leading this unit that(?: [a-z0-9][a-z0-9 '\-]*)? model has "
+            r"while a (?P<model>.+?) model is leading this unit that(?: [a-z0-9][a-z0-9 '\-]*)?(?: model)? has "
             r"(?:the )?feel no pain (?P<val>[1-6])(?: ability)?"
         )
         m_specific = re.fullmatch(specific_model_pattern, norm)

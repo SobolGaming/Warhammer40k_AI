@@ -458,6 +458,30 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         self.assertIn((4, None), datasmith.has_feel_no_pain(target_model=datasmith.models[0]))
         self.assertNotIn((4, None), other_leader.has_feel_no_pain(target_model=other_leader.models[0]))
 
+    def test_character_leading_fnp_variant_without_model_token_applies(self):
+        ability = {
+            "name": "Guardian Organism",
+            "description": (
+                "While a Character model is leading this unit, that CHARACTER has the Feel No Pain 5+ ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        bodyguard = _make_unit("Tyrant Guard", abilities=[ability])
+
+        leader = _make_unit("Hive Tyrant")
+        leader.models[0].name = "Hive Tyrant"
+        leader.keywords = ["CHARACTER"]
+
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = [bodyguard.name]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertIn((5, None), leader.has_feel_no_pain(target_model=leader.models[0]))
+        self.assertNotIn((5, None), bodyguard.has_feel_no_pain(target_model=bodyguard.models[0]))
+
     def test_same_unit_keyword_fnp_applies_to_officer_only(self):
         ability = {
             "name": "Ogryn Bodyguard",
