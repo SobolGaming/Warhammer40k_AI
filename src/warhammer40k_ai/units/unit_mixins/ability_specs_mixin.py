@@ -1544,11 +1544,25 @@ class AbilitySpecsMixin:
             normalized = re.sub(r"\s+", " ", normalized).strip()
             m = self._OPPONENT_COMMAND_PHASE_BELOW_STARTING_BATTLESHOCK_RE.fullmatch(normalized)
             if not m:
+                m = self._OPPONENT_COMMAND_PHASE_BELOW_STARTING_BATTLESHOCK_RE.search(normalized)
+            if not m:
                 continue
+            aura_range = 0
+            aura_range_match = re.search(
+                r"while an enemy unit(?: excluding [a-z0-9 ]+)? is within (?P<range>\d+) of this model",
+                normalized,
+            )
+            if aura_range_match:
+                try:
+                    aura_range = int(aura_range_match.group("range") or 0)
+                except (TypeError, ValueError):
+                    aura_range = 0
             try:
                 range_value = int(m.group("range") or m.group("range_alt") or 0)
             except (TypeError, ValueError):
                 range_value = 0
+            if range_value <= 0:
+                range_value = int(max(0, aura_range))
             try:
                 psyker_penalty = int(m.group("pen") or 0)
             except (TypeError, ValueError):

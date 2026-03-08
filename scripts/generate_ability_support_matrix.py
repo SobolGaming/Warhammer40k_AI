@@ -10688,21 +10688,42 @@ def _opponent_command_phase_below_starting_battleshock_support(description: str)
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    aura_range = 0
+    aura_range_match = re.search(
+        r"while an enemy unit(?: excluding [a-z0-9 ]+)? is within (?P<range>\d+) of this model",
+        norm,
+    )
+    if aura_range_match:
+        try:
+            aura_range = int(aura_range_match.group("range") or 0)
+        except (TypeError, ValueError):
+            aura_range = 0
+    leadership_worsen = 0
+    leadership_match = re.search(
+        r"worsen the leadership characteristic of models in that unit by (?P<val>\d+)",
+        norm,
+    )
+    if leadership_match:
+        try:
+            leadership_worsen = int(leadership_match.group("val") or 0)
+        except (TypeError, ValueError):
+            leadership_worsen = 0
     pattern = (
-        r"(?:while an enemy unit is within (?P<range_alt>\d+) of this model )?"
         r"in the battle shock step of your opponent(?:s| s) command phase if "
         r"(?:an enemy unit that is below its starting strength is within (?P<range>\d+) of this model|"
         r"such an enemy unit is below its starting strength) "
         r"(?:that enemy unit|it) must take a battle shock test"
         r"(?P<suffix>(?: .+)?)"
     )
-    m = re.fullmatch(pattern, norm)
+    m = re.search(pattern, norm)
     if not m:
         return None
     try:
-        rng = int(m.group("range") or m.group("range_alt") or 0)
+        rng = int(m.group("range") or 0)
     except (TypeError, ValueError):
         rng = 0
+    if rng <= 0:
+        rng = int(max(0, aura_range))
     if rng <= 0:
         return None
 
@@ -10737,19 +10758,23 @@ def _opponent_command_phase_below_starting_battleshock_support(description: str)
         else:
             return None
 
+    prefix = ""
+    if leadership_worsen > 0:
+        prefix = f"Enemy units within {rng}\" worsen Leadership by {leadership_worsen}. "
+
     if flat_penalty > 0:
         return (
             "Supported",
-            f"Opponent Command phase Battle-shock step: enemy units below Starting Strength within {rng}\" take Battle-shock tests at -{flat_penalty}.",
+            f"{prefix}Opponent Command phase Battle-shock step: enemy units below Starting Strength within {rng}\" take Battle-shock tests at -{flat_penalty}.",
         )
     if psyker_penalty > 0:
         return (
             "Supported",
-            f"Opponent Command phase Battle-shock step: enemy units below Starting Strength within {rng}\" take Battle-shock tests; PSYKER units take the test at -{psyker_penalty}.",
+            f"{prefix}Opponent Command phase Battle-shock step: enemy units below Starting Strength within {rng}\" take Battle-shock tests; PSYKER units take the test at -{psyker_penalty}.",
         )
     return (
         "Supported",
-        f"Opponent Command phase Battle-shock step: enemy units below Starting Strength within {rng}\" take Battle-shock tests.",
+        f"{prefix}Opponent Command phase Battle-shock step: enemy units below Starting Strength within {rng}\" take Battle-shock tests.",
     )
 
 
