@@ -3479,8 +3479,9 @@ class Unit(
         re.IGNORECASE,
     )
     _SNARLING_PROTECTOR_HEROIC_RE = re.compile(
-        r"you can target this model with the heroic intervention stratagem for 0cp and can do so even if you have already targeted "
-        r"a different unit with that stratagem this phase",
+        r"you can target this (?:model|unit) with the heroic intervention stratagem for 0cp and can do so even if you have already "
+        r"(?:targeted (?:a )?(?:different|another) unit with that stratagem|used that stratagem on (?:a )?(?:different|another) unit) "
+        r"this (?:phase|turn)",
         re.IGNORECASE,
     )
     _SNARLING_PROTECTOR_CHARGE_REROLL_RE = re.compile(

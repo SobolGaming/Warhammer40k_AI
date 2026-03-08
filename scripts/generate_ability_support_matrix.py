@@ -5847,6 +5847,7 @@ def _classify_ability_base(
     rapid_ingress_heroic_intervention_zero_cp_repeat_support = (
         _rapid_ingress_heroic_intervention_zero_cp_repeat_support(description)
     )
+    heroic_intervention_zero_cp_repeat_support = _heroic_intervention_zero_cp_repeat_support(description)
     targeted_stratagem_increase_support = _targeted_stratagem_cp_increase_support(description)
     datasheet_overwatch_discount_support = _datasheet_overwatch_discount_support(description)
     overwatch_hit_threshold_support = _overwatch_hit_threshold_support(description)
@@ -6340,6 +6341,8 @@ def _classify_ability_base(
         return targeted_stratagem_discount_support
     if rapid_ingress_heroic_intervention_zero_cp_repeat_support:
         return rapid_ingress_heroic_intervention_zero_cp_repeat_support
+    if heroic_intervention_zero_cp_repeat_support:
+        return heroic_intervention_zero_cp_repeat_support
     if targeted_stratagem_increase_support:
         return targeted_stratagem_increase_support
     if datasheet_overwatch_discount_support:
@@ -9175,6 +9178,41 @@ def _rapid_ingress_heroic_intervention_zero_cp_repeat_support(description: str) 
     return (
         "Supported",
         "Once per battle round, this unit can be targeted with Rapid Ingress or Heroic Intervention for 0CP, including repeat-use bypass when that Stratagem already targeted a different unit.",
+    )
+
+
+def _heroic_intervention_zero_cp_repeat_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "rapid ingress" in norm:
+        return None
+    if "heroic intervention" not in norm or "stratagem" not in norm or "0cp" not in norm:
+        return None
+    if (
+        "target this unit with the heroic intervention stratagem for 0cp" not in norm
+        and "target this model with the heroic intervention stratagem for 0cp" not in norm
+        and "targeted with the heroic intervention stratagem for 0cp" not in norm
+    ):
+        return None
+    repeat_clause = (
+        "already targeted a different unit with that stratagem this phase" in norm
+        or "already targeted another unit with that stratagem this phase" in norm
+        or "already targeted a different unit with that stratagem this turn" in norm
+        or "already targeted another unit with that stratagem this turn" in norm
+        or "already used that stratagem on a different unit this phase" in norm
+        or "already used that stratagem on another unit this phase" in norm
+        or "already used that stratagem on a different unit this turn" in norm
+        or "already used that stratagem on another unit this turn" in norm
+    )
+    if not repeat_clause:
+        return None
+    subject = "this model" if "target this model with the heroic intervention stratagem for 0cp" in norm else "this unit"
+    return (
+        "Supported",
+        f"Heroic Intervention can target {subject} for 0CP even if that Stratagem already targeted a different unit this phase/turn.",
     )
 
 
