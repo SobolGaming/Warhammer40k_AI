@@ -10533,6 +10533,898 @@ class GameShootingFightHandlersMixin:
                 )
                 self.request_decision(request)
 
+    @staticmethod
+    def _normalize_parasitic_infection_token(value: object) -> str:
+        text = str(value or "").replace("\u2019", "'").lower()
+        text = re.sub(r"[^a-z0-9]+", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _weapon_profile_matches_parasitic_infection(
+        self,
+        weapon_profile: object,
+        expected_weapon_name: str,
+    ) -> bool:
+        expected = self._normalize_parasitic_infection_token(expected_weapon_name)
+        if not expected:
+            return False
+        candidates = [
+            getattr(weapon_profile, "name", ""),
+            getattr(getattr(weapon_profile, "parent_wargear", None), "name", ""),
+        ]
+        for raw_name in candidates:
+            norm_name = self._normalize_parasitic_infection_token(raw_name)
+            if not norm_name:
+                continue
+            if expected in norm_name or norm_name in expected:
+                return True
+        return False
+
+    def _get_parasitic_infection_pending_triggers(self, unit) -> list[dict]:
+        if unit is None:
+            return []
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return []
+        raw = sr.get("parasitic_infection_pending_triggers")
+        if not isinstance(raw, list):
+            return []
+        triggers: list[dict] = []
+        for entry in raw:
+            if isinstance(entry, dict):
+                triggers.append(dict(entry))
+        return triggers
+
+    def _set_parasitic_infection_pending_triggers(self, unit, triggers: list[dict]) -> None:
+        if unit is None:
+            return
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        normalized = [dict(entry) for entry in list(triggers or []) if isinstance(entry, dict)]
+        if normalized:
+            sr["parasitic_infection_pending_triggers"] = normalized
+        else:
+            sr.pop("parasitic_infection_pending_triggers", None)
+        unit.special_rules = sr
+
+    def _consume_parasitic_infection_trigger(self, unit, *, trigger_id: int) -> None:
+        if unit is None:
+            return
+        pending = self._get_parasitic_infection_pending_triggers(unit)
+        kept: list[dict] = []
+        consumed = False
+        for entry in pending:
+            try:
+                entry_trigger_id = int(entry.get("trigger_id", 0) or 0)
+            except (TypeError, ValueError):
+                entry_trigger_id = 0
+            if not consumed and entry_trigger_id == int(trigger_id or 0):
+                consumed = True
+                continue
+            kept.append(entry)
+        if not consumed and pending:
+            kept = list(pending[1:])
+        self._set_parasitic_infection_pending_triggers(unit, kept)
+
+    def _find_parasitic_infection_trigger(self, unit, *, trigger_id: int) -> dict | None:
+        for entry in self._get_parasitic_infection_pending_triggers(unit):
+            try:
+                if int(entry.get("trigger_id", 0) or 0) == int(trigger_id or 0):
+                    return dict(entry)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _parasitic_infection_pending_pick_point_request_exists(
+        self,
+        *,
+        source_unit_id: str,
+        trigger_id: int,
+    ) -> bool:
+        from ..decision_kinds import DECISION_PICK_POINT
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_PICK_POINT:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "parasitic_infection_spawn":
+                continue
+            if str(ctx.get("source_unit_id", "") or "") != str(source_unit_id or ""):
+                continue
+            try:
+                req_trigger_id = int(ctx.get("trigger_id", 0) or 0)
+            except (TypeError, ValueError):
+                req_trigger_id = 0
+            if req_trigger_id != int(trigger_id or 0):
+                continue
+            return True
+        return False
+
+    def _queue_next_parasitic_infection_spawn_decision(
+        self,
+        source_unit,
+        *,
+        phase_name: str = "Shooting phase",
+    ) -> None:
+        if source_unit is None:
+            return
+        try:
+            root = source_unit.get_attached_unit_root()
+        except Exception:
+            root = source_unit
+        if root is None:
+            return
+        pending = self._get_parasitic_infection_pending_triggers(root)
+        if not pending:
+            return
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if current_turn > 0:
+            filtered = []
+            for entry in pending:
+                try:
+                    entry_turn = int(entry.get("turn", 0) or 0)
+                except (TypeError, ValueError):
+                    entry_turn = 0
+                if entry_turn and entry_turn != current_turn:
+                    continue
+                filtered.append(entry)
+            if len(filtered) != len(pending):
+                self._set_parasitic_infection_pending_triggers(root, filtered)
+            pending = filtered
+        if not pending:
+            return
+
+        first = dict(pending[0])
+        source_unit_id = str(get_entity_id(root) or "")
+        if not source_unit_id:
+            return
+        try:
+            trigger_id = int(first.get("trigger_id", 0) or 0)
+        except (TypeError, ValueError):
+            trigger_id = 0
+        if trigger_id <= 0:
+            self._consume_parasitic_infection_trigger(root, trigger_id=0)
+            self._queue_next_parasitic_infection_spawn_decision(root, phase_name=phase_name)
+            return
+        if self._parasitic_infection_pending_pick_point_request_exists(
+            source_unit_id=source_unit_id,
+            trigger_id=int(trigger_id),
+        ):
+            return
+
+        spawn_roll = str(first.get("spawn_model_count_roll", "") or "D3").strip().upper() or "D3"
+        try:
+            spawn_count = int(first.get("spawn_model_count", 0) or 0)
+        except (TypeError, ValueError):
+            spawn_count = 0
+        if spawn_count <= 0:
+            try:
+                spawn_count = int(get_roll(spawn_roll) or 0)
+            except Exception:
+                spawn_count = 0
+            spawn_count = max(1, min(3, int(spawn_count or 0)))
+            pending[0]["spawn_model_count"] = int(spawn_count)
+            self._set_parasitic_infection_pending_triggers(root, pending)
+            first = dict(pending[0])
+
+        player = getattr(root.get_parent_army(), "player", None)
+        if player is None:
+            return
+        source_model_name = str(first.get("source_model_name", "") or "model").strip() or "model"
+        ability_name = str(first.get("ability_name", "") or "Parasitic Infection").strip() or "Parasitic Infection"
+        spawn_unit_name = str(first.get("spawn_unit_name", "") or "Ripper Swarms").strip() or "Ripper Swarms"
+        try:
+            setup_range = int(first.get("setup_range", 3) or 3)
+        except (TypeError, ValueError):
+            setup_range = 3
+
+        from ..decision_kinds import DECISION_PICK_POINT
+
+        request = DecisionRequest.create(
+            DECISION_PICK_POINT,
+            f"{ability_name}: place {spawn_unit_name} ({int(spawn_count)} models) within {int(setup_range)}\" of {source_model_name} (or Skip).",
+            player_id=getattr(player, "id", None),
+            options=[
+                DecisionOption.create("Confirm", payload={"action": "confirm"}),
+                DecisionOption.create("Skip", payload={"action": "skip"}),
+            ],
+            context={
+                "ability": "parasitic_infection_spawn",
+                "ability_name": ability_name,
+                "phase": str(phase_name or "Shooting phase"),
+                "unit_id": source_unit_id,
+                "source_unit_id": source_unit_id,
+                "source_model_id": str(first.get("source_model_id", "") or ""),
+                "source_model_name": source_model_name,
+                "target_unit_id": str(first.get("target_unit_id", "") or ""),
+                "target_unit_name": str(first.get("target_unit_name", "") or ""),
+                "spawn_unit_name": spawn_unit_name,
+                "spawn_model_count_roll": spawn_roll,
+                "spawn_model_count": int(spawn_count),
+                "setup_range": int(setup_range),
+                "allow_target_engagement": bool(first.get("allow_target_engagement", True)),
+                "disallow_other_enemy_engagement": bool(first.get("disallow_other_enemy_engagement", True)),
+                "trigger_id": int(trigger_id),
+                "optional": True,
+                "instruction": (
+                    f"Select a setup point for {spawn_unit_name} within {int(setup_range)}\" of {source_model_name}, or Skip."
+                ),
+            },
+        )
+        self.request_decision(request)
+
+    def _parasitic_infection_datasheet_cache_key(self, *, faction_id: str, unit_name: str) -> tuple[str, str]:
+        return (str(faction_id or "").strip().upper(), self._normalize_parasitic_infection_token(unit_name))
+
+    def _get_parasitic_infection_spawn_datasheet(self, source_unit, *, spawn_unit_name: str):
+        if source_unit is None:
+            return None
+        try:
+            root = source_unit.get_attached_unit_root()
+        except Exception:
+            root = source_unit
+        if root is None:
+            return None
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        faction_id = str(getattr(army, "faction_id", "") or "").strip().upper()
+        cache = getattr(self, "_parasitic_infection_datasheet_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._parasitic_infection_datasheet_cache = cache
+        cache_key = self._parasitic_infection_datasheet_cache_key(
+            faction_id=faction_id,
+            unit_name=spawn_unit_name,
+        )
+        if cache_key in cache:
+            return cache.get(cache_key)
+
+        target_name_norm = self._normalize_parasitic_infection_token(spawn_unit_name)
+        datasheet = None
+        if army is not None:
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                if self._normalize_parasitic_infection_token(getattr(unit, "name", "")) != target_name_norm:
+                    continue
+                datasheet = getattr(unit, "_datasheet", None)
+                if datasheet is not None:
+                    break
+        if datasheet is None:
+            from ...waha_helper.waha_helper import WahaHelper
+
+            helper = WahaHelper()
+            candidate = helper.get_full_datasheet_info_by_name(
+                spawn_unit_name,
+                faction_id=faction_id or None,
+            )
+            if candidate is None and faction_id:
+                candidate = helper.get_full_datasheet_info_by_name(spawn_unit_name)
+            datasheet = candidate
+        cache[cache_key] = datasheet
+        self._parasitic_infection_datasheet_cache = cache
+        return datasheet
+
+    def _collect_parasitic_infection_disallowed_enemy_models(
+        self,
+        *,
+        source_unit,
+        allowed_engagement_unit_id: str,
+    ) -> list:
+        game_map = getattr(self, "map", None)
+        if game_map is None or source_unit is None:
+            return []
+        try:
+            enemy_units = list(game_map.get_enemy_units(source_unit) or [])
+        except Exception:
+            enemy_units = []
+        disallowed: list[Any] = []
+        allowed_id = str(allowed_engagement_unit_id or "")
+        for enemy in enemy_units:
+            if enemy is None:
+                continue
+            try:
+                enemy_root = enemy.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy
+            if enemy_root is None:
+                continue
+            if str(get_entity_id(enemy_root) or "") == allowed_id:
+                continue
+            get_models = getattr(enemy_root, "get_models_for_collision", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(enemy_root, "models", []) or [])
+            for model in models:
+                if bool(getattr(model, "is_alive", False)):
+                    disallowed.append(model)
+        return disallowed
+
+    def _parasitic_infection_candidate_in_disallowed_engagement(self, candidate_base, disallowed_enemy_models: list) -> bool:
+        if candidate_base is None:
+            return True
+        if not disallowed_enemy_models:
+            return False
+        from ...utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+
+        for enemy_model in list(disallowed_enemy_models or []):
+            enemy_base = getattr(enemy_model, "model_base", None)
+            if enemy_base is None:
+                continue
+            try:
+                horizontal = float(horizontal_distance_between_bases_2d(candidate_base, enemy_base))
+                vertical = float(vertical_distance_between_bases(candidate_base, enemy_base))
+            except Exception:
+                continue
+            if horizontal <= float(ENGAGEMENT_RANGE_HORIZONTAL) + 1e-6 and vertical <= float(ENGAGEMENT_RANGE_VERTICAL) + 1e-6:
+                return True
+        return False
+
+    def _parasitic_infection_candidate_valid(
+        self,
+        *,
+        spawn_unit,
+        model,
+        x: float,
+        y: float,
+        z: float,
+        facing: float,
+        placed: list[tuple[float, float, float, float]],
+        source_model,
+        setup_range: float,
+        disallowed_enemy_models: list,
+        disallow_other_enemy_engagement: bool,
+        game_map,
+    ) -> bool:
+        if spawn_unit is None or model is None or source_model is None or game_map is None:
+            return False
+        candidate_base = spawn_unit._create_potential_base(x, y, z, facing, model=model)
+        from ...utility.aura_utils import distance_between_bases_3d
+
+        try:
+            source_base = getattr(source_model, "model_base", None)
+            if source_base is None:
+                return False
+            if float(distance_between_bases_3d(candidate_base, source_base)) > float(setup_range) + 1e-6:
+                return False
+        except Exception:
+            return False
+
+        if not bool(game_map.is_within_boundary(model, destination=(x, y))):
+            return False
+        if bool(spawn_unit._check_collision_with_obstacles_or_terrain(game_map, model, (x, y))):
+            return False
+        if bool(game_map.check_collision_with_other_friendly_units(model, destination=(x, y))):
+            return False
+        if bool(game_map.check_collision_with_other_enemy_units(model, destination=(x, y))):
+            return False
+        if bool(spawn_unit._collides_with_unit_models(x, y, z, facing, placed, model=model)):
+            return False
+        if not bool(spawn_unit._is_coherent_within_unit(x, y, z, facing, placed, model=model)):
+            return False
+        if disallow_other_enemy_engagement and self._parasitic_infection_candidate_in_disallowed_engagement(
+            candidate_base,
+            disallowed_enemy_models,
+        ):
+            return False
+        return True
+
+    def _find_parasitic_infection_spawn_placements(
+        self,
+        *,
+        source_unit,
+        source_model,
+        trigger: dict,
+        point: Sequence[float],
+    ) -> tuple[bool, str, list[tuple[float, float, float, float]]]:
+        if source_unit is None or source_model is None:
+            return (False, "Parasitic Infection requires a valid source model.", [])
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return (False, "Parasitic Infection requires an active battlefield map.", [])
+
+        spawn_unit_name = str(trigger.get("spawn_unit_name", "") or "Ripper Swarms").strip() or "Ripper Swarms"
+        datasheet = self._get_parasitic_infection_spawn_datasheet(
+            source_unit,
+            spawn_unit_name=spawn_unit_name,
+        )
+        if datasheet is None:
+            return (False, f"Parasitic Infection could not find datasheet '{spawn_unit_name}'.", [])
+
+        try:
+            spawn_count = int(trigger.get("spawn_model_count", 0) or 0)
+        except (TypeError, ValueError):
+            spawn_count = 0
+        if spawn_count <= 0:
+            return (False, "Parasitic Infection spawn count is unavailable.", [])
+
+        from ...units.unit import Unit as UnitClass
+
+        try:
+            spawn_unit = UnitClass(datasheet, quantity=int(spawn_count))
+        except TypeError:
+            spawn_unit = UnitClass(datasheet)
+        spawn_unit.spawned_in_battle = True
+        source_army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+        set_parent = getattr(spawn_unit, "set_parent_army", None)
+        if callable(set_parent):
+            set_parent(source_army)
+        else:
+            spawn_unit.parent_army = source_army
+
+        models = [m for m in list(getattr(spawn_unit, "models", []) or []) if bool(getattr(m, "is_alive", False))]
+        if len(models) < int(spawn_count):
+            return (False, f"Parasitic Infection could not create {int(spawn_count)} {spawn_unit_name} models.", [])
+        models = list(models[: int(spawn_count)])
+
+        try:
+            setup_range = float(trigger.get("setup_range", 3) or 3)
+        except (TypeError, ValueError):
+            setup_range = 3.0
+        if setup_range <= 0:
+            setup_range = 3.0
+
+        allow_target_engagement = bool(trigger.get("allow_target_engagement", True))
+        disallow_other = bool(trigger.get("disallow_other_enemy_engagement", True))
+        allowed_target_unit_id = str(trigger.get("target_unit_id", "") or "") if allow_target_engagement else ""
+        disallowed_enemy_models = self._collect_parasitic_infection_disallowed_enemy_models(
+            source_unit=source_unit,
+            allowed_engagement_unit_id=allowed_target_unit_id,
+        )
+
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            return (False, "Parasitic Infection setup requires point coordinates.", [])
+        try:
+            anchor_x = float(point[0])
+            anchor_y = float(point[1])
+        except (TypeError, ValueError):
+            return (False, "Parasitic Infection setup point must be numeric.", [])
+        if len(point) > 2:
+            try:
+                anchor_z = float(point[2])
+            except (TypeError, ValueError):
+                anchor_z = float(getattr(source_model.model_base, "z", 0.0))
+        else:
+            try:
+                anchor_z = float(game_map.get_height_at_point(anchor_x, anchor_y))
+            except Exception:
+                anchor_z = float(getattr(source_model.model_base, "z", 0.0))
+
+        placed: list[tuple[float, float, float, float]] = []
+        first_model = models[0]
+        first_facing = 0.0
+        if not self._parasitic_infection_candidate_valid(
+            spawn_unit=spawn_unit,
+            model=first_model,
+            x=float(anchor_x),
+            y=float(anchor_y),
+            z=float(anchor_z),
+            facing=float(first_facing),
+            placed=placed,
+            source_model=source_model,
+            setup_range=float(setup_range),
+            disallowed_enemy_models=list(disallowed_enemy_models),
+            disallow_other_enemy_engagement=bool(disallow_other),
+            game_map=game_map,
+        ):
+            return (
+                False,
+                f"Parasitic Infection: selected point cannot place {spawn_unit_name} while respecting setup and engagement restrictions.",
+                [],
+            )
+        placed.append((float(anchor_x), float(anchor_y), float(anchor_z), float(first_facing)))
+
+        try:
+            sx = float(getattr(source_model.model_base, "x", 0.0))
+            sy = float(getattr(source_model.model_base, "y", 0.0))
+            sz = float(getattr(source_model.model_base, "z", 0.0))
+            source_radius = float(source_model.model_base.get_longest_radius())
+        except Exception:
+            return (False, "Parasitic Infection source model geometry is unavailable.", [])
+
+        for model in models[1:]:
+            try:
+                model_radius = float(model.model_base.get_longest_radius())
+            except Exception:
+                try:
+                    model_radius = float(model.model_base.get_radius())
+                except Exception:
+                    model_radius = 1.0
+            min_center = float(source_radius + model_radius + 0.05)
+            max_center = float(source_radius + model_radius + setup_range + 1e-6)
+            if max_center < min_center:
+                return (False, "Parasitic Infection cannot place all spawned models in range.", [])
+
+            found_position = None
+            ring = 0.0
+            while ring <= (max_center - min_center) + 1e-6:
+                radius = float(min_center + ring)
+                for degrees in range(0, 360, 15):
+                    radians = math.radians(float(degrees))
+                    x = float(sx + math.cos(radians) * radius)
+                    y = float(sy + math.sin(radians) * radius)
+                    try:
+                        z = float(game_map.get_height_at_point(x, y))
+                    except Exception:
+                        z = float(sz)
+                    if self._parasitic_infection_candidate_valid(
+                        spawn_unit=spawn_unit,
+                        model=model,
+                        x=x,
+                        y=y,
+                        z=float(z),
+                        facing=0.0,
+                        placed=placed,
+                        source_model=source_model,
+                        setup_range=float(setup_range),
+                        disallowed_enemy_models=list(disallowed_enemy_models),
+                        disallow_other_enemy_engagement=bool(disallow_other),
+                        game_map=game_map,
+                    ):
+                        found_position = (x, y, float(z), 0.0)
+                        break
+                if found_position is not None:
+                    break
+                ring += 0.5
+            if found_position is None:
+                return (
+                    False,
+                    f"Parasitic Infection cannot place all {spawn_unit_name} models at that point.",
+                    [],
+                )
+            placed.append(found_position)
+
+        return (True, "", placed)
+
+    def _spawn_parasitic_infection_unit_from_placements(
+        self,
+        *,
+        source_unit,
+        trigger: dict,
+        placements: list[tuple[float, float, float, float]],
+    ):
+        if source_unit is None:
+            return None
+        if not placements:
+            return None
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return None
+
+        spawn_unit_name = str(trigger.get("spawn_unit_name", "") or "Ripper Swarms").strip() or "Ripper Swarms"
+        datasheet = self._get_parasitic_infection_spawn_datasheet(
+            source_unit,
+            spawn_unit_name=spawn_unit_name,
+        )
+        if datasheet is None:
+            return None
+        try:
+            spawn_count = int(trigger.get("spawn_model_count", 0) or 0)
+        except (TypeError, ValueError):
+            spawn_count = 0
+        if spawn_count <= 0:
+            return None
+
+        from ...units.unit import Unit as UnitClass
+
+        try:
+            spawned = UnitClass(datasheet, quantity=int(spawn_count))
+        except TypeError:
+            spawned = UnitClass(datasheet)
+        spawned.spawned_in_battle = True
+        source_army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+        if source_army is None:
+            return None
+        set_parent = getattr(spawned, "set_parent_army", None)
+        if callable(set_parent):
+            set_parent(source_army)
+        else:
+            spawned.parent_army = source_army
+
+        models = list(getattr(spawned, "models", []) or [])
+        if len(models) < len(placements):
+            return None
+        for model, position in zip(models, placements):
+            model.set_location(
+                float(position[0]),
+                float(position[1]),
+                float(position[2]),
+                float(position[3]),
+            )
+
+        spawned.deployed = True
+        reserve_fn = getattr(spawned, "set_reserve_status", None)
+        if callable(reserve_fn):
+            reserve_fn("deployed")
+        else:
+            spawned.reserve_status = "deployed"
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        spawned.reserve_turn_deployed = int(current_turn) if current_turn > 0 else None
+        spawned.arrived_from_reserves_this_turn = True
+        try:
+            spawned.round_state.reinforced_this_round = True
+            spawned.round_state.remained_stationary_this_round = False
+        except Exception:
+            pass
+
+        if not bool(game_map.place_unit(spawned)):
+            return None
+        added = bool(source_army.add_unit(spawned))
+        if not added:
+            if spawned in list(getattr(game_map, "units", []) or []):
+                game_map.units.remove(spawned)
+            return None
+        rebuild_registry = getattr(self, "rebuild_entity_registry", None)
+        if callable(rebuild_registry):
+            rebuild_registry()
+        event_system = getattr(self, "event_system", None)
+        if event_system is not None:
+            event_system.publish(
+                "unit_set_up",
+                unit=spawned,
+                set_up_as_reinforcements=False,
+            )
+        try:
+            from ...utility.event_bus import append_action
+
+            player = getattr(source_army, "player", None)
+            if player is not None:
+                append_action(
+                    player,
+                    f"Parasitic Infection: spawned {spawn_unit_name} ({len(placements)} model(s)).",
+                )
+        except Exception:
+            pass
+        return spawned
+
+    def _validate_parasitic_infection_spawn_point(self, context: dict, point: Sequence[float]) -> tuple[bool, str]:
+        ctx = dict(context or {})
+        source_unit_id = str(ctx.get("source_unit_id", "") or ctx.get("unit_id", "") or "")
+        if not source_unit_id:
+            return (False, "Parasitic Infection spawn requires a source unit.")
+        source_unit = self._resolve_unit_by_id(source_unit_id)
+        if source_unit is None:
+            return (False, "Parasitic Infection source unit could not be resolved.")
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        if source_root is None:
+            return (False, "Parasitic Infection source unit is unavailable.")
+
+        try:
+            trigger_id = int(ctx.get("trigger_id", 0) or 0)
+        except (TypeError, ValueError):
+            trigger_id = 0
+        if trigger_id <= 0:
+            return (False, "Parasitic Infection trigger id is invalid.")
+        trigger = self._find_parasitic_infection_trigger(source_root, trigger_id=int(trigger_id))
+        if not isinstance(trigger, dict):
+            return (False, "Parasitic Infection trigger is no longer pending.")
+
+        source_model_id = str(trigger.get("source_model_id", "") or ctx.get("source_model_id", "") or "")
+        source_model = self._resolve_model_by_id(source_model_id) if source_model_id else None
+        if source_model is None:
+            source_model = next(
+                (
+                    model
+                    for model in list(getattr(source_root, "models", []) or [])
+                    if str(get_entity_id(model) or "") == source_model_id
+                ),
+                None,
+            )
+        if source_model is None:
+            return (False, "Parasitic Infection source model could not be resolved.")
+
+        valid, reason, _placements = self._find_parasitic_infection_spawn_placements(
+            source_unit=source_root,
+            source_model=source_model,
+            trigger=trigger,
+            point=point,
+        )
+        if not valid:
+            return (False, str(reason or "Parasitic Infection spawn point is invalid."))
+        return (True, "")
+
+    def _apply_parasitic_infection_spawn_point(self, context: dict, point: Sequence[float]) -> bool:
+        ctx = dict(context or {})
+        source_unit_id = str(ctx.get("source_unit_id", "") or ctx.get("unit_id", "") or "")
+        source_unit = self._resolve_unit_by_id(source_unit_id) if source_unit_id else None
+        if source_unit is None:
+            return False
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        if source_root is None:
+            return False
+        try:
+            trigger_id = int(ctx.get("trigger_id", 0) or 0)
+        except (TypeError, ValueError):
+            trigger_id = 0
+        trigger = self._find_parasitic_infection_trigger(source_root, trigger_id=int(trigger_id))
+        if not isinstance(trigger, dict):
+            return False
+
+        source_model_id = str(trigger.get("source_model_id", "") or ctx.get("source_model_id", "") or "")
+        source_model = self._resolve_model_by_id(source_model_id) if source_model_id else None
+        if source_model is None:
+            source_model = next(
+                (
+                    model
+                    for model in list(getattr(source_root, "models", []) or [])
+                    if str(get_entity_id(model) or "") == source_model_id
+                ),
+                None,
+            )
+        if source_model is None:
+            return False
+
+        valid, _reason, placements = self._find_parasitic_infection_spawn_placements(
+            source_unit=source_root,
+            source_model=source_model,
+            trigger=trigger,
+            point=point,
+        )
+        if not valid:
+            self._queue_next_parasitic_infection_spawn_decision(
+                source_root,
+                phase_name=str(ctx.get("phase", "") or "Shooting phase"),
+            )
+            return False
+
+        spawned = self._spawn_parasitic_infection_unit_from_placements(
+            source_unit=source_root,
+            trigger=trigger,
+            placements=placements,
+        )
+        if spawned is None:
+            self._queue_next_parasitic_infection_spawn_decision(
+                source_root,
+                phase_name=str(ctx.get("phase", "") or "Shooting phase"),
+            )
+            return False
+
+        self._consume_parasitic_infection_trigger(source_root, trigger_id=int(trigger_id))
+        self._queue_next_parasitic_infection_spawn_decision(
+            source_root,
+            phase_name=str(ctx.get("phase", "") or "Shooting phase"),
+        )
+        return True
+
+    def _skip_parasitic_infection_spawn(self, context: dict) -> None:
+        ctx = dict(context or {})
+        source_unit_id = str(ctx.get("source_unit_id", "") or ctx.get("unit_id", "") or "")
+        source_unit = self._resolve_unit_by_id(source_unit_id) if source_unit_id else None
+        if source_unit is None:
+            return
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        if source_root is None:
+            return
+        try:
+            trigger_id = int(ctx.get("trigger_id", 0) or 0)
+        except (TypeError, ValueError):
+            trigger_id = 0
+        self._consume_parasitic_infection_trigger(source_root, trigger_id=int(trigger_id))
+        self._queue_next_parasitic_infection_spawn_decision(
+            source_root,
+            phase_name=str(ctx.get("phase", "") or "Shooting phase"),
+        )
+
+    def _on_model_destroyed_parasitic_infection(
+        self,
+        attacker_model=None,
+        attacker_unit=None,
+        target_model=None,
+        target_unit=None,
+        weapon_profile=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_model is None or target_model is None or target_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        if attacker_unit is None:
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if attacker_root is None or target_root is None:
+            return
+        if attacker_root.get_parent_army() is target_root.get_parent_army():
+            return
+
+        get_specs = getattr(attacker_root, "model_parasitic_infection_specs", None)
+        specs = list(get_specs(attacker_model) or []) if callable(get_specs) else []
+        if not specs:
+            return
+
+        matched_spec = None
+        for spec in specs:
+            if not isinstance(spec, dict):
+                continue
+            required_keyword = str(spec.get("required_target_keyword", "") or "INFANTRY").strip().upper() or "INFANTRY"
+            model_has_keyword = bool(getattr(target_model, "has_any_keyword", lambda *_a, **_k: False)(required_keyword))
+            unit_has_keyword = bool(getattr(target_root, "has_any_keyword", lambda *_a, **_k: False)(required_keyword))
+            if not model_has_keyword and not unit_has_keyword:
+                continue
+            expected_weapon = str(spec.get("weapon_name", "") or "").strip()
+            if not self._weapon_profile_matches_parasitic_infection(weapon_profile, expected_weapon):
+                continue
+            matched_spec = dict(spec)
+            break
+        if not isinstance(matched_spec, dict):
+            return
+
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        pending = self._get_parasitic_infection_pending_triggers(attacker_root)
+        try:
+            next_trigger_id = int(sr.get("parasitic_infection_next_trigger_id", 1) or 1)
+        except (TypeError, ValueError):
+            next_trigger_id = 1
+        next_trigger_id = max(1, int(next_trigger_id))
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        current_player = getattr(self, "get_current_player", lambda: None)()
+        trigger = {
+            "trigger_id": int(next_trigger_id),
+            "turn": int(current_turn),
+            "turn_owner_id": str(getattr(current_player, "id", "") or ""),
+            "source_model_id": str(get_entity_id(attacker_model) or ""),
+            "source_model_name": str(getattr(attacker_model, "name", "") or "Model"),
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "target_unit_name": str(getattr(target_root, "name", "") or "Enemy unit"),
+            "ability_name": str(matched_spec.get("source", "") or "Parasitic Infection"),
+            "spawn_unit_name": str(matched_spec.get("spawn_unit_name", "") or "Ripper Swarms"),
+            "spawn_model_count_roll": str(matched_spec.get("spawn_model_count_roll", "") or "D3").strip().upper() or "D3",
+            "setup_range": int(matched_spec.get("setup_range", 3) or 3),
+            "allow_target_engagement": bool(matched_spec.get("allow_target_engagement", True)),
+            "disallow_other_enemy_engagement": bool(matched_spec.get("disallow_other_enemy_engagement", True)),
+        }
+        pending.append(trigger)
+        self._set_parasitic_infection_pending_triggers(attacker_root, pending)
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["parasitic_infection_next_trigger_id"] = int(next_trigger_id + 1)
+        attacker_root.special_rules = sr
+
+    def _on_unit_shooting_resolved_parasitic_infection(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return
+        pending = self._get_parasitic_infection_pending_triggers(attacker_root)
+        if not pending:
+            return
+        self._queue_next_parasitic_infection_spawn_decision(attacker_root, phase_name="Shooting phase")
+
     def _queue_curse_of_walking_pox_decision(self, source_unit, *, phase_name: str, ability_name: str) -> None:
         if source_unit is None:
             return

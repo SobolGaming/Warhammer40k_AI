@@ -9347,6 +9347,123 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_parasitic_infection_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: BARBED OVIPOSITOR infantry kill can spawn RIPPER SWARMS.
+
+        Returns specs with keys:
+            - source: ability name
+            - weapon_name: expected weapon profile/wargear name
+            - required_target_keyword: keyword gate for destroyed model
+            - spawn_unit_name: unit to spawn
+            - spawn_model_count_roll: die expression for spawned model count
+            - setup_range: setup distance from source model
+            - allow_target_engagement: spawned unit may be within Engagement Range of destroyed model's unit
+            - disallow_other_enemy_engagement: spawned unit cannot be within Engagement Range of other enemies
+        """
+        if model is None:
+            return []
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = f"model_parasitic_infection_specs:{get_entity_id(model)}"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        specs: list[dict] = []
+        seen: set[tuple] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            if not normalized:
+                continue
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"'s\b", " s", normalized)
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+
+            required = (
+                "each time an infantry model is destroyed by an attack made with this model s",
+                "after this model has finished making its attacks",
+                "you can add one new",
+                "unit to your army consisting of d3 models",
+                "set it up within",
+                "of this model",
+                "can be set up within engagement range of the destroyed model s unit",
+                "but not within engagement range of any other enemy units",
+            )
+            if not all(fragment in normalized for fragment in required):
+                continue
+
+            weapon_match = re.search(
+                r"destroyed by an attack made with this model s (?P<weapon>[a-z0-9 ]+?) after this model has finished making its attacks",
+                normalized,
+            )
+            if weapon_match is None:
+                continue
+            weapon_name = str(weapon_match.group("weapon") or "").strip()
+            if not weapon_name:
+                continue
+
+            spawn_match = re.search(
+                r"you can add one new (?P<spawn>[a-z0-9 ]+?) unit to your army consisting of (?P<count>d\d+|\d+) models",
+                normalized,
+            )
+            if spawn_match is None:
+                continue
+            spawn_name_raw = str(spawn_match.group("spawn") or "").strip()
+            if not spawn_name_raw:
+                continue
+            spawn_unit_name = " ".join(token.capitalize() for token in spawn_name_raw.split())
+            count_roll = str(spawn_match.group("count") or "").strip().upper()
+            if not count_roll:
+                continue
+
+            range_match = re.search(r"set it up within (?P<range>\d+) of this model", normalized)
+            if range_match is None:
+                continue
+            try:
+                setup_range = int(range_match.group("range") or 0)
+            except (TypeError, ValueError):
+                setup_range = 0
+            if setup_range <= 0:
+                continue
+
+            source = str(name or "Parasitic Infection").strip() or "Parasitic Infection"
+            key = (
+                source.lower(),
+                weapon_name,
+                spawn_unit_name.lower(),
+                count_roll,
+                int(setup_range),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "weapon_name": weapon_name,
+                    "required_target_keyword": "INFANTRY",
+                    "spawn_unit_name": spawn_unit_name,
+                    "spawn_model_count_roll": count_roll,
+                    "setup_range": int(setup_range),
+                    "allow_target_engagement": True,
+                    "disallow_other_enemy_engagement": True,
+                }
+            )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def move_over_mortal_wounds_reroll_count(self) -> int:
         """Count models that can re-roll their move-over mortal wound die (e.g., Cluster Caltrops)."""
         try:

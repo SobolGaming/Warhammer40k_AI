@@ -5634,6 +5634,7 @@ def _classify_ability_base(
     titanic_move_through_support = _titanic_move_through_support(description)
     move_over_mortal_support = _move_over_mortal_wounds_support(description)
     floating_death_support = _floating_death_support(description)
+    parasitic_infection_support = _parasitic_infection_support(description)
     hazardous_test_modifier_support = _hazardous_test_modifier_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
@@ -5824,6 +5825,8 @@ def _classify_ability_base(
         return move_over_mortal_support
     if floating_death_support:
         return floating_death_support
+    if parasitic_infection_support:
+        return parasitic_infection_support
     if hazardous_test_modifier_support:
         return hazardous_test_modifier_support
     if ranged_ignore_bs_hit_support:
@@ -12808,6 +12811,29 @@ def _floating_death_support(description: str) -> Optional[Tuple[str, str]]:
             "Move end (self or enemy): each model within 3\" selects an enemy unit within 3\", is destroyed, then deals D3 mortal wounds on 2-5 or D6 on 6.",
         )
     return None
+
+
+def _parasitic_infection_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    required_phrases = (
+        "each time an infantry model is destroyed by an attack made with this model",
+        "barbed ovipositor",
+        "after this model has finished making its attacks",
+        "you can add one new ripper swarms unit to your army consisting of d3 models",
+        "set it up within 3 of this model",
+        "that ripper swarms unit can be set up within engagement range of the destroyed model",
+        "but not within engagement range of any other enemy units",
+    )
+    if not all(phrase in norm for phrase in required_phrases):
+        return None
+    return (
+        "Supported",
+        "Each BARBED OVIPOSITOR INFANTRY kill queues an optional post-shoot setup point decision to spawn a new RIPPER SWARMS unit of D3 models within 3\" of the source model, allowing Engagement Range with the destroyed model's unit but not with other enemy units.",
+    )
 
 
 def _hazardous_test_modifier_support(description: str) -> Optional[Tuple[str, str]]:

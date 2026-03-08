@@ -2830,6 +2830,13 @@ def _validate_pick_point(game: object, request: DecisionRequest, result: Decisio
         valid, reason = validate_fn(unit=unit, point=point, game=game)
         if not bool(valid):
             return (str(reason or "Tunnel Marker position is invalid."),)
+    if ability_key == "parasitic_infection_spawn":
+        validate_fn = getattr(game, "_validate_parasitic_infection_spawn_point", None)
+        if not callable(validate_fn):
+            return ("Parasitic Infection spawn validation is unavailable.",)
+        valid, reason = validate_fn(ctx, point)
+        if not bool(valid):
+            return (str(reason or "Parasitic Infection spawn point is invalid."),)
     return ()
 
 
@@ -2852,6 +2859,10 @@ def _apply_pick_point(game: object, request: DecisionRequest, result: DecisionRe
                 mark_declined = getattr(source_unit, "mark_teleport_homer_marker_declined", None)
                 if callable(mark_declined):
                     mark_declined()
+        if ability_key == "parasitic_infection_spawn":
+            skip_fn = getattr(game, "_skip_parasitic_infection_spawn", None)
+            if callable(skip_fn):
+                skip_fn(ctx)
         return None
     payload = dict(result.payload or {})
     point = payload.get("point") or []
@@ -2964,6 +2975,14 @@ def _apply_pick_point(game: object, request: DecisionRequest, result: DecisionRe
         if marker is None:
             return None
         return (float(getattr(marker, "x", x)), float(getattr(marker, "y", y)), float(getattr(marker, "z", 0.0)))
+    if ability_key == "parasitic_infection_spawn":
+        apply_fn = getattr(game, "_apply_parasitic_infection_spawn_point", None)
+        if not callable(apply_fn):
+            return None
+        apply_fn(ctx, point)
+        if len(point) > 2:
+            return (x, y, float(point[2]))
+        return (x, y)
     if ability_key == "teleport_homer_marker_placement":
         source_unit = get_unit(game, str(ctx.get("source_unit_id", "") or ctx.get("unit_id", "") or ""))
         if source_unit is None:
