@@ -4516,6 +4516,163 @@ class KeywordsDetachmentsMixin:
             return False
         return True
 
+    def get_hypersensory_array_stratagem_discount_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Once per battle round, you can target this unit with the Rapid Ingress or Heroic Intervention Stratagem for 0CP,
+        and can do so even if you have already targeted a different unit with that Stratagem this turn."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "hypersensory_array_stratagem_discount_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not normalized:
+                    continue
+                if "once per battle round" not in normalized:
+                    continue
+                if "stratagem" not in normalized or "0cp" not in normalized:
+                    continue
+                if "rapid ingress" not in normalized or "heroic intervention" not in normalized:
+                    continue
+                if (
+                    "already targeted a different unit with that stratagem this turn" not in normalized
+                    and "already targeted another unit with that stratagem this turn" not in normalized
+                    and "already used that stratagem on a different unit this turn" not in normalized
+                    and "already used that stratagem on a different unit this phase" not in normalized
+                ):
+                    continue
+                source = str(name or "Hypersensory Array").strip() or "Hypersensory Array"
+                rule = {
+                    "source": source,
+                    "ability_key": "hypersensory_array_stratagem_discount",
+                    "usage_key": "HYPERSENSORY_ARRAY_FREE_STRATAGEM",
+                    "stratagems": ("RAPID INGRESS", "HEROIC INTERVENTION"),
+                    "limit": "battle_round",
+                    "repeat_bypass": True,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _hypersensory_array_battle_round_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        return str(br)
+
+    def hypersensory_array_used_this_battle_round(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._hypersensory_array_battle_round_key(game)
+        if not key:
+            return False
+        return str(sr.get("hypersensory_array_used_battle_round", "") or "") == key
+
+    def mark_hypersensory_array_used(self, game=None, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hypersensory_array_used_battle_round"] = self._hypersensory_array_battle_round_key(game)
+        if source:
+            sr["hypersensory_array_used_source"] = str(source or "").strip()
+        if stratagem_name:
+            sr["hypersensory_array_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+    def can_use_hypersensory_array_stratagem_discount(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive():
+                return False
+        except Exception:
+            return False
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_hypersensory_array_stratagem_discount_rule()
+        if not rule:
+            return False
+        if root.hypersensory_array_used_this_battle_round(game):
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        if name_u == "RAPID INGRESS":
+            try:
+                if not root.is_in_reserves():
+                    return False
+            except Exception:
+                return False
+        elif name_u == "HEROIC INTERVENTION":
+            try:
+                if not root.is_alive() or not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                return False
+            try:
+                if root.is_in_reserves():
+                    return False
+            except Exception:
+                pass
+        return True
+
     def _unit_is_dire_avengers_or_guardians(self, unit) -> bool:
         if unit is None:
             return False

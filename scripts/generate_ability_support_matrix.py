@@ -4857,6 +4857,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Once per battle round, this unit can be targeted with Rapid Ingress for 0CP.",
         ),
+        ("TYR", "Hypersensory Array"): (
+            "Supported",
+            "Once per battle round, one unit with this ability can be targeted with Rapid Ingress or Heroic Intervention for 0CP, including repeat-use bypass for those Stratagems.",
+        ),
         ("TYR", "Foul Spores (Aura)"): ("Partial", "Stealth aura within 6\" for non-MONSTER TYRANIDS units; Benefit of Cover aura not implemented."),
         ("TYR", "Spore Mine Cysts"): (
             "Supported",
@@ -5804,6 +5808,9 @@ def _classify_ability_base(
     targeted_stratagem_refund_support = _targeted_stratagem_cp_refund_support(description)
     opponent_ability_cp_gain_reaction_support = _opponent_ability_cp_gain_reaction_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
+    rapid_ingress_heroic_intervention_zero_cp_repeat_support = (
+        _rapid_ingress_heroic_intervention_zero_cp_repeat_support(description)
+    )
     targeted_stratagem_increase_support = _targeted_stratagem_cp_increase_support(description)
     datasheet_overwatch_discount_support = _datasheet_overwatch_discount_support(description)
     overwatch_hit_threshold_support = _overwatch_hit_threshold_support(description)
@@ -6273,6 +6280,8 @@ def _classify_ability_base(
         return opponent_ability_cp_gain_reaction_support
     if targeted_stratagem_discount_support:
         return targeted_stratagem_discount_support
+    if rapid_ingress_heroic_intervention_zero_cp_repeat_support:
+        return rapid_ingress_heroic_intervention_zero_cp_repeat_support
     if targeted_stratagem_increase_support:
         return targeted_stratagem_increase_support
     if datasheet_overwatch_discount_support:
@@ -9036,6 +9045,31 @@ def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[
             f"Once per {limit}, when {subject} is targeted with a Stratagem, you can reduce its CP cost by 1.",
         )
     return None
+
+
+def _rapid_ingress_heroic_intervention_zero_cp_repeat_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "once per battle round" not in norm:
+        return None
+    if "rapid ingress" not in norm or "heroic intervention" not in norm:
+        return None
+    if "stratagem" not in norm or "0cp" not in norm:
+        return None
+    if (
+        "already targeted a different unit with that stratagem this turn" not in norm
+        and "already targeted another unit with that stratagem this turn" not in norm
+        and "already used that stratagem on a different unit this turn" not in norm
+        and "already used that stratagem on a different unit this phase" not in norm
+    ):
+        return None
+    return (
+        "Supported",
+        "Once per battle round, this unit can be targeted with Rapid Ingress or Heroic Intervention for 0CP, including repeat-use bypass when that Stratagem already targeted a different unit.",
+    )
 
 
 def _targeted_stratagem_cp_refund_support(description: str) -> Optional[Tuple[str, str]]:

@@ -2623,6 +2623,14 @@ class StratagemManager(
             return bool(can_use_fn(unit, stratagem_name=stratagem_name))
         return False
 
+    def _unit_can_use_hypersensory_array_stratagem_discount(self, unit, *, stratagem_name: str = "") -> bool:
+        if unit is None:
+            return False
+        can_use_fn = getattr(self.player, "_target_unit_can_use_hypersensory_array_stratagem_discount", None)
+        if callable(can_use_fn):
+            return bool(can_use_fn(unit, stratagem_name=stratagem_name))
+        return False
+
     def _daemonforge_phase_key(self) -> str:
         turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
         phase_name = str(self._current_phase_name or "").strip().upper()
@@ -2781,6 +2789,10 @@ class StratagemManager(
                     target_unit,
                     stratagem_name="HEROIC INTERVENTION",
                 )
+                or self._unit_can_use_hypersensory_array_stratagem_discount(
+                    target_unit,
+                    stratagem_name="HEROIC INTERVENTION",
+                )
             ):
                 return False
             uid = self._heroic_intervention_target_id(target_unit)
@@ -2806,6 +2818,10 @@ class StratagemManager(
                     cand,
                     stratagem_name="HEROIC INTERVENTION",
                 )
+                or self._unit_can_use_hypersensory_array_stratagem_discount(
+                    cand,
+                    stratagem_name="HEROIC INTERVENTION",
+                )
             ):
                 continue
             uid = self._heroic_intervention_target_id(cand)
@@ -2820,17 +2836,29 @@ class StratagemManager(
 
     def _rapid_ingress_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
         if target_unit is not None:
-            if not self._unit_can_use_grimnars_mark_stratagem_discount(
-                target_unit,
-                stratagem_name="RAPID INGRESS",
+            if not (
+                self._unit_can_use_grimnars_mark_stratagem_discount(
+                    target_unit,
+                    stratagem_name="RAPID INGRESS",
+                )
+                or self._unit_can_use_hypersensory_array_stratagem_discount(
+                    target_unit,
+                    stratagem_name="RAPID INGRESS",
+                )
             ):
                 return False
             uid = self._heroic_intervention_target_id(target_unit)
             return bool(uid and uid not in self._rapid_ingress_units_this_phase)
         for cand in list(candidates or []):
-            if not self._unit_can_use_grimnars_mark_stratagem_discount(
-                cand,
-                stratagem_name="RAPID INGRESS",
+            if not (
+                self._unit_can_use_grimnars_mark_stratagem_discount(
+                    cand,
+                    stratagem_name="RAPID INGRESS",
+                )
+                or self._unit_can_use_hypersensory_array_stratagem_discount(
+                    cand,
+                    stratagem_name="RAPID INGRESS",
+                )
             ):
                 continue
             uid = self._heroic_intervention_target_id(cand)
@@ -3258,6 +3286,15 @@ class StratagemManager(
                     target_unit=context.get("target_unit") or context.get("unit"),
                     candidates=context.get("candidates"),
                     enemy_unit=context.get("enemy_unit"),
+                ):
+                    pass
+                else:
+                    result["reason"] = "Already used this phase"
+                    return result
+            elif name_u == "RAPID INGRESS":
+                if self._rapid_ingress_repeat_allowed(
+                    target_unit=context.get("target_unit") or context.get("unit"),
+                    candidates=context.get("candidates"),
                 ):
                     pass
                 else:
@@ -9218,6 +9255,10 @@ class StratagemManager(
                     )
                     or self._unit_has_snarling_protector_heroic_intervention(unit)
                     or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
+                        unit,
+                        stratagem_name="HEROIC INTERVENTION",
+                    )
+                    or self._unit_can_use_hypersensory_array_stratagem_discount(
                         unit,
                         stratagem_name="HEROIC INTERVENTION",
                     )

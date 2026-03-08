@@ -2046,6 +2046,30 @@ class Player:
             return True
         return False
 
+    def _target_unit_can_use_hypersensory_array_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        stratagem_key = self._normalize_stratagem_name_key(stratagem_name)
+        if stratagem_key not in ("RAPID INGRESS", "HEROIC INTERVENTION"):
+            return False
+        fn = getattr(target_unit, "can_use_hypersensory_array_stratagem_discount", None)
+        if not callable(fn):
+            return False
+        if not bool(fn(self.game, stratagem_name=stratagem_key)):
+            return False
+        get_rule = getattr(target_unit, "get_hypersensory_array_stratagem_discount_rule", None)
+        rule = get_rule() if callable(get_rule) else None
+        usage_key = str((rule or {}).get("usage_key", "") or "HYPERSENSORY_ARRAY_FREE_STRATAGEM").strip().upper()
+        battle_round = self._battle_round()
+        if battle_round <= 0:
+            return False
+        if int(self._ability_used_battle_round.get(usage_key, 0) or 0) == battle_round:
+            return False
+        return True
+
     def _target_unit_can_use_beast_handler_heroic_intervention(self, target_unit) -> bool:
         if target_unit is None:
             return False
@@ -2691,6 +2715,17 @@ class Player:
         if name_u not in ("RAPID INGRESS", "HEROIC INTERVENTION"):
             return 0
         if not self._target_unit_can_use_grimnars_mark_stratagem_discount(target_unit, stratagem_name=name_u):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_hypersensory_array_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u not in ("RAPID INGRESS", "HEROIC INTERVENTION"):
+            return 0
+        if not self._target_unit_can_use_hypersensory_array_stratagem_discount(target_unit, stratagem_name=name_u):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -3646,6 +3681,34 @@ class Player:
                 discount = base
                 reasons.append(f"{ability_name}: Grenade for 0CP.")
                 return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        hypersensory = self._preview_hypersensory_array_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if hypersensory:
+            ability_name = "Hypersensory Array"
+            try:
+                get_rule = getattr(target_unit, "get_hypersensory_array_stratagem_discount_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": stratagem_label,
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "HYPERSENSORY_ARRAY_STRATAGEM_DISCOUNT",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                reasons.append(f"{ability_name}: {stratagem_label} for 0CP.")
+                return {"base": base, "discount": base, "cost": 0, "reasons": reasons}
 
         if grimnars_mark:
             discount = base
@@ -5265,6 +5328,72 @@ class Player:
 
         if name_u == "GRENADE" and grenade_used_this_phase:
             return {"denied": True, "reason": "Grenade already used this phase"}
+
+        hypersensory = self._preview_hypersensory_array_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if hypersensory and target_unit is not None:
+            ability_name = "Hypersensory Array"
+            usage_key = "HYPERSENSORY_ARRAY_FREE_STRATAGEM"
+            try:
+                get_rule = getattr(target_unit, "get_hypersensory_array_stratagem_discount_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+                    usage_key = str(rule.get("usage_key", "") or usage_key).strip().upper() or usage_key
+            except Exception:
+                pass
+            stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": stratagem_label,
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("HYPERSENSORY_ARRAY_STRATAGEM_DISCOUNT", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                br = self._battle_round()
+                if br > 0 and usage_key:
+                    self._ability_used_battle_round[usage_key] = br
+                try:
+                    mark_used = getattr(target_unit, "mark_hypersensory_array_used", None)
+                    if callable(mark_used):
+                        mark_used(
+                            self.game,
+                            source=ability_name,
+                            stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                        )
+                except Exception:
+                    pass
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: {stratagem_label} for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "hypersensory_array_use": True,
+                    "hypersensory_array_source": ability_name,
+                }
 
         grimnars_mark = self._preview_grimnars_mark_discount(
             stratagem=stratagem,
