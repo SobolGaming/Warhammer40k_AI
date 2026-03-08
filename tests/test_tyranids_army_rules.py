@@ -214,6 +214,124 @@ class TestTyranidsArmyRules(unittest.TestCase):
 
         self.assertTrue(any("Synapse" in x for x in wound_res.get("modifiers", [])))
 
+    def test_neurocytes_grants_synapse_source_from_nearby_non_neurogaunt_in_synapse_range(self):
+        from warhammer40k_ai.rules.synapse import SynapseManager
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+
+        def _mk_model(name: str, x: float, y: float) -> Model:
+            model = Model(
+                name=name,
+                movement=6,
+                toughness=4,
+                save=3,
+                wounds=2,
+                leadership=7,
+                objective_control=1,
+                model_base=Base(BaseType.CIRCULAR, 1.0),
+            )
+            model.model_base.set_position(float(x), float(y), 0.0)
+            return model
+
+        army = _ArmyStub(units=[], faction_id="TYR")
+        synapse_unit = _UnitStub(
+            name="Synapse Source",
+            models=[_mk_model("Synapse Source", 0.0, 0.0)],
+            keywords=["SYNAPSE"],
+            faction_keywords=["TYRANIDS"],
+            army=army,
+        )
+        bridge_unit = _UnitStub(
+            name="Bridge Unit",
+            models=[_mk_model("Bridge", 4.0, 0.0)],
+            keywords=["TERMAGANTS"],
+            faction_keywords=["TYRANIDS"],
+            army=army,
+        )
+        neurogaunts = _UnitStub(
+            name="Neurogaunts",
+            models=[_mk_model("Neurogaunt", 9.0, 0.0)],
+            keywords=["NEUROGAUNTS"],
+            faction_keywords=["TYRANIDS"],
+            army=army,
+            abilities=[
+                SimpleNamespace(
+                    name="Neurocytes",
+                    description=(
+                        "While this unit is within Synapse Range of a friendly TYRANIDS unit "
+                        "(excluding NEUROGAUNT units), it has the Synapse keyword."
+                    ),
+                )
+            ],
+        )
+        army.units = [synapse_unit, bridge_unit, neurogaunts]
+
+        mgr = SynapseManager(army)
+        sources = list(mgr.get_synapse_sources())
+
+        self.assertIn(synapse_unit, sources)
+        self.assertIn(neurogaunts, sources)
+        self.assertTrue(mgr.unit_in_synapse_range(neurogaunts))
+
+    def test_neurocytes_excludes_neurogaunt_reference_units(self):
+        from warhammer40k_ai.rules.synapse import SynapseManager
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+
+        def _mk_model(name: str, x: float, y: float) -> Model:
+            model = Model(
+                name=name,
+                movement=6,
+                toughness=4,
+                save=3,
+                wounds=2,
+                leadership=7,
+                objective_control=1,
+                model_base=Base(BaseType.CIRCULAR, 1.0),
+            )
+            model.model_base.set_position(float(x), float(y), 0.0)
+            return model
+
+        army = _ArmyStub(units=[], faction_id="TYR")
+        synapse_unit = _UnitStub(
+            name="Synapse Source",
+            models=[_mk_model("Synapse Source", 0.0, 0.0)],
+            keywords=["SYNAPSE"],
+            faction_keywords=["TYRANIDS"],
+            army=army,
+        )
+        helper_neurogaunts = _UnitStub(
+            name="Helper Neurogaunts",
+            models=[_mk_model("Helper Neurogaunt", 4.0, 0.0)],
+            keywords=["NEUROGAUNTS"],
+            faction_keywords=["TYRANIDS"],
+            army=army,
+        )
+        candidate_neurogaunts = _UnitStub(
+            name="Candidate Neurogaunts",
+            models=[_mk_model("Candidate Neurogaunt", 9.0, 0.0)],
+            keywords=["NEUROGAUNTS"],
+            faction_keywords=["TYRANIDS"],
+            army=army,
+            abilities=[
+                SimpleNamespace(
+                    name="Neurocytes",
+                    description=(
+                        "While this unit is within Synapse Range of a friendly TYRANIDS unit "
+                        "(excluding NEUROGAUNT units), it has the Synapse keyword."
+                    ),
+                )
+            ],
+        )
+        army.units = [synapse_unit, helper_neurogaunts, candidate_neurogaunts]
+
+        mgr = SynapseManager(army)
+        sources = list(mgr.get_synapse_sources())
+
+        self.assertIn(synapse_unit, sources)
+        self.assertNotIn(candidate_neurogaunts, sources)
+        self.assertFalse(mgr.unit_in_synapse_range(candidate_neurogaunts))
+
     def test_shadow_in_the_warp_once_per_battle_and_modifier(self):
         from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType

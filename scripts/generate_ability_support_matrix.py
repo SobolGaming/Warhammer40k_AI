@@ -4869,6 +4869,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Deep Strike setup trigger: for each enemy unit within 12\", roll D6; on 2-4 that unit suffers D3 mortal wounds, and on 5+ it suffers 3 mortal wounds and takes a Battle-shock test.",
         ),
+        ("TYR", "Neurocytes"): (
+            "Supported",
+            "While this unit is within Synapse Range of a friendly TYRANIDS non-NEUROGAUNT unit, it gains the SYNAPSE keyword and counts as a Synapse source.",
+        ),
         ("TYR", "Foul Spores (Aura)"): ("Partial", "Stealth aura within 6\" for non-MONSTER TYRANIDS units; Benefit of Cover aura not implemented."),
         ("TYR", "Spore Mine Cysts"): (
             "Supported",
@@ -5688,6 +5692,7 @@ def _classify_ability_base(
     deep_strike_setup_mortal_battleshock_support = _deep_strike_setup_enemy_range_mortal_wounds_battleshock_support(
         description
     )
+    synapse_keyword_grant_support = _within_synapse_range_grants_synapse_keyword_support(description)
     post_deployment_redeploy_support = _post_deployment_redeploy_support(description)
     sticky_support = _sticky_objective_support(description)
     command_phase_unit_return_support = _command_phase_unit_return_support(description)
@@ -6056,6 +6061,8 @@ def _classify_ability_base(
         return setup_reactive_shoot_charge_support
     if deep_strike_setup_mortal_battleshock_support:
         return deep_strike_setup_mortal_battleshock_support
+    if synapse_keyword_grant_support:
+        return synapse_keyword_grant_support
     if post_deployment_redeploy_support:
         return post_deployment_redeploy_support
     if sticky_support:
@@ -10205,6 +10212,24 @@ def _deep_strike_setup_enemy_range_mortal_wounds_battleshock_support(
     return (
         "Supported",
         f"Deep Strike setup trigger: for each enemy unit within {rng}\", roll D6; on {low_min}-{low_max} it suffers {low_mw} mortal wounds, and on {high_threshold}+ it suffers {high_mw} mortal wounds then takes a Battle-shock test.",
+    )
+
+
+def _within_synapse_range_grants_synapse_keyword_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this unit is within synapse range of a friendly tyranids unit "
+        r"excluding neurogaunt units it has the synapse keyword"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "While this unit is within Synapse Range of a friendly TYRANIDS non-NEUROGAUNT unit, it gains the SYNAPSE keyword and is treated as a Synapse source.",
     )
 
 
