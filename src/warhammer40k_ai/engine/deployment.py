@@ -15,7 +15,7 @@ from ..roster.player import Player
 from ..utility.calcs import get_dist
 from ..utility.decision_utils import resolve_decision_command
 from ..utility.dice import get_dice_roll
-from ..utility.entity_ids import get_entity_id
+from ..utility.entity_ids import get_entity_id, maybe_entity_id
 from .missions import OfficialMission, MissionRegistry, DeploymentZoneType, create_objectives_from_mission
 
 if TYPE_CHECKING:
@@ -352,6 +352,7 @@ class DeploymentManager:
             player,
             deployable_units,
             deployment_zone=deployment_zone,
+            already_deployed_units=already_deployed,
             queue_requests=True,
         )
         chosen_unit = decision_maker.choose_next_deploy_unit(
@@ -408,7 +409,15 @@ class DeploymentManager:
                 return
         raise RuntimeError(f"Selected deployment unit not found in deployable list: {selected_id}")
 
-    def _build_deployment_move_request(self, unit: 'Unit') -> DecisionRequest:
+    def _build_deployment_move_request(
+        self,
+        unit: 'Unit',
+        *,
+        deployment_anchor: Tuple[float, float] | None = None,
+        deployment_model_positions: Optional[List[dict]] = None,
+        deployment_zone: Optional[dict] = None,
+        already_deployed: Optional[List['Unit']] = None,
+    ) -> DecisionRequest:
         unit_id = get_entity_id(unit)
         options = [
             DecisionOption.create(
@@ -434,6 +443,49 @@ class DeploymentManager:
             "allow_skip": False,
             "max_distance": 0.0,
         }
+        if deployment_anchor is not None:
+            context["deployment_anchor"] = [float(deployment_anchor[0]), float(deployment_anchor[1])]
+        if deployment_model_positions:
+            context["deployment_model_positions"] = [dict(entry or {}) for entry in list(deployment_model_positions or [])]
+        if isinstance(deployment_zone, dict):
+            zone_data = dict(deployment_zone or {})
+            context["deployment_zone_key"] = canonical_deployment_zone_key(zone_data)
+            context["deployment_zone_type"] = str(zone_data.get("zone_type", "") or "")
+            zone_name = str(zone_data.get("name", "") or "")
+            if zone_name:
+                context["deployment_zone_name"] = zone_name
+        if already_deployed is not None:
+            deployed_ids: List[str] = []
+            for deployed_unit in list(already_deployed or []):
+                deployed_id = str(maybe_entity_id(deployed_unit) or "")
+                if deployed_id:
+                    deployed_ids.append(deployed_id)
+            if deployed_ids:
+                context["already_deployed_unit_ids"] = sorted(set(deployed_ids))
+                context["already_deployed_count"] = int(len(set(deployed_ids)))
+        context.setdefault(
+            "deployment_intent",
+            {
+                "desired_affordances": [
+                    "SAFE_STAGING",
+                    "SCREEN_DEPTH",
+                    "RESERVE_DENIAL",
+                    "COUNTERCHARGE_POCKET",
+                ],
+                "weights": {
+                    "score": 0.3,
+                    "deny": 0.2,
+                    "safety": 0.3,
+                    "staging": 0.2,
+                    "reserve_deny": 0.22,
+                    "screen": 0.24,
+                    "countercharge": 0.18,
+                    "cover": 0.22,
+                    "los": 0.12,
+                    "aura": 0.12,
+                },
+            },
+        )
         return DecisionRequest.create(
             DECISION_MOVE_UNIT,
             f"Deploy {getattr(unit, 'name', 'Unit')}",
@@ -565,15 +617,21 @@ class DeploymentManager:
                 )
                 self._pop_selected_deploy_unit(current_units, unit)
                 position = current_decision_maker.choose_unit_deployment_position(unit, current_zone, current_deployed)
-
-                # Route deployment placement through DecisionRequest/Command API.
-                request = self._build_deployment_move_request(unit)
-                self.game.request_decision(request)
                 model_positions = self._build_deployment_model_positions(
                     unit,
                     position,
                     decision_maker=current_decision_maker,
                 )
+
+                # Route deployment placement through DecisionRequest/Command API.
+                request = self._build_deployment_move_request(
+                    unit,
+                    deployment_anchor=position,
+                    deployment_model_positions=model_positions,
+                    deployment_zone=current_zone,
+                    already_deployed=current_deployed,
+                )
+                self.game.request_decision(request)
                 option_id = request.options[0].option_id if getattr(request, "options", None) else ""
                 queue = getattr(self.game, "decision_queue", None)
                 pending = queue.get(request.decision_id) if queue is not None and hasattr(queue, "get") else request

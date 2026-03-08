@@ -25,6 +25,7 @@ from .command_kinds import (
 from .decisions import CandidateAction, DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
 from .candidate_semantics import ensure_candidate_semantic_metadata
 from .decision_kinds import (
+    DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CHOOSE_MISSION,
     DECISION_CHOOSE_PLEDGE,
     DECISION_CONFIRM_YES_NO,
@@ -40,6 +41,7 @@ from .decision_kinds import (
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
     DECISION_SELECT_TARGET_MODEL,
     DECISION_SELECT_OVERWATCH_SHOOTER,
+    DECISION_SELECT_NEXT_DEPLOY_UNIT,
     DECISION_SELECT_REALM_OF_CHAOS_UNITS,
     DECISION_SELECT_REVERBERATING_SUMMONS_UNIT,
 )
@@ -52,6 +54,8 @@ from .version_adapter import ensure_version_adapter_boundary
 from .tier1_plan import Tier1Plan, build_heuristic_tier1_plan
 from .tier2_orchestrator import Tier2TaskBundle, build_tier2_task_bundle
 from .time_manager import TimeManager
+from .deployment_intent import DeploymentIntent
+from .deployment_solver import generate_deployment_candidates
 from .movement_intent import MovementIntent
 from .movement_solver import generate_move_unit_candidates
 from .path_witness import PathWitnessStore
@@ -10179,21 +10183,47 @@ class Game(
             time_manager = TimeManager()
             self.time_manager = time_manager
         ctx = time_manager.decorate_context(request.decision_type, ctx)
+        if request.decision_type in (DECISION_CHOOSE_DEPLOYMENT_ZONE, DECISION_SELECT_NEXT_DEPLOY_UNIT):
+            deployment_intent = DeploymentIntent.from_context(ctx)
+            ctx["deployment_intent"] = deployment_intent.to_dict()
+            request.context = ctx
+            deployment_candidates, deployment_mask, solver_ms, fallback_mode = generate_deployment_candidates(
+                self,
+                request,
+                deployment_intent,
+            )
+            if deployment_candidates:
+                normalized_candidates: list[CandidateAction] = []
+                for candidate in list(deployment_candidates or []):
+                    metadata = dict(candidate.metadata or {})
+                    metadata["solver_ms"] = int(max(0, solver_ms))
+                    metadata["fallback_mode"] = bool(fallback_mode or metadata.get("fallback_mode", False))
+                    normalized_candidates.append(
+                        CandidateAction(
+                            action_id=str(candidate.action_id),
+                            params=dict(candidate.params or {}),
+                            metadata=metadata,
+                        )
+                    )
+                request.candidates = normalized_candidates
+                request.mask = [bool(value) for value in list(deployment_mask or [])]
+                if len(request.mask) != len(request.candidates):
+                    request.mask = [True] * len(request.candidates)
+                request.mask_reasons = [None if val else "masked_as_illegal" for val in request.mask]
         if request.decision_type == DECISION_MOVE_UNIT:
             placement_kind = str(ctx.get("placement_kind", "") or "").strip().lower()
-            # Placement-style move decisions are resolved via explicit model_positions payloads.
-            # Skip generic move candidate generation for these to avoid expensive unused solver work.
-            placement_style_kinds = {"deployment", "advance_redeploy_9h"}
-            if placement_kind not in placement_style_kinds:
-                if getattr(self, "path_witness_store", None) is None:
-                    self.path_witness_store = PathWitnessStore()
-                intent = MovementIntent.from_context(ctx)
-                ctx["movement_intent"] = intent.to_dict()
+            if placement_kind == "deployment":
+                deployment_intent = DeploymentIntent.from_context(ctx)
+                ctx["deployment_intent"] = deployment_intent.to_dict()
                 request.context = ctx
-                move_candidates, move_mask, solver_ms, fallback_mode = generate_move_unit_candidates(self, request, intent)
-                if move_candidates:
+                deployment_candidates, deployment_mask, solver_ms, fallback_mode = generate_deployment_candidates(
+                    self,
+                    request,
+                    deployment_intent,
+                )
+                if deployment_candidates:
                     normalized_candidates: list[CandidateAction] = []
-                    for candidate in list(move_candidates or []):
+                    for candidate in list(deployment_candidates or []):
                         metadata = dict(candidate.metadata or {})
                         metadata["solver_ms"] = int(max(0, solver_ms))
                         metadata["fallback_mode"] = bool(fallback_mode or metadata.get("fallback_mode", False))
@@ -10205,10 +10235,38 @@ class Game(
                             )
                         )
                     request.candidates = normalized_candidates
-                    request.mask = [bool(value) for value in list(move_mask or [])]
+                    request.mask = [bool(value) for value in list(deployment_mask or [])]
                     if len(request.mask) != len(request.candidates):
                         request.mask = [True] * len(request.candidates)
                     request.mask_reasons = [None if val else "masked_as_illegal" for val in request.mask]
+            else:
+                # Placement-style move decisions are resolved via explicit model_positions payloads.
+                # Skip generic move candidate generation for these to avoid expensive unused solver work.
+                if placement_kind != "advance_redeploy_9h":
+                    if getattr(self, "path_witness_store", None) is None:
+                        self.path_witness_store = PathWitnessStore()
+                    intent = MovementIntent.from_context(ctx)
+                    ctx["movement_intent"] = intent.to_dict()
+                    request.context = ctx
+                    move_candidates, move_mask, solver_ms, fallback_mode = generate_move_unit_candidates(self, request, intent)
+                    if move_candidates:
+                        normalized_candidates: list[CandidateAction] = []
+                        for candidate in list(move_candidates or []):
+                            metadata = dict(candidate.metadata or {})
+                            metadata["solver_ms"] = int(max(0, solver_ms))
+                            metadata["fallback_mode"] = bool(fallback_mode or metadata.get("fallback_mode", False))
+                            normalized_candidates.append(
+                                CandidateAction(
+                                    action_id=str(candidate.action_id),
+                                    params=dict(candidate.params or {}),
+                                    metadata=metadata,
+                                )
+                            )
+                        request.candidates = normalized_candidates
+                        request.mask = [bool(value) for value in list(move_mask or [])]
+                        if len(request.mask) != len(request.candidates):
+                            request.mask = [True] * len(request.candidates)
+                        request.mask_reasons = [None if val else "masked_as_illegal" for val in request.mask]
         semantic_rules_bundle_id = str(ctx.get("rules_bundle_id", "") or "")
         ensure_candidate_semantic_metadata(
             request,

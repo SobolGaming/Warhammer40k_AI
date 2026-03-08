@@ -596,6 +596,82 @@ def _normalized_range_pair(value: object) -> list[float]:
     return [lo, hi]
 
 
+def _polygon_area(vertices: list[list[float]]) -> float:
+    if len(vertices) < 3:
+        return 0.0
+    area = 0.0
+    for idx, current in enumerate(vertices):
+        nxt = vertices[(idx + 1) % len(vertices)]
+        area += _safe_float(current[0]) * _safe_float(nxt[1]) - _safe_float(nxt[0]) * _safe_float(current[1])
+    return abs(area) * 0.5
+
+
+def _deployment_zone_area_estimate(zone: dict) -> float:
+    mission_verts = _normalized_zone_vertices(zone)
+    if mission_verts:
+        return float(sum(_polygon_area(vertices) for vertices in mission_verts))
+    x_range = _normalized_range_pair(zone.get("x_range"))
+    y_range = _normalized_range_pair(zone.get("y_range"))
+    if len(x_range) == 2 and len(y_range) == 2:
+        width = max(0.0, _safe_float(x_range[1]) - _safe_float(x_range[0]))
+        depth = max(0.0, _safe_float(y_range[1]) - _safe_float(y_range[0]))
+        return float(width * depth)
+    return 0.0
+
+
+def _deployment_zone_frontage_depth(zone: dict) -> tuple[float, float]:
+    x_range = _normalized_range_pair(zone.get("x_range"))
+    y_range = _normalized_range_pair(zone.get("y_range"))
+    if len(x_range) == 2 and len(y_range) == 2:
+        width = max(0.0, _safe_float(x_range[1]) - _safe_float(x_range[0]))
+        depth = max(0.0, _safe_float(y_range[1]) - _safe_float(y_range[0]))
+        return float(max(width, depth)), float(min(width, depth))
+    mission_verts = _normalized_zone_vertices(zone)
+    if not mission_verts:
+        return 0.0, 0.0
+    xs: list[float] = []
+    ys: list[float] = []
+    for polygon in mission_verts:
+        for vertex in polygon:
+            if len(vertex) < 2:
+                continue
+            xs.append(_safe_float(vertex[0]))
+            ys.append(_safe_float(vertex[1]))
+    if not xs or not ys:
+        return 0.0, 0.0
+    span_x = max(xs) - min(xs)
+    span_y = max(ys) - min(ys)
+    return float(max(span_x, span_y)), float(min(span_x, span_y))
+
+
+def _default_deployment_intent(*, zone_type: str | None = None) -> dict[str, object]:
+    zone = str(zone_type or "").strip().lower()
+    score_weight = 0.28 if zone == "defender" else 0.32
+    deny_weight = 0.24 if zone == "defender" else 0.18
+    safety_weight = 0.33 if zone == "defender" else 0.27
+    staging_weight = 0.16 if zone == "defender" else 0.24
+    return {
+        "desired_affordances": [
+            "SAFE_STAGING",
+            "SCREEN_DEPTH",
+            "RESERVE_DENIAL",
+            "COUNTERCHARGE_POCKET",
+        ],
+        "weights": {
+            "score": score_weight,
+            "deny": deny_weight,
+            "safety": safety_weight,
+            "staging": staging_weight,
+            "reserve_deny": 0.22,
+            "screen": 0.24,
+            "countercharge": 0.18,
+            "cover": 0.22,
+            "los": 0.12,
+            "aura": 0.12,
+        },
+    }
+
+
 def canonical_deployment_zone_key(zone: dict) -> str:
     zone_data = dict(zone or {})
     payload = {
@@ -625,7 +701,9 @@ def build_deployment_zone_request(
         zone_key = canonical_deployment_zone_key(zone_data)
         zone_type = str(zone_data.get("zone_type", "") or "")
         zone_name = str(zone_data.get("name", "") or "")
-        zone_entries.append((zone_type, zone_name, zone_key, int(idx), zone_data))
+        zone_area = _deployment_zone_area_estimate(zone_data)
+        zone_frontage, zone_depth = _deployment_zone_frontage_depth(zone_data)
+        zone_entries.append((zone_type, zone_name, zone_key, int(idx), zone_data, zone_area, zone_frontage, zone_depth))
     if not zone_entries:
         return None
 
@@ -633,7 +711,7 @@ def build_deployment_zone_request(
     player_id = getattr(player, "id", None) if player is not None else None
     options: list[DecisionOption] = []
     choice_refs: list[dict[str, object]] = []
-    for order_idx, (zone_type, zone_name, zone_key, source_index, _zone_data) in enumerate(zone_entries):
+    for order_idx, (zone_type, zone_name, zone_key, source_index, _zone_data, zone_area, zone_frontage, zone_depth) in enumerate(zone_entries):
         zone_choice_id = f"{zone_key}:{int(source_index)}"
         label = str(zone_name or "").strip()
         if not label:
@@ -647,6 +725,9 @@ def build_deployment_zone_request(
                     "zone_index": int(source_index),
                     "zone_type": zone_type,
                     "zone_name": zone_name,
+                    "zone_area_estimate": float(round(zone_area, 6)),
+                    "zone_frontage_estimate": float(round(zone_frontage, 6)),
+                    "zone_depth_estimate": float(round(zone_depth, 6)),
                     "action_id": f"{DECISION_CHOOSE_DEPLOYMENT_ZONE}:{str(player_id or '')}:{zone_choice_id}",
                 },
             )
@@ -658,9 +739,16 @@ def build_deployment_zone_request(
                 "zone_index": int(source_index),
                 "zone_type": zone_type,
                 "zone_name": zone_name,
+                "zone_area_estimate": float(round(zone_area, 6)),
+                "zone_frontage_estimate": float(round(zone_frontage, 6)),
+                "zone_depth_estimate": float(round(zone_depth, 6)),
             }
         )
 
+    inferred_zone_type = ""
+    zone_types = sorted({str(ref.get("zone_type", "") or "") for ref in choice_refs if str(ref.get("zone_type", "") or "")})
+    if len(zone_types) == 1:
+        inferred_zone_type = zone_types[0]
     request = DecisionRequest.create(
         DECISION_CHOOSE_DEPLOYMENT_ZONE,
         "Choose deployment zone.",
@@ -672,6 +760,7 @@ def build_deployment_zone_request(
             "available_zone_choice_ids": [str(ref["zone_choice_id"]) for ref in choice_refs],
             "available_zone_keys": [str(ref["zone_key"]) for ref in choice_refs],
             "available_zone_choices": choice_refs,
+            "deployment_intent": _default_deployment_intent(zone_type=inferred_zone_type),
         },
     )
     if queue_requests and hasattr(game, "request_decision"):
@@ -685,6 +774,7 @@ def build_select_next_deploy_unit_request(
     units: Iterable[object] | None,
     *,
     deployment_zone: Optional[dict] = None,
+    already_deployed_units: Iterable[object] | None = None,
     queue_requests: bool = True,
 ) -> Optional[DecisionRequest]:
     unit_entries: list[tuple[str, object]] = []
@@ -716,14 +806,28 @@ def build_select_next_deploy_unit_request(
         "selection_kind": "deployment_next_unit",
         "phase": "deploy_armies",
         "unit_ids": [unit_id for unit_id, _unit in unit_entries],
+        "undeployed_count": int(len(unit_entries)),
     }
+    deployed_ids: list[str] = []
+    for unit in _iter_units(already_deployed_units):
+        unit_id = str(maybe_entity_id(unit) or "")
+        if unit_id:
+            deployed_ids.append(unit_id)
+    if deployed_ids:
+        deployed_ids = sorted(set(deployed_ids))
+        context["already_deployed_unit_ids"] = deployed_ids
+        context["already_deployed_count"] = int(len(deployed_ids))
     if isinstance(deployment_zone, dict):
         zone_data = dict(deployment_zone or {})
+        zone_type = str(zone_data.get("zone_type", "") or "")
         context["deployment_zone_key"] = canonical_deployment_zone_key(zone_data)
-        context["deployment_zone_type"] = str(zone_data.get("zone_type", "") or "")
+        context["deployment_zone_type"] = zone_type
         zone_name = str(zone_data.get("name", "") or "")
         if zone_name:
             context["deployment_zone_name"] = zone_name
+        context["deployment_intent"] = _default_deployment_intent(zone_type=zone_type)
+    else:
+        context["deployment_intent"] = _default_deployment_intent()
 
     request = DecisionRequest.create(
         DECISION_SELECT_NEXT_DEPLOY_UNIT,

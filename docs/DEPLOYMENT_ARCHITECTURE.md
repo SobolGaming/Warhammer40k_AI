@@ -16,6 +16,10 @@ Key goals:
 - Strategic pregame choices are explicit decisions routed through the engine stack:
   `CHOOSE_DEPLOYMENT_ZONE`, `DECLARE_RESERVES`, `SELECT_NEXT_DEPLOY_UNIT`, and deployment
   placement via `MOVE_UNIT` with `placement_kind="deployment"`.
+- Deployment candidate generation mirrors movement architecture:
+  `src/warhammer40k_ai/engine/deployment_intent.py` and
+  `src/warhammer40k_ai/engine/deployment_solver.py` produce deterministic candidates with
+  semantic metadata and time-budget fallback support.
 - `HumanDeploymentDecisionMaker` delegates to `src/warhammer40k_ai/UI/human_interface.py`
   (or console fallback if no UI is available).
 
@@ -37,6 +41,9 @@ Key goals:
   - RUINS placement rules for per-model deployment.
 - `Game.get_boundary_repulsors(context="deployment")` keeps model placement inside zone boundaries
   during formation placement.
+- Deployment candidates include semantic deltas used by replay/telemetry and headless ranking,
+  including reserve-denial, screen-integrity, countercharge-coverage, aura-connectivity, and
+  enemy-first-turn exposure estimates.
 
 Compound fortification section geometry and footprint resolution are documented in
 `docs/MODEL_GEOMETRY_OVERRIDES.md`.
