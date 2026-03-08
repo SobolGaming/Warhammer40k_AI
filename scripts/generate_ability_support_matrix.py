@@ -10644,7 +10644,7 @@ def _command_phase_regain_wound_support(description: str) -> Optional[Tuple[str,
     if not norm:
         return None
     start_end_pattern = (
-        r"(?:at the )?(?P<timing>start|end) of (?:(?:each|either) player s command phases?|(?:each of )?your command phases?) "
+        r"(?:at the )?(?P<timing>start|end) of (?:(?:each|either) player(?: s|s) command phases?|(?:each of )?your command phases?) "
         r"this model regains (?:(?P<up_to>up to) )?(?P<amt>\d+|d3) lost wounds?"
     )
     m = re.fullmatch(start_end_pattern, norm)
@@ -10653,7 +10653,7 @@ def _command_phase_regain_wound_support(description: str) -> Optional[Tuple[str,
         timing_label = "Start of Command phase" if str(m.group("timing") or "").strip().lower() == "start" else "End of Command phase"
     else:
         command_phase_pattern = (
-            r"in (?:(?:each|either) player s command phases?|(?:each of )?your command phases?) "
+            r"in (?:(?:each|either) player(?: s|s) command phases?|(?:each of )?your command phases?) "
             r"this model regains (?:(?P<up_to>up to) )?(?P<amt>\d+|d3) lost wounds?"
         )
         m = re.fullmatch(command_phase_pattern, norm)
