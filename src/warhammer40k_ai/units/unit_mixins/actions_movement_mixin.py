@@ -12925,6 +12925,96 @@ class ActionsMovementMixin:
                         }
                     )
 
+                harpoon_barbs_active = False
+                harpoon_barbs_source = "Harpoon Barbs"
+                for source_unit in members:
+                    iter_entries = getattr(source_unit, "_iter_ability_entries_for_rules", None)
+                    if not callable(iter_entries):
+                        continue
+                    for ability_name, ability_desc in list(iter_entries(model=None) or []):
+                        name_low = str(ability_name or "").strip().lower()
+                        text_low = self._normalize_rules_text(
+                            f"{ability_name or ''} {ability_desc or ''}".strip()
+                        ).lower()
+                        if name_low == "harpoon barbs":
+                            harpoon_barbs_active = True
+                            harpoon_barbs_source = str(ability_name or "Harpoon Barbs").strip() or "Harpoon Barbs"
+                            break
+                        if (
+                            "selected to fall back" in text_low
+                            and "on a 2+" in text_low
+                            and "d6 mortal wounds" in text_low
+                            and "within engagement range of this model" in text_low
+                        ):
+                            harpoon_barbs_active = True
+                            harpoon_barbs_source = str(ability_name or "Harpoon Barbs").strip() or "Harpoon Barbs"
+                            break
+                    if harpoon_barbs_active:
+                        break
+                if harpoon_barbs_active:
+                    source_sr = getattr(enemy_root, "special_rules", None)
+                    if not isinstance(source_sr, dict):
+                        source_sr = {}
+                    try:
+                        source_army = enemy_root.get_parent_army()
+                    except Exception:
+                        source_army = None
+                    source_player = getattr(source_army, "player", None) if source_army is not None else None
+                    game_obj = getattr(source_player, "game", None) if source_player is not None else None
+                    try:
+                        current_turn = int(getattr(game_obj, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    current_turn_owner_id = ""
+                    if game_obj is not None:
+                        try:
+                            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+                        except Exception:
+                            current_player = None
+                        current_turn_owner_id = str(getattr(current_player, "id", "") or "").strip()
+                    try:
+                        last_used_turn = int(source_sr.get("harpoon_barbs_last_used_turn", 0) or 0)
+                    except Exception:
+                        last_used_turn = 0
+                    last_used_owner_id = str(source_sr.get("harpoon_barbs_last_used_turn_owner", "") or "").strip()
+                    used_this_turn = (
+                        current_turn > 0
+                        and last_used_turn == current_turn
+                        and (
+                            not current_turn_owner_id
+                            or last_used_owner_id == current_turn_owner_id
+                        )
+                    )
+                    if not used_this_turn:
+                        try:
+                            trigger_roll = int(get_roll("D6") or 0)
+                        except Exception:
+                            trigger_roll = 0
+                        if trigger_roll >= 2:
+                            try:
+                                mortal_wounds = int(get_roll("D6") or 0)
+                            except Exception:
+                                mortal_wounds = 0
+                            if mortal_wounds > 0:
+                                try:
+                                    self._apply_mortal_wounds_to_unit(self, int(mortal_wounds), game_map=game_map)
+                                except Exception:
+                                    pass
+                            try:
+                                from ...utility.event_bus import append_action
+                                player_obj = self.get_parent_army().player
+                                append_action(
+                                    player_obj,
+                                    f"{self.name} suffers {int(mortal_wounds)} mortal wounds ({harpoon_barbs_source}: rolled {int(trigger_roll)}+).",
+                                )
+                            except Exception:
+                                pass
+                        source_sr["harpoon_barbs_last_used_turn"] = int(current_turn or 0)
+                        source_sr["harpoon_barbs_last_used_turn_owner"] = str(current_turn_owner_id or "")
+                        enemy_root.special_rules = source_sr
+                        if not bool(self.is_alive()):
+                            return False
+
                 for source_unit in members:
                     source_sr = getattr(source_unit, "special_rules", None)
                     if not isinstance(source_sr, dict):

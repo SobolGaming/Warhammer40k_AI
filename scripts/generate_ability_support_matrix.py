@@ -5711,6 +5711,7 @@ def _classify_ability_base(
     transport_assault_reserves_support = _transport_assault_reserves_support(description)
     opponent_turn_destroyed_reposition_support = _opponent_turn_destroyed_reposition_support(description)
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
+    enemy_fall_back_selection_mortal_wounds_support = _enemy_fall_back_selection_mortal_wounds_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     phase_end_leadership_cp_gain_support = _phase_end_leadership_cp_gain_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
@@ -6094,6 +6095,8 @@ def _classify_ability_base(
         return opponent_turn_destroyed_reposition_support
     if enemy_fall_back_desperate_escape_support:
         return enemy_fall_back_desperate_escape_support
+    if enemy_fall_back_selection_mortal_wounds_support:
+        return enemy_fall_back_selection_mortal_wounds_support
     if command_phase_bonus_cp_support:
         return command_phase_bonus_cp_support
     if phase_end_leadership_cp_gain_support:
@@ -10558,6 +10561,29 @@ def _enemy_fall_back_desperate_escape_support(description: str) -> Optional[Tupl
     if penalty:
         notes.append(f"Battle-shocked targets suffer -{penalty} to those tests.")
     return ("Supported", " ".join(notes))
+
+
+def _enemy_fall_back_selection_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per turn when an enemy unit within engagement range of this model is selected to fall back "
+        r"roll (?:one|1) d6 on a (?P<threshold>\d)\+? that unit suffers (?P<mortal>d3|d6|\d+) mortal wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    threshold = str(m.group("threshold") or "").strip()
+    mortal = str(m.group("mortal") or "").strip().upper()
+    if not threshold or not mortal:
+        return None
+    return (
+        "Supported",
+        f"Once per turn, when an enemy unit within Engagement Range is selected to Fall Back: roll D6; on {threshold}+ that unit suffers {mortal} mortal wounds.",
+    )
 
 
 def _command_phase_bonus_cp_support(description: str) -> Optional[Tuple[str, str]]:

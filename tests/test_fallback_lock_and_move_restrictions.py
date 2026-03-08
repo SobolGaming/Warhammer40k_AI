@@ -168,3 +168,123 @@ def test_grasping_tendrils_blocks_fall_back_on_three_plus(monkeypatch):
     ok = target.fall_back((0.0, 0.0, 0.0), [], game_map)
     assert not ok
     assert target.round_state.remained_stationary_this_round is True
+
+
+def test_harpoon_barbs_deals_d6_mortals_when_enemy_selected_to_fall_back(monkeypatch):
+    from warhammer40k_ai.units import unit as unit_module
+    from warhammer40k_ai.units.unit import Unit
+
+    player_a = SimpleNamespace(name="Player A", id="Player A")
+    player_b = SimpleNamespace(name="Player B", id="Player B")
+    game = SimpleNamespace(turn=1, get_current_player=lambda: player_b)
+    player_a.game = game
+    player_b.game = game
+    army_a = SimpleNamespace(player=player_a, units=[])
+    army_b = SimpleNamespace(player=player_b, units=[])
+
+    bearer = _make_stub_unit("Norn Assimilator", army_a, keywords=("MONSTER",))
+    bearer.possible_abilities = [
+        SimpleNamespace(
+            name="Harpoon Barbs",
+            description=(
+                "Once per turn, when an enemy unit within Engagement Range of this model is selected to Fall Back, "
+                "roll one D6: on a 2+, that unit suffers D6 mortal wounds."
+            ),
+        ),
+        SimpleNamespace(
+            name="Grasping Tendrils",
+            description=(
+                "Each time an enemy unit (excluding TITANIC units) within Engagement Range of one or more units "
+                "from your army with this ability is selected to Fall Back, you can roll one D6: on a 3+, "
+                "that enemy unit must Remain Stationary instead."
+            ),
+        ),
+    ]
+    bearer.models[0].model_base.x = 0.0
+    bearer.models[0].model_base.y = 0.0
+
+    target = _make_stub_unit("Target Unit", army_b, keywords=())
+    target.models[0].model_base.x = 0.0
+    target.models[0].model_base.y = 0.5
+
+    army_a.units.append(bearer)
+    army_b.units.append(target)
+    game_map = _DummyMap([bearer, target])
+    game.map = game_map
+
+    mortal_amounts = []
+
+    def _fake_apply_mortal(self, target_unit, mortal_wound_amount, game_map=None):
+        mortal_amounts.append(int(mortal_wound_amount or 0))
+        return 0
+
+    rolls = iter([2, 5, 3])
+    monkeypatch.setattr(unit_module, "get_roll", lambda *_args, **_kwargs: next(rolls))
+    monkeypatch.setattr(Unit, "_apply_mortal_wounds_to_unit", _fake_apply_mortal)
+
+    ok = target.fall_back((0.0, 0.0, 0.0), [], game_map)
+    assert not ok
+    assert mortal_amounts == [5]
+
+
+def test_harpoon_barbs_is_limited_to_once_per_turn(monkeypatch):
+    from warhammer40k_ai.units import unit as unit_module
+    from warhammer40k_ai.units.unit import Unit
+
+    player_a = SimpleNamespace(name="Player A", id="Player A")
+    player_b = SimpleNamespace(name="Player B", id="Player B")
+    game = SimpleNamespace(turn=2, get_current_player=lambda: player_b)
+    player_a.game = game
+    player_b.game = game
+    army_a = SimpleNamespace(player=player_a, units=[])
+    army_b = SimpleNamespace(player=player_b, units=[])
+
+    bearer = _make_stub_unit("Norn Assimilator", army_a, keywords=("MONSTER",))
+    bearer.possible_abilities = [
+        SimpleNamespace(
+            name="Harpoon Barbs",
+            description=(
+                "Once per turn, when an enemy unit within Engagement Range of this model is selected to Fall Back, "
+                "roll one D6: on a 2+, that unit suffers D6 mortal wounds."
+            ),
+        ),
+        SimpleNamespace(
+            name="Grasping Tendrils",
+            description=(
+                "Each time an enemy unit (excluding TITANIC units) within Engagement Range of one or more units "
+                "from your army with this ability is selected to Fall Back, you can roll one D6: on a 3+, "
+                "that enemy unit must Remain Stationary instead."
+            ),
+        ),
+    ]
+    bearer.models[0].model_base.x = 0.0
+    bearer.models[0].model_base.y = 0.0
+
+    target_one = _make_stub_unit("Target One", army_b, keywords=())
+    target_one.models[0].model_base.x = 0.0
+    target_one.models[0].model_base.y = 0.4
+
+    target_two = _make_stub_unit("Target Two", army_b, keywords=())
+    target_two.models[0].model_base.x = 0.4
+    target_two.models[0].model_base.y = 0.0
+
+    army_a.units.append(bearer)
+    army_b.units.extend([target_one, target_two])
+    game_map = _DummyMap([bearer, target_one, target_two])
+    game.map = game_map
+
+    mortal_amounts = []
+
+    def _fake_apply_mortal(self, target_unit, mortal_wound_amount, game_map=None):
+        mortal_amounts.append(int(mortal_wound_amount or 0))
+        return 0
+
+    rolls = iter([2, 4, 3, 3])
+    monkeypatch.setattr(unit_module, "get_roll", lambda *_args, **_kwargs: next(rolls))
+    monkeypatch.setattr(Unit, "_apply_mortal_wounds_to_unit", _fake_apply_mortal)
+
+    ok_one = target_one.fall_back((0.0, 0.0, 0.0), [], game_map)
+    ok_two = target_two.fall_back((0.0, 0.0, 0.0), [], game_map)
+    assert not ok_one
+    assert not ok_two
+    assert mortal_amounts == [4]
