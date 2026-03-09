@@ -2156,6 +2156,9 @@ class GameSetupDeploymentReservesMixin:
             return True
         else:
             self.setup_phase = SetupPhase(next_phase_value)
+            if self.setup_phase == SetupPhase.SELECT_MISSION_OBJECTIVES:
+                if bool(getattr(self, "is_authoritative", True)):
+                    self.request_mission_selection()
             if self.setup_phase == SetupPhase.RESOLVE_PREBATTLE_RULES:
                 self._queue_prebattle_rules_start_requests()
             logger.info(f"Advanced to setup phase: {self.setup_phase.name}")
@@ -3818,6 +3821,16 @@ class GameSetupDeploymentReservesMixin:
             "deployment": combination.get("deployment"),
             "layout": layout,
         }
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list") and hasattr(queue, "pop"):
+            pending_ids = [
+                str(getattr(req, "decision_id", "") or "")
+                for req in list(queue.list() or [])
+                if str(getattr(req, "decision_type", "")) == DECISION_CHOOSE_MISSION
+            ]
+            for decision_id in pending_ids:
+                if decision_id:
+                    queue.pop(decision_id)
         from ..mission_cards import create_primary_mission_card
 
         for player in list(self.players or []):

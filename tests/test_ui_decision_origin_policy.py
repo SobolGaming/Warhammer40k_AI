@@ -20,11 +20,12 @@ FORBIDDEN_PATTERNS = (
     "build_scout_move_request(",
     "build_start_of_round_request(",
     "build_command_phase_bearer_request(",
+    "request_mission_selection(",
 )
 
 
 def test_ui_modules_do_not_bypass_engine_decision_bridge() -> None:
-    """UI code must route decision creation/enqueue through engine bridge helpers."""
+    """UI code must not originate DecisionRequests or enqueue them."""
     violations: list[str] = []
     for path in sorted(UI_ROOT.rglob("*.py")):
         text = path.read_text(encoding="utf-8")

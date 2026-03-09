@@ -278,6 +278,7 @@ Responsibilities:
 - show dialogs that correspond to engine DecisionRequests
 - convert user choices into deterministic Commands
 - UI must not originate decision requests. UI modules consume already-issued pending requests via engine bridge readers (`require_pending_decision_request(...)`) and only submit deterministic decision commands/results.
+- Mission selection request issuance is engine-authoritative: when setup advances into `SELECT_MISSION_OBJECTIVES`, the engine queues `CHOOSE_MISSION` and UI only consumes that pending request.
 - project authoritative game updates through shared UI/HUD orchestration (`session_presentation_orchestrator.py`)
 - rebuild HUD state from authoritative presentation transcripts (`presentation_state_hydrator.py`)
 - avoid importing GUI backends at package import time; entry points should import GUI modules lazily so headless tooling/tests remain stable

@@ -10315,6 +10315,11 @@ class Game(
 
     def request_mission_selection(self) -> DecisionRequest:
         """Queue a mission selection decision request and return it."""
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if str(getattr(pending, "decision_type", "")) == DECISION_CHOOSE_MISSION:
+                    return pending
         from .mission_selection import iter_mission_combinations
 
         combos = iter_mission_combinations()

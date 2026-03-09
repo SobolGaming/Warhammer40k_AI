@@ -132,6 +132,7 @@ Command execution:
 - `Game.apply_command(...)` validates and dispatches commands through the engine dispatcher.
 - `Game.process_command_queue(...)` drains queued commands in order for deterministic replay.
 - Setup/phase progression and mission selection are now routed through command handlers.
+- The authoritative setup transition to `SELECT_MISSION_OBJECTIVES` queues `CHOOSE_MISSION`; clients/UI consume the pending request and respond with deterministic decision results.
 
 ## Decision/Action API (Core)
 

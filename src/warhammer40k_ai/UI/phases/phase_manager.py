@@ -197,7 +197,8 @@ class SetupPhaseHandler(BasePhaseHandler):
 
         req = _pending_request()
         if req is None:
-            req = self.game.request_mission_selection()
+            logger.warning("Mission selection request missing from authoritative queue; dialog not opened.")
+            return
 
         # Create mission selection dialog
         inner = MissionSelectionDialog(
