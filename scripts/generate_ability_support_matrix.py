@@ -3599,6 +3599,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Selected Relics of the Matriarchs aura: friendly ADEPTA SORORITAS units within 6\" improve melee AP by 1.",
         ),
+        ("AS", "Ministorum Sermon"): (
+            "Supported",
+            "While this unit contains a MINISTORUM PRIEST, melee weapons equipped by models in this unit gain [SUSTAINED HITS 1].",
+        ),
         ("AS", "Rituale Nullificatus"): ("Supported", "Feel No Pain 4+ against Psychic attacks and mortal wounds."),
         ("AS", "Spiritual Fortitude"): ("Supported", "Feel No Pain 4+ against Psychic attacks and mortal wounds."),
         ("AOI", "Psychic Assassin"): (

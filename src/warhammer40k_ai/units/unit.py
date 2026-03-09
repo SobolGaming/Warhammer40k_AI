@@ -3190,6 +3190,12 @@ class Unit(
         r"(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack(?:\s*,\s*|\s+)that\s+attack\s+has\s+(?P<kw_section>.+?)\s+abilit",
         re.IGNORECASE,
     )
+    _UNIT_CONTAINS_WEAPON_ALWAYS_KEYWORD_RE = re.compile(
+        r"while\s+this\s+unit\s+contains\s+(?:an?|one\s+or\s+more)\s+(?P<model>[a-z0-9 \-]+?)(?:\s+models?)?\s*,?\s*"
+        r"(?:(?P<atype>melee|ranged)\s+)?weapons?\s+equipped\s+by\s+models\s+in\s+this\s+unit\s+have\s+"
+        r"(?:the\s+)?(?P<kw_section>.+?)\s+abilit(?:y|ies)",
+        re.IGNORECASE,
+    )
     _WEAPON_LIST_HALF_RANGE_KEYWORD_RE = re.compile(
         r"this\s+model'?s\s+(?P<weapons>.+?)\s+(?:have|has)\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability.*?\bwithin\s+half\s+range\b",
         re.IGNORECASE,

@@ -3516,6 +3516,30 @@ class PositioningMixin:
                             "source": str(name or "Ability"),
                         }
                     )
+            for match in self._UNIT_CONTAINS_WEAPON_ALWAYS_KEYWORD_RE.finditer(text):
+                required_model = str(match.group("model") or "").strip()
+                if not required_model:
+                    continue
+                atype = str(match.group("atype") or "").strip().lower()
+                if atype not in ("melee", "ranged"):
+                    atype = "any"
+                kw_section = str(match.group("kw_section") or "")
+                bonus_keywords = _parse_bonus_keywords(kw_section)
+                if not bonus_keywords:
+                    continue
+                for bonus_kw in bonus_keywords:
+                    key = ("contains_weapon_kw", atype, bonus_kw.strip().lower(), required_model.lower())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    rules.append(
+                        {
+                            "attack_type": atype,
+                            "keyword": bonus_kw.strip(),
+                            "source": str(name or "Ability"),
+                            "requires_unit_contains_keyword": required_model,
+                        }
+                    )
 
         try:
             root = self.get_attached_unit_root()
@@ -5658,6 +5682,18 @@ class PositioningMixin:
                         continue
                 except Exception:
                     continue
+            required_contains_keyword = str(rule.get("requires_unit_contains_keyword", "") or "").strip()
+            if required_contains_keyword:
+                contains_required_model = False
+                contains_keyword_fn = getattr(root, "_unit_contains_model_with_keyword", None)
+                if callable(contains_keyword_fn):
+                    contains_required_model = bool(contains_keyword_fn(required_contains_keyword))
+                if not contains_required_model:
+                    contains_named_fn = getattr(root, "_unit_contains_model_named", None)
+                    if callable(contains_named_fn):
+                        contains_required_model = bool(contains_named_fn(required_contains_keyword))
+                if not contains_required_model:
+                    continue
             target_keywords_any = tuple(rule.get("target_keywords_any") or ())
             if target_keywords_any:
                 if not any(_target_has_keyword(k) for k in target_keywords_any):
@@ -5723,6 +5759,18 @@ class PositioningMixin:
                     if not self._target_within_objective_range(target, game_map):
                         continue
                 except Exception:
+                    continue
+            required_contains_keyword = str(rule.get("requires_unit_contains_keyword", "") or "").strip()
+            if required_contains_keyword:
+                contains_required_model = False
+                contains_keyword_fn = getattr(root, "_unit_contains_model_with_keyword", None)
+                if callable(contains_keyword_fn):
+                    contains_required_model = bool(contains_keyword_fn(required_contains_keyword))
+                if not contains_required_model:
+                    contains_named_fn = getattr(root, "_unit_contains_model_named", None)
+                    if callable(contains_named_fn):
+                        contains_required_model = bool(contains_named_fn(required_contains_keyword))
+                if not contains_required_model:
                     continue
             target_keywords_any = tuple(rule.get("target_keywords_any") or ())
             if target_keywords_any:
