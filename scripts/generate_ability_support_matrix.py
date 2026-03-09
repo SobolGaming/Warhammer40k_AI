@@ -3528,6 +3528,14 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "While leading, Command-phase choice supports either returning up to 1 destroyed non-CHARACTER model or discarding 1 Miracle die to return up to D3+1 instead.",
         ),
+        ("AS", "Litany of Deeds"): (
+            "Supported",
+            "Each time a friendly ADEPTA SORORITAS unit or model is destroyed within 12\" of this source, the resulting Miracle die gain can be re-rolled before being added to the pool.",
+        ),
+        ("AS", "Stanchion of Holy Martyrs"): (
+            "Supported",
+            "While leading, models in the attached unit have a Save characteristic of 2+ and a 4+ invulnerable save.",
+        ),
         ("AS", "Stirring Rhetoric"): (
             "Supported",
             "While a Dialogus is attached as a leader, each Act of Faith performed by that attached unit changes one used Miracle die value to 6 before resolving the substituted roll.",

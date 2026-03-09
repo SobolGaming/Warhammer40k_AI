@@ -568,6 +568,29 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         inv_val, _source = bodyguard.get_model_invulnerable_save_override(bodyguard.models[0])
         self.assertEqual(inv_val, 4)
 
+    def test_leading_unit_save_and_invulnerable_save_apply(self):
+        ability = {
+            "name": "Stanchion of Holy Martyrs",
+            "description": (
+                "While this model is leading a unit, models in that unit have a Save characteristic of 2+ and a 4+ "
+                "invulnerable save."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Imagifier", abilities=[ability])
+        bodyguard = _make_unit("Battle Sisters")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Battle Sisters"]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        save_val, _save_source = bodyguard.get_model_save_characteristic_override(bodyguard.models[0])
+        inv_val, _inv_source = bodyguard.get_model_invulnerable_save_override(bodyguard.models[0])
+        self.assertEqual(save_val, 2)
+        self.assertEqual(inv_val, 4)
+
     def test_unit_contains_character_fnp_applies(self):
         ability = {
             "name": "Mutated Bodyguard",

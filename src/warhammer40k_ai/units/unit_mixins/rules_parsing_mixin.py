@@ -2837,6 +2837,7 @@ class RulesParsingMixin:
                     "unit_contains_action_after_advance_entries",
                     "unit_contains_shoot_after_starting_action_entries",
                     "bearer_unit_invulnerable_save",
+                    "bearer_unit_save_characteristic",
                     "bearer_unit_leadership_bonus_controlled_objective",
                     "bearer_unit_agile_maneuver_reroll",
                     "bearer_unit_sustained_hits_value",
@@ -2898,6 +2899,7 @@ class RulesParsingMixin:
         unit_contains_action_after_advance_entries: list[dict] = []
         unit_contains_shoot_after_starting_action_entries: list[dict] = []
         invuln_entries: list[dict] = []
+        save_characteristic_entries: list[dict] = []
         sustained_hits_value = 0
         sustained_hits_value_melee = 0
         sustained_hits_value_ranged = 0
@@ -3375,6 +3377,12 @@ class RulesParsingMixin:
 
                     if not unit_contains_invuln_matched:
                         m = self._BEARER_UNIT_INVULNERABLE_SAVE_RE.search(sentence)
+                        if not m:
+                            m = re.search(
+                                r"(?:models\s+in\s+)?(?:the\s+bearer(?:'|\s)?s|that|this)\s+unit\s+(?:have|has)\s+.*?\band\s+(?:a|the)\s*([1-6])\+?\s*invulnerable\s+save",
+                                sentence,
+                                flags=re.IGNORECASE,
+                            )
                         if m:
                             try:
                                 val = int(m.group(1))
@@ -3383,6 +3391,19 @@ class RulesParsingMixin:
                             if val:
                                 source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                                 invuln_entries.append({"value": int(val), "source": source})
+                    m = re.search(
+                        r"(?:models\s+in\s+)?(?:the\s+bearer(?:'|\s)?s|that|this)\s+unit\s+have\s+(?:a\s+)?save\s+characteristic\s+of\s+([1-6])\+?",
+                        sentence,
+                        flags=re.IGNORECASE,
+                    )
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            save_characteristic_entries.append({"value": int(val), "source": source})
                     if self._BEARER_UNIT_AGILE_MANEUVER_REROLL_RE.search(sentence):
                         agile_maneuver_reroll = True
 
@@ -3783,6 +3804,27 @@ class RulesParsingMixin:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_invulnerable_save"] = list(deduped)
+                u.special_rules = sr
+
+        if save_characteristic_entries:
+            deduped = []
+            seen_saves = set()
+            for entry in save_characteristic_entries:
+                try:
+                    val = int(entry.get("value"))
+                except Exception:
+                    continue
+                source = str(entry.get("source", "") or "")
+                key = (val, source)
+                if key in seen_saves:
+                    continue
+                seen_saves.add(key)
+                deduped.append({"value": val, "source": source})
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_save_characteristic"] = list(deduped)
                 u.special_rules = sr
 
         if agile_maneuver_reroll:

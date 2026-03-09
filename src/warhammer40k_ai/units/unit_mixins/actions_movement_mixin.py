@@ -2117,6 +2117,82 @@ class ActionsMovementMixin:
             except Exception:
                 continue
 
+        # Leading/bearer unit abilities that set a save characteristic for the unit.
+        try:
+            sr = getattr(self, "special_rules", None)
+            entry_sets: list = []
+            if isinstance(sr, dict):
+                entries = sr.get("bearer_unit_save_characteristic")
+                if isinstance(entries, list):
+                    entry_sets.append(entries)
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            if root is not None:
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = []
+                if not members:
+                    members = [root]
+                for member in members:
+                    if member is None or member is self:
+                        continue
+                    member_sr = getattr(member, "special_rules", None)
+                    if not isinstance(member_sr, dict):
+                        continue
+                    member_entries = member_sr.get("bearer_unit_save_characteristic")
+                    if not isinstance(member_entries, list):
+                        continue
+                    requires_live_bearer = any(
+                        str(key).startswith("enhancement_") and bool(val)
+                        for key, val in member_sr.items()
+                    )
+                    if requires_live_bearer:
+                        bearer_alive = False
+                        bearer_id = str(member_sr.get("enhancement_bearer_model_id", "") or "").strip()
+                        if bearer_id:
+                            for candidate in list(getattr(member, "models", []) or []):
+                                if str(get_entity_id(candidate) or "") != bearer_id:
+                                    continue
+                                alive_attr = getattr(candidate, "is_alive", True)
+                                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                                break
+                        if not bearer_alive:
+                            bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                            if bearer is not None:
+                                alive_attr = getattr(bearer, "is_alive", True)
+                                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                        if not bearer_alive:
+                            continue
+                    entry_sets.append(member_entries)
+            seen_entries: set[tuple[int, str]] = set()
+            for entries in entry_sets:
+                for entry in entries:
+                    if isinstance(entry, dict):
+                        val = entry.get("value")
+                        source = entry.get("source")
+                    elif isinstance(entry, (list, tuple)):
+                        val = entry[0] if entry else None
+                        source = entry[1] if len(entry) > 1 else None
+                    else:
+                        continue
+                    try:
+                        val = int(val)
+                    except Exception:
+                        continue
+                    source = str(source or "").strip() or "Bearer unit ability"
+                    key = (int(val), source)
+                    if key in seen_entries:
+                        continue
+                    seen_entries.add(key)
+                    if best_value is None or int(val) < best_value:
+                        best_value = int(val)
+                        best_source = source
+        except Exception:
+            pass
+
         # Unit-level abilities on single-model units.
         try:
             if len(list(getattr(self, "models", []) or [])) == 1:
