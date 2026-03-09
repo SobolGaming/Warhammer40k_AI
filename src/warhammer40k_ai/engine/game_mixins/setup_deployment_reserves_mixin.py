@@ -2605,6 +2605,146 @@ class GameSetupDeploymentReservesMixin:
                 if army_id:
                     pending_army_ids.add(army_id)
 
+    def _apply_leader_attachment_declarations(self) -> None:
+        players = list(self.players or [])
+        if not players:
+            return
+
+        pending_leader_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            from ..decision_kinds import DECISION_ATTACH_LEADER
+
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_ATTACH_LEADER:
+                    continue
+                leader_id = str(getattr(req, "context", {}).get("leader_id", "") or "")
+                if leader_id:
+                    pending_leader_ids.add(leader_id)
+
+        from ..decision_requests import build_leader_attachment_requests
+
+        for player in players:
+            if player is None:
+                raise RuntimeError("Leader attachment declarations require players.")
+            army = player.get_army()
+            if army is None:
+                raise RuntimeError(f"Leader attachment declarations require an army for {player.name}.")
+            units = list(getattr(army, "units", []) or [])
+            requests = build_leader_attachment_requests(self, units, queue_requests=False)
+            for req in list(requests or []):
+                leader_id = str(getattr(req, "context", {}).get("leader_id", "") or "")
+                if leader_id and leader_id in pending_leader_ids:
+                    continue
+                self.request_decision(req)
+                if leader_id:
+                    pending_leader_ids.add(leader_id)
+
+    def _apply_support_artillery_attachment_declarations(self) -> None:
+        players = list(self.players or [])
+        if not players:
+            return
+
+        pending_support_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            from ..decision_kinds import DECISION_ATTACH_SUPPORT_ARTILLERY
+
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_ATTACH_SUPPORT_ARTILLERY:
+                    continue
+                support_id = str(getattr(req, "context", {}).get("support_unit_id", "") or "")
+                if support_id:
+                    pending_support_ids.add(support_id)
+
+        from ..decision_requests import build_support_artillery_attachment_requests
+
+        for player in players:
+            if player is None:
+                raise RuntimeError("Support attachment declarations require players.")
+            army = player.get_army()
+            if army is None:
+                raise RuntimeError(f"Support attachment declarations require an army for {player.name}.")
+            units = list(getattr(army, "units", []) or [])
+            requests = build_support_artillery_attachment_requests(self, units, queue_requests=False)
+            for req in list(requests or []):
+                support_id = str(getattr(req, "context", {}).get("support_unit_id", "") or "")
+                if support_id and support_id in pending_support_ids:
+                    continue
+                self.request_decision(req)
+                if support_id:
+                    pending_support_ids.add(support_id)
+
+    def _apply_transport_assignment_declarations(self) -> None:
+        players = list(self.players or [])
+        if not players:
+            return
+
+        pending_unit_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            from ..decision_kinds import DECISION_ASSIGN_TRANSPORT
+
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_ASSIGN_TRANSPORT:
+                    continue
+                unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
+                if unit_id:
+                    pending_unit_ids.add(unit_id)
+
+        from ..decision_requests import build_transport_assignment_requests
+
+        for player in players:
+            if player is None:
+                raise RuntimeError("Transport declarations require players.")
+            army = player.get_army()
+            if army is None:
+                raise RuntimeError(f"Transport declarations require an army for {player.name}.")
+            units = list(getattr(army, "units", []) or [])
+            requests = build_transport_assignment_requests(self, units, queue_requests=False)
+            for req in list(requests or []):
+                unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
+                if unit_id and unit_id in pending_unit_ids:
+                    continue
+                self.request_decision(req)
+                if unit_id:
+                    pending_unit_ids.add(unit_id)
+
+    def _apply_reserves_allocation_declarations(self) -> None:
+        players = list(self.players or [])
+        if not players:
+            return
+
+        pending_player_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            from ..decision_kinds import DECISION_DECLARE_RESERVES
+
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_DECLARE_RESERVES:
+                    continue
+                player_id = str(getattr(req, "player_id", "") or "")
+                if player_id:
+                    pending_player_ids.add(player_id)
+
+        from ..decision_requests import build_reserves_allocation_request
+
+        for player in players:
+            if player is None:
+                raise RuntimeError("Reserves declarations require players.")
+            player_id = str(getattr(player, "id", "") or "")
+            if player_id and player_id in pending_player_ids:
+                continue
+            army = player.get_army()
+            if army is None:
+                raise RuntimeError(f"Reserves declarations require an army for {player.name}.")
+            req = build_reserves_allocation_request(self, army, queue_requests=False)
+            if req is None:
+                continue
+            self.request_decision(req)
+            if player_id:
+                pending_player_ids.add(player_id)
+
     def _apply_rapid_drop_deployment_declarations(self) -> None:
         """Queue Rapid-drop Deployment selections for Orbital Assault Force armies."""
         players = list(self.players or [])
@@ -2750,6 +2890,10 @@ class GameSetupDeploymentReservesMixin:
             build_risen_rubricae_requests(self, units, queue_requests=True)
 
         self._apply_selected_leading_infiltrators_declarations()
+        self._apply_leader_attachment_declarations()
+        self._apply_support_artillery_attachment_declarations()
+        self._apply_transport_assignment_declarations()
+        self._apply_reserves_allocation_declarations()
 
         # Chaos Space Marines Deceptors: select Masters of Misdirection units.
         for p in list(self.players or []):

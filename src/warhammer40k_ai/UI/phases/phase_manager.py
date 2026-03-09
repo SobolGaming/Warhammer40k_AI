@@ -248,7 +248,6 @@ class SetupPhaseHandler(BasePhaseHandler):
         from ...engine.command_kinds import CMD_RESOLVE_DECISION
         from ...engine.commands import GameCommand
         from ...engine.decision_kinds import DECISION_ATTACH_LEADER
-        from ...engine.decision_requests import build_leader_attachment_requests
 
         dialog = LeaderAttachmentDialog(
             self.game_view.screen.get_width(),
@@ -308,13 +307,10 @@ class SetupPhaseHandler(BasePhaseHandler):
             for req in list(self.game.decision_queue.list() or [])
             if getattr(req, "decision_type", None) == DECISION_ATTACH_LEADER
         }
-        if pending:
-            leader_requests = pending
-        else:
-            requests = build_leader_attachment_requests(self.game, all_units)
-            leader_requests = {
-                str(getattr(req, "context", {}).get("leader_id", "")): req for req in requests
-            }
+        leader_requests = pending
+        if not leader_requests:
+            self._show_transport_assignment_dialog()
+            return
 
         dialog.show(
             all_units,
@@ -336,7 +332,6 @@ class SetupPhaseHandler(BasePhaseHandler):
         from ...engine.command_kinds import CMD_RESOLVE_DECISION
         from ...engine.commands import GameCommand
         from ...engine.decision_kinds import DECISION_ASSIGN_TRANSPORT
-        from ...engine.decision_requests import build_transport_assignment_requests
 
         dialog = TransportAssignmentDialog(
             self.game_view.screen.get_width(),
@@ -397,13 +392,11 @@ class SetupPhaseHandler(BasePhaseHandler):
             for req in list(self.game.decision_queue.list() or [])
             if getattr(req, "decision_type", None) == DECISION_ASSIGN_TRANSPORT
         }
-        if pending:
-            unit_requests = pending
-        else:
-            requests = build_transport_assignment_requests(self.game, all_units)
-            unit_requests = {
-                str(getattr(req, "context", {}).get("unit_id", "")): req for req in requests
-            }
+        unit_requests = pending
+        if not unit_requests:
+            _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
+            _advance_setup_phase_cmd(self.game, player_id=_current_player_id(self.game))
+            return
 
         dialog.show(all_units, unit_requests=unit_requests, on_confirm=_apply, on_cancel=_skip)
         dialog.visible = True
@@ -420,7 +413,6 @@ class SetupPhaseHandler(BasePhaseHandler):
         from ...engine.command_kinds import CMD_RESOLVE_DECISION
         from ...engine.commands import GameCommand
         from ...engine.decision_kinds import DECISION_SHADOW_ASSIGNMENT
-        from ...engine.decision_requests import build_shadow_assignment_requests
         from ..decision_ui_utils import first_option_id
 
         selected_players = [p for p in list(players or self.game.players or []) if p is not None]
@@ -442,9 +434,6 @@ class SetupPhaseHandler(BasePhaseHandler):
                 if selected_player_ids and req_player_id not in selected_player_ids:
                     continue
                 pending.append(req)
-        if not pending:
-            pending = list(build_shadow_assignment_requests(self.game, all_units))
-
         if not pending:
             if callable(on_done):
                 on_done()
@@ -541,7 +530,6 @@ class SetupPhaseHandler(BasePhaseHandler):
     def _start_player_color_selection_flow(self, players, on_done) -> None:
         """Prompt local players to choose a UI color before setup interaction dialogs."""
         from ...engine.decision_kinds import DECISION_CHOOSE_PLAYER_COLOR
-        from ...engine.decision_requests import build_player_color_selection_requests
 
         queue = getattr(self.game, "decision_queue", None)
         pending_requests = []
@@ -564,11 +552,6 @@ class SetupPhaseHandler(BasePhaseHandler):
                     if str(getattr(req, "player_id", "") or "") == player_id:
                         request = req
                         break
-
-            if request is None:
-                created = build_player_color_selection_requests(self.game, [player], queue_requests=True)
-                if created:
-                    request = created[0]
 
             if request is not None:
                 pending_requests.append((player, request))
@@ -750,7 +733,6 @@ class SetupPhaseHandler(BasePhaseHandler):
     def _start_patrol_squad_selection_flow(self, players, on_done) -> None:
         """Prompt local players for PATROL SQUAD split choices before formations dialogs."""
         from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
-        from ...engine.decision_requests import build_patrol_squad_requests
 
         local_players = []
         for player in list(players or []):
@@ -775,16 +757,6 @@ class SetupPhaseHandler(BasePhaseHandler):
                 pending.append(req)
 
         requests = list(pending)
-        if not requests:
-            for player in local_players:
-                try:
-                    army = player.get_army()
-                except Exception:
-                    army = None
-                if army is None:
-                    continue
-                units = list(getattr(army, "units", []) or [])
-                requests.extend(build_patrol_squad_requests(self.game, units, queue_requests=False))
 
         requests.sort(
             key=lambda req: (
@@ -938,7 +910,6 @@ class SetupPhaseHandler(BasePhaseHandler):
                 from ...engine.command_kinds import CMD_RESOLVE_DECISION
                 from ...engine.commands import GameCommand
                 from ...engine.decision_kinds import DECISION_ATTACH_LEADER
-                from ...engine.decision_requests import build_leader_attachment_requests
                 left_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
                 right_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
                 left_leaders.title = f"Attach Leaders - {p_left.name}"
@@ -1010,12 +981,9 @@ class SetupPhaseHandler(BasePhaseHandler):
                 r_ids = {get_entity_id(u) for u in r_units}
                 l_requests = {lid: req for lid, req in pending.items() if lid in l_ids}
                 r_requests = {rid: req for rid, req in pending.items() if rid in r_ids}
-                if not l_requests:
-                    l_reqs = build_leader_attachment_requests(self.game, l_units)
-                    l_requests = {str(getattr(req, "context", {}).get("leader_id", "")): req for req in l_reqs}
-                if not r_requests:
-                    r_reqs = build_leader_attachment_requests(self.game, r_units)
-                    r_requests = {str(getattr(req, "context", {}).get("leader_id", "")): req for req in r_reqs}
+                if not l_requests and not r_requests:
+                    _show_support_artillery()
+                    return
 
                 left_leaders.show(
                     l_units,
@@ -1042,7 +1010,6 @@ class SetupPhaseHandler(BasePhaseHandler):
                 from ...engine.command_kinds import CMD_RESOLVE_DECISION
                 from ...engine.commands import GameCommand
                 from ...engine.decision_kinds import DECISION_ATTACH_SUPPORT_ARTILLERY
-                from ...engine.decision_requests import build_support_artillery_attachment_requests
 
                 left_support = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
                 right_support = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
@@ -1115,12 +1082,6 @@ class SetupPhaseHandler(BasePhaseHandler):
                 r_ids = {get_entity_id(u) for u in r_units}
                 l_requests = {uid: req for uid, req in pending.items() if uid in l_ids}
                 r_requests = {uid: req for uid, req in pending.items() if uid in r_ids}
-                if not l_requests:
-                    l_reqs = build_support_artillery_attachment_requests(self.game, l_units)
-                    l_requests = {str(getattr(req, "context", {}).get("support_unit_id", "")): req for req in l_reqs}
-                if not r_requests:
-                    r_reqs = build_support_artillery_attachment_requests(self.game, r_units)
-                    r_requests = {str(getattr(req, "context", {}).get("support_unit_id", "")): req for req in r_reqs}
 
                 if not l_requests and not r_requests:
                     _show_transports()
@@ -1172,7 +1133,6 @@ class SetupPhaseHandler(BasePhaseHandler):
                 from ...engine.command_kinds import CMD_RESOLVE_DECISION
                 from ...engine.commands import GameCommand
                 from ...engine.decision_kinds import DECISION_ASSIGN_TRANSPORT
-                from ...engine.decision_requests import build_transport_assignment_requests
                 ldlg = TransportAssignmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
                 rdlg = TransportAssignmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
                 ldlg.title = f"Transports - {p_left.name}"
@@ -1234,12 +1194,9 @@ class SetupPhaseHandler(BasePhaseHandler):
                 r_ids = {get_entity_id(u) for u in units_r}
                 l_requests = {uid: req for uid, req in pending.items() if uid in l_ids}
                 r_requests = {uid: req for uid, req in pending.items() if uid in r_ids}
-                if not l_requests:
-                    l_reqs = build_transport_assignment_requests(self.game, units_l)
-                    l_requests = {str(getattr(req, "context", {}).get("unit_id", "")): req for req in l_reqs}
-                if not r_requests:
-                    r_reqs = build_transport_assignment_requests(self.game, units_r)
-                    r_requests = {str(getattr(req, "context", {}).get("unit_id", "")): req for req in r_reqs}
+                if not l_requests and not r_requests:
+                    _show_reserves()
+                    return
 
                 ldlg.show(units_l, unit_requests=l_requests, on_confirm=_l_done, on_cancel=lambda: None)
                 rdlg.show(units_r, unit_requests=r_requests, on_confirm=_r_done, on_cancel=lambda: None)
@@ -1252,7 +1209,6 @@ class SetupPhaseHandler(BasePhaseHandler):
             def _show_reserves():
                 from ..dialogs import ReservesAllocationDialog
                 from ...engine.decision_kinds import DECISION_DECLARE_RESERVES
-                from ...engine.decision_requests import build_reserves_allocation_request
                 from ...utility.decision_utils import resolve_decision_command
                 ldlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
                 rdlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
@@ -1291,10 +1247,14 @@ class SetupPhaseHandler(BasePhaseHandler):
                 ]
                 l_request = next((req for req in pending if req.player_id == p_left.id), None)
                 r_request = next((req for req in pending if req.player_id == p_right.id), None)
-                if l_request is None:
-                    l_request = build_reserves_allocation_request(self.game, a_left)
-                if r_request is None:
-                    r_request = build_reserves_allocation_request(self.game, a_right)
+                if l_request is None and r_request is None:
+                    _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
+                    _advance_setup_phase_cmd(self.game, player_id=_current_player_id(self.game))
+                    try:
+                        self.game_view.refresh_roster_panes()
+                    except Exception:
+                        pass
+                    return
 
                 ldlg.show(a_left, on_confirm=_l_done, on_cancel=lambda: None, decision_request=l_request)
                 rdlg.show(a_right, on_confirm=_r_done, on_cancel=lambda: None, decision_request=r_request)
@@ -1630,14 +1590,6 @@ class SetupPhaseHandler(BasePhaseHandler):
             DECISION_CHOOSE_PLAGUE,
             DECISION_CONFIRM_YES_NO,
         )
-        from ...engine.decision_requests import (
-            build_leader_attachment_requests,
-            build_patrol_squad_requests,
-            build_player_color_selection_requests,
-            build_support_artillery_attachment_requests,
-            build_transport_assignment_requests,
-            build_reserves_allocation_request,
-        )
         from ...engine.command_kinds import CMD_RESOLVE_DECISION
         from ...engine.commands import GameCommand
         from ...engine.decisions import DecisionOption, DecisionRequest
@@ -1710,9 +1662,6 @@ class SetupPhaseHandler(BasePhaseHandler):
         def _show_player_color():
             req = _pending_single(DECISION_CHOOSE_PLAYER_COLOR)
             if req is None:
-                created = build_player_color_selection_requests(self.game, [player], queue_requests=True)
-                req = created[0] if created else None
-            if req is None:
                 _show_hover()
                 return
 
@@ -1766,8 +1715,6 @@ class SetupPhaseHandler(BasePhaseHandler):
             _refresh_units_cache()
             req = _pending_single(DECISION_DECLARE_RESERVES)
             if req is None:
-                req = build_reserves_allocation_request(self.game, army)
-            if req is None:
                 return
             dlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
             self.game_view.reserves_allocation_dialog = dlg
@@ -1794,10 +1741,6 @@ class SetupPhaseHandler(BasePhaseHandler):
             _refresh_units_cache()
             unit_ids = {get_entity_id(u) for u in units}
             pending = _pending_requests(DECISION_ASSIGN_TRANSPORT, context_key="unit_id", valid_ids=unit_ids)
-            if not pending:
-                requests = build_transport_assignment_requests(self.game, units)
-                pending = {str(getattr(req, "context", {}).get("unit_id", "")): req for req in requests}
-                pending = {uid: req for uid, req in pending.items() if uid in unit_ids}
             if not pending:
                 _show_reserves()
                 return
@@ -1856,10 +1799,6 @@ class SetupPhaseHandler(BasePhaseHandler):
                 valid_ids=support_ids,
             )
             if not pending:
-                requests = build_support_artillery_attachment_requests(self.game, units)
-                pending = {str(getattr(req, "context", {}).get("support_unit_id", "")): req for req in requests}
-                pending = {sid: req for sid, req in pending.items() if sid in support_ids}
-            if not pending:
                 _show_transports()
                 return
             dlg = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
@@ -1916,10 +1855,6 @@ class SetupPhaseHandler(BasePhaseHandler):
             _refresh_units_cache()
             leader_ids = {get_entity_id(u) for u in units if bool(getattr(u, "is_leader", False))}
             pending = _pending_requests(DECISION_ATTACH_LEADER, context_key="leader_id", valid_ids=leader_ids)
-            if not pending:
-                requests = build_leader_attachment_requests(self.game, units)
-                pending = {str(getattr(req, "context", {}).get("leader_id", "")): req for req in requests}
-                pending = {lid: req for lid, req in pending.items() if lid in leader_ids}
             if not pending:
                 _show_transports()
                 return
@@ -2071,13 +2006,6 @@ class SetupPhaseHandler(BasePhaseHandler):
         def _show_patrol_squads():
             _refresh_units_cache()
             pending = _pending_patrol_squad_requests()
-            if not pending:
-                pending = list(build_patrol_squad_requests(self.game, units, queue_requests=False))
-                pending = [
-                    req
-                    for req in pending
-                    if str(getattr(req, "player_id", "") or "") == str(getattr(player, "id", "") or "")
-                ]
             if not pending:
                 _show_plague()
                 return
@@ -6013,7 +5941,6 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         from ...engine.command_kinds import CMD_RESOLVE_DECISION
         from ...engine.commands import GameCommand
         from ...engine.decision_kinds import DECISION_SCOUT_MOVE
-        from ...engine.decision_requests import build_scout_move_request
         from ...utility.entity_ids import get_entity_id
 
         def _pending_request():
@@ -6026,7 +5953,8 @@ class PreBattlePhaseHandler(BasePhaseHandler):
 
         req = _pending_request()
         if req is None:
-            req = build_scout_move_request(self.game_view.game, unit)
+            self._next_scout_unit()
+            return
 
         def _option_for_action(action: str) -> str:
             for opt in list(getattr(req, "options", []) or []):

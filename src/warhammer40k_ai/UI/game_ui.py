@@ -12036,11 +12036,6 @@ class GameView:
         except Exception:
             req = None
         if req is None:
-            try:
-                req = mgr.build_command_phase_bearer_request(game, player, source_unit, spec, targets)
-            except Exception:
-                req = None
-        if req is None:
             mgr.apply_command_phase_bearer_effect(source_unit, targets[0], spec)
             self._open_next_necrons_command_phase_enhancement_prompt(game, player)
             return
@@ -15485,11 +15480,6 @@ class GameView:
                 if str(ctx.get("army_id", "")) == str(army_id):
                     req = pending
                     break
-        if req is None and self.game is not None and bool(getattr(self.game, "is_authoritative", True)):
-            try:
-                req = mgr.build_start_of_round_request(army, battle_round=int(battle_round), game=self.game)
-            except Exception:
-                req = None
         if req is None:
             self._open_next_blessings_prompt(battle_round)
             return

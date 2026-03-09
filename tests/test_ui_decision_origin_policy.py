@@ -10,6 +10,16 @@ FORBIDDEN_PATTERNS = (
     "create_decision_request(",
     "queue_existing_decision_request(",
     "queue_decision_request(",
+    "build_leader_attachment_requests(",
+    "build_support_artillery_attachment_requests(",
+    "build_transport_assignment_requests(",
+    "build_reserves_allocation_request(",
+    "build_player_color_selection_requests(",
+    "build_patrol_squad_requests(",
+    "build_shadow_assignment_requests(",
+    "build_scout_move_request(",
+    "build_start_of_round_request(",
+    "build_command_phase_bearer_request(",
 )
 
 
