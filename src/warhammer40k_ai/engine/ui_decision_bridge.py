@@ -5,7 +5,7 @@ from typing import Optional
 from .decisions import CandidateAction, DecisionOption, DecisionRequest
 
 
-def create_decision_request(
+def _create_decision_request(
     decision_type: str,
     prompt: str,
     *,
@@ -33,7 +33,7 @@ def create_decision_request(
 
 
 def queue_decision_request(
-    game: object,
+    game: object | None,
     decision_type: str,
     prompt: str,
     *,
@@ -43,7 +43,7 @@ def queue_decision_request(
     candidates: list[CandidateAction] | None = None,
     mask: list[bool] | None = None,
 ) -> DecisionRequest:
-    request = create_decision_request(
+    request = _create_decision_request(
         decision_type,
         prompt,
         player_id=player_id,
@@ -52,16 +52,8 @@ def queue_decision_request(
         candidates=candidates,
         mask=mask,
     )
-    request_fn = getattr(game, "request_decision", None)
-    if not callable(request_fn):
-        raise RuntimeError("Game missing request_decision.")
-    request_fn(request)
-    return request
-
-
-def queue_existing_decision_request(game: object, request: DecisionRequest) -> DecisionRequest:
-    if request is None:
-        raise ValueError("Decision request is required.")
+    if game is None:
+        return request
     request_fn = getattr(game, "request_decision", None)
     if not callable(request_fn):
         raise RuntimeError("Game missing request_decision.")

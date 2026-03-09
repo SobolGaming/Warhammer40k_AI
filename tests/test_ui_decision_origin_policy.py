@@ -7,6 +7,8 @@ UI_ROOT = Path("src/warhammer40k_ai/UI")
 FORBIDDEN_PATTERNS = (
     "DecisionRequest.create(",
     ".request_decision(",
+    "create_decision_request(",
+    "queue_existing_decision_request(",
 )
 
 

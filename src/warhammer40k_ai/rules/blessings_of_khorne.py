@@ -579,6 +579,10 @@ class BlessingsOfKhorneManager:
             options=[DecisionOption.create("Confirm", payload={"army_id": army_id})],
             context={"army_id": army_id, "ctx": self.serialize_ctx_payload(ctx)},
         )
+        if game is not None:
+            request_fn = getattr(game, "request_decision", None)
+            if callable(request_fn):
+                request_fn(req)
         return req
 
     # ---------------- Total Carnage deferred resolution ----------------

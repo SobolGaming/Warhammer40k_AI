@@ -9,8 +9,7 @@ from ...utility.placement_validation import bases_overlap_3d
 from ...utility.entity_ids import get_entity_id
 from ...utility.debug import describe_callable, describe_self_stack
 from ...engine.ui_decision_bridge import (
-    create_decision_request as _create_decision_request,
-    queue_existing_decision_request as _queue_existing_decision_request,
+    queue_decision_request as _queue_decision_request,
 )
 import logging
 logger = logging.getLogger(__name__)
@@ -1548,22 +1547,17 @@ class IndividualModelMovementDialog(BaseDialog):
             existing_dialogs.append(self)
 
         unit_id = get_entity_id(self.unit)
-        request = _create_decision_request(
+        try:
+            game = getattr(getattr(self.unit.get_parent_army(), "player", None), "game", None)
+        except Exception:
+            game = None
+        request = _queue_decision_request(game,
             DECISION_RESOLVE_COHERENCY,
             f"Resolve coherency for {getattr(self.unit, 'name', 'Unit')}",
             player_id=getattr(getattr(self.unit.get_parent_army(), "player", None), "id", None),
             options=[DecisionOption.create("Confirm removals", payload={"unit_id": unit_id})],
             context={"unit_id": unit_id},
         )
-        try:
-            game = getattr(getattr(self.unit.get_parent_army(), "player", None), "game", None)
-        except Exception:
-            game = None
-        if game is not None:
-            try:
-                _queue_existing_decision_request(game, request)
-            except Exception:
-                pass
         self._coherency_request = request
         coherency_dialog.show(self.unit, non_coherent_models, self._on_coherency_resolution, existing_dialogs, decision_request=request)
 

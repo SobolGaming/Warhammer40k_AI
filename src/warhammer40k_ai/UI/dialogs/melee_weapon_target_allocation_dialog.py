@@ -18,8 +18,7 @@ from .base_dialog import (
 from ...units.wargear import AttackCountInfo
 from ...utility.entity_ids import get_entity_id
 from ...engine.ui_decision_bridge import (
-    create_decision_request as _create_decision_request,
-    queue_existing_decision_request as _queue_existing_decision_request,
+    queue_decision_request as _queue_decision_request,
 )
 
 
@@ -237,14 +236,14 @@ class MeleeWeaponTargetAllocationDialog(BaseDialog):
             wargear = bundle.get("wargear")
             profile_name = str(bundle.get("profile_name", "") or "")
             bundle_id = f"{get_entity_id(model)}:{get_entity_id(wargear)}:{profile_name}" if model and wargear else ""
-            request = _create_decision_request(
+            request = _queue_decision_request(self.game,
                 DECISION_SPLIT_ATTACKS,
                 f"Split attacks for {getattr(self.unit, 'name', 'Unit')}",
                 player_id=getattr(getattr(self.unit.get_parent_army(), "player", None), "id", None) if self.unit else None,
                 options=[DecisionOption.create("Confirm", payload={"unit_id": unit_id, "bundle_id": bundle_id})],
                 context={"unit_id": unit_id, "bundle_id": bundle_id},
+
             )
-            _queue_existing_decision_request(self.game, request)
 
         def _deserialize_attack_info(payload: dict) -> AttackCountInfo:
             return AttackCountInfo(
