@@ -234,6 +234,9 @@ class Game(
         self._phase_enemy_unit_destroyers: Dict[str, set[str]] = {}
         # Phase-scoped enemy model destruction tracking (for phase-end penalties like Daemonic Patrons).
         self._phase_enemy_model_destroyers: Dict[str, set[str]] = {}
+        # Adepta Sororitas datasheet tracking:
+        # army_id -> enemy unit ids that destroyed one or more ADEPTA SORORITAS units from that army.
+        self._adepta_sororitas_destroyers_by_army_id: Dict[str, set[str]] = {}
         # Temporary Shadow of Chaos zone overrides (e.g., Impossible Eclipse).
         self._shadow_of_chaos_zone_overrides: Dict[str, set[str]] = {}
         # Corrupt Realspace: allow sticky break only at start/end of turn.
@@ -8510,6 +8513,24 @@ class Game(
             attacker_root = destroyed_by_unit.get_attached_unit_root()
         except Exception:
             attacker_root = destroyed_by_unit
+
+        # Adepta Sororitas datasheet support:
+        # enemy units that destroyed one or more friendly ADEPTA SORORITAS units this battle.
+        destroyed_army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        destroyed_is_adepta_sororitas = False
+        if destroyed_army is not None:
+            faction_id = str(getattr(destroyed_army, "faction_id", "") or "").strip().upper()
+            destroyed_is_adepta_sororitas = faction_id == "AS"
+        if not destroyed_is_adepta_sororitas:
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if callable(has_any_keyword):
+                destroyed_is_adepta_sororitas = bool(has_any_keyword("ADEPTA SORORITAS"))
+        if destroyed_is_adepta_sororitas and destroyed_army is not None and attacker_root is not None:
+            destroyed_army_id = str(get_entity_id(destroyed_army) or getattr(destroyed_army, "_id", "") or "")
+            attacker_root_id = str(get_entity_id(attacker_root) or getattr(attacker_root, "_id", "") or "")
+            if destroyed_army_id and attacker_root_id:
+                tracked = self._adepta_sororitas_destroyers_by_army_id.setdefault(destroyed_army_id, set())
+                tracked.add(attacker_root_id)
 
         # Chaos Space Marines: Veterans of the Long War (Eye of Abaddon).
         try:

@@ -3547,6 +3547,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "While the unit contains a Repentia Superior model, melee attacks made by Sisters Repentia models in that unit can re-roll Hit rolls and Wound rolls.",
         ),
+        ("AS", "Storm of Retribution"): (
+            "Supported",
+            "Ranged attacks by this unit re-roll Hit rolls of 1 and Wound rolls of 1; attacks that target an enemy unit that has destroyed one or more friendly ADEPTA SORORITAS units this battle gain +1 to Hit and +1 to Wound.",
+        ),
         ("AS", "Litany of Deeds"): (
             "Supported",
             "Each time a friendly ADEPTA SORORITAS unit or model is destroyed within 12\" of this source, the resulting Miracle die gain can be re-rolled before being added to the pool.",

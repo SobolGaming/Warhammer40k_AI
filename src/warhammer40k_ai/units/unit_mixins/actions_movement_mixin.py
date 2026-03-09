@@ -4746,6 +4746,30 @@ class ActionsMovementMixin:
             return False
         return self._model_name_has_tokens(attacker_model, required=("repentia",), forbidden=("superior",))
 
+    def _storm_of_retribution_bonus_applies(self, *, root, target) -> bool:
+        if root is None or target is None:
+            return False
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        if army is None:
+            return False
+        game = getattr(getattr(army, "player", None), "game", None)
+        if game is None:
+            return False
+        tracker = getattr(game, "_adepta_sororitas_destroyers_by_army_id", None)
+        if not isinstance(tracker, dict):
+            return False
+        army_id = str(get_entity_id(army) or getattr(army, "_id", "") or "")
+        if not army_id:
+            return False
+        destroyers = tracker.get(army_id, set())
+        if not isinstance(destroyers, set):
+            return False
+        get_attached_unit_root = getattr(target, "get_attached_unit_root", None)
+        target_root = get_attached_unit_root() if callable(get_attached_unit_root) else target
+        target_id = str(get_entity_id(target_root) or getattr(target_root, "_id", "") or "")
+        return bool(target_id and target_id in destroyers)
+
     def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
         """
         Return unit-level hit modifiers for this attached unit, parsed via attack_roll_parser.
@@ -5514,6 +5538,19 @@ class ActionsMovementMixin:
                     source_name = str(source or "Oblivion Knight").strip() or "Oblivion Knight"
                     mods["hit"] += int(bonus)
                     hit_reasons.append(f"+{int(bonus)} to hit from {source_name}")
+
+        has_active_ability_fn = getattr(self, "_unit_has_active_ability_named", None)
+        storm_bonus_applies_fn = getattr(self, "_storm_of_retribution_bonus_applies", None)
+        if atype in ("any", "ranged") and callable(has_active_ability_fn):
+            if has_active_ability_fn(root, "Storm of Retribution"):
+                reroll_hit_values.add(1)
+                reroll_hit_reasons.append("Storm of Retribution: re-roll Hit rolls of 1 (ranged)")
+                if target is not None and callable(storm_bonus_applies_fn):
+                    if storm_bonus_applies_fn(root=root, target=target):
+                        mods["hit"] += 1
+                        hit_reasons.append(
+                            "+1 to hit from Storm of Retribution (vs enemy unit that destroyed friendly ADEPTA SORORITAS)"
+                        )
 
         overseer_applies_fn = getattr(self, "_overseer_of_redemption_applies_to_model", None)
         if callable(overseer_applies_fn):
@@ -6639,6 +6676,19 @@ class ActionsMovementMixin:
                 source_name = str(source or "Oblivion Knight").strip() or "Oblivion Knight"
                 mods["wound"] += int(bonus)
                 wound_reasons.append(f"{int(bonus):+d} to wound from {source_name}")
+
+        has_active_ability_fn = getattr(self, "_unit_has_active_ability_named", None)
+        storm_bonus_applies_fn = getattr(self, "_storm_of_retribution_bonus_applies", None)
+        if atype in ("any", "ranged") and callable(has_active_ability_fn):
+            if has_active_ability_fn(root, "Storm of Retribution"):
+                reroll_wound_values.add(1)
+                reroll_wound_reasons.append("Storm of Retribution: re-roll Wound rolls of 1 (ranged)")
+                if target is not None and callable(storm_bonus_applies_fn):
+                    if storm_bonus_applies_fn(root=root, target=target):
+                        mods["wound"] += 1
+                        wound_reasons.append(
+                            "+1 to wound from Storm of Retribution (vs enemy unit that destroyed friendly ADEPTA SORORITAS)"
+                        )
 
         overseer_applies_fn = getattr(self, "_overseer_of_redemption_applies_to_model", None)
         if callable(overseer_applies_fn):
