@@ -2105,11 +2105,10 @@ def _damaged_profile_support_for_key(key: str) -> Tuple[str, str]:
         "Hit roll -N + OC -N + Halve Attacks": "Applies all three effects while damaged.",
         "Melee Attacks +N": "Adds +N attacks for melee weapons while damaged.",
         "Specific weapon Attacks +N": "Adds +N attacks for a named weapon while damaged (best-effort match).",
+        "Limit Relics of the Matriarchs choices": "Damaged profile limits Relics of the Matriarchs to selecting one relic ability at battle-round start.",
     }
     if key in supported:
         return ("Supported", supported[key])
-    if "Limit Relics of the Matriarchs choices" in key:
-        return ("Partial", "Flag stored, but no gameplay/UI consumption yet.")
     if key == "Other / unclassified":
         return ("Not implemented", "No parser/engine effect wired for this damaged profile text.")
     return ("Partial", "Some damaged-profile text is recognized, but not all effects are implemented.")
@@ -3474,6 +3473,38 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AS", "Holy Mission"): ("Partial", "Scouts/Infiltrators applied without attachment restriction."),
         ("AS", "Holy Vanguard"): ("Partial", "Scouts 6\" applied without attached/embarked restriction."),
         ("AS", "Null Rod"): ("Supported", "Feel No Pain 4+ against mortal wounds and Psychic attacks."),
+        ("AS", "Relics of the Matriarchs"): (
+            "Supported",
+            "Start of each battle round: queue a deterministic choice (or None) of up to two listed relic auras for Triumph of Saint Katherine; when damaged, selection is capped to one relic; only selected relic auras are active until the next battle round.",
+        ),
+        ("AS", "Solemn Procession"): (
+            "Supported",
+            "At battle-round start, if an on-battlefield source has this ability, the army's Acts of Faith battle-round Miracle die is set to 6 (no D6 roll).",
+        ),
+        ("AS", "The Fiery Heart (Aura)"): (
+            "Supported",
+            "Selected Relics of the Matriarchs aura: friendly ADEPTA SORORITAS units within 6\" gain +2\" Move and +1 to Advance/Charge rolls.",
+        ),
+        ("AS", "Censer of the Sacred Rose (Aura)"): (
+            "Supported",
+            "Selected Relics of the Matriarchs aura: friendly ADEPTA SORORITAS units within 6\" can re-roll Battle-shock tests.",
+        ),
+        ("AS", "Simulacrum of the Ebon Chalice (Aura)"): (
+            "Supported",
+            "Selected Relics of the Matriarchs aura: friendly ADEPTA SORORITAS units within 6\" can perform up to two Acts of Faith per phase.",
+        ),
+        ("AS", "Simulacrum of the Argent Shroud (Aura)"): (
+            "Supported",
+            "Selected Relics of the Matriarchs aura: friendly ADEPTA SORORITAS units within 6\" re-roll Wound rolls of 1 for ranged attacks.",
+        ),
+        ("AS", "Icon of the Valorous Heart (Aura)"): (
+            "Supported",
+            "Selected Relics of the Matriarchs aura: friendly ADEPTA SORORITAS units within 6\" gain Feel No Pain 6+.",
+        ),
+        ("AS", "Petals of the Bloody Rose (Aura)"): (
+            "Supported",
+            "Selected Relics of the Matriarchs aura: friendly ADEPTA SORORITAS units within 6\" improve melee AP by 1.",
+        ),
         ("AS", "Rituale Nullificatus"): ("Supported", "Feel No Pain 4+ against Psychic attacks and mortal wounds."),
         ("AS", "Spiritual Fortitude"): ("Supported", "Feel No Pain 4+ against Psychic attacks and mortal wounds."),
         ("AOI", "Psychic Assassin"): (

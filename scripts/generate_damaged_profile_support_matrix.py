@@ -136,12 +136,10 @@ def _support_for_key(key: str) -> Tuple[str, str]:
         "Hit roll -N + OC -N + Halve Attacks": "Implemented: applies all three effects while damaged.",
         "Melee Attacks +N": "Implemented: adds +N attacks for melee weapons while damaged (as written on datasheet).",
         "Specific weapon Attacks +N": "Implemented: adds +N attacks for a specific named weapon while damaged (best-effort name match).",
+        "Limit Relics of the Matriarchs choices": "Implemented: damaged profile limits Relics of the Matriarchs selection to one relic ability.",
     }
     if key in supported:
         return "Supported", supported[key]
-    if "Limit Relics of the Matriarchs choices" in key:
-        # We set a flag, but no gameplay/UI currently consumes it.
-        return "Partial", "Flag is stored on the unit while damaged, but the Relics-of-the-Matriarchs selection UI/logic is not implemented."
     if key == "Other / unclassified":
         return "Not implemented", "No parser/engine effect wired for this damaged profile text yet."
     # Partial: we recognized some keyword but not all effect text (future-proof bucket).
@@ -234,4 +232,3 @@ def main() -> None:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()
-

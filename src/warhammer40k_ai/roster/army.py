@@ -272,6 +272,7 @@ class Army:
         self.prioritised_efficiency = None
         self.cult_ambush = None
         self.acts_of_faith = None
+        self.relics_of_the_matriarchs = None
         self.doctrina_imperatives = None
         self.voice_of_command = None
         self.voice_of_triarch = None
@@ -372,7 +373,9 @@ class Army:
 
         if fid == "AS":
             from ..rules.acts_of_faith import ActsOfFaithManager
+            from ..rules.adepta_sororitas_relics_of_the_matriarchs import RelicsOfTheMatriarchsManager
             self.acts_of_faith = ActsOfFaithManager(self)
+            self.relics_of_the_matriarchs = RelicsOfTheMatriarchsManager(self)
 
         if fid == "ADM":
             from ..rules.doctrina_imperatives import DoctrinaImperativesManager
@@ -2633,6 +2636,9 @@ class Army:
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "acts_of_faith", None)
+        if mgr is not None:
+            mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "relics_of_the_matriarchs", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "doctrina_imperatives", None)

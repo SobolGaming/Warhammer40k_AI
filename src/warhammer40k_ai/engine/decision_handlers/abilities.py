@@ -5830,6 +5830,78 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if required_round > 0 and battle_round != required_round:
             return ("Voice of the Triarch selection is no longer valid for this battle round.",)
         return ()
+    if ability == "relics_of_the_matriarchs":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Relics of the Matriarchs source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Relics of the Matriarchs source unit was not found.",)
+        if not _resurrection_orb_unit_on_battlefield(source_root):
+            return ("Relics of the Matriarchs source unit must be on the battlefield.",)
+        from ...rules.adepta_sororitas_relics_of_the_matriarchs import (
+            RELICS_OF_THE_MATRIARCHS_BY_KEY,
+            relics_of_the_matriarchs_max_choices,
+            unit_has_relics_of_the_matriarchs_ability,
+        )
+
+        if not bool(unit_has_relics_of_the_matriarchs_ability(source_root)):
+            return ("Relics of the Matriarchs source unit does not have Relics of the Matriarchs.",)
+
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            required_round = int(ctx.get("battle_round", 0) or 0)
+        except (TypeError, ValueError):
+            required_round = 0
+        if required_round > 0 and battle_round != required_round:
+            return ("Relics of the Matriarchs selection is no longer valid for this battle round.",)
+
+        raw_selected = payload.get("choice_keys")
+        if raw_selected is None:
+            choice_key = str(payload.get("choice_key", "") or "").strip()
+            raw_selected = [choice_key] if choice_key else []
+        if not isinstance(raw_selected, list):
+            return ("Relics of the Matriarchs selection requires choice_keys list.",)
+
+        selected_keys: list[str] = []
+        seen_keys: set[str] = set()
+        if not is_skip_choice(request, result):
+            for item in list(raw_selected or []):
+                key = str(item or "").strip().upper()
+                if not key:
+                    continue
+                if key in seen_keys:
+                    return ("Relics of the Matriarchs selection cannot include duplicate relics.",)
+                seen_keys.add(key)
+                selected_keys.append(key)
+
+        max_choices = int(relics_of_the_matriarchs_max_choices(source_root) or 0)
+        try:
+            ctx_max = int(ctx.get("max_choices", max_choices) or max_choices)
+        except (TypeError, ValueError):
+            ctx_max = int(max_choices)
+        max_choices = max(0, min(int(max_choices), int(ctx_max)))
+        if len(selected_keys) > int(max_choices):
+            return (f"Relics of the Matriarchs allows selecting up to {int(max_choices)} relic abilities.",)
+
+        allowed_keys = {
+            str(val).strip().upper()
+            for val in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(val).strip()
+        }
+        for key in selected_keys:
+            if allowed_keys and key not in allowed_keys:
+                return ("Relics of the Matriarchs selected relic is not an eligible choice.",)
+            if key not in RELICS_OF_THE_MATRIARCHS_BY_KEY:
+                return ("Relics of the Matriarchs selected relic is not supported.",)
+        return ()
     if ability == "librarius_psychic_disciplines":
         if is_skip_choice(request, result):
             return ("Psychic Disciplines selection cannot be skipped.",)
@@ -15024,6 +15096,116 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "source_unit_id": str(get_entity_id(source_root) or ""),
             "choice_key": str(choice_key),
             "choice_name": str(choice_name),
+            "battle_round": int(start_round or 0),
+        }
+    if ability == "relics_of_the_matriarchs":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return None
+        from ...rules.adepta_sororitas_relics_of_the_matriarchs import (
+            RELICS_OF_THE_MATRIARCHS_BY_KEY,
+            relics_of_the_matriarchs_max_choices,
+            set_active_relics_of_the_matriarchs,
+            unit_has_relics_of_the_matriarchs_ability,
+        )
+
+        if not bool(unit_has_relics_of_the_matriarchs_ability(source_root)):
+            return None
+
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            start_round = int(ctx.get("battle_round", 0) or battle_round)
+        except (TypeError, ValueError):
+            start_round = int(battle_round)
+        if start_round > 0 and battle_round != start_round:
+            return None
+
+        raw_selected = payload.get("choice_keys")
+        if raw_selected is None:
+            choice_key = str(payload.get("choice_key", "") or "").strip()
+            raw_selected = [choice_key] if choice_key else []
+        if not isinstance(raw_selected, list):
+            return None
+
+        selected_keys: list[str] = []
+        seen_keys: set[str] = set()
+        if not is_skip_choice(request, result):
+            for item in list(raw_selected or []):
+                key = str(item or "").strip().upper()
+                if not key or key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                selected_keys.append(key)
+        selected_key_set = set(selected_keys)
+        selected_keys = [
+            key for key in RELICS_OF_THE_MATRIARCHS_BY_KEY if key in selected_key_set
+        ]
+
+        max_choices = int(relics_of_the_matriarchs_max_choices(source_root) or 0)
+        try:
+            ctx_max = int(ctx.get("max_choices", max_choices) or max_choices)
+        except (TypeError, ValueError):
+            ctx_max = int(max_choices)
+        max_choices = max(0, min(int(max_choices), int(ctx_max)))
+        if len(selected_keys) > int(max_choices):
+            return None
+
+        allowed_keys = {
+            str(val).strip().upper()
+            for val in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(val).strip()
+        }
+        if allowed_keys and any(key not in allowed_keys for key in selected_keys):
+            return None
+        if any(key not in RELICS_OF_THE_MATRIARCHS_BY_KEY for key in selected_keys):
+            return None
+
+        try:
+            expires_round = int(ctx.get("expires_round", 0) or (start_round + 1))
+        except (TypeError, ValueError):
+            expires_round = int(start_round + 1)
+        player_id = str(ctx.get("player_id", "") or "")
+        if not player_id:
+            owner = getattr(source_root.get_parent_army(), "player", None) if hasattr(source_root, "get_parent_army") else None
+            player_id = str(getattr(owner, "id", "") or "")
+
+        set_active_relics_of_the_matriarchs(
+            source_root,
+            selected_keys,
+            start_round=int(start_round or 0),
+            expires_round=int(expires_round or 0),
+            player_id=player_id,
+        )
+
+        choice_names = [RELICS_OF_THE_MATRIARCHS_BY_KEY[key].name for key in selected_keys]
+        ability_name = str(ctx.get("ability_name", "") or "Relics of the Matriarchs").strip() or "Relics of the Matriarchs"
+        player = getattr(source_root.get_parent_army(), "player", None) if hasattr(source_root, "get_parent_army") else None
+        if choice_names:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected {' + '.join(choice_names)}.",
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected none.",
+            )
+        return {
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "choice_keys": list(selected_keys),
+            "choice_names": list(choice_names),
             "battle_round": int(start_round or 0),
         }
     if ability == "librarius_psychic_disciplines":

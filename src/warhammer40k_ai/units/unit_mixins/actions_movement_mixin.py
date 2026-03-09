@@ -659,6 +659,18 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            from ...rules.adepta_sororitas_relics_of_the_matriarchs import (
+                ability_name_to_key,
+                unit_has_active_relics_of_the_matriarchs,
+                unit_has_relics_of_the_matriarchs_ability,
+            )
+            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+            key = ability_name_to_key(name)
+            if key and unit_has_relics_of_the_matriarchs_ability(self):
+                return bool(unit_has_active_relics_of_the_matriarchs(self, key))
+        except Exception:
+            pass
+        try:
             from ...rules.adeptus_mechanicus_canticles import (
                 ability_name_to_key,
                 unit_has_active_canticles,

@@ -901,6 +901,14 @@ def _parse_advance_charge_roll_aura(ability) -> Optional[dict]:
         flags=re.IGNORECASE,
     )
     if not m:
+        m = re.search(
+            r'While a friendly (?P<faction_kw>.+?) units? is within (?P<rng>\d+)" of this (?:unit|model), '
+            r"(?:add \d+\"?\s+to (?:the )?Move characteristic of models in that unit|add \d+\"?\s+to that unit'?s Move characteristic) "
+            r"and add (?P<amt>\d+) to Advance and Charge rolls made for (?:that|the) unit",
+            desc,
+            flags=re.IGNORECASE,
+        )
+    if not m:
         return None
     return {
         "faction_keyword": str(m.group("faction_kw") or "").strip(),
@@ -952,6 +960,13 @@ def _parse_move_characteristic_aura(ability) -> Optional[dict]:
         desc,
         flags=re.IGNORECASE,
     )
+    if not m:
+        m = re.search(
+            rf'While a friendly (?P<faction_kw>.+?) units? is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
+            r"add (?P<amt>\d+)\"?\s+to that unit'?s Move characteristic",
+            desc,
+            flags=re.IGNORECASE,
+        )
     if not m:
         return None
     return {
@@ -2201,6 +2216,84 @@ def get_aura_advance_charge_roll_modifiers(unit, *, game_map=None) -> tuple[list
                 charge_mods.append((1, f"Aura: +1 to Charge rolls from {aura_name}"))
 
     return advance_mods, charge_mods
+
+
+def _parse_max_acts_of_faith_aura(ability) -> Optional[dict]:
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        rf'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
+        r"that unit can perform up to (?P<max_acts>\d+|one|two|three|four|five|six) Acts of Faith per phase(?:, instead of only one)?",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    max_acts_raw = str(m.group("max_acts") or "").strip().lower()
+    if max_acts_raw.isdigit():
+        max_acts = int(max_acts_raw)
+    else:
+        word_to_num = {
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+        }
+        max_acts = int(word_to_num.get(max_acts_raw, 0))
+    if max_acts <= 0:
+        return None
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "max_acts": int(max_acts),
+    }
+
+
+def get_aura_max_acts_of_faith_per_phase(unit, *, game_map=None) -> int:
+    _count_regex_hotspot("get_aura_max_acts_of_faith_per_phase")
+    """
+    Return the maximum Acts of Faith per phase allowed by friendly auras for this unit.
+    """
+    if unit is None:
+        return 1
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(unit)
+    if game_map is None:
+        return 1
+
+    max_acts = 1
+    applied_aura_names: set[str] = set()
+    for source in list(game_map.get_friendly_units(unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _cached_parse_aura_spec("_parse_max_acts_of_faith_aura", ab, _parse_max_acts_of_faith_aura)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if spec.get("faction_keyword"):
+                matches = _unit_matches_keyword_phrase(unit, spec["faction_keyword"])
+                if not matches:
+                    has_any_keyword = getattr(unit, "has_any_keyword", None)
+                    if callable(has_any_keyword):
+                        matches = bool(has_any_keyword(spec["faction_keyword"]))
+                if not matches:
+                    continue
+            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
+                continue
+            try:
+                max_acts = max(int(max_acts), int(spec.get("max_acts", 1) or 1))
+            except Exception:
+                continue
+    return max(1, int(max_acts))
 
 
 def has_aura_charge_reroll(unit, *, game_map=None) -> bool:

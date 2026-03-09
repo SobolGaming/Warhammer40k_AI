@@ -89,6 +89,56 @@ class TestActsOfFaith(unittest.TestCase):
 
         self.assertEqual(mgr.miracle_dice, [5])
 
+    def test_solemn_procession_forces_battle_round_miracle_die_to_six(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        game = SimpleNamespace(map=SimpleNamespace(), phase=SimpleNamespace(name="COMMAND_PHASE"))
+        player.game = game
+        army = self._make_army("AS", player)
+        triumph = self._make_unit("Triumph Of Saint Katherine", army, acts=True)
+        triumph.possible_abilities.append(SimpleNamespace(name="Solemn Procession"))
+        army.units = [triumph]
+        mgr = aof.ActsOfFaithManager(army)
+
+        calls = {"count": 0}
+        old_get_roll = aof.get_roll
+
+        def _get_roll(_s="D6"):
+            calls["count"] += 1
+            return 2
+
+        aof.get_roll = _get_roll
+        try:
+            mgr.on_battle_round_start(1, game=game)
+        finally:
+            aof.get_roll = old_get_roll
+
+        self.assertEqual(calls["count"], 0)
+        self.assertEqual(mgr.miracle_dice, [6])
+
+    def test_solemn_procession_does_not_apply_when_source_not_on_battlefield(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        game = SimpleNamespace(map=SimpleNamespace(), phase=SimpleNamespace(name="COMMAND_PHASE"))
+        player.game = game
+        army = self._make_army("AS", player)
+        triumph = self._make_unit("Triumph Of Saint Katherine", army, acts=True)
+        triumph.possible_abilities.append(SimpleNamespace(name="Solemn Procession"))
+        triumph.embarked_in = object()
+        army.units = [triumph]
+        mgr = aof.ActsOfFaithManager(army)
+
+        old_get_roll = aof.get_roll
+        aof.get_roll = lambda _s="D6": 4
+        try:
+            mgr.on_battle_round_start(1, game=game)
+        finally:
+            aof.get_roll = old_get_roll
+
+        self.assertEqual(mgr.miracle_dice, [4])
+
     def test_act_of_faith_once_per_phase(self):
         from warhammer40k_ai.rules import acts_of_faith as aof
 

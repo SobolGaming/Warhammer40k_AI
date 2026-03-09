@@ -217,6 +217,7 @@ Command phase:
 - twisted_doctrine_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="renegade_warband_twisted_doctrine"`, `ability_name="Twisted Doctrine"`, `unit_id`, `trigger_action`, `set_up_as_reinforcements`, `turn`, `turn_owner_id`, `allowed_choice_keys[]`, `optional=true`)
 - warmaster_dialog: CHOOSE_WARMASTER_ABILITY {choice_key} (context `unit_id`, `battle_round`, `player_id`, `expires_round`)
 - voice_of_triarch_dialog: CHOOSE_QUARRY {choice_key} (context `ability="voice_of_triarch"`, `source_unit_id`, `battle_round`, `expires_round`, `player_id`, `allowed_choice_keys`)
+- relics_of_the_matriarchs_dialog: CHOOSE_QUARRY {choice_keys[0..2] | skip} (context `ability="relics_of_the_matriarchs"`, `source_unit_id`, `battle_round`, `expires_round`, `player_id`, `allowed_choice_keys`, `max_choices`, `optional=true`)
 - blood_tithe_dialog: CHOOSE_BLOOD_TITHE {ability_key | skip} (context `army_id`, `timing`)
 - idols_of_khorne_dialog: CHOOSE_IDOL_OF_KHORNE {ability_key | skip} (context `army_id`, `timing`)
 - here_be_loot_dialog: CHOOSE_QUARRY {objective_id} (context `ability="here_be_loot"`, `ability_name="Here Be Loot"`, `army_id`, `battle_round`, `candidate_objective_ids[]`, `optional=false`)

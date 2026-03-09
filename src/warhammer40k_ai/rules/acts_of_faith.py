@@ -146,6 +146,25 @@ class ActsOfFaithManager:
             return False
         return False
 
+    def _solemn_procession_forces_battle_round_six(self) -> bool:
+        if self.army is None:
+            return False
+        seen_root_ids: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            root_id = self._unit_id(root)
+            if root_id:
+                if root_id in seen_root_ids:
+                    continue
+                seen_root_ids.add(root_id)
+            if not self._unit_on_battlefield(root):
+                continue
+            if self._unit_has_ability_named(root, "Solemn Procession"):
+                return True
+        return False
+
     def _model_matches_name(self, model, target_name: str) -> bool:
         if model is None:
             return False
@@ -420,6 +439,19 @@ class ActsOfFaithManager:
                 max_acts = max(1, int(max_fn(unit) or 1))
         except Exception:
             max_acts = 1
+        try:
+            from ..utility.aura_effects import get_aura_max_acts_of_faith_per_phase
+
+            aura_max = int(
+                get_aura_max_acts_of_faith_per_phase(
+                    unit,
+                    game_map=getattr(game, "map", None),
+                )
+                or 1
+            )
+            max_acts = max(int(max_acts), max(1, int(aura_max)))
+        except Exception:
+            pass
 
         used_phase = ""
         used_count = 0
@@ -607,9 +639,19 @@ class ActsOfFaithManager:
                 return int(value or 0)
         return int(get_roll("D6") or 0)
 
-    def gain_miracle_die(self, *, game=None, allow_reroll: bool = False, reason: str = "") -> int:
-        value = int(get_roll("D6") or 0)
-        value = self._maybe_reroll_miracle_die(value, allow_reroll=allow_reroll, game=game)
+    def gain_miracle_die(
+        self,
+        *,
+        game=None,
+        allow_reroll: bool = False,
+        reason: str = "",
+        battle_round_start: bool = False,
+    ) -> int:
+        if bool(battle_round_start) and self._solemn_procession_forces_battle_round_six():
+            value = 6
+        else:
+            value = int(get_roll("D6") or 0)
+            value = self._maybe_reroll_miracle_die(value, allow_reroll=allow_reroll, game=game)
         self.miracle_dice.append(int(value))
         try:
             player = getattr(self.army, "player", None)
@@ -625,7 +667,12 @@ class ActsOfFaithManager:
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
         if not self._army_has_rule():
             return
-        self.gain_miracle_die(game=game, allow_reroll=False, reason="Battle round start")
+        self.gain_miracle_die(
+            game=game,
+            allow_reroll=False,
+            reason="Battle round start",
+            battle_round_start=True,
+        )
 
     def on_unit_destroyed(
         self,
