@@ -3520,6 +3520,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Enemy units within 6\" of the source worsen their Leadership characteristic by 1.",
         ),
+        ("AS", "Devastating Refrain"): (
+            "Supported",
+            "After shooting, enemy units hit by this model's INDIRECT FIRE attacks take Battle-shock tests; models with Deadly Demise destroyed by such attacks trigger on 5+ instead of 6.",
+        ),
         ("AS", "Stirring Rhetoric"): (
             "Supported",
             "While a Dialogus is attached as a leader, each Act of Faith performed by that attached unit changes one used Miracle die value to 6 before resolving the substituted roll.",

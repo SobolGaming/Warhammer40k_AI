@@ -1344,6 +1344,41 @@ class DamageDeathMixin:
         except Exception:
             pass
 
+        # Adepta Sororitas (Exorcist): Devastating Refrain.
+        # If an enemy model with Deadly Demise is destroyed by one of this source's
+        # INDIRECT FIRE attacks, Deadly Demise triggers on 5+ instead of 6.
+        try:
+            last_weapon_profile = getattr(self, "_last_destroyed_by_weapon_profile", None)
+            last_attacker_unit = getattr(self, "_last_destroyed_by_unit", None)
+            if last_weapon_profile is not None and last_attacker_unit is not None:
+                is_indirect_fn = getattr(last_weapon_profile, "is_indirect_fire", None)
+                is_indirect = bool(is_indirect_fn()) if callable(is_indirect_fn) else False
+                if is_indirect:
+                    try:
+                        attacker_root = last_attacker_unit.get_attached_unit_root()
+                    except Exception:
+                        attacker_root = last_attacker_unit
+                    has_devastating_refrain = False
+                    for ability in list(getattr(attacker_root, "possible_abilities", []) or []):
+                        ability_name = ""
+                        try:
+                            if isinstance(ability, str):
+                                ability_name = str(ability or "")
+                            elif isinstance(ability, dict):
+                                ability_name = str(ability.get("name", "") or "")
+                            else:
+                                ability_name = str(getattr(ability, "name", "") or "")
+                        except Exception:
+                            ability_name = ""
+                        norm_name = re.sub(r"[^a-z0-9]+", " ", str(ability_name or "").lower()).strip()
+                        if norm_name == "devastating refrain":
+                            has_devastating_refrain = True
+                            break
+                    if has_devastating_refrain:
+                        trigger_threshold = int(min(int(trigger_threshold), 5))
+        except Exception:
+            pass
+
         auto_trigger = False
         putrid_auto_trigger = False
         sanctified_auto_trigger = False

@@ -593,6 +593,7 @@ class GameShootingFightHandlersMixin:
         attacker_unit=None,
         hits_by_target=None,
         hit_models_by_target=None,
+        hit_models_by_target_weapon=None,
         killing_models_by_target=None,
         **_kwargs,
     ) -> None:
@@ -642,6 +643,107 @@ class GameShootingFightHandlersMixin:
             if not hit_models:
                 return False
             return model in hit_models
+
+        def _normalize_weapon_key(value: str) -> str:
+            normalizer = getattr(attacker_unit, "_normalize_keyword_phrase", None)
+            if callable(normalizer):
+                try:
+                    return str(normalizer(value) or "")
+                except Exception:
+                    return ""
+            text = str(value or "").lower()
+            text = re.sub(r"[^a-z0-9]+", " ", text)
+            return re.sub(r"\s+", " ", text).strip()
+
+        def _target_weapon_hit_models(target, weapon_key: str):
+            if not weapon_key or not isinstance(hit_models_by_target_weapon, dict):
+                return None
+            target_map = hit_models_by_target_weapon.get(target)
+            if target_map is None:
+                try:
+                    target_root = target.get_attached_unit_root()
+                except Exception:
+                    target_root = target
+                target_map = hit_models_by_target_weapon.get(target_root)
+            if not isinstance(target_map, dict):
+                return None
+            models = target_map.get(weapon_key)
+            if not models and weapon_key.endswith("s"):
+                models = target_map.get(weapon_key[:-1])
+            if not models and not weapon_key.endswith("s"):
+                models = target_map.get(f"{weapon_key}s")
+            return models
+
+        indirect_weapon_keys_by_model: dict[str, set[str]] = {}
+        all_indirect_weapon_keys: set[str] = set()
+
+        def _model_indirect_weapon_keys(model) -> set[str]:
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in indirect_weapon_keys_by_model:
+                return set(indirect_weapon_keys_by_model[model_id])
+            keys: set[str] = set()
+            for wargear in list(getattr(model, "wargear", []) or []):
+                is_ranged_fn = getattr(wargear, "is_ranged", None)
+                try:
+                    if callable(is_ranged_fn) and not bool(is_ranged_fn()):
+                        continue
+                except Exception:
+                    continue
+                profiles = getattr(wargear, "profiles", None)
+                if not isinstance(profiles, dict):
+                    continue
+                for profile in list(profiles.values()):
+                    if profile is None:
+                        continue
+                    is_indirect_fn = getattr(profile, "is_indirect_fire", None)
+                    try:
+                        is_indirect = bool(is_indirect_fn()) if callable(is_indirect_fn) else False
+                    except Exception:
+                        is_indirect = False
+                    if not is_indirect:
+                        continue
+                    weapon_name = ""
+                    try:
+                        parent = getattr(profile, "parent_wargear", None)
+                        if parent is not None:
+                            weapon_name = str(getattr(parent, "name", "") or "")
+                    except Exception:
+                        weapon_name = ""
+                    if not weapon_name:
+                        weapon_name = str(getattr(profile, "name", "") or "")
+                    key = _normalize_weapon_key(weapon_name)
+                    if key:
+                        keys.add(key)
+                        all_indirect_weapon_keys.add(key)
+            if model_id:
+                indirect_weapon_keys_by_model[model_id] = set(keys)
+            return set(keys)
+
+        def _model_hit_target_with_any_indirect_weapon(model, target) -> bool:
+            if not isinstance(hit_models_by_target_weapon, dict):
+                return False
+            weapon_keys = _model_indirect_weapon_keys(model)
+            if not weapon_keys:
+                return False
+            for weapon_key in list(weapon_keys):
+                hit_models = _target_weapon_hit_models(target, weapon_key)
+                if hit_models and model in hit_models:
+                    return True
+            return False
+
+        def _target_hit_with_any_indirect_weapon(target) -> bool:
+            if not isinstance(hit_models_by_target_weapon, dict):
+                return False
+            if not all_indirect_weapon_keys:
+                for model in list(attacker_unit.models or []):
+                    _model_indirect_weapon_keys(model)
+            if not all_indirect_weapon_keys:
+                return False
+            for weapon_key in list(all_indirect_weapon_keys):
+                hit_models = _target_weapon_hit_models(target, weapon_key)
+                if hit_models:
+                    return True
+            return False
 
         def _is_monster_or_vehicle(unit) -> bool:
             if unit is None:
@@ -765,6 +867,10 @@ class GameShootingFightHandlersMixin:
                         continue
                     if not _model_hit_target(model, target_unit):
                         continue
+                    if bool(spec.get("require_indirect_fire_hit", False)) and not _model_hit_target_with_any_indirect_weapon(
+                        model, target_unit
+                    ):
+                        continue
                     candidates.append(target_unit)
                 if candidates:
                     triggers.append((model, spec, candidates))
@@ -781,6 +887,10 @@ class GameShootingFightHandlersMixin:
                     continue
                 if not _spec_allows_target(spec, target_unit):
                     continue
+                if bool(spec.get("require_indirect_fire_hit", False)) and not _target_hit_with_any_indirect_weapon(
+                    target_unit
+                ):
+                    continue
                 candidates.append(target_unit)
             if candidates:
                 triggers.append((None, spec, candidates))
@@ -788,45 +898,80 @@ class GameShootingFightHandlersMixin:
         if not triggers:
             return
 
+        def _battle_shock_modifier_for_target(spec: dict, cand, model) -> int:
+            modifier = 0
+            try:
+                modifier = int(spec.get("test_modifier", 0) or 0)
+            except Exception:
+                modifier = 0
+            try:
+                conditional_mod = int(spec.get("test_modifier_if_target_within_range", 0) or 0)
+            except Exception:
+                conditional_mod = 0
+            if conditional_mod:
+                try:
+                    cond_range = float(spec.get("test_modifier_range", 0) or 0.0)
+                except Exception:
+                    cond_range = 0.0
+                phrase = str(spec.get("test_modifier_friendly_keyword_phrase", "") or "")
+                if _target_within_friendly_keyword_phrase_range(
+                    cand,
+                    phrase=phrase,
+                    range_value=cond_range,
+                ):
+                    modifier += int(conditional_mod)
+            try:
+                if spec.get("test_modifier_on_kill"):
+                    if model is None:
+                        if _unit_killed_target(cand):
+                            modifier += int(spec.get("test_modifier_on_kill", 0) or 0)
+                    else:
+                        if _model_killed_target(model, cand):
+                            modifier += int(spec.get("test_modifier_on_kill", 0) or 0)
+            except Exception:
+                pass
+            return int(modifier)
+
         from ..decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
 
         for model, spec, candidates in triggers:
             if not candidates:
                 continue
             ability_name = str(spec.get("source", "") or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
+            if bool(spec.get("auto_each_target", False)):
+                tested_ids: set[str] = set()
+                for cand in list(candidates):
+                    if cand is None or not getattr(cand, "is_alive", lambda: False)():
+                        continue
+                    target_id = str(get_entity_id(cand) or "")
+                    if target_id and target_id in tested_ids:
+                        continue
+                    modifier = _battle_shock_modifier_for_target(spec, cand, model)
+                    if modifier:
+                        sr = getattr(cand, "special_rules", None)
+                        if not isinstance(sr, dict):
+                            sr = {}
+                        current = int(sr.get("battle_shock_test_modifier", 0) or 0)
+                        sr["battle_shock_test_modifier"] = int(current + modifier)
+                        reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+                        reasons.append(ability_name)
+                        sr["battle_shock_test_modifier_reasons"] = reasons
+                        cand.special_rules = sr
+                    try:
+                        cand.take_battle_shock_test(int(getattr(self, "turn", 0) or 0))
+                    except Exception:
+                        pass
+                    try:
+                        target_name = str(getattr(cand, "name", "Unit") or "Unit")
+                        _log_action_for_players(self, attacker_player, f"{ability_name}: {target_name} takes a Battle-shock test.")
+                    except Exception:
+                        pass
+                    if target_id:
+                        tested_ids.add(target_id)
+                continue
             options = []
             for cand in list(candidates):
-                modifier = 0
-                try:
-                    modifier = int(spec.get("test_modifier", 0) or 0)
-                except Exception:
-                    modifier = 0
-                try:
-                    conditional_mod = int(spec.get("test_modifier_if_target_within_range", 0) or 0)
-                except Exception:
-                    conditional_mod = 0
-                if conditional_mod:
-                    try:
-                        cond_range = float(spec.get("test_modifier_range", 0) or 0.0)
-                    except Exception:
-                        cond_range = 0.0
-                    phrase = str(spec.get("test_modifier_friendly_keyword_phrase", "") or "")
-                    if _target_within_friendly_keyword_phrase_range(
-                        cand,
-                        phrase=phrase,
-                        range_value=cond_range,
-                    ):
-                        modifier += int(conditional_mod)
-                try:
-                    if spec.get("test_modifier_on_kill"):
-                        if model is None:
-                            if _unit_killed_target(cand):
-                                modifier += int(spec.get("test_modifier_on_kill", 0) or 0)
-                        else:
-                            if _model_killed_target(model, cand):
-                                modifier += int(spec.get("test_modifier_on_kill", 0) or 0)
-                except Exception:
-                    pass
+                modifier = _battle_shock_modifier_for_target(spec, cand, model)
                 payload = {"unit_id": get_entity_id(cand)}
                 if modifier:
                     payload["battle_shock_test_modifier"] = int(modifier)

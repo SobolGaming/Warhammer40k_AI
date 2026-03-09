@@ -40,6 +40,25 @@ class AbilitySpecsMixin:
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
             exclude_mv = "excluding monsters and vehicles" in normalized
+            if (
+                "after this model has shot" in normalized
+                and "made with an indirect fire weapon scored a hit against an enemy unit" in normalized
+                and "that unit must take a battle shock test" in normalized
+            ):
+                source = str(name or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
+                key = (source.lower(), "indirect_fire_hit")
+                if key not in seen:
+                    seen.add(key)
+                    specs.append(
+                        {
+                            "infantry_only": False,
+                            "exclude_monster_vehicle": False,
+                            "require_indirect_fire_hit": True,
+                            "auto_each_target": True,
+                            "source": source,
+                        }
+                    )
+                continue
             m_kill = self._POST_SHOOT_BATTLESHOCK_ON_KILL_RE.fullmatch(normalized)
             if m_kill:
                 if str(m_kill.group("subject") or "").strip().lower() != "model":
