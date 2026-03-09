@@ -85,10 +85,15 @@ class _UnitStub:
 
         return Unit.get_unit_hit_reroll_modifiers(self, attack_type, target=target, attacker_model=attacker_model)
 
-    def get_unit_wound_reroll_modifiers(self, attack_type: str, *, target=None) -> dict:
+    def get_unit_wound_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
         from warhammer40k_ai.units.unit import Unit
 
-        return Unit.get_unit_wound_reroll_modifiers(self, attack_type, target=target)
+        return Unit.get_unit_wound_reroll_modifiers(
+            self,
+            attack_type,
+            target=target,
+            attacker_model=attacker_model,
+        )
 
     def _target_within_objective_range(self, target_unit=None, game_map=None) -> bool:
         return bool(getattr(self, "_force_target_within_objective", False))

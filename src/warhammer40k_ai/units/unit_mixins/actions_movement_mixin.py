@@ -4691,6 +4691,61 @@ class ActionsMovementMixin:
                     return False
         return True
 
+    def _unit_has_active_ability_named(self, unit, ability_name: str) -> bool:
+        if unit is None:
+            return False
+        target = self._normalize_ascii_alnum_space(ability_name)
+        if not target:
+            return False
+        iter_active = getattr(unit, "_iter_active_possible_abilities", None)
+        if callable(iter_active):
+            abilities = list(iter_active() or [])
+        else:
+            abilities = list(getattr(unit, "possible_abilities", []) or [])
+        for ab in abilities:
+            if isinstance(ab, str):
+                name = str(ab or "")
+            else:
+                name = str(getattr(ab, "name", "") or "")
+            if self._normalize_ascii_alnum_space(name) == target:
+                return True
+        return False
+
+    def _model_name_has_tokens(self, model, *, required: tuple[str, ...], forbidden: tuple[str, ...] = ()) -> bool:
+        if model is None:
+            return False
+        model_name = self._normalize_ascii_alnum_space(getattr(model, "name", ""))
+        if not model_name:
+            return False
+        tokens = set(model_name.split())
+        for token in required:
+            if str(token or "").strip().lower() not in tokens:
+                return False
+        for token in forbidden:
+            if str(token or "").strip().lower() in tokens:
+                return False
+        return True
+
+    def _overseer_of_redemption_applies_to_model(self, *, root, attacker_model, attack_type: str) -> bool:
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("any", "melee"):
+            return False
+        if root is None or attacker_model is None:
+            return False
+        if not self._unit_has_active_ability_named(root, "Overseer of Redemption"):
+            return False
+        contains_named = getattr(root, "_unit_contains_model_named", None)
+        has_superior = bool(contains_named("Repentia Superior")) if callable(contains_named) else False
+        if not has_superior:
+            models = list(getattr(root, "models", []) or [])
+            for model in models:
+                if self._model_name_has_tokens(model, required=("repentia", "superior")):
+                    has_superior = True
+                    break
+        if not has_superior:
+            return False
+        return self._model_name_has_tokens(attacker_model, required=("repentia",), forbidden=("superior",))
+
     def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
         """
         Return unit-level hit modifiers for this attached unit, parsed via attack_roll_parser.
@@ -5460,6 +5515,16 @@ class ActionsMovementMixin:
                     mods["hit"] += int(bonus)
                     hit_reasons.append(f"+{int(bonus)} to hit from {source_name}")
 
+        overseer_applies_fn = getattr(self, "_overseer_of_redemption_applies_to_model", None)
+        if callable(overseer_applies_fn):
+            if overseer_applies_fn(
+                root=root,
+                attacker_model=attacker_model,
+                attack_type=atype,
+            ):
+                mods["reroll_hit_full"] = True
+                reroll_hit_full_reasons.append("Overseer of Redemption: re-roll Hit roll (Sisters Repentia melee)")
+
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
         mods["crit_hit_threshold"] = crit_hit_threshold
@@ -5708,7 +5773,7 @@ class ActionsMovementMixin:
             return False
         return True
 
-    def get_unit_wound_reroll_modifiers(self, attack_type: str, *, target=None) -> dict:
+    def get_unit_wound_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
         """
         Return unit-level wound modifiers for this attached unit, parsed via attack_roll_parser.
         """
@@ -6560,20 +6625,30 @@ class ActionsMovementMixin:
         if callable(bonus_fn):
             get_models = getattr(root, "get_attached_unit_models", None)
             models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
-            attacker_model = None
+            oblivion_attacker_model = None
             for model in models:
                 is_alive_attr = getattr(model, "is_alive", None)
                 is_alive = bool(is_alive_attr()) if callable(is_alive_attr) else bool(is_alive_attr)
                 if is_alive:
-                    attacker_model = model
+                    oblivion_attacker_model = model
                     break
             player = getattr(army, "player", None) if army is not None else None
             game_now = getattr(player, "game", None) if player is not None else None
-            bonus, source = bonus_fn(attacker_model=attacker_model, target_unit=target, game=game_now)
+            bonus, source = bonus_fn(attacker_model=oblivion_attacker_model, target_unit=target, game=game_now)
             if int(bonus or 0):
                 source_name = str(source or "Oblivion Knight").strip() or "Oblivion Knight"
                 mods["wound"] += int(bonus)
                 wound_reasons.append(f"{int(bonus):+d} to wound from {source_name}")
+
+        overseer_applies_fn = getattr(self, "_overseer_of_redemption_applies_to_model", None)
+        if callable(overseer_applies_fn):
+            if overseer_applies_fn(
+                root=root,
+                attacker_model=attacker_model,
+                attack_type=atype,
+            ):
+                mods["reroll_wound_full"] = True
+                reroll_wound_full_reasons.append("Overseer of Redemption: re-roll Wound roll (Sisters Repentia melee)")
 
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
         mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)
