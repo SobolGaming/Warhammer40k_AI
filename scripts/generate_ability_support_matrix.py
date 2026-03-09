@@ -3471,7 +3471,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
     raw = {
         ("AS", "Endless Suffering"): ("Supported", "Charge-after-Advance eligibility."),
         ("AS", "Holy Mission"): ("Partial", "Scouts/Infiltrators applied without attachment restriction."),
-        ("AS", "Holy Vanguard"): ("Partial", "Scouts 6\" applied without attached/embarked restriction."),
+        ("AS", "Holy Vanguard"): (
+            "Supported",
+            "Attached Leader gains Scouts 6\" only when the bodyguard started the battle embarked in a TRANSPORT.",
+        ),
         ("AS", "Null Rod"): ("Supported", "Feel No Pain 4+ against mortal wounds and Psychic attacks."),
         ("AS", "Relics of the Matriarchs"): (
             "Supported",

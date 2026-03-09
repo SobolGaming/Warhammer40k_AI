@@ -8863,11 +8863,16 @@ class PositioningMixin:
             dist = max(float(dist or 0.0), float(bonus_dist))
         try:
             sr = getattr(self, "special_rules", None)
-            leader_bonus_dist = (
-                float(sr.get("attached_unit_bodyguard_leader_scout_distance", 0) or 0.0)
-                if isinstance(sr, dict) and bool(getattr(self, "is_attached_leader", False))
-                else 0.0
-            )
+            leader_bonus_dist = 0.0
+            if isinstance(sr, dict) and bool(getattr(self, "is_attached_leader", False)):
+                leader_bonus_dist = float(sr.get("attached_unit_bodyguard_leader_scout_distance", 0) or 0.0)
+                conditional_bonus_dist = float(
+                    sr.get("attached_unit_bodyguard_leader_scout_distance_requires_bodyguard_embarked", 0) or 0.0
+                )
+                if conditional_bonus_dist > 0:
+                    bodyguard = getattr(self, "attached_to", None)
+                    if bodyguard is not None and bool(getattr(bodyguard, "is_embarked", False)):
+                        leader_bonus_dist = max(float(leader_bonus_dist), float(conditional_bonus_dist))
         except Exception:
             leader_bonus_dist = 0.0
         if leader_bonus_dist > 0:

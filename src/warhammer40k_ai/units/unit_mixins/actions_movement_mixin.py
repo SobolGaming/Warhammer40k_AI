@@ -892,9 +892,18 @@ class ActionsMovementMixin:
                 return None
         if "scout" not in low:
             return None
+        requires_bodyguard_embarked = bool(
+            re.search(
+                r"\bthis unit starts the battle embarked within (?:a|an) transport\b",
+                low,
+                flags=re.IGNORECASE,
+            )
+        )
 
         m = re.search(
-            r"\bif a (?P<keywords>[^.;]+?)\s+(?:(?:model|unit)\s+)?from your army is attached to this unit during the declare battle formations step,?\s*"
+            r"\bif a (?P<keywords>[^.;]+?)\s+(?:(?:model|unit)\s+)?from your army is attached to this unit during the declare battle formations step"
+            r"(?:\s+and\s+this unit starts the battle embarked within (?:a|an)\s+transport)?"
+            r",?\s*"
             r"that model gains(?: the)? scouts?\s*(?P<distance>\d+)",
             low,
             flags=re.IGNORECASE,
@@ -915,11 +924,17 @@ class ActionsMovementMixin:
                 return None
             if distance <= 0:
                 return None
-            return {"leader_keywords": tuple(leader_keywords), "scout_distance": int(distance)}
+            return {
+                "leader_keywords": tuple(leader_keywords),
+                "scout_distance": int(distance),
+                "requires_bodyguard_embarked": bool(requires_bodyguard_embarked),
+            }
 
         # Generic retinue-style wording where any attached Leader gains Scouts.
         m = re.search(
-            r"\bif this unit has a leader unit attached to it during the declare battle formations step,?\s*"
+            r"\bif this unit has a leader unit attached to it during the declare battle formations step"
+            r"(?:\s+and\s+this unit starts the battle embarked within (?:a|an)\s+transport)?"
+            r",?\s*"
             r"that leader unit gains(?: the)? scouts?\s*(?P<distance>\d+)",
             low,
             flags=re.IGNORECASE,
@@ -932,7 +947,11 @@ class ActionsMovementMixin:
             return None
         if distance <= 0:
             return None
-        return {"leader_keywords": tuple(), "scout_distance": int(distance)}
+        return {
+            "leader_keywords": tuple(),
+            "scout_distance": int(distance),
+            "requires_bodyguard_embarked": bool(requires_bodyguard_embarked),
+        }
 
     def _ability_attached_unit_bodyguard_leader_deep_strike(self, ability) -> Optional[dict]:
         """
@@ -1008,6 +1027,9 @@ class ActionsMovementMixin:
             removed = True
         if "attached_unit_bodyguard_leader_scout_distance" in sr:
             del sr["attached_unit_bodyguard_leader_scout_distance"]
+            removed = True
+        if "attached_unit_bodyguard_leader_scout_distance_requires_bodyguard_embarked" in sr:
+            del sr["attached_unit_bodyguard_leader_scout_distance_requires_bodyguard_embarked"]
             removed = True
         if "enhancement_warped_foresight_active" in sr:
             del sr["enhancement_warped_foresight_active"]
@@ -1128,7 +1150,8 @@ class ActionsMovementMixin:
         self._clear_attached_unit_bodyguard_leader_scouts()
         if bodyguard is None:
             return
-        max_distance = 0
+        max_distance_unconditional = 0
+        max_distance_requires_embarked = 0
         for ab in (getattr(bodyguard, "possible_abilities", []) or []):
             rule = self._ability_attached_unit_bodyguard_leader_scouts(ab)
             if rule is None:
@@ -1137,15 +1160,26 @@ class ActionsMovementMixin:
             if rule_keywords and not any(self.has_any_keyword(k) for k in rule_keywords):
                 continue
             try:
-                max_distance = max(max_distance, int(rule.get("scout_distance", 0) or 0))
+                scout_distance = int(rule.get("scout_distance", 0) or 0)
             except Exception:
                 continue
-        if max_distance > 0:
+            if scout_distance <= 0:
+                continue
+            if bool(rule.get("requires_bodyguard_embarked", False)):
+                max_distance_requires_embarked = max(max_distance_requires_embarked, int(scout_distance))
+            else:
+                max_distance_unconditional = max(max_distance_unconditional, int(scout_distance))
+        if max_distance_unconditional > 0 or max_distance_requires_embarked > 0:
             sr = getattr(self, "special_rules", None)
             if not isinstance(sr, dict):
                 sr = {}
             sr["attached_unit_bodyguard_leader_scouts"] = True
-            sr["attached_unit_bodyguard_leader_scout_distance"] = int(max_distance)
+            if max_distance_unconditional > 0:
+                sr["attached_unit_bodyguard_leader_scout_distance"] = int(max_distance_unconditional)
+            if max_distance_requires_embarked > 0:
+                sr["attached_unit_bodyguard_leader_scout_distance_requires_bodyguard_embarked"] = int(
+                    max_distance_requires_embarked
+                )
             self.special_rules = sr
         self._refresh_warped_foresight_attached_scouts(bodyguard)
 
