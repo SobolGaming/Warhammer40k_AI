@@ -20,6 +20,9 @@ Default candidate kinds used for dataset extraction:
 - `noop` (skip/pass candidates in deployment-scoped requests)
 
 The pipeline consumes DecisionRecords with deterministic candidate metadata and chosen actions.
+Deployment-zone candidates include board-affordance metadata produced from terrain-aware lane
+sampling (for example `los_tunnel_count`, `hidden_staging_cell_count`,
+`must_expose_to_advance_cell_count`, infantry/vehicle approach quality).
 
 ## Dataset build
 

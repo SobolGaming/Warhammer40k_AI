@@ -1036,7 +1036,7 @@ def build_deployment_zone_request(
     extra_context: Optional[dict] = None,
     queue_requests: bool = True,
 ) -> Optional[DecisionRequest]:
-    zone_entries: list[tuple[str, str, str, int, dict]] = []
+    zone_entries: list[tuple[str, str, str, int, dict, float, float, float, dict[str, object]]] = []
     for idx, zone in enumerate(list(available_zones or [])):
         if not isinstance(zone, dict):
             continue
@@ -1046,7 +1046,20 @@ def build_deployment_zone_request(
         zone_name = str(zone_data.get("name", "") or "")
         zone_area = _deployment_zone_area_estimate(zone_data)
         zone_frontage, zone_depth = _deployment_zone_frontage_depth(zone_data)
-        zone_entries.append((zone_type, zone_name, zone_key, int(idx), zone_data, zone_area, zone_frontage, zone_depth))
+        zone_affordances = compute_board_affordance_summary(game, deployment_zone=zone_data).to_dict()
+        zone_entries.append(
+            (
+                zone_type,
+                zone_name,
+                zone_key,
+                int(idx),
+                zone_data,
+                zone_area,
+                zone_frontage,
+                zone_depth,
+                dict(zone_affordances or {}),
+            )
+        )
     if not zone_entries:
         return None
 
@@ -1054,7 +1067,7 @@ def build_deployment_zone_request(
     player_id = getattr(player, "id", None) if player is not None else None
     options: list[DecisionOption] = []
     choice_refs: list[dict[str, object]] = []
-    for order_idx, (zone_type, zone_name, zone_key, source_index, _zone_data, zone_area, zone_frontage, zone_depth) in enumerate(zone_entries):
+    for order_idx, (zone_type, zone_name, zone_key, source_index, _zone_data, zone_area, zone_frontage, zone_depth, zone_affordances) in enumerate(zone_entries):
         zone_choice_id = f"{zone_key}:{int(source_index)}"
         label = str(zone_name or "").strip()
         if not label:
@@ -1071,6 +1084,7 @@ def build_deployment_zone_request(
                     "zone_area_estimate": float(round(zone_area, 6)),
                     "zone_frontage_estimate": float(round(zone_frontage, 6)),
                     "zone_depth_estimate": float(round(zone_depth, 6)),
+                    "board_affordances": dict(zone_affordances or {}),
                     "action_id": f"{DECISION_CHOOSE_DEPLOYMENT_ZONE}:{str(player_id or '')}:{zone_choice_id}",
                 },
             )
@@ -1085,6 +1099,7 @@ def build_deployment_zone_request(
                 "zone_area_estimate": float(round(zone_area, 6)),
                 "zone_frontage_estimate": float(round(zone_frontage, 6)),
                 "zone_depth_estimate": float(round(zone_depth, 6)),
+                "board_affordances": dict(zone_affordances or {}),
             }
         )
 

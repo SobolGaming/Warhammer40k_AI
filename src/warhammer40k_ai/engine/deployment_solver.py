@@ -147,6 +147,7 @@ def _zone_projection(
     area_estimate: float,
     frontage_estimate: float,
     depth_estimate: float,
+    board_affordances: dict[str, Any] | None = None,
 ) -> dict[str, float]:
     score_weight = _weight(intent, "score", 0.3)
     deny_weight = _weight(intent, "deny", 0.2)
@@ -166,14 +167,51 @@ def _zone_projection(
     area_norm = _clamp(area_estimate / 900.0, low=0.2, high=1.8)
     frontage_norm = _clamp(frontage_estimate / 30.0, low=0.2, high=1.8)
     depth_norm = _clamp(depth_estimate / 20.0, low=0.2, high=1.8)
+    affordances = dict(board_affordances or {})
+    los_tunnel_count = _safe_float(affordances.get("los_tunnel_count"), 0.0)
+    hidden_cell_count = _safe_float(affordances.get("hidden_staging_cell_count"), 0.0)
+    must_expose_count = _safe_float(affordances.get("must_expose_to_advance_cell_count"), 0.0)
+    infantry_approach_quality = _safe_float(affordances.get("infantry_objective_approach_quality"), 0.0)
+    vehicle_approach_quality = _safe_float(affordances.get("vehicle_objective_approach_quality"), 0.0)
+    reserve_lane_values = [
+        _safe_float(value, 0.0)
+        for value in dict(affordances.get("reserve_entry_lane_quality", {}) or {}).values()
+    ]
+    reserve_lane_quality_avg = (
+        sum(reserve_lane_values) / float(len(reserve_lane_values))
+        if reserve_lane_values
+        else 0.0
+    )
     zone_type_norm = str(zone_type or "").strip().lower()
     defender_bias = 0.08 if zone_type_norm == "defender" else 0.0
     attacker_bias = 0.07 if zone_type_norm == "attacker" else 0.0
 
-    score_next = score_weight * (0.22 + area_norm * 0.23 + objective_count * 0.03 + staging_weight * 0.2 + defender_bias)
-    deny_next = deny_weight * (0.16 + reserve_target_count * 0.04 + lane_count * 0.03 + reserve_deny_weight * 0.22 + defender_bias)
+    score_next = score_weight * (
+        0.22
+        + area_norm * 0.23
+        + objective_count * 0.03
+        + staging_weight * 0.2
+        + defender_bias
+        + infantry_approach_quality * 0.12
+        + los_tunnel_count * 0.02
+    )
+    deny_next = deny_weight * (
+        0.16
+        + reserve_target_count * 0.04
+        + lane_count * 0.03
+        + reserve_deny_weight * 0.22
+        + defender_bias
+        + reserve_lane_quality_avg * 0.14
+        + hidden_cell_count * 0.01
+    )
     control = (score_next + deny_next) * 0.72 + screen_weight * (0.06 + frontage_norm * 0.05)
-    action_enable = staging_weight * (0.14 + depth_norm * 0.18 + affordance_count * 0.03 + attacker_bias * 0.5)
+    action_enable = staging_weight * (
+        0.14
+        + depth_norm * 0.18
+        + affordance_count * 0.03
+        + attacker_bias * 0.5
+        + infantry_approach_quality * 0.1
+    )
 
     exposure_if_enemy_first = _clamp(
         0.62
@@ -181,21 +219,63 @@ def _zone_projection(
         - cover_weight * 0.2
         - area_norm * 0.1
         - depth_norm * 0.08
+        - hidden_cell_count * 0.008
+        + must_expose_count * 0.01
         + attacker_bias * 0.45,
         low=0.0,
         high=1.4,
     )
     exposure = _clamp(-exposure_if_enemy_first + defender_bias - attacker_bias * 0.35, low=-2.0, high=2.0)
     trade = _clamp(score_next * 0.38 + deny_next * 0.3 + countercharge_weight * 0.22 - exposure_if_enemy_first * 0.28, low=-3.0, high=3.0)
-    cover = _clamp(cover_weight * (0.14 + area_norm * 0.08 + defender_bias), low=-1.5, high=1.5)
-    los = _clamp(los_weight * (0.05 + frontage_norm * 0.09 + attacker_bias * 0.6 - defender_bias * 0.35), low=-1.5, high=1.5)
+    cover = _clamp(
+        cover_weight * (
+            0.14
+            + area_norm * 0.08
+            + defender_bias
+            + hidden_cell_count * 0.006
+            - must_expose_count * 0.01
+        ),
+        low=-1.5,
+        high=1.5,
+    )
+    los = _clamp(
+        los_weight * (
+            0.05
+            + frontage_norm * 0.09
+            + attacker_bias * 0.6
+            - defender_bias * 0.35
+            + los_tunnel_count * 0.05
+            + infantry_approach_quality * 0.08
+        ),
+        low=-1.5,
+        high=1.5,
+    )
     resource = _clamp(-(reserve_deny_weight * 0.04 + screen_weight * 0.03), low=-3.0, high=3.0)
 
-    reserve_denial_delta = reserve_deny_weight * (0.2 + reserve_target_count * 0.05 + area_norm * 0.09)
+    reserve_denial_delta = reserve_deny_weight * (
+        0.2
+        + reserve_target_count * 0.05
+        + area_norm * 0.09
+        + reserve_lane_quality_avg * 0.08
+    )
     screen_integrity_delta = screen_weight * (0.19 + frontage_norm * 0.14 + lane_count * 0.03)
-    countercharge_coverage_delta = countercharge_weight * (0.14 + depth_norm * 0.11)
-    aura_connectivity_delta = aura_weight * (0.1 + area_norm * 0.05 + objective_count * 0.02)
-    melee_staging_delta = staging_weight * (0.16 + depth_norm * 0.21 + attacker_bias * 0.45)
+    countercharge_coverage_delta = countercharge_weight * (
+        0.14
+        + depth_norm * 0.11
+        + vehicle_approach_quality * 0.1
+    )
+    aura_connectivity_delta = aura_weight * (
+        0.1
+        + area_norm * 0.05
+        + objective_count * 0.02
+        + hidden_cell_count * 0.004
+    )
+    melee_staging_delta = staging_weight * (
+        0.16
+        + depth_norm * 0.21
+        + attacker_bias * 0.45
+        + los_tunnel_count * 0.03
+    )
 
     return {
         "projected_score_delta_next_window": _round6(score_next),
@@ -235,12 +315,14 @@ def _deployment_zone_candidates(game: object, request: DecisionRequest, intent: 
         area_estimate = _safe_float(payload.get("zone_area_estimate", ref.get("zone_area_estimate", 480.0)), 480.0)
         frontage_estimate = _safe_float(payload.get("zone_frontage_estimate", ref.get("zone_frontage_estimate", 24.0)), 24.0)
         depth_estimate = _safe_float(payload.get("zone_depth_estimate", ref.get("zone_depth_estimate", 20.0)), 20.0)
+        board_affordances = dict(payload.get("board_affordances", ref.get("board_affordances", {})) or {})
         projection = _zone_projection(
             intent=intent,
             zone_type=zone_type,
             area_estimate=area_estimate,
             frontage_estimate=frontage_estimate,
             depth_estimate=depth_estimate,
+            board_affordances=board_affordances,
         )
         metadata = {
             "candidate_kind": "deployment_zone",
@@ -251,6 +333,15 @@ def _deployment_zone_candidates(game: object, request: DecisionRequest, intent: 
             "zone_area_estimate": _round6(area_estimate),
             "zone_frontage_estimate": _round6(frontage_estimate),
             "zone_depth_estimate": _round6(depth_estimate),
+            "los_tunnel_count": _safe_int(board_affordances.get("los_tunnel_count", 0), 0),
+            "hidden_staging_cell_count": _safe_int(board_affordances.get("hidden_staging_cell_count", 0), 0),
+            "must_expose_to_advance_cell_count": _safe_int(board_affordances.get("must_expose_to_advance_cell_count", 0), 0),
+            "infantry_objective_approach_quality": _round6(
+                _safe_float(board_affordances.get("infantry_objective_approach_quality"), 0.0)
+            ),
+            "vehicle_objective_approach_quality": _round6(
+                _safe_float(board_affordances.get("vehicle_objective_approach_quality"), 0.0)
+            ),
             "rules_provenance_refs": [str(ctx.get("rules_bundle_id", "") or "")] if str(ctx.get("rules_bundle_id", "") or "") else [],
         }
         metadata.update(projection)

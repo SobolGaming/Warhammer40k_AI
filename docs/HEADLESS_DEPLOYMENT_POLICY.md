@@ -7,6 +7,8 @@ This document describes deterministic headless placement behavior for deployment
 - `DeterministicDeploymentDecisionMaker` remains legality-first and deterministic.
 - The headless decision maker now uses a deterministic heuristic pregame teacher (`PregameDeploymentAgent`) when player context is available.
   - Deployment zone choice is teacher-scored from army-role inference and board affordances.
+  - Board affordances include terrain-agnostic LOS/route signals (not RUINS-only), including
+    LOS tunnel pressure, hidden staging cells, exposure pressure, and per-objective approach quality.
   - `SELECT_NEXT_DEPLOY_UNIT` order is teacher-scored instead of implicit roster order.
   - Deployment intent/context payloads are enriched with:
     - `army_role_summary`

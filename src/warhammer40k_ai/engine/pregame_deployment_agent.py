@@ -216,6 +216,11 @@ class PregameDeploymentAgent:
         nest_count = float(len(affordance.upper_floor_fire_nests))
         corridor_count = float(affordance.breachable_melee_corridors)
         tight_lane_count = float(affordance.opening_constrained_vehicle_corridors)
+        hidden_cell_count = float(getattr(affordance, "hidden_staging_cell_count", 0))
+        expose_cell_count = float(getattr(affordance, "must_expose_to_advance_cell_count", 0))
+        los_tunnel_count = float(getattr(affordance, "los_tunnel_count", 0))
+        infantry_approach_quality = float(getattr(affordance, "infantry_objective_approach_quality", 0.0))
+        vehicle_approach_quality = float(getattr(affordance, "vehicle_objective_approach_quality", 0.0))
 
         score = 0.0
         score += area_norm * 0.35
@@ -226,6 +231,11 @@ class PregameDeploymentAgent:
         score += nest_count * (0.04 + army_summary.gunline_score * 0.06)
         score += corridor_count * (0.05 + army_summary.melee_score * 0.08)
         score += tight_lane_count * (0.03 + army_summary.screen_score * 0.04)
+        score += hidden_cell_count * (0.008 + army_summary.gunline_score * 0.02)
+        score -= expose_cell_count * (0.01 + army_summary.gunline_score * 0.015)
+        score += los_tunnel_count * (0.04 + army_summary.melee_score * 0.1)
+        score += infantry_approach_quality * (0.18 + army_summary.melee_score * 0.16 + army_summary.screen_score * 0.08)
+        score += vehicle_approach_quality * (0.08 + army_summary.anchor_score * 0.06)
         score += army_summary.infiltrator_score * 0.05
         score += army_summary.scout_score * 0.04
         score += army_summary.aura_score * 0.03
@@ -269,6 +279,10 @@ class PregameDeploymentAgent:
         if summary.gunline_score >= 0.55:
             desired_affordances.add("SAFE_FIRING_POCKET")
             desired_affordances.add("HOME_ANCHOR")
+        if int(getattr(affordance, "los_tunnel_count", 0)) > 0:
+            desired_affordances.add("LOS_TUNNEL_ADVANCE")
+        if int(getattr(affordance, "must_expose_to_advance_cell_count", 0)) > 3:
+            desired_affordances.add("EXPOSURE_MINIMIZATION")
         if summary.infiltrator_score >= 0.5 or summary.scout_score >= 0.5:
             desired_affordances.add("FORWARD_SCREEN")
         target_objective_ids = [str(entry.get("objective_id", "") or "") for entry in affordance.objective_lane_distances if str(entry.get("objective_id", "") or "")]

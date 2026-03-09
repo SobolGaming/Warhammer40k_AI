@@ -183,6 +183,8 @@ def test_deployment_zone_candidates_include_solver_metadata_and_are_deterministi
         assert "reserve_denial_delta" in metadata
         assert "screen_integrity_delta" in metadata
         assert "projected_exposure_delta_if_enemy_goes_first" in metadata
+        assert "los_tunnel_count" in metadata
+        assert "infantry_objective_approach_quality" in metadata
         assert metadata.get("semantic_projection_kind") == "generic"
 
     assert _candidate_view(first) == _candidate_view(second)

@@ -316,6 +316,9 @@ def test_build_deployment_context_includes_teacher_features() -> None:
     assert "weights" in intent
     assert "board_affordances" in context
     assert "army_role_summary" in context
+    board_affordances = dict(context.get("board_affordances", {}) or {})
+    assert "los_tunnel_count" in board_affordances
+    assert "infantry_objective_approach_quality" in board_affordances
 
 
 def test_semantic_anchor_candidates_are_used_for_placement(

@@ -53,13 +53,15 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  UI["Pygame UI<br/>(UI/)"] --> UIDC["UIDecisionController"]
-  UIDC --> Hub["DecisionControllerHub"]
-  Hub --> Game["Authoritative Game"]
-  Game --> Hub
-  Game --> Runtime["LocalAuthoritativeRuntime<br/>+ AuthoritativeSessionDriver"]
-  Runtime --> Channel["InProcessCommandChannel"]
-  Channel --> UI
+  UI["Pygame UI / dialogs"] --> Proxy["IntentRoutedGameProxy"]
+  Proxy --> Gateway["PlayerIntentGateway"]
+  Gateway --> Runtime["LocalAuthoritativeRuntime"]
+  Runtime --> Driver["AuthoritativeSessionDriver"]
+  Driver --> Game["Authoritative Game"]
+  Game --> Decisions["DecisionRequests"]
+  Decisions --> UI
+  Game --> Events["Deterministic events"]
+  Events --> UI
 ```
 
 Use case:
@@ -82,22 +84,28 @@ Use case:
 
 ```mermaid
 flowchart LR
-  subgraph Server["Server process"]
-    SGame["Authoritative Game"]
+  subgraph Server["Server process (authoritative)"]
     SDriver["AuthoritativeSessionDriver"]
-    SGame --> SDriver
+    SGame["Authoritative Game"]
+    SDriver --> SGame
   end
 
-  subgraph Client1["Client UI (player/spectator)"]
+  subgraph Client1["Client UI (player)"]
+    CSession1["NetworkGameSession"]
+    CProxy1["NetworkGameProxy"]
     CUI1["pygame_client / UI"]
+    CUI1 --> CProxy1 --> CSession1
   end
 
   subgraph Client2["Client UI (player/spectator)"]
+    CSession2["NetworkGameSession"]
+    CProxy2["NetworkGameProxy"]
     CUI2["pygame_client / UI"]
+    CUI2 --> CProxy2 --> CSession2
   end
 
-  SGame <-->|"DecisionRequests / Commands / Events (WebSocket)"| CUI1
-  SGame <-->|"DecisionRequests / Commands / Events (WebSocket)"| CUI2
+  SGame <-->|"DecisionRequests / Commands / Events (WebSocket)"| CSession1
+  SGame <-->|"DecisionRequests / Commands / Events (WebSocket)"| CSession2
 ```
 
 Use case:
@@ -108,21 +116,26 @@ Use case:
 ```mermaid
 flowchart LR
   subgraph Server["Server process (authoritative)"]
+    SDriver["AuthoritativeSessionDriver"]
     SGame["Authoritative Game"]
-    SHub["DecisionControllerHub"]
-    SGame --> SHub
+    SDriver --> SGame
   end
 
   subgraph HeadlessClient["Headless network client/controller"]
-    HC["Network client + policy/controller"]
+    HCSession["NetworkGameSession"]
+    HCProxy["NetworkGameProxy"]
+    HCPolicy["Headless policy/controller"]
+    HCPolicy --> HCProxy --> HCSession
   end
 
   subgraph UIClient["UI network client"]
+    UISession["NetworkGameSession"]
     UI["client-ui"]
+    UI --> UISession
   end
 
-  SGame <-->|"DecisionRequests / Commands / Events"| HC
-  SGame <-->|"DecisionRequests / Commands / Events"| UI
+  SGame <-->|"DecisionRequests / Commands / Events"| HCSession
+  SGame <-->|"DecisionRequests / Commands / Events"| UISession
 ```
 
 Use cases:
@@ -140,6 +153,11 @@ Notes:
 | Human vs Human | Yes (`scripts/main.py`) | No | Yes (`server` + 2x `client-ui`) | N/A |
 | AI vs AI | Possible via custom local composition, but primary path is headless | Yes (`scripts/run_headless_self_play.py`) | Possible with 2 headless controllers/clients | Yes |
 | AI vs Human | Possible via custom mixed controller composition | Yes (mixed controller composition) | Yes (1x `client-ui`, 1x headless controller/client) | Yes |
+
+Explicit controller ownership:
+- Human vs Human: both sides answer decision requests via UI dialogs.
+- AI vs Human: one side answers via headless policy/controller, the other via UI.
+- AI vs AI: both sides answer via headless policy/controller (local self-play or remote clients).
 
 ## Major components
 

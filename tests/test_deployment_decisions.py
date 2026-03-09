@@ -89,6 +89,8 @@ def test_build_deployment_zone_request_resolves_through_decision_stack() -> None
     assert request.decision_type == DECISION_CHOOSE_DEPLOYMENT_ZONE
     assert request.context.get("selection_kind") == "deployment_zone"
     assert len(request.options) == 2
+    first_payload = dict(request.options[0].payload or {})
+    assert isinstance(first_payload.get("board_affordances"), dict)
 
     by_label = {str(option.label): option for option in list(request.options or [])}
     selected_option = by_label["Left Zone"]

@@ -20,6 +20,9 @@ Key goals:
   `src/warhammer40k_ai/engine/deployment_intent.py` and
   `src/warhammer40k_ai/engine/deployment_solver.py` produce deterministic candidates with
   semantic metadata and time-budget fallback support.
+- Board affordance extraction now uses all terrain classes (not RUINS-only), with deterministic
+  lane/route sampling to derive LOS tunnel pressure, hidden staging cell counts, exposure pressure,
+  and objective approach quality signals for both infantry and vehicle posture.
 - `DeploymentDecisionMaker` can optionally select by queued request option id
   (`choose_deployment_zone_option` / `choose_reserves_allocation_option` /
   `choose_next_deploy_unit_option`) so learned rankers
@@ -50,6 +53,10 @@ Key goals:
 - Deployment candidates include semantic deltas used by replay/telemetry and headless ranking,
   including reserve-denial, screen-integrity, countercharge-coverage, aura-connectivity, and
   enemy-first-turn exposure estimates.
+- Zone candidates also carry board-affordance semantics (`los_tunnel_count`,
+  `hidden_staging_cell_count`, `must_expose_to_advance_cell_count`,
+  `infantry_objective_approach_quality`, `vehicle_objective_approach_quality`) so deployment-zone
+  ranking can reason over geometry-derived staging quality.
 
 Compound fortification section geometry and footprint resolution are documented in
 `docs/MODEL_GEOMETRY_OVERRIDES.md`.
