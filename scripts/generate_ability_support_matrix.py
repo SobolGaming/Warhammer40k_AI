@@ -5863,6 +5863,7 @@ def _classify_ability_base(
     attached_battleline_infiltrators_support = _attached_battleline_infiltrators_scouts_support(description)
     transport_support = _transport_disembark_support(description)
     leading_bodyguard_embark_support = _leading_bodyguard_transport_embark_support(description)
+    model_embark_within_transports_support = _model_embarking_within_transports_support(description)
     transport_reactive_disembark_support = _transport_reactive_disembark_support(description)
     embarking_firing_deck_weight_support = _embarking_firing_deck_weight_support(description)
     end_of_fight_embark_support = _end_of_fight_embark_support(description)
@@ -6251,6 +6252,8 @@ def _classify_ability_base(
         return end_of_fight_embark_support
     if leading_bodyguard_embark_support:
         return leading_bodyguard_embark_support
+    if model_embark_within_transports_support:
+        return model_embark_within_transports_support
     if transport_support:
         return transport_support
     if transport_reactive_disembark_support:
@@ -10484,6 +10487,34 @@ def _leading_bodyguard_transport_embark_support(description: str) -> Optional[Tu
             "Attached leader/joined model can embark in any TRANSPORT its bodyguard host can embark in (host eligibility still required).",
         )
     return None
+
+
+def _model_embarking_within_transports_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"this model can embark within friendly (?P<faction>[a-z0-9 ]+) transport models "
+        r"that can transport (?P<keyword>[a-z0-9 ]+) models "
+        r"when doing so it takes up the space of (?P<slots>\d+) infantry models"
+    )
+    match = re.fullmatch(pattern, norm)
+    if not match:
+        return None
+    faction = str(match.group("faction") or "").strip().upper()
+    keyword = str(match.group("keyword") or "").strip().upper()
+    slots = int(match.group("slots") or 0)
+    if slots <= 0:
+        return None
+    return (
+        "Supported",
+        (
+            f"Model can embark within friendly {faction} TRANSPORT models that can transport {keyword} models; "
+            f"it counts as {slots} transport slots."
+        ),
+    )
 
 
 def _transport_reactive_disembark_support(description: str) -> Optional[Tuple[str, str]]:

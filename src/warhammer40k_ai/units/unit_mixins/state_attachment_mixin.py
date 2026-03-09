@@ -48,6 +48,12 @@ _BODYGUARD_TRANSPORT_EMBARK_OVERRIDE_RE = re.compile(
     r"it can embark within any transport that (?:its bodyguard unit|that unit) can embark within",
     re.IGNORECASE,
 )
+_MODEL_EMBARKING_WITHIN_TRANSPORTS_RE = re.compile(
+    r"this model can embark within friendly (?P<faction>[a-z0-9 ]+) transport models "
+    r"that can transport (?P<keyword>[a-z0-9 ]+) models "
+    r"when doing so it takes up the space of (?P<slots>\d+) infantry models",
+    re.IGNORECASE,
+)
 
 _MASTERS_OF_THE_MAELSTROM_TARGET_UNIT_NAMES = {
     "chosen",
@@ -1808,6 +1814,39 @@ class StateAttachmentMixin:
         name = _normalize_unit_name_for_rules(getattr(model, "name", "") or "")
         return "heavy weapons gunner" in name
 
+    def _model_transport_embark_slot_override(self) -> int:
+        """Return model-specific embark slot override from active ability text."""
+        cache_key = "model_transport_embark_slot_override"
+        cache = getattr(self, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return int(cache.get(cache_key) or 0)
+
+        slot_override = 0
+        iter_texts = getattr(self, "_iter_active_ability_texts", None)
+        normalize = getattr(self, "_normalize_rules_text", None)
+        if callable(iter_texts):
+            for raw_text in iter_texts():
+                text = str(raw_text or "")
+                if not text:
+                    continue
+                if callable(normalize):
+                    text = normalize(text)
+                normalized = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not normalized:
+                    continue
+                match = _MODEL_EMBARKING_WITHIN_TRANSPORTS_RE.fullmatch(normalized)
+                if not match:
+                    continue
+                slot_override = max(slot_override, int(match.group("slots") or 0))
+
+        if not isinstance(cache, dict):
+            cache = {}
+            self._ability_cache = cache
+        cache[cache_key] = int(slot_override)
+        return int(slot_override)
+
     def get_transport_slot_cost_for_model(self, model: Optional[Model]) -> int:
         """Return per-model embark slot cost for this unit (default 1)."""
         if model is None:
@@ -1834,6 +1873,13 @@ class StateAttachmentMixin:
                 kind = str(kind_fn() or "").strip().lower() if callable(kind_fn) else ""
                 if kind == "loyal_protector":
                     return 3
+
+        model_unit = source_unit if source_unit is not None else self
+        slot_override_fn = getattr(model_unit, "_model_transport_embark_slot_override", None)
+        if callable(slot_override_fn):
+            slot_override = int(slot_override_fn() or 0)
+            if slot_override > 0:
+                return slot_override
 
         rule = self._embarking_slot_rule()
         if rule == "all_models":
