@@ -31,6 +31,8 @@ Key goals:
 - `SCOUT_MOVE` requests now expose deterministic destination options plus skip, with deployment-semantic metadata.
 - Deployment `MOVE_UNIT` placement now exposes deterministic multi-candidate exact-placement options at runtime
   (`placement_candidate_id`, anchor, exact `model_positions`) instead of a single confirm-only payload.
+- Deployment candidate generation now supports an optional bounded pregame lookahead layer
+  (`context.deployment_lookahead`) that evaluates deterministic enemy-response branches and follow-up value.
 - `HumanDeploymentDecisionMaker` delegates to `src/warhammer40k_ai/UI/human_interface.py`
   (or console fallback if no UI is available).
 
@@ -57,6 +59,9 @@ Key goals:
   enemy-first-turn exposure estimates.
 - Deployment-placement candidates include per-option spatial metadata (`forward_progress_norm`,
   `lateral_offset_norm`, `anchor_center_distance_norm`) so exact placement is rankable online.
+- When lookahead is enabled, deployment candidates include rollout metadata
+  (`lookahead_immediate_value`, `lookahead_worst_branch_value`, `lookahead_followup_value`,
+  `lookahead_enemy_pressure`, `lookahead_total_value`) plus adjusted round/trade projections.
 - Zone candidates also carry board-affordance semantics (`los_tunnel_count`,
   `hidden_staging_cell_count`, `must_expose_to_advance_cell_count`,
   `infantry_objective_approach_quality`, `vehicle_objective_approach_quality`) so deployment-zone

@@ -18,7 +18,10 @@ This document describes deterministic headless placement behavior for deployment
 - Optional imitation/ranking model integration:
   - `DeterministicDeploymentDecisionMaker(..., ranker_model_path=...)` can load a linear deployment ranker model.
   - When loaded, zone, reserves-allocation, next-unit, scout, and deployment-placement choices can be selected directly from request candidates via ranker scores.
-  - If model scoring is unavailable for a request, deterministic heuristic fallback remains active.
+  - If model scoring is unavailable for deployment placement requests and rollout metadata is present, the headless policy can fall back to `lookahead_total_value` candidate selection.
+  - If neither model nor rollout scoring is available, deterministic heuristic fallback remains active.
+- Teacher decision context now includes optional rollout settings under `deployment_lookahead`
+  (enabled, depth, branch count, discount, blend, candidate kinds) for bounded pregame lookahead.
 - Standard units:
   - Candidate anchors are searched inside the assigned deployment zone.
   - Teacher semantic anchors are evaluated first, then lattice fallback scanning.
@@ -50,3 +53,4 @@ This document describes deterministic headless placement behavior for deployment
 - `DECLARE_RESERVES` now emits deterministic multi-option allocation candidates (forced-only, pressure, balanced variants) with semantic metadata.
 - `SCOUT_MOVE` now emits deterministic destination options (plus skip) and solver metadata keyed to reserve denial, entry-lane quality, and exposure.
 - Deployment-scoped `MOVE_UNIT` now emits deterministic multi-option exact-placement candidates at runtime (anchor + exact `model_positions` per option), with per-option deployment semantic metadata.
+- With rollout enabled, deployment pregame candidates include deterministic shallow-lookahead metadata (`lookahead_*`) and adjusted round/trade projections for ranker consumption.

@@ -122,7 +122,10 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         already_deployed: list[object],
     ) -> Optional[str]:
         del unit, deployment_zone, already_deployed
-        return self._ranked_option_id(request)
+        option_id = self._ranked_option_id(request)
+        if option_id:
+            return option_id
+        return self._lookahead_option_id(request)
 
     def declare_reserves(self, player: Player) -> dict:
         army = player.get_army() if player is not None else None
@@ -758,7 +761,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         deployable_units: Optional[list[object]] = None,
         already_deployed: Optional[list[object]] = None,
     ) -> dict:
-        del decision_kind, unit, deployable_units, already_deployed
+        del unit, deployable_units, already_deployed
         resolved_player = player
         if resolved_player is None and self._active_player_id:
             resolved_player = self._resolve_player_by_id(self._active_player_id)
@@ -767,6 +770,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         return self._pregame_agent.decision_context(
             player=resolved_player,
             deployment_zone=dict(deployment_zone or {}) if isinstance(deployment_zone, dict) else None,
+            decision_kind=str(decision_kind or ""),
         )
 
     def build_deployment_model_positions(self, unit: object, position: tuple[float, float]) -> list[dict]:
@@ -1084,6 +1088,56 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         if not action_id:
             return None
         return self._option_id_for_action_id(request, action_id)
+
+    def _lookahead_option_id(self, request: DecisionRequest) -> Optional[str]:
+        context = dict(getattr(request, "context", {}) or {})
+        raw_lookahead = context.get("deployment_lookahead")
+        if isinstance(raw_lookahead, dict):
+            enabled = self._truthy(raw_lookahead.get("enabled", False))
+        else:
+            enabled = self._truthy(raw_lookahead)
+        if not enabled:
+            return None
+
+        candidates = list(getattr(request, "candidates", []) or [])
+        mask = [bool(value) for value in list(getattr(request, "mask", []) or [])]
+        best_action_id = ""
+        best_value = float("-inf")
+        best_tie = ""
+        has_lookahead_metadata = False
+        for idx, candidate in enumerate(candidates):
+            if idx < len(mask) and not bool(mask[idx]):
+                continue
+            metadata = dict(candidate.metadata or {})
+            if "lookahead_total_value" not in metadata:
+                continue
+            has_lookahead_metadata = True
+            score = self._safe_float(metadata.get("lookahead_total_value"), default=float("-inf"))
+            action_id = str(getattr(candidate, "action_id", "") or "")
+            tie = action_id
+            if (score > best_value) or (score == best_value and tie < best_tie):
+                best_value = float(score)
+                best_tie = tie
+                best_action_id = action_id
+        if not has_lookahead_metadata or not best_action_id:
+            return None
+        return self._option_id_for_action_id(request, best_action_id)
+
+    @staticmethod
+    def _truthy(value: object) -> bool:
+        if isinstance(value, bool):
+            return bool(value)
+        if isinstance(value, (int, float)):
+            return bool(value)
+        token = str(value or "").strip().lower()
+        return token in {"1", "true", "yes", "on", "enabled"}
+
+    @staticmethod
+    def _safe_float(value: object, *, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(default)
 
     @staticmethod
     def _option_id_for_action_id(request: DecisionRequest, action_id: str) -> Optional[str]:

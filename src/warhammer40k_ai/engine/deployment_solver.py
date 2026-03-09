@@ -125,6 +125,363 @@ def _copy_request_candidates(request: DecisionRequest, *, fallback_mode: bool) -
     return copied, mask
 
 
+_DEFAULT_LOOKAHEAD_CANDIDATE_KINDS: tuple[str, ...] = (
+    "deployment_zone",
+    "deployment_commit_order",
+    "deployment_reserves",
+    "deployment_scout",
+    "deployment_move",
+)
+
+_LOOKAHEAD_BRANCH_PROFILES: tuple[tuple[str, float, float, float, float], ...] = (
+    ("enemy_alpha", 1.0, 0.75, 0.6, 0.88),
+    ("enemy_reserve_flank", 0.9, 1.15, 0.8, 0.82),
+    ("enemy_staged_trade", 0.72, 0.68, 1.05, 0.95),
+)
+
+
+def _safe_bool(value: object, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, (int, float)):
+        return bool(value)
+    token = str(value or "").strip().lower()
+    if not token:
+        return bool(default)
+    if token in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if token in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return bool(default)
+
+
+def _as_string_set(values: object) -> set[str]:
+    if isinstance(values, str):
+        token = str(values or "").strip()
+        return {token} if token else set()
+    if isinstance(values, (list, tuple, set)):
+        result: set[str] = set()
+        for value in list(values):
+            token = str(value or "").strip()
+            if token:
+                result.add(token)
+        return result
+    return set()
+
+
+def _lookahead_config(context: dict[str, Any], intent: DeploymentIntent) -> dict[str, Any]:
+    toggles = dict(intent.constraint_toggles or {})
+    raw = context.get("deployment_lookahead")
+    cfg: dict[str, Any] = {}
+    if isinstance(raw, dict):
+        cfg = dict(raw or {})
+    elif raw is not None:
+        cfg = {"enabled": raw}
+
+    enabled = _safe_bool(
+        cfg.get("enabled", toggles.get("deployment_lookahead_enabled", False)),
+        default=False,
+    )
+    depth = max(
+        1,
+        min(
+            3,
+            _safe_int(
+                cfg.get("depth", toggles.get("deployment_lookahead_depth", 2)),
+                2,
+            ),
+        ),
+    )
+    branch_count = max(
+        1,
+        min(
+            len(_LOOKAHEAD_BRANCH_PROFILES),
+            _safe_int(
+                cfg.get(
+                    "branch_count",
+                    toggles.get("deployment_lookahead_branch_count", 2),
+                ),
+                2,
+            ),
+        ),
+    )
+    discount = _clamp(
+        _safe_float(
+            cfg.get("discount", toggles.get("deployment_lookahead_discount", 0.62)),
+            0.62,
+        ),
+        low=0.2,
+        high=0.95,
+    )
+    continuation_decay = _clamp(
+        _safe_float(
+            cfg.get(
+                "continuation_decay",
+                toggles.get("deployment_lookahead_continuation_decay", 0.7),
+            ),
+            0.7,
+        ),
+        low=0.25,
+        high=0.95,
+    )
+    score_blend = _clamp(
+        _safe_float(
+            cfg.get("score_blend", toggles.get("deployment_lookahead_score_blend", 0.2)),
+            0.2,
+        ),
+        low=0.0,
+        high=0.8,
+    )
+    raw_kinds = cfg.get(
+        "candidate_kinds",
+        toggles.get("deployment_lookahead_candidate_kinds", _DEFAULT_LOOKAHEAD_CANDIDATE_KINDS),
+    )
+    candidate_kinds = _as_string_set(raw_kinds)
+    if not candidate_kinds:
+        candidate_kinds = set(_DEFAULT_LOOKAHEAD_CANDIDATE_KINDS)
+    return {
+        "enabled": bool(enabled),
+        "depth": int(depth),
+        "branch_count": int(branch_count),
+        "discount": float(discount),
+        "continuation_decay": float(continuation_decay),
+        "score_blend": float(score_blend),
+        "candidate_kinds": candidate_kinds,
+    }
+
+
+def _lookahead_immediate_value(metadata: dict[str, Any], *, intent: DeploymentIntent) -> float:
+    score_weight = _weight(intent, "score", 0.3)
+    deny_weight = _weight(intent, "deny", 0.2)
+    safety_weight = _weight(intent, "safety", 0.3)
+    staging_weight = _weight(intent, "staging", 0.2)
+    reserve_deny_weight = _weight(intent, "reserve_deny", 0.2)
+    screen_weight = _weight(intent, "screen", 0.2)
+    countercharge_weight = _weight(intent, "countercharge", 0.15)
+    cover_weight = _weight(intent, "cover", 0.2)
+    los_weight = _weight(intent, "los", 0.1)
+    aura_weight = _weight(intent, "aura", 0.1)
+
+    projected_score_next = _safe_float(metadata.get("projected_score_delta_next_window"), 0.0)
+    projected_score_round = _safe_float(metadata.get("projected_score_delta_round"), 0.0)
+    projected_deny_next = _safe_float(metadata.get("projected_deny_delta_next_window"), 0.0)
+    projected_control = _safe_float(metadata.get("projected_control_delta"), 0.0)
+    projected_action = _safe_float(metadata.get("projected_action_enablement_delta"), 0.0)
+    projected_trade = _safe_float(metadata.get("projected_trade_ev"), 0.0)
+    projected_exposure = _safe_float(metadata.get("projected_exposure_delta"), 0.0)
+    exposure_enemy_first = _safe_float(metadata.get("projected_exposure_delta_if_enemy_goes_first"), 0.0)
+    reserve_denial = _safe_float(metadata.get("reserve_denial_delta"), 0.0)
+    screen_integrity = _safe_float(metadata.get("screen_integrity_delta"), 0.0)
+    countercharge = _safe_float(metadata.get("countercharge_coverage_delta"), 0.0)
+    aura = _safe_float(metadata.get("aura_connectivity_delta"), 0.0)
+    melee_staging = _safe_float(metadata.get("projected_melee_staging_delta"), 0.0)
+    cover = _safe_float(metadata.get("cover_delta"), 0.0)
+    los = _safe_float(metadata.get("los_delta"), 0.0)
+    resource = _safe_float(metadata.get("resource_delta"), 0.0)
+
+    return float(
+        projected_score_next * (0.45 + score_weight * 0.55)
+        + projected_score_round * (0.16 + score_weight * 0.2)
+        + projected_deny_next * (0.38 + deny_weight * 0.52)
+        + projected_control * 0.33
+        + projected_action * (0.23 + staging_weight * 0.28)
+        + projected_trade * 0.28
+        + reserve_denial * (0.16 + reserve_deny_weight * 0.22)
+        + screen_integrity * (0.14 + screen_weight * 0.24)
+        + countercharge * (0.12 + countercharge_weight * 0.21)
+        + aura * (0.08 + aura_weight * 0.16)
+        + melee_staging * (0.11 + staging_weight * 0.24)
+        + cover * (0.11 + cover_weight * 0.2)
+        + los * (0.07 + los_weight * 0.18)
+        + resource * 0.05
+        - exposure_enemy_first * (0.52 + safety_weight * 0.48)
+        + projected_exposure * 0.05
+    )
+
+
+def _lookahead_enemy_pressure(
+    metadata: dict[str, Any],
+    *,
+    intent: DeploymentIntent,
+    aggressive_mul: float,
+    reserve_mul: float,
+    screen_mul: float,
+) -> float:
+    safety_weight = _weight(intent, "safety", 0.3)
+    exposure_enemy_first = _safe_float(metadata.get("projected_exposure_delta_if_enemy_goes_first"), 0.0)
+    forward_progress = max(0.0, _safe_float(metadata.get("forward_progress_norm"), 0.0))
+    anchor_center_distance = _safe_float(metadata.get("anchor_center_distance_norm"), 0.0)
+    reserve_denial = _safe_float(metadata.get("reserve_denial_delta"), 0.0)
+    screen_integrity = _safe_float(metadata.get("screen_integrity_delta"), 0.0)
+    countercharge = _safe_float(metadata.get("countercharge_coverage_delta"), 0.0)
+    cover = _safe_float(metadata.get("cover_delta"), 0.0)
+    los = _safe_float(metadata.get("los_delta"), 0.0)
+    reserve_gap = max(0.0, 0.24 - reserve_denial)
+    screen_gap = max(0.0, 0.2 - screen_integrity)
+    counter_gap = max(0.0, 0.16 - countercharge)
+    cover_gap = max(0.0, 0.14 - cover)
+    los_vulnerability = max(0.0, -los)
+    return float(
+        exposure_enemy_first * (0.74 + safety_weight * 0.36) * float(aggressive_mul)
+        + forward_progress * (0.12 + float(aggressive_mul) * 0.11)
+        + anchor_center_distance * 0.07
+        + reserve_gap * (0.55 + float(reserve_mul) * 0.35)
+        + screen_gap * (0.48 + float(screen_mul) * 0.26)
+        + counter_gap * 0.32
+        + cover_gap * 0.28
+        + los_vulnerability * 0.22
+    )
+
+
+def _lookahead_followup_value(
+    metadata: dict[str, Any],
+    *,
+    intent: DeploymentIntent,
+    followup_mul: float,
+) -> float:
+    staging_weight = _weight(intent, "staging", 0.2)
+    action_enable = _safe_float(metadata.get("projected_action_enablement_delta"), 0.0)
+    control = _safe_float(metadata.get("projected_control_delta"), 0.0)
+    trade = max(0.0, _safe_float(metadata.get("projected_trade_ev"), 0.0))
+    reserve_denial = max(0.0, _safe_float(metadata.get("reserve_denial_delta"), 0.0))
+    screen_integrity = max(0.0, _safe_float(metadata.get("screen_integrity_delta"), 0.0))
+    countercharge = max(0.0, _safe_float(metadata.get("countercharge_coverage_delta"), 0.0))
+    aura = max(0.0, _safe_float(metadata.get("aura_connectivity_delta"), 0.0))
+    melee_staging = max(0.0, _safe_float(metadata.get("projected_melee_staging_delta"), 0.0))
+    resource_cost = max(0.0, -_safe_float(metadata.get("resource_delta"), 0.0))
+    value = (
+        action_enable * (0.3 + staging_weight * 0.2)
+        + control * 0.24
+        + trade * 0.18
+        + reserve_denial * 0.14
+        + screen_integrity * 0.14
+        + countercharge * 0.12
+        + aura * 0.08
+        + melee_staging * 0.16
+        - resource_cost * 0.08
+    )
+    return float(value * float(followup_mul))
+
+
+def _lookahead_projection(
+    metadata: dict[str, Any],
+    *,
+    intent: DeploymentIntent,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    immediate = _lookahead_immediate_value(metadata, intent=intent)
+    branch_count = int(config.get("branch_count", 1) or 1)
+    considered_profiles = list(_LOOKAHEAD_BRANCH_PROFILES[: max(1, branch_count)])
+    worst_branch_name = ""
+    worst_branch_value = float("inf")
+    followup_values: list[float] = []
+    for branch_name, aggressive_mul, reserve_mul, screen_mul, followup_mul in considered_profiles:
+        enemy_pressure = _lookahead_enemy_pressure(
+            metadata,
+            intent=intent,
+            aggressive_mul=float(aggressive_mul),
+            reserve_mul=float(reserve_mul),
+            screen_mul=float(screen_mul),
+        )
+        followup = _lookahead_followup_value(
+            metadata,
+            intent=intent,
+            followup_mul=float(followup_mul),
+        )
+        followup_values.append(float(followup))
+        branch_value = float(immediate - enemy_pressure + followup * 0.5)
+        if branch_value < worst_branch_value:
+            worst_branch_value = float(branch_value)
+            worst_branch_name = str(branch_name)
+
+    if worst_branch_value == float("inf"):
+        worst_branch_value = float(immediate)
+    avg_followup = (
+        float(sum(followup_values) / float(len(followup_values)))
+        if followup_values
+        else 0.0
+    )
+    discount = float(config.get("discount", 0.62) or 0.62)
+    continuation_decay = float(config.get("continuation_decay", 0.7) or 0.7)
+    depth = int(config.get("depth", 1) or 1)
+
+    total_value = float(immediate)
+    continuation_value = float(worst_branch_value)
+    for step in range(max(1, depth)):
+        total_value += (discount ** float(step + 1)) * continuation_value
+        continuation_value = continuation_value * continuation_decay + avg_followup * (1.0 - continuation_decay) * 0.6
+
+    enemy_pressure = float(max(0.0, immediate - worst_branch_value + avg_followup * 0.5))
+    return {
+        "lookahead_immediate_value": _round6(immediate),
+        "lookahead_worst_branch_value": _round6(worst_branch_value),
+        "lookahead_followup_value": _round6(avg_followup),
+        "lookahead_enemy_pressure": _round6(enemy_pressure),
+        "lookahead_total_value": _round6(total_value),
+        "lookahead_worst_branch_name": str(worst_branch_name),
+    }
+
+
+def _apply_deployment_lookahead(
+    candidates: list[CandidateAction],
+    *,
+    request: DecisionRequest,
+    intent: DeploymentIntent,
+) -> list[CandidateAction]:
+    context = dict(getattr(request, "context", {}) or {})
+    config = _lookahead_config(context, intent)
+    if not bool(config.get("enabled", False)):
+        return list(candidates or [])
+    allowed_kinds = set(config.get("candidate_kinds", set()) or set())
+    score_blend = float(config.get("score_blend", 0.0) or 0.0)
+    depth = int(config.get("depth", 1) or 1)
+    branch_count = int(config.get("branch_count", 1) or 1)
+    discount = float(config.get("discount", 0.62) or 0.62)
+    continuation_decay = float(config.get("continuation_decay", 0.7) or 0.7)
+
+    updated: list[CandidateAction] = []
+    for candidate in list(candidates or []):
+        metadata = dict(candidate.metadata or {})
+        candidate_kind = str(metadata.get("candidate_kind", "") or "")
+        if allowed_kinds and candidate_kind and candidate_kind not in allowed_kinds:
+            updated.append(candidate)
+            continue
+        lookahead = _lookahead_projection(metadata, intent=intent, config=config)
+        metadata["lookahead_enabled"] = True
+        metadata["lookahead_depth"] = int(depth)
+        metadata["lookahead_branch_count"] = int(branch_count)
+        metadata["lookahead_discount"] = _round6(discount)
+        metadata["lookahead_continuation_decay"] = _round6(continuation_decay)
+        metadata["lookahead_score_blend"] = _round6(score_blend)
+        for key, value in lookahead.items():
+            metadata[str(key)] = value
+
+        base_round = _safe_float(metadata.get("projected_score_delta_round"), 0.0)
+        base_trade = _safe_float(metadata.get("projected_trade_ev"), 0.0)
+        metadata["lookahead_base_projected_score_delta_round"] = _round6(base_round)
+        metadata["lookahead_base_projected_trade_ev"] = _round6(base_trade)
+        adjusted_round = float(base_round + _safe_float(lookahead.get("lookahead_total_value"), 0.0) * score_blend)
+        trade_adjustment = (
+            _safe_float(lookahead.get("lookahead_worst_branch_value"), 0.0)
+            - _safe_float(lookahead.get("lookahead_immediate_value"), 0.0)
+        ) * (score_blend * 0.35)
+        trade_adjustment += _safe_float(lookahead.get("lookahead_followup_value"), 0.0) * (score_blend * 0.1)
+        adjusted_trade = float(base_trade + trade_adjustment)
+        metadata["lookahead_adjusted_score_delta_round"] = _round6(adjusted_round)
+        metadata["lookahead_adjusted_trade_ev"] = _round6(adjusted_trade)
+        metadata["projected_score_delta_round"] = _round6(adjusted_round)
+        metadata["projected_trade_ev"] = _round6(adjusted_trade)
+
+        updated.append(
+            CandidateAction(
+                action_id=str(candidate.action_id),
+                params=dict(candidate.params or {}),
+                metadata=metadata,
+            )
+        )
+    return updated
+
+
 def _zone_choice_lookup(context: dict[str, Any]) -> dict[str, dict[str, Any]]:
     refs: dict[str, dict[str, Any]] = {}
     for entry in list(context.get("available_zone_choices", []) or []):
@@ -1109,11 +1466,22 @@ def generate_deployment_candidates(
     if time_manager is None or budget_ms <= 0:
         start = time.perf_counter()
         candidates, mask = _solver_candidates(game, request, intent)
+        candidates = _apply_deployment_lookahead(
+            candidates,
+            request=request,
+            intent=intent,
+        )
         wall_clock_ms = int(round((time.perf_counter() - start) * 1000.0))
         return candidates, mask, wall_clock_ms, False
 
     def _action(_deadline: float):
-        return _solver_candidates(game, request, intent)
+        candidates, mask = _solver_candidates(game, request, intent)
+        candidates = _apply_deployment_lookahead(
+            candidates,
+            request=request,
+            intent=intent,
+        )
+        return candidates, mask
 
     def _fallback():
         return _copy_request_candidates(request, fallback_mode=True)

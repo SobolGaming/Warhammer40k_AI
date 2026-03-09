@@ -316,7 +316,12 @@ def test_build_deployment_context_includes_teacher_features() -> None:
     assert "weights" in intent
     assert "board_affordances" in context
     assert "army_role_summary" in context
+    assert "deployment_lookahead" in context
     board_affordances = dict(context.get("board_affordances", {}) or {})
+    lookahead = dict(context.get("deployment_lookahead", {}) or {})
+    assert bool(lookahead.get("enabled", False)) is True
+    assert int(lookahead.get("depth", 0) or 0) >= 1
+    assert isinstance(list(lookahead.get("candidate_kinds", []) or []), list)
     assert "los_tunnel_count" in board_affordances
     assert "infantry_objective_approach_quality" in board_affordances
 
@@ -497,5 +502,49 @@ def test_deployment_headless_uses_ranker_model_for_deployment_move_option_select
         ),
     ]
     request.mask = [True, True]
+    option_id = maker.choose_deployment_move_option(request, object(), {}, [])
+    assert str(option_id or "") == str(request.options[1].option_id)
+
+
+def test_deployment_headless_falls_back_to_rollout_metadata_when_ranker_missing() -> None:
+    class _StubGame:
+        players: list[object] = []
+
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame(), ranker_model_path=None)
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Deploy unit",
+        player_id="player:test",
+        options=[
+            DecisionOption.create(
+                "Candidate A",
+                payload={"unit_id": "unit:test", "movement_type": "deploy", "action": "confirm"},
+            ),
+            DecisionOption.create(
+                "Candidate B",
+                payload={"unit_id": "unit:test", "movement_type": "deploy", "action": "confirm"},
+            ),
+        ],
+        context={
+            "placement_kind": "deployment",
+            "deployment_lookahead": {"enabled": True},
+        },
+    )
+    action_a = request.action_id_for_option_id(request.options[0].option_id)
+    action_b = request.action_id_for_option_id(request.options[1].option_id)
+    request.candidates = [
+        CandidateAction(
+            action_id=action_a,
+            params={},
+            metadata={"candidate_kind": "deployment_move", "lookahead_total_value": 0.4},
+        ),
+        CandidateAction(
+            action_id=action_b,
+            params={},
+            metadata={"candidate_kind": "deployment_move", "lookahead_total_value": 1.6},
+        ),
+    ]
+    request.mask = [True, True]
+
     option_id = maker.choose_deployment_move_option(request, object(), {}, [])
     assert str(option_id or "") == str(request.options[1].option_id)

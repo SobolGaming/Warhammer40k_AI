@@ -348,12 +348,65 @@ class PregameDeploymentAgent:
         *,
         player: object,
         deployment_zone: Optional[dict],
+        decision_kind: str = "",
     ) -> dict[str, Any]:
         summary = self._army_role_summary(player)
         affordance = self.board_affordances(zone=deployment_zone)
+        decision_kind_key = str(decision_kind or "").strip().lower()
+        candidate_kinds: list[str]
+        if decision_kind_key == "zone_choice":
+            candidate_kinds = ["deployment_zone"]
+        elif decision_kind_key == "next_unit":
+            candidate_kinds = ["deployment_commit_order"]
+        elif decision_kind_key == "reserves":
+            candidate_kinds = ["deployment_reserves"]
+        elif decision_kind_key == "scout":
+            candidate_kinds = ["deployment_scout"]
+        elif decision_kind_key == "placement":
+            candidate_kinds = ["deployment_move"]
+        else:
+            candidate_kinds = [
+                "deployment_zone",
+                "deployment_commit_order",
+                "deployment_reserves",
+                "deployment_scout",
+                "deployment_move",
+            ]
+        lookahead_depth = 2 if decision_kind_key in {"zone_choice", "reserves", "placement"} else 1
+        lookahead_branch_count = 3 if (summary.screen_score >= 0.35 or summary.melee_score >= 0.45) else 2
+        lookahead_discount = _round6(
+            _clamp(
+                0.56 + summary.anchor_score * 0.12 + summary.gunline_score * 0.08,
+                low=0.45,
+                high=0.85,
+            )
+        )
+        lookahead_score_blend = _round6(
+            _clamp(
+                0.14 + summary.melee_score * 0.08 + summary.gunline_score * 0.06,
+                low=0.08,
+                high=0.35,
+            )
+        )
+        continuation_decay = _round6(
+            _clamp(
+                0.66 + summary.anchor_score * 0.1,
+                low=0.45,
+                high=0.9,
+            )
+        )
         return {
             "board_affordances": affordance.to_dict(),
             "army_role_summary": summary.to_dict(),
+            "deployment_lookahead": {
+                "enabled": True,
+                "depth": int(lookahead_depth),
+                "branch_count": int(lookahead_branch_count),
+                "discount": float(lookahead_discount),
+                "continuation_decay": float(continuation_decay),
+                "score_blend": float(lookahead_score_blend),
+                "candidate_kinds": list(candidate_kinds),
+            },
         }
 
     def ordered_deploy_units(

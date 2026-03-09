@@ -14,6 +14,7 @@ Runtime guarantees:
 - Candidate metadata is normalized to include portability semantic keys (`projected_*`, `cover_delta`, `los_delta`, `resource_delta`, `rules_provenance_refs`) for all decision types.
 - Semantic numeric metadata is computed deterministically from decision context and candidate params (movement, deployment-pregame, targeting, charge, fight, and tool classes), rather than static heuristic defaults.
 - Deployment candidates may include extra pregame deltas (`reserve_denial_delta`, `screen_integrity_delta`, `countercharge_coverage_delta`, `aura_connectivity_delta`, `projected_exposure_delta_if_enemy_goes_first`, `projected_melee_staging_delta`) in addition to portable `projected_*` keys.
+- When deployment lookahead is enabled, deployment candidates may also include deterministic bounded rollout metadata (`lookahead_immediate_value`, `lookahead_worst_branch_value`, `lookahead_followup_value`, `lookahead_enemy_pressure`, `lookahead_total_value`) and `lookahead_base_*`/`lookahead_adjusted_*` projection fields.
 - `outcome.immediate_deltas.actor_player_id` is recorded for each decision resolution and is used by reward-profile labeling.
 - Valid decisions (`valid=true`) include `chosen_action_id`, and that action is present in `candidates`.
 - Invalid decisions (`valid=false`) include `invalid_attempt` and `rejection_reason`.

@@ -356,6 +356,118 @@ def test_deployment_move_candidates_vary_by_runtime_placement_option() -> None:
     )
 
 
+def test_deployment_move_lookahead_layer_adds_runtime_rollout_metadata() -> None:
+    game, player, screen_unit, _hammer = _build_game()
+
+    def _request(*, include_lookahead: bool) -> DecisionRequest:
+        context = {
+            "unit_id": screen_unit.id,
+            "movement_type": "deploy",
+            "placement_kind": "deployment",
+            "deployment_candidate_count": 2,
+            "deployment_intent": {
+                "desired_affordances": ["LOS_TUNNEL_ADVANCE", "SCREEN_DEPTH"],
+                "anchors": {
+                    "deployment_center_x": "8.0",
+                    "deployment_center_y": "10.0",
+                },
+                "weights": {
+                    "score": 0.32,
+                    "deny": 0.22,
+                    "safety": 0.26,
+                    "staging": 0.22,
+                    "reserve_deny": 0.24,
+                    "screen": 0.25,
+                    "countercharge": 0.15,
+                    "cover": 0.2,
+                    "los": 0.12,
+                    "aura": 0.1,
+                },
+            },
+        }
+        if include_lookahead:
+            context["deployment_lookahead"] = {
+                "enabled": True,
+                "depth": 2,
+                "branch_count": 3,
+                "discount": 0.64,
+                "score_blend": 0.22,
+                "candidate_kinds": ["deployment_move"],
+            }
+        return DecisionRequest.create(
+            DECISION_MOVE_UNIT,
+            "Deploy Forward Screen",
+            player_id=player.id,
+            options=[
+                DecisionOption.create(
+                    "Forward Candidate",
+                    payload={
+                        "unit_id": screen_unit.id,
+                        "movement_type": "deploy",
+                        "action": "confirm",
+                        "placement_candidate_id": "cand:forward",
+                        "placement_candidate_index": 0,
+                        "deployment_anchor": [12.0, 10.0],
+                        "model_positions": [
+                            {
+                                "model_id": "m1",
+                                "position": [12.0, 10.0, 0.0],
+                                "facing": 0.0,
+                            }
+                        ],
+                    },
+                ),
+                DecisionOption.create(
+                    "Back Candidate",
+                    payload={
+                        "unit_id": screen_unit.id,
+                        "movement_type": "deploy",
+                        "action": "confirm",
+                        "placement_candidate_id": "cand:back",
+                        "placement_candidate_index": 1,
+                        "deployment_anchor": [6.0, 10.0],
+                        "model_positions": [
+                            {
+                                "model_id": "m1",
+                                "position": [6.0, 10.0, 0.0],
+                                "facing": 0.0,
+                            }
+                        ],
+                    },
+                ),
+            ],
+            context=context,
+        )
+
+    without_lookahead = _request(include_lookahead=False)
+    with_lookahead = _request(include_lookahead=True)
+    game.request_decision(without_lookahead)
+    game.request_decision(with_lookahead)
+
+    baseline_by_id = {
+        str(dict(candidate.params or {}).get("placement_candidate_id", "") or ""): dict(candidate.metadata or {})
+        for candidate in list(without_lookahead.candidates or [])
+    }
+    rollout_by_id = {
+        str(dict(candidate.params or {}).get("placement_candidate_id", "") or ""): dict(candidate.metadata or {})
+        for candidate in list(with_lookahead.candidates or [])
+    }
+    assert "cand:forward" in baseline_by_id
+    assert "cand:forward" in rollout_by_id
+    rollout_meta = dict(rollout_by_id["cand:forward"] or {})
+    baseline_meta = dict(baseline_by_id["cand:forward"] or {})
+    assert rollout_meta.get("lookahead_enabled") is True
+    assert "lookahead_total_value" in rollout_meta
+    assert "lookahead_worst_branch_name" in rollout_meta
+    assert "lookahead_adjusted_score_delta_round" in rollout_meta
+    assert float(rollout_meta.get("lookahead_base_projected_score_delta_round", 0.0) or 0.0) != float(
+        rollout_meta.get("lookahead_adjusted_score_delta_round", 0.0) or 0.0
+    )
+    assert float(rollout_meta.get("projected_score_delta_round", 0.0) or 0.0) != float(
+        baseline_meta.get("projected_score_delta_round", 0.0) or 0.0
+    )
+
+
 def test_reserves_request_generates_rankable_candidates_with_semantic_metadata() -> None:
     game, player, _screen_unit, _hammer = _build_game()
     request = build_reserves_allocation_request(game, player.army, queue_requests=True)

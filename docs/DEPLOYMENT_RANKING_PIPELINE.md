@@ -23,6 +23,8 @@ The pipeline consumes DecisionRecords with deterministic candidate metadata and 
 Deployment-zone candidates include board-affordance metadata produced from terrain-aware lane
 sampling (for example `los_tunnel_count`, `hidden_staging_cell_count`,
 `must_expose_to_advance_cell_count`, infantry/vehicle approach quality).
+When `context.deployment_lookahead.enabled=true`, candidate metadata also includes deterministic
+bounded rollout fields (`lookahead_*`) derived from shallow enemy-response branches and follow-up value.
 
 ## Dataset build
 
@@ -67,6 +69,8 @@ Output model includes:
   - next deploy unit requests
   - scout move requests (through the shared deployment solver metadata path)
   - deployment placement `MOVE_UNIT` requests (`placement_kind="deployment"`) with multi-candidate exact placements
+- The deployment solver can optionally blend rollout totals into projected round/trade deltas via
+  `context.deployment_lookahead.score_blend`, while preserving base values in `lookahead_base_*` metadata.
 - If ranker cannot score a request, deterministic heuristic fallback remains active.
 
 ## Headless usage

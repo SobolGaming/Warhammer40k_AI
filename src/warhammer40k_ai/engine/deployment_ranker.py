@@ -40,6 +40,11 @@ DEFAULT_DEPLOYMENT_RANKER_FEATURE_KEYS: tuple[str, ...] = (
     "aura_connectivity_delta",
     "projected_exposure_delta_if_enemy_goes_first",
     "projected_melee_staging_delta",
+    "lookahead_immediate_value",
+    "lookahead_worst_branch_value",
+    "lookahead_followup_value",
+    "lookahead_enemy_pressure",
+    "lookahead_total_value",
 )
 
 
