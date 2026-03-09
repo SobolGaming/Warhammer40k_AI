@@ -783,6 +783,27 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         self.assertEqual(model.wounds, 7)
         self.assertEqual(unit.starting_total_wounds, 7)
 
+    def test_attached_leader_bearer_wounds_characteristic_set_value_applies(self):
+        ability = {
+            "name": "Relic Shield",
+            "description": "The bearer has a Wounds characteristic of 6.",
+            "type": "Wargear",
+            "parameter": "",
+        }
+        leader = _make_unit("Captain", abilities=[ability], attached_to=["Bodyguard"])
+        bodyguard = _make_unit("Bodyguard")
+        leader_model = leader.models[0]
+        leader_model.optional_wargear = ["Relic Shield"]
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Bodyguard"]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertEqual(leader_model._base_wounds, 6)
+        self.assertEqual(leader_model.wounds, 6)
+        self.assertEqual(leader.starting_total_wounds, 6)
+
     def test_leading_unit_contains_model_invulnerable_save_applies(self):
         ability = {
             "name": "Faithful Flock",

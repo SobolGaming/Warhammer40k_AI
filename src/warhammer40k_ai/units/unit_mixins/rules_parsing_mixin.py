@@ -4247,16 +4247,26 @@ class RulesParsingMixin:
         except Exception:
             root = self
         try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        try:
             models = list(root.get_attached_unit_models() or [])
         except Exception:
             models = list(getattr(root, "models", []) or [])
         if not models:
             return
 
-        bonus_by_name: dict[str, int] = {}
-        set_by_name: dict[str, int] = {}
-        for ab in list(getattr(root, "possible_abilities", []) or []):
-            try:
+        bonus_by_unit: dict[int, dict[str, int]] = {}
+        set_by_unit: dict[int, dict[str, int]] = {}
+        for member in list(members or []):
+            if member is None:
+                continue
+            unit_bonus_by_name: dict[str, int] = {}
+            unit_set_by_name: dict[str, int] = {}
+            for ab in list(getattr(member, "possible_abilities", []) or []):
                 atype = str(getattr(ab, "type", "") or "").lower()
                 if ("wargear" not in atype) and ("datasheet" not in atype):
                     continue
@@ -4268,30 +4278,37 @@ class RulesParsingMixin:
                 if not normalized:
                     continue
                 normalized = normalized.replace("\u2019", "'").lower()
+
                 set_match = self._BEARER_WOUNDS_SET_RE.search(normalized)
                 if set_match:
                     try:
                         set_val = int(set_match.group(1) or 0)
-                    except Exception:
+                    except (TypeError, ValueError):
                         set_val = 0
                     if set_val > 0:
-                        set_by_name[self._norm_wargear_name(name)] = int(set_val)
-                m = self._BEARER_WOUNDS_BONUS_RE.search(normalized)
-                if not m:
+                        unit_set_by_name[self._norm_wargear_name(name)] = int(set_val)
+
+                bonus_match = self._BEARER_WOUNDS_BONUS_RE.search(normalized)
+                if not bonus_match:
                     continue
                 try:
-                    val = int(m.group(1) or 0)
-                except Exception:
-                    val = 0
-                if val <= 0:
+                    bonus_val = int(bonus_match.group(1) or 0)
+                except (TypeError, ValueError):
+                    bonus_val = 0
+                if bonus_val <= 0:
                     continue
-                bonus_by_name[self._norm_wargear_name(name)] = int(val)
-            except Exception:
-                continue
+                unit_bonus_by_name[self._norm_wargear_name(name)] = int(bonus_val)
+            bonus_by_unit[id(member)] = unit_bonus_by_name
+            set_by_unit[id(member)] = unit_set_by_name
 
         for model in list(models or []):
             if model is None:
                 continue
+            model_unit = getattr(model, "parent_unit", None)
+            if model_unit is None:
+                model_unit = root
+            unit_bonus = bonus_by_unit.get(id(model_unit), {})
+            unit_set = set_by_unit.get(id(model_unit), {})
             base_unmod = getattr(model, "_base_wounds_unmodified", None)
             if base_unmod is None:
                 try:
@@ -4308,19 +4325,19 @@ class RulesParsingMixin:
             try:
                 for wg in list(getattr(model, "wargear", []) or []):
                     nm = self._norm_wargear_name(getattr(wg, "name", "") or "")
-                    if nm in set_by_name:
-                        set_values.append(int(set_by_name.get(nm, 0) or 0))
-                    if nm in bonus_by_name:
-                        bonus += int(bonus_by_name.get(nm, 0) or 0)
+                    if nm in unit_set:
+                        set_values.append(int(unit_set.get(nm, 0) or 0))
+                    if nm in unit_bonus:
+                        bonus += int(unit_bonus.get(nm, 0) or 0)
             except Exception:
                 pass
             try:
                 for ow in list(getattr(model, "optional_wargear", []) or []):
                     nm = self._norm_wargear_name(str(ow or ""))
-                    if nm in set_by_name:
-                        set_values.append(int(set_by_name.get(nm, 0) or 0))
-                    if nm in bonus_by_name:
-                        bonus += int(bonus_by_name.get(nm, 0) or 0)
+                    if nm in unit_set:
+                        set_values.append(int(unit_set.get(nm, 0) or 0))
+                    if nm in unit_bonus:
+                        bonus += int(unit_bonus.get(nm, 0) or 0)
             except Exception:
                 pass
             set_base = 0
@@ -4346,10 +4363,14 @@ class RulesParsingMixin:
                     model._wounds = max(0, int(desired_base) - int(missing))
                 model._base_wounds = int(desired_base)
 
-        try:
-            root.starting_total_wounds = sum(int(getattr(m, "_base_wounds", 0) or 0) for m in list(root.models or []))
-        except Exception:
-            pass
+        for member in list(members or []):
+            if member is None:
+                continue
+            try:
+                member_models = list(getattr(member, "models", []) or [])
+                member.starting_total_wounds = sum(int(getattr(m, "_base_wounds", 0) or 0) for m in member_models)
+            except Exception:
+                continue
 
     def _parse_advance_no_roll_distance(self, text: str) -> Optional[int]:
         if not text:
