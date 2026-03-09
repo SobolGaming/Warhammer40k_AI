@@ -4744,6 +4744,40 @@ class WargearProfile:
                                 )
         except Exception:
             pass
+        try:
+            sr = self._unit_special_rules(attacker)
+            rr_bonus = int(sr.get("righteous_repugnance_bonus", 0) or 0)
+            if rr_bonus:
+                source_model_id = str(sr.get("righteous_repugnance_source_model_id", "") or "")
+                attacker_model_id = str(get_entity_id(attacker) or "")
+                if (not source_model_id) or (source_model_id == attacker_model_id):
+                    if self._enhancement_bonus_window_active(
+                        attacker,
+                        sr,
+                        expires_phase_key="righteous_repugnance_expires_phase",
+                        turn_key="righteous_repugnance_turn",
+                        owner_key="righteous_repugnance_owner",
+                    ):
+                        base_weapon_name = str(getattr(getattr(self, "parent_wargear", None), "name", "") or "").strip()
+                        if not base_weapon_name:
+                            base_weapon_name = str(getattr(self, "name", "") or "").strip()
+                        name_key = base_weapon_name.lower()
+                        if "fidelis" in name_key or "lance of illumination" in name_key:
+                            atk_mods.append(
+                                Modifier(
+                                    ModifierOp.ADD,
+                                    int(rr_bonus),
+                                    source="ability:righteous_repugnance_attacks_add",
+                                )
+                            )
+                            source_name = str(sr.get("righteous_repugnance_source", "") or "Righteous Repugnance").strip()
+                            if not source_name:
+                                source_name = "Righteous Repugnance"
+                            attack_result.attacks_special_modifiers.append(
+                                f"{source_name} +{int(rr_bonus)}A ({base_weapon_name})"
+                            )
+        except Exception:
+            pass
         if self.parent_wargear and self.parent_wargear.is_melee():
             sr = self._unit_special_rules(attacker)
             bearer_bonus = int(sr.get("enhancement_bearer_melee_attacks_bonus", 0) or 0)

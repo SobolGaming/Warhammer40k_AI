@@ -3535,6 +3535,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of your Command phase: optional CHOOSE_QUARRY mode supports either discarding 1 Miracle die to gain 1CP or taking a Leadership test for this model to gain 1CP on a pass.",
         ),
+        ("AS", "Righteous Repugnance"): (
+            "Supported",
+            "Each time this model's unit is selected to shoot or fight, optionally discard 1 Miracle die to grant +3 Attacks to Fidelis and Lance of Illumination until phase end; each enemy unit destroyed by this model grants 1 Miracle die.",
+        ),
         ("AS", "Litany of Deeds"): (
             "Supported",
             "Each time a friendly ADEPTA SORORITAS unit or model is destroyed within 12\" of this source, the resulting Miracle die gain can be re-rolled before being added to the pool.",

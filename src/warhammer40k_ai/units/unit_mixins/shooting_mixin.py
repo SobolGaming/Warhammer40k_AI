@@ -304,6 +304,18 @@ class ShootingMixin:
                         continue
                     selected_models[get_entity_id(m)] = m
             if selected_models:
+                try:
+                    army = self.get_parent_army()
+                except Exception:
+                    army = None
+                acts_mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                on_select = getattr(acts_mgr, "on_shoot_unit_selected", None) if acts_mgr is not None else None
+                if callable(on_select):
+                    selecting_player = getattr(army, "player", None) if army is not None else None
+                    try:
+                        on_select(self, game=game, selecting_player=selecting_player)
+                    except Exception:
+                        pass
                 self.grant_selected_to_shoot_rerolls_for_models(list(selected_models.values()))
                 self.grant_selected_to_action_reroll_choice_for_models(list(selected_models.values()), action="shoot")
                 try:

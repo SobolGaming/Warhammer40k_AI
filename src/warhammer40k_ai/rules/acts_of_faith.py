@@ -160,6 +160,43 @@ class ActsOfFaithManager:
                 return True
         return False
 
+    def _iter_root_and_members(self, root) -> list:
+        if root is None:
+            return []
+        members_getter = getattr(root, "get_attached_unit_members", None)
+        members = list(members_getter() or []) if callable(members_getter) else [root]
+        if not members:
+            members = [root]
+        try:
+            members = sorted(members, key=lambda unit: str(get_entity_id(unit) or ""))
+        except Exception:
+            members = list(members)
+        return list(members or [])
+
+    def _first_member_with_ability_named(self, root, ability_name: str):
+        for member in list(self._iter_root_and_members(root) or []):
+            if member is None:
+                continue
+            if self._unit_has_ability_named(member, ability_name):
+                return member
+        return None
+
+    def _first_alive_model_for_unit(self, unit):
+        if unit is None:
+            return None
+        try:
+            models = list(getattr(unit, "models", []) or [])
+        except Exception:
+            models = []
+        try:
+            models = sorted(models, key=lambda model: str(get_entity_id(model) or ""))
+        except Exception:
+            models = list(models)
+        for model in models:
+            if self._model_is_alive(model):
+                return model
+        return None
+
     def _stirring_rhetoric_applies(self, unit) -> bool:
         """
         Dialogus: while leading a unit, one Miracle die used in each Act of Faith
@@ -875,6 +912,12 @@ class ActsOfFaithManager:
             destroyed_by_unit=destroyed_by_unit,
             game=game,
         )
+        self._maybe_trigger_righteous_repugnance_enemy_unit_destroyed(
+            unit=unit,
+            destroyed_by_unit=destroyed_by_unit,
+            destroyed_by_model=destroyed_by_model,
+            game=game,
+        )
 
     def on_model_destroyed(self, unit, model, *, game=None, game_map=None) -> None:
         if unit is None or model is None or not self._army_has_rule():
@@ -1004,12 +1047,31 @@ class ActsOfFaithManager:
     def _blade_state_key(self, game=None) -> str:
         return f"blade_of_saint_ellynor:{self._phase_key(game)}"
 
+    def on_shoot_unit_selected(self, unit, *, game=None, selecting_player=None) -> None:
+        if not self._army_has_rule() or unit is None:
+            return
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return
+        self._maybe_apply_righteous_repugnance(
+            root,
+            game=game,
+            selecting_player=selecting_player,
+            trigger_action="shoot",
+        )
+
     def on_fight_unit_selected(self, unit, *, game=None, selecting_player=None) -> None:
         if not self._army_has_rule() or unit is None:
             return
         root = self._unit_root(unit)
         if root is None or not self._unit_in_army(root):
             return
+        self._maybe_apply_righteous_repugnance(
+            root,
+            game=game,
+            selecting_player=selecting_player,
+            trigger_action="fight",
+        )
         if self._is_bringers_of_flame():
             self._maybe_apply_righteous_rage(root, game=game, selecting_player=selecting_player)
         if not self._is_army_of_faith():
@@ -1352,6 +1414,120 @@ class ActsOfFaithManager:
             reason="Chaplet of Sacrifice",
             skip_sixes=True,
         )
+
+    def _maybe_apply_righteous_repugnance(
+        self,
+        unit,
+        *,
+        game=None,
+        selecting_player=None,
+        trigger_action: str = "",
+    ) -> None:
+        if unit is None:
+            return
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if selecting_player is not None and owner is not None and selecting_player is not owner:
+            return
+        source_unit = self._first_member_with_ability_named(unit, "Righteous Repugnance")
+        if source_unit is None:
+            return
+        source_model = self._first_alive_model_for_unit(source_unit)
+        if source_model is None:
+            return
+        if not self.miracle_dice:
+            return
+        chosen_indices = self._choose_miracle_pool_indices(
+            unit=source_unit,
+            bearer_model=source_model,
+            game=game,
+            pool=list(self.miracle_dice),
+            max_select=1,
+            reason="Righteous Repugnance",
+            skip_sixes=True,
+        )
+        if not chosen_indices:
+            return
+        discarded = self._discard_miracle_dice_by_indices(self.miracle_dice, chosen_indices[:1])
+        if not discarded:
+            return
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        except Exception:
+            current_turn = 0
+        try:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        except Exception:
+            phase_name = ""
+        if not phase_name:
+            phase_name = "FIGHT_PHASE" if str(trigger_action or "").strip().lower() == "fight" else "SHOOTING_PHASE"
+        owner_id = str(get_entity_id(owner) or getattr(owner, "id", "")) if owner is not None else ""
+        sr = self._unit_special_rules(source_unit)
+        try:
+            existing_bonus = int(sr.get("righteous_repugnance_bonus", 0) or 0)
+        except Exception:
+            existing_bonus = 0
+        try:
+            existing_turn = int(sr.get("righteous_repugnance_turn", 0) or 0)
+        except Exception:
+            existing_turn = 0
+        existing_phase = str(sr.get("righteous_repugnance_expires_phase", "") or "").strip().upper()
+        existing_owner = str(sr.get("righteous_repugnance_owner", "") or "")
+        if (
+            (existing_turn and current_turn and existing_turn != current_turn)
+            or (existing_phase and phase_name and existing_phase != phase_name)
+            or (existing_owner and owner_id and existing_owner != owner_id)
+        ):
+            existing_bonus = 0
+        sr = dict(sr)
+        sr["righteous_repugnance_bonus"] = int(max(0, int(existing_bonus) + 3))
+        sr["righteous_repugnance_turn"] = int(current_turn)
+        sr["righteous_repugnance_owner"] = str(owner_id)
+        sr["righteous_repugnance_expires_phase"] = str(phase_name)
+        sr["righteous_repugnance_source_model_id"] = str(get_entity_id(source_model) or "")
+        sr["righteous_repugnance_source"] = "Righteous Repugnance"
+        source_unit.special_rules = sr
+        try:
+            if owner is not None:
+                append_dice(
+                    owner,
+                    (
+                        "Righteous Repugnance: discarded Miracle die "
+                        f"{discarded} for +3 Attacks to Fidelis and Lance of Illumination this phase"
+                    ),
+                )
+        except Exception:
+            pass
+
+    def _maybe_trigger_righteous_repugnance_enemy_unit_destroyed(
+        self,
+        *,
+        unit,
+        destroyed_by_unit,
+        destroyed_by_model,
+        game=None,
+    ) -> None:
+        if unit is None or destroyed_by_model is None:
+            return
+        target_root = self._unit_root(unit)
+        if target_root is None or self._unit_in_army(target_root):
+            return
+        attacker_root = self._unit_root(destroyed_by_unit)
+        if attacker_root is None:
+            attacker_root = self._unit_root(getattr(destroyed_by_model, "parent_unit", None))
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return
+        source_unit = self._first_member_with_ability_named(attacker_root, "Righteous Repugnance")
+        if source_unit is None:
+            return
+        source_model_ids = {
+            str(get_entity_id(model) or "")
+            for model in list(getattr(source_unit, "models", []) or [])
+            if model is not None
+        }
+        destroyed_model_id = str(get_entity_id(destroyed_by_model) or "")
+        if not destroyed_model_id or destroyed_model_id not in source_model_ids:
+            return
+        self.gain_miracle_die(game=game, allow_reroll=False, reason="Righteous Repugnance")
 
     def _maybe_apply_righteous_rage(self, unit, *, game=None, selecting_player=None) -> None:
         if unit is None or not self._unit_has_special_rule(unit, "enhancement_righteous_rage"):
