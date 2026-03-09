@@ -7069,6 +7069,73 @@ class GameShootingFightHandlersMixin:
             instance_key=f"{unit_id}:plasmacyte:{used}",
         )
 
+    def _on_fight_unit_selected_extremis_trigger_word(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        pname = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if pname and pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        root_getter = getattr(unit, "get_attached_unit_root", None)
+        root = root_getter() if callable(root_getter) else unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        army_getter = getattr(root, "get_parent_army", None)
+        army = army_getter() if callable(army_getter) else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None:
+            return
+        if selecting_player is not None and selecting_player is not player:
+            return
+
+        source_fn = getattr(root, "get_extremis_trigger_word_source", None)
+        ability_name = str(source_fn() if callable(source_fn) else "").strip()
+        if not ability_name:
+            return
+
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("extremis_trigger_word_active")):
+            exp = str(sr.get("extremis_trigger_word_expires_phase", "") or "").strip().upper()
+            if not exp or exp == "FIGHT_PHASE":
+                return
+
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        message = f"Use {ability_name} for {getattr(root, 'name', 'Unit')}?"
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="extremis_trigger_word",
+            ability_name=ability_name,
+            message=message,
+            context={
+                "ability": "extremis_trigger_word",
+                "ability_name": ability_name,
+                "phase": "Fight phase",
+                "unit": getattr(root, "name", "") or "",
+                "unit_id": unit_id,
+                "weapon_name": "arco-flails",
+                "attacks_value": 6,
+            },
+            payload={
+                "unit_id": unit_id,
+                "ability_name": ability_name,
+                "weapon_name": "arco-flails",
+                "attacks_value": 6,
+            },
+            instance_key=f"{unit_id}:{turn}:{owner_id}:extremis_trigger_word",
+        )
+
     def _on_fight_unit_selected_sacrificial_dagger(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None:
             return

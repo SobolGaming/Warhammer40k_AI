@@ -2507,6 +2507,161 @@ class PositioningMixin:
         root._ability_cache[cache_key] = source
         return str(source or "")
 
+    def get_extremis_trigger_word_source(self) -> str:
+        """
+        Return the source name for Extremis Trigger Word on this attached unit root, if present.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "extremis_trigger_word_source"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return str(cache.get(cache_key) or "")
+
+        source = ""
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in list(members or []):
+            if member is None:
+                continue
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                name_norm = str(name or "").strip().lower()
+                text_src = member._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = root._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "extremis trigger word" not in name_norm:
+                    if "extremis trigger word" not in normalized:
+                        continue
+                    if "selected to fight" not in normalized:
+                        continue
+                    if "arco flails equipped by models in this unit" not in normalized:
+                        continue
+                    if "attacks characteristic of 6" not in normalized:
+                        continue
+                    if "hazardous" not in normalized:
+                        continue
+                source = str(name or "Extremis Trigger Word").strip() or "Extremis Trigger Word"
+                break
+            if source:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = source
+        return str(source or "")
+
+    def apply_extremis_trigger_word_effect(
+        self,
+        *,
+        weapon_name: str = "arco-flails",
+        attacks_value: int = 6,
+        source: str = "",
+        game=None,
+        expires_phase: str = "FIGHT_PHASE",
+    ) -> bool:
+        """
+        Apply Extremis Trigger Word to this attached unit:
+        - set arco-flails Attacks to a fixed value
+        - grant [HAZARDOUS] to those weapons
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        source_name = str(source or "").strip()
+        if not source_name:
+            source_name = str(root.get_extremis_trigger_word_source() or "").strip()
+        if not source_name:
+            return False
+        try:
+            fixed_attacks = int(attacks_value or 0)
+        except Exception:
+            fixed_attacks = 0
+        if fixed_attacks <= 0:
+            return False
+        target_weapon = str(weapon_name or "").strip() or "arco-flails"
+        phase_name = str(expires_phase or "FIGHT_PHASE").strip().upper() or "FIGHT_PHASE"
+
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        if not models:
+            models = list(getattr(root, "models", []) or [])
+
+        applied = False
+        for model in list(models or []):
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if not model_id:
+                continue
+            if hasattr(model, "set_temporary_weapon_attacks_override"):
+                model.set_temporary_weapon_attacks_override(
+                    key=f"extremis_trigger_word:{model_id}:attacks",
+                    weapon_name=target_weapon,
+                    attacks_value=int(fixed_attacks),
+                    source=source_name,
+                    expires_phase=phase_name,
+                )
+            if hasattr(model, "set_temporary_weapon_keyword_bonuses"):
+                model.set_temporary_weapon_keyword_bonuses(
+                    key=f"extremis_trigger_word:{model_id}:keywords",
+                    weapon_name=target_weapon,
+                    keywords=["HAZARDOUS"],
+                    source=source_name,
+                    expires_phase=phase_name,
+                    attack_type="melee",
+                )
+            applied = True
+
+        if not applied:
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["extremis_trigger_word_active"] = True
+        sr["extremis_trigger_word_source"] = source_name
+        sr["extremis_trigger_word_weapon_name"] = target_weapon
+        sr["extremis_trigger_word_attacks_value"] = int(fixed_attacks)
+        sr["extremis_trigger_word_expires_phase"] = phase_name
+
+        game_obj = game
+        if game_obj is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            player = getattr(army, "player", None) if army is not None else None
+            game_obj = getattr(player, "game", None) if player is not None else None
+        if game_obj is not None:
+            try:
+                sr["extremis_trigger_word_turn"] = int(getattr(game_obj, "turn", 0) or 0)
+            except Exception:
+                sr["extremis_trigger_word_turn"] = 0
+            try:
+                current_player = getattr(game_obj, "get_current_player", lambda: None)()
+                owner_id = str(getattr(current_player, "id", "") or "")
+            except Exception:
+                owner_id = ""
+            if owner_id:
+                sr["extremis_trigger_word_owner"] = owner_id
+        root.special_rules = sr
+        return True
+
     def clear_embodied_prophecy_effect(self) -> None:
         try:
             root = self.get_attached_unit_root()
@@ -3846,6 +4001,7 @@ class PositioningMixin:
             "ignores_cover": False,
             "lethal_hits": False,
             "assault": False,
+            "hazardous": False,
             "sustained_hits_value": 0,
             "sustained_hits_dice": "",
             "devastating_wounds": False,
@@ -3875,6 +4031,9 @@ class PositioningMixin:
             elif kw == "ASSAULT":
                 bonuses["assault"] = True
                 sources.append(f"Assault ({source})")
+            elif kw == "HAZARDOUS":
+                bonuses["hazardous"] = True
+                sources.append(f"Hazardous ({source})")
             elif kw == "LETHAL HITS":
                 bonuses["lethal_hits"] = True
                 sources.append(f"Lethal Hits ({source})")
@@ -3922,6 +4081,7 @@ class PositioningMixin:
             bonuses["ignores_cover"]
             or bonuses["lethal_hits"]
             or bonuses["assault"]
+            or bonuses["hazardous"]
             or bonuses["devastating_wounds"]
             or bonuses["twin_linked"]
             or bonuses["heavy"]

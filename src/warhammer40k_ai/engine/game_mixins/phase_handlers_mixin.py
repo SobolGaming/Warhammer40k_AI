@@ -16176,6 +16176,18 @@ class GamePhaseHandlersMixin:
                         "plasmacyte_owner",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("extremis_trigger_word_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "extremis_trigger_word_active",
+                        "extremis_trigger_word_source",
+                        "extremis_trigger_word_weapon_name",
+                        "extremis_trigger_word_attacks_value",
+                        "extremis_trigger_word_expires_phase",
+                        "extremis_trigger_word_turn",
+                        "extremis_trigger_word_owner",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("dark_pacts_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (

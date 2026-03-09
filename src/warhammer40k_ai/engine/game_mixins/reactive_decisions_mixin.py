@@ -4683,6 +4683,7 @@ class GameReactiveDecisionsMixin:
             "cat_unit",
             "ammo_runt",
             "plasmacyte",
+            "extremis_trigger_word",
             "flickerjump",
             "advance_redeploy",
             "daemonic_patrons",
@@ -7341,6 +7342,63 @@ class GameReactiveDecisionsMixin:
                     append_action(
                         player,
                         f"{ability_name}: {getattr(root, 'name', 'Unit')} gains [DEVASTATING WOUNDS] on melee weapons this phase.",
+                    )
+            except (ImportError, AttributeError, TypeError, ValueError):
+                pass
+            return
+
+        if ability_key == "extremis_trigger_word":
+            if choice is False:
+                return
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            root_getter = getattr(unit, "get_attached_unit_root", None)
+            root = root_getter() if callable(root_getter) else unit
+            if root is None or not root.is_alive():
+                return
+            if not getattr(root, "deployed", True):
+                return
+            if root.is_in_reserves() or root.is_embarked:
+                return
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("extremis_trigger_word_active")):
+                exp = str(sr.get("extremis_trigger_word_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "FIGHT_PHASE":
+                    return
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Extremis Trigger Word").strip()
+            weapon_name = str(payload.get("weapon_name") or ctx.get("weapon_name") or "arco-flails").strip() or "arco-flails"
+            try:
+                attacks_value = int(payload.get("attacks_value") or ctx.get("attacks_value") or 6)
+            except (TypeError, ValueError):
+                attacks_value = 6
+            apply_fn = getattr(root, "apply_extremis_trigger_word_effect", None)
+            if not callable(apply_fn):
+                return
+            applied = bool(
+                apply_fn(
+                    weapon_name=weapon_name,
+                    attacks_value=int(attacks_value),
+                    source=ability_name,
+                    game=self,
+                    expires_phase="FIGHT_PHASE",
+                )
+            )
+            if not applied:
+                return
+            try:
+                from ...utility.event_bus import append_action
+
+                army_getter = getattr(root, "get_parent_army", None)
+                army = army_getter() if callable(army_getter) else None
+                player = getattr(army, "player", None) if army is not None else None
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(root, 'name', 'Unit')} gains Attacks {int(attacks_value)} and [HAZARDOUS] on {weapon_name} until phase end.",
                     )
             except (ImportError, AttributeError, TypeError, ValueError):
                 pass

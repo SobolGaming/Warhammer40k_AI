@@ -6252,6 +6252,9 @@ class WargearProfile:
         except Exception:
             kill_team_toughness = None
 
+        bonus_hazardous_applies = False
+        bonus_hazardous_source = ""
+
         # Process each attack
         for attack_num in range(num_attacks):
             attack_instance = {
@@ -6293,6 +6296,10 @@ class WargearProfile:
             # Check if we hit
             hit_result = self._hit_target_with_tracking(target, attacker, attack_instance)
             attack_result.hit_results.append(hit_result)
+            if bool(attack_instance.get("bonus_hazardous")):
+                bonus_hazardous_applies = True
+                if not bonus_hazardous_source:
+                    bonus_hazardous_source = str(attack_instance.get("bonus_hazardous_source", "") or "")
             
             if hit_result['hit']:
                 hit_instances.append(attack_instance)
@@ -6613,6 +6620,15 @@ class WargearProfile:
         # Handle hazardous weapon effects
         hazardous_active = self.is_hazardous()
         hazardous_source_count = 1 if hazardous_active else 0
+        bonus_melee_hazardous = False
+        bonus_ranged_hazardous = False
+        if bonus_hazardous_applies:
+            hazardous_active = True
+            hazardous_source_count += 1
+            source_name = str(bonus_hazardous_source or "Ability").strip() or "Ability"
+            note = f"{source_name}: [HAZARDOUS]"
+            if note not in attack_result.attacks_special_modifiers:
+                attack_result.attacks_special_modifiers.append(note)
         if daemonic_ordnance_active:
             hazardous_active = True
             hazardous_source_count += 1
@@ -6632,6 +6648,11 @@ class WargearProfile:
             and callable(getattr(parent_wargear, "is_ranged", None))
             and parent_wargear.is_ranged()
         )
+        if bonus_hazardous_applies:
+            if is_melee_weapon:
+                bonus_melee_hazardous = True
+            if is_ranged_weapon:
+                bonus_ranged_hazardous = True
         possessed_blade_hazardous = False
         if is_melee_weapon:
             possessed_blade = self._get_possessed_blade_state(attacker)
@@ -6814,8 +6835,8 @@ class WargearProfile:
                     eligible = collect_hazardous_eligible_models(
                         root_unit,
                         include_melee_non_character=bool(pain_hazardous),
-                        include_melee_all=bool(target_melee_hazardous),
-                        include_ranged_all=bool(target_ranged_hazardous or attacker_ranged_hazardous),
+                        include_melee_all=bool(target_melee_hazardous or bonus_melee_hazardous),
+                        include_ranged_all=bool(target_ranged_hazardous or attacker_ranged_hazardous or bonus_ranged_hazardous),
                     )
                 except Exception:
                     eligible = []
@@ -8938,6 +8959,8 @@ class WargearProfile:
         bonus_anti_specs = ()
         bonus_precision_on_crit = False
         bonus_precision = False
+        bonus_hazardous = False
+        bonus_hazardous_label = ""
         try:
             if attack_is_ranged and self._purging_fire_lethal_hits_active(attacker):
                 bonus_lethal = True
@@ -9123,6 +9146,7 @@ class WargearProfile:
             nonlocal bonus_lethal, bonus_sustained_value, bonus_sustained_label, bonus_sustained_dice
             nonlocal bonus_devastating, bonus_twin_linked, bonus_heavy, bonus_heavy_label
             nonlocal bonus_lance, bonus_lance_label, bonus_anti_specs, bonus_precision
+            nonlocal bonus_hazardous, bonus_hazardous_label
             if not isinstance(bonus, dict):
                 return
             def _extract_source(keyword_name: str) -> str:
@@ -9137,6 +9161,11 @@ class WargearProfile:
                 bonus_lethal = True
             if bool(bonus.get("precision")):
                 bonus_precision = True
+            if bool(bonus.get("hazardous")):
+                bonus_hazardous = True
+                inferred_hazardous_label = _extract_source("Hazardous")
+                if inferred_hazardous_label and not bonus_hazardous_label:
+                    bonus_hazardous_label = inferred_hazardous_label
             bonus_sustained_val = int(bonus.get("sustained_hits_value", 0) or 0)
             if bonus_sustained_val:
                 _set_bonus_sustained(bonus_sustained_val, sustained_label)
@@ -9233,6 +9262,10 @@ class WargearProfile:
                 attack_instance["bonus_anti_specs"] = bonus_anti_specs
             if bonus_precision:
                 attack_instance["bonus_precision"] = True
+            if bonus_hazardous:
+                attack_instance["bonus_hazardous"] = True
+                if bonus_hazardous_label:
+                    attack_instance["bonus_hazardous_source"] = bonus_hazardous_label
         except Exception:
             bonus_lethal = False
             bonus_sustained_value = 0
@@ -9247,6 +9280,8 @@ class WargearProfile:
             bonus_anti_specs = ()
             bonus_precision_on_crit = False
             bonus_precision = False
+            bonus_hazardous = False
+            bonus_hazardous_label = ""
         try:
             if attack_is_ranged and self._purging_fire_lethal_hits_active(attacker):
                 bonus_lethal = True
