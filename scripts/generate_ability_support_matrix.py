@@ -3513,6 +3513,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of Shooting phase: select one enemy unit within 12\" and visible to Ephrael Stern; target takes a Leadership test counted as Battle-shock, suffering -2 if it has the CHAOS keyword, and on a failed test it suffers 3 mortal wounds.",
         ),
+        ("AS", "Executioner of Heretics (Aura)"): (
+            "Supported",
+            "Enemy units within 6\" of the source worsen their Leadership characteristic by 1.",
+        ),
         ("AS", "Stirring Rhetoric"): (
             "Supported",
             "While a Dialogus is attached as a leader, each Act of Faith performed by that attached unit changes one used Miracle die value to 6 before resolving the substituted roll.",
