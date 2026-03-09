@@ -514,6 +514,33 @@ class Model:
             strength_bonus=int(strength_bonus),
         )
 
+    def activate_fight_phase_melee_attacks_devastating_wounds_boost(
+        self,
+        *,
+        key: str,
+        ability_name: str,
+        attacks_bonus: int = 3,
+    ) -> bool:
+        """
+        Once per battle, at the start of the Fight phase, this model can use this ability.
+        If it does, until the end of the phase:
+        - add to the Attacks characteristic of melee weapons equipped by this model
+        - those weapons have [DEVASTATING WOUNDS]
+        """
+        label = str(ability_name or "").strip() or "Fight phase melee devastating wounds boost"
+        try:
+            attacks_bonus = int(attacks_bonus or 0)
+        except Exception:
+            attacks_bonus = 0
+        if attacks_bonus <= 0:
+            return False
+        return self._activate_once_per_battle_melee_buff(
+            key=key,
+            ability_name=label,
+            attacks_bonus=int(attacks_bonus),
+            devastating_wounds=True,
+        )
+
     def activate_fight_phase_melee_full_characteristic_boost(
         self,
         *,

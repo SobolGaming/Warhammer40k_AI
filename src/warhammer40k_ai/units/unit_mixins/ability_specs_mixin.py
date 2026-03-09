@@ -4522,6 +4522,70 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_fight_phase_melee_attacks_devastating_wounds_boost_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: once per battle, at the start of the Fight phase, add Attacks and gain [DEVASTATING WOUNDS].
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - key: once-per-battle tracking key
+            - attacks_bonus: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_phase_melee_attacks_devastating_wounds_boost:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = re.fullmatch(
+                r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
+                r"add (?P<bonus>\d+) to the attacks characteristic of melee weapons equipped by this model and those weapons have the devastating wounds ability",
+                normalized,
+            )
+            if not m:
+                continue
+            try:
+                attacks_bonus = int(m.group("bonus") or 0)
+            except Exception:
+                attacks_bonus = 0
+            if attacks_bonus <= 0:
+                continue
+            source = str(name or "Fight phase melee devastating wounds boost").strip() or "Fight phase melee devastating wounds boost"
+            key_seed = self._normalize_keyword_phrase(source) or "fight_phase_melee_attacks_devastating_wounds_boost"
+            key = f"fight_phase_melee_attacks_devastating_wounds_boost:{key_seed}"
+            spec_key = (key, int(attacks_bonus))
+            if spec_key in seen:
+                continue
+            seen.add(spec_key)
+            specs.append(
+                {
+                    "source": source,
+                    "key": key,
+                    "attacks_bonus": int(attacks_bonus),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_fight_phase_blinding_spray_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: once per battle in the Fight phase, optional activation grants Fights First to its unit.

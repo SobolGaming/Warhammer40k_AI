@@ -4663,6 +4663,7 @@ class GameReactiveDecisionsMixin:
             "waaagh",
             "possessed_lord",
             "fight_phase_melee_ap_boost",
+            "divine_deliverance",
             "might_of_titan",
             "stars_are_right",
             "thrilling_spectacle",
@@ -5954,6 +5955,36 @@ class GameReactiveDecisionsMixin:
                 return
             ability_name = str(ctx.get("ability_name", "") or "Fight phase melee boost").strip()
             model.activate_fight_phase_melee_ap_boost(key=key, ability_name=ability_name)
+            return
+
+        if ability_key == "divine_deliverance":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None:
+                return
+            key = str(
+                payload.get("buff_key")
+                or ctx.get("buff_key")
+                or "fight_phase_melee_attacks_devastating_wounds_boost"
+            ).strip().lower()
+            if not key:
+                key = "fight_phase_melee_attacks_devastating_wounds_boost"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            ability_name = str(ctx.get("ability_name", "") or "Divine Deliverance").strip() or "Divine Deliverance"
+            try:
+                attacks_bonus = int(payload.get("attacks_bonus") or ctx.get("attacks_bonus") or 3)
+            except Exception:
+                attacks_bonus = 3
+            model.activate_fight_phase_melee_attacks_devastating_wounds_boost(
+                key=key,
+                ability_name=ability_name,
+                attacks_bonus=int(attacks_bonus),
+            )
             return
 
         if ability_key == "might_of_titan":

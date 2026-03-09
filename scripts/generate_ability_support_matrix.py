@@ -3493,6 +3493,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Fight phase selected-unit trigger: optional CONFIRM_YES_NO applies Attacks 6 and [HAZARDOUS] to arco-flails until phase end.",
         ),
+        ("AS", "Divine Deliverance"): (
+            "Supported",
+            "Once per battle, start of Fight phase: optional CONFIRM_YES_NO grants +3 melee Attacks and [DEVASTATING WOUNDS] to the bearer until phase end.",
+        ),
         ("AS", "The Emperor's Grace"): (
             "Supported",
             "Once per battle, start of any phase: optional CONFIRM_YES_NO grants the bearer a 2+ invulnerable save until phase end.",

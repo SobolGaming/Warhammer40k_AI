@@ -428,6 +428,7 @@ Fight:
 - malign_sacrifice_dialog: CHOOSE_QUARRY {target_unit_id, model_id | skip} (context `ability="malign_sacrifice"`, `source_unit_id`, `ability_name`)
 - soulstain_made_manifest_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="charge_end_select_one_battleshock"`, `ability_name="Soulstain Made Manifest"`, `source_unit_id`, `model_id`, `test_modifier=-1`, `optional=true`)
 - fight_phase_melee_ap_boost_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="fight_phase_melee_ap_boost"`, `unit_id`, `model_id`)
+- divine_deliverance_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="divine_deliverance"`, `unit_id`, `model_id`, `buff_key`, `attacks_bonus`)
 - thrilling_spectacle_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="thrilling_spectacle"`, `unit_id`, `model_id`, `buff_key`, `invuln`, `attacks_value`)
 - chance_for_glory_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="chance_for_glory"`, `unit_id`, `model_id`, `buff_key`, `bonus`)
 - malefic_destruction_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="malefic_destruction"`, `unit_id`, `model_id`, `buff_key`, `weapon_name`, `attacks_bonus`)
