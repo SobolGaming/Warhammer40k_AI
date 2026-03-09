@@ -319,6 +319,107 @@ class TestActsOfFaith(unittest.TestCase):
 
         self.assertEqual(mgr.miracle_dice, [4, 5])
 
+    def test_recount_the_deeds_grants_miracle_die_when_led_unit_destroys_enemy_unit(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        enemy_player = SimpleNamespace(name="P2", id="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        game = SimpleNamespace(map=SimpleNamespace(), phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        player.game = game
+        enemy_player.game = game
+
+        army = self._make_army("AS", player)
+        enemy_army = self._make_army("ENEMY", enemy_player)
+
+        bodyguard = self._make_unit("Battle Sisters", army, acts=True)
+        leader = self._make_unit("Aestred Thurga And Agathae Dolan", army, acts=True)
+        leader.possible_abilities.append(SimpleNamespace(name="Recount the Deeds of the Saints"))
+        leader.models[0].name = "Agathae Dolan"
+        leader.attached_to = bodyguard
+        leader.get_attached_unit_root = lambda: bodyguard
+        bodyguard.attached_leaders = [leader]
+        army.units = [bodyguard, leader]
+
+        enemy = self._make_unit("Enemy Squad", enemy_army, acts=False)
+        enemy_army.units = [enemy]
+
+        mgr = aof.ActsOfFaithManager(army)
+
+        old_get_roll = aof.get_roll
+        aof.get_roll = lambda _s="D6": 6
+        try:
+            mgr.on_unit_destroyed(
+                enemy,
+                game=game,
+                destroyed_by_unit=bodyguard,
+                destroyed_by_model=bodyguard.models[0],
+                destroyed_by_weapon_profile=None,
+            )
+        finally:
+            aof.get_roll = old_get_roll
+
+        self.assertEqual(mgr.miracle_dice, [6])
+
+    def test_recount_the_deeds_requires_leading_and_agathae_alive_for_enemy_unit_kill_trigger(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        enemy_player = SimpleNamespace(name="P2", id="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        game = SimpleNamespace(map=SimpleNamespace(), phase=SimpleNamespace(name="FIGHT_PHASE"))
+        player.game = game
+        enemy_player.game = game
+
+        army = self._make_army("AS", player)
+        enemy_army = self._make_army("ENEMY", enemy_player)
+
+        bodyguard = self._make_unit("Battle Sisters", army, acts=True)
+        leader = self._make_unit("Aestred Thurga And Agathae Dolan", army, acts=True)
+        leader.possible_abilities.append(SimpleNamespace(name="Recount the Deeds of the Saints"))
+        leader.models[0].name = "Agathae Dolan"
+        army.units = [bodyguard, leader]
+
+        enemy = self._make_unit("Enemy Squad", enemy_army, acts=False)
+        enemy_army.units = [enemy]
+
+        mgr = aof.ActsOfFaithManager(army)
+
+        # Not leading: no trigger.
+        mgr.on_unit_destroyed(enemy, game=game, destroyed_by_unit=bodyguard)
+        self.assertEqual(mgr.miracle_dice, [])
+
+        # Leading but Agathae destroyed: no trigger.
+        leader.attached_to = bodyguard
+        leader.get_attached_unit_root = lambda: bodyguard
+        bodyguard.attached_leaders = [leader]
+        leader.models[0].wounds = 0
+        mgr.on_unit_destroyed(enemy, game=game, destroyed_by_unit=bodyguard)
+        self.assertEqual(mgr.miracle_dice, [])
+
+    def test_recount_the_deeds_grants_d3_miracle_dice_when_agathae_is_destroyed_once(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        game = SimpleNamespace(map=SimpleNamespace(), phase=SimpleNamespace(name="FIGHT_PHASE"))
+        player.game = game
+        army = self._make_army("AS", player)
+        unit = self._make_unit("Aestred Thurga And Agathae Dolan", army, acts=True)
+        unit.possible_abilities.append(SimpleNamespace(name="Recount the Deeds of the Saints"))
+        unit.models[0].name = "Agathae Dolan"
+        army.units = [unit]
+
+        mgr = aof.ActsOfFaithManager(army)
+
+        seq = iter([2, 4, 5])  # D3 extra, then two D6 miracle dice.
+        old_get_roll = aof.get_roll
+        aof.get_roll = lambda _s="D6": next(seq)
+        try:
+            mgr.on_model_destroyed(unit, unit.models[0], game=game)
+            mgr.on_model_destroyed(unit, unit.models[0], game=game)
+        finally:
+            aof.get_roll = old_get_roll
+
+        self.assertEqual(mgr.miracle_dice, [4, 5])
+
     def test_chaplet_of_sacrifice_rerolls_one_die_at_command_phase_end(self):
         from warhammer40k_ai.rules import acts_of_faith as aof
 

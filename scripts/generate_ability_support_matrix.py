@@ -5838,6 +5838,8 @@ def _classify_ability_base(
     datasheet_command_reroll_cherub_support = _datasheet_command_reroll_cherub_support(description)
     shieldbreaker_support = _shieldbreaker_support(description)
     act_of_faith_cherub_support = _act_of_faith_cherub_support(description)
+    auto_tapestry_support = _auto_tapestry_of_the_emperors_judgement_support(description)
+    recount_the_deeds_support = _recount_the_deeds_of_the_saints_support(description)
     cat_unit_support = _cat_unit_support(description)
     ammo_runt_support = _ammo_runt_support(description)
     bomb_squigs_support = _bomb_squigs_support(description)
@@ -6324,6 +6326,10 @@ def _classify_ability_base(
         return shieldbreaker_support
     if act_of_faith_cherub_support:
         return act_of_faith_cherub_support
+    if auto_tapestry_support:
+        return auto_tapestry_support
+    if recount_the_deeds_support:
+        return recount_the_deeds_support
     if orders_support:
         return orders_support
     if attached_unit_support:
@@ -14058,6 +14064,45 @@ def _act_of_faith_cherub_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         f"After this unit performs an Act of Faith: gain 1 Miracle die ({label.lower()}).",
+    )
+
+
+def _recount_the_deeds_of_the_saints_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while this unit is leading a unit and contains an agathae dolan model "
+        r"each time that unit destroys an enemy unit you gain 1 miracle dice "
+        r"when (?:that|the) agathae dolan model is destroyed you gain d3 miracle dice",
+        norm,
+    )
+    if not m:
+        return None
+    return (
+        "Supported",
+        "While leading and containing Agathae Dolan: enemy unit kills by that attached unit grant 1 Miracle die; Agathae Dolan's destruction grants D3 Miracle dice.",
+    )
+
+
+def _auto_tapestry_of_the_emperors_judgement_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while this unit is leading a unit and contains an aestred thurga model "
+        r"weapons equipped by models in that unit have the devastating wounds ability",
+        norm,
+    )
+    if not m:
+        return None
+    return (
+        "Supported",
+        "While leading and containing Aestred Thurga: weapons equipped by models in that attached unit gain Devastating Wounds.",
     )
 
 

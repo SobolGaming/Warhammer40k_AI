@@ -229,7 +229,8 @@ class ActionsMovementMixin:
 
     # ---------------- Ability helpers (best-effort parsing) ----------------
     _LEADING_ABILITY_PREFIX_RE = re.compile(
-        r"^\W*while (?:this (?:model|unit)|(?:the )?bearer) is leading(?:s)?(?: a)?(?: [^.,;:]+?)? unit\b",
+        r"^\W*while (?:this (?:model|unit)|(?:the )?bearer) is leading(?:s)?(?: a)?(?: [^.,;:]+?)? unit"
+        r"(?: and contains an? [^.,;:]+? models?)?\b",
         re.IGNORECASE,
     )
     _LEADING_ABILITY_RE = re.compile(
@@ -247,6 +248,11 @@ class ActionsMovementMixin:
     )
     _LED_BY_MODEL_RE = re.compile(
         r"\b(?:while|if)\s+an?\s+(?P<model>[^.,;:]+?)\s+model\s+is\s+leading\s+(?:this|that)\s+unit\b",
+        re.IGNORECASE,
+    )
+    _LEADING_CONTAINS_MODEL_RE = re.compile(
+        r"\b(?:while|if)\s+(?:this model|this unit|the bearer)\s+is\s+leading(?:s)?(?:\s+a)?"
+        r"(?:\s+[^.,;:]+?)?\s+unit\s+and\s+contains\s+an?\s+(?P<model>[^.,;:]+?)\s+models?\b",
         re.IGNORECASE,
     )
     _SEGMENT_SPLIT_RE = re.compile(r"[.;]\s*")
@@ -290,7 +296,7 @@ class ActionsMovementMixin:
     def _parse_ability_condition_metadata(
         cls,
         normalized_text: str,
-    ) -> tuple[bool, bool, tuple[str, ...], tuple[str, ...]]:
+    ) -> tuple[bool, bool, tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
         """
         Parse ability condition metadata from normalized text.
 
@@ -298,7 +304,7 @@ class ActionsMovementMixin:
         """
         text = str(normalized_text or "")
         if not text:
-            return False, False, tuple(), tuple()
+            return False, False, tuple(), tuple(), tuple()
 
         requires_leading = bool(cls._LEADING_ABILITY_RE.search(text))
         requires_not_leading = bool(cls._NOT_LEADING_ABILITY_RE.search(text))
@@ -315,11 +321,18 @@ class ActionsMovementMixin:
             if phrase:
                 led_by_models.append(phrase)
 
+        leading_contains_models: list[str] = []
+        for match in cls._LEADING_CONTAINS_MODEL_RE.finditer(text):
+            phrase = str(match.group("model") or "").strip()
+            if phrase:
+                leading_contains_models.append(phrase)
+
         return (
             requires_leading,
             requires_not_leading,
             tuple(leading_specific_units),
             tuple(led_by_models),
+            tuple(leading_contains_models),
         )
 
     @classmethod
@@ -380,6 +393,19 @@ class ActionsMovementMixin:
             return []
         meta = self._parse_ability_condition_metadata(text)
         return list(meta[3])
+
+    def _ability_leading_contains_model_phrases(self, ability) -> list[str]:
+        """
+        Return model-name phrases for abilities gated by
+        "while this unit/model is leading a unit and contains a/an <model> model".
+        """
+        name, desc = self._ability_name_and_description(ability)
+        text = self._strip_eligibility_prefix(f"{name} {desc}".strip())
+        text = self._normalize_rules_text(text)
+        if not text:
+            return []
+        meta = self._parse_ability_condition_metadata(text)
+        return list(meta[4])
 
     def _attached_leader_matches_phrase(self, phrase: str) -> bool:
         if not str(phrase or "").strip():
@@ -513,6 +539,31 @@ class ActionsMovementMixin:
         led_by_model_phrases = self._ability_led_by_model_phrases(ability)
         if led_by_model_phrases:
             if not any(self._attached_leader_matches_phrase(phrase) for phrase in led_by_model_phrases):
+                return False
+        leading_contains_model_phrases = self._ability_leading_contains_model_phrases(ability)
+        if leading_contains_model_phrases:
+            def _contains_model_phrase(phrase: str) -> bool:
+                target = str(phrase or "").strip()
+                if not target:
+                    return False
+                try:
+                    if hasattr(self, "_unit_contains_model_named") and self._unit_contains_model_named(target):
+                        return True
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, "_unit_contains_model_with_keyword") and self._unit_contains_model_with_keyword(target):
+                        return True
+                except Exception:
+                    pass
+                try:
+                    if self._unit_matches_keyword_phrase(self, target, use_effective=False):
+                        return True
+                except Exception:
+                    pass
+                return False
+
+            if not any(_contains_model_phrase(phrase) for phrase in leading_contains_model_phrases):
                 return False
         if self._ability_requires_leading(ability):
             # Only enforce leading attachment when this unit is actually a Leader datasheet.

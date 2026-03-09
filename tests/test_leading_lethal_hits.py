@@ -181,6 +181,79 @@ class TestLeadingLethalHits(unittest.TestCase):
         self.assertIn(("PSYKER", 4), tuple(attack_instance.get("bonus_anti_specs") or ()))
         self.assertTrue(any("Anti-PSYKER 4+" in effect for effect in wound_result.get("special_effects", [])))
 
+    def test_leading_contains_named_model_grants_devastating_wounds(self):
+        ability = {
+            "name": "Auto-Tapestry of the Emperor's Judgement",
+            "description": (
+                "While this unit is leading a unit and contains an Aestred Thurga model, weapons equipped by "
+                "models in that unit have the [DEVASTATING WOUNDS] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Aestred Thurga and Agathae Dolan", abilities=[ability])
+        leader.models[0].name = "Aestred Thurga"
+        bodyguard = _make_unit("Battle Sisters Squad")
+        self._attach_leader(leader, bodyguard)
+
+        target = SimpleNamespace(
+            toughness=4,
+            models=[SimpleNamespace(is_alive=True)],
+            has_keyword=lambda _k: False,
+            has_any_keyword=lambda _k: False,
+        )
+        bonuses = bodyguard.get_attack_keyword_bonuses(target=target, attack_type="ranged")
+        self.assertTrue(bool(bonuses.get("devastating_wounds")))
+
+    def test_leading_contains_named_model_requires_matching_model(self):
+        ability = {
+            "name": "Auto-Tapestry of the Emperor's Judgement",
+            "description": (
+                "While this unit is leading a unit and contains an Aestred Thurga model, weapons equipped by "
+                "models in that unit have the [DEVASTATING WOUNDS] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Aestred Thurga and Agathae Dolan", abilities=[ability])
+        leader.models[0].name = "Agathae Dolan"
+        bodyguard = _make_unit("Battle Sisters Squad")
+        self._attach_leader(leader, bodyguard)
+
+        target = SimpleNamespace(
+            toughness=4,
+            models=[SimpleNamespace(is_alive=True)],
+            has_keyword=lambda _k: False,
+            has_any_keyword=lambda _k: False,
+        )
+        bonuses = bodyguard.get_attack_keyword_bonuses(target=target, attack_type="ranged")
+        self.assertFalse(bool(bonuses.get("devastating_wounds")))
+
+    def test_leading_contains_named_model_requires_model_alive(self):
+        ability = {
+            "name": "Auto-Tapestry of the Emperor's Judgement",
+            "description": (
+                "While this unit is leading a unit and contains an Aestred Thurga model, weapons equipped by "
+                "models in that unit have the [DEVASTATING WOUNDS] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Aestred Thurga and Agathae Dolan", abilities=[ability])
+        leader.models[0].name = "Aestred Thurga"
+        leader.models[0].wounds = 0
+        bodyguard = _make_unit("Battle Sisters Squad")
+        self._attach_leader(leader, bodyguard)
+
+        target = SimpleNamespace(
+            toughness=4,
+            models=[SimpleNamespace(is_alive=True)],
+            has_keyword=lambda _k: False,
+            has_any_keyword=lambda _k: False,
+        )
+        bonuses = bodyguard.get_attack_keyword_bonuses(target=target, attack_type="ranged")
+        self.assertFalse(bool(bonuses.get("devastating_wounds")))
+
 
 if __name__ == "__main__":
     unittest.main()

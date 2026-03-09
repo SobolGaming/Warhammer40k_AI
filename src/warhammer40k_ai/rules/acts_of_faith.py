@@ -123,6 +123,139 @@ class ActsOfFaithManager:
         return False
 
     @staticmethod
+    def _norm_name_fragment(value: str) -> str:
+        text = str(value or "")
+        text = text.replace("\u2019", "'").replace("\u2018", "'")
+        text = text.lower()
+        text = re.sub(r"[^a-z0-9]+", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    def _unit_has_ability_named(self, unit, ability_name: str) -> bool:
+        if unit is None:
+            return False
+        target = self._norm_name_fragment(ability_name)
+        if not target:
+            return False
+        try:
+            for ab in list(getattr(unit, "possible_abilities", []) or []):
+                name = self._norm_name_fragment(getattr(ab, "name", ""))
+                if name == target:
+                    return True
+        except Exception:
+            return False
+        return False
+
+    def _model_matches_name(self, model, target_name: str) -> bool:
+        if model is None:
+            return False
+        target = self._norm_name_fragment(target_name)
+        if not target:
+            return False
+        model_name = self._norm_name_fragment(getattr(model, "name", ""))
+        if not model_name:
+            return False
+        if target in model_name:
+            return True
+        target_tokens = set(target.split())
+        if target_tokens and target_tokens.issubset(set(model_name.split())):
+            return True
+        return False
+
+    def _unit_contains_named_alive_model(self, unit, target_name: str) -> bool:
+        if unit is None:
+            return False
+        contains_named = getattr(unit, "_unit_contains_model_named", None)
+        if callable(contains_named):
+            try:
+                return bool(contains_named(target_name))
+            except Exception:
+                pass
+        for model in list(getattr(unit, "models", []) or []):
+            if not self._model_is_alive(model):
+                continue
+            if self._model_matches_name(model, target_name):
+                return True
+        return False
+
+    def _iter_recount_the_deeds_eligible_leaders(self, attached_root) -> list:
+        if attached_root is None or not self._unit_in_army(attached_root):
+            return []
+        try:
+            leaders = list(getattr(attached_root, "attached_leaders", []) or [])
+        except Exception:
+            leaders = []
+        eligible = []
+        for leader in leaders:
+            if leader is None:
+                continue
+            if not self._unit_in_army(leader):
+                continue
+            if getattr(leader, "attached_to", None) is not attached_root:
+                continue
+            if not self._unit_has_ability_named(leader, "Recount the Deeds of the Saints"):
+                continue
+            if not self._unit_contains_named_alive_model(leader, "Agathae Dolan"):
+                continue
+            eligible.append(leader)
+        return eligible
+
+    def _maybe_trigger_recount_the_deeds_enemy_unit_destroyed(
+        self,
+        *,
+        unit,
+        destroyed_by_unit,
+        game=None,
+    ) -> None:
+        if unit is None or destroyed_by_unit is None:
+            return
+        target_root = self._unit_root(unit)
+        attacker_root = self._unit_root(destroyed_by_unit)
+        if target_root is None or attacker_root is None:
+            return
+        if self._unit_in_army(target_root):
+            return
+        if not self._unit_in_army(attacker_root):
+            return
+        if not self._iter_recount_the_deeds_eligible_leaders(attacker_root):
+            return
+        self.gain_miracle_die(game=game, allow_reroll=False, reason="Recount the Deeds of the Saints")
+
+    def _maybe_trigger_recount_the_deeds_agathae_destroyed(
+        self,
+        *,
+        unit,
+        model,
+        game=None,
+    ) -> None:
+        if unit is None or model is None:
+            return
+        if not self._unit_has_ability_named(unit, "Recount the Deeds of the Saints"):
+            return
+        if not self._model_matches_name(model, "Agathae Dolan"):
+            return
+        if getattr(model, "_recount_the_deeds_triggered", False):
+            return
+        try:
+            setattr(model, "_recount_the_deeds_triggered", True)
+        except Exception:
+            pass
+
+        try:
+            extra = int(get_roll("D3") or 0)
+        except Exception:
+            extra = 0
+        if extra <= 0:
+            return
+        allow_reroll = self._litany_allows_reroll(destroyed_unit=unit, destroyed_model=model)
+        for _ in range(int(extra)):
+            self.gain_miracle_die(
+                game=game,
+                allow_reroll=allow_reroll,
+                reason="Recount the Deeds of the Saints",
+            )
+
+    @staticmethod
     def _cherub_max_uses_for_ability(ability) -> int:
         name = ""
         desc = ""
@@ -520,6 +653,11 @@ class ActsOfFaithManager:
             destroyed_by_weapon_profile=destroyed_by_weapon_profile,
             game=game,
         )
+        self._maybe_trigger_recount_the_deeds_enemy_unit_destroyed(
+            unit=unit,
+            destroyed_by_unit=destroyed_by_unit,
+            game=game,
+        )
         self._maybe_trigger_psalm_of_righteous_judgement(
             unit=unit,
             destroyed_by_unit=destroyed_by_unit,
@@ -531,6 +669,7 @@ class ActsOfFaithManager:
             return
         if not self._unit_in_army(unit):
             return
+        self._maybe_trigger_recount_the_deeds_agathae_destroyed(unit=unit, model=model, game=game)
         enh = getattr(unit, "enhancement", None)
         name = ""
         enh_id = ""
