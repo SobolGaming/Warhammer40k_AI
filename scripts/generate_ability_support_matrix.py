@@ -3470,7 +3470,10 @@ def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
 def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str]]:
     raw = {
         ("AS", "Endless Suffering"): ("Supported", "Charge-after-Advance eligibility."),
-        ("AS", "Holy Mission"): ("Partial", "Scouts/Infiltrators applied without attachment restriction."),
+        ("AS", "Holy Mission"): (
+            "Supported",
+            "Declare Battle Formations attachment clause is enforced: attached to a DOMINION SQUAD grants Scouts 6\"; attached to a SISTERS NOVITIATE SQUAD grants Infiltrators.",
+        ),
         ("AS", "Holy Vanguard"): (
             "Supported",
             "Attached Leader gains Scouts 6\" only when the bodyguard started the battle embarked in a TRANSPORT.",

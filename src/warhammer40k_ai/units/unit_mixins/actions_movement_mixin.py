@@ -243,7 +243,7 @@ class ActionsMovementMixin:
         re.IGNORECASE,
     )
     _ATTACHED_SPECIFIC_UNIT_RE = re.compile(
-        r"\bif\s+(?:(?:this model|this unit|the bearer)\s+is\s+)?attached\s+to\s+an?\s+(?P<unit>[^.,;:]+?)\s+unit\b",
+        r"\bif\s+(?:(?:this model|this unit|the bearer)\s+is\s+)?attached\s+to\s+an?\s+(?P<unit>[^.,;:]+?)(?:\s+unit\b|\s+during\b)",
         re.IGNORECASE,
     )
     _LED_BY_MODEL_RE = re.compile(
