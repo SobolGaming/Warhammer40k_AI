@@ -3313,6 +3313,70 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         return errors
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "command_phase_miracle_discard_return_mode":
+        payload = _option_payload(request, result)
+        allow_skip = bool(ctx.get("allow_skip", True))
+        if is_skip_choice(request, result):
+            if not allow_skip:
+                return ("Command phase model return choice cannot be skipped.",)
+            return ()
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action == "skip":
+            if not allow_skip:
+                return ("Command phase model return choice cannot be skipped.",)
+            return ()
+        if action not in {"base", "discard"}:
+            return ("Command phase model return choice is invalid.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or ctx.get("source_unit_id"),
+        )
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or ctx.get("target_unit_id"),
+        )
+        if source_unit is None:
+            return ("Command phase model return source unit was not found.",)
+        if target_unit is None:
+            return ("Command phase model return target unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if source_root is None or target_root is None:
+            return ("Command phase model return source or target unit was not found.",)
+        destroyed = list(getattr(target_root, "models_lost", []) or [])
+        allowed_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("allowed_model_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if allowed_ids:
+            destroyed = [m for m in list(destroyed or []) if str(get_entity_id(m) or "") in allowed_ids]
+        if not destroyed:
+            return ("Command phase model return has no eligible destroyed models.",)
+        if action == "discard":
+            try:
+                discard_count = int(ctx.get("discard_count", payload.get("discard_count", 1)) or 1)
+            except (TypeError, ValueError):
+                discard_count = 1
+            discard_count = max(1, int(discard_count))
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            aof_mgr = getattr(source_army, "acts_of_faith", None) if source_army is not None else None
+            if aof_mgr is None:
+                return ("Command phase Miracle discard option requires Acts of Faith.",)
+            pool_size = len(list(getattr(aof_mgr, "miracle_dice", []) or []))
+            if int(pool_size) < int(discard_count):
+                return (
+                    f"Command phase Miracle discard option requires at least {int(discard_count)} Miracle dice.",
+                )
+        return ()
     if ability == "prescient_redeployment":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -8434,6 +8498,181 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "command_phase_miracle_discard_return_mode":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or ctx.get("source_unit_id"),
+        )
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or ctx.get("target_unit_id"),
+        )
+        if source_unit is None or target_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if source_root is None or target_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_root.get_parent_army().player
+            except Exception:
+                player = None
+        if is_skip_choice(request, result):
+            return None
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action == "skip":
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Command phase model return").strip() or "Command phase model return"
+
+        return_count = 0
+        if action == "discard":
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            aof_mgr = getattr(source_army, "acts_of_faith", None) if source_army is not None else None
+            if aof_mgr is None:
+                return None
+            try:
+                discard_count = int(ctx.get("discard_count", payload.get("discard_count", 1)) or 1)
+            except (TypeError, ValueError):
+                discard_count = 1
+            discard_count = max(1, int(discard_count))
+            pool = list(getattr(aof_mgr, "miracle_dice", []) or [])
+            if len(pool) < discard_count:
+                return None
+            choose_indices = []
+            choose_fn = getattr(aof_mgr, "_choose_miracle_pool_indices", None)
+            if callable(choose_fn):
+                try:
+                    choose_indices = list(
+                        choose_fn(
+                            unit=source_root,
+                            bearer_model=None,
+                            game=game,
+                            pool=list(pool),
+                            max_select=int(discard_count),
+                            reason=ability_name,
+                            skip_sixes=False,
+                        )
+                        or []
+                    )
+                except Exception:
+                    choose_indices = []
+            normalized_indices: list[int] = []
+            seen_indices: set[int] = set()
+            for idx in list(choose_indices or []):
+                try:
+                    index = int(idx)
+                except (TypeError, ValueError):
+                    continue
+                if index < 0 or index >= len(pool) or index in seen_indices:
+                    continue
+                seen_indices.add(index)
+                normalized_indices.append(index)
+            if len(normalized_indices) < discard_count:
+                remaining = [idx for idx in range(len(pool)) if idx not in seen_indices]
+                remaining.sort(key=lambda idx: (int(pool[idx] or 0), int(idx)))
+                for idx in list(remaining):
+                    normalized_indices.append(int(idx))
+                    if len(normalized_indices) >= discard_count:
+                        break
+            if len(normalized_indices) < discard_count:
+                return None
+            discard_fn = getattr(aof_mgr, "_discard_miracle_dice_by_indices", None)
+            if callable(discard_fn):
+                discarded = list(discard_fn(aof_mgr.miracle_dice, list(normalized_indices[:discard_count])) or [])
+            else:
+                discarded = []
+                for idx in sorted(list(normalized_indices[:discard_count]), reverse=True):
+                    if idx < 0 or idx >= len(aof_mgr.miracle_dice):
+                        continue
+                    try:
+                        die_value = int(aof_mgr.miracle_dice[idx] or 0)
+                    except Exception:
+                        die_value = 0
+                    discarded.append(int(die_value))
+                    del aof_mgr.miracle_dice[idx]
+                discarded.reverse()
+            if len(discarded) < discard_count:
+                return None
+            try:
+                from ...utility.event_bus import append_dice
+
+                if player is not None:
+                    append_dice(
+                        player,
+                        f"{ability_name}: discarded Miracle dice {list(discarded)}.",
+                    )
+            except Exception:
+                pass
+            discard_amount_roll = str(
+                ctx.get("discard_amount_roll", payload.get("discard_amount_roll", ""))
+                or ""
+            ).strip().upper()
+            if discard_amount_roll:
+                try:
+                    from ...utility.dice import get_roll
+
+                    return_count = int(get_roll(discard_amount_roll) or 0)
+                except Exception:
+                    return_count = 0
+            else:
+                try:
+                    return_count = int(
+                        ctx.get("discard_amount", payload.get("discard_amount", 0))
+                        or 0
+                    )
+                except (TypeError, ValueError):
+                    return_count = 0
+        else:
+            base_amount_roll = str(
+                ctx.get("base_amount_roll", payload.get("base_amount_roll", ""))
+                or ""
+            ).strip().upper()
+            if base_amount_roll:
+                try:
+                    from ...utility.dice import get_roll
+
+                    return_count = int(get_roll(base_amount_roll) or 0)
+                except Exception:
+                    return_count = 0
+            else:
+                try:
+                    return_count = int(
+                        ctx.get("base_amount", payload.get("base_amount", 0))
+                        or 0
+                    )
+                except (TypeError, ValueError):
+                    return_count = 0
+        return_count = max(0, int(return_count or 0))
+        if return_count <= 0:
+            return target_root
+        allowed_model_ids = [
+            str(v or "").strip()
+            for v in list(ctx.get("allowed_model_ids", []) or [])
+            if str(v or "").strip()
+        ]
+        queue_fn = getattr(game, "_queue_bodyguard_return_decision", None)
+        if callable(queue_fn):
+            queue_fn(
+                player=player,
+                leader_unit=source_root,
+                bodyguard_unit=target_root,
+                ability={"name": ability_name},
+                remaining=int(return_count),
+                allowed_model_ids=list(allowed_model_ids) if allowed_model_ids else None,
+                allow_skip=False,
+            )
+        return target_root
     if ability == "prescient_redeployment":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

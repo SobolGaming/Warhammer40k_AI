@@ -3524,6 +3524,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "After shooting, enemy units hit by this model's INDIRECT FIRE attacks take Battle-shock tests; models with Deadly Demise destroyed by such attacks trigger on 5+ instead of 6.",
         ),
+        ("AS", "Sacred Healing"): (
+            "Supported",
+            "While leading, Command-phase choice supports either returning up to 1 destroyed non-CHARACTER model or discarding 1 Miracle die to return up to D3+1 instead.",
+        ),
         ("AS", "Stirring Rhetoric"): (
             "Supported",
             "While a Dialogus is attached as a leader, each Act of Faith performed by that attached unit changes one used Miracle die value to 6 before resolving the substituted roll.",

@@ -73,6 +73,22 @@ def _build_game_with_units(units):
     return game, player
 
 
+def _build_as_game_with_units(units):
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.roster.army import Army
+    from warhammer40k_ai.roster.player import Player, PlayerControl
+
+    army = Army("Adepta Sororitas", "Hallowed Martyrs")
+    army.faction_id = "AS"
+    for unit in list(units or []):
+        army.add_unit(unit)
+    player = Player("P1", control=PlayerControl.REMOTE, army=army)
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
+    game.map.units = list(units or [])
+    game.rebuild_entity_registry()
+    return game, player
+
+
 def test_command_phase_end_self_heal_triggers_at_phase_end_only():
     from warhammer40k_ai.engine.game import BattleRoundPhases
 
@@ -425,3 +441,179 @@ def test_command_phase_unit_return_bearers_unit_below_starting_strength_queues_d
         if (opt.payload or {}).get("model_id") not in (None, "")
     ]
     assert option_model_ids == [removed_id]
+
+
+def test_sacred_healing_parses_optional_miracle_discard_mode():
+    ability = {
+        "name": "Sacred Healing",
+        "description": (
+            "While this model is leading a unit, in your Command phase, you can return up to 1 destroyed model "
+            "(excluding CHARACTER models) to that unit. If you wish, you can first discard 1 Miracle dice; "
+            "if you do, you can return up to D3+1 destroyed models (excluding CHARACTER models) to that unit instead."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    unit = _make_unit(name="Hospitaller", datasheet_id="as_hospitaller_parse", model_count=1, abilities=[ability])
+
+    spec = unit.get_command_phase_unit_return_ability()
+    assert spec is not None
+    assert int(spec.get("amount", 0) or 0) == 1
+    assert int(spec.get("optional_miracle_discard_count", 0) or 0) == 1
+    assert int(spec.get("optional_miracle_discard_amount", 0) or 0) == 4
+    assert str(spec.get("optional_miracle_discard_amount_roll", "") or "").strip().upper() == "D3+1"
+
+
+def test_sacred_healing_queues_mode_selection_with_discard_option_when_available():
+    from warhammer40k_ai.engine.game import BattleRoundPhases
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+    ability = {
+        "name": "Sacred Healing",
+        "description": (
+            "While this model is leading a unit, in your Command phase, you can return up to 1 destroyed model "
+            "(excluding CHARACTER models) to that unit. If you wish, you can first discard 1 Miracle dice; "
+            "if you do, you can return up to D3+1 destroyed models (excluding CHARACTER models) to that unit instead."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    leader = _make_unit(name="Hospitaller", datasheet_id="as_hospitaller_mode", model_count=1, abilities=[ability])
+    bodyguard = _make_unit(name="Battle Sisters Squad", datasheet_id="as_bss_mode", model_count=3, abilities=[])
+    leader.can_be_attached_to = [bodyguard.get_datasheet_id()]
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
+    bodyguard.remove_model(bodyguard.models[0])
+
+    game, player = _build_as_game_with_units([bodyguard, leader])
+    aof_mgr = getattr(player.get_army(), "acts_of_faith", None)
+    assert aof_mgr is not None
+    aof_mgr.miracle_dice = [2]
+
+    game.event_system.publish("phase_start", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    pending = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_CHOOSE_QUARRY
+        and str((req.context or {}).get("ability", "") or "") == "command_phase_miracle_discard_return_mode"
+    ]
+    assert len(pending) == 1
+    request = pending[0]
+    actions = [str((opt.payload or {}).get("action", "") or "") for opt in list(request.options or [])]
+    assert actions == ["skip", "base", "discard"]
+
+
+def test_sacred_healing_discard_mode_discards_miracle_die_and_queues_returns():
+    from warhammer40k_ai.engine.game import BattleRoundPhases
+    from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE, DECISION_CHOOSE_QUARRY
+    from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+    ability = {
+        "name": "Sacred Healing",
+        "description": (
+            "While this model is leading a unit, in your Command phase, you can return up to 1 destroyed model "
+            "(excluding CHARACTER models) to that unit. If you wish, you can first discard 1 Miracle dice; "
+            "if you do, you can return up to D3+1 destroyed models (excluding CHARACTER models) to that unit instead."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    leader = _make_unit(name="Hospitaller", datasheet_id="as_hospitaller_apply", model_count=1, abilities=[ability])
+    bodyguard = _make_unit(name="Battle Sisters Squad", datasheet_id="as_bss_apply", model_count=3, abilities=[])
+    leader.can_be_attached_to = [bodyguard.get_datasheet_id()]
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
+    removed = bodyguard.models[0]
+    removed_id = str(get_entity_id(removed) or "")
+    bodyguard.remove_model(removed)
+
+    game, player = _build_as_game_with_units([bodyguard, leader])
+    aof_mgr = getattr(player.get_army(), "acts_of_faith", None)
+    assert aof_mgr is not None
+    aof_mgr.miracle_dice = [1, 5]
+
+    game.event_system.publish("phase_start", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    mode_request = next(
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_CHOOSE_QUARRY
+        and str((req.context or {}).get("ability", "") or "") == "command_phase_miracle_discard_return_mode"
+    )
+    discard_option = next(
+        opt
+        for opt in list(mode_request.options or [])
+        if str((opt.payload or {}).get("action", "") or "") == "discard"
+    )
+
+    with patch("warhammer40k_ai.utility.dice.get_roll", return_value=3):
+        mode_result = resolve_decision_command(
+            game,
+            mode_request,
+            discard_option.option_id,
+            player_id=player.id,
+        )
+    assert mode_result.ok is True
+    assert list(aof_mgr.miracle_dice or []) == [5]
+
+    return_request = next(
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_ALLOCATE_DAMAGE
+        and str((req.context or {}).get("selection_kind", "") or "") == "bodyguard_return"
+    )
+    assert int((return_request.context or {}).get("remaining", 0) or 0) == 3
+    option_model_ids = [
+        str((opt.payload or {}).get("model_id", "") or "")
+        for opt in list(return_request.options or [])
+        if (opt.payload or {}).get("model_id") not in (None, "")
+    ]
+    assert option_model_ids == [removed_id]
+
+    model_option = next(
+        opt
+        for opt in list(return_request.options or [])
+        if str((opt.payload or {}).get("model_id", "") or "") == removed_id
+    )
+    apply_result = resolve_decision_command(game, return_request, model_option.option_id, player_id=player.id)
+    assert apply_result.ok is True
+    assert not list(getattr(bodyguard, "models_lost", []) or [])
+
+
+def test_sacred_healing_without_miracle_dice_omits_discard_option():
+    from warhammer40k_ai.engine.game import BattleRoundPhases
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+    ability = {
+        "name": "Sacred Healing",
+        "description": (
+            "While this model is leading a unit, in your Command phase, you can return up to 1 destroyed model "
+            "(excluding CHARACTER models) to that unit. If you wish, you can first discard 1 Miracle dice; "
+            "if you do, you can return up to D3+1 destroyed models (excluding CHARACTER models) to that unit instead."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    leader = _make_unit(name="Hospitaller", datasheet_id="as_hospitaller_no_pool", model_count=1, abilities=[ability])
+    bodyguard = _make_unit(name="Battle Sisters Squad", datasheet_id="as_bss_no_pool", model_count=3, abilities=[])
+    leader.can_be_attached_to = [bodyguard.get_datasheet_id()]
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
+    bodyguard.remove_model(bodyguard.models[0])
+
+    game, player = _build_as_game_with_units([bodyguard, leader])
+    aof_mgr = getattr(player.get_army(), "acts_of_faith", None)
+    assert aof_mgr is not None
+    aof_mgr.miracle_dice = []
+
+    game.event_system.publish("phase_start", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    mode_request = next(
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_CHOOSE_QUARRY
+        and str((req.context or {}).get("ability", "") or "") == "command_phase_miracle_discard_return_mode"
+    )
+    actions = [str((opt.payload or {}).get("action", "") or "") for opt in list(mode_request.options or [])]
+    assert actions == ["skip", "base"]

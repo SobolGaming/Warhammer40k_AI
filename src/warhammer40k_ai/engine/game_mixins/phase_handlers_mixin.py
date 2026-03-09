@@ -1196,8 +1196,6 @@ class GamePhaseHandlersMixin:
                     get_tome_skull_specs = getattr(root, "unit_start_any_phase_tome_skull_specs", None)
                     tome_skull_specs = list(get_tome_skull_specs() or []) if callable(get_tome_skull_specs) else []
                     if tome_skull_specs:
-                        from ..decision_kinds import DECISION_CHOOSE_QUARRY
-                        from ..decisions import DecisionOption, DecisionRequest
                         from ...units.unit import Unit
                         from ...utility.aura_utils import unit_within_range_of_unit
 
@@ -1983,7 +1981,6 @@ class GamePhaseHandlersMixin:
 
             # Moment Shackle: once per battle, start of Fight phase, choose one effect.
             from ..decision_kinds import DECISION_CHOOSE_MOMENT_SHACKLE
-            from ..decisions import DecisionOption, DecisionRequest
 
             pending_models = set()
             queue = getattr(self, "decision_queue", None)
@@ -2225,7 +2222,10 @@ class GamePhaseHandlersMixin:
 
             ability = unit.get_command_phase_bodyguard_return_ability()
             if not ability:
-                continue
+                unit_return = unit.get_command_phase_unit_return_ability()
+                if not unit_return or not bool(unit_return.get("requires_source_leading_unit", False)):
+                    continue
+                ability = dict(unit_return)
             bodyguard = unit.get_attached_unit_root()
             if bodyguard is None or bodyguard is unit:
                 continue
@@ -2241,6 +2241,15 @@ class GamePhaseHandlersMixin:
                 continue
             if len(bodyguard.models or []) <= 0:
                 continue
+            if not _return_ability_bearer_alive(unit, ability):
+                continue
+            if bool(ability.get("requires_bearer_unit_below_starting_strength", False)):
+                below_fn = getattr(bodyguard, "is_below_starting_strength", None)
+                is_below_starting_strength = (
+                    bool(below_fn()) if callable(below_fn) else bool(list(getattr(bodyguard, "models_lost", []) or []))
+                )
+                if not is_below_starting_strength:
+                    continue
             ability_key = str(ability.get("ability_key", "") or "").strip().lower()
             if bool(ability.get("once_per_battle", False)) and ability_key:
                 has_used_once = getattr(bodyguard, "has_used_unit_once_per_battle", None)
@@ -2298,6 +2307,71 @@ class GamePhaseHandlersMixin:
                 continue
             amount_roll = str(ability.get("amount_roll", "") or "").strip().upper()
             amount = int(ability.get("amount", 0) or 0)
+            try:
+                optional_discard_count = int(ability.get("optional_miracle_discard_count", 0) or 0)
+            except Exception:
+                optional_discard_count = 0
+            try:
+                optional_discard_amount = int(ability.get("optional_miracle_discard_amount", 0) or 0)
+            except Exception:
+                optional_discard_amount = 0
+            optional_discard_amount_roll = str(ability.get("optional_miracle_discard_amount_roll", "") or "").strip().upper()
+            allowed_ids = _filtered_bodyguard_return_model_ids(bodyguard, ability)
+            if allowed_ids is not None and not allowed_ids:
+                continue
+            if optional_discard_count > 0 and (optional_discard_amount > 0 or optional_discard_amount_roll):
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                base_amount_label = str(amount_roll or int(amount) or "0").strip()
+                options.append(
+                    DecisionOption.create(
+                        f"Return up to {base_amount_label}",
+                        payload={"action": "base"},
+                    )
+                )
+                miracle_pool_count = 0
+                try:
+                    source_army = unit.get_parent_army()
+                except Exception:
+                    source_army = None
+                aof_mgr = getattr(source_army, "acts_of_faith", None) if source_army is not None else None
+                if aof_mgr is not None:
+                    try:
+                        miracle_pool_count = len(list(getattr(aof_mgr, "miracle_dice", []) or []))
+                    except Exception:
+                        miracle_pool_count = 0
+                if int(miracle_pool_count) >= int(optional_discard_count):
+                    alt_amount_label = str(optional_discard_amount_roll or int(optional_discard_amount) or "0").strip()
+                    suffix = "die" if int(optional_discard_count) == 1 else "dice"
+                    options.append(
+                        DecisionOption.create(
+                            f"Discard {int(optional_discard_count)} Miracle {suffix}: return up to {alt_amount_label}",
+                            payload={"action": "discard"},
+                        )
+                    )
+                context = {
+                    "ability": "command_phase_miracle_discard_return_mode",
+                    "ability_name": str(ability.get("name", "") or "Command phase model return"),
+                    "phase": "Command phase",
+                    "source_unit_id": get_entity_id(unit),
+                    "target_unit_id": get_entity_id(bodyguard),
+                    "base_amount": int(amount),
+                    "base_amount_roll": str(amount_roll or ""),
+                    "discard_count": int(optional_discard_count),
+                    "discard_amount": int(optional_discard_amount),
+                    "discard_amount_roll": str(optional_discard_amount_roll or ""),
+                    "allow_skip": bool(ability.get("allow_skip", True)),
+                }
+                if allowed_ids is not None:
+                    context["allowed_model_ids"] = list(allowed_ids)
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{str(ability.get('name', '') or 'Command phase model return')}: select one option.",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context=context,
+                )
+                self.request_decision(request)
+                continue
             if amount_roll:
                 try:
                     from ...utility.dice import get_roll
@@ -2310,9 +2384,6 @@ class GamePhaseHandlersMixin:
                 ability = dict(ability or {})
                 ability["rolled_amount"] = int(rolled)
             if amount <= 0:
-                continue
-            allowed_ids = _filtered_bodyguard_return_model_ids(bodyguard, ability)
-            if allowed_ids is not None and not allowed_ids:
                 continue
             self._queue_bodyguard_return_decision(
                 player=player,
@@ -2469,6 +2540,15 @@ class GamePhaseHandlersMixin:
 
             amount = int(ability.get("amount", 0) or 0)
             amount_roll = str(ability.get("amount_roll", "") or "").strip().upper()
+            try:
+                optional_discard_count = int(ability.get("optional_miracle_discard_count", 0) or 0)
+            except Exception:
+                optional_discard_count = 0
+            try:
+                optional_discard_amount = int(ability.get("optional_miracle_discard_amount", 0) or 0)
+            except Exception:
+                optional_discard_amount = 0
+            optional_discard_amount_roll = str(ability.get("optional_miracle_discard_amount_roll", "") or "").strip().upper()
             controlled_amount = int(ability.get("controlled_objective_amount", 0) or 0)
             controlled_amount_roll = str(ability.get("controlled_objective_amount_roll", "") or "").strip().upper()
             if controlled_amount > 0 or controlled_amount_roll:
@@ -2482,6 +2562,64 @@ class GamePhaseHandlersMixin:
                     amount_roll = str(controlled_amount_roll or "").strip().upper()
                     ability = dict(ability or {})
                     ability["controlled_objective_amount_applied"] = True
+            allowed_ids = _filtered_bodyguard_return_model_ids(root, ability)
+            if allowed_ids is not None and not allowed_ids:
+                continue
+
+            if optional_discard_count > 0 and (optional_discard_amount > 0 or optional_discard_amount_roll):
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                base_amount_label = str(amount_roll or int(amount) or "0").strip()
+                options.append(
+                    DecisionOption.create(
+                        f"Return up to {base_amount_label}",
+                        payload={"action": "base"},
+                    )
+                )
+                miracle_pool_count = 0
+                try:
+                    source_army = root.get_parent_army()
+                except Exception:
+                    source_army = None
+                aof_mgr = getattr(source_army, "acts_of_faith", None) if source_army is not None else None
+                if aof_mgr is not None:
+                    try:
+                        miracle_pool_count = len(list(getattr(aof_mgr, "miracle_dice", []) or []))
+                    except Exception:
+                        miracle_pool_count = 0
+                if int(miracle_pool_count) >= int(optional_discard_count):
+                    alt_amount_label = str(optional_discard_amount_roll or int(optional_discard_amount) or "0").strip()
+                    suffix = "die" if int(optional_discard_count) == 1 else "dice"
+                    options.append(
+                        DecisionOption.create(
+                            f"Discard {int(optional_discard_count)} Miracle {suffix}: return up to {alt_amount_label}",
+                            payload={"action": "discard"},
+                        )
+                    )
+                context = {
+                    "ability": "command_phase_miracle_discard_return_mode",
+                    "ability_name": str(ability.get("name", "") or "Command phase model return"),
+                    "phase": "Command phase",
+                    "source_unit_id": get_entity_id(root),
+                    "target_unit_id": get_entity_id(root),
+                    "base_amount": int(amount),
+                    "base_amount_roll": str(amount_roll or ""),
+                    "discard_count": int(optional_discard_count),
+                    "discard_amount": int(optional_discard_amount),
+                    "discard_amount_roll": str(optional_discard_amount_roll or ""),
+                    "allow_skip": True,
+                }
+                if allowed_ids is not None:
+                    context["allowed_model_ids"] = list(allowed_ids)
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{str(ability.get('name', '') or 'Command phase model return')}: select one option.",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context=context,
+                )
+                self.request_decision(request)
+                continue
+
             if amount_roll:
                 try:
                     from ...utility.dice import get_roll
@@ -2494,10 +2632,6 @@ class GamePhaseHandlersMixin:
                 ability = dict(ability or {})
                 ability["rolled_amount"] = int(rolled)
             if amount <= 0:
-                continue
-
-            allowed_ids = _filtered_bodyguard_return_model_ids(root, ability)
-            if allowed_ids is not None and not allowed_ids:
                 continue
 
             self._queue_bodyguard_return_decision(

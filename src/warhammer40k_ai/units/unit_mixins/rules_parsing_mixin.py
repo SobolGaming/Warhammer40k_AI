@@ -669,7 +669,30 @@ class RulesParsingMixin:
                     )
                     or re.search(r"if\s+this\s+unit\s+is\s+below\s+(?:its\s+)?starting\s+strength", plain)
                 ),
+                "requires_source_leading_unit": bool(
+                    re.search(r"while\s+this\s+model\s+is\s+leading\s+(?:a|this)\s+unit", plain)
+                    or re.search(r"while\s+the\s+bearer\s+is\s+leading\s+(?:a|this)\s+unit", plain)
+                ),
             }
+            miracle_discard_match = re.search(
+                r"discard\s+(?P<count>one|a|\d+)\s+miracle\s+dice?\s+if\s+you\s+do\s+you\s+can\s+return(?:\s+up\s+to)?\s+"
+                + r"(?P<alt_amount>"
+                + amount_token_re
+                + r")"
+                + r"\s+destroyed\s+models?(?:\s+excluding\s+character\s+models?)?\s+to\s+"
+                + target_unit_re
+                + r"\s+instead",
+                plain,
+            )
+            if miracle_discard_match:
+                discard_token = str(miracle_discard_match.group("count") or "").strip()
+                alt_amount_token = str(miracle_discard_match.group("alt_amount") or "").strip()
+                discard_count, _discard_roll = self._parse_command_phase_return_amount_token(discard_token)
+                alt_amount, alt_amount_roll = self._parse_command_phase_return_amount_token(alt_amount_token)
+                if discard_count > 0 and alt_amount > 0:
+                    parsed["optional_miracle_discard_count"] = int(discard_count)
+                    parsed["optional_miracle_discard_amount"] = int(alt_amount)
+                    parsed["optional_miracle_discard_amount_roll"] = str(alt_amount_roll or "")
             if required_keyword:
                 parsed["required_keyword"] = required_keyword
             if required_model_name:
