@@ -3470,6 +3470,10 @@ def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
 def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str]]:
     raw = {
         ("AS", "Endless Suffering"): ("Supported", "Charge-after-Advance eligibility."),
+        ("AS", "Impetuous Fervour"): (
+            "Supported",
+            "Unit attacks re-roll Hit rolls of 1 for all attacks; against enemy units within range of an objective marker, those attacks re-roll the Hit roll instead.",
+        ),
         ("AS", "Holy Mission"): (
             "Supported",
             "Declare Battle Formations attachment clause is enforced: attached to a DOMINION SQUAD grants Scouts 6\"; attached to a SISTERS NOVITIATE SQUAD grants Infiltrators.",
