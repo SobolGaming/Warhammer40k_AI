@@ -4609,6 +4609,10 @@ class Unit(
         r"^the bearer has a (?P<save>\d)\+ save characteristic and a move characteristic of (?P<move>\d+)\"?\.?$",
         re.IGNORECASE,
     )
+    _BEARER_MOVE_AND_SAVE_CHARACTERISTICS_RE = re.compile(
+        r"^the bearer has a move characteristic of (?P<move>\d+)\"? and a save characteristic of (?P<save>\d)\+\.?$",
+        re.IGNORECASE,
+    )
     _FORTIFICATION_COVER_RE = re.compile(
         r"^each time a ranged attack is allocated to a model if that model is not fully visible to "
         r"(?:every model in )?the attacking unit because of this fortification that model has the benefit of cover against that attack\.?$",

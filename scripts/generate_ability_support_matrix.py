@@ -5785,6 +5785,7 @@ def _classify_ability_base(
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
+    bearer_move_and_save_support = _bearer_move_and_save_characteristics_support(description)
     bearer_save_support = _bearer_save_characteristic_support(description)
     model_fnp_support = _model_fnp_support(description)
     attached_character_fnp_support = _attached_character_fnp_support(description)
@@ -6155,6 +6156,8 @@ def _classify_ability_base(
         return weapon_keyword_grant_support
     if bearer_invuln_support:
         return bearer_invuln_support
+    if bearer_move_and_save_support:
+        return bearer_move_and_save_support
     if bearer_save_support:
         return bearer_save_support
     if model_fnp_support:
@@ -7641,6 +7644,31 @@ def _bearer_save_characteristic_support(description: str) -> Optional[Tuple[str,
     if not m:
         return None
     return ("Supported", f"Bearer has a Save characteristic of {m.group(1)}+.")
+
+
+def _bearer_move_and_save_characteristics_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    text = re.sub(r"\s+([.])", r"\1", text)
+    m = re.fullmatch(
+        r"the bearer has a move characteristic of (?P<move>\d+)\"? and a save characteristic of (?P<save>\d)\+\.?",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        m = re.fullmatch(
+            r"the bearer has a (?P<save>\d)\+ save characteristic and a move characteristic of (?P<move>\d+)\"?\.?",
+            text,
+            flags=re.IGNORECASE,
+        )
+    if not m:
+        return None
+    return ("Supported", f"Bearer has Move characteristic {m.group('move')}\" and Save characteristic {m.group('save')}+.")
 
 
 def _model_fnp_support(description: str) -> Optional[Tuple[str, str]]:

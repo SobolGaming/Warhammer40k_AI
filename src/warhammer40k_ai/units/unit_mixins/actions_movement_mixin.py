@@ -1461,6 +1461,12 @@ class ActionsMovementMixin:
                 return int(m_combo.group("save"))
             except Exception:
                 return None
+        m_combo = self._BEARER_MOVE_AND_SAVE_CHARACTERISTICS_RE.match(normalized)
+        if m_combo:
+            try:
+                return int(m_combo.group("save"))
+            except Exception:
+                return None
         m = self._BEARER_SAVE_CHARACTERISTIC_RE.match(normalized)
         if not m:
             return None
@@ -1478,6 +1484,12 @@ class ActionsMovementMixin:
         normalized = normalized.replace("\u2019", "'")
         normalized = re.sub(r"\s+([.])", r"\1", normalized).strip()
         m_combo = self._BEARER_SAVE_AND_MOVE_CHARACTERISTICS_RE.match(normalized)
+        if m_combo:
+            try:
+                return int(m_combo.group("move"))
+            except Exception:
+                return None
+        m_combo = self._BEARER_MOVE_AND_SAVE_CHARACTERISTICS_RE.match(normalized)
         if m_combo:
             try:
                 return int(m_combo.group("move"))
