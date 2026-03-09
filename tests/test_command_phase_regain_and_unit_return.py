@@ -617,3 +617,149 @@ def test_sacred_healing_without_miracle_dice_omits_discard_option():
     )
     actions = [str((opt.payload or {}).get("action", "") or "") for opt in list(mode_request.options or [])]
     assert actions == ["skip", "base"]
+
+
+def test_fiery_conviction_queues_mode_selection_with_none_discard_and_leadership():
+    from warhammer40k_ai.engine.game import BattleRoundPhases
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+    ability = {
+        "name": "Fiery Conviction",
+        "description": (
+            "If this model is on the battlefield at the start of your Command phase, you can choose one of the following: "
+            "Discard 1 Miracle dice and gain 1CP. Take a Leadership test for this model, if that test is passed, gain 1CP."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    unit = _make_unit(name="Junith Eruita", datasheet_id="as_junith_prompt", model_count=1, abilities=[ability])
+    game, player = _build_as_game_with_units([unit])
+    aof_mgr = getattr(player.get_army(), "acts_of_faith", None)
+    assert aof_mgr is not None
+    aof_mgr.miracle_dice = [2]
+
+    game.event_system.publish("phase_start", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    request = next(
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_CHOOSE_QUARRY
+        and str((req.context or {}).get("ability", "") or "") == "fiery_conviction"
+    )
+    actions = [str((opt.payload or {}).get("action", "") or "") for opt in list(request.options or [])]
+    assert actions == ["skip", "discard_miracle_gain_cp", "leadership_test_gain_cp"]
+
+
+def test_fiery_conviction_discard_mode_discards_miracle_die_and_gains_cp():
+    from warhammer40k_ai.engine.game import BattleRoundPhases
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+    ability = {
+        "name": "Fiery Conviction",
+        "description": (
+            "If this model is on the battlefield at the start of your Command phase, you can choose one of the following: "
+            "Discard 1 Miracle dice and gain 1CP. Take a Leadership test for this model, if that test is passed, gain 1CP."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    unit = _make_unit(name="Junith Eruita", datasheet_id="as_junith_discard", model_count=1, abilities=[ability])
+    game, player = _build_as_game_with_units([unit])
+    aof_mgr = getattr(player.get_army(), "acts_of_faith", None)
+    assert aof_mgr is not None
+    aof_mgr.miracle_dice = [1, 6]
+    before_cp = int(getattr(player, "command_points", 0) or 0)
+
+    game.event_system.publish("phase_start", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    request = next(
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_CHOOSE_QUARRY
+        and str((req.context or {}).get("ability", "") or "") == "fiery_conviction"
+    )
+    discard_option = next(
+        opt
+        for opt in list(request.options or [])
+        if str((opt.payload or {}).get("action", "") or "") == "discard_miracle_gain_cp"
+    )
+    result = resolve_decision_command(game, request, discard_option.option_id, player_id=player.id)
+    assert result.ok is True
+    assert list(aof_mgr.miracle_dice or []) == [6]
+    assert int(getattr(player, "command_points", 0) or 0) == before_cp + 1
+
+
+def test_fiery_conviction_discard_mode_rejects_when_pool_spent_before_resolution():
+    from warhammer40k_ai.engine.game import BattleRoundPhases
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+    ability = {
+        "name": "Fiery Conviction",
+        "description": (
+            "If this model is on the battlefield at the start of your Command phase, you can choose one of the following: "
+            "Discard 1 Miracle dice and gain 1CP. Take a Leadership test for this model, if that test is passed, gain 1CP."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    unit = _make_unit(name="Junith Eruita", datasheet_id="as_junith_invalid", model_count=1, abilities=[ability])
+    game, player = _build_as_game_with_units([unit])
+    aof_mgr = getattr(player.get_army(), "acts_of_faith", None)
+    assert aof_mgr is not None
+    aof_mgr.miracle_dice = [3]
+
+    game.event_system.publish("phase_start", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    request = next(
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_CHOOSE_QUARRY
+        and str((req.context or {}).get("ability", "") or "") == "fiery_conviction"
+    )
+    discard_option = next(
+        opt
+        for opt in list(request.options or [])
+        if str((opt.payload or {}).get("action", "") or "") == "discard_miracle_gain_cp"
+    )
+    aof_mgr.miracle_dice = []
+    result = resolve_decision_command(game, request, discard_option.option_id, player_id=player.id)
+    assert result.ok is False
+
+
+def test_fiery_conviction_leadership_mode_gains_cp_on_pass():
+    from warhammer40k_ai.engine.game import BattleRoundPhases
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+    ability = {
+        "name": "Fiery Conviction",
+        "description": (
+            "If this model is on the battlefield at the start of your Command phase, you can choose one of the following: "
+            "Discard 1 Miracle dice and gain 1CP. Take a Leadership test for this model, if that test is passed, gain 1CP."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    unit = _make_unit(name="Junith Eruita", datasheet_id="as_junith_leadership", model_count=1, abilities=[ability])
+    game, player = _build_as_game_with_units([unit])
+    aof_mgr = getattr(player.get_army(), "acts_of_faith", None)
+    assert aof_mgr is not None
+    aof_mgr.miracle_dice = []
+    unit.pass_leadership_check_for_model = lambda _model: True
+    before_cp = int(getattr(player, "command_points", 0) or 0)
+
+    game.event_system.publish("phase_start", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    request = next(
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_CHOOSE_QUARRY
+        and str((req.context or {}).get("ability", "") or "") == "fiery_conviction"
+    )
+    leadership_option = next(
+        opt
+        for opt in list(request.options or [])
+        if str((opt.payload or {}).get("action", "") or "") == "leadership_test_gain_cp"
+    )
+    result = resolve_decision_command(game, request, leadership_option.option_id, player_id=player.id)
+    assert result.ok is True
+    assert int(getattr(player, "command_points", 0) or 0) == before_cp + 1

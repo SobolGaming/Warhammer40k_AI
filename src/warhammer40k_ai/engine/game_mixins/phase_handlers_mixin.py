@@ -198,6 +198,159 @@ class GamePhaseHandlersMixin:
                         f"{source}: gained {int(gained)}CP.",
                     )
 
+    def _on_phase_start_fiery_conviction(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase start: queue Fiery Conviction mode selections for eligible models."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        player_id = str(getattr(player, "id", "") or "")
+        army_id = str(get_entity_id(army) or "")
+        aof_mgr = getattr(army, "acts_of_faith", None)
+        miracle_pool = list(getattr(aof_mgr, "miracle_dice", []) or []) if aof_mgr is not None else []
+
+        queue = getattr(self, "decision_queue", None)
+
+        def _already_pending_for_model(model_id: str) -> bool:
+            if queue is None or not hasattr(queue, "list"):
+                return False
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "fiery_conviction":
+                    continue
+                if str(ctx.get("source_model_id", "") or "") != model_id:
+                    continue
+                if player_id and str(ctx.get("player_id", "") or "") != player_id:
+                    continue
+                if current_turn and int(ctx.get("turn", 0) or 0) != current_turn:
+                    continue
+                return True
+            return False
+
+        def _unit_sort_key(unit_obj) -> str:
+            return str(get_entity_id(unit_obj) or "")
+
+        processed_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id in processed_roots:
+                continue
+            if root_id:
+                processed_roots.add(root_id)
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", True)):
+                continue
+            in_reserves_fn = getattr(root, "is_in_reserves", None)
+            if callable(in_reserves_fn) and bool(in_reserves_fn()):
+                continue
+            if bool(getattr(root, "is_embarked", False)):
+                continue
+            iter_entries = getattr(root, "_iter_model_specific_ability_entries", None)
+            if not callable(iter_entries):
+                continue
+
+            models = [
+                m
+                for m in list(getattr(root, "models", []) or [])
+                if bool(getattr(m, "is_alive", True))
+            ]
+            models.sort(key=lambda m: str(get_entity_id(m) or ""))
+            for model in models:
+                model_id = str(get_entity_id(model) or "")
+                if not model_id:
+                    continue
+                if _already_pending_for_model(model_id):
+                    continue
+                ability_name = ""
+                for name, _desc in iter_entries(model):
+                    if str(name or "").strip().lower() != "fiery conviction":
+                        continue
+                    ability_name = str(name or "").strip() or "Fiery Conviction"
+                    break
+                if not ability_name:
+                    continue
+
+                options = [
+                    DecisionOption.create(
+                        "None",
+                        payload={
+                            "action": "skip",
+                            "source_unit_id": root_id,
+                            "source_model_id": model_id,
+                            "summary": "Do not use Fiery Conviction.",
+                        },
+                    ),
+                    DecisionOption.create(
+                        "Leadership Test",
+                        payload={
+                            "action": "leadership_test_gain_cp",
+                            "source_unit_id": root_id,
+                            "source_model_id": model_id,
+                            "summary": "Take a Leadership test for this model; if passed, gain 1CP.",
+                        },
+                    ),
+                ]
+                if len(miracle_pool) >= 1:
+                    options.insert(
+                        1,
+                        DecisionOption.create(
+                            "Discard Miracle Die",
+                            payload={
+                                "action": "discard_miracle_gain_cp",
+                                "source_unit_id": root_id,
+                                "source_model_id": model_id,
+                                "discard_count": 1,
+                                "summary": "Discard 1 Miracle die and gain 1CP.",
+                            },
+                        ),
+                    )
+
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Fiery Conviction: choose one mode (or None).",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "fiery_conviction",
+                        "ability_name": ability_name,
+                        "phase": "Command phase",
+                        "phase_name": "COMMAND_PHASE",
+                        "optional": True,
+                        "army_id": army_id,
+                        "player_id": player_id,
+                        "source_unit_id": root_id,
+                        "source_model_id": model_id,
+                        "unit_id": root_id,
+                        "model_id": model_id,
+                        "turn": int(current_turn or 0),
+                        "discard_count": 1,
+                        "cp_gain": 1,
+                    },
+                )
+                self.request_decision(request)
+
     def _on_phase_start_ds8_support_turret_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Movement phase start: clear prior DS8 Support Turret virtual weapons for the active player."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

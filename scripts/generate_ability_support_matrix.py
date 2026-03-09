@@ -3528,6 +3528,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "While leading, Command-phase choice supports either returning up to 1 destroyed non-CHARACTER model or discarding 1 Miracle die to return up to D3+1 instead.",
         ),
+        ("AS", "Fiery Conviction"): (
+            "Supported",
+            "Start of your Command phase: optional CHOOSE_QUARRY mode supports either discarding 1 Miracle die to gain 1CP or taking a Leadership test for this model to gain 1CP on a pass.",
+        ),
         ("AS", "Litany of Deeds"): (
             "Supported",
             "Each time a friendly ADEPTA SORORITAS unit or model is destroyed within 12\" of this source, the resulting Miracle die gain can be re-rolled before being added to the pool.",

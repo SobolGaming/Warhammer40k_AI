@@ -185,6 +185,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_target_tracking"),
                 ("phase_start", "_on_phase_start_ds8_support_turret_cleanup"),
                 ("phase_start", "_on_phase_start_command_phase_cp_rolls"),
+                ("phase_start", "_on_phase_start_fiery_conviction"),
                 ("phase_start", "_on_phase_start_neuroloids_cleanup"),
                 ("phase_start", "_on_phase_start_death_guard_detachments"),
                 ("phase_start", "_on_phase_start_tyranids_detachments"),

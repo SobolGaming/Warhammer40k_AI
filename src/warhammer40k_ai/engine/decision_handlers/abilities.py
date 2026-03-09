@@ -8475,6 +8475,100 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if objective_id in targeted:
                 return ("Selected objective marker has already been targeted by this ability this turn.",)
         return ()
+    if ability == "fiery_conviction":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Fiery Conviction source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Fiery Conviction source unit was not found.",)
+        source_alive_fn = getattr(source_root, "is_alive", None)
+        source_is_alive = bool(source_alive_fn()) if callable(source_alive_fn) else False
+        if not source_is_alive:
+            return ("Fiery Conviction source unit is not alive.",)
+        if not bool(getattr(source_root, "deployed", False)):
+            return ("Fiery Conviction source unit is not deployed.",)
+        source_in_reserves_fn = getattr(source_root, "is_in_reserves", None)
+        if callable(source_in_reserves_fn) and bool(source_in_reserves_fn()):
+            return ("Fiery Conviction source unit is in Reserves.",)
+        if bool(getattr(source_root, "is_embarked", False)):
+            return ("Fiery Conviction source unit is embarked.",)
+
+        model = resolve_model(
+            game,
+            payload.get("source_model_id")
+            or ctx.get("source_model_id")
+            or payload.get("model_id")
+            or ctx.get("model_id"),
+        )
+        if model is None:
+            return ("Fiery Conviction source model was not found.",)
+        if not bool(getattr(model, "is_alive", True)):
+            return ("Fiery Conviction source model is not alive.",)
+        model_parent = getattr(model, "parent_unit", None)
+        model_parent_root = (
+            model_parent.get_attached_unit_root()
+            if model_parent is not None and hasattr(model_parent, "get_attached_unit_root")
+            else model_parent
+        )
+        if model_parent_root is not None and model_parent_root is not source_root:
+            return ("Fiery Conviction source model does not belong to the source unit.",)
+
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if current_phase != "COMMAND_PHASE":
+            return ("Fiery Conviction can only be resolved in the Command phase.",)
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        expected_player_id = str(
+            payload.get("player_id")
+            or ctx.get("player_id")
+            or getattr(request, "player_id", "")
+            or ""
+        ).strip()
+        if expected_player_id:
+            current_player_id = str(getattr(current_player, "id", "") or "").strip()
+            if current_player_id != expected_player_id:
+                return ("Fiery Conviction can only be resolved by the active player.",)
+        try:
+            queued_turn = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            queued_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if queued_turn > 0 and current_turn > 0 and queued_turn != current_turn:
+            return ("Fiery Conviction decision is no longer valid this turn.",)
+
+        if is_skip_choice(request, result):
+            return ()
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action not in {"discard_miracle_gain_cp", "leadership_test_gain_cp"}:
+            return ("Fiery Conviction requires choosing discard-Miracle or Leadership-test mode.",)
+        if action == "discard_miracle_gain_cp":
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            aof_mgr = getattr(source_army, "acts_of_faith", None) if source_army is not None else None
+            if aof_mgr is None:
+                return ("Fiery Conviction discard mode requires Acts of Faith manager.",)
+            try:
+                discard_count = int(ctx.get("discard_count", payload.get("discard_count", 1)) or 1)
+            except (TypeError, ValueError):
+                discard_count = 1
+            discard_count = max(1, int(discard_count))
+            pool = list(getattr(aof_mgr, "miracle_dice", []) or [])
+            if len(pool) < discard_count:
+                return ("Fiery Conviction discard mode requires enough Miracle dice.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability not in ("strategic_conqueror", "archons_will_objective"):
@@ -8498,6 +8592,171 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "fiery_conviction":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        model = resolve_model(
+            game,
+            payload.get("source_model_id")
+            or ctx.get("source_model_id")
+            or payload.get("model_id")
+            or ctx.get("model_id"),
+        )
+        if model is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_root.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Fiery Conviction").strip() or "Fiery Conviction"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {"action": "skip", "gained_cp": 0, "discarded": []}
+
+        action = str(payload.get("action", "") or "").strip().lower()
+        try:
+            cp_gain = int(ctx.get("cp_gain", payload.get("cp_gain", 1)) or 1)
+        except (TypeError, ValueError):
+            cp_gain = 1
+        cp_gain = max(0, int(cp_gain))
+        gain_cp_fn = getattr(player, "gain_command_points", None) if player is not None else None
+
+        if action == "discard_miracle_gain_cp":
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            aof_mgr = getattr(source_army, "acts_of_faith", None) if source_army is not None else None
+            if aof_mgr is None:
+                return None
+            try:
+                discard_count = int(ctx.get("discard_count", payload.get("discard_count", 1)) or 1)
+            except (TypeError, ValueError):
+                discard_count = 1
+            discard_count = max(1, int(discard_count))
+            pool = list(getattr(aof_mgr, "miracle_dice", []) or [])
+            if len(pool) < discard_count:
+                return {"action": action, "gained_cp": 0, "discarded": []}
+
+            choose_indices: list[int] = []
+            choose_fn = getattr(aof_mgr, "_choose_miracle_pool_indices", None)
+            if callable(choose_fn):
+                try:
+                    choose_indices = list(
+                        choose_fn(
+                            unit=source_root,
+                            bearer_model=model,
+                            game=game,
+                            pool=list(pool),
+                            max_select=int(discard_count),
+                            reason=ability_name,
+                            skip_sixes=False,
+                        )
+                        or []
+                    )
+                except Exception:
+                    choose_indices = []
+            selected_indices: list[int] = []
+            seen_indices: set[int] = set()
+            for raw_idx in list(choose_indices or []):
+                try:
+                    idx = int(raw_idx)
+                except (TypeError, ValueError):
+                    continue
+                if idx < 0 or idx >= len(pool) or idx in seen_indices:
+                    continue
+                seen_indices.add(idx)
+                selected_indices.append(idx)
+            if len(selected_indices) < discard_count:
+                remaining = [idx for idx in range(len(pool)) if idx not in seen_indices]
+                remaining.sort(key=lambda idx: (int(pool[idx] or 0), int(idx)))
+                for idx in list(remaining):
+                    selected_indices.append(int(idx))
+                    if len(selected_indices) >= discard_count:
+                        break
+            if len(selected_indices) < discard_count:
+                return {"action": action, "gained_cp": 0, "discarded": []}
+
+            discard_fn = getattr(aof_mgr, "_discard_miracle_dice_by_indices", None)
+            if callable(discard_fn):
+                discarded = list(
+                    discard_fn(
+                        aof_mgr.miracle_dice,
+                        list(selected_indices[:discard_count]),
+                    )
+                    or []
+                )
+            else:
+                discarded = []
+                for idx in sorted(list(selected_indices[:discard_count]), reverse=True):
+                    if idx < 0 or idx >= len(aof_mgr.miracle_dice):
+                        continue
+                    try:
+                        die_value = int(aof_mgr.miracle_dice[idx] or 0)
+                    except (TypeError, ValueError):
+                        die_value = 0
+                    discarded.append(int(die_value))
+                    del aof_mgr.miracle_dice[idx]
+                discarded.reverse()
+            gained_cp = int(gain_cp_fn(cp_gain, reason=ability_name) or 0) if callable(gain_cp_fn) else 0
+            try:
+                from ...utility.event_bus import append_dice
+
+                if player is not None:
+                    append_dice(
+                        player,
+                        f"{ability_name}: discarded Miracle dice {list(discarded)}.",
+                    )
+            except Exception:
+                pass
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: discarded 1 Miracle die and gained {int(gained_cp)}CP.",
+            )
+            return {
+                "action": action,
+                "gained_cp": int(gained_cp),
+                "discarded": list(discarded),
+            }
+
+        if action == "leadership_test_gain_cp":
+            pass_fn = getattr(source_root, "pass_leadership_check_for_model", None)
+            passed = bool(pass_fn(model)) if callable(pass_fn) else False
+            gained_cp = int(gain_cp_fn(cp_gain, reason=ability_name) or 0) if (passed and callable(gain_cp_fn)) else 0
+            if passed:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: Leadership test passed; gained {int(gained_cp)}CP.",
+                )
+            else:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: Leadership test failed; gained 0CP.",
+                )
+            return {
+                "action": action,
+                "passed": bool(passed),
+                "gained_cp": int(gained_cp),
+                "discarded": [],
+            }
+        return None
     if ability == "command_phase_miracle_discard_return_mode":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(
