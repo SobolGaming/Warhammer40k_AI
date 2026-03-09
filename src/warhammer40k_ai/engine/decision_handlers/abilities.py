@@ -16825,6 +16825,12 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             except Exception:
                 pass
             try:
+                setattr(source_unit, "_exemplar_of_the_code_reroll_hit", bool(ctx.get("exemplar_reroll_hit", False)))
+                setattr(source_unit, "_exemplar_of_the_code_reroll_wound", bool(ctx.get("exemplar_reroll_wound", True)))
+                setattr(source_unit, "_exemplar_of_the_code_precision", bool(ctx.get("exemplar_precision", False)))
+            except Exception:
+                pass
+            try:
                 setattr(source_unit, "_bondsman_quarry_name", str(getattr(chosen, "name", "")))
             except Exception:
                 pass

@@ -5143,6 +5143,29 @@ class PositioningMixin:
         except Exception:
             pass
         try:
+            if target is not None:
+                root = self.get_attached_unit_root()
+                quarry_ids = getattr(root, "_exemplar_of_the_code_quarry_ids", None)
+                precision_vs_quarry = bool(getattr(root, "_exemplar_of_the_code_precision", False))
+                if quarry_ids and precision_vs_quarry:
+                    try:
+                        target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                        tid = getattr(target_root, "_id", None)
+                        rid = getattr(target, "_id", None)
+                    except Exception:
+                        tid = getattr(target, "_id", None)
+                        rid = None
+                    if (tid in quarry_ids) or (rid in quarry_ids):
+                        source = (
+                            str(getattr(root, "_exemplar_of_the_code_source", "") or "Exemplar of the Code").strip()
+                            or "Exemplar of the Code"
+                        )
+                        rules = list(rules or []) + [
+                            {"attack_type": "any", "keyword": "PRECISION", "source": source}
+                        ]
+        except Exception:
+            pass
+        try:
             root = self.get_attached_unit_root()
             sr = getattr(root, "special_rules", None)
             if isinstance(sr, dict) and sr.get("aeldari_preternatural_precision_active"):

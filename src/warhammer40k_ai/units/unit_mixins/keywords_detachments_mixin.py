@@ -3389,12 +3389,20 @@ class KeywordsDetachmentsMixin:
         """
         Detect abilities with text like:
         "At the start of the battle, select one unit from your opponent's army to be this model's quarry.
-        Each time this model makes an attack that targets its quarry, you can re-roll the Wound roll.
+        Each time this model makes an attack that targets its quarry, you can re-roll the Wound roll."
+
+        Also supports variants that grant:
+        - Hit re-rolls vs quarry
+        - [PRECISION] vs quarry
+        - repick-on-destroyed text in a separate ability entry
+
         Each time this model's quarry is destroyed, you can select a new unit from your opponent's army to be its quarry."
 
         Returns a rule dict with:
             - source: ability name
+            - reroll_hit: bool
             - reroll_wound: bool
+            - precision: bool
             - repick_on_destroyed: bool
             - optional_repick_on_destroyed: bool
         """
@@ -3422,8 +3430,48 @@ class KeywordsDetachmentsMixin:
                     return True
             return False
 
+        def _is_quarry_selector(text: str) -> bool:
+            if "quarry" not in text:
+                return False
+            if "select one" not in text:
+                return False
+            if "your opponent s army" not in text:
+                return False
+            if "start of the battle" not in text and "start of the first battle round" not in text:
+                return False
+            if not _has_phrase(
+                text,
+                "to be this model s quarry",
+                "to be this unit s quarry",
+                "to be its quarry",
+            ):
+                return False
+            return True
+
+        def _extract_repick_flags(text: str) -> tuple[bool, bool]:
+            repick_on_destroyed = (
+                "quarry is destroyed" in text
+                and _has_phrase(
+                    text,
+                    "select a new unit",
+                    "select one new unit",
+                    "select one new enemy unit",
+                )
+            )
+            optional_repick = (
+                bool(repick_on_destroyed)
+                and _has_phrase(
+                    text,
+                    "you can select a new unit",
+                    "you can select one new unit",
+                    "you can select one new enemy unit",
+                )
+            )
+            return bool(repick_on_destroyed), bool(optional_repick)
+
         rule = None
         seen = set()
+        entries = []
         try:
             members = list(root.get_attached_unit_members() or [])
         except Exception:
@@ -3445,48 +3493,54 @@ class KeywordsDetachmentsMixin:
                 if key in seen:
                     continue
                 seen.add(key)
+                entries.append((str(name or ""), normalized))
 
-                if "start of the battle" not in normalized and "start of the first battle round" not in normalized:
-                    continue
-                if (
-                    "to be this model s quarry" not in normalized
-                    and "to be this unit s quarry" not in normalized
-                ):
-                    continue
-                if not _has_phrase(normalized, "targets its quarry", "targets that quarry"):
-                    continue
-                if not _has_phrase(normalized, "re roll the wound roll", "reroll the wound roll"):
-                    continue
+        for name, normalized in list(entries):
+            if not _is_quarry_selector(normalized):
+                continue
+            if not _has_phrase(normalized, "targets its quarry", "targets that quarry"):
+                continue
+            reroll_hit = _has_phrase(normalized, "re roll the hit roll", "reroll the hit roll")
+            reroll_wound = _has_phrase(normalized, "re roll the wound roll", "reroll the wound roll")
+            precision = _has_phrase(
+                normalized,
+                "precision ability",
+                "precision abilities",
+            )
+            if not (reroll_hit or reroll_wound or precision):
+                continue
+            repick_on_destroyed, optional_repick = _extract_repick_flags(normalized)
+            source = str(name or "Exemplar of the Code").strip() or "Exemplar of the Code"
+            rule = {
+                "source": source,
+                "reroll_hit": bool(reroll_hit),
+                "reroll_wound": bool(reroll_wound),
+                "precision": bool(precision),
+                "repick_on_destroyed": bool(repick_on_destroyed),
+                "optional_repick_on_destroyed": bool(optional_repick),
+            }
+            break
 
-                repick_on_destroyed = (
-                    "quarry is destroyed" in normalized
-                    and _has_phrase(
-                        normalized,
-                        "select a new unit",
-                        "select one new unit",
-                        "select one new enemy unit",
-                    )
-                )
-                optional_repick = (
-                    bool(repick_on_destroyed)
-                    and _has_phrase(
-                        normalized,
-                        "you can select a new unit",
-                        "you can select one new unit",
-                        "you can select one new enemy unit",
-                    )
-                )
-
-                source = str(name or "Exemplar of the Code").strip() or "Exemplar of the Code"
-                rule = {
-                    "source": source,
-                    "reroll_wound": True,
-                    "repick_on_destroyed": bool(repick_on_destroyed),
-                    "optional_repick_on_destroyed": bool(optional_repick),
-                }
+        if rule is not None and not bool(rule.get("repick_on_destroyed", False)):
+            for _name, normalized in list(entries):
+                if "quarry" not in normalized:
+                    continue
+                repick_on_destroyed, optional_repick = _extract_repick_flags(normalized)
+                if not repick_on_destroyed:
+                    continue
+                rule["repick_on_destroyed"] = True
+                rule["optional_repick_on_destroyed"] = bool(optional_repick)
                 break
-            if rule is not None:
-                break
+
+        if rule is not None:
+            if "reroll_hit" not in rule:
+                rule["reroll_hit"] = False
+            if "reroll_wound" not in rule:
+                rule["reroll_wound"] = True
+            if "precision" not in rule:
+                rule["precision"] = False
+            rule["repick_on_destroyed"] = bool(rule.get("repick_on_destroyed", False))
+            rule["optional_repick_on_destroyed"] = bool(rule.get("optional_repick_on_destroyed", False))
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}

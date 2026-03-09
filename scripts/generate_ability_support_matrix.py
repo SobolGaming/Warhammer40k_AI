@@ -3501,6 +3501,14 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Once per battle, start of any phase: optional CONFIRM_YES_NO grants the bearer a 2+ invulnerable save until phase end.",
         ),
+        ("AS", "Virtue of Intolerance"): (
+            "Supported",
+            "Start-of-battle quarry selection; attacks vs quarry can re-roll Hit rolls and gain [PRECISION], including while embarked.",
+        ),
+        ("AS", "Denuncia Oratory"): (
+            "Supported",
+            "When this unit's quarry is destroyed, optional CHOOSE_QUARRY re-pick selects a new quarry.",
+        ),
         ("AS", "The Fiery Heart (Aura)"): (
             "Supported",
             "Selected Relics of the Matriarchs aura: friendly ADEPTA SORORITAS units within 6\" gain +2\" Move and +1 to Advance/Charge rolls.",

@@ -12883,6 +12883,62 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Exemplar of the Code: optional re-roll of the Hit roll vs quarry.
+        try:
+            if rerolls_allowed and "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                quarry_ids = getattr(unit, "_exemplar_of_the_code_quarry_ids", None)
+                reroll_hit_vs_quarry = bool(getattr(unit, "_exemplar_of_the_code_reroll_hit", False))
+                if quarry_ids and reroll_hit_vs_quarry:
+                    try:
+                        tid = getattr(target, "_id", None)
+                        rid = getattr(target.get_attached_unit_root(), "_id", None)
+                    except Exception:
+                        tid = getattr(target, "_id", None)
+                        rid = None
+                    is_quarry = (tid in quarry_ids) or (rid in quarry_ids)
+                    if is_quarry:
+                        try:
+                            game = unit.get_parent_army().player.game
+                            player = unit.get_parent_army().player
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            provider = None
+                            player = None
+                            game = None
+
+                        try:
+                            success = (dice_roll != 1) and (base_skill > 0) and (dice_roll >= final_needed)
+                        except Exception:
+                            success = False
+
+                        do_reroll = False
+                        if callable(provider):
+                            try:
+                                reason = str(getattr(unit, "_exemplar_of_the_code_source", "") or "Exemplar of the Code")
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="hit",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason=reason,
+                                ))
+                            except Exception:
+                                do_reroll = False
+
+                        if do_reroll:
+                            rr = _reroll_hit()
+                            label = str(getattr(unit, "_exemplar_of_the_code_source", "") or "Exemplar of the Code")
+                            hit_result.setdefault("special_effects", []).append(f"{label}: re-roll Hit roll (quarry)")
+                            hit_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
         # PREY SELECTION: optional re-roll of the Hit roll vs prey (if enabled).
         try:
             if rerolls_allowed and "reroll" not in hit_result:
@@ -17855,7 +17911,8 @@ class WargearProfile:
             if rerolls_allowed and "reroll" not in wound_result:
                 unit = attacker.parent_unit
                 quarry_ids = getattr(unit, "_exemplar_of_the_code_quarry_ids", None)
-                if quarry_ids:
+                reroll_wound_vs_quarry = bool(getattr(unit, "_exemplar_of_the_code_reroll_wound", True))
+                if quarry_ids and reroll_wound_vs_quarry:
                     try:
                         tid = getattr(target, "_id", None)
                         rid = getattr(target.get_attached_unit_root(), "_id", None)

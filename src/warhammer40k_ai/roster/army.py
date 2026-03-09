@@ -3115,6 +3115,13 @@ class Army:
         ability_name = str(rule.get("source", "") or "Exemplar of the Code").strip() if isinstance(rule, dict) else "Exemplar of the Code"
         label = ability_name or "Exemplar of the Code"
         prompt = f"Select quarry ({label})."
+        context_extra = {}
+        if isinstance(rule, dict):
+            context_extra = {
+                "exemplar_reroll_hit": bool(rule.get("reroll_hit", False)),
+                "exemplar_reroll_wound": bool(rule.get("reroll_wound", True)),
+                "exemplar_precision": bool(rule.get("precision", False)),
+            }
         return self._build_quarry_selection_request(
             game=game,
             source_unit=source_unit,
@@ -3124,6 +3131,7 @@ class Army:
             ability_name=label,
             exclude_embarked=False,
             allow_skip=bool(allow_skip),
+            context_extra=context_extra,
         )
 
     def _queue_prey_selection(self, *, game, battle_round: int) -> None:
