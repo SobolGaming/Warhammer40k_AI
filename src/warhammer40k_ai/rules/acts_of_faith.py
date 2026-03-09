@@ -1072,6 +1072,11 @@ class ActsOfFaithManager:
             selecting_player=selecting_player,
             trigger_action="fight",
         )
+        self._maybe_apply_rapturous_blows(
+            root,
+            game=game,
+            selecting_player=selecting_player,
+        )
         if self._is_bringers_of_flame():
             self._maybe_apply_righteous_rage(root, game=game, selecting_player=selecting_player)
         if not self._is_army_of_faith():
@@ -1528,6 +1533,66 @@ class ActsOfFaithManager:
         if not destroyed_model_id or destroyed_model_id not in source_model_ids:
             return
         self.gain_miracle_die(game=game, allow_reroll=False, reason="Righteous Repugnance")
+
+    def _maybe_apply_rapturous_blows(self, unit, *, game=None, selecting_player=None) -> None:
+        if unit is None:
+            return
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if selecting_player is not None and owner is not None and selecting_player is not owner:
+            return
+        source_unit = self._first_member_with_ability_named(unit, "Rapturous Blows")
+        if source_unit is None:
+            return
+        source_model = self._first_alive_model_for_unit(source_unit)
+        if source_model is None:
+            return
+        if not self.miracle_dice:
+            return
+        chosen_indices = self._choose_miracle_pool_indices(
+            unit=source_unit,
+            bearer_model=source_model,
+            game=game,
+            pool=list(self.miracle_dice),
+            max_select=1,
+            reason="Rapturous Blows",
+            skip_sixes=True,
+        )
+        if not chosen_indices:
+            return
+        discarded = self._discard_miracle_dice_by_indices(self.miracle_dice, chosen_indices[:1])
+        if not discarded:
+            return
+        current_turn = 0
+        if game is not None:
+            turn_value = getattr(game, "turn", 0)
+            if isinstance(turn_value, (int, float)):
+                current_turn = int(turn_value)
+            else:
+                turn_text = str(turn_value or "").strip()
+                if turn_text.lstrip("-").isdigit():
+                    current_turn = int(turn_text)
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if not phase_name:
+            phase_name = "FIGHT_PHASE"
+        owner_id = str(get_entity_id(owner) or getattr(owner, "id", "")) if owner is not None else ""
+        sr = self._unit_special_rules(source_unit)
+        sr = dict(sr)
+        sr["rapturous_blows_active"] = True
+        sr["rapturous_blows_extra_mortals"] = 1
+        sr["rapturous_blows_turn"] = int(current_turn)
+        sr["rapturous_blows_owner"] = str(owner_id)
+        sr["rapturous_blows_expires_phase"] = str(phase_name)
+        sr["rapturous_blows_source_model_id"] = str(get_entity_id(source_model) or "")
+        sr["rapturous_blows_source"] = "Rapturous Blows"
+        source_unit.special_rules = sr
+        if owner is not None:
+            append_dice(
+                owner,
+                (
+                    "Rapturous Blows: discarded Miracle die "
+                    f"{discarded} for +1 mortal wound on each successful wound this phase"
+                ),
+            )
 
     def _maybe_apply_righteous_rage(self, unit, *, game=None, selecting_player=None) -> None:
         if unit is None or not self._unit_has_special_rule(unit, "enhancement_righteous_rage"):

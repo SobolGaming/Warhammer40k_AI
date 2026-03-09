@@ -1109,6 +1109,36 @@ class WargearProfile:
             return 0
         return 1
 
+    def _rapturous_blows_extra_mortal_wounds(self, attacker: 'Model') -> int:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return 0
+        sr = self._unit_special_rules(attacker)
+        if not isinstance(sr, dict) or not bool(sr.get("rapturous_blows_active", False)):
+            return 0
+        try:
+            extra = int(sr.get("rapturous_blows_extra_mortals", 0) or 0)
+        except (TypeError, ValueError):
+            extra = 0
+        if extra <= 0:
+            return 0
+        source_model_id = str(sr.get("rapturous_blows_source_model_id", "") or "")
+        attacker_model_id = str(get_entity_id(attacker) or "")
+        if source_model_id and attacker_model_id and source_model_id != attacker_model_id:
+            return 0
+        parent = getattr(self, "parent_wargear", None)
+        if parent is None or not bool(getattr(parent, "is_melee", lambda: False)()):
+            return 0
+        if not self._enhancement_bonus_window_active(
+            attacker,
+            sr,
+            expires_phase_key="rapturous_blows_expires_phase",
+            turn_key="rapturous_blows_turn",
+            owner_key="rapturous_blows_owner",
+        ):
+            return 0
+        return int(extra)
+
     def _attacker_in_shadow_of_chaos(self, attacker: 'Model') -> bool:
         unit = getattr(attacker, "parent_unit", None)
         if unit is None:
@@ -19044,6 +19074,13 @@ class WargearProfile:
                 attack_instance["successful_wound_extra_mortal_wounds"] = current_extra + extra_mortals
                 wound_result["special_effects"].append(
                     f"Radiant Champion: {int(extra_mortals)} mortal wound(s) in addition"
+                )
+            rapturous_mortals = int(self._rapturous_blows_extra_mortal_wounds(attacker) or 0)
+            if rapturous_mortals > 0:
+                current_extra = int(attack_instance.get("successful_wound_extra_mortal_wounds", 0) or 0)
+                attack_instance["successful_wound_extra_mortal_wounds"] = current_extra + rapturous_mortals
+                wound_result["special_effects"].append(
+                    f"Rapturous Blows: {int(rapturous_mortals)} mortal wound(s) in addition"
                 )
 
         if dice_roll == 1:

@@ -3539,6 +3539,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Each time this model's unit is selected to shoot or fight, optionally discard 1 Miracle die to grant +3 Attacks to Fidelis and Lance of Illumination until phase end; each enemy unit destroyed by this model grants 1 Miracle die.",
         ),
+        ("AS", "Rapturous Blows"): (
+            "Supported",
+            "Each time this model's unit is selected to fight, optionally discard 1 Miracle die to grant +1 mortal wound in addition on each successful melee wound made by this model until phase end.",
+        ),
         ("AS", "Litany of Deeds"): (
             "Supported",
             "Each time a friendly ADEPTA SORORITAS unit or model is destroyed within 12\" of this source, the resulting Miracle die gain can be re-rolled before being added to the pool.",
