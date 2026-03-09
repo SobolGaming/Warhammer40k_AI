@@ -6794,7 +6794,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, int, int, bool, tuple[str, ...]]] = set()
+        seen: set[tuple] = set()
 
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
@@ -6807,33 +6807,69 @@ class AbilitySpecsMixin:
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
             m = self._START_SHOOTING_PHASE_VISIBLE_BATTLESHOCK_RE.fullmatch(normalized)
-            if not m:
-                continue
-            try:
-                range_value = int(m.group("range") or 0)
-            except (TypeError, ValueError):
-                range_value = 0
-            if range_value <= 0:
-                continue
-            try:
-                infantry_penalty = int(m.group("infantry_penalty") or 0)
-            except (TypeError, ValueError):
-                infantry_penalty = 0
-            if infantry_penalty > 0:
-                infantry_penalty = -int(infantry_penalty)
-            fail_mw_token = str(m.group("fail_mw") or "").strip().lower()
-            fail_mortal_wounds = 0
-            if fail_mw_token.isdigit():
+            keyword_penalty = 0
+            keyword_penalty_target = ""
+            if m is not None:
                 try:
-                    fail_mortal_wounds = int(fail_mw_token or 0)
+                    range_value = int(m.group("range") or 0)
                 except (TypeError, ValueError):
-                    fail_mortal_wounds = 0
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                try:
+                    infantry_penalty = int(m.group("infantry_penalty") or 0)
+                except (TypeError, ValueError):
+                    infantry_penalty = 0
+                if infantry_penalty > 0:
+                    infantry_penalty = -int(infantry_penalty)
+                fail_mw_token = str(m.group("fail_mw") or "").strip().lower()
+                fail_mortal_wounds = 0
+                if fail_mw_token.isdigit():
+                    try:
+                        fail_mortal_wounds = int(fail_mw_token or 0)
+                    except (TypeError, ValueError):
+                        fail_mortal_wounds = 0
+            else:
+                m_keyword = re.fullmatch(
+                    r"at the start of your shooting phase select one enemy unit within (?P<range>\d+) "
+                    r"of and visible to this unit s [a-z0-9 ]+ model that unit must take a battle shock test "
+                    r"subtracting (?P<keyword_penalty>\d+) from the result if it is a (?P<keyword>[a-z0-9 ]+) unit "
+                    r"if the test is failed that enemy unit suffers (?P<fail_mw>d3|d6|\d+) mortal wounds?",
+                    normalized,
+                )
+                if not m_keyword:
+                    continue
+                try:
+                    range_value = int(m_keyword.group("range") or 0)
+                except (TypeError, ValueError):
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                infantry_penalty = 0
+                try:
+                    keyword_penalty = int(m_keyword.group("keyword_penalty") or 0)
+                except (TypeError, ValueError):
+                    keyword_penalty = 0
+                if keyword_penalty > 0:
+                    keyword_penalty = -int(keyword_penalty)
+                keyword_penalty_target = self._normalize_keyword_phrase(str(m_keyword.group("keyword") or ""))
+                fail_mw_token = str(m_keyword.group("fail_mw") or "").strip().lower()
+                fail_mortal_wounds = 0
+                if fail_mw_token.isdigit():
+                    try:
+                        fail_mortal_wounds = int(fail_mw_token or 0)
+                    except (TypeError, ValueError):
+                        fail_mortal_wounds = 0
             use_leadership_test = bool(infantry_penalty != 0 or fail_mortal_wounds > 0)
+            if int(keyword_penalty or 0) != 0 and str(keyword_penalty_target or "").strip():
+                use_leadership_test = True
             source = str(name or "Start of Shooting phase Battle-shock").strip() or "Start of Shooting phase Battle-shock"
             key = (
                 source.lower(),
                 int(range_value),
                 int(infantry_penalty),
+                int(keyword_penalty),
+                str(keyword_penalty_target or ""),
                 int(fail_mortal_wounds),
                 bool(use_leadership_test),
             )
@@ -6846,6 +6882,8 @@ class AbilitySpecsMixin:
                     "range": int(range_value),
                     "use_leadership_test": bool(use_leadership_test),
                     "leadership_test_modifier_if_infantry": int(infantry_penalty),
+                    "leadership_test_modifier_if_target_keyword": int(keyword_penalty),
+                    "leadership_test_modifier_target_keyword": str(keyword_penalty_target or ""),
                     "fail_mortal_wounds": int(fail_mortal_wounds),
                     "leadership_test_counts_as_battle_shock": bool(use_leadership_test),
                 }

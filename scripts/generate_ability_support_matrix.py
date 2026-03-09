@@ -3509,6 +3509,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "When this unit's quarry is destroyed, optional CHOOSE_QUARRY re-pick selects a new quarry.",
         ),
+        ("AS", "Holy Judgement"): (
+            "Supported",
+            "Start of Shooting phase: select one enemy unit within 12\" and visible to Ephrael Stern; target takes a Leadership test counted as Battle-shock, suffering -2 if it has the CHAOS keyword, and on a failed test it suffers 3 mortal wounds.",
+        ),
         ("AS", "The Fiery Heart (Aura)"): (
             "Supported",
             "Selected Relics of the Matriarchs aura: friendly ADEPTA SORORITAS units within 6\" gain +2\" Move and +1 to Advance/Charge rolls.",

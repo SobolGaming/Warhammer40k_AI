@@ -21841,6 +21841,23 @@ def _apply_start_shooting_battleshock_target(game: object, request: DecisionRequ
             )
         except (TypeError, ValueError):
             test_modifier_if_infantry = 0
+        try:
+            test_modifier_if_target_keyword = int(
+                ctx.get(
+                    "leadership_test_modifier_if_target_keyword",
+                    payload.get("leadership_test_modifier_if_target_keyword", 0),
+                )
+                or 0
+            )
+        except (TypeError, ValueError):
+            test_modifier_if_target_keyword = 0
+        target_modifier_keyword = str(
+            ctx.get(
+                "leadership_test_modifier_target_keyword",
+                payload.get("leadership_test_modifier_target_keyword", ""),
+            )
+            or ""
+        ).strip().upper()
         counts_as_battle_shock_test = bool(
             ctx.get(
                 "leadership_test_counts_as_battle_shock",
@@ -21858,6 +21875,8 @@ def _apply_start_shooting_battleshock_target(game: object, request: DecisionRequ
             effective_test_modifier += int(test_modifier_if_battle_shocked or 0)
         if target_is_infantry:
             effective_test_modifier += int(test_modifier_if_infantry or 0)
+        if target_modifier_keyword and _target_has_keyword(target_unit, target_modifier_keyword):
+            effective_test_modifier += int(test_modifier_if_target_keyword or 0)
 
         temp_keys = (
             "post_shoot_leadership_debuff_active",

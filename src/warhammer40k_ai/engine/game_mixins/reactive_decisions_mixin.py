@@ -1336,6 +1336,15 @@ class GameReactiveDecisionsMixin:
         except (TypeError, ValueError):
             leadership_test_modifier_if_infantry = 0
         try:
+            leadership_test_modifier_if_target_keyword = int(
+                spec.get("leadership_test_modifier_if_target_keyword", 0) or 0
+            )
+        except (TypeError, ValueError):
+            leadership_test_modifier_if_target_keyword = 0
+        leadership_test_modifier_target_keyword = str(
+            spec.get("leadership_test_modifier_target_keyword", "") or ""
+        ).strip().upper()
+        try:
             fail_mortal_wounds = int(spec.get("fail_mortal_wounds", 0) or 0)
         except (TypeError, ValueError):
             fail_mortal_wounds = 0
@@ -1354,6 +1363,8 @@ class GameReactiveDecisionsMixin:
             "use_leadership_test": bool(use_leadership_test),
             "leadership_test_modifier_if_battle_shocked": int(leadership_test_modifier_if_battle_shocked),
             "leadership_test_modifier_if_infantry": int(leadership_test_modifier_if_infantry),
+            "leadership_test_modifier_if_target_keyword": int(leadership_test_modifier_if_target_keyword),
+            "leadership_test_modifier_target_keyword": str(leadership_test_modifier_target_keyword),
             "fail_mortal_wounds": int(fail_mortal_wounds),
             "leadership_test_counts_as_battle_shock": bool(leadership_test_counts_as_battle_shock),
         }
