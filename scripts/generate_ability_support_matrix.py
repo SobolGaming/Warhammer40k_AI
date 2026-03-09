@@ -3493,6 +3493,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Fight phase selected-unit trigger: optional CONFIRM_YES_NO applies Attacks 6 and [HAZARDOUS] to arco-flails until phase end.",
         ),
+        ("AS", "The Emperor's Grace"): (
+            "Supported",
+            "Once per battle, start of any phase: optional CONFIRM_YES_NO grants the bearer a 2+ invulnerable save until phase end.",
+        ),
         ("AS", "The Fiery Heart (Aura)"): (
             "Supported",
             "Selected Relics of the Matriarchs aura: friendly ADEPTA SORORITAS units within 6\" gain +2\" Move and +1 to Advance/Charge rolls.",
