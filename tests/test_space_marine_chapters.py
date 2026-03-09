@@ -4,11 +4,12 @@ from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
 
 class StubUnit:
-    def __init__(self, name, *, keywords=None, faction_keywords=None, psyker=False):
+    def __init__(self, name, *, keywords=None, faction_keywords=None, psyker=False, abilities=None):
         self.name = name
         self.keywords = list(keywords or [])
         self.faction_keywords = list(faction_keywords or [])
         self._psyker = bool(psyker)
+        self.possible_abilities = list(abilities or [])
 
     def has_any_keyword(self, keyword: str) -> bool:
         kw = (keyword or "").strip().lower()
@@ -88,6 +89,53 @@ class TestSpaceMarineChapters(unittest.TestCase):
         ]
         with self.assertRaises(ArmyValidationError):
             army.validate_space_marine_chapters()
+
+    def test_crimson_fists_blocks_other_imperial_fists_epic_heroes(self):
+        crimson_fists = {
+            "name": "CRIMSON FISTS",
+            "description": (
+                "This model is from the Crimson Fists Chapter, a successor of the Imperial Fists. "
+                "For all rules purposes, it is treated as an Imperial Fists model, but it cannot be "
+                "included in an army that includes any other Imperial Fists Epic Hero models."
+            ),
+        }
+        army = self._make_army(
+            [
+                StubUnit(
+                    "Pedro Kantor",
+                    keywords=["CHARACTER", "EPIC HERO"],
+                    faction_keywords=["ADEPTUS ASTARTES", "IMPERIAL FISTS"],
+                    abilities=[crimson_fists],
+                ),
+                StubUnit(
+                    "Darnath Lysander",
+                    keywords=["CHARACTER", "EPIC HERO"],
+                    faction_keywords=["ADEPTUS ASTARTES", "IMPERIAL FISTS"],
+                ),
+            ]
+        )
+        with self.assertRaises(ArmyValidationError):
+            army.validate_space_marine_chapters()
+
+    def test_crimson_fists_allows_non_epic_hero_imperial_fists(self):
+        crimson_fists = {"name": "CRIMSON FISTS", "description": ""}
+        army = self._make_army(
+            [
+                StubUnit(
+                    "Pedro Kantor",
+                    keywords=["CHARACTER", "EPIC HERO"],
+                    faction_keywords=["ADEPTUS ASTARTES", "IMPERIAL FISTS"],
+                    abilities=[crimson_fists],
+                ),
+                StubUnit(
+                    "Imperial Fists Captain",
+                    keywords=["CHARACTER"],
+                    faction_keywords=["ADEPTUS ASTARTES", "IMPERIAL FISTS"],
+                ),
+            ]
+        )
+
+        army.validate_space_marine_chapters()
 
 
 if __name__ == "__main__":

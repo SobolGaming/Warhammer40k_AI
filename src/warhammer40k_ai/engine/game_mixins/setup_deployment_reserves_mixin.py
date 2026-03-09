@@ -2727,6 +2727,15 @@ class GameSetupDeploymentReservesMixin:
         self._apply_shadow_assignment_declarations()
         self._apply_rapid_drop_deployment_declarations()
         self._apply_teleport_homer_declarations()
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Missing player during Declare Battle Formations.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Missing army for {p.name} during Declare Battle Formations.")
+            apply_fn = getattr(army, "apply_declare_battle_formations_restrictions", None)
+            if callable(apply_fn):
+                apply_fn()
 
         # Thousand Sons: Risen Rubricae selections are made at the start of this step.
         from ..decision_requests import build_risen_rubricae_requests

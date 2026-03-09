@@ -174,6 +174,12 @@ CULT_OF_DARK_GODS_UNITS = {
     "PLAGUE MARINES",
     "NOISE MARINES",
 }
+_AETHON_SHAAN_DATASHEET_ID = "000004148"
+_KAYVAAN_SHRIKE_DATASHEET_ID = "000002708"
+_CHAPTER_MASTER_OF_THE_RAVEN_GUARD_MARKER = (
+    "loses its lone operative ability and it replaces its chapter master keyword with captain"
+)
+_COMPANY_HEROES_MUSTERING_MARKER = "must attach one captain or chapter master model to this unit"
 
 
 def get_faction_id_from_name(faction_name: str) -> Optional[str]:
@@ -215,6 +221,56 @@ def get_faction_id_from_name(faction_name: str) -> Optional[str]:
     
     # If no match found, return None (will use generic lookup)
     return None
+
+
+def _normalize_ability_text_for_rules(value: str) -> str:
+    normalized = re.sub(r"<[^>]+>", " ", str(value or ""))
+    normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+    normalized = normalized.lower()
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _iter_unit_ability_entries_for_rules(unit) -> list[tuple[str, str]]:
+    iter_entries = getattr(unit, "_iter_ability_entries_for_rules", None)
+    if callable(iter_entries):
+        entries: list[tuple[str, str]] = []
+        for entry in iter_entries(model=None):
+            if not isinstance(entry, tuple) or len(entry) < 2:
+                continue
+            entries.append((str(entry[0] or ""), str(entry[1] or "")))
+        return entries
+
+    entries: list[tuple[str, str]] = []
+    for ability in list(getattr(unit, "possible_abilities", []) or []):
+        if isinstance(ability, str):
+            entries.append((ability, ability))
+            continue
+        if isinstance(ability, dict):
+            entries.append(
+                (
+                    str(ability.get("name") or ""),
+                    str(ability.get("description") or ""),
+                )
+            )
+            continue
+        entries.append(
+            (
+                str(getattr(ability, "name", "") or ""),
+                str(getattr(ability, "description", "") or ""),
+            )
+        )
+    return entries
+
+
+def _unit_has_named_ability_for_rules(unit, ability_name: str) -> bool:
+    target = _normalize_ability_text_for_rules(ability_name)
+    if not target:
+        return False
+    for name, _desc in _iter_unit_ability_entries_for_rules(unit):
+        if _normalize_ability_text_for_rules(name) == target:
+            return True
+    return False
 
 
 class Army:
@@ -1466,8 +1522,184 @@ class Army:
                     f"Unit '{bodyguard.name}' has {len(leaders)} Leaders attached (max {max_leaders})."
                 )
 
+    @staticmethod
+    def _unit_matches_name_or_datasheet_id(unit, *, normalized_name: str, datasheet_id: str) -> bool:
+        if unit is None:
+            return False
+        name_norm = re.sub(r"[^a-z0-9]+", " ", str(getattr(unit, "name", "") or "").lower()).strip()
+        name_norm = re.sub(r"\s+", " ", name_norm).strip()
+        if normalized_name and name_norm == normalized_name:
+            return True
+        get_dsid = getattr(unit, "get_datasheet_id", None)
+        if callable(get_dsid):
+            return str(get_dsid() or "").strip() == str(datasheet_id or "").strip()
+        return False
+
+    @staticmethod
+    def _append_unique_case_insensitive(values: list[str], value: str) -> list[str]:
+        target = str(value or "").strip()
+        if not target:
+            return list(values or [])
+        existing = list(values or [])
+        lowered = {str(item or "").strip().lower() for item in existing}
+        if target.lower() not in lowered:
+            existing.append(target)
+        return existing
+
+    def _apply_chapter_master_of_the_raven_guard(self) -> None:
+        units = list(getattr(self, "units", []) or [])
+        if not units:
+            return
+        aethon_units = [
+            unit for unit in units
+            if self._unit_matches_name_or_datasheet_id(
+                unit,
+                normalized_name="aethon shaan",
+                datasheet_id=_AETHON_SHAAN_DATASHEET_ID,
+            )
+        ]
+        shrike_units = [
+            unit for unit in units
+            if self._unit_matches_name_or_datasheet_id(
+                unit,
+                normalized_name="kayvaan shrike",
+                datasheet_id=_KAYVAAN_SHRIKE_DATASHEET_ID,
+            )
+        ]
+        if not aethon_units or not shrike_units:
+            return
+
+        has_rule = False
+        for source in aethon_units:
+            if _unit_has_named_ability_for_rules(source, "CHAPTER MASTER OF THE RAVEN GUARD"):
+                has_rule = True
+                break
+            for name, desc in _iter_unit_ability_entries_for_rules(source):
+                text = _normalize_ability_text_for_rules(desc or name)
+                if _CHAPTER_MASTER_OF_THE_RAVEN_GUARD_MARKER in text:
+                    has_rule = True
+                    break
+            if has_rule:
+                break
+        if not has_rule:
+            return
+
+        for shrike in shrike_units:
+            sr = getattr(shrike, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+
+            disabled = list(sr.get("disabled_ability_names", []) or [])
+            disabled = self._append_unique_case_insensitive(disabled, "Lone Operative")
+            sr["disabled_ability_names"] = disabled
+
+            removed_keywords = list(sr.get("ability_removed_keywords", []) or [])
+            removed_keywords = self._append_unique_case_insensitive(removed_keywords, "CHAPTER MASTER")
+            sr["ability_removed_keywords"] = removed_keywords
+
+            added_keywords = list(sr.get("ability_added_keywords", []) or [])
+            added_keywords = self._append_unique_case_insensitive(added_keywords, "CAPTAIN")
+            sr["ability_added_keywords"] = added_keywords
+            sr["chapter_master_of_the_raven_guard_applied"] = True
+            shrike.special_rules = sr
+
+            invalidate = getattr(shrike, "_invalidate_ability_cache", None)
+            if callable(invalidate):
+                invalidate()
+
+    def apply_declare_battle_formations_restrictions(self) -> None:
+        """Apply non-optional, start-of-Declare-Battle-Formations datasheet restrictions."""
+        self._apply_chapter_master_of_the_raven_guard()
+
+    def _unit_has_company_heroes_restriction(self, unit: Unit) -> bool:
+        if unit is None:
+            return False
+        if _unit_has_named_ability_for_rules(unit, "COMPANY HEROES"):
+            return True
+        for name, desc in _iter_unit_ability_entries_for_rules(unit):
+            text = _normalize_ability_text_for_rules(desc or name)
+            if _COMPANY_HEROES_MUSTERING_MARKER in text:
+                return True
+        return False
+
+    def _leader_satisfies_company_heroes_requirement(self, leader: Unit) -> bool:
+        if leader is None:
+            return False
+        has_kw = getattr(leader, "has_any_keyword", None)
+        if callable(has_kw):
+            if bool(has_kw("CAPTAIN")) or bool(has_kw("CHAPTER MASTER")):
+                return True
+        keywords = [
+            str(k).strip().upper()
+            for k in (list(getattr(leader, "keywords", []) or []) + list(getattr(leader, "faction_keywords", []) or []))
+            if str(k).strip()
+        ]
+        return "CAPTAIN" in keywords or "CHAPTER MASTER" in keywords
+
+    def _validate_company_heroes_mandatory_leader(self) -> None:
+        company_heroes_units = [
+            unit for unit in list(getattr(self, "units", []) or [])
+            if self._unit_has_company_heroes_restriction(unit)
+        ]
+        if not company_heroes_units:
+            return
+
+        units_to_remove: list[Unit] = []
+        for company_heroes in company_heroes_units:
+            attached = list(getattr(company_heroes, "attached_leaders", []) or [])
+            if any(self._leader_satisfies_company_heroes_requirement(leader) for leader in attached):
+                continue
+
+            eligible_leaders: list[Unit] = []
+            for candidate in list(getattr(self, "units", []) or []):
+                if candidate is None or not bool(getattr(candidate, "is_leader", False)):
+                    continue
+                if not self._leader_satisfies_company_heroes_requirement(candidate):
+                    continue
+                can_attach = getattr(candidate, "can_attach_to", None)
+                if callable(can_attach):
+                    if not bool(can_attach(company_heroes)):
+                        continue
+                eligible_leaders.append(candidate)
+
+            if eligible_leaders:
+                names = ", ".join(
+                    sorted(
+                        {
+                            str(getattr(candidate, "name", "Unknown") or "Unknown")
+                            for candidate in eligible_leaders
+                        }
+                    )
+                )
+                suffix = f" Eligible Leaders: {names}." if names else "."
+                raise ArmyValidationError(
+                    f"Unit '{company_heroes.name}' must have one attached CAPTAIN or CHAPTER MASTER model "
+                    "during Declare Battle Formations."
+                    f"{suffix}"
+                )
+
+            units_to_remove.append(company_heroes)
+
+        for company_heroes in units_to_remove:
+            if company_heroes not in self.units:
+                continue
+            self.units.remove(company_heroes)
+            sr = getattr(company_heroes, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["destroyed_before_battle"] = True
+            sr["destroyed_before_battle_reason"] = (
+                "COMPANY HEROES mandatory CAPTAIN/CHAPTER MASTER attachment was impossible."
+            )
+            company_heroes.special_rules = sr
+            logger.info(
+                "Declare Battle Formations: removed '%s' as destroyed because no eligible CAPTAIN/CHAPTER MASTER leader was available for COMPANY HEROES.",
+                getattr(company_heroes, "name", "Unknown"),
+            )
+
     def validate_support_artillery(self):
         """Validate joined-support attachments (Support Artillery + retinue-style joins)."""
+        self.apply_declare_battle_formations_restrictions()
         bodyguard_map: dict = {}
         units_to_remove: list[Unit] = []
         for unit in list(self.units or []):
@@ -1548,6 +1780,7 @@ class Army:
                 "Declare Battle Formations: removed '%s' as destroyed because no eligible mandatory joined-support target was available.",
                 getattr(unit, "name", "Unknown"),
             )
+        self._validate_company_heroes_mandatory_leader()
 
     def validate_enhancements(self):
         # Rule 1: Maximum enhancements (Veterans of the Void overrides core cap).
@@ -1745,6 +1978,19 @@ class Army:
             txt = re.sub(r"[^a-z0-9]+", " ", str(name or "").lower())
             return re.sub(r"\s+", " ", txt).strip()
 
+        def _unit_has_crimson_fists_restriction(unit) -> bool:
+            if _unit_has_named_ability_for_rules(unit, "CRIMSON FISTS"):
+                return True
+            marker = (
+                "cannot be included in an army that includes any other "
+                "imperial fists epic hero models"
+            )
+            for name, desc in _iter_unit_ability_entries_for_rules(unit):
+                text = _normalize_ability_text_for_rules(desc or name)
+                if marker in text:
+                    return True
+            return False
+
         astartes_units = [u for u in list(getattr(self, "units", []) or []) if _unit_has_keyword(u, "ADEPTUS ASTARTES")]
         if not astartes_units:
             return
@@ -1832,6 +2078,7 @@ class Army:
         has_space_wolves = bool(committed_chapter == "SPACE WOLVES") or any(
             _unit_has_keyword(u, "SPACE WOLVES") for u in astartes_units
         )
+        crimson_fists_units = [u for u in astartes_units if _unit_has_crimson_fists_restriction(u)]
 
         bt_banned = {_norm_name(n) for n in BLACK_TEMPLARS_FORBIDDEN_UNITS}
         dw_banned = {_norm_name(n) for n in DEATHWATCH_FORBIDDEN_UNITS}
@@ -1842,6 +2089,24 @@ class Army:
             if mgr is not None and mgr.detachment_matches("1st Company Task Force"):
                 raise ArmyValidationError(
                     "Black Templars armies cannot use the 1st Company Task Force detachment."
+                )
+
+        if crimson_fists_units:
+            imperial_fists_epic_heroes = [
+                unit for unit in astartes_units
+                if _unit_has_keyword(unit, "IMPERIAL FISTS") and _unit_has_keyword(unit, "EPIC HERO")
+            ]
+            for crimson_unit in crimson_fists_units:
+                conflicting_units = [unit for unit in imperial_fists_epic_heroes if unit is not crimson_unit]
+                if not conflicting_units:
+                    continue
+                conflict_names = ", ".join(
+                    sorted(str(getattr(unit, "name", "Unknown") or "Unknown") for unit in conflicting_units)
+                )
+                raise ArmyValidationError(
+                    "CRIMSON FISTS: "
+                    f"'{getattr(crimson_unit, 'name', 'Unknown')}' cannot be included in an army that "
+                    f"includes other IMPERIAL FISTS EPIC HERO units ({conflict_names})."
                 )
 
         for unit in list(getattr(self, "units", []) or []):

@@ -119,3 +119,18 @@ def test_named_unit_restriction_blocks_duplicates_with_digit_one_singular():
 
     with pytest.raises(ArmyValidationError):
         army.validate_unique_model_restrictions()
+
+
+def test_named_model_restriction_blocks_duplicates():
+    ability = {
+        "name": "CHOSEN OF THE EMPEROR",
+        "description": "You cannot include more than one EMPEROR'S CHAMPION model in your army.",
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    army = Army("Space Marines", "Detachment", points_limit=2000)
+    army.add_unit(make_unit("Emperor's Champion", abilities=[ability]))
+    army.add_unit(make_unit("Emperor's Champion", abilities=[ability]))
+
+    with pytest.raises(ArmyValidationError):
+        army.validate_unique_model_restrictions()

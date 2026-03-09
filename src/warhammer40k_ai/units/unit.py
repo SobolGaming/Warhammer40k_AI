@@ -3008,6 +3008,10 @@ class Unit(
         r"cannot include more than one of this (?:model|unit) in your army",
         re.IGNORECASE,
     )
+    _UNIQUE_NAMED_MODEL_RESTRICTION_RE = re.compile(
+        r"(?:unless otherwise stated )?you cannot include more than one (?P<model>.+?) models? in your army",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_SUSTAINED_HITS_RE = re.compile(
         r"(?:weapons?\s+equipped\s+by\s+models\s+in|models\s+in)\s+the\s+bearer'?s\s+unit.*?\bsustained\s+hits\b\s*(\d+)",
         re.IGNORECASE,

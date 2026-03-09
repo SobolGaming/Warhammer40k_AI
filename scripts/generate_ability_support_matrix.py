@@ -4289,6 +4289,26 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "On set up: until end of the turn, successful unmodified hit rolls with ranged attacks count as critical hits.",
         ),
+        ("SM", "CHOSEN OF THE EMPEROR"): (
+            "Supported",
+            "Army validation enforces the one-model inclusion cap for EMPEROR'S CHAMPION.",
+        ),
+        ("SM", "CRIMSON FISTS"): (
+            "Supported",
+            "Space Marine chapter validation blocks this model when other IMPERIAL FISTS EPIC HERO units are present.",
+        ),
+        ("SM", "COMPANY HEROES"): (
+            "Supported",
+            "Declare Battle Formations: Company Heroes must have one attached CAPTAIN/CHAPTER MASTER Leader if possible; otherwise the unit is removed as destroyed.",
+        ),
+        ("SM", "HEROES OF ULTRAMAR"): (
+            "Supported",
+            "Declare Battle Formations: Wardens of Ultramar can join Assault Intercessor Squad, Bladeguard Veteran Squad, Intercessor Squad, or Sternguard Veteran Squad only if the target is not already an Attached unit; after joining, only Captain Titus can attach as Leader.",
+        ),
+        ("SM", "CHAPTER MASTER OF THE RAVEN GUARD"): (
+            "Supported",
+            "Declare Battle Formations: if Aethon Shaan and Kayvaan Shrike are both present, Kayvaan Shrike loses Lone Operative and replaces CHAPTER MASTER with CAPTAIN for the rest of the battle.",
+        ),
         ("SM", "Lead From the Front"): ("Partial", "Leading: unit ranged weapons gain Assault; Scouts 6\" not implemented."),
         ("SM", "Swift Assault"): ("Supported", "Leading: unit ranged weapons gain Assault."),
         ("SM", "Wind Walker (Psychic)"): (
