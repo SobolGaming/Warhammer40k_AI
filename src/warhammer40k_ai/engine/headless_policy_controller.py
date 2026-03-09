@@ -55,6 +55,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         tie_break_salt: str = "headless_policy_v1",
         max_reserves_anchor_points: int = 20000,
         max_reserves_arrival_seconds: float = 10.0,
+        require_authoritative: bool = True,
         auto_attach: bool = True,
     ) -> None:
         super().__init__(player_id=player_id)
@@ -70,6 +71,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         self._tie_break_salt = str(tie_break_salt or "headless_policy_v1")
         self._max_reserves_anchor_points = int(max(64, int(max_reserves_anchor_points or 0)))
         self._max_reserves_arrival_seconds = float(max(0.1, float(max_reserves_arrival_seconds or 0.1)))
+        self._require_authoritative = bool(require_authoritative)
         self._attached = False
         if auto_attach and self._game is not None:
             self.attach()
@@ -86,22 +88,26 @@ class HeadlessPolicyDecisionController(DecisionController):
     def on_decision_requested(self, game: object, request: DecisionRequest) -> None:
         if request is None:
             return
-        if not bool(getattr(game, "is_authoritative", True)):
+        observed_game = game if game is not None else self._game
+        if observed_game is None:
+            return
+        resolution_game = self._game if self._game is not None else observed_game
+        if self._require_authoritative and not bool(getattr(observed_game, "is_authoritative", True)):
             return
         if str(getattr(request, "decision_type", "") or "") in self._skip_decision_types:
             return
 
         ranked = self._rank_legal_candidates(request)
         if not ranked:
-            self._resolve_first_legal_option(game, request)
+            self._resolve_first_legal_option(resolution_game, request)
             return
 
         for candidate in ranked:
-            if self._try_resolve_candidate(game, request, candidate):
+            if self._try_resolve_candidate(resolution_game, request, candidate):
                 return
-        if self._try_resolve_reserves_arrival_bruteforce(game, request):
+        if self._try_resolve_reserves_arrival_bruteforce(resolution_game, request):
             return
-        self._resolve_first_legal_option(game, request)
+        self._resolve_first_legal_option(resolution_game, request)
 
     def _resolve_first_legal_option(self, game: object, request: DecisionRequest) -> None:
         for option in list(getattr(request, "options", []) or []):

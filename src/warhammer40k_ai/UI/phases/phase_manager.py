@@ -11,6 +11,7 @@ from warhammer40k_ai.utility.dice import get_roll
 
 from ..ui_constants import TILE_SIZE
 from ...utility.debug import describe_callable
+from ...engine.ui_decision_bridge import create_decision_request as _create_decision_request
 import logging
 logger = logging.getLogger(__name__)
 
@@ -1379,7 +1380,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                         )
                     if not req_options:
                         return None
-                    req = DecisionRequest.create(
+                    req = _create_decision_request(
                         DECISION_CHOOSE_PLAGUE,
                         "Nurgle's Gift: select one Plague.",
                         player_id=getattr(player, "id", None),
@@ -2000,7 +2001,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                 if not options:
                     _show_shadow_assignments()
                     return
-                req = DecisionRequest.create(
+                req = _create_decision_request(
                     DECISION_CHOOSE_PLAGUE,
                     "Nurgle's Gift: select one Plague.",
                     player_id=getattr(player, "id", None),
@@ -2602,7 +2603,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 )
                 for action in actions
             ]
-            req = DecisionRequest.create(
+            req = _create_decision_request(
                 DECISION_SELECT_MOVEMENT_ACTION,
                 f"Select movement action for {getattr(unit, 'name', 'Unit')}",
                 player_id=getattr(self.game.get_current_player(), "id", None),
@@ -2764,7 +2765,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     payload={"unit_id": unit_id, "action": "skip"},
                 ),
             ]
-            req = DecisionRequest.create(
+            req = _create_decision_request(
                 DECISION_DECLARE_SHOTS,
                 f"Declare shots for {getattr(unit, 'name', 'Unit')}",
                 player_id=getattr(self.game.get_current_player(), "id", None),
@@ -2860,7 +2861,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                             payload={"transport_id": transport_id, "action": "skip"},
                         ),
                     ]
-                    req = DecisionRequest.create(
+                    req = _create_decision_request(
                         DECISION_DECLARE_FIRING_DECK,
                         f"Declare firing deck for {getattr(unit, 'name', 'Transport')}",
                         player_id=getattr(self.game.get_current_player(), "id", None),
@@ -2893,7 +2894,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                             payload={"transport_id": transport_id, "action": "skip"},
                         ),
                     ]
-                    req = DecisionRequest.create(
+                    req = _create_decision_request(
                         DECISION_DECLARE_FIRING_DECK,
                         f"Declare firing deck for {getattr(unit, 'name', 'Transport')}",
                         player_id=getattr(self.game.get_current_player(), "id", None),
@@ -2972,7 +2973,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                         },
                     )
                 )
-            req = DecisionRequest.create(
+            req = _create_decision_request(
                 DECISION_DECLARE_CHARGE,
                 f"Declare charge for {getattr(unit, 'name', 'Unit')}",
                 player_id=getattr(self.game.get_current_player(), "id", None),
@@ -3090,7 +3091,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     unit_id = get_entity_id(unit)
                     label = getattr(unit, "name", "Unit")
                     options.append(DecisionOption.create(label, payload={"unit_id": unit_id}))
-                req = DecisionRequest.create(
+                req = _create_decision_request(
                     DECISION_SELECT_FIGHTER,
                     f"Select unit to fight ({stage.value})",
                     player_id=getattr(active_player, "id", None),
@@ -3153,7 +3154,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                         )
                     )
 
-                req = DecisionRequest.create(
+                req = _create_decision_request(
                     DECISION_SELECT_FIGHT_TARGETS,
                     f"Select targets for {getattr(fighting_unit, 'name', 'Unit')}",
                     player_id=getattr(active_player, "id", None),
@@ -3261,7 +3262,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     )
                 )
 
-                req = DecisionRequest.create(
+                req = _create_decision_request(
                     DECISION_SELECT_EXPLODING_HORRORS_TARGET,
                     f"Exploding Horrors - Select target for {getattr(fighting_unit, 'name', 'Unit')}",
                     player_id=getattr(active_player, "id", None),
@@ -3284,7 +3285,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                         return
 
                     model_options = [DecisionOption.create("Confirm", payload={"action": "confirm"})]
-                    req_models = DecisionRequest.create(
+                    req_models = _create_decision_request(
                         DECISION_SELECT_EXPLODING_HORRORS_MODELS,
                         "Exploding Horrors - Select Brimstones",
                         player_id=getattr(active_player, "id", None),
@@ -3652,7 +3653,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 options.append(DecisionOption.create(label, payload={"unit_id": get_entity_id(unit)}))
             options.append(DecisionOption.create("Skip", payload={"action": "skip"}))
 
-            req = DecisionRequest.create(
+            req = _create_decision_request(
                 DECISION_SELECT_RISE_TO_CHALLENGE,
                 "Select Rise to the Challenge unit.",
                 player_id=getattr(player, "id", None),
@@ -3851,7 +3852,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             context = {"unit_id": unit_id, "movement_type": movement_type}
             if movement_type == "deploy":
                 context["placement_kind"] = "deployment"
-            req = DecisionRequest.create(
+            req = _create_decision_request(
                 DECISION_MOVE_UNIT,
                 f"Move {getattr(unit, 'name', 'Unit')} ({movement_type})",
                 player_id=player_id,
@@ -3938,7 +3939,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             player_id = unit.get_parent_army().player.id
         except Exception:
             player_id = None
-        req = DecisionRequest.create(
+        req = _create_decision_request(
             DECISION_DECLARE_MELEE_WEAPONS,
             f"Declare melee weapons for {getattr(unit, 'name', 'Unit')}",
             player_id=player_id,
@@ -4084,7 +4085,7 @@ class BattlePhaseHandler(BasePhaseHandler):
 
         unit_id = get_entity_id(fighting_unit)
         options = [DecisionOption.create("Confirm", payload={"unit_id": unit_id})]
-        req = DecisionRequest.create(
+        req = _create_decision_request(
             DECISION_ALLOCATE_MELEE_TARGETS,
             f"Allocate melee targets for {getattr(fighting_unit, 'name', 'Unit')}",
             player_id=getattr(current_player, "id", None),
@@ -4235,7 +4236,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 label = getattr(model, "name", "Model")
                 options.append(DecisionOption.create(label, payload={"model_id": get_entity_id(model)}))
 
-            req = DecisionRequest.create(
+            req = _create_decision_request(
                 DECISION_SELECT_TARGET_MODEL,
                 f"Select wound allocation for {getattr(target_unit, 'name', 'Unit')}",
                 player_id=getattr(opponent_player, "id", None),
@@ -4659,7 +4660,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     from ...utility.entity_ids import get_entity_id
 
                     unit_id = get_entity_id(unit)
-                    req = DecisionRequest.create(
+                    req = _create_decision_request(
                         DECISION_SELECT_MOVEMENT_ACTION,
                         f"{getattr(unit, 'name', 'Unit')} remains stationary",
                         player_id=getattr(self.game.get_current_player(), "id", None),
@@ -4712,7 +4713,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 from ...utility.entity_ids import get_entity_id
 
                 unit_id = get_entity_id(unit)
-                move_request = DecisionRequest.create(
+                move_request = _create_decision_request(
                     DECISION_MOVE_UNIT,
                     f"Move {getattr(unit, 'name', 'Unit')}",
                     player_id=getattr(self.game.get_current_player(), "id", None),
@@ -5184,7 +5185,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                         payload={"unit_id": unit_id, "transport_id": None},
                     ),
                 ]
-                req = DecisionRequest.create(
+                req = _create_decision_request(
                     DECISION_EMBARK,
                     f"Embark {getattr(unit, 'name', 'Unit')}",
                     player_id=getattr(self.game.get_current_player(), "id", None),
@@ -5282,7 +5283,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                         payload={"unit_id": unit_id, "transport_id": None},
                     ),
                 ]
-                req = DecisionRequest.create(
+                req = _create_decision_request(
                     DECISION_DISEMBARK,
                     f"Disembark {getattr(unit, 'name', 'Unit')}",
                     player_id=getattr(self.game.get_current_player(), "id", None),
@@ -5437,7 +5438,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             )
         if not options:
             return
-        req = DecisionRequest.create(
+        req = _create_decision_request(
             DECISION_SELECT_WEAPON,
             f"Select weapon for {getattr(unit, 'name', 'Unit')}",
             player_id=getattr(self.game.get_current_player(), "id", None),

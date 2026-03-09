@@ -78,43 +78,45 @@ def initialize_game(
     return screen, game, game_map, player1, player2
 
 
-def execute_setup_phases(game: Game, player_configs: dict, ui_interface, runtime: LocalAuthoritativeRuntime | None = None) -> None:
+def execute_setup_phases(game_proxy: Game, player_configs: dict, ui_interface, runtime: LocalAuthoritativeRuntime | None = None) -> None:
     """Execute all setup phases automatically."""
     setup_kwargs = {
         "player1_army_file": player_configs.get("player1_army_file"),
         "player2_army_file": player_configs.get("player2_army_file"),
     }
 
-    while game.is_in_setup_phase():
+    lifecycle_game = runtime.game_proxy if runtime is not None else game_proxy
+
+    while lifecycle_game.is_in_setup_phase():
         if runtime is not None and runtime.is_driver_managed_setup_phase():
             runtime.run_setup_autosteps()
             continue
 
-        current_phase = game.get_current_setup_phase()
+        current_phase = lifecycle_game.get_current_setup_phase()
 
         if current_phase.name == "DEPLOY_ARMIES":
             decision_makers = {
                 player.id: HumanDeploymentDecisionMaker(ui_interface=ui_interface)
-                for player in game.players
+                for player in lifecycle_game.players
             }
             setup_kwargs["decision_makers"] = decision_makers
 
-        game.execute_current_setup_phase(**setup_kwargs)
-        setup_complete = game.advance_setup_phase()
+        lifecycle_game.execute_current_setup_phase(**setup_kwargs)
+        setup_complete = lifecycle_game.advance_setup_phase()
         if setup_complete:
             break
 
 
-def execute_human_turn(game: Game, player: Player, ui_interface=None) -> None:
+def execute_human_turn(game_proxy: Game, player: Player, ui_interface=None) -> None:
     """Execute a local player's turn."""
-    if game.is_fight_phase():
+    if game_proxy.is_fight_phase():
         logger.info(f"{player.name} fight phase - use UI to select units and fight")
         return
-    if game.is_command_phase():
-        game.start_command_phase()
-        game.next_phase()
+    if game_proxy.is_command_phase():
+        game_proxy.start_command_phase()
+        game_proxy.next_phase()
         return
-    game.next_phase()
+    game_proxy.next_phase()
 
 
 def run_game_loop(player_configs: dict) -> None:
@@ -133,6 +135,7 @@ def run_game_loop(player_configs: dict) -> None:
     )
     runtime.register_local_player_facade("local_player1", player1.id)
     runtime.register_local_player_facade("local_player2", player2.id)
+    session_game = runtime.game_proxy
 
     from warhammer40k_ai.UI.game_ui import GameView
     from warhammer40k_ai.UI.human_interface import HumanUIInterface
@@ -152,7 +155,7 @@ def run_game_loop(player_configs: dict) -> None:
     running = True
     setup_complete = False
 
-    while running and not game.is_game_over():
+    while running and not session_game.is_game_over():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -165,14 +168,14 @@ def run_game_loop(player_configs: dict) -> None:
                 continue
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
-                    if game.is_in_setup_phase():
-                        current_phase = game.get_current_setup_phase()
+                    if session_game.is_in_setup_phase():
+                        current_phase = session_game.get_current_setup_phase()
 
                         if (
                             current_phase.name == "DEPLOY_ARMIES"
-                            and getattr(game, "waiting_for_deployment_input", False)
+                            and getattr(session_game, "waiting_for_deployment_input", False)
                         ):
-                            game.waiting_for_deployment_input = False
+                            session_game.set_waiting_for_deployment_input(False)
                             continue
 
                         setup_kwargs = {
@@ -183,12 +186,12 @@ def run_game_loop(player_configs: dict) -> None:
                         if current_phase.name == "DEPLOY_ARMIES":
                             decision_makers = {
                                 player.id: HumanDeploymentDecisionMaker(ui_interface=ui_interface)
-                                for player in game.players
+                                for player in session_game.players
                             }
                             setup_kwargs["decision_makers"] = decision_makers
                             setup_kwargs["manual_phases"] = manual_phases
 
-                        game.execute_current_setup_phase(**setup_kwargs)
+                        session_game.execute_current_setup_phase(**setup_kwargs)
 
                         if game_view:
                             if current_phase.name == "MUSTER_ARMIES":
@@ -201,7 +204,7 @@ def run_game_loop(player_configs: dict) -> None:
                         should_advance = True
                         if current_phase.name == "DEPLOY_ARMIES":
                             local_players_deploying = False
-                            for player in game.players:
+                            for player in session_game.players:
                                 if player.has_control():
                                     undeployed_units = [
                                         unit
@@ -217,32 +220,31 @@ def run_game_loop(player_configs: dict) -> None:
                                 should_advance = False
                                 logger.info("Press SPACE again after all units are deployed")
 
-                        if getattr(game, "waiting_for_deployment_input", False):
+                        if getattr(session_game, "waiting_for_deployment_input", False):
                             should_advance = False
 
                         if should_advance:
-                            setup_complete = game.advance_setup_phase()
+                            setup_complete = session_game.advance_setup_phase()
                             if setup_complete:
                                 logger.info("Setup complete! Battle begins!")
                     elif manual_phases:
-                        current_player = game.get_current_player()
-                        if game.is_command_phase():
-                            game.start_command_phase()
-                            game.next_phase()
-                        elif game.is_fight_phase():
+                        if session_game.is_command_phase():
+                            session_game.start_command_phase()
+                            session_game.next_phase()
+                        elif session_game.is_fight_phase():
                             pass
                         else:
-                            game.next_phase()
+                            session_game.next_phase()
                 elif event.key == pygame.K_ESCAPE:
                     if game_view:
                         game_view.close_unit_details()
 
-        if not manual_phases and not game.is_in_setup_phase():
-            current_player = game.get_current_player()
-            execute_human_turn(game, current_player, ui_interface)
+        if not manual_phases and not session_game.is_in_setup_phase():
+            current_player = session_game.get_current_player()
+            execute_human_turn(session_game, current_player, ui_interface)
 
-        if not manual_phases and game.is_in_setup_phase() and not setup_complete:
-            execute_setup_phases(game, player_configs, ui_interface, runtime=runtime)
+        if not manual_phases and session_game.is_in_setup_phase() and not setup_complete:
+            execute_setup_phases(session_game, player_configs, ui_interface, runtime=runtime)
             setup_complete = True
             if game_view:
                 game_view.refresh_roster_panes()

@@ -81,7 +81,7 @@ Status: Implemented (transport, lobby, army submission, start flow, spectator ga
 - Use asyncio WebSockets with an SSLContext for TLS.
 - Server CLI inputs: `--host`, `--port`, `--cert`, `--key`.
 - Client inputs: `--server`, `--ca-cert`, `--insecure` (dev only, explicit opt-in).
-- CLI entrypoint: `python -m warhammer40k_ai.network.cli server|client|client-ui`.
+- CLI entrypoint: `python -m warhammer40k_ai.network.cli server|client|client-ui|client-headless`.
 - Self-signed test certs live in `tests/fixtures/tls/` for integration tests.
 - Each connection receives a session-scoped token for reconnects and role locking.
 - Optional join code or password for private sessions.
@@ -92,6 +92,15 @@ Status: Implemented (transport, lobby, army submission, start flow, spectator ga
   - Works for both `client` (headless) and `client-ui` (pygame) clients.
   - Logs appear in the terminal running the client.
   - Additional client-side tags include `transport.recv`, `session.poll`, and `client.game.*.cursor` to show inbound queueing and event cursor advances.
+
+## Headless Controller Client
+
+- `client-headless` is a policy-driven network client mode for remote AI/hybrid games.
+- It composes:
+  - `NetworkClient` transport/auth.
+  - `NetworkGameSession` snapshot/resync mirror.
+  - `HeadlessPolicyDecisionController` attached to `NetworkGameProxy`.
+- The server remains authoritative; the headless client only submits deterministic command payloads for decisions it controls.
 
 ## Message Channels
 

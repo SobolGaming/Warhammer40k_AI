@@ -27,6 +27,7 @@ python -c "from warhammer40k_ai.ml import detect_ml_dependency_status; print(det
 ## 1) Generate headless AI-vs-AI games from army lists
 
 `run_headless_self_play.py` runs full setup (including deployment) and battle phases in headless mode, then exports DecisionRecords.
+It uses the same local authoritative runtime/session shell as interactive local play (`LocalAuthoritativeRuntime` + `AuthoritativeSessionDriver`) so lifecycle progression stays on the shared command path.
 
 ```bash
 python scripts/run_headless_self_play.py \

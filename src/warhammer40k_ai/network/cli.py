@@ -4,7 +4,9 @@ import argparse
 import asyncio
 from pathlib import Path
 
+from ..engine.headless_policy_controller import HeadlessPolicyDecisionController
 from .client import NetworkClient
+from .game_session import GameUpdate, NetworkGameSession
 from .server import NetworkServer
 import logging
 logger = logging.getLogger(__name__)
@@ -97,6 +99,31 @@ def _build_parser() -> argparse.ArgumentParser:
         default="INFO",
     )
 
+    headless_client = subparsers.add_parser("client-headless", help="Run a headless policy network client")
+    headless_client.add_argument("--server", required=True, help="Server URI (wss://host:port)")
+    headless_client.add_argument("--ca-cert", help="CA certificate path")
+    headless_client.add_argument("--insecure", action="store_true", help="Disable TLS verification (dev only)")
+    headless_client.add_argument("--display-name", default="HeadlessClient")
+    headless_client.add_argument("--join-code", help="Join code")
+    headless_client.add_argument("--reconnect-token", help="Reconnect token")
+    headless_client.add_argument("--role", choices=["player1", "player2"], required=True, help="Controlled role")
+    headless_client.add_argument("--army-file", help="Army list file to submit")
+    headless_client.add_argument("--ready", action="store_true", help="Mark ready after submit")
+    headless_client.add_argument(
+        "--max-reserves-arrival-seconds",
+        type=float,
+        default=10.0,
+        help="Hard wall-clock cap per reserves-arrival placement decision (default: 10.0).",
+    )
+    headless_client.add_argument(
+        "-l",
+        "--log",
+        dest="log_level",
+        help="Set the logging level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+    )
+
     return parser
 
 
@@ -171,6 +198,86 @@ async def _run_client(args: argparse.Namespace) -> None:
         await client.close()
 
 
+async def _run_headless_client(args: argparse.Namespace) -> None:
+    client = NetworkClient(
+        uri=args.server,
+        ca_cert=args.ca_cert,
+        insecure=args.insecure,
+    )
+    session = NetworkGameSession(client, allow_commands=True)
+    current_controller: HeadlessPolicyDecisionController | None = None
+
+    def _bind_policy(update: GameUpdate) -> None:
+        nonlocal current_controller
+        player_id = client.player_id
+        if not player_id:
+            return
+        current_controller = HeadlessPolicyDecisionController(
+            game=update.game_proxy,
+            player_id=player_id,
+            max_reserves_arrival_seconds=float(args.max_reserves_arrival_seconds),
+            require_authoritative=False,
+            auto_attach=True,
+        )
+
+    session.on_game_loaded = _bind_policy
+
+    await client.connect()
+    await client.send_hello(args.display_name)
+    hello_msg = await _wait_for_control(client, "hello")
+    hello_payload = hello_msg.get("payload", {})
+    if not hello_payload.get("ok"):
+        logger.info(f"Version mismatch: {hello_payload.get('errors', [])}")
+        await client.close()
+        return
+    await client.send_auth(join_code=args.join_code, reconnect_token=args.reconnect_token)
+    auth_msg = await _wait_for_control(client, "auth")
+    payload = auth_msg.get("payload", {})
+    if not payload.get("ok"):
+        logger.error(f"Auth failed: {payload.get('errors', [])}")
+        await client.close()
+        return
+    await client.send_role_select(str(args.role))
+    role_msg = await _wait_for_control(client, "role_select")
+    role_payload = role_msg.get("payload", {})
+    if not role_payload.get("ok"):
+        logger.error(f"Role selection failed: {role_payload.get('errors', [])}")
+        await client.close()
+        return
+    if args.army_file:
+        text = Path(args.army_file).read_text(encoding="utf-8")
+        await client.send_army_submit(text, list_name=Path(args.army_file).name)
+        army_msg = await _wait_for_control(client, "army_submit")
+        army_payload = army_msg.get("payload", {})
+        if not army_payload.get("ok"):
+            logger.error(f"Army submission failed: {army_payload.get('errors', [])}")
+            await client.close()
+            return
+    if args.ready:
+        await client.send_ready(True)
+        ready_msg = await _wait_for_control(client, "ready")
+        ready_payload = ready_msg.get("payload", {})
+        if not ready_payload.get("ok"):
+            logger.error(f"Ready state update failed: {ready_payload.get('errors', [])}")
+            await client.close()
+            return
+
+    logger.info("Connected. Waiting for game snapshot...")
+    try:
+        while session.game is None:
+            event = await client.next_message(timeout=0.25)
+            await session.handle_message(event)
+        logger.info("Headless policy active. Listening for decisions...")
+        while True:
+            await session.poll_messages()
+            await session.flush_outgoing()
+            await asyncio.sleep(0.01)
+    except asyncio.CancelledError:
+        raise
+    finally:
+        await client.close()
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -197,6 +304,9 @@ def main() -> None:
                 ready=args.ready,
             )
         )
+        return
+    if args.mode == "client-headless":
+        asyncio.run(_run_headless_client(args))
         return
     raise ValueError(f"Unknown mode: {args.mode}")
 

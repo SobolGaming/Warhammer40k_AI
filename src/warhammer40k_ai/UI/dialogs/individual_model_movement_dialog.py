@@ -8,6 +8,7 @@ from ...utility.constants import RUINS_FLOOR_HEIGHT
 from ...utility.placement_validation import bases_overlap_3d
 from ...utility.entity_ids import get_entity_id
 from ...utility.debug import describe_callable, describe_self_stack
+from ...engine.ui_decision_bridge import create_decision_request as _create_decision_request
 import logging
 logger = logging.getLogger(__name__)
 
@@ -1544,7 +1545,7 @@ class IndividualModelMovementDialog(BaseDialog):
             existing_dialogs.append(self)
 
         unit_id = get_entity_id(self.unit)
-        request = DecisionRequest.create(
+        request = _create_decision_request(
             DECISION_RESOLVE_COHERENCY,
             f"Resolve coherency for {getattr(self.unit, 'name', 'Unit')}",
             player_id=getattr(getattr(self.unit.get_parent_army(), "player", None), "id", None),

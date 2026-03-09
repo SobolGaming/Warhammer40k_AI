@@ -14,6 +14,7 @@ from typing import Any
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.deployment_headless import DeterministicDeploymentDecisionMaker
 from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
+from warhammer40k_ai.engine.local_runtime import LocalAuthoritativeRuntime
 from warhammer40k_ai.engine.reward_profile import (
     annotate_decision_records_with_rewards,
     list_reward_profile_ids,
@@ -152,6 +153,13 @@ def _run_single_game(
         auto_attach=True,
         max_reserves_arrival_seconds=float(max_reserves_arrival_seconds),
     )
+    runtime = LocalAuthoritativeRuntime(
+        game,
+        player1_army_file=player1_army_file,
+        player2_army_file=player2_army_file,
+        manual_phases=False,
+    )
+    session_game = runtime.game_proxy
 
     deployment_decision_makers = {
         player1.id: DeterministicDeploymentDecisionMaker(
@@ -166,25 +174,29 @@ def _run_single_game(
         ),
     }
 
-    while game.is_in_setup_phase():
+    while session_game.is_in_setup_phase():
+        if runtime.is_driver_managed_setup_phase():
+            runtime.run_setup_autosteps()
+            _drain_pending_decisions(game)
+            continue
         setup_kwargs: dict[str, Any] = {
             "player1_army_file": player1_army_file,
             "player2_army_file": player2_army_file,
         }
-        phase_name = str(getattr(game.get_current_setup_phase(), "name", "") or "")
+        phase_name = str(getattr(session_game.get_current_setup_phase(), "name", "") or "")
         if phase_name == "DEPLOY_ARMIES":
             setup_kwargs["decision_makers"] = deployment_decision_makers
-        game.execute_current_setup_phase(**setup_kwargs)
+        session_game.execute_current_setup_phase(**setup_kwargs)
         _drain_pending_decisions(game)
-        game.advance_setup_phase()
+        session_game.advance_setup_phase()
         _drain_pending_decisions(game)
 
     phase_steps = 0
-    while not game.is_game_over():
+    while not session_game.is_game_over():
         if phase_steps >= int(max_phase_steps):
             raise RuntimeError(f"Headless game hit max phase steps ({max_phase_steps}) before game over.")
         _drain_pending_decisions(game)
-        game.next_phase()
+        session_game.next_phase()
         _drain_pending_decisions(game)
         phase_steps += 1
 

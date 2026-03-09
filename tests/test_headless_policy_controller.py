@@ -92,6 +92,59 @@ def test_headless_policy_controller_does_not_handle_dice_decisions() -> None:
     assert game.commands == []
 
 
+def test_headless_policy_controller_skips_non_authoritative_game_by_default() -> None:
+    class _ObservedGame:
+        is_authoritative = False
+
+    game_proxy = _FakeGame()
+    controller = HeadlessPolicyDecisionController(game=game_proxy, auto_attach=False)
+    options = [
+        DecisionOption.create("Option A", payload={"action_id": "a"}),
+    ]
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Pick one",
+        player_id="p1",
+        options=options,
+        candidates=[CandidateAction(action_id="a", params={"choice": "A"}, metadata={})],
+        mask=[True],
+    )
+
+    controller.on_decision_requested(_ObservedGame(), request)
+
+    assert game_proxy.commands == []
+
+
+def test_headless_policy_controller_can_route_via_bound_game_in_non_authoritative_mode() -> None:
+    class _ObservedGame:
+        is_authoritative = False
+
+    game_proxy = _FakeGame()
+    controller = HeadlessPolicyDecisionController(
+        game=game_proxy,
+        auto_attach=False,
+        require_authoritative=False,
+    )
+    options = [
+        DecisionOption.create("Option A", payload={"action_id": "a"}),
+    ]
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Pick one",
+        player_id="p1",
+        options=options,
+        candidates=[CandidateAction(action_id="a", params={"choice": "A"}, metadata={})],
+        mask=[True],
+    )
+
+    controller.on_decision_requested(_ObservedGame(), request)
+
+    assert len(game_proxy.commands) == 1
+    payload = dict(game_proxy.commands[0].payload or {})
+    assert str(payload.get("option_id", "")) == str(options[0].option_id)
+    assert dict(payload.get("result_payload", {}) or {}) == {"choice": "A"}
+
+
 def test_headless_policy_controller_marks_skip_payload_when_falling_back_to_skip_option() -> None:
     class _SkipGame(_FakeGame):
         def apply_command(self, command):

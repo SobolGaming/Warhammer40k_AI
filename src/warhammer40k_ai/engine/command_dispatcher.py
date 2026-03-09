@@ -11,6 +11,7 @@ from .command_kinds import (
     CMD_REQUEST_DECISION,
     CMD_RESOLVE_DECISION,
     CMD_SELECT_MISSION,
+    CMD_START_COMMAND_PHASE,
     CMD_SET_DEPLOYMENT_WAITING,
 )
 from .commands import GameCommand
@@ -84,6 +85,18 @@ def _apply_next_phase(game: object, command: GameCommand) -> None:
     from .turn_manager import next_phase as _next_phase
 
     _next_phase(game)
+    return None
+
+
+def _validate_start_command_phase(game: object, command: GameCommand) -> Sequence[str]:
+    return ()
+
+
+def _apply_start_command_phase(game: object, command: GameCommand) -> None:
+    start_fn = getattr(game, "start_command_phase", None)
+    if not callable(start_fn):
+        raise RuntimeError("Game missing start_command_phase.")
+    start_fn()
     return None
 
 
@@ -277,6 +290,7 @@ def _apply_resolve_decision(game: object, command: GameCommand) -> None:
 
 
 register_command_handler(CMD_NEXT_PHASE, validate=_validate_next_phase, apply=_apply_next_phase)
+register_command_handler(CMD_START_COMMAND_PHASE, validate=_validate_start_command_phase, apply=_apply_start_command_phase)
 register_command_handler(CMD_EXECUTE_SETUP_PHASE, validate=_validate_execute_setup_phase, apply=_apply_execute_setup_phase)
 register_command_handler(CMD_ADVANCE_SETUP_PHASE, validate=_validate_advance_setup_phase, apply=_apply_advance_setup_phase)
 register_command_handler(CMD_SELECT_MISSION, validate=_validate_select_mission, apply=_apply_select_mission)

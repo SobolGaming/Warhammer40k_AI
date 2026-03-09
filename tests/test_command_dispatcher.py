@@ -5,6 +5,7 @@ from warhammer40k_ai.engine.command_kinds import (
     CMD_REQUEST_DECISION,
     CMD_RESOLVE_DECISION,
     CMD_SELECT_MISSION,
+    CMD_START_COMMAND_PHASE,
     CMD_SET_DEPLOYMENT_WAITING,
 )
 from warhammer40k_ai.engine.commands import GameCommand
@@ -43,6 +44,18 @@ def test_next_phase_advances_when_setup_complete():
     result = game.apply_command(cmd)
     assert result.ok is True
     assert game.phase == BattleRoundPhases.MOVEMENT_PHASE
+
+
+def test_start_command_phase_routes_through_command_dispatch():
+    game = _make_game()
+    game.setup_complete = True
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+
+    game.start_command_phase()
+
+    command_events = [event for event in game.event_log.events if event.event_type == "command_applied"]
+    assert command_events
+    assert command_events[-1].payload["kind"] == CMD_START_COMMAND_PHASE
 
 
 def test_execute_setup_phase_rejects_unknown_payload_keys():

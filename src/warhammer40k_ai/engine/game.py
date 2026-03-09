@@ -20,6 +20,7 @@ from .command_kinds import (
     CMD_EXECUTE_SETUP_PHASE,
     CMD_NEXT_PHASE,
     CMD_SELECT_MISSION,
+    CMD_START_COMMAND_PHASE,
     CMD_SET_DEPLOYMENT_WAITING,
 )
 from .decisions import CandidateAction, DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
@@ -10051,13 +10052,15 @@ class Game(
         self.command_queue.append(command)
 
     def _enter_command_context(self) -> None:
-        self._command_context_depth += 1
+        depth = int(getattr(self, "_command_context_depth", 0) or 0)
+        self._command_context_depth = depth + 1
 
     def _exit_command_context(self) -> None:
-        self._command_context_depth = max(0, self._command_context_depth - 1)
+        depth = int(getattr(self, "_command_context_depth", 0) or 0)
+        self._command_context_depth = max(0, depth - 1)
 
     def in_command_context(self) -> bool:
-        return self._command_context_depth > 0
+        return int(getattr(self, "_command_context_depth", 0) or 0) > 0
 
     def apply_command(self, command: GameCommand):
         """Validate and apply a command; returns CommandResult."""
@@ -11154,6 +11157,15 @@ class Game(
 
     def start_command_phase(self) -> None:
         """Start the command phase: active player gains normal CP, then resolves any bonus CP sources."""
+        if not self.in_command_context():
+            player_id = None
+            try:
+                player_id = self.get_current_player().id
+            except Exception:
+                player_id = None
+            cmd = GameCommand.create(CMD_START_COMMAND_PHASE, player_id=player_id)
+            self.apply_command(cmd)
+            return
         # Battle-shock expires at the start of *your* next Command phase (even if the unit was later destroyed).
         # Clear it before doing anything else in the Command phase.
         self.battle_shock_step_active = False

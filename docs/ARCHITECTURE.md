@@ -8,8 +8,9 @@ This document is a *high-level* map of the codebase. Detailed designs live in `d
 
 - **Local interactive game**: `python3 scripts/main.py ...` runs the engine and pygame UI in one process.
   - Local composition uses `engine/local_runtime.py` (`LocalAuthoritativeRuntime`) for shared authoritative setup orchestration without websocket loopback.
-- **Network play**: `python3 -m warhammer40k_ai.network.cli server|client|client-ui ...`.
+- **Network play**: `python3 -m warhammer40k_ai.network.cli server|client|client-ui|client-headless ...`.
 - **Headless/controller-driven**: the engine can be driven purely by Commands + DecisionResults (see `docs/NETWORK_SAVELOAD_DESIGN.md`).
+  - Local self-play (`scripts/run_headless_self_play.py`) now reuses the same local authoritative runtime shell (`LocalAuthoritativeRuntime` + `AuthoritativeSessionDriver`) as interactive local play.
 
 ## Core architectural idea
 
@@ -71,8 +72,13 @@ Use case:
 
 ```mermaid
 flowchart LR
+  Loop["Headless self-play loop<br/>(scripts/run_headless_self_play.py)"] --> Proxy["IntentRoutedGameProxy"]
+  Proxy --> Gateway["PlayerIntentGateway"]
+  Gateway --> Runtime["LocalAuthoritativeRuntime"]
+  Runtime --> Driver["AuthoritativeSessionDriver"]
+  Driver --> Game["Authoritative Game"]
   Policy["HeadlessPolicyDecisionController<br/>(AI/policy)"] --> Hub["DecisionControllerHub"]
-  Hub --> Game["Authoritative Game"]
+  Hub --> Game
   Game --> Hub
   Game --> Records["DecisionRecord store / replay artifacts"]
 ```
@@ -130,8 +136,9 @@ flowchart LR
 
   subgraph UIClient["UI network client"]
     UISession["NetworkGameSession"]
+    UIProxy["NetworkGameProxy"]
     UI["client-ui"]
-    UI --> UISession
+    UI --> UIProxy --> UISession
   end
 
   SGame <-->|"DecisionRequests / Commands / Events"| HCSession
@@ -141,6 +148,10 @@ flowchart LR
 Use cases:
 - AI vs Human (one UI client, one headless controller/client).
 - AI vs AI (two headless controllers/clients).
+
+Current entrypoint:
+- `python3 -m warhammer40k_ai.network.cli client-headless --role player1|player2 ...`
+  - Builds `NetworkGameSession`, waits for authoritative snapshot/resync, then attaches `HeadlessPolicyDecisionController` to the local `NetworkGameProxy`.
 
 Notes:
 - In network mode, default auto-resolution is dice-only unless a full policy controller is explicitly attached.
@@ -266,6 +277,7 @@ Responsibilities:
 - render the battlefield and unit panels
 - show dialogs that correspond to engine DecisionRequests
 - convert user choices into deterministic Commands
+- for UI-triggered prompts that still need an explicit request object, route construction through engine-owned helpers (`engine/ui_decision_bridge.py`) rather than creating `DecisionRequest` instances directly in UI modules
 - project authoritative game updates through shared UI/HUD orchestration (`session_presentation_orchestrator.py`)
 - rebuild HUD state from authoritative presentation transcripts (`presentation_state_hydrator.py`)
 - avoid importing GUI backends at package import time; entry points should import GUI modules lazily so headless tooling/tests remain stable
