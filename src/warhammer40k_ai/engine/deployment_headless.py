@@ -105,6 +105,15 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         del deployable_units, deployment_zone, already_deployed
         return self._ranked_option_id(request)
 
+    def choose_reserves_allocation_option(
+        self,
+        request: DecisionRequest,
+        player: Player,
+        proposed_decisions: dict[str, str],
+    ) -> Optional[str]:
+        del player, proposed_decisions
+        return self._ranked_option_id(request)
+
     def declare_reserves(self, player: Player) -> dict:
         army = player.get_army() if player is not None else None
         if army is None:

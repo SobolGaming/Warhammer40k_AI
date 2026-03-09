@@ -5,7 +5,9 @@ from typing import Any
 
 from .decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_DECLARE_RESERVES,
     DECISION_MOVE_UNIT,
+    DECISION_SCOUT_MOVE,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
 )
 from .decisions import CandidateAction, DecisionOption, DecisionRequest
@@ -51,6 +53,52 @@ def _resolve_unit(game: object, unit_id: str):
             if uid == str(unit_id or ""):
                 return unit
     return None
+
+
+def _resolve_army(game: object, army_id: str):
+    army_key = str(army_id or "")
+    if not army_key:
+        return None
+    entity_registry = getattr(game, "entity_registry", None)
+    if entity_registry is not None:
+        get_from_registry = getattr(entity_registry, "get", None)
+        if callable(get_from_registry):
+            army = get_from_registry(army_key, kind="army")
+            if army is not None:
+                return army
+    for player in list(getattr(game, "players", []) or []):
+        army = getattr(player, "army", None)
+        if army is None:
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else None
+        if army is None:
+            continue
+        resolved_id = str(getattr(army, "id", "") or getattr(army, "_id", "") or "")
+        if resolved_id == army_key:
+            return army
+    return None
+
+
+def _unit_scout_distance(unit: object) -> float:
+    if unit is None:
+        return 0.0
+    has_scout = getattr(unit, "has_scout", None)
+    if callable(has_scout):
+        value = has_scout()
+        if isinstance(value, (list, tuple)) and len(value) >= 2:
+            return _safe_float(value[1], 0.0) if bool(value[0]) else 0.0
+        if bool(value):
+            return _safe_float(getattr(unit, "scout_move_distance", 0.0), 0.0)
+    return _safe_float(getattr(unit, "scout_move_distance", 0.0), 0.0)
+
+
+def _unit_point_cost(unit: object) -> float:
+    if unit is None:
+        return 0.0
+    get_cost = getattr(unit, "get_unit_cost", None)
+    if callable(get_cost):
+        return max(0.0, _safe_float(get_cost(), 0.0))
+    return 0.0
 
 
 def _option_payload(option: DecisionOption) -> dict[str, Any]:
@@ -237,6 +285,10 @@ def _unit_flag_from_method(unit: object, method_name: str) -> bool:
     if not callable(method):
         return False
     value = method()
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return False
+        return bool(value[0])
     return bool(value)
 
 
@@ -399,6 +451,334 @@ def _next_deploy_unit_candidates(game: object, request: DecisionRequest, intent:
     return candidates, mask
 
 
+def _reserves_candidates(game: object, request: DecisionRequest, intent: DeploymentIntent) -> tuple[list[CandidateAction], list[bool]]:
+    ctx = dict(getattr(request, "context", {}) or {})
+    options = list(getattr(request, "options", []) or [])
+    army = _resolve_army(game, str(ctx.get("army_id", "") or ""))
+    limits_fn = getattr(army, "get_reserve_limits", None) if army is not None else None
+    limits = dict(limits_fn() or {}) if callable(limits_fn) else {}
+    max_units = max(1, _safe_int(limits.get("max_units"), 1))
+    max_points = max(1, _safe_int(limits.get("max_points"), 1))
+    max_strategic_points = max(1, _safe_int(limits.get("max_strategic_points"), 1))
+    reserve_lane_quality = dict(dict(ctx.get("board_affordances", {}) or {}).get("reserve_entry_lane_quality", {}) or {})
+    lane_values = [_safe_float(value, 0.0) for value in reserve_lane_quality.values()]
+    lane_quality_avg = sum(lane_values) / float(len(lane_values)) if lane_values else 0.0
+    root_unit_ids = [str(unit_id) for unit_id in list(ctx.get("reserve_root_unit_ids", []) or []) if str(unit_id)]
+
+    candidates: list[CandidateAction] = []
+    for option in options:
+        option_id = str(getattr(option, "option_id", "") or "")
+        if not option_id:
+            continue
+        action_id = request.action_id_for_option_id(option_id)
+        payload = _option_payload(option)
+        buckets = dict(payload.get("unit_ids_by_bucket", {}) or {})
+        decisions: dict[str, str] = {unit_id: "deploy" for unit_id in root_unit_ids}
+        for status in ("deploy", "reserves", "strategic_reserves"):
+            for unit_id in list(buckets.get(status, []) or []):
+                unit_key = str(unit_id or "")
+                if not unit_key:
+                    continue
+                decisions[unit_key] = status
+
+        reserve_units = 0
+        reserve_points = 0.0
+        strategic_points = 0.0
+        deep_strike_reserve_count = 0.0
+        reserve_capable_count = 0.0
+        deploy_screen_count = 0.0
+        deploy_anchor_count = 0.0
+        for unit_id, status in sorted(decisions.items()):
+            unit = _resolve_unit(game, unit_id)
+            profile = _unit_profile(unit) if unit is not None else {
+                "reserve_capable": 0.0,
+                "screen_value": 0.0,
+                "anchor_value": 0.0,
+            }
+            points = _unit_point_cost(unit)
+            status_key = str(status or "deploy")
+            if status_key in ("reserves", "strategic_reserves"):
+                reserve_units += 1
+                reserve_points += points
+                if status_key == "strategic_reserves":
+                    strategic_points += points
+                reserve_capable_count += _safe_float(profile.get("reserve_capable"), 0.0)
+                if _safe_float(profile.get("reserve_capable"), 0.0) > 0.0 and status_key == "reserves":
+                    deep_strike_reserve_count += 1.0
+            else:
+                deploy_screen_count += _safe_float(profile.get("screen_value"), 0.0)
+                deploy_anchor_count += _safe_float(profile.get("anchor_value"), 0.0)
+
+        reserve_units_ratio = _clamp(float(reserve_units) / float(max_units), low=0.0, high=2.0)
+        reserve_points_ratio = _clamp(float(reserve_points) / float(max_points), low=0.0, high=2.0)
+        strategic_points_ratio = _clamp(float(strategic_points) / float(max_strategic_points), low=0.0, high=2.0)
+
+        score_weight = _weight(intent, "score", 0.3)
+        deny_weight = _weight(intent, "deny", 0.2)
+        safety_weight = _weight(intent, "safety", 0.3)
+        reserve_deny_weight = _weight(intent, "reserve_deny", 0.2)
+        screen_weight = _weight(intent, "screen", 0.2)
+        staging_weight = _weight(intent, "staging", 0.2)
+        cover_weight = _weight(intent, "cover", 0.2)
+        los_weight = _weight(intent, "los", 0.1)
+        countercharge_weight = _weight(intent, "countercharge", 0.15)
+        aura_weight = _weight(intent, "aura", 0.1)
+
+        objective_count = float(len(list(intent.target_objective_ids or [])))
+        lane_count = float(len(list(intent.threatened_lane_ids or [])))
+        deep_strike_pressure_delta = reserve_deny_weight * (
+            0.08 + deep_strike_reserve_count * 0.18 + reserve_capable_count * 0.06
+        )
+        reserve_entry_lane_delta = reserve_deny_weight * (
+            0.06 + lane_quality_avg * 0.65 + lane_count * 0.03
+        )
+        reserve_denial_delta = reserve_deny_weight * (
+            0.12 + deploy_screen_count * 0.14 + deploy_anchor_count * 0.05
+        )
+        screen_integrity_delta = screen_weight * (0.1 + deploy_screen_count * 0.22)
+        countercharge_coverage_delta = countercharge_weight * (0.08 + deploy_anchor_count * 0.12)
+        aura_connectivity_delta = aura_weight * (0.05 + deploy_anchor_count * 0.09)
+
+        score_next = score_weight * (
+            0.05 + deep_strike_pressure_delta * 0.45 + reserve_entry_lane_delta * 0.35 + objective_count * 0.01
+        )
+        deny_next = deny_weight * (
+            0.07 + reserve_denial_delta * 0.6 + screen_integrity_delta * 0.25 + lane_count * 0.02
+        )
+        control = (score_next + deny_next) * 0.7 + screen_weight * deploy_anchor_count * 0.03
+        action_enable = staging_weight * (
+            0.07 + deep_strike_reserve_count * 0.08 + reserve_entry_lane_delta * 0.25
+        )
+        exposure_if_enemy_first = _clamp(
+            0.52 - safety_weight * 0.28 - cover_weight * 0.16 + reserve_units_ratio * 0.08 - deploy_screen_count * 0.05,
+            low=0.0,
+            high=1.6,
+        )
+        exposure = _clamp(-exposure_if_enemy_first + reserve_units_ratio * 0.02, low=-2.0, high=2.0)
+        trade = _clamp(
+            score_next * 0.32
+            + deny_next * 0.28
+            + deep_strike_pressure_delta * 0.22
+            + reserve_entry_lane_delta * 0.2
+            - exposure_if_enemy_first * 0.25,
+            low=-3.0,
+            high=3.0,
+        )
+        cover = _clamp(cover_weight * (0.03 + deploy_anchor_count * 0.08), low=-1.5, high=1.5)
+        los = _clamp(los_weight * (0.02 + deep_strike_pressure_delta * 0.2), low=-1.5, high=1.5)
+        resource = _clamp(
+            -(reserve_points_ratio * 0.18 + strategic_points_ratio * 0.14 + reserve_units_ratio * 0.08),
+            low=-3.0,
+            high=3.0,
+        )
+
+        metadata = {
+            "candidate_kind": "deployment_reserves",
+            "solver_ms": 0,
+            "fallback_mode": False,
+            "intent_hash": intent.stable_hash(),
+            "strategy_id": str(payload.get("strategy_id", "") or ""),
+            "reserve_units": int(reserve_units),
+            "reserve_points": int(round(reserve_points)),
+            "strategic_points": int(round(strategic_points)),
+            "reserve_unit_slots_ratio": _round6(reserve_units_ratio),
+            "reserve_points_ratio": _round6(reserve_points_ratio),
+            "strategic_points_ratio": _round6(strategic_points_ratio),
+            "deep_strike_pressure_delta": _round6(deep_strike_pressure_delta),
+            "reserve_entry_lane_delta": _round6(reserve_entry_lane_delta),
+            "rules_provenance_refs": [str(ctx.get("rules_bundle_id", "") or "")] if str(ctx.get("rules_bundle_id", "") or "") else [],
+            "projected_score_delta_next_window": _round6(score_next),
+            "projected_score_delta_round": _round6(score_next * 1.18),
+            "projected_deny_delta_next_window": _round6(deny_next),
+            "projected_control_delta": _round6(control),
+            "projected_action_enablement_delta": _round6(action_enable),
+            "projected_exposure_delta": _round6(exposure),
+            "projected_trade_ev": _round6(trade),
+            "cover_delta": _round6(cover),
+            "los_delta": _round6(los),
+            "resource_delta": _round6(resource),
+            "reserve_denial_delta": _round6(reserve_denial_delta),
+            "screen_integrity_delta": _round6(screen_integrity_delta),
+            "countercharge_coverage_delta": _round6(countercharge_coverage_delta),
+            "aura_connectivity_delta": _round6(aura_connectivity_delta),
+            "projected_exposure_delta_if_enemy_goes_first": _round6(exposure_if_enemy_first),
+            "projected_melee_staging_delta": _round6(staging_weight * (0.06 + deep_strike_pressure_delta * 0.2)),
+        }
+        candidates.append(
+            CandidateAction(
+                action_id=str(action_id),
+                params=payload,
+                metadata=metadata,
+            )
+        )
+    candidates.sort(key=lambda candidate: str(candidate.action_id))
+    top_k = _safe_int(ctx.get("deployment_top_k", len(candidates)), len(candidates))
+    if top_k > 0:
+        candidates = candidates[:top_k]
+    mask = [True] * len(candidates)
+    return candidates, mask
+
+
+def _scout_move_candidates(game: object, request: DecisionRequest, intent: DeploymentIntent) -> tuple[list[CandidateAction], list[bool]]:
+    ctx = dict(getattr(request, "context", {}) or {})
+    options = list(getattr(request, "options", []) or [])
+    unit_id = str(ctx.get("unit_id", "") or "")
+    unit = _resolve_unit(game, unit_id)
+    unit_profile = _unit_profile(unit) if unit is not None else {
+        "screen_value": 0.0,
+        "infiltrator": 0.0,
+        "scout": 0.0,
+        "anchor_value": 0.0,
+        "reserve_capable": 0.0,
+    }
+    scout_distance = _safe_float(ctx.get("scout_distance", _unit_scout_distance(unit)), 0.0)
+    origin_data = list(ctx.get("scout_origin", []) or [])
+    origin_x = _safe_float(origin_data[0], 0.0) if len(origin_data) >= 1 else 0.0
+    origin_y = _safe_float(origin_data[1], 0.0) if len(origin_data) >= 2 else 0.0
+    board_affordances = dict(ctx.get("board_affordances", {}) or {})
+    reserve_lane_quality = dict(board_affordances.get("reserve_entry_lane_quality", {}) or {})
+    lane_quality_values = [_safe_float(value, 0.0) for value in reserve_lane_quality.values()]
+    lane_quality_avg = sum(lane_quality_values) / float(len(lane_quality_values)) if lane_quality_values else 0.0
+    map_obj = getattr(game, "map", None)
+    board_width = _safe_float(getattr(map_obj, "width", 60.0), 60.0)
+    board_height = _safe_float(getattr(map_obj, "height", 44.0), 44.0)
+    center_x = board_width * 0.5
+    center_y = board_height * 0.5
+    origin_center_dist = ((origin_x - center_x) ** 2 + (origin_y - center_y) ** 2) ** 0.5
+
+    score_weight = _weight(intent, "score", 0.3)
+    deny_weight = _weight(intent, "deny", 0.2)
+    safety_weight = _weight(intent, "safety", 0.3)
+    reserve_deny_weight = _weight(intent, "reserve_deny", 0.2)
+    screen_weight = _weight(intent, "screen", 0.2)
+    staging_weight = _weight(intent, "staging", 0.2)
+    cover_weight = _weight(intent, "cover", 0.2)
+    los_weight = _weight(intent, "los", 0.1)
+    countercharge_weight = _weight(intent, "countercharge", 0.15)
+    aura_weight = _weight(intent, "aura", 0.1)
+
+    candidates: list[CandidateAction] = []
+    for option in options:
+        option_id = str(getattr(option, "option_id", "") or "")
+        if not option_id:
+            continue
+        payload = _option_payload(option)
+        action_id = request.action_id_for_option_id(option_id)
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action == "skip":
+            metadata = {
+                "candidate_kind": "noop",
+                "solver_ms": 0,
+                "fallback_mode": False,
+                "intent_hash": intent.stable_hash(),
+                "rules_provenance_refs": [str(ctx.get("rules_bundle_id", "") or "")] if str(ctx.get("rules_bundle_id", "") or "") else [],
+                "projected_score_delta_next_window": _round6(0.0),
+                "projected_score_delta_round": _round6(0.0),
+                "projected_deny_delta_next_window": _round6(0.0),
+                "projected_control_delta": _round6(0.0),
+                "projected_action_enablement_delta": _round6(0.0),
+                "projected_exposure_delta": _round6(0.0),
+                "projected_trade_ev": _round6(0.0),
+                "cover_delta": _round6(0.0),
+                "los_delta": _round6(0.0),
+                "resource_delta": _round6(0.0),
+                "reserve_denial_delta": _round6(0.0),
+                "screen_integrity_delta": _round6(0.0),
+                "countercharge_coverage_delta": _round6(0.0),
+                "aura_connectivity_delta": _round6(0.0),
+                "projected_exposure_delta_if_enemy_goes_first": _round6(0.0),
+                "projected_melee_staging_delta": _round6(0.0),
+            }
+            candidates.append(CandidateAction(action_id=str(action_id), params=payload, metadata=metadata))
+            continue
+
+        destination = list(payload.get("destination", []) or [])
+        dest_x = _safe_float(destination[0], origin_x) if len(destination) >= 1 else origin_x
+        dest_y = _safe_float(destination[1], origin_y) if len(destination) >= 2 else origin_y
+        travel = ((dest_x - origin_x) ** 2 + (dest_y - origin_y) ** 2) ** 0.5
+        travel_ratio = _clamp(travel / max(1.0, scout_distance), low=0.0, high=1.5)
+        dest_center_dist = ((dest_x - center_x) ** 2 + (dest_y - center_y) ** 2) ** 0.5
+        center_delta = _clamp((origin_center_dist - dest_center_dist) / max(1.0, scout_distance), low=-1.5, high=1.5)
+        screen_value = _safe_float(unit_profile.get("screen_value"), 0.0)
+        infiltrator = _safe_float(unit_profile.get("infiltrator"), 0.0)
+        scout_value = _safe_float(unit_profile.get("scout"), 0.0)
+        anchor_value = _safe_float(unit_profile.get("anchor_value"), 0.0)
+
+        deep_strike_pressure_delta = reserve_deny_weight * (0.05 + (infiltrator + scout_value) * 0.22 + travel_ratio * 0.04)
+        reserve_entry_lane_delta = reserve_deny_weight * (0.04 + lane_quality_avg * 0.7 + travel_ratio * 0.06)
+        reserve_denial_delta = reserve_deny_weight * (0.09 + screen_value * 0.3 + travel_ratio * 0.1)
+        screen_integrity_delta = screen_weight * (0.1 + screen_value * 0.28 + max(0.0, center_delta) * 0.08)
+        countercharge_coverage_delta = countercharge_weight * (0.05 + anchor_value * 0.18 + travel_ratio * 0.04)
+        aura_connectivity_delta = aura_weight * (0.03 + anchor_value * 0.08 - max(0.0, center_delta) * 0.05)
+
+        score_next = score_weight * (0.04 + max(0.0, center_delta) * 0.28 + deep_strike_pressure_delta * 0.35)
+        deny_next = deny_weight * (0.06 + reserve_denial_delta * 0.58 + reserve_entry_lane_delta * 0.28)
+        control = (score_next + deny_next) * 0.68 + screen_weight * screen_value * 0.04
+        action_enable = staging_weight * (0.05 + travel_ratio * 0.14 + max(0.0, center_delta) * 0.12)
+        exposure_if_enemy_first = _clamp(
+            0.48 - safety_weight * 0.26 - cover_weight * 0.16 + max(0.0, center_delta) * 0.15 - screen_value * 0.08,
+            low=0.0,
+            high=1.5,
+        )
+        exposure = _clamp(-exposure_if_enemy_first + screen_value * 0.04, low=-2.0, high=2.0)
+        trade = _clamp(
+            score_next * 0.31
+            + deny_next * 0.29
+            + deep_strike_pressure_delta * 0.24
+            - exposure_if_enemy_first * 0.24,
+            low=-3.0,
+            high=3.0,
+        )
+        cover = _clamp(cover_weight * (0.02 + screen_value * 0.09), low=-1.5, high=1.5)
+        los = _clamp(los_weight * (0.01 + max(0.0, center_delta) * 0.12 + travel_ratio * 0.05), low=-1.5, high=1.5)
+        resource = _clamp(-(travel_ratio * 0.06), low=-3.0, high=3.0)
+
+        metadata = {
+            "candidate_kind": "deployment_scout",
+            "solver_ms": 0,
+            "fallback_mode": False,
+            "intent_hash": intent.stable_hash(),
+            "unit_profile": unit_profile,
+            "scout_distance": _round6(scout_distance),
+            "travel_distance": _round6(travel),
+            "travel_ratio": _round6(travel_ratio),
+            "center_delta": _round6(center_delta),
+            "deep_strike_pressure_delta": _round6(deep_strike_pressure_delta),
+            "reserve_entry_lane_delta": _round6(reserve_entry_lane_delta),
+            "rules_provenance_refs": [str(ctx.get("rules_bundle_id", "") or "")] if str(ctx.get("rules_bundle_id", "") or "") else [],
+            "projected_score_delta_next_window": _round6(score_next),
+            "projected_score_delta_round": _round6(score_next * 1.16),
+            "projected_deny_delta_next_window": _round6(deny_next),
+            "projected_control_delta": _round6(control),
+            "projected_action_enablement_delta": _round6(action_enable),
+            "projected_exposure_delta": _round6(exposure),
+            "projected_trade_ev": _round6(trade),
+            "cover_delta": _round6(cover),
+            "los_delta": _round6(los),
+            "resource_delta": _round6(resource),
+            "reserve_denial_delta": _round6(reserve_denial_delta),
+            "screen_integrity_delta": _round6(screen_integrity_delta),
+            "countercharge_coverage_delta": _round6(countercharge_coverage_delta),
+            "aura_connectivity_delta": _round6(aura_connectivity_delta),
+            "projected_exposure_delta_if_enemy_goes_first": _round6(exposure_if_enemy_first),
+            "projected_melee_staging_delta": _round6(staging_weight * (0.05 + max(0.0, center_delta) * 0.2)),
+        }
+        candidates.append(
+            CandidateAction(
+                action_id=str(action_id),
+                params=payload,
+                metadata=metadata,
+            )
+        )
+
+    candidates.sort(key=lambda candidate: str(candidate.action_id))
+    top_k = _safe_int(ctx.get("deployment_top_k", len(candidates)), len(candidates))
+    if top_k > 0:
+        candidates = candidates[:top_k]
+    mask = [True] * len(candidates)
+    return candidates, mask
+
+
 def _deployment_move_candidates(game: object, request: DecisionRequest, intent: DeploymentIntent) -> tuple[list[CandidateAction], list[bool]]:
     del game
     ctx = dict(getattr(request, "context", {}) or {})
@@ -490,6 +870,10 @@ def _solver_candidates(game: object, request: DecisionRequest, intent: Deploymen
         return _deployment_zone_candidates(game, request, intent)
     if decision_type == DECISION_SELECT_NEXT_DEPLOY_UNIT:
         return _next_deploy_unit_candidates(game, request, intent)
+    if decision_type == DECISION_DECLARE_RESERVES:
+        return _reserves_candidates(game, request, intent)
+    if decision_type == DECISION_SCOUT_MOVE:
+        return _scout_move_candidates(game, request, intent)
     if decision_type == DECISION_MOVE_UNIT:
         placement_kind = str(dict(getattr(request, "context", {}) or {}).get("placement_kind", "") or "").strip().lower()
         if placement_kind == "deployment":

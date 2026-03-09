@@ -197,8 +197,12 @@ def _validate_declare_reserves(game: object, request: DecisionRequest, result: D
     errors = list(_validate_choice_from_options(request, result))
     if errors:
         return errors
+    opt = _find_option(request, result.option_id)
+    option_payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
     payload = dict(result.payload or {})
     buckets = payload.get("unit_ids_by_bucket")
+    if not isinstance(buckets, dict):
+        buckets = option_payload.get("unit_ids_by_bucket")
     if not isinstance(buckets, dict):
         return ("Reserves decision requires unit_ids_by_bucket.",)
     decisions: dict[str, str] = {}
@@ -227,8 +231,14 @@ def _validate_declare_reserves(game: object, request: DecisionRequest, result: D
 
 
 def _apply_declare_reserves(game: object, request: DecisionRequest, result: DecisionResult) -> None:
+    opt = _find_option(request, result.option_id)
+    option_payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
     payload = dict(result.payload or {})
-    buckets = payload.get("unit_ids_by_bucket") or {}
+    buckets = payload.get("unit_ids_by_bucket")
+    if not isinstance(buckets, dict):
+        buckets = option_payload.get("unit_ids_by_bucket")
+    if not isinstance(buckets, dict):
+        buckets = {}
     decisions: dict[str, str] = {}
     for status, ids in buckets.items():
         for unit_id in list(ids or []):
@@ -453,7 +463,8 @@ def _validate_scout_move(game: object, request: DecisionRequest, result: Decisio
         return errors
     opt = _find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
-    action = str(payload.get("action", "") or "")
+    result_payload = dict(result.payload or {})
+    action = str(payload.get("action", result_payload.get("action", "")) or "")
     unit_id = str(payload.get("unit_id", "") or "")
     if not unit_id:
         return ("Scout move requires unit_id.",)
@@ -463,7 +474,7 @@ def _validate_scout_move(game: object, request: DecisionRequest, result: Decisio
     if action not in ("scout", "skip"):
         return ("Scout move action must be 'scout' or 'skip'.",)
     if action == "scout":
-        model_positions = result.payload.get("model_positions")
+        model_positions = result_payload.get("model_positions")
         if isinstance(model_positions, list) and model_positions:
             for entry in model_positions:
                 if not isinstance(entry, dict):
@@ -478,7 +489,9 @@ def _validate_scout_move(game: object, request: DecisionRequest, result: Decisio
                 if not isinstance(pos, (list, tuple)) or len(pos) < 2:
                     return ("Model position entry missing position.",)
             return ()
-        dest = result.payload.get("destination")
+        dest = result_payload.get("destination")
+        if not isinstance(dest, (list, tuple)) or len(dest) < 2:
+            dest = payload.get("destination")
         if not isinstance(dest, (list, tuple)) or len(dest) < 2:
             return ("Scout move requires destination coordinates.",)
     return ()
@@ -487,14 +500,15 @@ def _validate_scout_move(game: object, request: DecisionRequest, result: Decisio
 def _apply_scout_move(game: object, request: DecisionRequest, result: DecisionResult) -> None:
     opt = _find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
-    action = str(payload.get("action", "") or "")
+    result_payload = dict(result.payload or {})
+    action = str(payload.get("action", result_payload.get("action", "")) or "")
     unit = _get_unit(game, str(payload.get("unit_id", "") or ""))
     if unit is None:
         raise RuntimeError("Scout unit missing.")
     if action == "skip":
         setattr(unit, "scout_move_made", True)
         return None
-    model_positions = result.payload.get("model_positions")
+    model_positions = result_payload.get("model_positions")
     if isinstance(model_positions, list) and model_positions:
         for entry in model_positions:
             model_id = str(entry.get("model_id", "") or "")
@@ -513,7 +527,9 @@ def _apply_scout_move(game: object, request: DecisionRequest, result: DecisionRe
             model.set_location(x, y, z, float(facing))
         setattr(unit, "scout_move_made", True)
         return None
-    dest = result.payload.get("destination")
+    dest = result_payload.get("destination")
+    if not isinstance(dest, (list, tuple)) or len(dest) < 2:
+        dest = payload.get("destination")
     if not isinstance(dest, (list, tuple)) or len(dest) < 2:
         raise RuntimeError("Scout move destination missing.")
     x = float(dest[0])

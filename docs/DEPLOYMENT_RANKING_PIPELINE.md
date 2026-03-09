@@ -6,7 +6,18 @@ This document defines the imitation/ranking path for deployment pregame decision
 
 Current trainable deployment decision types:
 - `CHOOSE_DEPLOYMENT_ZONE`
+- `DECLARE_RESERVES`
 - `SELECT_NEXT_DEPLOY_UNIT`
+- `SCOUT_MOVE`
+- `MOVE_UNIT` (deployment-only: `placement_kind="deployment"`)
+
+Default candidate kinds used for dataset extraction:
+- `deployment_zone`
+- `deployment_commit_order`
+- `deployment_reserves`
+- `deployment_scout`
+- `deployment_move`
+- `noop` (skip/pass candidates in deployment-scoped requests)
 
 The pipeline consumes DecisionRecords with deterministic candidate metadata and chosen actions.
 
@@ -14,6 +25,7 @@ The pipeline consumes DecisionRecords with deterministic candidate metadata and 
 
 Script:
 - `scripts/build_deployment_ranking_dataset.py`
+- Supports `--decision-types` and `--candidate-kinds` filters for controlled extraction.
 
 Input:
 - DecisionRecord JSON list (or object with `records` list).
@@ -21,8 +33,10 @@ Input:
 Output:
 - normalized ranking dataset with:
   - `feature_keys`
+  - `candidate_kinds`
   - `decisions[]` grouped by decision id
   - legal candidate rows and chosen labels
+- `MOVE_UNIT` records are included only when `context.placement_kind == "deployment"`.
 
 ## Model training
 
@@ -46,7 +60,9 @@ Output model includes:
 - `DeterministicDeploymentDecisionMaker` accepts `ranker_model_path`.
 - When provided, it prefers ranker-based option selection for:
   - deployment zone choice requests
+  - reserves allocation requests
   - next deploy unit requests
+  - scout move requests (through the shared deployment solver metadata path)
 - If ranker cannot score a request, deterministic heuristic fallback remains active.
 
 ## Headless usage

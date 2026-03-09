@@ -3,11 +3,15 @@ from __future__ import annotations
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_DECLARE_RESERVES,
     DECISION_MOVE_UNIT,
+    DECISION_SCOUT_MOVE,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
 )
 from warhammer40k_ai.engine.decision_requests import (
     build_deployment_zone_request,
+    build_reserves_allocation_request,
+    build_scout_move_request,
     build_select_next_deploy_unit_request,
 )
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
@@ -43,6 +47,8 @@ class _DummyUnit:
         self.faction_keywords = []
         self.models = [_DummyModel(f"{unit_id}:model:{idx}") for idx in range(max(1, int(model_count)))]
         self.parent_army = None
+        self.deployed = True
+        self.reserve_status = "deployed"
 
     def has_infiltrate(self) -> bool:
         return bool(self._infiltrate)
@@ -50,12 +56,24 @@ class _DummyUnit:
     def has_deep_strike(self) -> bool:
         return bool(self._deep_strike)
 
+    def has_scout(self):
+        if self.scout_move_distance > 0.0:
+            return (True, float(self.scout_move_distance))
+        return (False, 0.0)
+
+    def get_unit_cost(self) -> int:
+        return 100
+
 
 class _DummyModel:
     def __init__(self, model_id: str) -> None:
         self.id = model_id
         self._id = model_id
         self.is_alive = True
+        self._location = (10.0, 10.0, 0.0, 0.0)
+
+    def get_location(self):
+        return self._location
 
 
 class _DummyArmy:
@@ -66,6 +84,43 @@ class _DummyArmy:
         self.player = None
         for unit in self.units:
             setattr(unit, "parent_army", self)
+
+    def get_reserve_limits(self) -> dict:
+        return {
+            "max_units": max(1, len(list(self.units or []))),
+            "max_points": 1000,
+            "max_strategic_points": 500,
+        }
+
+    def validate_reserves_decisions(self, reserves_decisions: dict) -> dict:
+        reserve_units = 0
+        reserve_points = 0
+        strategic_points = 0
+        for unit in list(self.units or []):
+            unit_id = str(getattr(unit, "id", "") or getattr(unit, "_id", "") or "")
+            status = str(dict(reserves_decisions or {}).get(unit_id, "deploy") or "deploy")
+            if status in ("reserves", "strategic_reserves"):
+                reserve_units += 1
+                reserve_points += int(getattr(unit, "get_unit_cost", lambda: 0)() or 0)
+                if status == "strategic_reserves":
+                    strategic_points += int(getattr(unit, "get_unit_cost", lambda: 0)() or 0)
+        limits = self.get_reserve_limits()
+        valid = (
+            reserve_units <= int(limits["max_units"])
+            and reserve_points <= int(limits["max_points"])
+            and strategic_points <= int(limits["max_strategic_points"])
+        )
+        return {
+            "valid": bool(valid),
+            "errors": [] if valid else ["reserve limits exceeded"],
+            "reserve_units": int(reserve_units),
+            "reserve_points": int(reserve_points),
+            "strategic_points": int(strategic_points),
+            "limits": dict(limits),
+        }
+
+    def enforce_reserves_limits(self, reserves_decisions: dict) -> dict:
+        return dict(reserves_decisions or {})
 
     def set_player(self, player: object) -> None:
         self.player = player
@@ -91,6 +146,10 @@ def _build_game() -> tuple[Game, Player, _DummyUnit, _DummyUnit]:
     p1.army = _DummyArmy("army-1", [infiltrator, hammer])
     p2.army = _DummyArmy("army-2", [])
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
+    game.deployment_zones = {
+        p1.id: {"name": "Left Zone", "zone_type": "defender", "x_range": [0.0, 30.0], "y_range": [0.0, 44.0]},
+        p2.id: {"name": "Right Zone", "zone_type": "attacker", "x_range": [30.0, 60.0], "y_range": [0.0, 44.0]},
+    }
     return game, p1, infiltrator, hammer
 
 
@@ -205,3 +264,46 @@ def test_deployment_move_request_uses_deployment_solver_candidate_payload() -> N
     metadata = dict(candidate.metadata or {})
     assert metadata.get("candidate_kind") == "deployment_move"
     assert "model_positions" in dict(candidate.params or {})
+
+
+def test_reserves_request_generates_rankable_candidates_with_semantic_metadata() -> None:
+    game, player, _screen_unit, _hammer = _build_game()
+    request = build_reserves_allocation_request(game, player.army, queue_requests=True)
+    assert request is not None
+    assert request.decision_type == DECISION_DECLARE_RESERVES
+    assert len(list(request.options or [])) >= 2
+    assert request.candidates
+    assert all(
+        str(dict(candidate.metadata or {}).get("candidate_kind", "") or "") == "deployment_reserves"
+        for candidate in list(request.candidates or [])
+    )
+    first_metadata = dict(request.candidates[0].metadata or {})
+    assert "deep_strike_pressure_delta" in first_metadata
+    assert "reserve_entry_lane_delta" in first_metadata
+    assert "reserve_denial_delta" in first_metadata
+
+
+def test_scout_move_request_generates_rankable_destination_candidates() -> None:
+    game, _player, screen_unit, _hammer = _build_game()
+    request = build_scout_move_request(game, screen_unit)
+    assert request is not None
+    assert request.decision_type == DECISION_SCOUT_MOVE
+    scout_options = [
+        option
+        for option in list(request.options or [])
+        if str(dict(option.payload or {}).get("action", "") or "") == "scout"
+    ]
+    assert scout_options
+    assert any(
+        isinstance(dict(option.payload or {}).get("destination"), list)
+        for option in scout_options
+    )
+    scout_candidates = [
+        candidate
+        for candidate in list(request.candidates or [])
+        if str(dict(candidate.params or {}).get("action", "") or "") == "scout"
+    ]
+    assert scout_candidates
+    metadata = dict(scout_candidates[0].metadata or {})
+    assert metadata.get("candidate_kind") == "deployment_scout"
+    assert "reserve_entry_lane_delta" in metadata

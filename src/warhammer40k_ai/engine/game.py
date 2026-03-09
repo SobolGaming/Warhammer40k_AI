@@ -29,6 +29,7 @@ from .decision_kinds import (
     DECISION_CHOOSE_MISSION,
     DECISION_CHOOSE_PLEDGE,
     DECISION_CONFIRM_YES_NO,
+    DECISION_DECLARE_RESERVES,
     DECISION_DISEMBARK,
     DECISION_DECLARE_SHOTS,
     DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
@@ -38,6 +39,7 @@ from .decision_kinds import (
     DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
     DECISION_MOVE_UNIT,
     DECISION_ALLOCATE_DAMAGE,
+    DECISION_SCOUT_MOVE,
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
     DECISION_SELECT_TARGET_MODEL,
     DECISION_SELECT_OVERWATCH_SHOOTER,
@@ -10204,7 +10206,12 @@ class Game(
             time_manager = TimeManager()
             self.time_manager = time_manager
         ctx = time_manager.decorate_context(request.decision_type, ctx)
-        if request.decision_type in (DECISION_CHOOSE_DEPLOYMENT_ZONE, DECISION_SELECT_NEXT_DEPLOY_UNIT):
+        if request.decision_type in (
+            DECISION_CHOOSE_DEPLOYMENT_ZONE,
+            DECISION_SELECT_NEXT_DEPLOY_UNIT,
+            DECISION_DECLARE_RESERVES,
+            DECISION_SCOUT_MOVE,
+        ):
             deployment_intent = DeploymentIntent.from_context(ctx)
             ctx["deployment_intent"] = deployment_intent.to_dict()
             request.context = ctx

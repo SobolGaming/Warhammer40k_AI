@@ -5,8 +5,9 @@ import hashlib
 from itertools import combinations
 import json
 import re
-from typing import Iterable, List, Optional
+from typing import Any, Iterable, List, Optional
 
+from .board_affordances import compute_board_affordance_summary, deployment_zone_from_player
 from .decisions import DecisionOption, DecisionRequest
 from .decision_kinds import (
     DECISION_ATTACH_LEADER,
@@ -569,6 +570,346 @@ def _safe_float(value: object) -> float:
         return 0.0
 
 
+def _safe_int(value: object, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _clamp(value: float, *, low: float, high: float) -> float:
+    return max(float(low), min(float(high), float(value)))
+
+
+def _reserve_group_roots(army: object) -> list[object]:
+    if army is None:
+        return []
+    iter_roots = getattr(army, "_iter_reserve_group_roots", None)
+    if callable(iter_roots):
+        roots = [unit for unit in list(iter_roots() or []) if unit is not None]
+    else:
+        roots = []
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            if bool(getattr(unit, "is_attached_leader", False)):
+                continue
+            if bool(getattr(unit, "is_joined_support", False)):
+                continue
+            roots.append(unit)
+    roots.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+    return roots
+
+
+def _unit_supports_standard_reserves(army: object, unit: object) -> bool:
+    if unit is None:
+        return False
+    has_deep_strike = getattr(unit, "has_deep_strike", None)
+    if callable(has_deep_strike) and bool(has_deep_strike()):
+        return True
+    allow_fn = getattr(army, "_ride_the_wind_allows_standard_reserves", None) if army is not None else None
+    if callable(allow_fn):
+        return bool(allow_fn(unit))
+    return False
+
+
+def _must_start_in_reserves(unit: object) -> bool:
+    must_start_fn = getattr(unit, "must_start_in_reserves", None)
+    return bool(must_start_fn()) if callable(must_start_fn) else False
+
+
+def _reserve_status_choices(army: object, unit: object) -> list[str]:
+    if _must_start_in_reserves(unit):
+        return ["reserves"]
+    choices = ["deploy"]
+    if _unit_supports_standard_reserves(army, unit):
+        choices.append("reserves")
+    if not bool(getattr(unit, "is_fortification", False)):
+        choices.append("strategic_reserves")
+    return choices
+
+
+def _reserve_unit_priority(army: object, unit: object) -> float:
+    unit_id = str(get_entity_id(unit) or "")
+    has_deep_strike = 1.0 if _unit_supports_standard_reserves(army, unit) else 0.0
+    has_infiltrate = 0.0
+    has_scout = 0.0
+    has_infiltrate_fn = getattr(unit, "has_infiltrate", None)
+    if callable(has_infiltrate_fn) and bool(has_infiltrate_fn()):
+        has_infiltrate = 1.0
+    has_scout_fn = getattr(unit, "has_scout", None)
+    if callable(has_scout_fn):
+        scout_value = has_scout_fn()
+        if isinstance(scout_value, (list, tuple)):
+            has_scout = 1.0 if bool(scout_value[0]) else 0.0
+        else:
+            has_scout = 1.0 if bool(scout_value) else 0.0
+    get_cost = getattr(unit, "get_unit_cost", None)
+    points = _safe_float(get_cost()) if callable(get_cost) else 0.0
+    model_count = float(len(list(getattr(unit, "models", []) or [])))
+    is_transport = 1.0 if bool(getattr(unit, "is_transport", False)) else 0.0
+    is_titanic = 1.0 if bool(getattr(unit, "is_titanic", False)) else 0.0
+    is_leader = 1.0 if bool(getattr(unit, "is_leader", False)) else 0.0
+    score = 0.0
+    score += points
+    score += has_deep_strike * 120.0
+    score += has_infiltrate * 45.0
+    score += has_scout * 40.0
+    score += min(20.0, model_count * 1.5)
+    score += is_transport * 30.0
+    score += is_titanic * 90.0
+    score -= is_leader * 15.0
+    tie = int(hashlib.sha256(unit_id.encode("utf-8")).hexdigest()[:8], 16) if unit_id else 0
+    return float(score + (float(tie % 1000) / 10000.0))
+
+
+def _normalize_reserves_decisions(army: object, decisions: dict[str, str] | None) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    roots = _reserve_group_roots(army)
+    for unit in roots:
+        unit_id = str(get_entity_id(unit) or "")
+        if not unit_id:
+            continue
+        available = _reserve_status_choices(army, unit)
+        raw_status = str(dict(decisions or {}).get(unit_id, "deploy") or "deploy")
+        if raw_status not in available:
+            raw_status = available[0] if available else "deploy"
+        normalized[unit_id] = raw_status
+    return normalized
+
+
+def _reserves_validation(army: object, decisions: dict[str, str]) -> dict[str, object]:
+    validate_fn = getattr(army, "validate_reserves_decisions", None) if army is not None else None
+    if callable(validate_fn):
+        return dict(validate_fn(dict(decisions or {})) or {})
+    return {"valid": True}
+
+
+def _reserves_apply_enforcement(army: object, decisions: dict[str, str]) -> dict[str, str]:
+    enforce_fn = getattr(army, "enforce_reserves_limits", None) if army is not None else None
+    if callable(enforce_fn):
+        return dict(enforce_fn(dict(decisions or {})) or {})
+    return dict(decisions or {})
+
+
+def _reserves_buckets_from_decisions(decisions: dict[str, str]) -> dict[str, list[str]]:
+    buckets: dict[str, list[str]] = {
+        "deploy": [],
+        "reserves": [],
+        "strategic_reserves": [],
+    }
+    for unit_id, status in sorted((dict(decisions or {})).items()):
+        bucket = str(status or "deploy")
+        if bucket not in buckets:
+            bucket = "deploy"
+        buckets[bucket].append(str(unit_id))
+    return buckets
+
+
+def _reserves_greedy_decisions(
+    army: object,
+    *,
+    base_decisions: dict[str, str],
+    primary_status: str,
+    secondary_status: str | None = None,
+) -> dict[str, str]:
+    decisions = dict(base_decisions or {})
+    roots = _reserve_group_roots(army)
+    ranked = sorted(
+        [unit for unit in roots if not _must_start_in_reserves(unit)],
+        key=lambda unit: (-_reserve_unit_priority(army, unit), str(get_entity_id(unit) or "")),
+    )
+    for unit in ranked:
+        unit_id = str(get_entity_id(unit) or "")
+        if not unit_id:
+            continue
+        available = _reserve_status_choices(army, unit)
+        if primary_status in available:
+            desired = primary_status
+        elif secondary_status is not None and secondary_status in available:
+            desired = secondary_status
+        else:
+            continue
+        if decisions.get(unit_id, "deploy") == desired:
+            continue
+        trial = dict(decisions)
+        trial[unit_id] = desired
+        status = _reserves_validation(army, trial)
+        if bool(status.get("valid", False)):
+            decisions = trial
+    return decisions
+
+
+def _reserves_strategy_decisions(
+    army: object,
+    *,
+    strategy_id: str,
+    forced_decisions: dict[str, str],
+) -> dict[str, str]:
+    strategy = str(strategy_id or "").strip().lower()
+    if strategy == "deep_strike_pressure":
+        return _reserves_greedy_decisions(
+            army,
+            base_decisions=forced_decisions,
+            primary_status="reserves",
+            secondary_status="strategic_reserves",
+        )
+    if strategy == "strategic_pressure":
+        return _reserves_greedy_decisions(
+            army,
+            base_decisions=forced_decisions,
+            primary_status="strategic_reserves",
+            secondary_status="reserves",
+        )
+    if strategy == "balanced_mix":
+        mixed = dict(forced_decisions or {})
+        roots = _reserve_group_roots(army)
+        ranked = sorted(
+            [unit for unit in roots if not _must_start_in_reserves(unit)],
+            key=lambda unit: (-_reserve_unit_priority(army, unit), str(get_entity_id(unit) or "")),
+        )
+        flip = True
+        for unit in ranked:
+            unit_id = str(get_entity_id(unit) or "")
+            if not unit_id:
+                continue
+            available = _reserve_status_choices(army, unit)
+            primary = "reserves" if flip else "strategic_reserves"
+            secondary = "strategic_reserves" if flip else "reserves"
+            desired = None
+            if primary in available:
+                desired = primary
+            elif secondary in available:
+                desired = secondary
+            if desired is None:
+                continue
+            trial = dict(mixed)
+            trial[unit_id] = desired
+            status = _reserves_validation(army, trial)
+            if bool(status.get("valid", False)):
+                mixed = trial
+                flip = not flip
+        return mixed
+    return dict(forced_decisions or {})
+
+
+def _reserves_option_payloads(
+    army: object,
+    *,
+    player_id: str,
+    preferred_decisions: Optional[dict[str, str]] = None,
+    max_options: int = 6,
+) -> list[dict[str, Any]]:
+    roots = _reserve_group_roots(army)
+    if not roots:
+        return []
+    forced = {}
+    for unit in roots:
+        unit_id = str(get_entity_id(unit) or "")
+        if not unit_id:
+            continue
+        choices = _reserve_status_choices(army, unit)
+        forced[unit_id] = choices[0] if choices else "deploy"
+    candidate_specs: list[tuple[str, str, dict[str, str]]] = []
+    preferred_normalized = _normalize_reserves_decisions(army, preferred_decisions)
+    if preferred_normalized:
+        candidate_specs.append(("teacher", "Teacher allocation", preferred_normalized))
+    candidate_specs.append(("forced_only", "Forced-only reserves", dict(forced)))
+    candidate_specs.append(
+        (
+            "deep_strike_pressure",
+            "Deep strike pressure",
+            _reserves_strategy_decisions(
+                army,
+                strategy_id="deep_strike_pressure",
+                forced_decisions=forced,
+            ),
+        )
+    )
+    candidate_specs.append(
+        (
+            "strategic_pressure",
+            "Strategic pressure",
+            _reserves_strategy_decisions(
+                army,
+                strategy_id="strategic_pressure",
+                forced_decisions=forced,
+            ),
+        )
+    )
+    candidate_specs.append(
+        (
+            "balanced_mix",
+            "Balanced reserves mix",
+            _reserves_strategy_decisions(
+                army,
+                strategy_id="balanced_mix",
+                forced_decisions=forced,
+            ),
+        )
+    )
+
+    entries: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    max_count = max(1, int(max_options))
+    for strategy_id, label, decisions in candidate_specs:
+        normalized = _normalize_reserves_decisions(army, decisions)
+        validated = _reserves_validation(army, normalized)
+        if not bool(validated.get("valid", False)):
+            normalized = _reserves_apply_enforcement(army, normalized)
+            validated = _reserves_validation(army, normalized)
+        if not bool(validated.get("valid", False)):
+            continue
+        key = json.dumps(
+            {k: normalized[k] for k in sorted(normalized.keys())},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        buckets = _reserves_buckets_from_decisions(normalized)
+        reserve_units = _safe_int(validated.get("reserve_units"), default=0)
+        reserve_points = _safe_int(validated.get("reserve_points"), default=0)
+        strategic_points = _safe_int(validated.get("strategic_points"), default=0)
+        limits = dict(validated.get("limits", {}) or {})
+        max_units = max(1, _safe_int(limits.get("max_units"), default=max(1, len(roots))))
+        max_points = max(1, _safe_int(limits.get("max_points"), default=1))
+        max_strategic = max(1, _safe_int(limits.get("max_strategic_points"), default=1))
+        payload = {
+            "strategy_id": str(strategy_id),
+            "unit_ids_by_bucket": buckets,
+            "reserve_units": int(reserve_units),
+            "reserve_points": int(reserve_points),
+            "strategic_points": int(strategic_points),
+            "reserve_unit_slots_ratio": float(round(float(reserve_units) / float(max_units), 6)),
+            "reserve_points_ratio": float(round(float(reserve_points) / float(max_points), 6)),
+            "strategic_points_ratio": float(round(float(strategic_points) / float(max_strategic), 6)),
+        }
+        entries.append({"label": str(label), "payload": payload})
+        if len(entries) >= max_count:
+            break
+    if not entries:
+        buckets = _reserves_buckets_from_decisions(forced)
+        entries.append(
+            {
+                "label": "Forced-only reserves",
+                "payload": {
+                    "strategy_id": "forced_only",
+                    "unit_ids_by_bucket": buckets,
+                    "reserve_units": 0,
+                    "reserve_points": 0,
+                    "strategic_points": 0,
+                    "reserve_unit_slots_ratio": 0.0,
+                    "reserve_points_ratio": 0.0,
+                    "strategic_points_ratio": 0.0,
+                },
+            }
+        )
+    return entries
+
+
 def _normalized_zone_vertices(zone: dict) -> list[list[list[float]]]:
     mission_zones = list(zone.get("mission_zones", []) or [])
     normalized: list[list[list[float]]] = []
@@ -862,19 +1203,83 @@ def build_reserves_allocation_request(
     game: object,
     army: object,
     *,
+    deployment_intent: Optional[dict] = None,
+    extra_context: Optional[dict] = None,
+    preferred_decisions: Optional[dict[str, str]] = None,
+    max_options: int = 6,
     queue_requests: bool = True,
 ) -> Optional[DecisionRequest]:
     if army is None:
         return None
     player = getattr(army, "player", None)
     player_id = getattr(player, "id", None) if player is not None else None
-    option = DecisionOption.create("Confirm reserves")
+    player_key = str(player_id or "")
+    option_entries = _reserves_option_payloads(
+        army,
+        player_id=player_key,
+        preferred_decisions=preferred_decisions,
+        max_options=max_options,
+    )
+    options: list[DecisionOption] = []
+    option_refs: list[dict[str, object]] = []
+    for idx, entry in enumerate(list(option_entries or [])):
+        label = str(dict(entry or {}).get("label", "") or f"Allocation {int(idx) + 1}")
+        payload = dict(dict(entry or {}).get("payload", {}) or {})
+        buckets = dict(payload.get("unit_ids_by_bucket", {}) or {})
+        bucket_key = json.dumps(
+            {k: sorted(str(unit_id) for unit_id in list(v or [])) for k, v in sorted(buckets.items())},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+        alloc_hash = hashlib.sha256(bucket_key.encode("utf-8")).hexdigest()[:12]
+        allocation_id = f"reserve_alloc:{alloc_hash}"
+        payload["allocation_id"] = allocation_id
+        payload["action_id"] = f"{DECISION_DECLARE_RESERVES}:{player_key}:{allocation_id}"
+        options.append(DecisionOption.create(label, payload=payload))
+        option_refs.append(
+            {
+                "allocation_id": allocation_id,
+                "label": label,
+                "strategy_id": str(payload.get("strategy_id", "") or ""),
+                "reserve_units": _safe_int(payload.get("reserve_units"), default=0),
+                "reserve_points": _safe_int(payload.get("reserve_points"), default=0),
+                "strategic_points": _safe_int(payload.get("strategic_points"), default=0),
+                "reserve_unit_slots_ratio": float(payload.get("reserve_unit_slots_ratio", 0.0) or 0.0),
+                "reserve_points_ratio": float(payload.get("reserve_points_ratio", 0.0) or 0.0),
+                "strategic_points_ratio": float(payload.get("strategic_points_ratio", 0.0) or 0.0),
+            }
+        )
+    if not options:
+        options = [DecisionOption.create("Forced-only reserves")]
+
+    zone_type = ""
+    if isinstance(extra_context, dict):
+        zone_type = str(dict(extra_context or {}).get("deployment_zone_type", "") or "")
+    default_intent = _default_deployment_intent(zone_type=zone_type)
+    root_unit_ids = [str(get_entity_id(unit) or "") for unit in _reserve_group_roots(army)]
+    root_unit_ids = [unit_id for unit_id in root_unit_ids if unit_id]
+    context: dict[str, object] = {
+        "army_id": get_entity_id(army),
+        "selection_kind": "reserves_allocation",
+        "phase": "declare_battle_formations",
+        "reserve_root_unit_ids": root_unit_ids,
+        "reserve_allocation_option_ids": [str(ref.get("allocation_id", "") or "") for ref in option_refs],
+        "reserve_allocation_options": option_refs,
+        "deployment_intent": dict(deployment_intent or default_intent),
+    }
+    if isinstance(extra_context, dict):
+        for key, value in dict(extra_context or {}).items():
+            if key in context:
+                continue
+            context[str(key)] = value
+
     request = DecisionRequest.create(
         DECISION_DECLARE_RESERVES,
         "Allocate reserves for this army.",
         player_id=player_id,
-        options=[option],
-        context={"army_id": get_entity_id(army)},
+        options=options,
+        context=context,
     )
     if queue_requests and hasattr(game, "request_decision"):
         game.request_decision(request)
@@ -1474,27 +1879,181 @@ def build_army_selected_leading_infiltrators_requests(
     return requests
 
 
+def _unit_anchor_location(unit: object) -> tuple[float, float, float] | None:
+    if unit is None:
+        return None
+    for model in list(getattr(unit, "models", []) or []):
+        alive = getattr(model, "is_alive", True)
+        if callable(alive):
+            alive = bool(alive())
+        if not bool(alive):
+            continue
+        get_location = getattr(model, "get_location", None)
+        if not callable(get_location):
+            continue
+        location = get_location()
+        if not isinstance(location, (list, tuple)) or len(location) < 2:
+            continue
+        x = _safe_float(location[0])
+        y = _safe_float(location[1])
+        z = _safe_float(location[2]) if len(location) > 2 else 0.0
+        return (x, y, z)
+    return None
+
+
+def _unit_scout_distance(unit: object) -> float:
+    if unit is None:
+        return 0.0
+    has_scout_fn = getattr(unit, "has_scout", None)
+    if callable(has_scout_fn):
+        value = has_scout_fn()
+        if isinstance(value, (list, tuple)) and len(value) >= 2:
+            return float(_safe_float(value[1]) if bool(value[0]) else 0.0)
+        if bool(value):
+            return float(_safe_float(getattr(unit, "scout_move_distance", 0.0)))
+    return float(_safe_float(getattr(unit, "scout_move_distance", 0.0)))
+
+
+def _board_dimensions_for_scout(game: object) -> tuple[float, float]:
+    game_map = getattr(game, "map", None)
+    width = _safe_float(getattr(game_map, "width", 60.0))
+    height = _safe_float(getattr(game_map, "height", 44.0))
+    return (max(1.0, width), max(1.0, height))
+
+
+def _normalized_direction(dx: float, dy: float) -> tuple[float, float]:
+    magnitude = float((float(dx) * float(dx) + float(dy) * float(dy)) ** 0.5)
+    if magnitude <= 1e-9:
+        return (0.0, 0.0)
+    return (float(dx) / magnitude, float(dy) / magnitude)
+
+
+def _scout_candidate_destinations(
+    game: object,
+    unit: object,
+    *,
+    scout_distance: float,
+) -> list[tuple[float, float, float]]:
+    origin = _unit_anchor_location(unit)
+    if origin is None:
+        return []
+    ox, oy, oz = origin
+    width, height = _board_dimensions_for_scout(game)
+    center_x = float(width) * 0.5
+    center_y = float(height) * 0.5
+    forward_x, forward_y = _normalized_direction(center_x - ox, center_y - oy)
+    if abs(forward_x) <= 1e-9 and abs(forward_y) <= 1e-9:
+        forward_x, forward_y = (0.0, 1.0)
+    side_x, side_y = (-forward_y, forward_x)
+
+    primary = max(1.0, float(scout_distance) * 0.9)
+    secondary = max(1.0, float(scout_distance) * 0.5)
+    radii = [primary, secondary]
+    directions = [
+        (forward_x, forward_y),
+        (forward_x + side_x * 0.65, forward_y + side_y * 0.65),
+        (forward_x - side_x * 0.65, forward_y - side_y * 0.65),
+        (side_x, side_y),
+        (-side_x, -side_y),
+        (-forward_x + side_x * 0.4, -forward_y + side_y * 0.4),
+        (-forward_x - side_x * 0.4, -forward_y - side_y * 0.4),
+        (-forward_x, -forward_y),
+    ]
+    destinations: list[tuple[float, float, float]] = []
+    seen: set[tuple[float, float, float]] = set()
+    for radius in radii:
+        for dx, dy in directions:
+            ndx, ndy = _normalized_direction(dx, dy)
+            tx = _clamp(ox + ndx * float(radius), low=0.0, high=width)
+            ty = _clamp(oy + ndy * float(radius), low=0.0, high=height)
+            key = (round(float(tx), 3), round(float(ty), 3), round(float(oz), 3))
+            if key in seen:
+                continue
+            seen.add(key)
+            destinations.append((float(tx), float(ty), float(oz)))
+            if len(destinations) >= 8:
+                return destinations
+    return destinations
+
+
 def build_scout_move_request(game: object, unit: object) -> Optional[DecisionRequest]:
     if unit is None:
         return None
     unit_id = get_entity_id(unit)
-    options = [
-        DecisionOption.create(
-            "Scout move",
-            payload={"unit_id": unit_id, "action": "scout"},
-        ),
+    player_id = _player_id_for_unit(unit)
+    player_key = str(player_id or "")
+    scout_distance = max(0.0, _unit_scout_distance(unit))
+    destinations = _scout_candidate_destinations(
+        game,
+        unit,
+        scout_distance=scout_distance,
+    )
+
+    options: list[DecisionOption] = []
+    for idx, destination in enumerate(list(destinations or [])):
+        x, y, z = destination
+        options.append(
+            DecisionOption.create(
+                f"Scout to ({float(x):.1f}, {float(y):.1f})",
+                payload={
+                    "unit_id": unit_id,
+                    "action": "scout",
+                    "destination": [float(x), float(y), float(z)],
+                    "scout_candidate_index": int(idx),
+                    "action_id": f"{DECISION_SCOUT_MOVE}:{player_key}:{unit_id}:scout:{int(idx):02d}",
+                },
+            )
+        )
+    if not options:
+        options.append(
+            DecisionOption.create(
+                "Scout move",
+                payload={
+                    "unit_id": unit_id,
+                    "action": "scout",
+                    "action_id": f"{DECISION_SCOUT_MOVE}:{player_key}:{unit_id}:scout:default",
+                },
+            )
+        )
+    options.append(
         DecisionOption.create(
             "Skip scout move",
-            payload={"unit_id": unit_id, "action": "skip"},
-        ),
-    ]
+            payload={
+                "unit_id": unit_id,
+                "action": "skip",
+                "action_id": f"{DECISION_SCOUT_MOVE}:{player_key}:{unit_id}:skip",
+            },
+        )
+    )
+
+    deployment_zone = deployment_zone_from_player(game, player_key) if player_key else None
+    zone_type = str(dict(deployment_zone or {}).get("zone_type", "") or "")
+    context: dict[str, object] = {
+        "unit_id": unit_id,
+        "selection_kind": "scout_move",
+        "phase": "resolve_prebattle_rules",
+        "scout_distance": float(round(scout_distance, 6)),
+        "deployment_intent": dict(_default_deployment_intent(zone_type=zone_type)),
+    }
+    origin = _unit_anchor_location(unit)
+    if origin is not None:
+        context["scout_origin"] = [float(origin[0]), float(origin[1]), float(origin[2])]
+    if isinstance(deployment_zone, dict):
+        zone_data = dict(deployment_zone or {})
+        context["deployment_zone_key"] = canonical_deployment_zone_key(zone_data)
+        context["deployment_zone_type"] = zone_type
+        zone_name = str(zone_data.get("name", "") or "")
+        if zone_name:
+            context["deployment_zone_name"] = zone_name
+        affordance_summary = compute_board_affordance_summary(game, deployment_zone=zone_data)
+        context["board_affordances"] = affordance_summary.to_dict()
     prompt = f"Scout move for {getattr(unit, 'name', 'Unit')}"
     request = DecisionRequest.create(
         DECISION_SCOUT_MOVE,
         prompt,
-        player_id=_player_id_for_unit(unit),
+        player_id=player_id,
         options=options,
-        context={"unit_id": unit_id},
+        context=context,
     )
     if hasattr(game, "request_decision"):
         game.request_decision(request)

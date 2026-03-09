@@ -5,7 +5,13 @@ from typing import Any, Iterable, Optional
 
 import numpy as np
 
-from .decision_kinds import DECISION_CHOOSE_DEPLOYMENT_ZONE, DECISION_SELECT_NEXT_DEPLOY_UNIT
+from .decision_kinds import (
+    DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_DECLARE_RESERVES,
+    DECISION_MOVE_UNIT,
+    DECISION_SCOUT_MOVE,
+    DECISION_SELECT_NEXT_DEPLOY_UNIT,
+)
 from .deployment_ranker import (
     DEFAULT_DEPLOYMENT_RANKER_FEATURE_KEYS,
     DEPLOYMENT_RANKER_MODEL_TYPE,
@@ -16,7 +22,19 @@ from .deployment_ranker import (
 
 DEFAULT_DEPLOYMENT_RANKING_DECISION_TYPES: tuple[str, ...] = (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_DECLARE_RESERVES,
+    DECISION_MOVE_UNIT,
+    DECISION_SCOUT_MOVE,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
+)
+
+DEFAULT_DEPLOYMENT_RANKING_CANDIDATE_KINDS: tuple[str, ...] = (
+    "deployment_zone",
+    "deployment_commit_order",
+    "deployment_reserves",
+    "deployment_scout",
+    "deployment_move",
+    "noop",
 )
 
 
@@ -46,6 +64,7 @@ def build_deployment_ranking_dataset(
     records: Iterable[dict[str, Any]],
     *,
     decision_types: Iterable[str] | None = None,
+    candidate_kinds: Iterable[str] | None = None,
     feature_keys: Iterable[str] | None = None,
     require_valid: bool = True,
     minimum_legal_candidates: int = 2,
@@ -53,6 +72,11 @@ def build_deployment_ranking_dataset(
     decision_type_set = {
         str(value or "").strip()
         for value in list(decision_types or DEFAULT_DEPLOYMENT_RANKING_DECISION_TYPES)
+        if str(value or "").strip()
+    }
+    candidate_kind_set = {
+        str(value or "").strip()
+        for value in list(candidate_kinds or DEFAULT_DEPLOYMENT_RANKING_CANDIDATE_KINDS)
         if str(value or "").strip()
     }
     ordered_feature_keys = tuple(
@@ -70,6 +94,8 @@ def build_deployment_ranking_dataset(
     skipped_low_candidate_count = 0
     skipped_not_valid = 0
     skipped_decision_type = 0
+    skipped_candidate_kind = 0
+    skipped_non_deployment_move = 0
 
     for record in list(records or []):
         item = dict(record or {})
@@ -78,6 +104,12 @@ def build_deployment_ranking_dataset(
         if decision_type not in decision_type_set:
             skipped_decision_type += 1
             continue
+        if decision_type == DECISION_MOVE_UNIT:
+            context = dict(item.get("context", {}) or {})
+            placement_kind = str(context.get("placement_kind", "") or "").strip().lower()
+            if placement_kind != "deployment":
+                skipped_non_deployment_move += 1
+                continue
         if require_valid and not bool(item.get("valid", False)):
             skipped_not_valid += 1
             continue
@@ -98,11 +130,15 @@ def build_deployment_ranking_dataset(
             if idx < len(raw_mask) and not bool(raw_mask[idx]):
                 continue
             metadata = dict(candidate_payload.get("metadata", {}) or {})
+            candidate_kind = str(metadata.get("candidate_kind", "") or "").strip()
+            if candidate_kind_set and candidate_kind not in candidate_kind_set:
+                skipped_candidate_kind += 1
+                continue
             legal_rows.append(
                 {
                     "action_id": action_id,
                     "is_chosen": bool(action_id == chosen_action_id),
-                    "candidate_kind": str(metadata.get("candidate_kind", "") or ""),
+                    "candidate_kind": candidate_kind,
                     "features": deployment_ranker_feature_vector(metadata, feature_keys=ordered_feature_keys),
                 }
             )
@@ -132,11 +168,14 @@ def build_deployment_ranking_dataset(
         "dataset_type": "deployment_candidate_ranking",
         "generated_at_utc": _utc_timestamp(),
         "decision_types": sorted(decision_type_set),
+        "candidate_kinds": sorted(candidate_kind_set),
         "feature_keys": list(ordered_feature_keys),
         "total_input_records": int(total_input_records),
         "total_rank_decisions": int(len(decisions)),
         "total_candidate_rows": int(total_candidate_rows),
         "skipped_not_target_decision_type": int(skipped_decision_type),
+        "skipped_not_target_candidate_kind": int(skipped_candidate_kind),
+        "skipped_non_deployment_move_records": int(skipped_non_deployment_move),
         "skipped_not_valid": int(skipped_not_valid),
         "skipped_missing_choice": int(skipped_missing_choice),
         "skipped_low_candidate_count": int(skipped_low_candidate_count),

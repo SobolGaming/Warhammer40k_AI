@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_DECLARE_RESERVES,
     DECISION_MOVE_UNIT,
 )
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
@@ -26,6 +27,11 @@ def _metadata(*, score: float, deny: float, candidate_kind: str = "deployment_zo
         "los_delta": 0.0,
         "resource_delta": 0.0,
         "reserve_denial_delta": float(deny) * 0.5,
+        "deep_strike_pressure_delta": float(deny) * 0.4,
+        "reserve_entry_lane_delta": float(deny) * 0.3,
+        "reserve_unit_slots_ratio": 0.2,
+        "reserve_points_ratio": 0.2,
+        "strategic_points_ratio": 0.1,
         "screen_integrity_delta": float(deny) * 0.4,
         "countercharge_coverage_delta": 0.0,
         "aura_connectivity_delta": 0.0,
@@ -58,6 +64,36 @@ def _record(
             {
                 "action_id": "zone:b",
                 "metadata": _metadata(score=second_score, deny=0.1),
+            },
+        ],
+    }
+
+
+def _decision_record(
+    *,
+    decision_id: str,
+    decision_type: str,
+    chosen_action_id: str,
+    candidate_kind: str,
+    context: dict | None = None,
+) -> dict:
+    return {
+        "decision_id": decision_id,
+        "decision_type": decision_type,
+        "game_id": "game:test",
+        "player_id": "player:test",
+        "valid": True,
+        "chosen_action_id": chosen_action_id,
+        "mask": [True, True],
+        "context": dict(context or {}),
+        "candidates": [
+            {
+                "action_id": "a",
+                "metadata": _metadata(score=1.0, deny=0.3, candidate_kind=candidate_kind),
+            },
+            {
+                "action_id": "b",
+                "metadata": _metadata(score=0.2, deny=0.1, candidate_kind=candidate_kind),
             },
         ],
     }
@@ -145,3 +181,34 @@ def test_trained_deployment_ranker_selects_higher_value_candidate() -> None:
     request.mask = [True, True]
     chosen = ranker.choose_action_id(request)
     assert str(chosen) == str(action_a)
+
+
+def test_default_dataset_includes_reserves_and_filters_non_deployment_move_records() -> None:
+    records = [
+        _decision_record(
+            decision_id="reserve-1",
+            decision_type=DECISION_DECLARE_RESERVES,
+            chosen_action_id="a",
+            candidate_kind="deployment_reserves",
+        ),
+        _decision_record(
+            decision_id="move-1",
+            decision_type=DECISION_MOVE_UNIT,
+            chosen_action_id="a",
+            candidate_kind="move",
+            context={"placement_kind": "movement"},
+        ),
+        _decision_record(
+            decision_id="move-2",
+            decision_type=DECISION_MOVE_UNIT,
+            chosen_action_id="a",
+            candidate_kind="deployment_move",
+            context={"placement_kind": "deployment"},
+        ),
+    ]
+    dataset = build_deployment_ranking_dataset(records)
+    assert int(dataset.get("total_rank_decisions", 0) or 0) == 2
+    assert int(dataset.get("skipped_non_deployment_move_records", 0) or 0) == 1
+    kinds = set(str(value) for value in list(dataset.get("candidate_kinds", []) or []))
+    assert "deployment_reserves" in kinds
+    assert "deployment_move" in kinds

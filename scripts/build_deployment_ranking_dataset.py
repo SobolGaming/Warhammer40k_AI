@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from warhammer40k_ai.engine.deployment_ranker_training import (
+    DEFAULT_DEPLOYMENT_RANKING_CANDIDATE_KINDS,
     DEFAULT_DEPLOYMENT_RANKING_DECISION_TYPES,
     build_deployment_ranking_dataset,
     extract_records_from_document,
@@ -39,6 +40,11 @@ def main() -> None:
         help="Optional comma-separated numeric metadata keys. Defaults to canonical deployment ranking keys.",
     )
     parser.add_argument(
+        "--candidate-kinds",
+        default=",".join(DEFAULT_DEPLOYMENT_RANKING_CANDIDATE_KINDS),
+        help="Comma-separated candidate kinds to include.",
+    )
+    parser.add_argument(
         "--minimum-legal-candidates",
         type=int,
         default=2,
@@ -57,6 +63,7 @@ def main() -> None:
     dataset = build_deployment_ranking_dataset(
         records,
         decision_types=_parse_csv_arg(args.decision_types),
+        candidate_kinds=_parse_csv_arg(args.candidate_kinds),
         feature_keys=_parse_csv_arg(args.feature_keys),
         require_valid=not bool(args.include_invalid),
         minimum_legal_candidates=max(2, int(args.minimum_legal_candidates)),

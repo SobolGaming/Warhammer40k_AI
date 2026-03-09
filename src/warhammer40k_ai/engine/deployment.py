@@ -44,6 +44,15 @@ class DeploymentDecisionMaker(ABC):
     def declare_reserves(self, player: Player) -> dict:
         """Decide which units go into reserves, strategic reserves, or deploy normally."""
         pass
+
+    def choose_reserves_allocation_option(
+        self,
+        request: DecisionRequest,
+        player: Player,
+        proposed_decisions: Dict[str, str],
+    ) -> Optional[str]:
+        del request, player, proposed_decisions
+        return None
     
     @abstractmethod
     def choose_unit_deployment_position(self, unit: 'Unit', deployment_zone: dict, 
@@ -186,9 +195,17 @@ class DeploymentManager:
         logger.info(f"{self.defender.name} chose deployment zone, {self.attacker.name} gets the other")
         
         # Step 3: Declare Reserves & Strategic Reserves (simultaneously)
-        defender_reserves = self._resolve_reserves_decisions(self.defender, defender_decision_maker)
+        defender_reserves = self._resolve_reserves_decisions(
+            self.defender,
+            defender_decision_maker,
+            deployment_zone=deployment_results['deployment_zones'].get(self.defender.id),
+        )
         attacker_decision_maker = decision_makers[self.attacker.id]
-        attacker_reserves = self._resolve_reserves_decisions(self.attacker, attacker_decision_maker)
+        attacker_reserves = self._resolve_reserves_decisions(
+            self.attacker,
+            attacker_decision_maker,
+            deployment_zone=deployment_results['deployment_zones'].get(self.attacker.id),
+        )
         
         deployment_results['reserves'][self.defender.id] = defender_reserves
         deployment_results['reserves'][self.attacker.id] = attacker_reserves
@@ -270,30 +287,135 @@ class DeploymentManager:
         
         return zones
 
-    def _resolve_reserves_decisions(self, player: Player, decision_maker: DeploymentDecisionMaker) -> dict:
-        army = player.get_army()
-        if army is None:
-            return {}
-        decisions = dict(decision_maker.declare_reserves(player) or {})
-        request = build_reserves_allocation_request(self.game, army)
-        if request is None:
-            return decisions
-        option_id = request.options[0].option_id if getattr(request, "options", None) else ""
-        buckets = {"deploy": [], "reserves": [], "strategic_reserves": []}
-        for unit_id, status in decisions.items():
-            unit_key = str(unit_id)
+    @staticmethod
+    def _decisions_to_buckets(decisions: Dict[str, str]) -> Dict[str, List[str]]:
+        buckets: Dict[str, List[str]] = {
+            "deploy": [],
+            "reserves": [],
+            "strategic_reserves": [],
+        }
+        for unit_id, status in sorted(dict(decisions or {}).items()):
+            unit_key = str(unit_id or "")
+            if not unit_key:
+                continue
             choice = str(status or "deploy")
             if choice not in buckets:
                 choice = "deploy"
             buckets[choice].append(unit_key)
+        return buckets
+
+    @staticmethod
+    def _decisions_from_buckets(
+        buckets: Dict[str, List[str]],
+        *,
+        root_unit_ids: Optional[List[str]] = None,
+    ) -> Dict[str, str]:
+        decisions: Dict[str, str] = {str(unit_id): "deploy" for unit_id in list(root_unit_ids or []) if str(unit_id)}
+        for status in ("deploy", "reserves", "strategic_reserves"):
+            for unit_id in list(dict(buckets or {}).get(status, []) or []):
+                unit_key = str(unit_id or "")
+                if not unit_key:
+                    continue
+                decisions[unit_key] = status
+        return decisions
+
+    @staticmethod
+    def _matching_reserves_option(request: DecisionRequest, decisions: Dict[str, str]) -> Optional[DecisionOption]:
+        target_buckets = DeploymentManager._decisions_to_buckets(decisions)
+        root_unit_ids = [
+            str(unit_id)
+            for unit_id in list(dict(getattr(request, "context", {}) or {}).get("reserve_root_unit_ids", []) or [])
+            if str(unit_id)
+        ]
+        for option in list(getattr(request, "options", []) or []):
+            payload = dict(getattr(option, "payload", {}) or {})
+            option_buckets = dict(payload.get("unit_ids_by_bucket", {}) or {})
+            if DeploymentManager._decisions_to_buckets(
+                DeploymentManager._decisions_from_buckets(
+                    option_buckets,
+                    root_unit_ids=root_unit_ids,
+                )
+            ) == target_buckets:
+                return option
+        return None
+
+    def _resolve_reserves_decisions(
+        self,
+        player: Player,
+        decision_maker: DeploymentDecisionMaker,
+        *,
+        deployment_zone: Optional[dict] = None,
+    ) -> dict:
+        army = player.get_army()
+        if army is None:
+            return {}
+        decisions = dict(decision_maker.declare_reserves(player) or {})
+        request = build_reserves_allocation_request(
+            self.game,
+            army,
+            deployment_intent=decision_maker.build_deployment_intent(
+                decision_kind="reserves",
+                player=player,
+                deployment_zone=deployment_zone,
+                deployable_units=[],
+                already_deployed=[],
+            ),
+            extra_context=decision_maker.build_deployment_decision_context(
+                decision_kind="reserves",
+                player=player,
+                deployment_zone=deployment_zone,
+                deployable_units=[],
+                already_deployed=[],
+            ),
+            preferred_decisions=decisions,
+            queue_requests=True,
+        )
+        if request is None:
+            return decisions
+        selected_option: Optional[DecisionOption] = None
+        option_id = str(
+            decision_maker.choose_reserves_allocation_option(
+                request,
+                player,
+                dict(decisions),
+            )
+            or ""
+        )
+        if option_id:
+            for option in list(getattr(request, "options", []) or []):
+                if str(getattr(option, "option_id", "") or "") == option_id:
+                    selected_option = option
+                    break
+            if selected_option is None:
+                raise RuntimeError(
+                    f"Reserves option selection for {player.name} returned unknown option id: {option_id}"
+                )
+        if selected_option is None:
+            selected_option = self._matching_reserves_option(request, decisions)
+        if selected_option is None and getattr(request, "options", None):
+            selected_option = request.options[0]
+        if selected_option is None:
+            raise RuntimeError(f"Reserves allocation request for {player.name} has no selectable option.")
+
+        selected_buckets = dict(getattr(selected_option, "payload", {}) or {}).get("unit_ids_by_bucket")
+        if not isinstance(selected_buckets, dict):
+            selected_buckets = self._decisions_to_buckets(decisions)
+
+        root_unit_ids = [
+            str(unit_id)
+            for unit_id in list(dict(getattr(request, "context", {}) or {}).get("reserve_root_unit_ids", []) or [])
+            if str(unit_id)
+        ]
+        resolved_decisions = self._decisions_from_buckets(selected_buckets, root_unit_ids=root_unit_ids)
+
         queue = getattr(self.game, "decision_queue", None)
         pending = queue.get(request.decision_id) if queue is not None and hasattr(queue, "get") else request
         if pending is not None:
             apply_result = resolve_decision_command(
                 self.game,
                 request,
-                option_id,
-                result_payload={"unit_ids_by_bucket": buckets},
+                selected_option.option_id,
+                result_payload={"unit_ids_by_bucket": selected_buckets},
                 player_id=getattr(player, "id", None),
             )
             if not bool(getattr(apply_result, "ok", False)):
@@ -301,7 +423,7 @@ class DeploymentManager:
                 raise RuntimeError(
                     f"Reserves allocation decision rejected for player {getattr(player, 'name', 'Player')}: {list(errors)}"
                 )
-        return decisions
+        return resolved_decisions
 
     def _resolve_deployment_zone_decision(
         self,
