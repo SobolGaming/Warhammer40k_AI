@@ -2318,7 +2318,8 @@ class GamePhaseHandlersMixin:
             exclude_character = bool(ability_spec.get("exclude_character", False))
             required_keyword = str(ability_spec.get("required_keyword", "") or "").strip().upper()
             required_model_name = str(ability_spec.get("required_model_name", "") or "").strip()
-            if not exclude_character and not required_keyword and not required_model_name:
+            excluded_model_name = str(ability_spec.get("excluded_model_name", "") or "").strip()
+            if not exclude_character and not required_keyword and not required_model_name and not excluded_model_name:
                 return None
             allowed_ids: list[str] = []
             for model in list(getattr(bodyguard_unit, "models_lost", []) or []):
@@ -2329,6 +2330,8 @@ class GamePhaseHandlersMixin:
                 if required_keyword and not _bodyguard_return_model_has_keyword(model, required_keyword):
                     continue
                 if required_model_name and not _bodyguard_return_model_matches_name(bodyguard_unit, model, required_model_name):
+                    continue
+                if excluded_model_name and _bodyguard_return_model_matches_name(bodyguard_unit, model, excluded_model_name):
                     continue
                 model_id = str(get_entity_id(model) or "")
                 if model_id:
@@ -2367,6 +2370,82 @@ class GamePhaseHandlersMixin:
             alive_attr = getattr(bearer, "is_alive", True)
             return bool(alive_attr() if callable(alive_attr) else alive_attr)
 
+        def _return_ability_source_model_present(source_unit, ability_spec: dict) -> bool:
+            if source_unit is None:
+                return False
+            if not isinstance(ability_spec, dict):
+                return False
+            required_model_name = str(ability_spec.get("requires_source_model_name", "") or "").strip()
+            if not required_model_name:
+                return True
+            contains_attached = getattr(source_unit, "_attached_unit_contains_model_named", None)
+            if callable(contains_attached):
+                return bool(contains_attached(required_model_name))
+            contains_local = getattr(source_unit, "_unit_contains_model_named", None)
+            if callable(contains_local):
+                return bool(contains_local(required_model_name))
+            return False
+
+        def _queue_command_phase_return_mode_choice(*, player_obj, source_unit, bodyguard_unit, ability_spec: dict) -> bool:
+            if source_unit is None or bodyguard_unit is None:
+                return False
+            mode_options = ability_spec.get("mode_options") if isinstance(ability_spec, dict) else None
+            if not isinstance(mode_options, list) or not mode_options:
+                return False
+
+            options: list[DecisionOption] = []
+            for mode in list(mode_options):
+                if not isinstance(mode, dict):
+                    continue
+                label = str(mode.get("label", "") or "").strip()
+                if not label:
+                    continue
+                allowed_ids = _filtered_bodyguard_return_model_ids(bodyguard_unit, mode)
+                if allowed_ids is not None and not allowed_ids:
+                    continue
+                amount_roll = str(mode.get("amount_roll", "") or "").strip().upper()
+                try:
+                    amount = int(mode.get("amount", 0) or 0)
+                except (TypeError, ValueError):
+                    amount = 0
+                if amount <= 0 and not amount_roll:
+                    continue
+                action = str(mode.get("action", "base") or "base").strip().lower()
+                if action not in {"base", "discard"}:
+                    continue
+                payload = {
+                    "action": action,
+                    "source_unit_id": get_entity_id(source_unit),
+                    "target_unit_id": get_entity_id(bodyguard_unit),
+                    "base_amount": int(max(0, amount)),
+                    "base_amount_roll": amount_roll,
+                    "return_allow_skip": bool(mode.get("return_allow_skip", True)),
+                }
+                if allowed_ids is not None:
+                    payload["allowed_model_ids"] = list(allowed_ids)
+                options.append(DecisionOption.create(label, payload=payload))
+
+            if not options:
+                return False
+
+            ability_name = str(ability_spec.get("name", "") or "Command phase model return").strip() or "Command phase model return"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select one option.",
+                player_id=getattr(player_obj, "id", None),
+                options=options,
+                context={
+                    "ability": "command_phase_miracle_discard_return_mode",
+                    "ability_name": ability_name,
+                    "phase": "Command phase",
+                    "source_unit_id": get_entity_id(source_unit),
+                    "target_unit_id": get_entity_id(bodyguard_unit),
+                    "allow_skip": False,
+                },
+            )
+            self.request_decision(request)
+            return True
+
         for unit in list(army.units):
             if not unit.is_alive():
                 continue
@@ -2396,6 +2475,8 @@ class GamePhaseHandlersMixin:
                 continue
             if not _return_ability_bearer_alive(unit, ability):
                 continue
+            if not _return_ability_source_model_present(unit, ability):
+                continue
             if bool(ability.get("requires_bearer_unit_below_starting_strength", False)):
                 below_fn = getattr(bodyguard, "is_below_starting_strength", None)
                 is_below_starting_strength = (
@@ -2408,6 +2489,13 @@ class GamePhaseHandlersMixin:
                 has_used_once = getattr(bodyguard, "has_used_unit_once_per_battle", None)
                 if callable(has_used_once) and bool(has_used_once(ability_key)):
                     continue
+            if _queue_command_phase_return_mode_choice(
+                player_obj=player,
+                source_unit=unit,
+                bodyguard_unit=bodyguard,
+                ability_spec=ability,
+            ):
+                continue
 
             table_roll = str(ability.get("table_roll", "") or "").strip().upper()
             if table_roll == "D6":
@@ -2579,6 +2667,8 @@ class GamePhaseHandlersMixin:
                 continue
             if not _return_ability_bearer_alive(root, ability):
                 continue
+            if not _return_ability_source_model_present(root, ability):
+                continue
             if bool(ability.get("requires_bearer_unit_below_starting_strength", False)):
                 below_fn = getattr(root, "is_below_starting_strength", None)
                 is_below_starting_strength = (
@@ -2586,6 +2676,13 @@ class GamePhaseHandlersMixin:
                 )
                 if not is_below_starting_strength:
                     continue
+            if _queue_command_phase_return_mode_choice(
+                player_obj=player,
+                source_unit=root,
+                bodyguard_unit=root,
+                ability_spec=ability,
+            ):
+                continue
 
             if bool(ability.get("single_choice", False)):
                 required_model_name = str(ability.get("required_model_name", "") or "").strip()

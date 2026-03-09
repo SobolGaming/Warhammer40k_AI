@@ -573,9 +573,14 @@ class RulesParsingMixin:
             if not text:
                 continue
             low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+            healing_tears_mode = (
+                "either one destroyed" in low
+                and "other bodyguard models" in low
+                and "are returned to this unit" in low
+            )
             if "command phase" not in low:
                 continue
-            if "bodyguard model" in low or "bodyguard models" in low:
+            if ("bodyguard model" in low or "bodyguard models" in low) and not healing_tears_mode:
                 continue
             if "return" not in low or "destroyed" not in low:
                 continue
@@ -586,6 +591,45 @@ class RulesParsingMixin:
             if not re.search(r"to\s+" + target_unit_re + r"\b", plain):
                 continue
             amount_token_re = r"(one|a|\d+|(?:\d+)?d\d+(?:\+\d+)?)"
+            healing_tears_match = re.search(
+                r"while\s+this\s+unit\s+contains\s+(?:one\s+or\s+more\s+)?(?:an?\s+)?(?P<anchor>[a-z0-9' -]+?)\s+models?\s+"
+                r"in\s+your\s+command\s+phase\s+if\s+this\s+unit\s+is\s+below\s+(?:its\s+)?starting\s+strength\s+"
+                r"either\s+one\s+destroyed\s+(?P<primary>[a-z0-9' -]+?)\s+model\s+or\s+up\s+to\s+(?P<secondary>(?:\d+)?d\d+(?:\+\d+)?)\s+"
+                r"other\s+bodyguard\s+models?\s+are\s+returned\s+to\s+" + target_unit_re + r"\b",
+                plain,
+            )
+            if healing_tears_match is not None:
+                secondary_token = str(healing_tears_match.group("secondary") or "").strip()
+                secondary_amount, secondary_amount_roll = self._parse_command_phase_return_amount_token(secondary_token)
+                if secondary_amount <= 0:
+                    continue
+                anchor_model_name = str(healing_tears_match.group("anchor") or "").strip()
+                primary_model_name = str(healing_tears_match.group("primary") or "").strip()
+                if not anchor_model_name or not primary_model_name:
+                    continue
+                return {
+                    "name": name or "Command phase model return",
+                    "description": desc or "",
+                    "requires_bearer_unit_below_starting_strength": True,
+                    "requires_source_model_name": anchor_model_name,
+                    "mode_options": [
+                        {
+                            "label": f"Return 1 {primary_model_name}",
+                            "action": "base",
+                            "amount": 1,
+                            "required_model_name": primary_model_name,
+                            "return_allow_skip": False,
+                        },
+                        {
+                            "label": f"Return up to {secondary_amount_roll or secondary_amount} other Bodyguard models",
+                            "action": "base",
+                            "amount": int(secondary_amount),
+                            "amount_roll": str(secondary_amount_roll or ""),
+                            "excluded_model_name": primary_model_name,
+                            "return_allow_skip": True,
+                        },
+                    ],
+                }
             amount_match = re.search(
                 r"return(?:\s+up\s+to)?\s+" + amount_token_re + r"\s+destroyed\b",
                 plain,
@@ -2241,6 +2285,39 @@ class RulesParsingMixin:
                         "model_name": "Fabius Bile",
                         "must_reattach_if_attached": bool(must_reattach),
                     }
+                else:
+                    # Saint Celestine (Miraculous Intervention): first time this unit's named model is destroyed,
+                    # end-of-phase roll and return that named model.
+                    m_unit_model = re.search(
+                        r"the first time this unit(?:s| s) (?P<model>[a-z0-9 ]+?) model is destroyed "
+                        r"(?:at the end of the phase roll one d6|roll one d6 at the end of the phase) on a (?P<roll>\d+) "
+                        r"set that (?P<model_repeat>[a-z0-9 ]+?) model back up on the battlefield"
+                        r"(?: as close as possible to where it was destroyed)? "
+                        r"and not within engagement range of (?:one or more|any) enemy (?:units|models)(?: with)? "
+                        r"(?P<wounds>its full wounds remaining|(?:d3|d6|\d+) wounds? remaining)",
+                        norm,
+                    )
+                    if m_unit_model:
+                        model_name = str(m_unit_model.group("model") or "").strip()
+                        model_repeat = str(m_unit_model.group("model_repeat") or "").strip()
+                        if model_name and model_repeat and model_name == model_repeat:
+                            try:
+                                roll_min = int(m_unit_model.group("roll") or 2)
+                            except (TypeError, ValueError):
+                                roll_min = 2
+                            wounds_raw = str(m_unit_model.group("wounds") or "")
+                            wounds = self._parse_return_on_death_wounds(wounds_raw)
+                            key = re.sub(r"[^a-z0-9]+", "_", str(name or "return_on_death").lower()).strip("_")
+                            if not key:
+                                key = "return_on_death"
+                            spec = {
+                                "name": name or "Return on Death",
+                                "roll_min": int(roll_min or 2),
+                                "wounds": wounds,
+                                "skip_deadly_demise": False,
+                                "key": key,
+                                "model_name": model_name,
+                            }
             if spec is None:
                 continue
             # Enhancement: Superior Creation is bearer-only; gate it to the bearer model.
@@ -2297,6 +2374,47 @@ class RulesParsingMixin:
 
         sr = getattr(self, "special_rules", None)
         specs = list(sr.get("return_on_death_specs", []) or []) if isinstance(sr, dict) else []
+        if not specs:
+            for name, desc in list(self._iter_ability_entries_for_rules(model=None)):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or ""))
+                if not text:
+                    continue
+                norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                norm = re.sub(r"'s\b", "s", norm)
+                norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                norm = re.sub(r"\s+", " ", norm).strip()
+                if not norm:
+                    continue
+                m_unit_model = re.search(
+                    r"the first time this unit(?:s| s) (?P<model>[a-z0-9 ]+?) model is destroyed "
+                    r"(?:at the end of the phase roll one d6|roll one d6 at the end of the phase) on a (?P<roll>\d+) "
+                    r"set that (?P<model_repeat>[a-z0-9 ]+?) model back up on the battlefield"
+                    r"(?: as close as possible to where it was destroyed)? "
+                    r"and not within engagement range of (?:one or more|any) enemy (?:units|models)(?: with)? "
+                    r"(?P<wounds>its full wounds remaining|(?:d3|d6|\d+) wounds? remaining)",
+                    norm,
+                )
+                if not m_unit_model:
+                    continue
+                model_name = str(m_unit_model.group("model") or "").strip()
+                model_repeat = str(m_unit_model.group("model_repeat") or "").strip()
+                if not model_name or model_name != model_repeat:
+                    continue
+                try:
+                    roll_min = int(m_unit_model.group("roll") or 2)
+                except (TypeError, ValueError):
+                    roll_min = 2
+                specs.append(
+                    {
+                        "name": name or "Return on Death",
+                        "roll_min": int(roll_min or 2),
+                        "wounds": self._parse_return_on_death_wounds(str(m_unit_model.group("wounds") or "")),
+                        "skip_deadly_demise": False,
+                        "key": re.sub(r"[^a-z0-9]+", "_", str(name or "return_on_death").lower()).strip("_") or "return_on_death",
+                        "model_name": model_name,
+                    }
+                )
+                break
 
         if isinstance(sr, dict) and sr.get("enhancement_phoenix_gem"):
             specs.append(
@@ -2833,6 +2951,7 @@ class RulesParsingMixin:
                     "fight_phase_destroy_enemy_fnp_upgrade_entries",
                     "attached_character_fnp_entries",
                     "unit_contains_character_fnp_entries",
+                    "unit_contains_named_model_fnp_entries",
                     "same_unit_keyword_fnp_entries",
                     "unit_contains_action_after_advance_entries",
                     "unit_contains_shoot_after_starting_action_entries",
@@ -2895,6 +3014,7 @@ class RulesParsingMixin:
         fight_phase_destroy_enemy_fnp_upgrade_entries: list[dict] = []
         attached_character_fnp_entries: list[dict] = []
         unit_contains_character_fnp_entries: list[dict] = []
+        unit_contains_named_model_fnp_entries: list[dict] = []
         same_unit_keyword_fnp_entries: list[dict] = []
         unit_contains_action_after_advance_entries: list[dict] = []
         unit_contains_shoot_after_starting_action_entries: list[dict] = []
@@ -3329,6 +3449,25 @@ class RulesParsingMixin:
                                 }
                             )
 
+                    m = self._UNIT_CONTAINS_MODEL_NAMED_FNP_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group("value"))
+                        except Exception:
+                            val = None
+                        required_model = str(m.group("required_model") or "").strip()
+                        target_model = str(m.group("target_model") or "").strip()
+                        if val and required_model and target_model:
+                            source = str(name or "Unit contains ability").strip() or "Unit contains ability"
+                            unit_contains_named_model_fnp_entries.append(
+                                {
+                                    "value": int(val),
+                                    "source": source,
+                                    "required_model_name": required_model,
+                                    "target_model_name": target_model,
+                                }
+                            )
+
                     m = self._SAME_UNIT_KEYWORD_FNP_RE.search(sentence)
                     if m:
                         try:
@@ -3721,6 +3860,44 @@ class RulesParsingMixin:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["unit_contains_character_fnp_entries"] = list(unit_contains_character_fnp_entries)
+                u.special_rules = sr
+        if unit_contains_named_model_fnp_entries:
+            deduped_entries = []
+            seen_entries: set[tuple[int, str, str, str]] = set()
+            for entry in unit_contains_named_model_fnp_entries:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    val = int(entry.get("value"))
+                except Exception:
+                    continue
+                source = str(entry.get("source", "") or "").strip() or "Unit contains ability"
+                required_model_name = str(entry.get("required_model_name", "") or "").strip()
+                target_model_name = str(entry.get("target_model_name", "") or "").strip()
+                if not required_model_name or not target_model_name:
+                    continue
+                key = (
+                    int(val),
+                    source.lower(),
+                    required_model_name.lower(),
+                    target_model_name.lower(),
+                )
+                if key in seen_entries:
+                    continue
+                seen_entries.add(key)
+                deduped_entries.append(
+                    {
+                        "value": int(val),
+                        "source": source,
+                        "required_model_name": required_model_name,
+                        "target_model_name": target_model_name,
+                    }
+                )
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["unit_contains_named_model_fnp_entries"] = list(deduped_entries)
                 u.special_rules = sr
         if same_unit_keyword_fnp_entries:
             for u in members:

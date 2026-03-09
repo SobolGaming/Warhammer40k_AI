@@ -1136,6 +1136,15 @@ class LateGameplayMixin:
                     flags=re.IGNORECASE,
                 )
             )
+
+        def _is_named_model_fnp_conditional_text(value: str) -> bool:
+            normalized = self._normalize_rules_text(value or "")
+            matcher = getattr(self, "_UNIT_CONTAINS_MODEL_NAMED_FNP_RE", None)
+            if matcher is None:
+                return False
+            return bool(matcher.search(normalized))
+
+        fnp_pattern_requested = any(str(pattern or "").strip().lower() in {"feel no pain", "fnp"} for pattern in list(patterns or []))
         
         # Check keywords first
         for keyword in self.keywords:
@@ -1191,6 +1200,8 @@ class LateGameplayMixin:
                 if not ability_name_matched and hasattr(ability, 'description') and ability.description:
                     desc_text = self._normalize_rules_text(ability.description)
                     if _is_waaagh_conditional_text(desc_text):
+                        continue
+                    if fnp_pattern_requested and _is_named_model_fnp_conditional_text(desc_text):
                         continue
                     for pattern in patterns:
                         if pattern.lower() in desc_text.lower():
@@ -1249,6 +1260,8 @@ class LateGameplayMixin:
                 if not ability_name_matched and hasattr(ability, 'description') and ability.description:
                     desc_text = self._normalize_rules_text(ability.description)
                     if _is_waaagh_conditional_text(desc_text):
+                        continue
+                    if fnp_pattern_requested and _is_named_model_fnp_conditional_text(desc_text):
                         continue
                     for pattern in patterns:
                         if pattern.lower() in desc_text.lower():
@@ -1550,6 +1563,53 @@ class LateGameplayMixin:
                         result.append((int(val), None))
         except Exception:
             pass
+        sr = getattr(self, "special_rules", None)
+        entries = sr.get("unit_contains_named_model_fnp_entries") if isinstance(sr, dict) else None
+        if isinstance(entries, list) and target_model is not None:
+            t_unit = getattr(target_model, "parent_unit", None) or self
+            contains_named_model_fn = getattr(t_unit, "_unit_contains_model_named", None)
+            normalize_name_fn = getattr(t_unit, "_normalize_attached_unit_name", None)
+
+            def _normalize_name(value: object) -> str:
+                raw = str(value or "").strip().lower()
+                if not raw:
+                    return ""
+                if callable(normalize_name_fn):
+                    normalized = str(normalize_name_fn(raw) or "").strip().lower()
+                else:
+                    normalized = re.sub(r"[^a-z0-9]+", " ", raw).strip()
+                return re.sub(r"\s+", " ", normalized).strip()
+
+            target_model_name = _normalize_name(getattr(target_model, "name", ""))
+            target_model_tokens = set(target_model_name.split())
+            seen = set((int(v), (c or "")) for v, c in result)
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    val = int(entry.get("value"))
+                except (TypeError, ValueError):
+                    continue
+                required_model_name = str(entry.get("required_model_name", "") or "").strip()
+                if required_model_name:
+                    if not callable(contains_named_model_fn):
+                        continue
+                    if not bool(contains_named_model_fn(required_model_name)):
+                        continue
+                target_model_name_required = str(entry.get("target_model_name", "") or "").strip()
+                if target_model_name_required:
+                    required_norm = _normalize_name(target_model_name_required)
+                    if not required_norm:
+                        continue
+                    if required_norm not in target_model_name:
+                        required_tokens = set(required_norm.split())
+                        if not required_tokens or not required_tokens.issubset(target_model_tokens):
+                            continue
+                key = (int(val), "")
+                if key in seen:
+                    continue
+                seen.add(key)
+                result.append((int(val), None))
         try:
             sr = getattr(self, "special_rules", None)
             entries = sr.get("same_unit_keyword_fnp_entries") if isinstance(sr, dict) else None

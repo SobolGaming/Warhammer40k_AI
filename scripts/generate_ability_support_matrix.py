@@ -3531,6 +3531,18 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "While leading, Command-phase choice supports either returning up to 1 destroyed non-CHARACTER model or discarding 1 Miracle die to return up to D3+1 instead.",
         ),
+        ("AS", "Healing Tears"): (
+            "Supported",
+            "Command phase return mode: while the unit contains a Celestine model and is below Starting Strength, choose either return 1 destroyed Geminae Superia model or return up to D3 other destroyed Bodyguard models.",
+        ),
+        ("AS", "Lifewards"): (
+            "Supported",
+            "While the unit contains one or more Geminae Superia models, the Celestine model in that unit has Feel No Pain 4+.",
+        ),
+        ("AS", "Miraculous Intervention"): (
+            "Supported",
+            "The first time the unit's Celestine model is destroyed, at end of phase roll D6; on 2+ set that model back up as close as possible to where it was destroyed, outside Engagement Range, with full wounds remaining.",
+        ),
         ("AS", "Fiery Conviction"): (
             "Supported",
             "Start of your Command phase: optional CHOOSE_QUARRY mode supports either discarding 1 Miracle die to gain 1CP or taking a Leadership test for this model to gain 1CP on a pass.",

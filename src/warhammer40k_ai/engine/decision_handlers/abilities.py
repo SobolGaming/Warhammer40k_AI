@@ -3352,11 +3352,18 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if source_root is None or target_root is None:
             return ("Command phase model return source or target unit was not found.",)
         destroyed = list(getattr(target_root, "models_lost", []) or [])
+        payload_allowed_ids = {
+            str(v or "").strip()
+            for v in list(payload.get("allowed_model_ids", []) or [])
+            if str(v or "").strip()
+        }
         allowed_ids = {
             str(v or "").strip()
             for v in list(ctx.get("allowed_model_ids", []) or [])
             if str(v or "").strip()
         }
+        if payload_allowed_ids:
+            allowed_ids = set(payload_allowed_ids)
         if allowed_ids:
             destroyed = [m for m in list(destroyed or []) if str(get_entity_id(m) or "") in allowed_ids]
         if not destroyed:
@@ -8801,7 +8808,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             if aof_mgr is None:
                 return None
             try:
-                discard_count = int(ctx.get("discard_count", payload.get("discard_count", 1)) or 1)
+                discard_count = int(payload.get("discard_count", ctx.get("discard_count", 1)) or 1)
             except (TypeError, ValueError):
                 discard_count = 1
             discard_count = max(1, int(discard_count))
@@ -8894,7 +8901,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     return_count = 0
         else:
             base_amount_roll = str(
-                ctx.get("base_amount_roll", payload.get("base_amount_roll", ""))
+                payload.get("base_amount_roll", ctx.get("base_amount_roll", ""))
                 or ""
             ).strip().upper()
             if base_amount_roll:
@@ -8907,7 +8914,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             else:
                 try:
                     return_count = int(
-                        ctx.get("base_amount", payload.get("base_amount", 0))
+                        payload.get("base_amount", ctx.get("base_amount", 0))
                         or 0
                     )
                 except (TypeError, ValueError):
@@ -8915,11 +8922,19 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         return_count = max(0, int(return_count or 0))
         if return_count <= 0:
             return target_root
+        payload_allowed_model_ids = [
+            str(v or "").strip()
+            for v in list(payload.get("allowed_model_ids", []) or [])
+            if str(v or "").strip()
+        ]
         allowed_model_ids = [
             str(v or "").strip()
             for v in list(ctx.get("allowed_model_ids", []) or [])
             if str(v or "").strip()
         ]
+        if payload_allowed_model_ids:
+            allowed_model_ids = list(payload_allowed_model_ids)
+        return_allow_skip = bool(payload.get("return_allow_skip", ctx.get("return_allow_skip", False)))
         queue_fn = getattr(game, "_queue_bodyguard_return_decision", None)
         if callable(queue_fn):
             queue_fn(
@@ -8929,7 +8944,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 ability={"name": ability_name},
                 remaining=int(return_count),
                 allowed_model_ids=list(allowed_model_ids) if allowed_model_ids else None,
-                allow_skip=False,
+                allow_skip=bool(return_allow_skip),
             )
         return target_root
     if ability == "prescient_redeployment":
