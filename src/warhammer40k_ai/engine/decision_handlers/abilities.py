@@ -5207,6 +5207,38 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if candidate_choices and choice not in candidate_choices:
             return ("Ferocious Strike choice is not an eligible candidate.",)
         return ()
+    if ability == "embodied_prophecy":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Embodied Prophecy source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Embodied Prophecy source unit was not found.",)
+        if not _resurrection_orb_unit_on_battlefield(source_root):
+            return ("Embodied Prophecy source unit must be on the battlefield.",)
+        source_fn = getattr(source_root, "get_embodied_prophecy_source", None)
+        if not callable(source_fn) or not str(source_fn() or "").strip():
+            return ("Embodied Prophecy is not active on the selected unit.",)
+        if is_skip_choice(request, result):
+            return ("Embodied Prophecy selection cannot be skipped.",)
+        if bool(getattr(getattr(source_root, "round_state", None), "charged_this_round", False)):
+            return ("Embodied Prophecy does not require a choice after this unit has charged.",)
+        choice = str(payload.get("choice") or payload.get("choice_key") or payload.get("key") or "").strip().upper()
+        if choice not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return ("Embodied Prophecy choice must be Lethal Hits or Sustained Hits 1.",)
+        candidate_choices = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("candidate_choices", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_choices and choice not in candidate_choices:
+            return ("Embodied Prophecy choice is not an eligible candidate.",)
+        return ()
     if ability == "hyperspace_hunters":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
@@ -11183,6 +11215,54 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "unit_id": str(get_entity_id(source_root) or ""),
             "choice": choice,
             "source": ability_name,
+        }
+    if ability == "embodied_prophecy":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        source_fn = getattr(source_root, "get_embodied_prophecy_source", None)
+        source_name = str(source_fn() if callable(source_fn) else "").strip()
+        if not source_name:
+            source_name = str(ctx.get("ability_name", "") or "Embodied Prophecy").strip() or "Embodied Prophecy"
+        choice = str(payload.get("choice") or payload.get("choice_key") or payload.get("key") or "").strip().upper()
+        if choice not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return None
+        apply_fn = getattr(source_root, "apply_embodied_prophecy_effect", None)
+        if not callable(apply_fn):
+            return None
+        applied = bool(
+            apply_fn(
+                lethal_hits=(choice == "LETHAL_HITS"),
+                sustained_hits_value=(1 if choice == "SUSTAINED_HITS_1" else 0),
+                source=source_name,
+                game=game,
+                expires_phase="FIGHT_PHASE",
+            )
+        )
+        if not applied:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        label = "Lethal Hits" if choice == "LETHAL_HITS" else "Sustained Hits 1"
+        _log_action_for_players(
+            game,
+            player,
+            f"{source_name}: {getattr(source_root, 'name', 'Unit')} selected {label} for melee weapons.",
+        )
+        return {
+            "unit_id": str(get_entity_id(source_root) or ""),
+            "choice": choice,
+            "source": source_name,
         }
     if ability == "channelled_force":
         payload = _option_payload(request, result)

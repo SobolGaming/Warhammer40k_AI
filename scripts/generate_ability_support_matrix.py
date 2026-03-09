@@ -3481,6 +3481,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "At battle-round start, if an on-battlefield source has this ability, the army's Acts of Faith battle-round Miracle die is set to 6 (no D6 roll).",
         ),
+        ("AS", "Embodied Prophecy"): (
+            "Supported",
+            "Fight phase selected-unit trigger: if the unit charged this turn, melee weapons gain both [LETHAL HITS] and [SUSTAINED HITS 1] until end of phase; otherwise a deterministic CHOOSE_QUARRY selection applies one of those keywords until end of phase.",
+        ),
         ("AS", "The Fiery Heart (Aura)"): (
             "Supported",
             "Selected Relics of the Matriarchs aura: friendly ADEPTA SORORITAS units within 6\" gain +2\" Move and +1 to Advance/Charge rolls.",

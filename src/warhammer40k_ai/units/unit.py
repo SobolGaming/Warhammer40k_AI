@@ -4092,6 +4092,12 @@ class Unit(
         r"characteristic of weapons equipped by models in that unit by (?P<bonus>\d+)",
         re.IGNORECASE,
     )
+    _EMBODIED_PROPHECY_RE = re.compile(
+        r"each time this unit is selected to fight select one of the following abilities .*"
+        r"sustained hits 1.*lethal hits.*if this unit made a charge move this turn.*"
+        r"select both abilities above.*melee weapons equipped by models in this unit(?: instead)?",
+        re.IGNORECASE,
+    )
     _HARBINGER_OF_DEATH_RE = re.compile(
         r"each time this model is selected to fight select one of the following abilities until the end of the phase this model s "
         r"hellforged weapons have that ability",

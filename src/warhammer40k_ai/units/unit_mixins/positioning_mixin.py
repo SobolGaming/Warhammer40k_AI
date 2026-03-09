@@ -2460,6 +2460,140 @@ class PositioningMixin:
                 break
         return results
 
+    def get_embodied_prophecy_source(self) -> str:
+        """
+        Return the source name for Embodied Prophecy on this attached unit root, if present.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "embodied_prophecy_source"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return str(cache.get(cache_key) or "")
+
+        source = ""
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in list(members or []):
+            if member is None:
+                continue
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text_src = member._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = root._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                name_norm = str(name or "").strip().lower()
+                if "embodied prophecy" not in name_norm:
+                    if not root._EMBODIED_PROPHECY_RE.fullmatch(normalized):
+                        continue
+                source = str(name or "Embodied Prophecy").strip() or "Embodied Prophecy"
+                break
+            if source:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = source
+        return str(source or "")
+
+    def clear_embodied_prophecy_effect(self) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "embodied_prophecy_lethal_hits_active",
+            "embodied_prophecy_sustained_hits_value",
+            "embodied_prophecy_expires_phase",
+            "embodied_prophecy_turn",
+            "embodied_prophecy_turn_owner",
+            "embodied_prophecy_source",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def apply_embodied_prophecy_effect(
+        self,
+        *,
+        lethal_hits: bool = False,
+        sustained_hits_value: int = 0,
+        source: str = "",
+        game=None,
+        expires_phase: str = "FIGHT_PHASE",
+    ) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        source_name = str(source or "").strip()
+        if not source_name:
+            source_name = str(root.get_embodied_prophecy_source() or "").strip()
+        if not source_name:
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        for key in (
+            "embodied_prophecy_lethal_hits_active",
+            "embodied_prophecy_sustained_hits_value",
+            "embodied_prophecy_expires_phase",
+            "embodied_prophecy_turn",
+            "embodied_prophecy_turn_owner",
+            "embodied_prophecy_source",
+        ):
+            sr.pop(key, None)
+
+        try:
+            sustained_value = int(sustained_hits_value or 0)
+        except Exception:
+            sustained_value = 0
+        sustained_value = max(0, int(sustained_value))
+        if not bool(lethal_hits) and sustained_value <= 0:
+            root.special_rules = sr
+            return True
+
+        game_obj = game
+        if game_obj is None:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            player = getattr(army, "player", None) if army is not None else None
+            game_obj = getattr(player, "game", None) if player is not None else None
+        try:
+            turn_now = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+        except Exception:
+            turn_now = 0
+
+        owner_id = ""
+        if game_obj is not None:
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            owner_id = str(getattr(current_player, "id", "") or "")
+        if not owner_id:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            owner_id = str(getattr(getattr(army, "player", None), "id", "") or "")
+
+        sr["embodied_prophecy_lethal_hits_active"] = bool(lethal_hits)
+        sr["embodied_prophecy_sustained_hits_value"] = int(sustained_value)
+        sr["embodied_prophecy_expires_phase"] = str(expires_phase or "FIGHT_PHASE").strip().upper() or "FIGHT_PHASE"
+        sr["embodied_prophecy_turn"] = int(turn_now or 0)
+        sr["embodied_prophecy_turn_owner"] = owner_id
+        sr["embodied_prophecy_source"] = source_name
+        root.special_rules = sr
+        return True
+
     def iter_cry_of_the_wind_models(self) -> list[dict]:
         try:
             root = self.get_attached_unit_root()
@@ -5176,6 +5310,63 @@ class PositioningMixin:
             if not source_name:
                 source_name = "Target Augury Web"
             rules.append({"attack_type": "any", "keyword": "LETHAL HITS", "source": source_name})
+        try:
+            if isinstance(sr, dict):
+                lethal_active = bool(sr.get("embodied_prophecy_lethal_hits_active", False))
+                try:
+                    sustained_value = int(sr.get("embodied_prophecy_sustained_hits_value", 0) or 0)
+                except Exception:
+                    sustained_value = 0
+                sustained_value = max(0, int(sustained_value))
+                apply_bonus = bool(lethal_active or sustained_value > 0)
+
+                atype = str(attack_type or "").strip().lower()
+                if apply_bonus and atype and atype not in ("any", "melee"):
+                    apply_bonus = False
+                if apply_bonus:
+                    source_army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                    source_player = getattr(source_army, "player", None) if source_army is not None else None
+                    game = getattr(source_player, "game", None) if source_player is not None else None
+                    exp = str(sr.get("embodied_prophecy_expires_phase", "") or "").strip().upper()
+                    owner_id = str(sr.get("embodied_prophecy_turn_owner", "") or "")
+                    try:
+                        effect_turn = int(sr.get("embodied_prophecy_turn", 0) or 0)
+                    except Exception:
+                        effect_turn = 0
+                    if game is not None:
+                        try:
+                            cur_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            cur_phase = ""
+                        try:
+                            cur_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+                        except Exception:
+                            cur_owner = ""
+                        try:
+                            cur_turn = int(getattr(game, "turn", 0) or 0)
+                        except Exception:
+                            cur_turn = 0
+                        if exp and cur_phase and cur_phase != exp:
+                            apply_bonus = False
+                        if apply_bonus and owner_id and cur_owner and owner_id != cur_owner:
+                            apply_bonus = False
+                        if apply_bonus and effect_turn and cur_turn and effect_turn != cur_turn:
+                            apply_bonus = False
+                if apply_bonus:
+                    source_name = str(sr.get("embodied_prophecy_source", "") or "Embodied Prophecy").strip()
+                    source_name = source_name or "Embodied Prophecy"
+                    if lethal_active:
+                        rules.append({"attack_type": "melee", "keyword": "LETHAL HITS", "source": source_name})
+                    if sustained_value > 0:
+                        rules.append(
+                            {
+                                "attack_type": "melee",
+                                "keyword": f"SUSTAINED HITS {int(sustained_value)}",
+                                "source": source_name,
+                            }
+                        )
+        except Exception:
+            pass
         try:
             attack_kind = str(attack_type or "").strip().lower()
             if attack_kind in ("", "any", "melee") and model is not None:
