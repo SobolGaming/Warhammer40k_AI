@@ -146,6 +146,114 @@ class ActsOfFaithManager:
             return False
         return False
 
+    def _root_or_members_have_ability_named(self, root, ability_name: str) -> bool:
+        if root is None:
+            return False
+        if self._unit_has_ability_named(root, ability_name):
+            return True
+        members_getter = getattr(root, "get_attached_unit_members", None)
+        members = list(members_getter() or []) if callable(members_getter) else [root]
+        for member in list(members or []):
+            if member is None or member is root:
+                continue
+            if self._unit_has_ability_named(member, ability_name):
+                return True
+        return False
+
+    def _iter_simulacrum_imperialis_roots(self) -> list:
+        if self.army is None:
+            return []
+        units = list(getattr(self.army, "units", []) or [])
+        units = sorted(units, key=lambda u: str(self._unit_id(u) or get_entity_id(u) or ""))
+        roots = []
+        seen_root_ids: set[str] = set()
+        for unit in units:
+            if unit is None:
+                continue
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            root_id = self._unit_id(root)
+            if root_id:
+                if root_id in seen_root_ids:
+                    continue
+                seen_root_ids.add(root_id)
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_on_battlefield(root):
+                continue
+            if not self._root_or_members_have_ability_named(root, "Simulacrum Imperialis"):
+                continue
+            roots.append(root)
+        return sorted(roots, key=lambda unit: str(self._unit_id(unit) or get_entity_id(unit) or ""))
+
+    @staticmethod
+    def _objective_sort_key(objective) -> str:
+        if objective is None:
+            return ""
+        location = getattr(objective, "location", None)
+        location_id = str(get_entity_id(location) or "")
+        if location_id:
+            return location_id
+        fallback = str(getattr(location, "id", "") or "").strip()
+        if fallback:
+            return fallback
+        return str(getattr(objective, "name", "") or "").strip()
+
+    def _apply_simulacrum_imperialis_command_phase_end(self, *, game=None, player=None) -> None:
+        if self.army is None:
+            return
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return
+        if player is not None and player is not owner:
+            return
+        game_obj = game if game is not None else getattr(owner, "game", None)
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        if game_map is None:
+            return
+        objectives = list(getattr(game_map, "objectives", []) or [])
+        if not objectives:
+            return
+        sources = self._iter_simulacrum_imperialis_roots()
+        if not sources:
+            return
+        objectives = sorted(objectives, key=self._objective_sort_key)
+
+        for objective in objectives:
+            location = getattr(objective, "location", None)
+            if location is None or getattr(location, "removed", False):
+                continue
+            if getattr(location, "controlling_player", None) is not owner:
+                continue
+            in_range = False
+            for source in sources:
+                if source is None:
+                    continue
+                if source.is_within_objective_range(location):
+                    in_range = True
+                    break
+            if not in_range:
+                continue
+            raw_roll = get_roll("D6")
+            if isinstance(raw_roll, (int, float)):
+                rolled = int(raw_roll)
+            else:
+                raw_roll_text = str(raw_roll or "").strip()
+                rolled = int(raw_roll_text) if raw_roll_text.isdigit() else 0
+            objective_label = str(getattr(location, "id", "") or getattr(objective, "name", "") or "Objective").strip()
+            if objective_label:
+                append_dice(owner, f"Simulacrum Imperialis ({objective_label}) roll: {int(rolled)}")
+            else:
+                append_dice(owner, f"Simulacrum Imperialis roll: {int(rolled)}")
+            if rolled >= 4:
+                self.gain_miracle_die(
+                    fixed_value=int(rolled),
+                    game=game_obj,
+                    allow_reroll=False,
+                    reason="Simulacrum Imperialis",
+                )
+
     def _solemn_procession_forces_battle_round_six(self) -> bool:
         if self.army is None:
             return False
@@ -642,12 +750,15 @@ class ActsOfFaithManager:
     def gain_miracle_die(
         self,
         *,
+        fixed_value: Optional[int] = None,
         game=None,
         allow_reroll: bool = False,
         reason: str = "",
         battle_round_start: bool = False,
     ) -> int:
-        if bool(battle_round_start) and self._solemn_procession_forces_battle_round_six():
+        if fixed_value is not None:
+            value = int(fixed_value)
+        elif bool(battle_round_start) and self._solemn_procession_forces_battle_round_six():
             value = 6
         else:
             value = int(get_roll("D6") or 0)
@@ -1390,8 +1501,6 @@ class ActsOfFaithManager:
     def on_command_phase_end(self, *, game=None, player=None) -> None:
         if not self._army_has_rule():
             return
-        if not self._is_hallowed_martyrs():
-            return
         if self.army is None:
             return
         owner = getattr(self.army, "player", None)
@@ -1411,6 +1520,10 @@ class ActsOfFaithManager:
             if current is not None and owner is not None and current is not owner:
                 return
 
+        self._apply_simulacrum_imperialis_command_phase_end(game=game, player=player)
+
+        if not self._is_hallowed_martyrs():
+            return
         if not self.miracle_dice:
             return
 

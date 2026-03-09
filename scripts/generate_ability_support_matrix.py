@@ -3481,6 +3481,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "At battle-round start, if an on-battlefield source has this ability, the army's Acts of Faith battle-round Miracle die is set to 6 (no D6 roll).",
         ),
+        ("AS", "Simulacrum Imperialis"): (
+            "Supported",
+            "End of Command phase: for each controlled objective with one or more friendly units in range that have this ability, roll one D6; on 4+ gain one Miracle die with that value.",
+        ),
         ("AS", "Embodied Prophecy"): (
             "Supported",
             "Fight phase selected-unit trigger: if the unit charged this turn, melee weapons gain both [LETHAL HITS] and [SUSTAINED HITS 1] until end of phase; otherwise a deterministic CHOOSE_QUARRY selection applies one of those keywords until end of phase.",
