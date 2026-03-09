@@ -12,7 +12,10 @@ from warhammer40k_ai.utility.dice import get_roll
 from warhammer40k_ai.utility.ability_support import ABILITY_BLESSINGS_OF_KHORNE, army_has_ability_id
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 from warhammer40k_ai.utility.profiling_controller import ProfilingController
-from warhammer40k_ai.engine.ui_decision_bridge import create_decision_request as _create_decision_request
+from warhammer40k_ai.engine.ui_decision_bridge import (
+    create_decision_request as _create_decision_request,
+    queue_existing_decision_request as _queue_existing_decision_request,
+)
 
 # Import UI panels
 from .panels.roster_pane import RosterPane
@@ -302,7 +305,7 @@ class GameView:
                 options=options,
                 context=ctx,
             )
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
             def _on_confirm(option_id: str):
                 value, apply = resolve_decision_value(self.game, req, option_id)
@@ -375,7 +378,7 @@ class GameView:
                 context=dict(context or {}),
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             dlg = dialog
             if dlg is None:
@@ -454,7 +457,7 @@ class GameView:
                 player_id=getattr(player, "id", None),
                 options=options,
             )
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
             def _on_confirm(option_id: str):
                 value, _apply = resolve_decision_value(self.game, req, option_id)
@@ -1485,7 +1488,7 @@ class GameView:
                 context=ctx,
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             if self.realm_of_chaos_units_dialog is None:
                 try:
@@ -2576,7 +2579,7 @@ class GameView:
                 context=ctx,
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
             choice_map = {opt.option_id: bool(opt.payload.get("choice", False)) for opt in options}
 
             def _on_confirm(option_id: str):
@@ -2633,7 +2636,7 @@ class GameView:
                 context={"unit_id": unit_id, "out_of_phase": True},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             def _cb(executed: bool):
                 self.shooting_declaration_dialog.force_single_target_unit = None
@@ -2677,7 +2680,7 @@ class GameView:
                 context={"unit_id": unit_id, "out_of_phase": True, "force_target_unit_id": target_id, "source": title},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             def _cb(executed: bool):
                 try:
@@ -2727,7 +2730,7 @@ class GameView:
                 context={"unit_id": unit_id, "out_of_phase": True},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             def _cb(executed: bool):
                 try:
@@ -2810,7 +2813,7 @@ class GameView:
                 context={"army_id": army_id, "ctx": {}},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             def _on_confirm(option_id: str, payload: dict):
                 value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
@@ -7705,7 +7708,7 @@ class GameView:
             context={"unit_id": get_entity_id(bodyguard), "selection_kind": "bodyguard_return"},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_choice(option_id: str):
             value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -7836,7 +7839,7 @@ class GameView:
             context={"unit_id": unit_id, "phase_name": phase_name or "", "trigger": trigger or ""},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str):
             value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -8009,7 +8012,7 @@ class GameView:
             context={"phase_name": phase_name or "", "trigger": trigger or ""},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str):
             value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -8122,7 +8125,7 @@ class GameView:
             context={"officer_unit_id": officer_id, "army_id": army_id, "phase_name": phase_name or "", "trigger": trigger or ""},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str):
             skip_id = option_id_for_action(req, "skip")
@@ -8233,7 +8236,7 @@ class GameView:
             context={"officer_unit_id": get_entity_id(officer), "order_key": order_key},
         )
         if self.game is not None:
-            self.game.request_decision(target_req)
+            _queue_existing_decision_request(self.game, target_req)
 
         def _resolve_issue_order(target_unit):
             ok = False
@@ -8426,7 +8429,7 @@ class GameView:
             context={"ability": "gate_of_infinity", "remaining": int(remaining or 0)},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         header = f"Select up to {remaining} unit{'s' if remaining != 1 else ''} to enter Strategic Reserves."
         subtitle = "Eligible units must be on the battlefield and not in Engagement Range."
@@ -8700,7 +8703,7 @@ class GameView:
             context={"unit_id": unit_id},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
@@ -8945,7 +8948,7 @@ class GameView:
                     "ability_name": PLEDGES_TO_THE_DARK_PRINCE_NAME,
                 },
             )
-            game_ctx.request_decision(req)
+            _queue_existing_decision_request(game_ctx, req)
         if req is None:
             self._emperors_children_pledge_flow_active = False
             self._open_next_emperors_children_pledge_prompt(game_ctx)
@@ -9059,7 +9062,7 @@ class GameView:
             context={"unit_id": unit_id, "selection_kind": "exquisite_swordsmanship"},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
@@ -9146,7 +9149,7 @@ class GameView:
             context={"unit_id": unit_id, "selection_kind": "exquisite_swordsmanship"},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         if not is_human:
             registrar = getattr(getattr(self, "phase_manager", None), "_register_decision_callback", None)
@@ -9383,7 +9386,7 @@ class GameView:
             },
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str):
             value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -9956,7 +9959,7 @@ class GameView:
             context={"unit_id": get_entity_id(unit), "selection_kind": "reverberating_summons_return"},
         )
         if game_ctx is not None:
-            game_ctx.request_decision(req)
+            _queue_existing_decision_request(game_ctx, req)
 
         def _on_choice(option_id: str):
             value, apply_result = resolve_decision_value(game_ctx, req, option_id)
@@ -10239,7 +10242,7 @@ class GameView:
                             ],
                             context={"unit_id": unit_id, "out_of_turn": True},
                         )
-                        self.game.request_decision(req)
+                        _queue_existing_decision_request(self.game, req)
                         payload = {
                             "decision_id": req.decision_id,
                             "option_id": req.options[0].option_id if req.options else "",
@@ -10289,7 +10292,7 @@ class GameView:
                 options=options,
                 context={"unit_id": getattr(unit, "_id", ""), "target_unit_id": getattr(target_unit, "_id", "")},
             )
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
             def _on_confirm(option_id: str):
                 value, apply = resolve_decision_value(self.game, req, option_id)
@@ -10401,7 +10404,7 @@ class GameView:
                 context={"unit_id": unit_id, "attacker_unit_id": get_entity_id(attacker_unit)},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             def _on_choice(option_id: str):
                 value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -10512,7 +10515,7 @@ class GameView:
         )
         try:
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
         except Exception:
             on_done()
             return
@@ -10879,7 +10882,7 @@ class GameView:
             context={"unit_id": get_entity_id(bodyguard), "selection_kind": "bodyguard_loss"},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_choice(option_id: str):
             value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -11309,7 +11312,7 @@ class GameView:
                     options=options,
                     context={"unit_id": unit_id, "transport_id": transport_id},
                 )
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
                 unit_requests[unit_id] = req
 
         def _option_id(req, disembark: bool) -> str:
@@ -11526,7 +11529,7 @@ class GameView:
             context={"ability": "oath_of_moment"},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _done(option_id: str):
             value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -11667,7 +11670,7 @@ class GameView:
                 context={"selection_kind": "code_chivalric_target"},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             try:
                 from .dialogs import QuarrySelectionDialog
@@ -11740,7 +11743,7 @@ class GameView:
                 context={"oath_kind": "quality", "army_id": army_id},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             def _on_quality(option_id: str):
                 value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -11809,7 +11812,7 @@ class GameView:
                 context={"oath_kind": "deed", "army_id": army_id},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             def _on_deed(option_id: str):
                 value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -11934,7 +11937,7 @@ class GameView:
             context={"source_unit_id": get_entity_id(source_unit), "ability": "bondsman"},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _done(option_id: str):
             value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -12418,7 +12421,7 @@ class GameView:
                         context={"unit_id": get_entity_id(unit)},
                     )
                     if self.game is not None:
-                        self.game.request_decision(req)
+                        _queue_existing_decision_request(self.game, req)
 
                     def _confirm(option_id: str, point):
                         try:
@@ -12534,7 +12537,7 @@ class GameView:
             context={"marker_id": get_entity_id(marker) if marker is not None else None},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         try:
             from .dialogs import QuarrySelectionDialog
@@ -12671,7 +12674,7 @@ class GameView:
             context={"ability": "for_the_greater_good", "step": "observer"},
         )
         if self.game is not None:
-            self.game.request_decision(obs_req)
+            _queue_existing_decision_request(self.game, obs_req)
 
         def _cancel_observer():
             skip_id = option_id_for_action(obs_req, "skip")
@@ -12719,7 +12722,7 @@ class GameView:
                 context={"ability": "for_the_greater_good", "step": "target"},
             )
             if self.game is not None:
-                self.game.request_decision(tgt_req)
+                _queue_existing_decision_request(self.game, tgt_req)
 
             def _cancel_target():
                 skip_id = option_id_for_action(tgt_req, "skip")
@@ -13047,7 +13050,7 @@ class GameView:
             context={"unit_id": unit_id, "ability": "battle_focus"},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str):
             self._battle_focus_flow_active = False
@@ -13158,7 +13161,7 @@ class GameView:
             context={"unit_id": unit_id, "ability": "battle_focus", "action": action},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
         subtitle = f"Choose an Agile Manoeuvre for {getattr(unit, 'name', 'unit')} (Tokens: {tokens})"
 
         def _on_confirm(option_id: str):
@@ -13373,7 +13376,7 @@ class GameView:
             context={"ability": "battle_focus", "maneuver": "opportunity"},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str):
             value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -13461,7 +13464,7 @@ class GameView:
             context={"ability": "battle_focus", "maneuver": "fade_back"},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         attacker_name = getattr(attacker_unit, "name", "attacker")
         subtitle = f"{attacker_name} scored hits. Select a unit to move."
@@ -13792,7 +13795,7 @@ class GameView:
             context={"ability": "cabal", "step": "caster"},
         )
         if self.game is not None:
-            self.game.request_decision(caster_req)
+            _queue_existing_decision_request(self.game, caster_req)
 
         def _on_caster(option_id: str):
             value, apply_result = resolve_decision_value(self.game, caster_req, option_id)
@@ -13838,7 +13841,7 @@ class GameView:
                 context={"army_id": get_entity_id(player.get_army()) if player is not None else ""},
             )
             if self.game is not None:
-                self.game.request_decision(ritual_req)
+                _queue_existing_decision_request(self.game, ritual_req)
 
             def _on_ritual(option_id: str):
                 if option_id_for_action(ritual_req, "skip") == option_id:
@@ -13886,7 +13889,7 @@ class GameView:
                     context={"ritual_key": getattr(ritual, "key", None)},
                 )
                 if self.game is not None:
-                    self.game.request_decision(target_req)
+                    _queue_existing_decision_request(self.game, target_req)
 
                 def _on_target(target_option_id: str):
                     target_unit, apply_result = resolve_decision_value(self.game, target_req, target_option_id)
@@ -13927,7 +13930,7 @@ class GameView:
                         context=channel_ctx,
                     )
                     if self.game is not None:
-                        self.game.request_decision(channel_req)
+                        _queue_existing_decision_request(self.game, channel_req)
 
                     def _on_channel_resolved(_req, _result):
                         chosen = False
@@ -14109,7 +14112,7 @@ class GameView:
             },
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_choice(option_id: str):
             value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -14241,7 +14244,7 @@ class GameView:
             context={"unit_id": unit_id, "roll_type": rt, "roll_value": roll_val},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_choice(option_id: str):
             value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -14384,7 +14387,7 @@ class GameView:
             },
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         choice_holder = {"choice": "skip", "done": False}
 
@@ -14553,7 +14556,7 @@ class GameView:
             },
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         choice_holder = {"choice": "skip", "done": False}
 
@@ -14675,7 +14678,7 @@ class GameView:
             },
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         choice_holder = {"choice": "skip", "done": False}
 
@@ -14763,7 +14766,7 @@ class GameView:
             context=dict(context or {}),
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         choice_holder = {"choice": None, "done": False}
 
@@ -15074,7 +15077,7 @@ class GameView:
             context=context,
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         dlg = self.miracle_dice_dialog
         choice_holder = {"choice": None, "done": False}
@@ -15542,7 +15545,7 @@ class GameView:
             except Exception:
                 req = None
             if req is not None and hasattr(self.game, "request_decision"):
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
         if req is None:
             self._open_next_blessings_prompt(battle_round)
             return
@@ -15677,7 +15680,7 @@ class GameView:
                 context={"army_id": army_id},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
         if req is None:
             self._open_next_templar_vows_prompt()
             return
@@ -15776,7 +15779,7 @@ class GameView:
                 context={"army_id": army_id, "battle_round": battle_round},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
         if req is None:
             self._open_next_hyper_adaptations_prompt(battle_round)
             return
@@ -15896,7 +15899,7 @@ class GameView:
                 context={"army_id": army_id, "battle_round": battle_round},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
         if req is None:
             self._open_next_harbingers_prompt(battle_round)
             return
@@ -16005,7 +16008,7 @@ class GameView:
                 context={"army_id": army_id, "battle_round": battle_round},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
         if req is None:
             self._open_next_doctrina_prompt(battle_round)
             return
@@ -16122,7 +16125,7 @@ class GameView:
             context={"army_id": army_id, "battle_round": br},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
@@ -16230,7 +16233,7 @@ class GameView:
             context={"army_id": army_id, "battle_round": br},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
@@ -16340,7 +16343,7 @@ class GameView:
             context={"army_id": army_id, "battle_round": br},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
@@ -16445,7 +16448,7 @@ class GameView:
                 context={"unit_id": unit_id, "battle_round": br},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
         if req is None:
             self._open_next_shadow_form_prompt()
             return
@@ -16562,7 +16565,7 @@ class GameView:
                 },
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
         if req is None:
             self._open_next_daemon_primarch_slaanesh_prompt()
             return
@@ -16674,7 +16677,7 @@ class GameView:
                 context={"unit_id": unit_id, "battle_round": br},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
         if req is None:
             self._open_next_wrathful_presence_prompt()
             return
@@ -16780,7 +16783,7 @@ class GameView:
             context={"unit_id": unit_id},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
@@ -16857,7 +16860,7 @@ class GameView:
             context={"attacker_model_id": attacker_id, "target_unit_id": target_id},
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         dlg.show(attacker_model, target_unit, wname, list(character_models or []), on_choice=_on_choice, decision_request=req)
         try:
@@ -16927,7 +16930,7 @@ class GameView:
             context=context,
         )
         if self.game is not None:
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _on_choice(option_id: str):
             value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -19053,7 +19056,7 @@ class GameView:
                             context=ctx,
                         )
                         if self.game is not None:
-                            self.game.request_decision(req)
+                            _queue_existing_decision_request(self.game, req)
 
                         def _on_resolved(_req, _result):
                             chosen = False
@@ -19623,7 +19626,7 @@ class GameView:
                 context=ctx_decision,
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             def _on_resolved(_req, _result):
                 chosen = False
@@ -19680,7 +19683,7 @@ class GameView:
                 context=ctx_decision,
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             def _on_eye_resolved(_req, _result):
                 chosen = False
@@ -19774,7 +19777,7 @@ class GameView:
                 ],
                 context={"unit_id": unit_id, "out_of_turn": True},
             )
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
             payload = {
                 "decision_id": req.decision_id,
                 "option_id": req.options[0].option_id if req.options else "",

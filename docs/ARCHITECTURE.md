@@ -277,7 +277,7 @@ Responsibilities:
 - render the battlefield and unit panels
 - show dialogs that correspond to engine DecisionRequests
 - convert user choices into deterministic Commands
-- for UI-triggered prompts that still need an explicit request object, route construction through engine-owned helpers (`engine/ui_decision_bridge.py`) rather than creating `DecisionRequest` instances directly in UI modules
+- never call `DecisionRequest.create(...)` or `game.request_decision(...)` directly from UI modules; UI must route decision enqueue/construction through engine-owned bridge helpers in `engine/ui_decision_bridge.py`
 - project authoritative game updates through shared UI/HUD orchestration (`session_presentation_orchestrator.py`)
 - rebuild HUD state from authoritative presentation transcripts (`presentation_state_hydrator.py`)
 - avoid importing GUI backends at package import time; entry points should import GUI modules lazily so headless tooling/tests remain stable

@@ -17,7 +17,10 @@ from .base_dialog import (
 )
 from ...units.wargear import AttackCountInfo
 from ...utility.entity_ids import get_entity_id
-from ...engine.ui_decision_bridge import create_decision_request as _create_decision_request
+from ...engine.ui_decision_bridge import (
+    create_decision_request as _create_decision_request,
+    queue_existing_decision_request as _queue_existing_decision_request,
+)
 
 
 class MeleeWeaponTargetAllocationDialog(BaseDialog):
@@ -241,7 +244,7 @@ class MeleeWeaponTargetAllocationDialog(BaseDialog):
                 options=[DecisionOption.create("Confirm", payload={"unit_id": unit_id, "bundle_id": bundle_id})],
                 context={"unit_id": unit_id, "bundle_id": bundle_id},
             )
-            self.game.request_decision(request)
+            _queue_existing_decision_request(self.game, request)
 
         def _deserialize_attack_info(payload: dict) -> AttackCountInfo:
             return AttackCountInfo(

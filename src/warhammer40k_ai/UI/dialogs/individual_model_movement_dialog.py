@@ -8,7 +8,10 @@ from ...utility.constants import RUINS_FLOOR_HEIGHT
 from ...utility.placement_validation import bases_overlap_3d
 from ...utility.entity_ids import get_entity_id
 from ...utility.debug import describe_callable, describe_self_stack
-from ...engine.ui_decision_bridge import create_decision_request as _create_decision_request
+from ...engine.ui_decision_bridge import (
+    create_decision_request as _create_decision_request,
+    queue_existing_decision_request as _queue_existing_decision_request,
+)
 import logging
 logger = logging.getLogger(__name__)
 
@@ -1558,7 +1561,7 @@ class IndividualModelMovementDialog(BaseDialog):
             game = None
         if game is not None:
             try:
-                game.request_decision(request)
+                _queue_existing_decision_request(game, request)
             except Exception:
                 pass
         self._coherency_request = request

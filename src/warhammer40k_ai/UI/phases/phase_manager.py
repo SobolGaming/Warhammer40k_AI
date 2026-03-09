@@ -11,7 +11,10 @@ from warhammer40k_ai.utility.dice import get_roll
 
 from ..ui_constants import TILE_SIZE
 from ...utility.debug import describe_callable
-from ...engine.ui_decision_bridge import create_decision_request as _create_decision_request
+from ...engine.ui_decision_bridge import (
+    create_decision_request as _create_decision_request,
+    queue_existing_decision_request as _queue_existing_decision_request,
+)
 import logging
 logger = logging.getLogger(__name__)
 
@@ -1392,7 +1395,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                             "optional": False,
                         },
                     )
-                    self.game.request_decision(req)
+                    _queue_existing_decision_request(self.game, req)
                     return req
 
                 if needs_left and needs_right:
@@ -2013,7 +2016,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                         "optional": False,
                     },
                 )
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             dlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
             dlg.title = f"Nurgle's Gift - {player.name}"
@@ -2610,7 +2613,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 options=options,
                 context={"unit_id": get_entity_id(unit)},
             )
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _option_for_action(action: str) -> str:
             for opt in list(getattr(req, "options", []) or []):
@@ -2772,7 +2775,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 options=options,
                 context={"unit_id": unit_id, "out_of_phase": False},
             )
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
             self.game_view.shooting_declaration_dialog.show(
                 unit,
                 on_shooting_complete,
@@ -2868,7 +2871,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                         options=options,
                         context={"transport_id": transport_id},
                     )
-                    self.game.request_decision(req)
+                    _queue_existing_decision_request(self.game, req)
                     resolve_decision_value(
                         self.game,
                         req,
@@ -2901,7 +2904,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                         options=options,
                         context={"transport_id": transport_id},
                     )
-                    self.game.request_decision(req)
+                    _queue_existing_decision_request(self.game, req)
                     resolve_decision_value(
                         self.game,
                         req,
@@ -2980,7 +2983,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 options=options,
                 context={"unit_id": get_entity_id(unit)},
             )
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
         def _option_id_for_target(target_unit) -> str:
             tid = get_entity_id(target_unit)
@@ -3097,7 +3100,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     player_id=getattr(active_player, "id", None),
                     options=options,
                 )
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
                 # Show fight unit selection dialog
                 if hasattr(self.game_view, 'ui_interface') and self.game_view.ui_interface:
                     def on_unit_selected(option_id):
@@ -3161,7 +3164,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     options=options,
                     context={"unit_id": get_entity_id(fighting_unit)},
                 )
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
                 def _resolve_targets(option_id: str, selected_ids: List[str]):
                     payload = {"target_unit_ids": list(selected_ids or [])}
@@ -3269,7 +3272,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     options=options,
                     context={"unit_id": get_entity_id(fighting_unit)},
                 )
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
                 def _start_model_selection(target_unit: Unit) -> None:
                     if target_unit is None:
@@ -3296,7 +3299,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                             "allowed_model_ids": [get_entity_id(m) for m in current_brimstones],
                         },
                     )
-                    self.game.request_decision(req_models)
+                    _queue_existing_decision_request(self.game, req_models)
 
                     def _apply_models_local(option_id: str, payload: dict):
                         value, apply_result = resolve_decision_value(
@@ -3661,7 +3664,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 context={},
             )
             if self.game is not None:
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
 
             self._rise_to_challenge_flow_active = True
 
@@ -3859,7 +3862,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 options=options,
                 context=context,
             )
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
         elif max_distance is None:
             try:
                 max_distance = float(getattr(req, "context", {}).get("max_distance", 0) or 0)
@@ -3946,7 +3949,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             options=options,
             context=context,
         )
-        self.game.request_decision(req)
+        _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str, payload: dict):
             value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
@@ -4092,7 +4095,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             options=options,
             context={"unit_id": unit_id},
         )
-        self.game.request_decision(req)
+        _queue_existing_decision_request(self.game, req)
 
         def _on_confirm(option_id: str, payload: dict):
             value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
@@ -4243,7 +4246,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 options=options,
                 context={"unit_id": get_entity_id(target_unit)},
             )
-            self.game.request_decision(req)
+            _queue_existing_decision_request(self.game, req)
 
             def _apply_selection(option_id: str):
                 value, apply_result = resolve_decision_value(self.game, req, option_id)
@@ -4667,7 +4670,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                         options=[DecisionOption.create("Confirm", payload={"unit_id": unit_id, "action_type": "stationary"})],
                         context={"unit_id": unit_id},
                     )
-                    self.game.request_decision(req)
+                    _queue_existing_decision_request(self.game, req)
                     if req.options:
                         resolve_decision_command(self.game, req, req.options[0].option_id, result_payload={})
                     logger.info(f"INFO: {unit.name} remains stationary")
@@ -4725,7 +4728,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     ],
                     context={"unit_id": unit_id, "movement_type": choice, "max_distance": max_distance},
                 )
-                self.game.request_decision(move_request)
+                _queue_existing_decision_request(self.game, move_request)
 
                 # Open individual model movement dialog
                 def on_movement_complete(completed: bool):
@@ -5192,7 +5195,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     options=options,
                     context={"unit_id": unit_id, "transport_id": get_entity_id(transport_unit)},
                 )
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
                 unit_requests[unit_id] = req
 
         req_candidates = []
@@ -5290,7 +5293,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     options=options,
                     context={"unit_id": unit_id, "transport_id": get_entity_id(transport_unit)},
                 )
-                self.game.request_decision(req)
+                _queue_existing_decision_request(self.game, req)
                 unit_requests[unit_id] = req
 
         def _option_id(req, disembark: bool) -> str:
@@ -5445,7 +5448,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             options=options,
             context={"unit_id": unit_id},
         )
-        self.game.request_decision(req)
+        _queue_existing_decision_request(self.game, req)
 
         def on_weapon_choice(option_id: str):
             value, _apply = resolve_decision_value(self.game, req, option_id)

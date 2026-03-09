@@ -16,7 +16,10 @@ import pygame
 
 from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_ERROR, BUTTON_BG, BUTTON_HOVER
 from .battlefield_point_pick_dialog import BattlefieldPointPickDialog
-from ...engine.ui_decision_bridge import create_decision_request as _create_decision_request
+from ...engine.ui_decision_bridge import (
+    create_decision_request as _create_decision_request,
+    queue_existing_decision_request as _queue_existing_decision_request,
+)
 import logging
 logger = logging.getLogger(__name__)
 
@@ -209,7 +212,7 @@ class DeathstrikeActionDialog(BaseDialog):
             context={"unit_id": unit_id},
         )
 
-        game.request_decision(req)
+        _queue_existing_decision_request(game, req)
 
         # Resolve decision
         result_payload = {}

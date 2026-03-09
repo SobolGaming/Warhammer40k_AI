@@ -57,3 +57,13 @@ def queue_decision_request(
         raise RuntimeError("Game missing request_decision.")
     request_fn(request)
     return request
+
+
+def queue_existing_decision_request(game: object, request: DecisionRequest) -> DecisionRequest:
+    if request is None:
+        raise ValueError("Decision request is required.")
+    request_fn = getattr(game, "request_decision", None)
+    if not callable(request_fn):
+        raise RuntimeError("Game missing request_decision.")
+    request_fn(request)
+    return request
