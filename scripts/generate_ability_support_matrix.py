@@ -11855,6 +11855,25 @@ def _post_shoot_battleshock_support(description: str) -> Optional[Tuple[str, str
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    indirect_pattern = (
+        r"in your shooting phase after this model has shot if one or more of those attacks made with an indirect fire weapon "
+        r"scored a hit against an enemy unit that unit must take a battle shock test"
+        r"(?: if an infantry unit is hit by one or more attacks made by a (?P<weapon>[a-z0-9 ]+) "
+        r"they must subtract (?P<pen>\d+) from their battle shock test when doing so)?"
+    )
+    indirect_match = re.fullmatch(indirect_pattern, norm)
+    if indirect_match:
+        weapon_name = str(indirect_match.group("weapon") or "").strip()
+        try:
+            penalty = int(indirect_match.group("pen") or 0)
+        except (TypeError, ValueError):
+            penalty = 0
+        if weapon_name and penalty > 0:
+            return (
+                "Supported",
+                f"After shooting, each enemy unit hit by this model's Indirect Fire attacks takes a Battle-shock test; INFANTRY units hit by {weapon_name} take that test at -{int(penalty)}.",
+            )
+        return ("Supported", "After shooting, each enemy unit hit by this model's Indirect Fire attacks takes a Battle-shock test.")
     pattern = (
         r"in your shooting phase after this (?:model|unit) has shot select one (?:enemy )?"
         r"(?:(?P<infantry>infantry) )?unit (?:that was )?hit by one or more of those attacks "

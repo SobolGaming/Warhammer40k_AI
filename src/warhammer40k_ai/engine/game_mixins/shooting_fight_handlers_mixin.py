@@ -745,6 +745,21 @@ class GameShootingFightHandlersMixin:
                     return True
             return False
 
+        def _target_hit_with_weapon_key(target, weapon_key: str) -> bool:
+            normalized_key = _normalize_weapon_key(weapon_key)
+            if not normalized_key:
+                return False
+            return bool(_target_weapon_hit_models(target, normalized_key))
+
+        def _model_hit_target_with_weapon_key(model, target, weapon_key: str) -> bool:
+            normalized_key = _normalize_weapon_key(weapon_key)
+            if not normalized_key:
+                return False
+            models = _target_weapon_hit_models(target, normalized_key)
+            if not models:
+                return False
+            return model in models
+
         def _is_monster_or_vehicle(unit) -> bool:
             if unit is None:
                 return False
@@ -920,6 +935,19 @@ class GameShootingFightHandlersMixin:
                     range_value=cond_range,
                 ):
                     modifier += int(conditional_mod)
+            try:
+                infantry_weapon_mod = int(spec.get("test_modifier_if_infantry_hit_by_weapon", 0) or 0)
+            except (TypeError, ValueError):
+                infantry_weapon_mod = 0
+            if infantry_weapon_mod and _is_infantry(cand):
+                infantry_weapon_name = str(spec.get("test_modifier_if_infantry_hit_by_weapon_name", "") or "")
+                if infantry_weapon_name:
+                    if model is None:
+                        if _target_hit_with_weapon_key(cand, infantry_weapon_name):
+                            modifier += int(infantry_weapon_mod)
+                    else:
+                        if _model_hit_target_with_weapon_key(model, cand, infantry_weapon_name):
+                            modifier += int(infantry_weapon_mod)
             try:
                 if spec.get("test_modifier_on_kill"):
                     if model is None:

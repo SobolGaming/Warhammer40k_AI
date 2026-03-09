@@ -45,19 +45,43 @@ class AbilitySpecsMixin:
                 and "made with an indirect fire weapon scored a hit against an enemy unit" in normalized
                 and "that unit must take a battle shock test" in normalized
             ):
+                infantry_weapon_penalty = 0
+                infantry_weapon_name = ""
+                infantry_weapon_match = re.search(
+                    r"if an infantry unit is hit by one or more attacks made by a (?P<weapon>[a-z0-9 ]+) "
+                    r"they must subtract (?P<pen>\d+) from their battle shock test when doing so",
+                    normalized,
+                )
+                if infantry_weapon_match:
+                    try:
+                        parsed_penalty = int(infantry_weapon_match.group("pen") or 0)
+                    except (TypeError, ValueError):
+                        parsed_penalty = 0
+                    if parsed_penalty > 0:
+                        infantry_weapon_penalty = -int(parsed_penalty)
+                    infantry_weapon_name = self._normalize_keyword_phrase(
+                        str(infantry_weapon_match.group("weapon") or "")
+                    )
                 source = str(name or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
-                key = (source.lower(), "indirect_fire_hit")
+                key = (
+                    source.lower(),
+                    "indirect_fire_hit",
+                    int(infantry_weapon_penalty),
+                    str(infantry_weapon_name or ""),
+                )
                 if key not in seen:
                     seen.add(key)
-                    specs.append(
-                        {
-                            "infantry_only": False,
-                            "exclude_monster_vehicle": False,
-                            "require_indirect_fire_hit": True,
-                            "auto_each_target": True,
-                            "source": source,
-                        }
-                    )
+                    spec = {
+                        "infantry_only": False,
+                        "exclude_monster_vehicle": False,
+                        "require_indirect_fire_hit": True,
+                        "auto_each_target": True,
+                        "source": source,
+                    }
+                    if infantry_weapon_penalty and infantry_weapon_name:
+                        spec["test_modifier_if_infantry_hit_by_weapon"] = int(infantry_weapon_penalty)
+                        spec["test_modifier_if_infantry_hit_by_weapon_name"] = str(infantry_weapon_name)
+                    specs.append(spec)
                 continue
             m_kill = self._POST_SHOOT_BATTLESHOCK_ON_KILL_RE.fullmatch(normalized)
             if m_kill:
