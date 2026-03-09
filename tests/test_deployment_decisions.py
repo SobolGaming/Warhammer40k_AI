@@ -3,6 +3,7 @@ from __future__ import annotations
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_MOVE_UNIT,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
 )
 from warhammer40k_ai.engine.decision_requests import (
@@ -16,10 +17,17 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 
 
+class _StubModel:
+    def __init__(self, model_id: str) -> None:
+        self.id = model_id
+        self._id = model_id
+
+
 class _StubUnit:
     def __init__(self, unit_id: str, name: str) -> None:
         self.id = unit_id
         self.name = name
+        self.models = [_StubModel(f"{unit_id}:model:0")]
 
 
 class _ScriptedDecisionMaker(DeploymentDecisionMaker):
@@ -67,6 +75,14 @@ class _OptionSelectingDecisionMaker(_ScriptedDecisionMaker):
         for option in list(getattr(request, "options", []) or []):
             payload = dict(getattr(option, "payload", {}) or {})
             if str(payload.get("unit_id", "") or "") == self._next_unit_id:
+                return str(getattr(option, "option_id", "") or "")
+        return None
+
+    def choose_deployment_move_option(self, request, unit: _StubUnit, deployment_zone: dict, already_deployed: list[_StubUnit]):
+        del unit, deployment_zone, already_deployed
+        for option in list(getattr(request, "options", []) or []):
+            payload = dict(getattr(option, "payload", {}) or {})
+            if int(payload.get("placement_candidate_index", -1) or -1) == 1:
                 return str(getattr(option, "option_id", "") or "")
         return None
 
@@ -176,3 +192,52 @@ def test_deployment_manager_prefers_option_selection_hooks_when_available() -> N
     )
     assert str(getattr(selected_unit, "id", "") or "") == "unit:b"
     assert int(decision_maker.unit_fallback_calls) == 0
+
+
+def test_deployment_move_request_supports_multi_candidate_payloads_and_option_hooks() -> None:
+    game, _player, _other = _build_game()
+    manager = DeploymentManager(game)
+    decision_maker = _OptionSelectingDecisionMaker(zone_name="Zone A", next_unit_id="unit:a")
+    unit = _StubUnit("unit:a", "Alpha")
+    request = manager._build_deployment_move_request(
+        unit,
+        placement_candidates=[
+            {
+                "anchor": [4.0, 8.0],
+                "model_positions": [
+                    {
+                        "model_id": "unit:a:model:0",
+                        "position": [4.0, 8.0, 0.0],
+                        "facing": 0.0,
+                    }
+                ],
+                "source": "semantic_anchor",
+            },
+            {
+                "anchor": [6.0, 10.0],
+                "model_positions": [
+                    {
+                        "model_id": "unit:a:model:0",
+                        "position": [6.0, 10.0, 0.0],
+                        "facing": 0.0,
+                    }
+                ],
+                "source": "lattice",
+            },
+        ],
+        deployment_zone={"name": "Zone A", "zone_type": "defender"},
+    )
+
+    assert request.decision_type == DECISION_MOVE_UNIT
+    assert int(request.context.get("deployment_candidate_count", 0) or 0) == 2
+    assert len(list(request.options or [])) == 2
+
+    selected = manager._select_deployment_move_option(
+        request=request,
+        decision_maker=decision_maker,
+        unit=unit,
+        deployment_zone={"name": "Zone A", "zone_type": "defender"},
+        already_deployed=[],
+    )
+    selected_payload = dict(getattr(selected, "payload", {}) or {})
+    assert int(selected_payload.get("placement_candidate_index", -1) or -1) == 1

@@ -1,4 +1,6 @@
 from typing import List, Tuple, Dict, Any, Optional, TYPE_CHECKING
+import hashlib
+import json
 import logging
 from abc import ABC, abstractmethod
 
@@ -79,6 +81,27 @@ class DeploymentDecisionMaker(ABC):
         already_deployed: List['Unit'],
     ) -> Optional[str]:
         del request, deployable_units, deployment_zone, already_deployed
+        return None
+
+    def build_deployment_move_candidates(
+        self,
+        unit: 'Unit',
+        deployment_zone: dict,
+        already_deployed: List['Unit'],
+        *,
+        max_candidates: int = 8,
+    ) -> List[dict]:
+        del unit, deployment_zone, already_deployed, max_candidates
+        return []
+
+    def choose_deployment_move_option(
+        self,
+        request: DecisionRequest,
+        unit: 'Unit',
+        deployment_zone: dict,
+        already_deployed: List['Unit'],
+    ) -> Optional[str]:
+        del request, unit, deployment_zone, already_deployed
         return None
 
     def build_deployment_intent(
@@ -660,10 +683,197 @@ class DeploymentManager:
                 return
         raise RuntimeError(f"Selected deployment unit not found in deployable list: {selected_id}")
 
+    def _build_deployment_move_candidates(
+        self,
+        unit: 'Unit',
+        *,
+        decision_maker: DeploymentDecisionMaker,
+        deployment_zone: dict,
+        already_deployed: List['Unit'],
+        max_candidates: int = 8,
+    ) -> List[dict]:
+        candidate_limit = max(1, int(max_candidates))
+        builder = getattr(decision_maker, "build_deployment_move_candidates", None)
+        if callable(builder):
+            raw_candidates = list(
+                builder(
+                    unit,
+                    deployment_zone,
+                    list(already_deployed or []),
+                    max_candidates=candidate_limit,
+                )
+                or []
+            )
+            normalized: List[dict] = []
+            seen: set[str] = set()
+            for entry in list(raw_candidates or []):
+                normalized_candidate = self._normalize_deployment_move_candidate(
+                    unit,
+                    entry,
+                    decision_maker=decision_maker,
+                )
+                if normalized_candidate is None:
+                    continue
+                signature = self._deployment_placement_candidate_id(
+                    str(get_entity_id(unit) or ""),
+                    (float(normalized_candidate["anchor"][0]), float(normalized_candidate["anchor"][1])),
+                    list(normalized_candidate["model_positions"] or []),
+                    candidate_index=0,
+                )
+                if signature in seen:
+                    continue
+                seen.add(signature)
+                normalized.append(normalized_candidate)
+                if len(normalized) >= candidate_limit:
+                    break
+            if normalized:
+                return normalized
+
+        anchor = decision_maker.choose_unit_deployment_position(unit, deployment_zone, list(already_deployed or []))
+        model_positions = self._build_deployment_model_positions(
+            unit,
+            (float(anchor[0]), float(anchor[1])),
+            decision_maker=decision_maker,
+        )
+        return [
+            {
+                "anchor": [float(anchor[0]), float(anchor[1])],
+                "model_positions": [dict(entry or {}) for entry in list(model_positions or [])],
+                "source": "decision_maker_fallback",
+            }
+        ]
+
+    def _normalize_deployment_move_candidate(
+        self,
+        unit: 'Unit',
+        candidate: object,
+        *,
+        decision_maker: Optional[DeploymentDecisionMaker] = None,
+    ) -> Optional[dict]:
+        if not isinstance(candidate, dict):
+            return None
+        raw_anchor = candidate.get("anchor", candidate.get("deployment_anchor"))
+        if not isinstance(raw_anchor, (list, tuple)) or len(raw_anchor) < 2:
+            return None
+        try:
+            anchor_x = float(raw_anchor[0])
+            anchor_y = float(raw_anchor[1])
+        except (TypeError, ValueError):
+            return None
+        raw_positions = list(candidate.get("model_positions", []) or [])
+        model_positions: List[dict] = []
+        for entry in raw_positions:
+            if isinstance(entry, dict):
+                model_positions.append(dict(entry or {}))
+        if not model_positions:
+            if decision_maker is None:
+                return None
+            try:
+                model_positions = self._build_deployment_model_positions(
+                    unit,
+                    (float(anchor_x), float(anchor_y)),
+                    decision_maker=decision_maker,
+                )
+            except RuntimeError:
+                return None
+        if not model_positions:
+            return None
+        source = str(candidate.get("source", "") or "").strip().lower()
+        if not source:
+            source = "decision_maker"
+        return {
+            "anchor": [float(anchor_x), float(anchor_y)],
+            "model_positions": [dict(entry or {}) for entry in list(model_positions or [])],
+            "source": source,
+        }
+
+    @staticmethod
+    def _deployment_move_option_from_id(request: DecisionRequest, option_id: str) -> Optional[DecisionOption]:
+        if not option_id:
+            return None
+        for option in list(getattr(request, "options", []) or []):
+            if str(getattr(option, "option_id", "") or "") == option_id:
+                return option
+        return None
+
+    def _select_deployment_move_option(
+        self,
+        *,
+        request: DecisionRequest,
+        decision_maker: DeploymentDecisionMaker,
+        unit: 'Unit',
+        deployment_zone: dict,
+        already_deployed: List['Unit'],
+    ) -> DecisionOption:
+        option_id = str(
+            decision_maker.choose_deployment_move_option(
+                request,
+                unit,
+                deployment_zone,
+                list(already_deployed or []),
+            )
+            or ""
+        )
+        selected_option = self._deployment_move_option_from_id(request, option_id)
+        if option_id and selected_option is None:
+            raise RuntimeError(
+                f"Deployment placement option selection returned unknown option id for "
+                f"{getattr(unit, 'name', 'Unit')}: {option_id}"
+            )
+        if selected_option is not None:
+            return selected_option
+        if getattr(request, "options", None):
+            return request.options[0]
+        raise RuntimeError(
+            f"Deployment placement request for {getattr(unit, 'name', 'Unit')} has no selectable options."
+        )
+
+    @staticmethod
+    def _deployment_placement_candidate_id(
+        unit_id: str,
+        anchor: Tuple[float, float],
+        model_positions: List[dict],
+        *,
+        candidate_index: int,
+    ) -> str:
+        canonical_positions: List[dict] = []
+        for entry in list(model_positions or []):
+            model_id = str(dict(entry or {}).get("model_id", "") or "")
+            pos = list(dict(entry or {}).get("position", []) or [])
+            facing = dict(entry or {}).get("facing", 0.0)
+            if not model_id or len(pos) < 2:
+                continue
+            try:
+                px = float(pos[0])
+                py = float(pos[1])
+                pz = float(pos[2]) if len(pos) >= 3 else 0.0
+                pf = float(facing)
+            except (TypeError, ValueError):
+                continue
+            canonical_positions.append(
+                {
+                    "model_id": model_id,
+                    "position": [round(px, 4), round(py, 4), round(pz, 4)],
+                    "facing": round(pf, 4),
+                }
+            )
+        canonical_positions.sort(key=lambda item: str(item.get("model_id", "") or ""))
+        canonical_payload = {
+            "unit_id": str(unit_id or "unit"),
+            "candidate_index": int(candidate_index),
+            "anchor": [round(float(anchor[0]), 4), round(float(anchor[1]), 4)],
+            "model_positions": canonical_positions,
+        }
+        digest = hashlib.sha256(
+            json.dumps(canonical_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        ).hexdigest()[:16]
+        return f"{str(unit_id or 'unit')}:deploy:{int(candidate_index):02d}:{digest}"
+
     def _build_deployment_move_request(
         self,
         unit: 'Unit',
         *,
+        placement_candidates: Optional[List[dict]] = None,
         deployment_anchor: Tuple[float, float] | None = None,
         deployment_model_positions: Optional[List[dict]] = None,
         deployment_zone: Optional[dict] = None,
@@ -672,12 +882,6 @@ class DeploymentManager:
         extra_context: Optional[dict] = None,
     ) -> DecisionRequest:
         unit_id = get_entity_id(unit)
-        options = [
-            DecisionOption.create(
-                "Confirm",
-                payload={"unit_id": unit_id, "movement_type": "deploy", "action": "confirm"},
-            )
-        ]
         player_id = None
         army = getattr(unit, "get_parent_army", None)
         if callable(army):
@@ -687,6 +891,76 @@ class DeploymentManager:
         if army is not None:
             player = getattr(army, "player", None)
             player_id = getattr(player, "id", None) if player is not None else None
+
+        normalized_candidates: List[dict] = []
+        for candidate in list(placement_candidates or []):
+            normalized = self._normalize_deployment_move_candidate(
+                unit,
+                candidate,
+                decision_maker=None,
+            )
+            if normalized is not None:
+                normalized_candidates.append(normalized)
+        if not normalized_candidates and deployment_anchor is not None and deployment_model_positions:
+            normalized_candidates = [
+                {
+                    "anchor": [float(deployment_anchor[0]), float(deployment_anchor[1])],
+                    "model_positions": [dict(entry or {}) for entry in list(deployment_model_positions or [])],
+                    "source": "legacy_single_anchor",
+                }
+            ]
+        if not normalized_candidates:
+            raise RuntimeError(f"Deployment move request for {getattr(unit, 'name', 'Unit')} has no candidates.")
+
+        options: List[DecisionOption] = []
+        candidate_summaries: List[dict] = []
+        player_key = str(player_id or "")
+        for idx, candidate in enumerate(list(normalized_candidates or [])):
+            anchor = list(candidate.get("anchor", []) or [])
+            model_positions = [dict(entry or {}) for entry in list(candidate.get("model_positions", []) or [])]
+            if len(anchor) < 2 or not model_positions:
+                continue
+            anchor_x = float(anchor[0])
+            anchor_y = float(anchor[1])
+            candidate_id = str(
+                candidate.get("candidate_id")
+                or self._deployment_placement_candidate_id(
+                    str(unit_id or ""),
+                    (anchor_x, anchor_y),
+                    model_positions,
+                    candidate_index=idx,
+                )
+            )
+            action_id = f"{DECISION_MOVE_UNIT}:{player_key}:{unit_id}:deployment:{candidate_id}"
+            payload = {
+                "unit_id": unit_id,
+                "movement_type": "deploy",
+                "action": "confirm",
+                "placement_candidate_id": candidate_id,
+                "placement_candidate_index": int(idx),
+                "deployment_anchor": [anchor_x, anchor_y],
+                "model_positions": model_positions,
+                "action_id": action_id,
+            }
+            source = str(candidate.get("source", "") or "").strip().lower()
+            if source:
+                payload["candidate_source"] = source
+            option = DecisionOption.create(
+                f"Place at ({anchor_x:.1f}, {anchor_y:.1f})",
+                payload=payload,
+            )
+            options.append(option)
+            candidate_summaries.append(
+                {
+                    "placement_candidate_id": candidate_id,
+                    "placement_candidate_index": int(idx),
+                    "deployment_anchor": [anchor_x, anchor_y],
+                    "candidate_source": source,
+                }
+            )
+        if not options:
+            raise RuntimeError(f"Deployment move request for {getattr(unit, 'name', 'Unit')} has no valid options.")
+
         allowed_model_ids = [get_entity_id(m) for m in list(getattr(unit, "models", []) or [])]
         context = {
             "unit_id": unit_id,
@@ -695,11 +969,17 @@ class DeploymentManager:
             "allowed_model_ids": allowed_model_ids,
             "allow_skip": False,
             "max_distance": 0.0,
+            "deployment_candidate_count": int(len(options)),
         }
-        if deployment_anchor is not None:
-            context["deployment_anchor"] = [float(deployment_anchor[0]), float(deployment_anchor[1])]
-        if deployment_model_positions:
-            context["deployment_model_positions"] = [dict(entry or {}) for entry in list(deployment_model_positions or [])]
+        first_payload = dict(options[0].payload or {})
+        first_anchor = list(first_payload.get("deployment_anchor", []) or [])
+        first_positions = list(first_payload.get("model_positions", []) or [])
+        if len(first_anchor) >= 2:
+            context["deployment_anchor"] = [float(first_anchor[0]), float(first_anchor[1])]
+        if first_positions:
+            context["deployment_model_positions"] = [dict(entry or {}) for entry in list(first_positions or [])]
+        if candidate_summaries:
+            context["deployment_candidate_summaries"] = candidate_summaries
         if isinstance(deployment_zone, dict):
             zone_data = dict(deployment_zone or {})
             context["deployment_zone_key"] = canonical_deployment_zone_key(zone_data)
@@ -874,12 +1154,23 @@ class DeploymentManager:
                     current_deployed,
                 )
                 self._pop_selected_deploy_unit(current_units, unit)
-                position = current_decision_maker.choose_unit_deployment_position(unit, current_zone, current_deployed)
-                model_positions = self._build_deployment_model_positions(
+                placement_candidates = self._build_deployment_move_candidates(
                     unit,
-                    position,
                     decision_maker=current_decision_maker,
+                    deployment_zone=current_zone,
+                    already_deployed=current_deployed,
+                    max_candidates=8,
                 )
+                if not placement_candidates:
+                    raise RuntimeError(
+                        f"No deployment placement candidates were generated for {getattr(unit, 'name', 'Unit')}."
+                    )
+                first_anchor = list(dict(placement_candidates[0] or {}).get("anchor", []) or [])
+                if len(first_anchor) < 2:
+                    raise RuntimeError(
+                        f"Deployment placement candidates for {getattr(unit, 'name', 'Unit')} are missing anchors."
+                    )
+                primary_position = (float(first_anchor[0]), float(first_anchor[1]))
                 deployment_intent = current_decision_maker.build_deployment_intent(
                     decision_kind="placement",
                     player=current_player,
@@ -900,23 +1191,43 @@ class DeploymentManager:
                 # Route deployment placement through DecisionRequest/Command API.
                 request = self._build_deployment_move_request(
                     unit,
-                    deployment_anchor=position,
-                    deployment_model_positions=model_positions,
+                    placement_candidates=placement_candidates,
                     deployment_zone=current_zone,
                     already_deployed=current_deployed,
                     deployment_intent=deployment_intent,
                     extra_context=extra_context,
                 )
                 self.game.request_decision(request)
-                option_id = request.options[0].option_id if getattr(request, "options", None) else ""
+                selected_option = self._select_deployment_move_option(
+                    request=request,
+                    decision_maker=current_decision_maker,
+                    unit=unit,
+                    deployment_zone=current_zone,
+                    already_deployed=current_deployed,
+                )
+                selected_payload = dict(getattr(selected_option, "payload", {}) or {})
+                selected_positions = [
+                    dict(entry or {})
+                    for entry in list(selected_payload.get("model_positions", []) or [])
+                    if isinstance(entry, dict)
+                ]
+                if not selected_positions:
+                    raise RuntimeError(
+                        f"Deployment placement option for {getattr(unit, 'name', 'Unit')} is missing model_positions."
+                    )
+                selected_anchor_data = list(selected_payload.get("deployment_anchor", []) or [])
+                if len(selected_anchor_data) >= 2:
+                    selected_position = (float(selected_anchor_data[0]), float(selected_anchor_data[1]))
+                else:
+                    selected_position = primary_position
                 queue = getattr(self.game, "decision_queue", None)
                 pending = queue.get(request.decision_id) if queue is not None and hasattr(queue, "get") else request
                 if pending is not None:
                     apply_result = resolve_decision_command(
                         self.game,
                         request,
-                        option_id,
-                        result_payload={"model_positions": model_positions},
+                        selected_option.option_id,
+                        result_payload={"model_positions": selected_positions},
                         player_id=getattr(request, "player_id", None),
                     )
                     if not bool(getattr(apply_result, "ok", False)):
@@ -930,9 +1241,12 @@ class DeploymentManager:
                         "decision was consumed by another controller but unit is not deployed."
                     )
                 current_deployed.append(unit)
-                deployment_order.append((current_player.id, unit.id, position))
+                deployment_order.append((current_player.id, unit.id, selected_position))
                 
-                logger.info(f"{current_player.name} deploys {unit.name} at ({position[0]:.1f}, {position[1]:.1f})")
+                logger.info(
+                    f"{current_player.name} deploys {unit.name} at "
+                    f"({selected_position[0]:.1f}, {selected_position[1]:.1f})"
+                )
 
                 if unit.is_titanic:
                     deployment_skip_turns[current_player] = int(deployment_skip_turns.get(current_player, 0)) + 1

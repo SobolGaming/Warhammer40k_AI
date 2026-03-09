@@ -17,7 +17,7 @@ This document describes deterministic headless placement behavior for deployment
 - Reserve choices in `balanced` mode still obey reserve limits and validation, but candidate ranking now includes teacher reserve preference scoring.
 - Optional imitation/ranking model integration:
   - `DeterministicDeploymentDecisionMaker(..., ranker_model_path=...)` can load a linear deployment ranker model.
-  - When loaded, zone, reserves-allocation, and next-unit choices can be selected directly from request candidates via ranker scores.
+  - When loaded, zone, reserves-allocation, next-unit, scout, and deployment-placement choices can be selected directly from request candidates via ranker scores.
   - If model scoring is unavailable for a request, deterministic heuristic fallback remains active.
 - Standard units:
   - Candidate anchors are searched inside the assigned deployment zone.
@@ -49,4 +49,4 @@ This document describes deterministic headless placement behavior for deployment
 
 - `DECLARE_RESERVES` now emits deterministic multi-option allocation candidates (forced-only, pressure, balanced variants) with semantic metadata.
 - `SCOUT_MOVE` now emits deterministic destination options (plus skip) and solver metadata keyed to reserve denial, entry-lane quality, and exposure.
-- Deployment-scoped `MOVE_UNIT` candidates continue to carry exact-model placement payloads and deployment semantic metadata.
+- Deployment-scoped `MOVE_UNIT` now emits deterministic multi-option exact-placement candidates at runtime (anchor + exact `model_positions` per option), with per-option deployment semantic metadata.

@@ -8,7 +8,7 @@ from shapely.geometry import Point
 
 from warhammer40k_ai.battlefield.map import Map, TerrainFactory
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_DEPLOYMENT_ZONE
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_DEPLOYMENT_ZONE, DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.deployment_ranker import DEFAULT_DEPLOYMENT_RANKER_FEATURE_KEYS
 from warhammer40k_ai.engine.deployment_headless import DeterministicDeploymentDecisionMaker
 
@@ -358,6 +358,38 @@ def test_semantic_anchor_candidates_are_used_for_placement(
     assert y == pytest.approx(12.0, abs=0.2)
 
 
+def test_headless_builds_multiple_runtime_deployment_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FlatMap:
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+    class _StubGame:
+        def __init__(self, players: list[_StubPlayer]) -> None:
+            self.players = list(players)
+            self.map = _FlatMap()
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+
+        def is_valid_deployment_position(self, _unit, _x: float, _y: float, _player_id: str) -> bool:
+            return True
+
+    unit = _StubUnit("unit:multi", must_start_in_reserves=False, map_obj=_FlatMap())
+    army = _StubArmy([unit])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    unit._army = army
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame([player]))
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", lambda *_args, **_kwargs: ())
+
+    zone = {"name": "zone", "x_range": [0.0, 30.0], "y_range": [0.0, 20.0]}
+    candidates = maker.build_deployment_move_candidates(unit, zone, already_deployed=[], max_candidates=4)
+    assert len(candidates) >= 2
+    first = dict(candidates[0] or {})
+    assert isinstance(first.get("anchor"), list)
+    assert isinstance(first.get("model_positions"), list)
+    assert str(first.get("source", "") or "")
+
+
 def test_deployment_headless_uses_ranker_model_for_option_selection(tmp_path: Path) -> None:
     class _StubGame:
         players: list[object] = []
@@ -408,4 +440,62 @@ def test_deployment_headless_uses_ranker_model_for_option_selection(tmp_path: Pa
     ]
     request.mask = [True, True]
     option_id = maker.choose_deployment_zone_option(request, [])
+    assert str(option_id or "") == str(request.options[1].option_id)
+
+
+def test_deployment_headless_uses_ranker_model_for_deployment_move_option_selection(tmp_path: Path) -> None:
+    class _StubGame:
+        players: list[object] = []
+
+    feature_keys = list(DEFAULT_DEPLOYMENT_RANKER_FEATURE_KEYS)
+    model_payload = {
+        "model_type": "deployment_linear_ranker_v1",
+        "feature_keys": feature_keys,
+        "weights": [1.0] + [0.0 for _ in feature_keys[1:]],
+        "bias": 0.0,
+        "normalization": {
+            "mean": [0.0 for _ in feature_keys],
+            "scale": [1.0 for _ in feature_keys],
+        },
+        "decision_types": [DECISION_MOVE_UNIT],
+        "candidate_kinds": ["deployment_move"],
+        "created_at_utc": "2026-03-08T00:00:00Z",
+        "training_metrics": {},
+    }
+    model_path = tmp_path / "deployment_move_ranker_model.json"
+    model_path.write_text(json.dumps(model_payload, sort_keys=True), encoding="utf-8")
+    maker = DeterministicDeploymentDecisionMaker(game=_StubGame(), ranker_model_path=str(model_path))
+
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Deploy unit",
+        player_id="player:test",
+        options=[
+            DecisionOption.create(
+                "Candidate A",
+                payload={"unit_id": "unit:test", "movement_type": "deploy", "action": "confirm"},
+            ),
+            DecisionOption.create(
+                "Candidate B",
+                payload={"unit_id": "unit:test", "movement_type": "deploy", "action": "confirm"},
+            ),
+        ],
+        context={"placement_kind": "deployment"},
+    )
+    action_a = request.action_id_for_option_id(request.options[0].option_id)
+    action_b = request.action_id_for_option_id(request.options[1].option_id)
+    request.candidates = [
+        CandidateAction(
+            action_id=action_a,
+            params={},
+            metadata={"candidate_kind": "deployment_move", "projected_score_delta_next_window": 0.2},
+        ),
+        CandidateAction(
+            action_id=action_b,
+            params={},
+            metadata={"candidate_kind": "deployment_move", "projected_score_delta_next_window": 1.3},
+        ),
+    ]
+    request.mask = [True, True]
+    option_id = maker.choose_deployment_move_option(request, object(), {}, [])
     assert str(option_id or "") == str(request.options[1].option_id)

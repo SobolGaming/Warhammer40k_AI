@@ -871,11 +871,51 @@ def _scout_move_candidates(game: object, request: DecisionRequest, intent: Deplo
 
 
 def _deployment_move_candidates(game: object, request: DecisionRequest, intent: DeploymentIntent) -> tuple[list[CandidateAction], list[bool]]:
-    del game
     ctx = dict(getattr(request, "context", {}) or {})
-    model_positions = list(ctx.get("deployment_model_positions", []) or [])
-    if not model_positions:
+    fallback_positions = list(ctx.get("deployment_model_positions", []) or [])
+    if not fallback_positions and not list(getattr(request, "options", []) or []):
         return _copy_request_candidates(request, fallback_mode=False)
+
+    desired_affordances = {str(value or "").strip().upper() for value in list(intent.desired_affordances or []) if str(value or "").strip()}
+    forward_preference = 0.0
+    if "LOS_TUNNEL_ADVANCE" in desired_affordances:
+        forward_preference += 0.6
+    if "MIDBOARD_STAGING" in desired_affordances:
+        forward_preference += 0.45
+    if "FORWARD_SCREEN" in desired_affordances:
+        forward_preference += 0.5
+    if "EXPOSURE_MINIMIZATION" in desired_affordances:
+        forward_preference -= 0.75
+    if "HOME_ANCHOR" in desired_affordances:
+        forward_preference -= 0.4
+    lateral_preference = 0.0
+    if "SCREEN_DEPTH" in desired_affordances:
+        lateral_preference += 0.45
+    if "COUNTERCHARGE_POCKET" in desired_affordances:
+        lateral_preference += 0.2
+    if "SAFE_FIRING_POCKET" in desired_affordances:
+        lateral_preference += 0.1
+    retreat_preference = max(0.0, -forward_preference)
+
+    map_obj = getattr(game, "map", None)
+    board_width = max(1.0, _safe_float(getattr(map_obj, "width", 60.0), 60.0))
+    board_height = max(1.0, _safe_float(getattr(map_obj, "height", 44.0), 44.0))
+    board_center_x = board_width * 0.5
+    board_center_y = board_height * 0.5
+    anchor_tokens = dict(intent.anchors or {})
+    zone_center_x = _safe_float(anchor_tokens.get("deployment_center_x"), board_center_x)
+    zone_center_y = _safe_float(anchor_tokens.get("deployment_center_y"), board_center_y)
+    forward_dx = board_center_x - zone_center_x
+    forward_dy = board_center_y - zone_center_y
+    forward_mag = float((forward_dx * forward_dx + forward_dy * forward_dy) ** 0.5)
+    if forward_mag <= 1e-9:
+        forward_vec = (0.0, 1.0)
+    else:
+        forward_vec = (forward_dx / forward_mag, forward_dy / forward_mag)
+    side_vec = (-forward_vec[1], forward_vec[0])
+    anchor_norm_scale = max(6.0, max(board_width, board_height) * 0.5)
+    candidate_count = max(1, _safe_int(ctx.get("deployment_candidate_count", len(list(getattr(request, "options", []) or []))), 1))
+
     candidates: list[CandidateAction] = []
     for option in list(getattr(request, "options", []) or []):
         payload = _option_payload(option)
@@ -898,8 +938,46 @@ def _deployment_move_candidates(game: object, request: DecisionRequest, intent: 
                 )
             )
             continue
+        model_positions = list(payload.get("model_positions", []) or fallback_positions or [])
+        if not model_positions:
+            continue
         params = dict(payload)
         params["model_positions"] = model_positions
+        raw_anchor = list(payload.get("deployment_anchor", []) or [])
+        if len(raw_anchor) >= 2:
+            anchor_x = _safe_float(raw_anchor[0], zone_center_x)
+            anchor_y = _safe_float(raw_anchor[1], zone_center_y)
+        else:
+            sample_points = [
+                list(dict(entry or {}).get("position", []) or [])
+                for entry in list(model_positions or [])
+                if isinstance(entry, dict)
+            ]
+            sample_points = [point for point in sample_points if len(point) >= 2]
+            if sample_points:
+                anchor_x = sum(_safe_float(point[0], zone_center_x) for point in sample_points) / float(len(sample_points))
+                anchor_y = sum(_safe_float(point[1], zone_center_y) for point in sample_points) / float(len(sample_points))
+            else:
+                anchor_x = zone_center_x
+                anchor_y = zone_center_y
+        params["deployment_anchor"] = [float(anchor_x), float(anchor_y)]
+
+        relative_dx = float(anchor_x - zone_center_x)
+        relative_dy = float(anchor_y - zone_center_y)
+        forward_progress = float(relative_dx * forward_vec[0] + relative_dy * forward_vec[1])
+        lateral_offset = float(abs(relative_dx * side_vec[0] + relative_dy * side_vec[1]))
+        center_distance = float((relative_dx * relative_dx + relative_dy * relative_dy) ** 0.5)
+        forward_norm = _clamp(forward_progress / anchor_norm_scale, low=-1.5, high=1.5)
+        lateral_norm = _clamp(lateral_offset / anchor_norm_scale, low=0.0, high=1.5)
+        center_norm = _clamp(center_distance / anchor_norm_scale, low=0.0, high=2.0)
+
+        placement_index = max(0, _safe_int(payload.get("placement_candidate_index", 0), 0))
+        rank_bonus = _clamp(float(candidate_count - min(candidate_count, placement_index + 1)) / float(candidate_count), low=0.0, high=1.0)
+        intent_alignment = (
+            forward_norm * forward_preference
+            + lateral_norm * lateral_preference
+            - center_norm * retreat_preference * 0.5
+        )
         score_weight = _weight(intent, "score", 0.3)
         deny_weight = _weight(intent, "deny", 0.2)
         safety_weight = _weight(intent, "safety", 0.3)
@@ -913,18 +991,66 @@ def _deployment_move_candidates(game: object, request: DecisionRequest, intent: 
         reserve_targets = float(len(list(intent.reserve_deny_targets or [])))
         threatened_lanes = float(len(list(intent.threatened_lane_ids or [])))
         objective_targets = float(len(list(intent.target_objective_ids or [])))
-        score_next = score_weight * (0.2 + staging_weight * 0.25 + objective_targets * 0.03)
-        deny_next = deny_weight * (0.14 + reserve_deny_weight * 0.2 + reserve_targets * 0.05 + threatened_lanes * 0.03)
-        control = (score_next + deny_next) * 0.72 + screen_weight * 0.08
-        action_enable = staging_weight * 0.25
-        exposure_if_enemy_first = _clamp(0.55 - safety_weight * 0.35 - cover_weight * 0.2, low=0.0, high=1.4)
-        exposure = _clamp(-exposure_if_enemy_first + 0.04, low=-2.0, high=2.0)
-        trade = _clamp(score_next * 0.32 + deny_next * 0.28 + countercharge_weight * 0.16 - exposure_if_enemy_first * 0.26, low=-3.0, high=3.0)
+        score_next = score_weight * (0.18 + staging_weight * 0.24 + objective_targets * 0.03)
+        score_next += score_weight * (intent_alignment * 0.14 + rank_bonus * 0.04)
+        deny_next = deny_weight * (0.12 + reserve_deny_weight * 0.2 + reserve_targets * 0.05 + threatened_lanes * 0.03)
+        deny_next += deny_weight * (max(0.0, forward_norm) * 0.09 + lateral_norm * (0.05 + lateral_preference * 0.04))
+        control = (score_next + deny_next) * 0.72 + screen_weight * (0.08 + lateral_norm * 0.04)
+        action_enable = staging_weight * (0.23 + max(0.0, forward_norm) * (0.16 + max(0.0, forward_preference) * 0.08))
+        exposure_if_enemy_first = _clamp(
+            0.55
+            - safety_weight * 0.35
+            - cover_weight * 0.2
+            + max(0.0, forward_norm) * (0.22 + max(0.0, forward_preference) * 0.1)
+            + center_norm * 0.08
+            - retreat_preference * max(0.0, -forward_norm) * 0.12,
+            low=0.0,
+            high=1.6,
+        )
+        exposure = _clamp(
+            -exposure_if_enemy_first + 0.04 + retreat_preference * max(0.0, -forward_norm) * 0.08,
+            low=-2.0,
+            high=2.0,
+        )
+        trade = _clamp(
+            score_next * 0.32 + deny_next * 0.28 + countercharge_weight * 0.16 - exposure_if_enemy_first * 0.26,
+            low=-3.0,
+            high=3.0,
+        )
+        cover = _clamp(
+            cover_weight * (0.18 - max(0.0, forward_norm) * 0.07 + retreat_preference * 0.03),
+            low=-1.5,
+            high=1.5,
+        )
+        los = _clamp(
+            los_weight * (0.08 + max(0.0, forward_norm) * (0.1 + max(0.0, forward_preference) * 0.06) - retreat_preference * 0.04),
+            low=-1.5,
+            high=1.5,
+        )
+        resource = _clamp(
+            -(reserve_deny_weight * (0.03 + max(0.0, forward_norm) * 0.03) + screen_weight * (0.02 + lateral_norm * 0.02)),
+            low=-3.0,
+            high=3.0,
+        )
+        reserve_denial_delta = reserve_deny_weight * (0.15 + reserve_targets * 0.05 + max(0.0, forward_norm) * 0.08 + lateral_norm * 0.05)
+        screen_integrity_delta = screen_weight * (0.18 + threatened_lanes * 0.03 + lateral_norm * 0.08)
+        countercharge_coverage_delta = countercharge_weight * (0.17 + max(0.0, forward_norm) * 0.06 + lateral_norm * 0.03)
+        aura_connectivity_delta = aura_weight * (0.12 + _clamp(1.0 - center_norm, low=0.0, high=1.0) * 0.06)
+        melee_staging_delta = staging_weight * (0.2 + max(0.0, forward_norm) * (0.2 + max(0.0, forward_preference) * 0.1))
         metadata = {
             "candidate_kind": "deployment_move",
             "solver_ms": 0,
             "fallback_mode": False,
             "intent_hash": intent.stable_hash(),
+            "placement_candidate_id": str(payload.get("placement_candidate_id", "") or ""),
+            "placement_candidate_index": int(placement_index),
+            "candidate_count": int(candidate_count),
+            "deployment_anchor_x": _round6(anchor_x),
+            "deployment_anchor_y": _round6(anchor_y),
+            "forward_progress_norm": _round6(forward_norm),
+            "lateral_offset_norm": _round6(lateral_norm),
+            "anchor_center_distance_norm": _round6(center_norm),
+            "intent_alignment": _round6(intent_alignment),
             "rules_provenance_refs": [str(ctx.get("rules_bundle_id", "") or "")] if str(ctx.get("rules_bundle_id", "") or "") else [],
             "projected_score_delta_next_window": _round6(score_next),
             "projected_score_delta_round": _round6(score_next * 1.2),
@@ -933,15 +1059,15 @@ def _deployment_move_candidates(game: object, request: DecisionRequest, intent: 
             "projected_action_enablement_delta": _round6(action_enable),
             "projected_exposure_delta": _round6(exposure),
             "projected_trade_ev": _round6(trade),
-            "cover_delta": _round6(_clamp(cover_weight * 0.2, low=-1.5, high=1.5)),
-            "los_delta": _round6(_clamp(los_weight * 0.1, low=-1.5, high=1.5)),
-            "resource_delta": _round6(_clamp(-(reserve_deny_weight * 0.03 + screen_weight * 0.02), low=-3.0, high=3.0)),
-            "reserve_denial_delta": _round6(reserve_deny_weight * (0.15 + reserve_targets * 0.05)),
-            "screen_integrity_delta": _round6(screen_weight * (0.18 + threatened_lanes * 0.03)),
-            "countercharge_coverage_delta": _round6(countercharge_weight * 0.18),
-            "aura_connectivity_delta": _round6(aura_weight * 0.12),
+            "cover_delta": _round6(cover),
+            "los_delta": _round6(los),
+            "resource_delta": _round6(resource),
+            "reserve_denial_delta": _round6(reserve_denial_delta),
+            "screen_integrity_delta": _round6(screen_integrity_delta),
+            "countercharge_coverage_delta": _round6(countercharge_coverage_delta),
+            "aura_connectivity_delta": _round6(aura_connectivity_delta),
             "projected_exposure_delta_if_enemy_goes_first": _round6(exposure_if_enemy_first),
-            "projected_melee_staging_delta": _round6(staging_weight * 0.2),
+            "projected_melee_staging_delta": _round6(melee_staging_delta),
         }
         candidates.append(
             CandidateAction(

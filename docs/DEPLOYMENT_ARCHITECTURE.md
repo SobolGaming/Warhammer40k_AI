@@ -25,10 +25,12 @@ Key goals:
   and objective approach quality signals for both infantry and vehicle posture.
 - `DeploymentDecisionMaker` can optionally select by queued request option id
   (`choose_deployment_zone_option` / `choose_reserves_allocation_option` /
-  `choose_next_deploy_unit_option`) so learned rankers
+  `choose_next_deploy_unit_option` / `choose_deployment_move_option`) so learned rankers
   can consume engine-generated candidate metadata directly.
 - `DECLARE_RESERVES` requests now expose deterministic multi-option allocation plans (not a single confirm-only option).
 - `SCOUT_MOVE` requests now expose deterministic destination options plus skip, with deployment-semantic metadata.
+- Deployment `MOVE_UNIT` placement now exposes deterministic multi-candidate exact-placement options at runtime
+  (`placement_candidate_id`, anchor, exact `model_positions`) instead of a single confirm-only payload.
 - `HumanDeploymentDecisionMaker` delegates to `src/warhammer40k_ai/UI/human_interface.py`
   (or console fallback if no UI is available).
 
@@ -53,6 +55,8 @@ Key goals:
 - Deployment candidates include semantic deltas used by replay/telemetry and headless ranking,
   including reserve-denial, screen-integrity, countercharge-coverage, aura-connectivity, and
   enemy-first-turn exposure estimates.
+- Deployment-placement candidates include per-option spatial metadata (`forward_progress_norm`,
+  `lateral_offset_norm`, `anchor_center_distance_norm`) so exact placement is rankable online.
 - Zone candidates also carry board-affordance semantics (`los_tunnel_count`,
   `hidden_staging_cell_count`, `must_expose_to_advance_cell_count`,
   `infantry_objective_approach_quality`, `vehicle_objective_approach_quality`) so deployment-zone

@@ -114,6 +114,16 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         del player, proposed_decisions
         return self._ranked_option_id(request)
 
+    def choose_deployment_move_option(
+        self,
+        request: DecisionRequest,
+        unit: object,
+        deployment_zone: dict,
+        already_deployed: list[object],
+    ) -> Optional[str]:
+        del unit, deployment_zone, already_deployed
+        return self._ranked_option_id(request)
+
     def declare_reserves(self, player: Player) -> dict:
         army = player.get_army() if player is not None else None
         if army is None:
@@ -261,32 +271,59 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         validate_fn = getattr(self.game, "is_valid_deployment_position", None)
         if not callable(validate_fn):
             return self._zone_center(deployment_zone)
+        candidates = self.build_deployment_move_candidates(
+            unit,
+            deployment_zone,
+            list(already_deployed or []),
+            max_candidates=1,
+        )
+        if candidates:
+            first = dict(candidates[0] or {})
+            anchor = list(first.get("anchor", []) or [])
+            if len(anchor) >= 2:
+                return (float(anchor[0]), float(anchor[1]))
+        raise RuntimeError(
+            f"No valid deployment position found for unit {getattr(unit, 'name', 'Unit')} "
+            f"(player_id={player_id})."
+        )
+
+    def build_deployment_move_candidates(
+        self,
+        unit: object,
+        deployment_zone: dict,
+        already_deployed: list[object],
+        *,
+        max_candidates: int = 8,
+    ) -> list[dict]:
+        player_id = self._player_id_for_unit(unit)
+        if not player_id:
+            return []
+        validate_fn = getattr(self.game, "is_valid_deployment_position", None)
+        if not callable(validate_fn):
+            return []
 
         unit_id = str(get_entity_id(unit) or "")
         if unit_id:
             self._selected_payload_by_unit_id.pop(unit_id, None)
 
         player = self._resolve_player_for_unit(unit)
-        candidate_groups: list[list[tuple[float, float]]] = [
-            self._semantic_anchor_candidates(
-                unit,
-                deployment_zone,
-                already_deployed=already_deployed,
-                player=player,
-            ),
-            self._candidate_positions(unit, deployment_zone, already_deployed),
-            self._candidate_positions_exhaustive(unit, deployment_zone),
-        ]
-        if self._unit_has_infiltrate(unit):
-            candidate_groups.extend(self._infiltrate_candidate_groups(unit, already_deployed=already_deployed))
+        candidate_groups = self._deployment_anchor_candidate_groups(
+            unit,
+            deployment_zone,
+            already_deployed=list(already_deployed or []),
+            player=player,
+        )
+        candidate_limit = max(1, int(max_candidates))
+        seen_anchor: set[tuple[float, float]] = set()
+        seen_payload: set[tuple[tuple[str, float, float, float, float], ...]] = set()
+        candidates: list[dict] = []
 
-        seen: set[tuple[float, float]] = set()
-        for group in candidate_groups:
-            for x, y in group:
+        for source, anchors in list(candidate_groups or []):
+            for x, y in list(anchors or []):
                 key = (round(float(x), 3), round(float(y), 3))
-                if key in seen:
+                if key in seen_anchor:
                     continue
-                seen.add(key)
+                seen_anchor.add(key)
                 payload = self._select_valid_deployment_payload(
                     unit,
                     player_id=str(player_id),
@@ -294,15 +331,82 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                     y=float(y),
                     fast_validate_fn=validate_fn,
                 )
-                if payload:
-                    if unit_id:
-                        self._selected_payload_by_unit_id[unit_id] = ((float(x), float(y)), list(payload))
-                    return (float(x), float(y))
+                if not payload:
+                    continue
+                payload_sig = self._model_positions_signature(payload)
+                if payload_sig in seen_payload:
+                    continue
+                seen_payload.add(payload_sig)
+                candidates.append(
+                    {
+                        "anchor": [float(x), float(y)],
+                        "model_positions": [dict(entry or {}) for entry in list(payload or [])],
+                        "source": str(source or "heuristic").strip().lower() or "heuristic",
+                    }
+                )
+                if len(candidates) >= candidate_limit:
+                    break
+            if len(candidates) >= candidate_limit:
+                break
 
-        raise RuntimeError(
-            f"No valid deployment position found for unit {getattr(unit, 'name', 'Unit')} "
-            f"(player_id={player_id})."
-        )
+        if unit_id and candidates:
+            first = dict(candidates[0] or {})
+            first_anchor = list(first.get("anchor", []) or [])
+            first_positions = [dict(entry or {}) for entry in list(first.get("model_positions", []) or [])]
+            if len(first_anchor) >= 2 and first_positions:
+                self._selected_payload_by_unit_id[unit_id] = (
+                    (float(first_anchor[0]), float(first_anchor[1])),
+                    list(first_positions),
+                )
+        return candidates
+
+    def _deployment_anchor_candidate_groups(
+        self,
+        unit: object,
+        deployment_zone: dict,
+        *,
+        already_deployed: list[object],
+        player: Optional[Player],
+    ) -> list[tuple[str, list[tuple[float, float]]]]:
+        groups: list[tuple[str, list[tuple[float, float]]]] = [
+            (
+                "semantic_anchor",
+                self._semantic_anchor_candidates(
+                    unit,
+                    deployment_zone,
+                    already_deployed=already_deployed,
+                    player=player,
+                ),
+            ),
+            ("lattice", self._candidate_positions(unit, deployment_zone, already_deployed)),
+            ("lattice_exhaustive", self._candidate_positions_exhaustive(unit, deployment_zone)),
+        ]
+        if self._unit_has_infiltrate(unit):
+            infiltrate_groups = self._infiltrate_candidate_groups(unit, already_deployed=already_deployed)
+            for idx, anchors in enumerate(list(infiltrate_groups or [])):
+                groups.append((f"infiltrate_{int(idx)}", list(anchors or [])))
+        return groups
+
+    @staticmethod
+    def _model_positions_signature(model_positions: list[dict]) -> tuple[tuple[str, float, float, float, float], ...]:
+        signature: list[tuple[str, float, float, float, float]] = []
+        for entry in list(model_positions or []):
+            if not isinstance(entry, dict):
+                continue
+            model_id = str(entry.get("model_id", "") or "")
+            pos = list(entry.get("position", []) or [])
+            if not model_id or len(pos) < 2:
+                continue
+            try:
+                x = float(pos[0])
+                y = float(pos[1])
+                z = float(pos[2]) if len(pos) >= 3 else 0.0
+                facing = float(entry.get("facing", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            signature.append((model_id, round(x, 4), round(y, 4), round(z, 4), round(facing, 4)))
+        signature.sort(key=lambda item: item[0])
+        return tuple(signature)
 
     def _select_valid_deployment_payload(
         self,

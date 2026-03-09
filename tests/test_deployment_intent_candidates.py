@@ -268,6 +268,94 @@ def test_deployment_move_request_uses_deployment_solver_candidate_payload() -> N
     assert "model_positions" in dict(candidate.params or {})
 
 
+def test_deployment_move_candidates_vary_by_runtime_placement_option() -> None:
+    game, player, screen_unit, _hammer = _build_game()
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Deploy Forward Screen",
+        player_id=player.id,
+        options=[
+            DecisionOption.create(
+                "Forward Candidate",
+                payload={
+                    "unit_id": screen_unit.id,
+                    "movement_type": "deploy",
+                    "action": "confirm",
+                    "placement_candidate_id": "cand:forward",
+                    "placement_candidate_index": 0,
+                    "deployment_anchor": [12.0, 10.0],
+                    "model_positions": [
+                        {
+                            "model_id": "m1",
+                            "position": [12.0, 10.0, 0.0],
+                            "facing": 0.0,
+                        }
+                    ],
+                },
+            ),
+            DecisionOption.create(
+                "Back Candidate",
+                payload={
+                    "unit_id": screen_unit.id,
+                    "movement_type": "deploy",
+                    "action": "confirm",
+                    "placement_candidate_id": "cand:back",
+                    "placement_candidate_index": 1,
+                    "deployment_anchor": [6.0, 10.0],
+                    "model_positions": [
+                        {
+                            "model_id": "m1",
+                            "position": [6.0, 10.0, 0.0],
+                            "facing": 0.0,
+                        }
+                    ],
+                },
+            ),
+        ],
+        context={
+            "unit_id": screen_unit.id,
+            "movement_type": "deploy",
+            "placement_kind": "deployment",
+            "deployment_candidate_count": 2,
+            "deployment_intent": {
+                "desired_affordances": ["LOS_TUNNEL_ADVANCE", "SCREEN_DEPTH"],
+                "anchors": {
+                    "deployment_center_x": "8.0",
+                    "deployment_center_y": "10.0",
+                },
+                "weights": {
+                    "score": 0.32,
+                    "deny": 0.22,
+                    "safety": 0.26,
+                    "staging": 0.22,
+                    "reserve_deny": 0.24,
+                    "screen": 0.25,
+                    "countercharge": 0.15,
+                    "cover": 0.2,
+                    "los": 0.12,
+                    "aura": 0.1,
+                },
+            },
+        },
+    )
+
+    game.request_decision(request)
+    assert len(list(request.candidates or [])) == 2
+    by_candidate_id = {
+        str(dict(candidate.params or {}).get("placement_candidate_id", "") or ""): candidate
+        for candidate in list(request.candidates or [])
+    }
+    assert "cand:forward" in by_candidate_id
+    assert "cand:back" in by_candidate_id
+    forward_meta = dict(by_candidate_id["cand:forward"].metadata or {})
+    back_meta = dict(by_candidate_id["cand:back"].metadata or {})
+    assert forward_meta.get("candidate_kind") == "deployment_move"
+    assert float(forward_meta.get("forward_progress_norm", 0.0) or 0.0) != float(back_meta.get("forward_progress_norm", 0.0) or 0.0)
+    assert float(forward_meta.get("projected_score_delta_next_window", 0.0) or 0.0) != float(
+        back_meta.get("projected_score_delta_next_window", 0.0) or 0.0
+    )
+
+
 def test_reserves_request_generates_rankable_candidates_with_semantic_metadata() -> None:
     game, player, _screen_unit, _hammer = _build_game()
     request = build_reserves_allocation_request(game, player.army, queue_requests=True)

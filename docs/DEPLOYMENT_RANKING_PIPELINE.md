@@ -66,6 +66,7 @@ Output model includes:
   - reserves allocation requests
   - next deploy unit requests
   - scout move requests (through the shared deployment solver metadata path)
+  - deployment placement `MOVE_UNIT` requests (`placement_kind="deployment"`) with multi-candidate exact placements
 - If ranker cannot score a request, deterministic heuristic fallback remains active.
 
 ## Headless usage
