@@ -9,7 +9,7 @@ from ...utility.placement_validation import bases_overlap_3d
 from ...utility.entity_ids import get_entity_id
 from ...utility.debug import describe_callable, describe_self_stack
 from ...engine.ui_decision_bridge import (
-    queue_decision_request as _queue_decision_request,
+    require_pending_decision_request as _require_pending_decision_request,
 )
 import logging
 logger = logging.getLogger(__name__)
@@ -1551,7 +1551,7 @@ class IndividualModelMovementDialog(BaseDialog):
             game = getattr(getattr(self.unit.get_parent_army(), "player", None), "game", None)
         except Exception:
             game = None
-        request = _queue_decision_request(game,
+        request = _require_pending_decision_request(game,
             DECISION_RESOLVE_COHERENCY,
             f"Resolve coherency for {getattr(self.unit, 'name', 'Unit')}",
             player_id=getattr(getattr(self.unit.get_parent_army(), "player", None), "id", None),

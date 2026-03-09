@@ -9,6 +9,7 @@ FORBIDDEN_PATTERNS = (
     ".request_decision(",
     "create_decision_request(",
     "queue_existing_decision_request(",
+    "queue_decision_request(",
 )
 
 

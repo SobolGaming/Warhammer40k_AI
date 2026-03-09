@@ -13,7 +13,7 @@ from warhammer40k_ai.utility.ability_support import ABILITY_BLESSINGS_OF_KHORNE,
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 from warhammer40k_ai.utility.profiling_controller import ProfilingController
 from warhammer40k_ai.engine.ui_decision_bridge import (
-    queue_decision_request as _queue_decision_request,
+    require_pending_decision_request as _require_pending_decision_request,
 )
 
 # Import UI panels
@@ -297,7 +297,7 @@ class GameView:
                 except Exception:
                     pass
 
-            req = _queue_decision_request(self.game,
+            req = _require_pending_decision_request(self.game,
                 decision_type,
                 prompt,
                 player_id=getattr(player, "id", None),
@@ -369,7 +369,7 @@ class GameView:
                 on_chosen(None)
                 return
 
-            req = _queue_decision_request(self.game,
+            req = _require_pending_decision_request(self.game,
                 decision_type,
                 prompt,
                 player_id=getattr(player, "id", None),
@@ -447,7 +447,7 @@ class GameView:
                 except Exception:
                     name = "Secondary"
                 options.append(DecisionOption.create(name, payload={"card_name": name}))
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_DISCARD_SECONDARY,
                 "Select a secondary to discard.",
                 player_id=getattr(player, "id", None),
@@ -1476,7 +1476,7 @@ class GameView:
                 "max_units": int(max_units or 2),
                 "outside_shadow_unit_ids": [str(v) for v in list(outside_ids or []) if v is not None],
             }
-            req = _queue_decision_request(game_ctx,
+            req = _require_pending_decision_request(game_ctx,
                 DECISION_SELECT_REALM_OF_CHAOS_UNITS,
                 "Select up to two LEGIONES DAEMONICA units.",
                 player_id=getattr(player, "id", None),
@@ -2566,7 +2566,7 @@ class GameView:
             ctx = dict(context or {})
             ctx["message"] = message
             ctx["ui_prompted"] = True
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CONFIRM_YES_NO,
                 title or "Confirm",
                 player_id=getattr(player, "id", None) if player is not None else (getattr(self.game.get_current_player(), "id", None) if self.game else None),
@@ -2622,7 +2622,7 @@ class GameView:
                 DecisionOption.create("Confirm", payload={"action": "confirm", "unit_id": unit_id}),
                 DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}),
             ]
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_DECLARE_SHOTS,
                 f"Declare Overwatch shots for {getattr(shooter_unit, 'name', 'Unit')}",
                 player_id=getattr(getattr(shooter_unit.get_parent_army(), "player", None), "id", None),
@@ -2665,7 +2665,7 @@ class GameView:
                 DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}),
             ]
             title = str(source or "Reactive Response").strip() or "Reactive Response"
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_DECLARE_SHOTS,
                 f"{title}: Declare shots for {getattr(shooter_unit, 'name', 'Unit')}",
                 player_id=getattr(getattr(shooter_unit.get_parent_army(), "player", None), "id", None),
@@ -2714,7 +2714,7 @@ class GameView:
                 DecisionOption.create("Confirm", payload={"action": "confirm", "unit_id": unit_id}),
                 DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}),
             ]
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_DECLARE_SHOTS,
                 f"Declare Frenzy shots for {getattr(shooter_unit, 'name', 'Unit')}",
                 player_id=getattr(getattr(shooter_unit.get_parent_army(), "player", None), "id", None),
@@ -2796,7 +2796,7 @@ class GameView:
 
             army_id = get_entity_id(army) if army is not None else ""
             options = [DecisionOption.create("Confirm", payload={"army_id": army_id})]
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CHOOSE_BLESSINGS,
                 "Select Blessings of Khorne.",
                 player_id=getattr(player, "id", None),
@@ -7690,7 +7690,7 @@ class GameView:
                     payload={"model_id": get_entity_id(model)},
                 )
             )
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_ALLOCATE_DAMAGE,
             "Select destroyed Bodyguard model to return.",
             player_id=getattr(player, "id", None),
@@ -7820,7 +7820,7 @@ class GameView:
                 payload["action"] = "skip"
             decision_options.append(DecisionOption.create(label, payload=payload))
 
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_DARK_PACT,
             f"Select Dark Pact for {getattr(unit, 'name', 'Unit')}",
             player_id=getattr(player, "id", None),
@@ -7992,7 +7992,7 @@ class GameView:
                 )
             )
 
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_QUARRY,
             "Select an officer to issue orders.",
             player_id=getattr(player, "id", None),
@@ -8104,7 +8104,7 @@ class GameView:
                 )
             )
 
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_ISSUE_ORDER,
             f"Select order for {getattr(officer, 'name', 'Officer')}",
             player_id=getattr(player, "id", None),
@@ -8214,7 +8214,7 @@ class GameView:
                     payload={"target_unit_id": get_entity_id(tgt)},
                 )
             )
-        target_req = _queue_decision_request(self.game if self.game is not None else None,
+        target_req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_QUARRY,
             "Select Voice of Command target.",
             player_id=getattr(player, "id", None),
@@ -8406,7 +8406,7 @@ class GameView:
                     payload={"target_unit_id": get_entity_id(unit)},
                 )
             )
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_QUARRY,
             "Select Gate of Infinity unit.",
             player_id=getattr(player, "id", None),
@@ -8679,7 +8679,7 @@ class GameView:
                         },
                     )
                 )
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_MARTIAL_KATAH,
             "Select Martial Ka'tah stance.",
             player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
@@ -8919,7 +8919,7 @@ class GameView:
                         payload={"pledge_value": int(value), "army_id": army_id},
                     )
                 )
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CHOOSE_PLEDGE,
                 "Select pledge value.",
                 player_id=getattr(player, "id", None),
@@ -9037,7 +9037,7 @@ class GameView:
                 },
             ),
         ]
-        req = _queue_decision_request(self.game,
+        req = _require_pending_decision_request(self.game,
             DECISION_CHOOSE_MARTIAL_KATAH,
             "Select Exquisite Swordsmanship stance.",
             player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
@@ -9123,7 +9123,7 @@ class GameView:
                 },
             ),
         ]
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_MARTIAL_KATAH,
             "Select Exquisite Swordsmanship stance.",
             player_id=getattr(player, "id", None),
@@ -9355,7 +9355,7 @@ class GameView:
             opt = DecisionOption.create(label, payload=payload)
             options.append(opt)
             option_labels[opt.option_id] = label
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_BLOOD_TITHE,
             "Select a Blood Tithe ability.",
             player_id=getattr(player, "id", None),
@@ -9931,7 +9931,7 @@ class GameView:
                     payload={"model_id": get_entity_id(model)},
                 )
             )
-        req = _queue_decision_request(game_ctx if game_ctx is not None else None,
+        req = _require_pending_decision_request(game_ctx if game_ctx is not None else None,
             DECISION_ALLOCATE_DAMAGE,
             "Select destroyed Plaguebearer model to return.",
             player_id=getattr(player, "id", None),
@@ -10209,7 +10209,7 @@ class GameView:
 
                         unit_id = get_entity_id(unit)
                         target_id = get_entity_id(target_unit)
-                        req = _queue_decision_request(self.game if self.game is not None else None,
+                        req = _require_pending_decision_request(self.game if self.game is not None else None,
                             DECISION_DECLARE_CHARGE,
                             f"{source}: {getattr(unit, 'name', 'Unit')} declares a charge",
                             player_id=getattr(player, "id", None),
@@ -10264,7 +10264,7 @@ class GameView:
             if not options:
                 _finish_and_next()
                 return
-            req = _queue_decision_request(self.game,
+            req = _require_pending_decision_request(self.game,
                 DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
                 f"{source}: Choose action",
                 player_id=getattr(player, "id", None),
@@ -10375,7 +10375,7 @@ class GameView:
                 DecisionOption.create("Fight", payload={"action": "fight", "unit_id": unit_id}),
                 DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}),
             ]
-            req = _queue_decision_request(self.game,
+            req = _require_pending_decision_request(self.game,
                 DECISION_CHOOSE_FRENZY_TARGET,
                 "Choose Frenzy response.",
                 player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
@@ -10478,7 +10478,7 @@ class GameView:
             DecisionOption.create("Use", payload={"choice": True, "unit_id": unit_id}),
             DecisionOption.create("Skip", payload={"choice": False, "unit_id": unit_id}),
         ]
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CONFIRM_YES_NO,
             ability_name,
             player_id=getattr(player, "id", None),
@@ -10845,7 +10845,7 @@ class GameView:
                     payload={"model_id": get_entity_id(model)},
                 )
             )
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_ALLOCATE_DAMAGE,
             "Select Bodyguard model to destroy.",
             player_id=getattr(player, "id", None),
@@ -11275,7 +11275,7 @@ class GameView:
                         payload={"unit_id": unit_id, "transport_id": None},
                     ),
                 ]
-                req = _queue_decision_request(self.game if self.game is not None else None,
+                req = _require_pending_decision_request(self.game if self.game is not None else None,
                     DECISION_DISEMBARK,
                     f"Disembark {getattr(unit, 'name', 'Unit')}",
                     player_id=getattr(player, "id", None),
@@ -11491,7 +11491,7 @@ class GameView:
                     payload={"target_unit_id": get_entity_id(enemy)},
                 )
             )
-        req = _queue_decision_request(self.game,
+        req = _require_pending_decision_request(self.game,
             DECISION_CHOOSE_QUARRY,
             "Select Oath of Moment target.",
             player_id=getattr(player, "id", None),
@@ -11631,7 +11631,7 @@ class GameView:
                         payload={"model_id": get_entity_id(model)},
                     )
                 )
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_SELECT_TARGET_MODEL,
                 "Select Code Chivalric target model.",
                 player_id=getattr(player, "id", None),
@@ -11703,7 +11703,7 @@ class GameView:
                 )
                 req_options.append(opt)
                 option_labels[opt.option_id] = name
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CHOOSE_CHIVALRIC_OATH,
                 "Select Code Chivalric Quality.",
                 player_id=getattr(player, "id", None),
@@ -11771,7 +11771,7 @@ class GameView:
                 )
                 req_options.append(opt)
                 option_labels[opt.option_id] = name
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CHOOSE_CHIVALRIC_OATH,
                 "Select Code Chivalric Deed.",
                 player_id=getattr(player, "id", None),
@@ -11895,7 +11895,7 @@ class GameView:
                     payload={"target_unit_id": get_entity_id(target)},
                 )
             )
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_QUARRY,
             "Select Bondsman target.",
             player_id=getattr(player, "id", None),
@@ -12378,7 +12378,7 @@ class GameView:
                         DecisionOption.create("Confirm", payload={"action": "confirm"}),
                         DecisionOption.create("Skip", payload={"action": "skip"}),
                     ]
-                    req = _queue_decision_request(self.game if self.game is not None else None,
+                    req = _require_pending_decision_request(self.game if self.game is not None else None,
                         DECISION_PICK_POINT,
                         "Select Cult Ambush marker point.",
                         player_id=getattr(player, "id", None),
@@ -12493,7 +12493,7 @@ class GameView:
                     payload={"target_unit_id": get_entity_id(unit)},
                 )
             )
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_QUARRY,
             "Select Cult Ambush unit.",
             player_id=getattr(player, "id", None),
@@ -12629,7 +12629,7 @@ class GameView:
                     payload={"target_unit_id": get_entity_id(obs)},
                 )
             )
-        obs_req = _queue_decision_request(self.game if self.game is not None else None,
+        obs_req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_QUARRY,
             "Select For the Greater Good observer.",
             player_id=getattr(player, "id", None),
@@ -12676,7 +12676,7 @@ class GameView:
                         payload={"target_unit_id": get_entity_id(target)},
                     )
                 )
-            tgt_req = _queue_decision_request(self.game if self.game is not None else None,
+            tgt_req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CHOOSE_QUARRY,
                 "Select For the Greater Good target.",
                 player_id=getattr(player, "id", None),
@@ -13003,7 +13003,7 @@ class GameView:
                     payload={"choice": str(maneuver), "unit_id": unit_id},
                 )
             )
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_ASPECT,
             "Select Battle Focus maneuver.",
             player_id=getattr(player, "id", None),
@@ -13113,7 +13113,7 @@ class GameView:
                     payload={"choice": str(opt), "unit_id": unit_id},
                 )
             )
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_ASPECT,
             "Select Battle Focus maneuver.",
             player_id=getattr(player, "id", None),
@@ -13327,7 +13327,7 @@ class GameView:
                     payload={"unit_id": get_entity_id(unit)},
                 )
             )
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_SELECT_OVERWATCH_SHOOTER,
             "Select Battle Focus reactive unit.",
             player_id=getattr(player, "id", None),
@@ -13414,7 +13414,7 @@ class GameView:
                     payload={"unit_id": get_entity_id(unit)},
                 )
             )
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_SELECT_OVERWATCH_SHOOTER,
             "Select Battle Focus unit to fade back.",
             player_id=getattr(player, "id", None),
@@ -13744,7 +13744,7 @@ class GameView:
             opt = DecisionOption.create(label, payload={"model_id": get_entity_id(model)})
             caster_options.append(opt)
             caster_map[opt.option_id] = (unit, model)
-        caster_req = _queue_decision_request(self.game if self.game is not None else None,
+        caster_req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_SELECT_TARGET_MODEL,
             "Select Cabal caster.",
             player_id=getattr(player, "id", None),
@@ -13789,7 +13789,7 @@ class GameView:
                 opt = DecisionOption.create(getattr(ritual, "name", "Ritual"), payload=payload)
                 ritual_options.append(opt)
                 ritual_by_option[opt.option_id] = ritual
-            ritual_req = _queue_decision_request(self.game if self.game is not None else None,
+            ritual_req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CHOOSE_RITUALS,
                 "Select Cabal ritual.",
                 player_id=getattr(player, "id", None),
@@ -13836,7 +13836,7 @@ class GameView:
                             payload={"target_unit_id": get_entity_id(tgt)},
                         )
                     )
-                target_req = _queue_decision_request(self.game if self.game is not None else None,
+                target_req = _require_pending_decision_request(self.game if self.game is not None else None,
                     DECISION_CHOOSE_QUARRY,
                     "Select Cabal ritual target.",
                     player_id=getattr(player, "id", None),
@@ -13876,7 +13876,7 @@ class GameView:
                         "target_unit_id": get_entity_id(target_unit),
                         "rolls": [r1, r2],
                     }
-                    channel_req = _queue_decision_request(self.game if self.game is not None else None,
+                    channel_req = _require_pending_decision_request(self.game if self.game is not None else None,
                         DECISION_CONFIRM_YES_NO,
                         "Cabal of Sorcerers",
                         player_id=getattr(player, "id", None),
@@ -14053,7 +14053,7 @@ class GameView:
         options = [DecisionOption.create("Keep", payload={"reroll": False})]
         if allow_reroll:
             options.append(DecisionOption.create("Re-roll", payload={"reroll": True}))
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_REROLL_ROLL,
             title or "Re-roll?",
             player_id=getattr(player, "id", None) if player is not None else None,
@@ -14188,7 +14188,7 @@ class GameView:
             DecisionOption.create("Don't Use", payload={"choice": "skip"}),
             DecisionOption.create("Don't Use for this Unit", payload={"choice": "suppress"}),
         ]
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_ASPECT,
             title or "Aspect Shrine Token",
             player_id=getattr(player, "id", None) if player is not None else None,
@@ -14324,7 +14324,7 @@ class GameView:
                 )
             )
 
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_USE_LEADING_UNMODIFIED_SIX,
             title,
             player_id=getattr(player, "id", None),
@@ -14492,7 +14492,7 @@ class GameView:
                 )
             )
 
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_USE_MODEL_UNMODIFIED_SIX,
             title,
             player_id=getattr(player, "id", None),
@@ -14610,7 +14610,7 @@ class GameView:
         except Exception:
             model_id = ""
 
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CONFIRM_YES_NO,
             title,
             player_id=getattr(player, "id", None),
@@ -14706,7 +14706,7 @@ class GameView:
             return str(opts[0] or "keep_all")
         options = [DecisionOption.create(CHOICE_LABELS.get(opt, str(opt)), payload={"choice": opt}) for opt in opts]
 
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             decision_kind,
             "Choose which modifiers to ignore.",
             player_id=getattr(player, "id", None),
@@ -15016,7 +15016,7 @@ class GameView:
         needed = _kwargs.get("needed", None)
         if needed is not None:
             context["needed"] = int(needed)
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_USE_MIRACLE_DIE,
             "Select Miracle Die",
             player_id=getattr(player, "id", None),
@@ -15616,7 +15616,7 @@ class GameView:
                         payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
                     )
                 )
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CHOOSE_VOW,
                 "Select Templar Vow.",
                 player_id=getattr(player, "id", None),
@@ -15714,7 +15714,7 @@ class GameView:
                         payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
                     )
                 )
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CHOOSE_HYPER_ADAPTATION,
                 "Select Hyper-adaptation.",
                 player_id=getattr(player, "id", None),
@@ -15833,7 +15833,7 @@ class GameView:
                     )
                 )
 
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CHOOSE_HARBINGER,
                 "Select Harbingers of Dread.",
                 player_id=getattr(player, "id", None),
@@ -15941,7 +15941,7 @@ class GameView:
                 self._open_next_doctrina_prompt(battle_round)
                 return
 
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CHOOSE_DOCTRINA,
                 "Select Doctrina Imperative.",
                 player_id=getattr(player, "id", None),
@@ -16057,7 +16057,7 @@ class GameView:
             self._open_next_combat_doctrines_prompt(br)
             return
 
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_COMBAT_DOCTRINE,
             "Select Combat Doctrine.",
             player_id=getattr(player, "id", None),
@@ -16164,7 +16164,7 @@ class GameView:
             self._open_next_grand_coven_prompt(br)
             return
 
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_GRAND_COVEN,
             "Select a Kindred Sorcery ability.",
             player_id=getattr(player, "id", None),
@@ -16273,7 +16273,7 @@ class GameView:
             self._open_next_combat_drugs_prompt(br)
             return
 
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_COMBAT_DRUGS,
             "Select Combat Drugs.",
             player_id=getattr(player, "id", None),
@@ -16377,7 +16377,7 @@ class GameView:
                 self._open_next_shadow_form_prompt()
                 return
 
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CHOOSE_SHADOW_FORM,
                 "Select Shadow Form.",
                 player_id=getattr(player, "id", None),
@@ -16488,7 +16488,7 @@ class GameView:
                 return
 
             expires_round = int(br or 0) + 1 if br else 0
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CHOOSE_DAEMON_PRIMARCH_SLAANESH,
                 "Select Daemon Primarch of Slaanesh ability.",
                 player_id=getattr(player, "id", None),
@@ -16604,7 +16604,7 @@ class GameView:
                 self._open_next_wrathful_presence_prompt()
                 return
 
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CHOOSE_WRATHFUL_PRESENCE,
                 "Select Wrathful Presence.",
                 player_id=getattr(player, "id", None),
@@ -16709,7 +16709,7 @@ class GameView:
             self._open_next_daemonic_allegiance_prompt(game)
             return
 
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_CHOOSE_DAEMONIC_ALLEGIANCE,
             f"Select Daemonic Allegiance for {getattr(unit, 'name', 'Unit')}.",
             player_id=getattr(player, "id", None),
@@ -16785,7 +16785,7 @@ class GameView:
         ]
         for model in list(character_models or []):
             options.append(DecisionOption.create(getattr(model, "name", "CHARACTER"), payload={"model_id": get_entity_id(model)}))
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_SELECT_PRECISION_TARGET,
             "Select PRECISION allocation target.",
             player_id=getattr(getattr(attacker_model.parent_unit.get_parent_army(), "player", None), "id", None) if attacker_model else None,
@@ -16854,7 +16854,7 @@ class GameView:
 
         context = dict(ctx or {})
         context["unit_id"] = get_entity_id(unit)
-        req = _queue_decision_request(self.game if self.game is not None else None,
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
             DECISION_ALLOCATE_DAMAGE,
             title or "Allocate Damage",
             player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None) if unit is not None else None,
@@ -18979,7 +18979,7 @@ class GameView:
                             DecisionOption.create("Use", payload={"choice": True}),
                             DecisionOption.create("Skip", payload={"choice": False}),
                         ]
-                        req = _queue_decision_request(self.game if self.game is not None else None,
+                        req = _require_pending_decision_request(self.game if self.game is not None else None,
                             DECISION_CONFIRM_YES_NO,
                             decision.get("title", "Confirm"),
                             player_id=getattr(decision_player, "id", None),
@@ -19548,7 +19548,7 @@ class GameView:
                 DecisionOption.create("Use", payload={"choice": True}),
                 DecisionOption.create("Skip", payload={"choice": False}),
             ]
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CONFIRM_YES_NO,
                 ability_name or "Brutal Example",
                 player_id=getattr(player, "id", None),
@@ -19604,7 +19604,7 @@ class GameView:
                 DecisionOption.create("Use", payload={"choice": True}),
                 DecisionOption.create("Skip", payload={"choice": False}),
             ]
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_CONFIRM_YES_NO,
                 ability_name or "Eye of the Augurium",
                 player_id=getattr(player, "id", None),
@@ -19693,7 +19693,7 @@ class GameView:
 
             unit_id = get_entity_id(unit)
             enemy_id = get_entity_id(enemy_unit)
-            req = _queue_decision_request(self.game if self.game is not None else None,
+            req = _require_pending_decision_request(self.game if self.game is not None else None,
                 DECISION_DECLARE_CHARGE,
                 f"Heroic Intervention: {getattr(unit, 'name', 'Unit')} declares a charge",
                 player_id=getattr(player, "id", None),

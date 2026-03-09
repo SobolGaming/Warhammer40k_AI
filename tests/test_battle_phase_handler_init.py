@@ -3,6 +3,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from warhammer40k_ai.UI.phases.phase_manager import BattlePhaseHandler
+from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_MOVEMENT_ACTION
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.event.system import EventSystem
 from warhammer40k_ai.units.unit import MovementAction
 
@@ -18,8 +20,11 @@ class _DummyGameView:
 
 
 class _DummyDecisionQueue:
+    def __init__(self, requests=None):
+        self._requests = list(requests or [])
+
     def list(self):
-        return []
+        return list(self._requests)
 
 
 class _DummyMovementChoiceDialog:
@@ -32,10 +37,10 @@ class _DummyMovementChoiceDialog:
 
 
 class _DummyMovementGame:
-    def __init__(self, *, apply_ok: bool = True) -> None:
+    def __init__(self, *, apply_ok: bool = True, pending_requests=None) -> None:
         self.event_system = None
         self.map = object()
-        self.decision_queue = _DummyDecisionQueue()
+        self.decision_queue = _DummyDecisionQueue(pending_requests)
         self._player = SimpleNamespace(id="player-1")
         self.requested_decisions = []
         self.apply_ok = apply_ok
@@ -82,6 +87,24 @@ class _DummyMovementUnit:
         ]
 
 
+def _build_pending_movement_choice_request(unit: _DummyMovementUnit, *, player_id: str) -> DecisionRequest:
+    options = [
+        DecisionOption.create("Move", payload={"action_type": "move", "unit_id": unit.id}),
+        DecisionOption.create("Advance", payload={"action_type": "advance", "unit_id": unit.id}),
+        DecisionOption.create(
+            "Remain Stationary",
+            payload={"action_type": "stationary", "unit_id": unit.id},
+        ),
+    ]
+    return DecisionRequest.create(
+        DECISION_SELECT_MOVEMENT_ACTION,
+        f"Select movement action for {unit.name}",
+        player_id=player_id,
+        options=options,
+        context={"unit_id": unit.id},
+    )
+
+
 def test_battle_phase_handler_initializes_pending_movement_state() -> None:
     handler = BattlePhaseHandler(_DummyGameView(_DummyGame(with_event_system=False)))
 
@@ -104,27 +127,28 @@ def test_battle_phase_handler_subscribes_to_roll_made_events() -> None:
 
 
 def test_advance_choice_does_not_create_second_select_movement_decision() -> None:
-    game = _DummyMovementGame(apply_ok=True)
+    unit = _DummyMovementUnit()
+    pending_request = _build_pending_movement_choice_request(unit, player_id="player-1")
+    game = _DummyMovementGame(apply_ok=True, pending_requests=[pending_request])
     game_view = _DummyMovementGameView(game, choice="advance")
     handler = BattlePhaseHandler(game_view)
-    unit = _DummyMovementUnit()
 
     handler._handle_movement_phase_selection(unit)
 
-    assert len(game.requested_decisions) == 1
-    assert "Advance with" not in str(game.requested_decisions[0].prompt)
+    assert game.requested_decisions == []
     assert unit.id in handler._pending_advance_units
 
 
 def test_movement_choice_not_processed_when_resolution_is_rejected() -> None:
-    game = _DummyMovementGame(apply_ok=False)
+    unit = _DummyMovementUnit()
+    pending_request = _build_pending_movement_choice_request(unit, player_id="player-1")
+    game = _DummyMovementGame(apply_ok=False, pending_requests=[pending_request])
     game_view = _DummyMovementGameView(game, choice="advance")
     handler = BattlePhaseHandler(game_view)
-    unit = _DummyMovementUnit()
     seen = []
     handler._handle_movement_choice = lambda u, c: seen.append((u, c))
 
     handler._handle_movement_phase_selection(unit)
 
-    assert len(game.requested_decisions) == 1
+    assert game.requested_decisions == []
     assert seen == []
