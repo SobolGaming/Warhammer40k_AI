@@ -160,6 +160,31 @@ class ActsOfFaithManager:
                 return True
         return False
 
+    def _stirring_rhetoric_applies(self, unit) -> bool:
+        """
+        Dialogus: while leading a unit, one Miracle die used in each Act of Faith
+        is changed to 6.
+        """
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        leaders = list(getattr(root, "attached_leaders", []) or [])
+        for leader in leaders:
+            if leader is None:
+                continue
+            if getattr(leader, "attached_to", None) is not root:
+                continue
+            if not self._unit_in_army(leader):
+                continue
+            if self._unit_has_ability_named(leader, "Stirring Rhetoric"):
+                return True
+        return False
+
+    def _resolve_used_miracle_die_value(self, unit, *, selected_value: int) -> int:
+        if self._stirring_rhetoric_applies(unit):
+            return 6
+        return int(selected_value)
+
     def _iter_simulacrum_imperialis_roots(self) -> list:
         if self.army is None:
             return []
@@ -651,23 +676,40 @@ class ActsOfFaithManager:
             chosen = None
         if chosen is None:
             return None
-        if self._consume_miracle_die(unit, int(chosen), roll_type=roll_type, game=game):
-            return int(chosen)
+        selected_value = int(chosen)
+        used_value = self._resolve_used_miracle_die_value(unit, selected_value=selected_value)
+        if self._consume_miracle_die(
+            unit,
+            selected_value,
+            roll_type=roll_type,
+            game=game,
+            used_value=used_value,
+        ):
+            return int(used_value)
         return None
 
-    def _consume_miracle_die(self, unit, value: int, *, roll_type: str, game=None) -> bool:
+    def _consume_miracle_die(
+        self,
+        unit,
+        value: int,
+        *,
+        roll_type: str,
+        game=None,
+        used_value: Optional[int] = None,
+    ) -> bool:
         try:
             idx = self.miracle_dice.index(int(value))
         except Exception:
             return False
         self.miracle_dice.pop(idx)
         self._mark_used(unit, game=game)
+        resolved_used_value = int(used_value) if used_value is not None else int(value)
         try:
             rt = str(roll_type or "").strip().lower()
             if rt not in {"advance", "charge", "hit", "wound", "save", "damage"}:
                 player = getattr(self.army, "player", None)
                 if player is not None:
-                    append_dice(player, f"Miracle die used ({roll_type}): {int(value)}")
+                    append_dice(player, f"Miracle die used ({roll_type}): {resolved_used_value}")
         except Exception:
             pass
         try:
@@ -713,12 +755,24 @@ class ActsOfFaithManager:
             game=game,
             needed=needed,
         )
-        if chosen is not None and self._consume_miracle_die(unit, int(chosen), roll_type=roll_type, game=game):
+        if chosen is not None:
+            selected_value = int(chosen)
+            used_value = self._resolve_used_miracle_die_value(unit, selected_value=selected_value)
+        else:
+            selected_value = 0
+            used_value = 0
+        if chosen is not None and self._consume_miracle_die(
+            unit,
+            selected_value,
+            roll_type=roll_type,
+            game=game,
+            used_value=used_value,
+        ):
             if count == 1:
-                dice = [int(chosen)]
+                dice = [int(used_value)]
             else:
                 other = [get_dice_roll(faces) for _ in range(count - 1)]
-                dice = [int(chosen)] + other
+                dice = [int(used_value)] + other
             total = int(sum(dice) + mod)
             return total, dice, True
 

@@ -218,6 +218,72 @@ class TestActsOfFaith(unittest.TestCase):
         self.assertEqual(mgr.miracle_dice, [4])
         self.assertEqual(calls["count"], 2)
 
+    def test_stirring_rhetoric_changes_used_miracle_die_to_six_while_leading(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        def _provider(**kwargs):
+            pool = list(kwargs.get("pool", []) or [])
+            return min(pool) if pool else None
+
+        game = SimpleNamespace(
+            map=SimpleNamespace(miracle_dice_provider=_provider),
+            phase=SimpleNamespace(name="SHOOTING_PHASE"),
+        )
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        army = self._make_army("AS", player)
+        bodyguard = self._make_unit("Battle Sisters Squad", army, acts=True)
+        dialogus = self._make_unit("Dialogus", army, acts=True)
+        dialogus.possible_abilities.append(SimpleNamespace(name="Stirring Rhetoric"))
+        dialogus.attached_to = bodyguard
+        dialogus.get_attached_unit_root = lambda: bodyguard
+        bodyguard.attached_leaders = [dialogus]
+        army.units.extend([bodyguard, dialogus])
+
+        mgr = aof.ActsOfFaithManager(army)
+        mgr.miracle_dice = [1, 5]
+
+        chosen = mgr.maybe_use_miracle_die(
+            bodyguard,
+            roll_type="wound",
+            dice_count=1,
+            die_faces=6,
+            game=game,
+        )
+
+        self.assertEqual(chosen, 6)
+        self.assertEqual(mgr.miracle_dice, [5])
+
+    def test_stirring_rhetoric_does_not_apply_when_dialogus_is_not_leading(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        def _provider(**kwargs):
+            pool = list(kwargs.get("pool", []) or [])
+            return min(pool) if pool else None
+
+        game = SimpleNamespace(
+            map=SimpleNamespace(miracle_dice_provider=_provider),
+            phase=SimpleNamespace(name="SHOOTING_PHASE"),
+        )
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        army = self._make_army("AS", player)
+        dialogus = self._make_unit("Dialogus", army, acts=True)
+        dialogus.possible_abilities.append(SimpleNamespace(name="Stirring Rhetoric"))
+        army.units.append(dialogus)
+
+        mgr = aof.ActsOfFaithManager(army)
+        mgr.miracle_dice = [1, 5]
+
+        chosen = mgr.maybe_use_miracle_die(
+            dialogus,
+            roll_type="wound",
+            dice_count=1,
+            die_faces=6,
+            game=game,
+        )
+
+        self.assertEqual(chosen, 1)
+        self.assertEqual(mgr.miracle_dice, [5])
+
     def test_litany_reroll_on_unit_destroyed(self):
         from warhammer40k_ai.rules import acts_of_faith as aof
 
