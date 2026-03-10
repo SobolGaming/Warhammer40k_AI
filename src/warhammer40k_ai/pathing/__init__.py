@@ -33,6 +33,14 @@ from .corridor import (
     string_pull_portals,
 )
 from .rules_profile import build_movement_profile
+from .se2_refine import (
+    Se2Pose,
+    Se2RefineRequest,
+    Se2RefineResult,
+    Se2RefineTrigger,
+    evaluate_se2_refine_trigger,
+    refine_corridor_se2,
+)
 from .surface_graph import (
     SurfaceConnector,
     SurfaceGraphPathResult,
@@ -76,6 +84,10 @@ __all__ = [
     "GROUND_SURFACE_ID",
     "MovementProfile",
     "RUINS_LAYER_KIND",
+    "Se2Pose",
+    "Se2RefineRequest",
+    "Se2RefineResult",
+    "Se2RefineTrigger",
     "StaticMeshCache",
     "StaticMeshCacheEntry",
     "StaticMeshCacheKey",
@@ -113,10 +125,12 @@ __all__ = [
     "query_enemy_engagement_masks",
     "query_friendly_blockers",
     "resolve_support_surface_at_position",
+    "refine_corridor_se2",
     "support_surface_revision",
     "terrain_ignored_for_ground_transit",
     "terrain_revision",
     "triangulate_surface_free_space",
+    "evaluate_se2_refine_trigger",
     "validate_pose_support",
     "validate_pose_support_on_surface",
     "string_pull_portals",

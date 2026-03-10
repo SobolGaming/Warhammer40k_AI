@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import heapq
 from dataclasses import dataclass, field
-from math import hypot
+from math import atan2, hypot
 from typing import Mapping, Optional
 
 from shapely.geometry import Point
@@ -18,6 +18,7 @@ from .cache import (
 from .cdt_mesh import SurfaceCdtMesh, build_surface_cdt_mesh, locate_triangles_for_point
 from .corridor import build_corridor
 from .dynamic_overlay import DynamicOverlay
+from .se2_refine import Se2RefineRequest, evaluate_se2_refine_trigger, refine_corridor_se2
 from .surfaces import GROUND_LAYER_KIND, SupportSurface, resolve_support_surface_at_position
 from .types import ConnectorId, MovementProfile, SurfaceId
 from .world_snapshot import WorldSnapshot
@@ -54,6 +55,7 @@ class SurfaceGraphPathResult:
     connector_path: tuple[ConnectorId, ...]
     surface_path: tuple[SurfaceId, ...]
     triangulation_backends: Mapping[SurfaceId, str]
+    used_exact_refiner: bool = False
     failure_reason: Optional[str] = None
     debug_artifacts: Mapping[str, object] = field(default_factory=dict)
 
@@ -538,7 +540,24 @@ def _connector_target_triangles(
     return locate_triangles_for_point(target_mesh, x, y)
 
 
-def _a_star_surface_triangles(
+def _reconstruct_node_path(
+    end_node: tuple[SurfaceId, int],
+    came_from: Mapping[tuple[SurfaceId, int], tuple[tuple[SurfaceId, int], str, str]],
+) -> tuple[tuple[tuple[SurfaceId, int], ...], tuple[tuple[str, str], ...]]:
+    current = end_node
+    node_path: list[tuple[SurfaceId, int]] = [current]
+    transitions: list[tuple[str, str]] = []
+    while current in came_from:
+        prev, transition_kind, transition_id = came_from[current]
+        transitions.append((transition_kind, transition_id))
+        current = prev
+        node_path.append(current)
+    node_path.reverse()
+    transitions.reverse()
+    return tuple(node_path), tuple(transitions)
+
+
+def _a_star_surface_triangles_candidates(
     *,
     start_surface_id: SurfaceId,
     start_triangles: tuple[int, ...],
@@ -551,13 +570,11 @@ def _a_star_surface_triangles(
     connectors_by_source: dict[SurfaceId, tuple[SurfaceConnector, ...]],
     movement_profile: MovementProfile,
     blocked_triangles: Mapping[SurfaceId, frozenset[int]],
-) -> tuple[
-    tuple[tuple[SurfaceId, int], ...],
-    tuple[tuple[str, str], ...],
-]:
+    max_paths: int = 1,
+) -> tuple[tuple[tuple[tuple[SurfaceId, int], ...], tuple[tuple[str, str], ...]], ...]:
     goal_nodes = {(goal_surface_id, triangle) for triangle in goal_triangles}
     if not goal_nodes:
-        return (), ()
+        return ()
 
     def heuristic(node: tuple[SurfaceId, int]) -> float:
         surface_id, triangle_index = node
@@ -583,24 +600,25 @@ def _a_star_surface_triangles(
         insertion_counter += 1
 
     if not open_heap:
-        return (), ()
+        return ()
 
+    path_candidates: list[tuple[tuple[tuple[SurfaceId, int], ...], tuple[tuple[str, str], ...]]] = []
+    candidate_keys: set[tuple[tuple[SurfaceId, int], ...]] = set()
     visited: set[tuple[SurfaceId, int]] = set()
     while open_heap:
         _, _, current = heapq.heappop(open_heap)
         if current in visited:
             continue
         if current in goal_nodes:
-            node_path: list[tuple[SurfaceId, int]] = [current]
-            transitions: list[tuple[str, str]] = []
-            while current in came_from:
-                prev, transition_kind, transition_id = came_from[current]
-                transitions.append((transition_kind, transition_id))
-                current = prev
-                node_path.append(current)
-            node_path.reverse()
-            transitions.reverse()
-            return tuple(node_path), tuple(transitions)
+            reconstructed = _reconstruct_node_path(current, came_from)
+            path_key = reconstructed[0]
+            if path_key not in candidate_keys:
+                candidate_keys.add(path_key)
+                path_candidates.append(reconstructed)
+            visited.add(current)
+            if len(path_candidates) >= max(1, int(max_paths)):
+                break
+            continue
         visited.add(current)
 
         current_surface_id, current_triangle_index = current
@@ -648,7 +666,43 @@ def _a_star_surface_triangles(
                 heapq.heappush(open_heap, (tentative_g + heuristic(neighbor), insertion_counter, neighbor))
                 insertion_counter += 1
 
-    return (), ()
+    return tuple(path_candidates)
+
+
+def _a_star_surface_triangles(
+    *,
+    start_surface_id: SurfaceId,
+    start_triangles: tuple[int, ...],
+    goal_surface_id: SurfaceId,
+    goal_triangles: tuple[int, ...],
+    goal_xy: tuple[float, float],
+    goal_surface_z: float,
+    surface_z_by_id: Mapping[SurfaceId, float],
+    surface_meshes: dict[SurfaceId, SurfaceCdtMesh],
+    connectors_by_source: dict[SurfaceId, tuple[SurfaceConnector, ...]],
+    movement_profile: MovementProfile,
+    blocked_triangles: Mapping[SurfaceId, frozenset[int]],
+) -> tuple[
+    tuple[tuple[SurfaceId, int], ...],
+    tuple[tuple[str, str], ...],
+]:
+    candidates = _a_star_surface_triangles_candidates(
+        start_surface_id=start_surface_id,
+        start_triangles=start_triangles,
+        goal_surface_id=goal_surface_id,
+        goal_triangles=goal_triangles,
+        goal_xy=goal_xy,
+        goal_surface_z=goal_surface_z,
+        surface_z_by_id=surface_z_by_id,
+        surface_meshes=surface_meshes,
+        connectors_by_source=connectors_by_source,
+        movement_profile=movement_profile,
+        blocked_triangles=blocked_triangles,
+        max_paths=1,
+    )
+    if not candidates:
+        return (), ()
+    return candidates[0]
 
 
 def _group_surface_segments(
@@ -724,6 +778,12 @@ def plan_surface_graph_path(
     prefer_constrained: bool = True,
     dynamic_overlay: Optional[DynamicOverlay] = None,
     use_cache: bool = True,
+    model_base: object = None,
+    start_facing: Optional[float] = None,
+    goal_facing: Optional[float] = None,
+    enable_exact_refine: bool = True,
+    exact_refine_max_paths: int = 3,
+    exact_refine_safety_margin: float = 0.1,
 ) -> SurfaceGraphPathResult:
     graph = build_surface_graph_for_query(
         world_snapshot,
@@ -737,6 +797,7 @@ def plan_surface_graph_path(
     surface_meshes = _mesh_pairs_to_dict(graph.surface_meshes)
     surfaces_by_id = _surface_by_id(world_snapshot)
     connectors_by_source = _connector_map_by_source(graph.connectors)
+    triangulation_backends = {surface_id: mesh.triangulation_backend for surface_id, mesh in graph.surface_meshes}
 
     start_surface = resolve_support_surface_at_position(
         world_snapshot.support_surfaces,
@@ -760,7 +821,7 @@ def plan_surface_graph_path(
             portal_path=(),
             connector_path=(),
             surface_path=(),
-            triangulation_backends={surface_id: mesh.triangulation_backend for surface_id, mesh in graph.surface_meshes},
+            triangulation_backends=triangulation_backends,
             failure_reason="Start position is not on a valid support surface",
         )
     if goal_surface is None:
@@ -771,7 +832,7 @@ def plan_surface_graph_path(
             portal_path=(),
             connector_path=(),
             surface_path=(),
-            triangulation_backends={surface_id: mesh.triangulation_backend for surface_id, mesh in graph.surface_meshes},
+            triangulation_backends=triangulation_backends,
             failure_reason="Goal position is not on a valid support surface",
         )
 
@@ -785,7 +846,7 @@ def plan_surface_graph_path(
             portal_path=(),
             connector_path=(),
             surface_path=(),
-            triangulation_backends={surface_id: mesh.triangulation_backend for surface_id, mesh in graph.surface_meshes},
+            triangulation_backends=triangulation_backends,
             failure_reason="Missing mesh for start or goal surface",
         )
 
@@ -808,7 +869,7 @@ def plan_surface_graph_path(
             portal_path=(),
             connector_path=(),
             surface_path=(),
-            triangulation_backends={surface_id: mesh.triangulation_backend for surface_id, mesh in graph.surface_meshes},
+            triangulation_backends=triangulation_backends,
             failure_reason="Start is outside traversable free space after clearance erosion",
         )
     if not goal_triangles:
@@ -819,11 +880,15 @@ def plan_surface_graph_path(
             portal_path=(),
             connector_path=(),
             surface_path=(),
-            triangulation_backends={surface_id: mesh.triangulation_backend for surface_id, mesh in graph.surface_meshes},
+            triangulation_backends=triangulation_backends,
             failure_reason="Goal is outside traversable free space after clearance erosion",
         )
 
-    node_path, transitions = _a_star_surface_triangles(
+    max_candidate_paths = 1
+    if enable_exact_refine and model_base is not None:
+        max_candidate_paths = max(1, int(exact_refine_max_paths))
+
+    path_candidates = _a_star_surface_triangles_candidates(
         start_surface_id=start_surface.surface_id,
         start_triangles=start_triangles,
         goal_surface_id=goal_surface.surface_id,
@@ -835,8 +900,9 @@ def plan_surface_graph_path(
         connectors_by_source=connectors_by_source,
         movement_profile=movement_profile,
         blocked_triangles=blocked_triangles,
+        max_paths=max_candidate_paths,
     )
-    if not node_path:
+    if not path_candidates:
         return SurfaceGraphPathResult(
             success=False,
             waypoints=(),
@@ -844,85 +910,192 @@ def plan_surface_graph_path(
             portal_path=(),
             connector_path=(),
             surface_path=(),
-            triangulation_backends={surface_id: mesh.triangulation_backend for surface_id, mesh in graph.surface_meshes},
+            triangulation_backends=triangulation_backends,
             failure_reason="No portal/connector route found",
         )
 
-    grouped = _group_surface_segments(node_path, transitions)
     connector_lookup = _connector_by_id(graph.connectors)
+    candidate_failures: list[dict[str, object]] = []
+    path_candidates = tuple(path_candidates)
 
-    waypoints: list[tuple[float, float, float]] = [(float(start[0]), float(start[1]), float(start[2]))]
-    portal_path: list[str] = []
-    connector_path: list[ConnectorId] = []
+    for candidate_rank, (node_path, transitions) in enumerate(path_candidates):
+        grouped = _group_surface_segments(node_path, transitions)
 
-    current_start_xy = (float(start[0]), float(start[1]))
-    for segment_index, (surface_id, triangle_path, connector_out_id) in enumerate(grouped):
-        mesh = surface_meshes[surface_id]
-        surface = surfaces_by_id[surface_id]
+        waypoints: list[tuple[float, float, float]] = [(float(start[0]), float(start[1]), float(start[2]))]
+        portal_path: list[str] = []
+        connector_path: list[ConnectorId] = []
+        current_start_xy = (float(start[0]), float(start[1]))
+        current_facing_value = float(start_facing) if start_facing is not None else None
+        used_exact_refiner = False
+        segment_refinements: list[dict[str, object]] = []
+        candidate_failure_reason: Optional[str] = None
 
-        if connector_out_id is not None:
-            connector = connector_lookup.get(connector_out_id)
-            if connector is None:
-                return SurfaceGraphPathResult(
-                    success=False,
-                    waypoints=(),
-                    distance_cost=0.0,
-                    portal_path=tuple(portal_path),
-                    connector_path=tuple(connector_path),
-                    surface_path=tuple(surface_id for surface_id, _ in node_path),
-                    triangulation_backends={surface_id_: mesh_.triangulation_backend for surface_id_, mesh_ in graph.surface_meshes},
-                    failure_reason=f"Connector '{connector_out_id}' missing from graph",
-                )
-            end_xy = (float(connector.anchor_xy[0]), float(connector.anchor_xy[1]))
-        else:
-            end_xy = (float(goal[0]), float(goal[1]))
+        for segment_index, (surface_id, triangle_path, connector_out_id) in enumerate(grouped):
+            mesh = surface_meshes[surface_id]
+            surface = surfaces_by_id[surface_id]
 
-        corridor = build_corridor(
-            mesh,
-            triangle_path,
-            start_xy=current_start_xy,
-            goal_xy=end_xy,
-        )
-        portal_path.extend(corridor.portal_ids)
-        for point_xy in corridor.smoothed_waypoints_xy[1:]:
-            waypoints.append((float(point_xy[0]), float(point_xy[1]), float(surface.surface_z)))
+            if connector_out_id is not None:
+                connector = connector_lookup.get(connector_out_id)
+                if connector is None:
+                    candidate_failure_reason = f"Connector '{connector_out_id}' missing from graph"
+                    break
+                end_xy = (float(connector.anchor_xy[0]), float(connector.anchor_xy[1]))
+            else:
+                end_xy = (float(goal[0]), float(goal[1]))
 
-        if connector_out_id is not None:
-            connector = connector_lookup[connector_out_id]
-            connector_path.append(connector.connector_id)
-            target_surface = surfaces_by_id[connector.target_surface_id]
-            waypoints.append(
-                (
-                    float(connector.anchor_xy[0]),
-                    float(connector.anchor_xy[1]),
-                    float(target_surface.surface_z),
-                )
+            corridor = build_corridor(
+                mesh,
+                triangle_path,
+                start_xy=current_start_xy,
+                goal_xy=end_xy,
             )
-            current_start_xy = (float(connector.anchor_xy[0]), float(connector.anchor_xy[1]))
-        else:
-            if segment_index == len(grouped) - 1:
-                waypoints[-1] = (float(goal[0]), float(goal[1]), float(goal[2]))
+            portal_path.extend(corridor.portal_ids)
 
-    waypoints_tuple = _dedupe_waypoints(waypoints)
-    surface_path = tuple(
-        dict.fromkeys(surface_id for surface_id, _ in node_path)
-    )
+            segment_goal_facing = None
+            if connector_out_id is None and segment_index == len(grouped) - 1 and goal_facing is not None:
+                segment_goal_facing = float(goal_facing)
+
+            refined_segment = False
+            if enable_exact_refine and model_base is not None:
+                trigger = evaluate_se2_refine_trigger(
+                    model_base=model_base,
+                    footprint_class=footprint_class,
+                    corridor=corridor,
+                    mesh=mesh,
+                    triangle_path=triangle_path,
+                    start_facing=current_facing_value,
+                    goal_facing=segment_goal_facing,
+                    safety_margin=float(exact_refine_safety_margin),
+                )
+                if trigger.should_refine:
+                    refine_result = refine_corridor_se2(
+                        Se2RefineRequest(
+                            surface=surface,
+                            mesh=mesh,
+                            triangle_path=triangle_path,
+                            corridor=corridor,
+                            model_base=model_base,
+                            movement_profile=movement_profile,
+                            dynamic_overlay=dynamic_overlay,
+                            start_facing=current_facing_value,
+                            goal_facing=segment_goal_facing,
+                            safety_margin=float(exact_refine_safety_margin),
+                            pivot_cost_once=0.0 if movement_profile.pivot_cost_mode == "none" else 0.1,
+                        )
+                    )
+                    segment_refinements.append(
+                        {
+                            "segment_index": int(segment_index),
+                            "surface_id": surface_id,
+                            "trigger_reasons": trigger.reasons,
+                            "corridor_min_clearance": trigger.corridor_min_clearance,
+                            "footprint_max_width": trigger.footprint_max_width,
+                            "theta_bins": trigger.theta_bins,
+                            "used_refiner": bool(refine_result.success),
+                            "failure_reason": refine_result.failure_reason,
+                            "refiner_debug": dict(refine_result.debug_artifacts),
+                        }
+                    )
+                    if not refine_result.success:
+                        candidate_failure_reason = (
+                            f"Exact corridor refinement failed on segment {segment_index}: {refine_result.failure_reason}"
+                        )
+                        break
+                    refined_segment = True
+                    used_exact_refiner = True
+                    for pose in refine_result.poses[1:]:
+                        waypoints.append((float(pose.x), float(pose.y), float(surface.surface_z)))
+                    if refine_result.poses:
+                        current_facing_value = float(refine_result.poses[-1].facing)
+                else:
+                    segment_refinements.append(
+                        {
+                            "segment_index": int(segment_index),
+                            "surface_id": surface_id,
+                            "trigger_reasons": trigger.reasons,
+                            "corridor_min_clearance": trigger.corridor_min_clearance,
+                            "footprint_max_width": trigger.footprint_max_width,
+                            "theta_bins": trigger.theta_bins,
+                            "used_refiner": False,
+                        }
+                    )
+
+            if not refined_segment:
+                for point_xy in corridor.smoothed_waypoints_xy[1:]:
+                    waypoints.append((float(point_xy[0]), float(point_xy[1]), float(surface.surface_z)))
+                if len(corridor.smoothed_waypoints_xy) >= 2:
+                    prev_x, prev_y = corridor.smoothed_waypoints_xy[-2]
+                    next_x, next_y = corridor.smoothed_waypoints_xy[-1]
+                    if abs(float(next_x) - float(prev_x)) > 1e-9 or abs(float(next_y) - float(prev_y)) > 1e-9:
+                        current_facing_value = atan2(float(next_y) - float(prev_y), float(next_x) - float(prev_x))
+
+            if connector_out_id is not None:
+                connector = connector_lookup[connector_out_id]
+                connector_path.append(connector.connector_id)
+                target_surface = surfaces_by_id[connector.target_surface_id]
+                waypoints.append(
+                    (
+                        float(connector.anchor_xy[0]),
+                        float(connector.anchor_xy[1]),
+                        float(target_surface.surface_z),
+                    )
+                )
+                current_start_xy = (float(connector.anchor_xy[0]), float(connector.anchor_xy[1]))
+            else:
+                if segment_index == len(grouped) - 1 and waypoints:
+                    waypoints[-1] = (float(goal[0]), float(goal[1]), float(goal[2]))
+
+        if candidate_failure_reason is not None:
+            candidate_failures.append(
+                {
+                    "candidate_rank": int(candidate_rank),
+                    "failure_reason": candidate_failure_reason,
+                    "node_path": node_path,
+                    "transitions": transitions,
+                    "segment_refinements": segment_refinements,
+                }
+            )
+            continue
+
+        waypoints_tuple = _dedupe_waypoints(waypoints)
+        surface_path = tuple(dict.fromkeys(surface_id for surface_id, _ in node_path))
+        return SurfaceGraphPathResult(
+            success=True,
+            waypoints=waypoints_tuple,
+            distance_cost=_waypoint_distance_cost(
+                waypoints_tuple,
+                ignore_vertical=movement_profile.can_ignore_vertical_distance,
+            ),
+            portal_path=tuple(portal_path),
+            connector_path=tuple(connector_path),
+            surface_path=surface_path,
+            triangulation_backends=triangulation_backends,
+            used_exact_refiner=used_exact_refiner,
+            failure_reason=None,
+            debug_artifacts={
+                "node_path": node_path,
+                "transitions": transitions,
+                "grouped_segments": grouped,
+                "candidate_rank": int(candidate_rank),
+                "candidate_count": len(path_candidates),
+                "segment_refinements": segment_refinements,
+                "final_facing": current_facing_value,
+            },
+        )
+
     return SurfaceGraphPathResult(
-        success=True,
-        waypoints=waypoints_tuple,
-        distance_cost=_waypoint_distance_cost(
-            waypoints_tuple,
-            ignore_vertical=movement_profile.can_ignore_vertical_distance,
-        ),
-        portal_path=tuple(portal_path),
-        connector_path=tuple(connector_path),
-        surface_path=surface_path,
-        triangulation_backends={surface_id: mesh.triangulation_backend for surface_id, mesh in graph.surface_meshes},
-        failure_reason=None,
+        success=False,
+        waypoints=(),
+        distance_cost=0.0,
+        portal_path=(),
+        connector_path=(),
+        surface_path=(),
+        triangulation_backends=triangulation_backends,
+        used_exact_refiner=False,
+        failure_reason="Exact corridor refinement failed for all candidate routes",
         debug_artifacts={
-            "node_path": node_path,
-            "transitions": transitions,
-            "grouped_segments": grouped,
+            "candidate_count": len(path_candidates),
+            "candidate_failures": candidate_failures,
         },
     )
 
