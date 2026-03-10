@@ -20978,8 +20978,9 @@ class GameView:
 
                 if hasattr(self, 'individual_model_preview_target') and self.individual_model_preview_target:
                     #print(f"DEBUG: Drawing path preview for model {model_index} to {self.individual_model_preview_target}")
-                    # Use unified pathfinding that accounts for already-moved models
-                    from ..utility.calcs import unified_pathfinding, MovementType
+                    # Use pathing API that accounts for already-moved models
+                    from ..pathing.api import PathQuery, plan_model_path
+                    from ..utility.calcs import MovementType
 
                     # Get moved models from the dialog if available
                     moved_models_in_unit = set()
@@ -21019,15 +21020,22 @@ class GameView:
                     if hasattr(self, 'individual_model_movement_dialog') and self.individual_model_movement_dialog.visible:
                         target_unit = self.individual_model_movement_dialog.target_unit
 
-                    path_result = unified_pathfinding(
-                        model=selected_model,
-                        target=target_3d,
-                        movement_type=preview_movement_type,
-                        max_distance=max_distance,
-                        game_map=self.game.map,
-                        target_unit=target_unit,
-                        moved_models_in_unit=moved_models_in_unit
-                    )
+                    path_result = plan_model_path(
+                        PathQuery(
+                            model=selected_model,
+                            target=(
+                                float(target_3d[0]),
+                                float(target_3d[1]),
+                                float(target_3d[2]),
+                            ),
+                            movement_type=preview_movement_type,
+                            max_distance=float(max_distance),
+                            game_map=self.game.map,
+                            target_unit=target_unit,
+                            moved_models_in_unit=tuple(sorted(moved_models_in_unit, key=str)),
+                            debug_enabled=False,
+                        )
+                    ).to_legacy_dict()
 
                     #print(f"DEBUG: Path result - valid: {path_result['valid']}, path length: {len(path_result['path']) if path_result['path'] else 0}")
 

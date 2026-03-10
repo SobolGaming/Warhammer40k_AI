@@ -6206,15 +6206,19 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         mouse_surface_x = int(mouse_game_x * TILE_SIZE * self.game_view.zoom_level + self.game_view.offset_x)
         mouse_surface_y = int(mouse_game_y * TILE_SIZE * self.game_view.zoom_level + self.game_view.offset_y)
 
-        # Use pathfinding to get movement preview
-        from warhammer40k_ai.utility.calcs import get_movement_path_preview
+        # Use pathing API to get movement preview
+        from warhammer40k_ai.pathing.api import PathQuery, preview_model_path
+        from warhammer40k_ai.utility.calcs import MovementType
 
-        path_result = get_movement_path_preview(
-            self.current_scout_unit,
-            (mouse_game_x, mouse_game_y),
-            self.scout_distance,
-            self.game_view.game.map
-        )
+        path_result = preview_model_path(
+            PathQuery(
+                model=first_model,
+                target=(float(mouse_game_x), float(mouse_game_y), float(first_model.model_base.z)),
+                movement_type=MovementType.SCOUT,
+                max_distance=float(self.scout_distance),
+                game_map=self.game_view.game.map,
+            )
+        ).to_legacy_dict()
 
         # Choose color based on pathfinding result
         if path_result['valid']:

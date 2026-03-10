@@ -12295,8 +12295,9 @@ class ActionsMovementMixin:
             logger.info(f"{self.name} cannot move - no valid formation found at destination")
             return False
 
-        # Use the new individual model pathfinding system
-        from ...utility.calcs import get_individual_model_movement_path, process_unit_movement_with_coherency_check
+        # Use the pathing API for individual-model movement.
+        from ...pathing.api import PathQuery, plan_model_path
+        from ...utility.calcs import process_unit_movement_with_coherency_check
         
         model_movements = []
         successful_moves = 0
@@ -12320,8 +12321,20 @@ class ActionsMovementMixin:
                 logger.info(f"Model {model._id} cannot reach destination {model_distance:.1f}\" away (max: {movement_range}\")")
                 continue  # Skip this model, don't move it
             
-            # Use new optimized pathfinding for individual model movement
-            path = get_individual_model_movement_path(self, model_index, model_destination, game_map, movement_range)
+            path_result = plan_model_path(
+                PathQuery(
+                    model=model,
+                    target=(
+                        float(model_destination[0]),
+                        float(model_destination[1]),
+                        float(model_destination[2]),
+                    ),
+                    movement_type=movement_type,
+                    max_distance=float(movement_range),
+                    game_map=game_map,
+                )
+            )
+            path = list(path_result.waypoints) if path_result.valid else None
             
             if not path:
                 logger.debug(f"Model {model._id} optimized pathfinding failed - destination may violate movement rules")
@@ -12561,12 +12574,24 @@ class ActionsMovementMixin:
                 logger.info(f"{self.name} cannot reach charge destination {model_distance:.1f}\" away (max: {max_charge_distance}\")")
                 return False
             
-            # Use charge-aware pathfinding for single model (can navigate around obstacles and into engagement range)
-            from ...utility.calcs import get_charge_movement_path
+            # Use charge-aware pathing for single model.
+            from ...pathing.api import PathQuery, plan_model_path
 
-            pathfinding_result = get_charge_movement_path(
-                model, destination, max_charge_distance, game_map, targets[0], target_units=targets
-            )
+            pathfinding_result = plan_model_path(
+                PathQuery(
+                    model=model,
+                    target=(
+                        float(destination[0]),
+                        float(destination[1]),
+                        float(destination[2]),
+                    ),
+                    movement_type=MovementType.CHARGE,
+                    max_distance=float(max_charge_distance),
+                    game_map=game_map,
+                    target_unit=targets[0],
+                    target_units=tuple(targets),
+                )
+            ).to_legacy_dict()
             
             if not pathfinding_result or not pathfinding_result.get('valid'):
                 logger.error(f"{self.name} cannot charge to destination - pathfinding failed (obstacles in way)")
@@ -12618,12 +12643,24 @@ class ActionsMovementMixin:
                         logger.debug(f"Model {model._id} cannot reach charge destination {model_distance:.1f}\" away (max: {max_charge_distance}\")")
                         continue
                     
-                    # Use charge-aware pathfinding for charge movement
-                    from ...utility.calcs import get_charge_movement_path
+                    # Use charge-aware pathing for charge movement.
+                    from ...pathing.api import PathQuery, plan_model_path
 
-                    pathfinding_result = get_charge_movement_path(
-                        model, model_destination, max_charge_distance, game_map, targets[0], target_units=targets
-                    )
+                    pathfinding_result = plan_model_path(
+                        PathQuery(
+                            model=model,
+                            target=(
+                                float(model_destination[0]),
+                                float(model_destination[1]),
+                                float(model_destination[2]),
+                            ),
+                            movement_type=MovementType.CHARGE,
+                            max_distance=float(max_charge_distance),
+                            game_map=game_map,
+                            target_unit=targets[0],
+                            target_units=tuple(targets),
+                        )
+                    ).to_legacy_dict()
 
                     if pathfinding_result and pathfinding_result.get('valid'):
                         shortest_path = pathfinding_result['path']
@@ -13950,16 +13987,23 @@ class ActionsMovementMixin:
                 logger.info(f"Model {model._id} cannot reach fall back destination {model_distance:.1f}\" away (max: {movement_range}\")")
                 continue  # Skip this model, don't move it
             
-            # Try pathfinding for Fall Back movement using standard pathfinding
-            from ...utility.calcs import get_movement_path_preview, MovementType
+            # Try pathing for Fall Back movement using the unified pathing API.
+            from ...pathing.api import PathQuery, plan_model_path
+            from ...utility.calcs import MovementType
 
-            pathfinding_result = get_movement_path_preview(
-                model,
-                model_destination,
-                self.movement,
-                game_map,
-                movement_type=MovementType.FALL_BACK,
-            )
+            pathfinding_result = plan_model_path(
+                PathQuery(
+                    model=model,
+                    target=(
+                        float(model_destination[0]),
+                        float(model_destination[1]),
+                        float(model_destination[2]),
+                    ),
+                    movement_type=MovementType.FALL_BACK,
+                    max_distance=float(self.movement),
+                    game_map=game_map,
+                )
+            ).to_legacy_dict()
 
             if not pathfinding_result or not pathfinding_result.get('valid'):
                 logger.debug(f"Model {model._id} pathfinding failed for fall back - destination may be invalid")
@@ -15832,9 +15876,6 @@ class ActionsMovementMixin:
                 logger.info(f"Model {model._id} cannot reach scout destination {model_distance:.1f}\" away (max: {scout_distance}\")")
                 continue  # Skip this model, don't move it
             
-            # Use new optimized pathfinding for scout move (individual model movement)
-            from ...utility.calcs import get_individual_model_movement_path
-            
             # Find model index for pathfinding
             model_index = None
             for i, m in enumerate(self.models):
@@ -15846,7 +15887,22 @@ class ActionsMovementMixin:
                 logger.error(f"Could not find model index for {model.name}")
                 continue
             
-            path = get_individual_model_movement_path(self, model_index, model_destination, game_map, scout_distance)
+            from ...pathing.api import PathQuery, plan_model_path
+
+            path_result = plan_model_path(
+                PathQuery(
+                    model=model,
+                    target=(
+                        float(model_destination[0]),
+                        float(model_destination[1]),
+                        float(model_destination[2]),
+                    ),
+                    movement_type=MovementType.SCOUT,
+                    max_distance=float(scout_distance),
+                    game_map=game_map,
+                )
+            )
+            path = list(path_result.waypoints) if path_result.valid else None
             
             if not path:
                 logger.debug(f"Model {model._id} optimized pathfinding failed for scout move - destination may be invalid")

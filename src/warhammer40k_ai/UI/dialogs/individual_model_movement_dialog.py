@@ -1322,9 +1322,9 @@ class IndividualModelMovementDialog(BaseDialog):
             logger.error(f"ERROR: No valid aircraft move for {model.name} (Model #{model_index + 1})")
             return False
 
-        # Use unified pathfinding for ALL movement types
-        #print(f" DEBUG: Using unified pathfinding for {model.name} with movement type {self.movement_type}")
-        from ...utility.calcs import unified_pathfinding, MovementType
+        # Use pathing API for all movement types.
+        from ...pathing.api import PathQuery, plan_model_path
+        from ...utility.calcs import MovementType
 
         # Get set of already-moved models (by object identity).
         # This works for both normal units and Attached units (where dialog uses a combined models list).
@@ -1365,16 +1365,23 @@ class IndividualModelMovementDialog(BaseDialog):
             pass
         #print(f" DEBUG: Mapped {self.movement_type} to {pathfinding_movement_type}")
 
-        path_result = unified_pathfinding(
-            model=model,
-            target=target_3d,
-            movement_type=pathfinding_movement_type,
-            max_distance=self.max_distance,
-            game_map=self.game_map,
-            target_unit=self.target_unit,
-            target_units=self.target_units,
-            moved_models_in_unit=moved_models_in_unit
-        )
+        path_result = plan_model_path(
+            PathQuery(
+                model=model,
+                target=(
+                    float(target_3d[0]),
+                    float(target_3d[1]),
+                    float(target_3d[2]),
+                ),
+                movement_type=pathfinding_movement_type,
+                max_distance=float(self.max_distance),
+                game_map=self.game_map,
+                target_unit=self.target_unit,
+                target_units=tuple(self.target_units or ()),
+                moved_models_in_unit=tuple(sorted(moved_models_in_unit, key=id)),
+                debug_enabled=False,
+            )
+        ).to_legacy_dict()
 
         #print(f" DEBUG: Pathfinding result for {model.name} to {destination}")
         #print(f" DEBUG: Path valid: {path_result['valid']}, movement_type: {pathfinding_movement_type}")

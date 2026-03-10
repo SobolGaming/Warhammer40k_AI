@@ -16,6 +16,7 @@ class DynamicModelBlocker:
     model_id: str
     unit_id: str
     army_identity_key: tuple[str, object]
+    is_same_unit: bool
     is_enemy: bool
     is_friendly: bool
     is_aircraft: bool
@@ -113,6 +114,7 @@ def build_dynamic_overlay(
 
         unit_id = _sort_key_for_entity(unit, "unit", unit_index)
         army_key = unit_army_identity_key(unit)
+        is_same_unit = unit is moving_unit
         is_friendly = units_share_army_identity(unit, moving_unit)
         is_enemy = not is_friendly
         is_aircraft = _bool_attr(unit, "is_aircraft")
@@ -137,6 +139,7 @@ def build_dynamic_overlay(
                 model_id=_sort_key_for_entity(model, f"{unit_id}:model", model_index),
                 unit_id=unit_id,
                 army_identity_key=army_key,
+                is_same_unit=is_same_unit,
                 is_enemy=is_enemy,
                 is_friendly=is_friendly,
                 is_aircraft=is_aircraft,

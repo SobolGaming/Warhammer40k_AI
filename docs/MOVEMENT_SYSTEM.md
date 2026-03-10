@@ -25,8 +25,10 @@ Movement is model-level pathfinding with unit-level validation:
 - Coherency is validated after all model moves are resolved.
 - If coherency would be broken, the move is rejected and rolled back.
 
-The primary movement planner/validation utilities live in `src/warhammer40k_ai/utility/calcs.py`.
-Movement capability extraction now lives in `src/warhammer40k_ai/pathing/rules_profile.py`
+The authoritative movement planner API now lives in `src/warhammer40k_ai/pathing/api.py`:
+`plan_model_path`, `preview_model_path`, `validate_final_pose`, and
+`compute_swept_interactions`.
+Movement capability extraction lives in `src/warhammer40k_ai/pathing/rules_profile.py`
 as `MovementProfile` (defined in `src/warhammer40k_ai/pathing/types.py`), while
 unit-level action orchestration is in `src/warhammer40k_ai/units/unit.py`.
 
@@ -47,8 +49,11 @@ unit-level action orchestration is in `src/warhammer40k_ai/units/unit.py`.
 
 ### Pathing and movement allowance
 
-Pathfinding is A*-based and terrain-aware. Important building blocks:
-- `get_individual_model_movement_path()` and `unified_pathfinding()` for model-level routing.
+Pathfinding is layered CDT + corridor-aware SE(2) refinement. Important building blocks:
+- `pathing/api.py`:
+  `plan_model_path()` / `preview_model_path()` for routing,
+  `validate_final_pose()` for endpoint legality,
+  `compute_swept_interactions()` for swept-footprint interactions.
 - `movement_segment_cost()` and `measure_path_distance()` for rules-aware distance.
 - `measure_direct_distance()` for straight-line checks prior to pathfinding.
 - `get_terrain_blocking_polygons()` and `is_terrain_impassable()` for collision gating.
@@ -75,6 +80,9 @@ Pathfinding is A*-based and terrain-aware. Important building blocks:
   pose transitions with exact `get_base_shape_at(...)` geometry and support checks.
   The SE(2) search is endpoint-anchored (exact start pose and exact segment end
   pose), and its one-time pivot cost uses existing unit/base pivot semantics.
+- `pathing/sweep.py` provides shared swept-footprint geometry used by
+  `compute_swept_interactions()` to report moved-over enemy model ids from exact
+  footprint sweeps instead of centerline-only checks.
 - Segment legality uses a swept-base check between waypoints so thin walls cannot be
   tunneled through by center-point interpolation artifacts.
 

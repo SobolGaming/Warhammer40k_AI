@@ -1,5 +1,11 @@
 """Pathing package."""
 
+from .api import (
+    compute_swept_interactions,
+    plan_model_path,
+    preview_model_path,
+    validate_final_pose,
+)
 from .dynamic_overlay import (
     DynamicModelBlocker,
     DynamicOverlay,
@@ -41,6 +47,7 @@ from .se2_refine import (
     evaluate_se2_refine_trigger,
     refine_corridor_se2,
 )
+from .sweep import intersects_enemy_models, list_models_moved_over, swept_footprint
 from .surface_graph import (
     SurfaceConnector,
     SurfaceGraphPathResult,
@@ -65,7 +72,7 @@ from .surfaces import (
     validate_pose_support,
     validate_pose_support_on_surface,
 )
-from .types import ConnectorId, MovementProfile, SurfaceId
+from .types import ConnectorId, MovementProfile, PathQuery, PathResult, Pose, SurfaceId, SweepResult, ValidationResult
 from .world_snapshot import (
     WorldSnapshot,
     build_world_snapshot,
@@ -83,6 +90,9 @@ __all__ = [
     "GROUND_LAYER_KIND",
     "GROUND_SURFACE_ID",
     "MovementProfile",
+    "PathQuery",
+    "PathResult",
+    "Pose",
     "RUINS_LAYER_KIND",
     "Se2Pose",
     "Se2RefineRequest",
@@ -99,6 +109,8 @@ __all__ = [
     "SupportSurface",
     "SupportValidationResult",
     "SurfaceId",
+    "SweepResult",
+    "ValidationResult",
     "WorldSnapshot",
     "build_corridor",
     "build_dynamic_overlay",
@@ -110,6 +122,7 @@ __all__ = [
     "build_surface_graph_for_query",
     "build_surface_graph_static",
     "build_world_snapshot",
+    "compute_swept_interactions",
     "clear_static_mesh_cache",
     "clearance_bucket_for_radius",
     "extract_ground_transit_obstacles",
@@ -126,7 +139,13 @@ __all__ = [
     "query_friendly_blockers",
     "resolve_support_surface_at_position",
     "refine_corridor_se2",
+    "plan_model_path",
+    "preview_model_path",
+    "validate_final_pose",
     "support_surface_revision",
+    "swept_footprint",
+    "intersects_enemy_models",
+    "list_models_moved_over",
     "terrain_ignored_for_ground_transit",
     "terrain_revision",
     "triangulate_surface_free_space",
