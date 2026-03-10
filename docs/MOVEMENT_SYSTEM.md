@@ -25,8 +25,10 @@ Movement is model-level pathfinding with unit-level validation:
 - Coherency is validated after all model moves are resolved.
 - If coherency would be broken, the move is rejected and rolled back.
 
-The primary movement utilities live in `src/warhammer40k_ai/utility/calcs.py`, while
-the unit-level action orchestration is in `src/warhammer40k_ai/units/unit.py`.
+The primary movement planner/validation utilities live in `src/warhammer40k_ai/utility/calcs.py`.
+Movement capability extraction now lives in `src/warhammer40k_ai/pathing/rules_profile.py`
+as `MovementProfile` (defined in `src/warhammer40k_ai/pathing/types.py`), while
+unit-level action orchestration is in `src/warhammer40k_ai/units/unit.py`.
 
 ```9442:9536:src/warhammer40k_ai/units/unit.py
         from ..utility.calcs import get_individual_model_movement_path, process_unit_movement_with_coherency_check
@@ -50,8 +52,26 @@ Pathfinding is A*-based and terrain-aware. Important building blocks:
 - `movement_segment_cost()` and `measure_path_distance()` for rules-aware distance.
 - `measure_direct_distance()` for straight-line checks prior to pathfinding.
 - `get_terrain_blocking_polygons()` and `is_terrain_impassable()` for collision gating.
+- `build_movement_profile()` for deterministic movement capability extraction
+  (climb thresholds, vertical-ignore behavior, breaches, engagement/fall-back interaction flags).
+- `pathing/surfaces.py` and `pathing/world_snapshot.py` for deterministic layered support
+  extraction (GROUND + RUINS floors + explicit elevated support tops) and immutable
+  per-query world snapshots.
+- `pathing/dynamic_overlay.py` for deterministic live model blocker overlays keyed by
+  army identity rather than faction string.
 - Segment legality uses a swept-base check between waypoints so thin walls cannot be
   tunneled through by center-point interpolation artifacts.
+
+Friendly/enemy blocker classification in movement collision trees is based on parent-army
+identity (with faction fallback only when army identity is unavailable), preventing mirror-match
+misclassification when both sides share the same faction string.
+
+Layered support semantics now used by pathing infrastructure:
+- Ground-layer transit ignores low terrain whose top/wall height is
+  `<= MovementProfile.free_climb_height_inches`.
+- Support placement on elevated/top surfaces is footprint-exact:
+  circular bases use support-polygon erosion by radius, while non-circular/compound
+  bases use full `get_base_shape_at(...)` containment checks.
 
 Movement allowance interacts with pathing in two steps:
 1. A direct-distance check ensures the destination is in range.

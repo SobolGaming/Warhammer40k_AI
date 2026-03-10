@@ -4,7 +4,6 @@ import heapq
 import numpy as np
 from ..utility.constants import (
     MM_TO_INCHES,
-    FREELY_CLIMBABLE_RANGE,
     ENGAGEMENT_RANGE_VERTICAL,
     RUINS_FLOOR_HEIGHT,
     RUINS_FLOOR_THICKNESS,
@@ -15,6 +14,22 @@ from shapely.ops import unary_union
 from shapely import STRtree
 
 from ..utility.entity_ids import get_entity_id
+from ..pathing.types import MovementProfile
+from ..pathing.rules_profile import (
+    build_movement_profile,
+    can_breach_ruins_walls as _can_breach_ruins_walls,
+    get_freely_climbable_range,
+    movement_type_allows_fly_over as _movement_type_allows_fly_over,
+    movement_type_tag as _movement_type_tag,
+    ruins_wall_traversal_allowed as _ruins_wall_traversal_allowed,
+    super_heavy_walker_active_for_move as _super_heavy_walker_active_for_move,
+    unit_army_identity_key as _unit_army_identity_key,
+    unit_can_fly_over_big_models as _unit_can_fly_over_big_models,
+    unit_ignores_vertical_distance as _unit_ignores_vertical_distance,
+    unit_is_fly_move as _unit_is_fly_move,
+    units_share_army_identity as _units_share_army_identity,
+)
+from ..pathing.surfaces import extract_ground_transit_obstacles
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -35,11 +50,11 @@ from .constants import ENGAGEMENT_RANGE_HORIZONTAL
 
 # Global caches for collision detection
 _terrain_cache = {}  # Cache for terrain blocking polygons by (game_map_id, unit_keywords, movement_type)
-_enemy_model_cache = {}  # Cache for non-aircraft enemy model shapes by (game_map_id, faction)
-_enemy_model_big_cache = {}  # Cache for non-aircraft MONSTER/VEHICLE shapes by (game_map_id, faction)
-_enemy_aircraft_model_cache = {}  # Cache for enemy AIRCRAFT model shapes by (game_map_id, faction)
-_enemy_engagement_buffer_cache = {}  # Cache for buffered non-aircraft enemy shapes by (game_map_id, faction)
-_enemy_aircraft_engagement_buffer_cache = {}  # Cache for buffered aircraft shapes by (game_map_id, faction)
+_enemy_model_cache = {}  # Cache for non-aircraft enemy model shapes by (game_map_id, army_identity)
+_enemy_model_big_cache = {}  # Cache for non-aircraft MONSTER/VEHICLE shapes by (game_map_id, army_identity)
+_enemy_aircraft_model_cache = {}  # Cache for enemy AIRCRAFT model shapes by (game_map_id, army_identity)
+_enemy_engagement_buffer_cache = {}  # Cache for buffered non-aircraft enemy shapes by (game_map_id, army_identity)
+_enemy_aircraft_engagement_buffer_cache = {}  # Cache for buffered aircraft shapes by (game_map_id, army_identity)
 
 
 def clear_collision_caches():
@@ -130,131 +145,6 @@ def angle_difference(angle1: float, angle2: float) -> float:
     """
     diff = (angle2 - angle1 + pi) % (2 * pi) - pi
     return diff
-
-def get_freely_climbable_range(unit: 'Unit', movement_type=None) -> float:
-    """Return the height threshold that can be traversed without vertical cost."""
-    threshold = float(FREELY_CLIMBABLE_RANGE)
-    if _super_heavy_walker_active_for_move(unit, movement_type):
-        threshold = max(threshold, 4.0)
-    height = _unit_move_over_low_terrain_height(unit, movement_type)
-    if height is not None:
-        threshold = max(threshold, float(height))
-    return float(threshold)
-
-def counts_as_infantry_for_terrain(unit: 'Unit') -> bool:
-    """Resolve Infantry-equivalent terrain interaction (Kill Team counts as Infantry)."""
-    fn = getattr(unit, "counts_as_infantry_for_terrain", None)
-    if callable(fn):
-        return bool(fn())
-    return bool(getattr(unit, "is_infantry", False))
-
-def _can_breach_ruins_walls(unit: 'Unit') -> bool:
-    """Check if a unit can treat RUINS walls as breachable without move-type gating."""
-    fn = getattr(unit, "can_move_through_ruins_walls", None)
-    if callable(fn):
-        return bool(fn())
-    if counts_as_infantry_for_terrain(unit):
-        return True
-    if getattr(unit, "is_beast", False):
-        return True
-    if getattr(unit, "is_imperium_primarch", False):
-        return True
-    if getattr(unit, "is_belisarius_cawl", False):
-        return True
-    return False
-
-def _movement_type_tag(movement_type) -> Optional[str]:
-    if movement_type is None:
-        return None
-    if hasattr(movement_type, "value"):
-        return str(movement_type.value)
-    return str(movement_type)
-
-def _move_type_matches(value, movement_type) -> bool:
-    mt = _movement_type_tag(movement_type)
-    if not mt or value is None:
-        return False
-    if isinstance(value, str):
-        return mt == value
-    if isinstance(value, (list, tuple, set)):
-        for item in value:
-            if not item:
-                continue
-            if mt == str(item):
-                return True
-    return False
-
-def _unit_move_over_low_terrain_height(unit: 'Unit', movement_type) -> Optional[float]:
-    sr = getattr(unit, "special_rules", None)
-    if not isinstance(sr, dict):
-        return None
-    height = sr.get("move_over_low_terrain_height_value")
-    if height is None:
-        return None
-    types = sr.get("move_over_low_terrain_height_types")
-    if not _move_type_matches(types, movement_type):
-        return None
-    try:
-        return float(height)
-    except (TypeError, ValueError):
-        return None
-
-def _unit_can_move_over_friendly_monster_vehicle(unit: 'Unit', movement_type) -> bool:
-    sr = getattr(unit, "special_rules", None)
-    if not isinstance(sr, dict):
-        return False
-    types = sr.get("move_over_friendly_monster_vehicle_types")
-    return _move_type_matches(types, movement_type)
-
-def _super_heavy_walker_active_for_move(unit: 'Unit', movement_type) -> bool:
-    mt = _movement_type_tag(movement_type)
-    if mt not in ("move", "advance", "fall_back"):
-        return False
-    fn = getattr(unit, "has_super_heavy_walker", None) if unit is not None else None
-    if callable(fn):
-        return bool(fn())
-    return False
-
-def _ruins_wall_traversal_allowed(unit: 'Unit', movement_type=None) -> bool:
-    if _can_breach_ruins_walls(unit):
-        return True
-    if _super_heavy_walker_active_for_move(unit, movement_type):
-        return True
-    return False
-
-def _movement_type_allows_fly_over(movement_type) -> bool:
-    mt = _movement_type_tag(movement_type)
-    return mt in ("move", "advance", "fall_back", "charge")
-
-def _movement_type_allows_flip_belt(movement_type) -> bool:
-    mt = _movement_type_tag(movement_type)
-    return mt in ("move", "advance", "fall_back", "charge")
-
-def _unit_ignores_vertical_distance(unit: 'Unit', movement_type=None) -> bool:
-    mt = _movement_type_tag(movement_type)
-    fn = getattr(unit, "ignores_vertical_distance_for_move_type", None)
-    if callable(fn) and fn(movement_type):
-        return True
-    if mt == "advance":
-        fn = getattr(unit, "advance_ignores_vertical_distance", None)
-        if callable(fn) and fn():
-            return True
-    if not _movement_type_allows_flip_belt(movement_type):
-        return False
-    fn = getattr(unit, "has_flip_belt", None)
-    if callable(fn):
-        return bool(fn())
-    return False
-
-def _unit_is_fly_move(unit: 'Unit', movement_type=None) -> bool:
-    if not _movement_type_allows_fly_over(movement_type):
-        return False
-    return bool(getattr(unit, "is_flying", False))
-
-def _unit_can_fly_over_big_models(unit: 'Unit', movement_type=None) -> bool:
-    if not _unit_is_fly_move(unit, movement_type):
-        return False
-    return bool(getattr(unit, "is_monster", False) or getattr(unit, "is_vehicle", False))
 
 def _is_position_on_terrain(game_map: 'Map', position: Tuple[float, float, float]) -> bool:
     if game_map is None:
@@ -835,11 +725,32 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
                 'reason': f'Distance limit exceeded: {straight_line_distance:.1f}" > {max_distance}"'
             }
 
+    movement_profile = build_movement_profile(
+        moving_unit,
+        movement_type,
+        target_unit=target_unit,
+        target_units=target_units,
+    )
+
     # Build collision trees based on movement type and unit capabilities
-    collision_trees = build_collision_trees(moving_unit, movement_type, game_map, model, moved_models_in_unit, max_distance)
+    collision_trees = build_collision_trees(
+        moving_unit,
+        movement_type,
+        game_map,
+        model,
+        moved_models_in_unit,
+        max_distance,
+        movement_profile=movement_profile,
+    )
 
     # Get validation rules for this movement type
-    validation_rules = get_validation_rules(movement_type, target_unit, moving_unit=moving_unit, target_units=target_units)
+    validation_rules = get_validation_rules(
+        movement_type,
+        target_unit,
+        moving_unit=moving_unit,
+        target_units=target_units,
+        movement_profile=movement_profile,
+    )
     if movement_type in (
         MovementType.BLOOD_SURGE,
         MovementType.BRAZEN_FURY,
@@ -873,7 +784,8 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
 
 def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game_map: 'Map',
                          moving_model: 'Model' = None, moved_models_in_unit: set = None,
-                         max_distance: float = None, target_position: tuple = None) -> dict:
+                         max_distance: float = None, target_position: tuple = None,
+                         movement_profile: Optional[MovementProfile] = None) -> dict:
     """
     Build STRTrees for collision detection based on movement type and unit capabilities.
 
@@ -895,6 +807,8 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     """
     if moved_models_in_unit is None:
         moved_models_in_unit = set()
+    if movement_profile is None:
+        movement_profile = build_movement_profile(moving_unit, movement_type)
 
     def _unit_models_for_collision(u):
         try:
@@ -967,7 +881,9 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     else:
         search_radius = max_distance + safety_buffer
 
-    allow_move_over_friendly_big = _unit_can_move_over_friendly_monster_vehicle(moving_unit, movement_type)
+    allow_move_over_friendly_big = bool(
+        movement_profile.terrain_transition_rules.get("can_move_over_friendly_monster_vehicle", False)
+    )
 
     def is_within_search_area(shape_or_pos):
         """Check if a shape or position is within the search area (2D distance only)."""
@@ -997,18 +913,20 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     if terrain_cache_key in _terrain_cache:
         all_blocking_terrain = _terrain_cache[terrain_cache_key]
     else:
-        all_blocking_terrain = []
-        for terrain_feature in game_map.terrain_features:
-            all_blocking_terrain.extend(
-                get_terrain_blocking_polygons(moving_unit, terrain_feature, movement_type=movement_type)
+        all_blocking_terrain = list(
+            extract_ground_transit_obstacles(
+                game_map,
+                movement_profile,
+                moving_unit=moving_unit,
             )
+        )
         _terrain_cache[terrain_cache_key] = all_blocking_terrain
 
     # Apply spatial filtering to terrain for this move
     blocking_terrain = [poly for poly in all_blocking_terrain if is_within_search_area(poly)]
 
     # Get enemy models with caching and spatial filtering (split aircraft vs non-aircraft)
-    enemy_cache_key = (id(game_map), moving_unit.faction)
+    enemy_cache_key = (id(game_map), _unit_army_identity_key(moving_unit))
     if enemy_cache_key in _enemy_model_cache:
         all_enemy_shapes = _enemy_model_cache[enemy_cache_key]
         all_enemy_big_shapes = _enemy_model_big_cache.get(enemy_cache_key, [])
@@ -1020,7 +938,7 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
         for unit in game_map.units:
             if not unit.is_alive() or not unit.deployed:
                 continue
-            if unit.faction == moving_unit.faction:
+            if _units_share_army_identity(unit, moving_unit):
                 continue
             try:
                 is_aircraft = bool(getattr(unit, "is_aircraft", False))
@@ -1062,7 +980,7 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     for unit in game_map.units:
         if not unit.is_alive() or not unit.deployed:
             continue
-        if unit.faction == moving_unit.faction:  # Friendly unit
+        if _units_share_army_identity(unit, moving_unit):  # Friendly unit
             unit_is_big = False
             if allow_move_over_friendly_big:
                 try:
@@ -1220,6 +1138,7 @@ def get_validation_rules(
     *,
     moving_unit: 'Unit' = None,
     target_units: Optional[list['Unit']] = None,
+    movement_profile: Optional[MovementProfile] = None,
 ) -> dict:
     """
     Get validation rules for specific movement types.
@@ -1231,15 +1150,26 @@ def get_validation_rules(
     Returns:
         Dict containing validation rules for this movement type
     """
+    if movement_profile is None:
+        movement_profile = build_movement_profile(
+            moving_unit,
+            movement_type,
+            target_unit=target_unit,
+            target_units=target_units,
+        )
+
     # Base rules that apply to all movement types
     base_rules = {
         'prevent_friendly_overlap': True,    # Always prevent friendly model overlap
         'prevent_enemy_overlap': True,       # Always prevent enemy model overlap
-        'apply_pivot_cost': True,           # Always apply pivot costs
+        'apply_pivot_cost': movement_profile.pivot_cost_mode != "none",
         'check_terrain_traversal': True,    # Always check if unit can traverse terrain
-        'can_move_through_enemy_models': False,
-        'can_move_through_friendly_models': False,
+        'can_move_through_enemy_models': bool(movement_profile.can_move_through_enemy_models),
+        'can_move_through_friendly_models': bool(movement_profile.can_move_through_friendly_models),
         'can_move_through_terrain': False,
+        'movement_profile': movement_profile,
+        'free_climb_height_inches': float(movement_profile.free_climb_height_inches),
+        'can_end_on_upper_surfaces': bool(movement_profile.can_end_on_upper_surfaces),
         # Aircraft rule: cannot end any move within Engagement Range of enemy AIRCRAFT (charge exception handled below).
         'cannot_end_within_engagement_range_of_aircraft': True,
     }
@@ -2397,7 +2327,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             allow_due_to_vertical_separation = False
             if game_map:
                 for unit in game_map.units:
-                    if unit.faction != model.parent_unit.faction:
+                    if not _units_share_army_identity(unit, model.parent_unit):
                         continue
                     for other_model in unit.models:
                         if other_model is model or not other_model.is_alive:
@@ -2455,10 +2385,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         for unit in list(getattr(game_map, "units", []) or []):
             if unit is model.parent_unit:
                 continue
-            try:
-                if unit.faction == model.parent_unit.faction:
-                    continue
-            except Exception:
+            if _units_share_army_identity(unit, model.parent_unit):
                 continue
             try:
                 is_monster = bool(getattr(unit, "is_monster", False))
@@ -2646,7 +2573,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                 except Exception:
                     pass
                 for unit in getattr(game_map, 'units', []) or []:
-                    if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                    if _units_share_army_identity(unit, model.parent_unit) or not unit.is_alive() or not unit.deployed:
                         continue
                     try:
                         if not bool(getattr(unit, "is_aircraft", False)):
@@ -2675,7 +2602,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         for unit in list(getattr(game_map, "units", []) or []):
             if unit is None:
                 continue
-            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+            if _units_share_army_identity(unit, model.parent_unit) or not unit.is_alive() or not unit.deployed:
                 continue
             if get_entity_id(unit) in charge_target_ids:
                 continue
@@ -2728,7 +2655,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             pass
         # Check against all enemy models using proper edge-to-edge distance
         for unit in game_map.units:
-            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+            if _units_share_army_identity(unit, model.parent_unit) or not unit.is_alive() or not unit.deployed:
                 continue
             for enemy_model in unit.models:
                 if not enemy_model.is_alive:
@@ -2811,9 +2738,11 @@ def check_desperate_escape_requirements(model: 'Model', path: List[Tuple[float, 
 
             # Check against all enemy models
             for enemy_unit in game_map.units:
-                if (enemy_unit.faction == unit.faction or
-                    not enemy_unit.is_alive() or
-                    not enemy_unit.deployed):
+                if (
+                    _units_share_army_identity(enemy_unit, unit)
+                    or not enemy_unit.is_alive()
+                    or not enemy_unit.deployed
+                ):
                     continue
 
                 for enemy_model in enemy_unit.models:
@@ -2885,7 +2814,7 @@ def get_enemy_units_moved_over(
             all_units = list(getattr(game_map, "units", []) or [])
         except Exception:
             all_units = []
-        enemy_units = [u for u in all_units if u is not None and getattr(u, "faction", None) != getattr(unit, "faction", None)]
+        enemy_units = [u for u in all_units if u is not None and not _units_share_army_identity(u, unit)]
 
     if not enemy_units:
         return []
@@ -3143,7 +3072,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
 
         # Check against all enemy models using proper edge-to-edge distance
         for unit in game_map.units:
-            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+            if _units_share_army_identity(unit, model.parent_unit) or not unit.is_alive() or not unit.deployed:
                 continue
             for enemy_model in unit.models:
                 if not enemy_model.is_alive:
@@ -3195,7 +3124,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         if use_unit:
             enemy_units = []
             for unit in game_map.units:
-                if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                if _units_share_army_identity(unit, model.parent_unit) or not unit.is_alive() or not unit.deployed:
                     continue
                 if exclude_keywords:
                     try:
@@ -3269,7 +3198,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         else:
             enemy_models = []
             for unit in game_map.units:
-                if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                if _units_share_army_identity(unit, model.parent_unit) or not unit.is_alive() or not unit.deployed:
                     continue
                 if exclude_keywords:
                     try:
@@ -3448,7 +3377,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
 
         enemy_units = []
         for unit in getattr(game_map, 'units', []) or []:
-            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+            if _units_share_army_identity(unit, model.parent_unit) or not unit.is_alive() or not unit.deployed:
                 continue
             if exclude_keywords:
                 try:
@@ -3553,7 +3482,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         closest_enemy_model = None
         closest_enemy_distance = None
         for unit in getattr(game_map, 'units', []) or []:
-            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+            if _units_share_army_identity(unit, model.parent_unit) or not unit.is_alive() or not unit.deployed:
                 continue
             if exclude_keywords:
                 try:
@@ -3642,7 +3571,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
             if use_unit:
                 enemy_units = []
                 for unit in getattr(game_map, 'units', []) or []:
-                    if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                    if _units_share_army_identity(unit, model.parent_unit) or not unit.is_alive() or not unit.deployed:
                         continue
                     if exclude_keywords:
                         try:
@@ -3757,7 +3686,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         temp_base.set_position(position[0], position[1], position[2])
 
         for unit in game_map.units:
-            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+            if _units_share_army_identity(unit, model.parent_unit) or not unit.is_alive() or not unit.deployed:
                 continue
             for enemy_model in unit.models:
                 if not enemy_model.is_alive:
