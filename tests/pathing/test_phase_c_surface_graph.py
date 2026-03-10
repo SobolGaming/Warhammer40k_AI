@@ -223,3 +223,53 @@ def test_phase_c_dynamic_overlay_applied_at_query_time() -> None:
     assert no_overlay.success
     assert with_overlay.success
     assert with_overlay.distance_cost > no_overlay.distance_cost
+
+
+def test_phase_c_connector_anchor_sampling_allows_alternate_overlap_transition() -> None:
+    game_map = Map(30, 30)
+    ruins = TerrainFactory.create_ruins(
+        [(8.0, 8.0), (18.0, 8.0), (18.0, 18.0), (8.0, 18.0)],
+        wall_height=4.0,
+        num_floors=1,
+    )
+    game_map.add_terrain_feature(ruins)
+
+    mover = _make_unit("Mover", x=9.0, y=9.0)
+    mover.can_move_through_ruins_walls = lambda: True
+    mover.can_access_upper_floors = lambda: True
+    enemy = _make_unit("AnchorBlocker", x=13.0, y=13.0, faction="OtherFaction")
+    game_map.units = [mover, enemy]
+
+    movement_profile = build_movement_profile(mover, MovementType.MOVE)
+    snapshot = build_world_snapshot(game_map, movement_profile)
+    overlay = build_dynamic_overlay(game_map, mover, movement_profile, moving_model=mover.models[0])
+    graph = build_surface_graph_for_query(
+        snapshot,
+        movement_profile,
+        base_radius=0.4,
+        footprint_class="disk",
+        dynamic_overlay=overlay,
+    )
+
+    floor_surface = next(surface for surface in snapshot.support_surfaces if surface.surface_id.startswith("ruins:0:floor:1"))
+    ground_to_floor = [
+        connector
+        for connector in graph.connectors
+        if connector.source_surface_id == "ground:main" and connector.target_surface_id == floor_surface.surface_id
+    ]
+    assert len(ground_to_floor) >= 2
+    assert any(connector.dynamic_blocked for connector in ground_to_floor)
+    assert any(not connector.dynamic_blocked for connector in ground_to_floor)
+
+    floor_z = float(floor_surface.surface_z)
+    result = plan_surface_graph_path(
+        snapshot,
+        movement_profile,
+        start=(9.0, 9.0, 0.0),
+        goal=(13.0, 13.0, floor_z),
+        base_radius=0.4,
+        footprint_class="disk",
+        dynamic_overlay=overlay,
+    )
+    assert result.success
+    assert result.connector_path

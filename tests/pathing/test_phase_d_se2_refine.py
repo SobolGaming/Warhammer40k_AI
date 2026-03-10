@@ -8,7 +8,11 @@ from warhammer40k_ai.battlefield.map import Map, RuinsTerrain, TerrainFactory
 from warhammer40k_ai.pathing.corridor import build_corridor
 from warhammer40k_ai.pathing.rules_profile import build_movement_profile
 from warhammer40k_ai.pathing.se2_refine import Se2RefineRequest, refine_corridor_se2
-from warhammer40k_ai.pathing.surface_graph import build_surface_graph_for_query, plan_surface_graph_path
+from warhammer40k_ai.pathing.surface_graph import (
+    _pivot_cost_once_for_refiner,
+    build_surface_graph_for_query,
+    plan_surface_graph_path,
+)
 from warhammer40k_ai.pathing.surfaces import SupportSurface
 from warhammer40k_ai.pathing.world_snapshot import build_world_snapshot
 from warhammer40k_ai.utility.calcs import MovementType
@@ -330,3 +334,30 @@ def test_phase_d_non_circular_connector_transition_is_anchor_continuous() -> Non
     i = int(vertical_transition_index)
     assert abs(result.waypoints[i][0] - result.waypoints[i - 1][0]) <= 1e-6
     assert abs(result.waypoints[i][1] - result.waypoints[i - 1][1]) <= 1e-6
+
+
+def test_phase_d_refiner_pivot_cost_semantics() -> None:
+    aircraft_base = Base(BaseType.HULL, (1.4, 0.6))
+    aircraft_unit = _make_unit("Aircraft", x=2.0, y=2.0, base=aircraft_base)
+    aircraft_unit.keywords = ["Aircraft", "Vehicle"]
+    aircraft_profile = build_movement_profile(aircraft_unit, MovementType.MOVE)
+    assert _pivot_cost_once_for_refiner(aircraft_profile, aircraft_base) == 0.0
+
+    monster_base = Base(BaseType.HULL, (1.4, 0.6))
+    monster_unit = _make_unit("Monster", x=2.0, y=2.0, base=monster_base)
+    monster_unit.keywords = ["Monster"]
+    monster_profile = build_movement_profile(monster_unit, MovementType.MOVE)
+    assert _pivot_cost_once_for_refiner(monster_profile, monster_base) == 2.0
+
+    infantry_base = Base(BaseType.ELLIPTICAL, (0.9, 0.45))
+    infantry_unit = _make_unit("Infantry", x=2.0, y=2.0, base=infantry_base)
+    infantry_unit.keywords = ["Infantry"]
+    infantry_profile = build_movement_profile(infantry_unit, MovementType.MOVE)
+    assert _pivot_cost_once_for_refiner(infantry_profile, infantry_base) == 1.0
+
+    flying_vehicle_base = Base(BaseType.CIRCULAR, 1.0)
+    setattr(flying_vehicle_base, "is_flying_base", True)
+    flying_vehicle_unit = _make_unit("FlyingVehicle", x=2.0, y=2.0, base=flying_vehicle_base)
+    flying_vehicle_unit.keywords = ["Vehicle"]
+    flying_vehicle_profile = build_movement_profile(flying_vehicle_unit, MovementType.MOVE)
+    assert _pivot_cost_once_for_refiner(flying_vehicle_profile, flying_vehicle_base) == 2.0

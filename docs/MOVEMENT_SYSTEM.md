@@ -67,6 +67,9 @@ Pathfinding is A*-based and terrain-aware. Important building blocks:
   clearance-eroded free-space triangulation, portal/connector A*, funnel corridor
   recovery, and static mesh cache keys based on terrain/support/profile revisions
   plus exact circular clearance keys.
+- Cross-surface connectors are now represented as deterministic sampled anchors over
+  overlap geometry (not a single representative point), so blocked/awkward anchors
+  can be bypassed by another legal overlap anchor.
 - `pathing/se2_refine.py` now provides Phase D local exact corridor refinement for
   non-circular/compound footprints and narrow portal corridors, validating sampled
   pose transitions with exact `get_base_shape_at(...)` geometry and support checks.

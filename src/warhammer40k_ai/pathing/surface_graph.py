@@ -23,6 +23,10 @@ from .surfaces import GROUND_LAYER_KIND, SupportSurface, resolve_support_surface
 from .types import ConnectorId, MovementProfile, SurfaceId
 from .world_snapshot import WorldSnapshot
 
+_CONNECTOR_POLYGON_GRID_FRACTIONS = (0.2, 0.5, 0.8)
+_CONNECTOR_LINE_FRACTIONS = (0.0, 0.25, 0.5, 0.75, 1.0)
+_MAX_CONNECTOR_ANCHORS = 12
+
 
 @dataclass(frozen=True, eq=False)
 class SurfaceConnector:
@@ -230,6 +234,104 @@ def _connector_kind_candidates(
     return ()
 
 
+def _point_key(x: float, y: float) -> tuple[float, float]:
+    return (round(float(x), 6), round(float(y), 6))
+
+
+def _collect_anchor_candidates(geometry: BaseGeometry) -> tuple[tuple[float, float], ...]:
+    if geometry.is_empty:
+        return ()
+
+    points: list[tuple[float, float]] = []
+    geom_type = str(getattr(geometry, "geom_type", ""))
+
+    if geom_type == "Polygon":
+        polygons = (geometry,)
+    elif geom_type == "MultiPolygon":
+        polygons = tuple(geometry.geoms)
+    elif geom_type == "GeometryCollection":
+        polygons = tuple(
+            geom for geom in geometry.geoms if str(getattr(geom, "geom_type", "")) in ("Polygon", "MultiPolygon")
+        )
+    else:
+        polygons = ()
+
+    for polygon_geom in polygons:
+        component_polygons = (
+            tuple(polygon_geom.geoms)
+            if str(getattr(polygon_geom, "geom_type", "")) == "MultiPolygon"
+            else (polygon_geom,)
+        )
+        for polygon in component_polygons:
+            representative = polygon.representative_point()
+            points.append((float(representative.x), float(representative.y)))
+            centroid = polygon.centroid
+            if polygon.covers(centroid):
+                points.append((float(centroid.x), float(centroid.y)))
+            min_x, min_y, max_x, max_y = polygon.bounds
+            for x_fraction in _CONNECTOR_POLYGON_GRID_FRACTIONS:
+                for y_fraction in _CONNECTOR_POLYGON_GRID_FRACTIONS:
+                    sample_x = float(min_x) + (float(max_x) - float(min_x)) * float(x_fraction)
+                    sample_y = float(min_y) + (float(max_y) - float(min_y)) * float(y_fraction)
+                    if polygon.covers(Point(sample_x, sample_y)):
+                        points.append((sample_x, sample_y))
+
+    if points:
+        return tuple(points)
+
+    if geom_type == "LineString":
+        lines = (geometry,)
+    elif geom_type == "MultiLineString":
+        lines = tuple(geometry.geoms)
+    elif geom_type == "GeometryCollection":
+        lines = tuple(geom for geom in geometry.geoms if str(getattr(geom, "geom_type", "")) in ("LineString", "MultiLineString"))
+    else:
+        lines = ()
+
+    for line_geom in lines:
+        component_lines = (
+            tuple(line_geom.geoms)
+            if str(getattr(line_geom, "geom_type", "")) == "MultiLineString"
+            else (line_geom,)
+        )
+        for line in component_lines:
+            if float(line.length) <= 1e-9:
+                continue
+            for fraction in _CONNECTOR_LINE_FRACTIONS:
+                sample_point = line.interpolate(float(fraction), normalized=True)
+                points.append((float(sample_point.x), float(sample_point.y)))
+
+    if points:
+        return tuple(points)
+
+    fallback = geometry.representative_point()
+    return ((float(fallback.x), float(fallback.y)),)
+
+
+def _sample_connector_anchors(
+    intersection: BaseGeometry,
+    *,
+    max_anchors: int = _MAX_CONNECTOR_ANCHORS,
+) -> tuple[tuple[float, float], ...]:
+    candidates = _collect_anchor_candidates(intersection)
+    if not candidates:
+        return ()
+
+    deduped: list[tuple[float, float]] = []
+    seen: set[tuple[float, float]] = set()
+    for x, y in candidates:
+        key = _point_key(x, y)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append((float(x), float(y)))
+
+    deduped.sort(key=lambda anchor: (_point_key(anchor[0], anchor[1])[0], _point_key(anchor[0], anchor[1])[1]))
+    if len(deduped) > int(max_anchors):
+        deduped = deduped[: int(max_anchors)]
+    return tuple(deduped)
+
+
 def build_surface_connectors(
     support_surfaces: tuple[SupportSurface, ...],
     movement_profile: MovementProfile,
@@ -251,8 +353,9 @@ def build_surface_connectors(
             if not kinds:
                 continue
 
-            anchor_point = intersection.representative_point()
-            anchor_xy = (float(anchor_point.x), float(anchor_point.y))
+            anchor_samples = _sample_connector_anchors(intersection)
+            if not anchor_samples:
+                continue
             z_delta = abs(float(source_surface.surface_z) - float(target_surface.surface_z))
             for kind in kinds:
                 allowed = _connector_allowed_for_profile(
@@ -261,53 +364,56 @@ def build_surface_connectors(
                     source_surface,
                     target_surface,
                 )
-                connector_id = (
-                    f"{source_surface.surface_id}->{target_surface.surface_id}:"
-                    f"{kind}:{source_index:03d}:{target_index:03d}"
-                )
-                connector = SurfaceConnector(
-                    connector_id=connector_id,
-                    source_surface_id=source_surface.surface_id,
-                    target_surface_id=target_surface.surface_id,
-                    kind=kind,
-                    anchor_geometry=intersection,
-                    anchor_xy=anchor_xy,
-                    distance_cost=_connector_distance_cost(movement_profile, source_surface, target_surface),
-                    requires_support_validation_source=source_surface.layer_kind != GROUND_LAYER_KIND,
-                    requires_support_validation_target=target_surface.layer_kind != GROUND_LAYER_KIND,
-                    allowed_for_profile=allowed,
-                    dynamic_blocked=False,
-                    metadata={
-                        "source_surface_z": float(source_surface.surface_z),
-                        "target_surface_z": float(target_surface.surface_z),
-                        "z_delta": float(z_delta),
-                        "intersection_area": float(getattr(intersection, "area", 0.0)),
-                        "intersection_length": float(getattr(intersection, "length", 0.0)),
-                    },
-                )
-                blocked = _connector_dynamic_blocked(
-                    connector,
-                    source_surface=source_surface,
-                    target_surface=target_surface,
-                    dynamic_overlay=dynamic_overlay,
-                    movement_profile=movement_profile,
-                )
-                connectors.append(
-                    SurfaceConnector(
-                        connector_id=connector.connector_id,
-                        source_surface_id=connector.source_surface_id,
-                        target_surface_id=connector.target_surface_id,
-                        kind=connector.kind,
-                        anchor_geometry=connector.anchor_geometry,
-                        anchor_xy=connector.anchor_xy,
-                        distance_cost=connector.distance_cost,
-                        requires_support_validation_source=connector.requires_support_validation_source,
-                        requires_support_validation_target=connector.requires_support_validation_target,
-                        allowed_for_profile=connector.allowed_for_profile,
-                        dynamic_blocked=blocked,
-                        metadata=connector.metadata,
+                for anchor_index, anchor_xy in enumerate(anchor_samples):
+                    connector_id = (
+                        f"{source_surface.surface_id}->{target_surface.surface_id}:"
+                        f"{kind}:{source_index:03d}:{target_index:03d}:a{anchor_index:02d}"
                     )
-                )
+                    connector = SurfaceConnector(
+                        connector_id=connector_id,
+                        source_surface_id=source_surface.surface_id,
+                        target_surface_id=target_surface.surface_id,
+                        kind=kind,
+                        anchor_geometry=intersection,
+                        anchor_xy=(float(anchor_xy[0]), float(anchor_xy[1])),
+                        distance_cost=_connector_distance_cost(movement_profile, source_surface, target_surface),
+                        requires_support_validation_source=source_surface.layer_kind != GROUND_LAYER_KIND,
+                        requires_support_validation_target=target_surface.layer_kind != GROUND_LAYER_KIND,
+                        allowed_for_profile=allowed,
+                        dynamic_blocked=False,
+                        metadata={
+                            "source_surface_z": float(source_surface.surface_z),
+                            "target_surface_z": float(target_surface.surface_z),
+                            "z_delta": float(z_delta),
+                            "intersection_area": float(getattr(intersection, "area", 0.0)),
+                            "intersection_length": float(getattr(intersection, "length", 0.0)),
+                            "anchor_index": int(anchor_index),
+                            "anchor_count": len(anchor_samples),
+                        },
+                    )
+                    blocked = _connector_dynamic_blocked(
+                        connector,
+                        source_surface=source_surface,
+                        target_surface=target_surface,
+                        dynamic_overlay=dynamic_overlay,
+                        movement_profile=movement_profile,
+                    )
+                    connectors.append(
+                        SurfaceConnector(
+                            connector_id=connector.connector_id,
+                            source_surface_id=connector.source_surface_id,
+                            target_surface_id=connector.target_surface_id,
+                            kind=connector.kind,
+                            anchor_geometry=connector.anchor_geometry,
+                            anchor_xy=connector.anchor_xy,
+                            distance_cost=connector.distance_cost,
+                            requires_support_validation_source=connector.requires_support_validation_source,
+                            requires_support_validation_target=connector.requires_support_validation_target,
+                            allowed_for_profile=connector.allowed_for_profile,
+                            dynamic_blocked=blocked,
+                            metadata=connector.metadata,
+                        )
+                    )
 
     connectors.sort(
         key=lambda connector: (

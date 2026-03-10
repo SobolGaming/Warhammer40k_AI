@@ -27,3 +27,5 @@ Implemented rules:
   unit/base semantics as engine pivot-cost rules (no placeholder constant).
 - If refinement fails for the best global route, the planner attempts additional
   global candidate routes before returning unreachable.
+- Cross-surface transitions use sampled overlap anchors, so connector routing can
+  select an alternate legal anchor when one overlap point is blocked.
