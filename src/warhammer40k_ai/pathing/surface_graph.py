@@ -200,9 +200,13 @@ def _connector_kind_candidates(
     source_surface: SupportSurface,
     target_surface: SupportSurface,
 ) -> tuple[str, ...]:
-    if source_surface.layer_kind == GROUND_LAYER_KIND and target_surface.layer_kind != GROUND_LAYER_KIND:
-        kinds = ["ground_to_support"]
-        if target_surface.terrain_type == "RUINS" and movement_profile.can_breach_ruins_walls:
+    source_is_ground = source_surface.layer_kind == GROUND_LAYER_KIND
+    target_is_ground = target_surface.layer_kind == GROUND_LAYER_KIND
+
+    if source_is_ground != target_is_ground:
+        kinds = ["ground_to_support" if source_is_ground else "support_to_ground"]
+        support_surface = target_surface if source_is_ground else source_surface
+        if support_surface.terrain_type == "RUINS" and movement_profile.can_breach_ruins_walls:
             kinds.append("breach_transition")
         if bool(movement_profile.terrain_transition_rules.get("is_fly_move", False)):
             kinds.append("fly_transition")

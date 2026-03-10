@@ -7,7 +7,11 @@ from warhammer40k_ai.pathing.cache import clear_static_mesh_cache, get_static_me
 from warhammer40k_ai.pathing.cdt_mesh import build_surface_cdt_mesh, locate_triangles_for_point
 from warhammer40k_ai.pathing.dynamic_overlay import build_dynamic_overlay
 from warhammer40k_ai.pathing.rules_profile import build_movement_profile
-from warhammer40k_ai.pathing.surface_graph import build_surface_graph_static, plan_surface_graph_path
+from warhammer40k_ai.pathing.surface_graph import (
+    build_surface_graph_for_query,
+    build_surface_graph_static,
+    plan_surface_graph_path,
+)
 from warhammer40k_ai.pathing.world_snapshot import build_world_snapshot
 from warhammer40k_ai.utility.calcs import MovementType
 from warhammer40k_ai.utility.model_base import Base, BaseType
@@ -118,6 +122,41 @@ def test_phase_c_surface_graph_uses_ground_to_floor_connectors() -> None:
     assert len(result.surface_path) >= 2
 
 
+def test_phase_c_upper_floor_to_ground_non_fly_succeeds() -> None:
+    game_map = Map(30, 30)
+    ruins = TerrainFactory.create_ruins([(8.0, 8.0), (16.0, 8.0), (16.0, 16.0), (8.0, 16.0)], wall_height=4.0, num_floors=1)
+    game_map.add_terrain_feature(ruins)
+
+    mover = _make_unit("Descender", x=9.0, y=9.0)
+    mover.can_move_through_ruins_walls = lambda: True
+    mover.can_access_upper_floors = lambda: True
+
+    movement_profile = build_movement_profile(mover, MovementType.MOVE)
+    assert not bool(movement_profile.terrain_transition_rules.get("is_fly_move", False))
+
+    snapshot = build_world_snapshot(game_map, movement_profile)
+    floor_z = ruins.floors[1]["elevation"] + ruins.floors[1]["thickness"]
+    graph = build_surface_graph_for_query(
+        snapshot,
+        movement_profile,
+        base_radius=0.4,
+        footprint_class="disk",
+    )
+    assert any(connector.kind == "support_to_ground" for connector in graph.connectors)
+
+    result = plan_surface_graph_path(
+        snapshot,
+        movement_profile,
+        start=(9.0, 9.0, floor_z),
+        goal=(6.0, 9.0, 0.0),
+        base_radius=0.4,
+        footprint_class="disk",
+    )
+
+    assert result.success
+    assert all("fly_transition" not in connector_id for connector_id in result.connector_path)
+
+
 def test_phase_c_static_mesh_cache_reuses_entries_for_same_key() -> None:
     clear_static_mesh_cache()
     game_map = Map(24, 24)
@@ -133,6 +172,23 @@ def test_phase_c_static_mesh_cache_reuses_entries_for_same_key() -> None:
     assert size_after_first == 1
     assert cache.size() == 1
     assert graph_a.surface_meshes[0][1].triangulation_backend == graph_b.surface_meshes[0][1].triangulation_backend
+
+
+def test_phase_c_different_radii_same_bucket_do_not_share_incorrect_mesh() -> None:
+    clear_static_mesh_cache()
+    game_map = Map(24, 24)
+    moving = _make_unit("CacheRadius", x=2.0, y=2.0)
+    movement_profile = build_movement_profile(moving, MovementType.MOVE)
+    snapshot = build_world_snapshot(game_map, movement_profile)
+    cache = get_static_mesh_cache()
+
+    graph_small = build_surface_graph_static(snapshot, movement_profile, base_radius=0.41, footprint_class="disk")
+    graph_large = build_surface_graph_static(snapshot, movement_profile, base_radius=0.49, footprint_class="disk")
+
+    assert cache.size() == 2
+    small_area = graph_small.surface_meshes[0][1].free_space.area
+    large_area = graph_large.surface_meshes[0][1].free_space.area
+    assert large_area < small_area
 
 
 def test_phase_c_dynamic_overlay_applied_at_query_time() -> None:

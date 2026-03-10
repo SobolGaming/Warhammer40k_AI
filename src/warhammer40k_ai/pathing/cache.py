@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass
-from math import floor
 from typing import Optional
 
 from .cdt_mesh import SurfaceCdtMesh
@@ -26,10 +25,9 @@ class StaticMeshCacheEntry:
 
 
 def clearance_bucket_for_radius(base_radius: float) -> str:
-    """Bucket radius to 0.25\" increments to improve static mesh cache reuse."""
+    """Return an exact circular-clearance key to avoid cross-radius mesh reuse."""
     clamped = max(0.0, float(base_radius))
-    bucket = floor((clamped / 0.25) + 0.5) * 0.25
-    return f"{bucket:.2f}"
+    return f"{clamped:.4f}"
 
 
 def build_static_mesh_cache_key(

@@ -66,7 +66,7 @@ Pathfinding is A*-based and terrain-aware. Important building blocks:
   `pathing/cache.py` now provide the circular-base Phase C planner substrate:
   clearance-eroded free-space triangulation, portal/connector A*, funnel corridor
   recovery, and static mesh cache keys based on terrain/support/profile revisions
-  plus footprint clearance buckets.
+  plus exact circular clearance keys.
 - Segment legality uses a swept-base check between waypoints so thin walls cannot be
   tunneled through by center-point interpolation artifacts.
 
