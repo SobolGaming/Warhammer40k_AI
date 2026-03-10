@@ -72,7 +72,17 @@ from .surfaces import (
     validate_pose_support,
     validate_pose_support_on_surface,
 )
-from .types import ConnectorId, MovementProfile, PathQuery, PathResult, Pose, SurfaceId, SweepResult, ValidationResult
+from .types import (
+    ConnectorId,
+    MovementProfile,
+    MovementType,
+    PathQuery,
+    PathResult,
+    Pose,
+    SurfaceId,
+    SweepResult,
+    ValidationResult,
+)
 from .world_snapshot import (
     WorldSnapshot,
     build_world_snapshot,
@@ -90,6 +100,7 @@ __all__ = [
     "GROUND_LAYER_KIND",
     "GROUND_SURFACE_ID",
     "MovementProfile",
+    "MovementType",
     "PathQuery",
     "PathResult",
     "Pose",

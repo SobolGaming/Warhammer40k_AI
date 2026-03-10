@@ -13989,7 +13989,7 @@ class ActionsMovementMixin:
             
             # Try pathing for Fall Back movement using the unified pathing API.
             from ...pathing.api import PathQuery, plan_model_path
-            from ...utility.calcs import MovementType
+            from ...utility.calcs import MovementType, get_enemy_models_moved_over
 
             pathfinding_result = plan_model_path(
                 PathQuery(
@@ -14016,8 +14016,15 @@ class ActionsMovementMixin:
             path_distance = measure_path_distance(shortest_path, self, MovementType.FALL_BACK, game_map)
             
             # Check for Desperate Escape Tests (models that move over enemy models).
-            # New pathfinding does not track enemy models moved over, so this stays empty.
-            enemy_models_moved_over = []
+            enemy_models_moved_over = list(
+                get_enemy_models_moved_over(
+                    model,
+                    shortest_path,
+                    game_map,
+                    require_vertical_overlap=True,
+                )
+                or []
+            )
             if enemy_models_moved_over and not self.is_titanic and not self.is_flying:
                 logger.info(f" Model {model._id} must take Desperate Escape Test for moving over {len(enemy_models_moved_over)} enemy model(s)")
                 

@@ -13,6 +13,12 @@ from .surface_graph import plan_surface_graph_path
 from .surfaces import validate_pose_support
 from .sweep import intersects_enemy_models, list_models_moved_over, swept_footprint
 from .types import PathQuery, PathResult, Pose, SweepResult, ValidationResult
+from .validation import (
+    build_collision_trees as build_validation_collision_trees,
+    get_pivot_cost as get_validation_pivot_cost,
+    get_validation_rules as get_validation_rule_set,
+    is_position_valid_unified_detailed as validate_position_detailed,
+)
 from .world_snapshot import build_world_snapshot
 
 
@@ -105,12 +111,10 @@ def _pivot_cost_for_path(
     if abs(last_facing - first_facing) <= 1e-6:
         return 0.0
 
-    from ..utility.calcs import get_pivot_cost
-
     unit = getattr(query.model, "parent_unit", None)
     if unit is None:
         return 0.0
-    return float(get_pivot_cost(unit))
+    return float(get_validation_pivot_cost(unit))
 
 
 def _moved_model_identity_tokens(query: PathQuery) -> tuple[str, ...]:
@@ -135,12 +139,10 @@ def _moved_model_identity_tokens(query: PathQuery) -> tuple[str, ...]:
 
 
 def _build_validation_rules(query: PathQuery, movement_profile: object) -> dict[str, object]:
-    from ..utility.calcs import get_validation_rules
-
     moving_unit = getattr(query.model, "parent_unit", None)
     target_units = tuple(query.target_units or ())
     rules = dict(
-        get_validation_rules(
+        get_validation_rule_set(
             query.movement_type,
             query.target_unit,
             moving_unit=moving_unit,
@@ -240,11 +242,9 @@ def _overlay_for_query(
 
 
 def _build_collision_trees_for_query(query: PathQuery, movement_profile: object) -> dict[str, object]:
-    from ..utility.calcs import build_collision_trees
-
     moving_unit = getattr(query.model, "parent_unit", None)
     moved_models_in_unit = set(tuple(query.moved_models_in_unit or ()))
-    return build_collision_trees(
+    return build_validation_collision_trees(
         moving_unit,
         query.movement_type,
         query.game_map,
@@ -263,8 +263,6 @@ def _validate_final_pose_with_context(
     validation_rules: Mapping[str, object],
     collision_trees: Mapping[str, object],
 ) -> ValidationResult:
-    from ..utility.calcs import is_position_valid_unified_detailed
-
     model = query.model
     model_base = getattr(model, "model_base", None)
     if model_base is None:
@@ -287,7 +285,7 @@ def _validate_final_pose_with_context(
     if not support_validation.valid:
         return ValidationResult(valid=False, reason=str(support_validation.reason))
 
-    legacy_validation = is_position_valid_unified_detailed(
+    legacy_validation = validate_position_detailed(
         (float(pose.x), float(pose.y), float(pose.z)),
         model,
         dict(collision_trees),
@@ -333,8 +331,6 @@ def _validate_transit_path_with_context(
     validation_rules: Mapping[str, object],
     collision_trees: Mapping[str, object],
 ) -> ValidationResult:
-    from ..utility.calcs import is_position_valid_unified_detailed
-
     if len(poses) < 2:
         return ValidationResult(valid=True, reason="Valid path")
 
@@ -389,7 +385,7 @@ def _validate_transit_path_with_context(
                 float(prev_pose.y) + dy * blend,
                 float(prev_pose.z) + dz * blend,
             )
-            validation = is_position_valid_unified_detailed(
+            validation = validate_position_detailed(
                 sample_position,
                 query.model,
                 dict(collision_trees),

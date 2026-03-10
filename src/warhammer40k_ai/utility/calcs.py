@@ -14,7 +14,8 @@ from shapely.ops import unary_union
 from shapely import STRtree
 
 from ..utility.entity_ids import get_entity_id
-from ..pathing.types import MovementProfile
+from ..pathing.sweep import swept_footprint
+from ..pathing.types import MovementProfile, MovementType, Pose
 from ..pathing.rules_profile import (
     build_movement_profile,
     can_breach_ruins_walls as _can_breach_ruins_walls,
@@ -468,23 +469,6 @@ def check_friendly_ending_collision(model: 'Model', end_pos: Tuple[float, float,
 # =============================================================================
 # UNIFIED PATHFINDING SYSTEM
 # =============================================================================
-
-from enum import Enum
-
-class MovementType(Enum):
-    """Movement types with specific rules and validation"""
-    MOVE = "move"
-    ADVANCE = "advance"
-    FALL_BACK = "fall_back"
-    CHARGE = "charge"
-    BLOOD_SURGE = "blood_surge"
-    BRAZEN_FURY = "brazen_fury"
-    HORDE_MOVE = "horde_move"
-    BLISTERING_ASSAULT = "blistering_assault"
-    CAREEN = "careen"
-    PILE_IN = "pile_in"
-    CONSOLIDATE = "consolidate"
-    SCOUT = "scout"
 
 def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game_map: 'Map',
                          moving_model: 'Model' = None, moved_models_in_unit: set = None,
@@ -2397,6 +2381,211 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
 
     return {'valid': True, 'reason': 'Position is valid'}
 
+def _entity_key(entity: object) -> str:
+    try:
+        return str(get_entity_id(entity))
+    except ValueError:
+        return f"object:{id(entity)}"
+
+
+def _path_point_to_pose(point: object, *, default_facing: float) -> Optional[Pose]:
+    if point is None:
+        return None
+    if isinstance(point, Pose):
+        return point
+
+    if hasattr(point, "x") and hasattr(point, "y"):
+        try:
+            x = float(getattr(point, "x"))
+            y = float(getattr(point, "y"))
+        except (TypeError, ValueError):
+            return None
+        try:
+            z = float(getattr(point, "z", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            z = 0.0
+        try:
+            facing = float(getattr(point, "facing", default_facing) or default_facing)
+        except (TypeError, ValueError):
+            facing = float(default_facing)
+        return Pose(x=x, y=y, z=z, facing=facing)
+
+    if not isinstance(point, (tuple, list)) or len(point) < 2:
+        return None
+
+    try:
+        x = float(point[0])
+        y = float(point[1])
+    except (TypeError, ValueError, IndexError):
+        return None
+    try:
+        z = float(point[2]) if len(point) > 2 else 0.0
+    except (TypeError, ValueError):
+        z = 0.0
+    try:
+        facing = float(point[3]) if len(point) > 3 else float(default_facing)
+    except (TypeError, ValueError):
+        facing = float(default_facing)
+    return Pose(x=x, y=y, z=z, facing=facing)
+
+
+def _path_to_sweep_poses(model: 'Model', path: List[Tuple[float, float, float]]) -> tuple[Pose, ...]:
+    model_base = getattr(model, "model_base", None)
+    if model_base is None:
+        return ()
+    try:
+        default_facing = float(getattr(model_base, "facing", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        default_facing = 0.0
+
+    poses: list[Pose] = []
+    for point in list(path or []):
+        pose = _path_point_to_pose(point, default_facing=default_facing)
+        if pose is None:
+            continue
+        poses.append(pose)
+    return tuple(poses)
+
+
+def _path_z_segments(poses: tuple[Pose, ...]) -> tuple[tuple[float, float], ...]:
+    if not poses:
+        return ()
+    if len(poses) == 1:
+        z = float(poses[0].z)
+        return ((z, z),)
+    segments: list[tuple[float, float]] = []
+    for index in range(1, len(poses)):
+        start = poses[index - 1]
+        end = poses[index]
+        z_min = min(float(start.z), float(end.z))
+        z_max = max(float(start.z), float(end.z))
+        segments.append((z_min, z_max))
+    return tuple(segments)
+
+
+def _segments_overlap_enemy_vertical(
+    z_segments: tuple[tuple[float, float], ...],
+    *,
+    enemy_z: float,
+    enemy_height: float,
+    moving_height: float,
+) -> bool:
+    max_height = max(float(enemy_height), float(moving_height))
+    for z_min, z_max in z_segments:
+        if z_max < float(enemy_z) - max_height:
+            continue
+        if z_min > float(enemy_z) + max_height:
+            continue
+        return True
+    return False
+
+
+def _enemy_units_for_moved_over(model: 'Model', game_map: 'Map') -> list['Unit']:
+    unit = getattr(model, "parent_unit", None)
+    if unit is None or game_map is None:
+        return []
+
+    get_enemy_units = getattr(game_map, "get_enemy_units", None)
+    if callable(get_enemy_units):
+        try:
+            return list(get_enemy_units(unit) or [])
+        except (TypeError, AttributeError):
+            pass
+
+    all_units = list(getattr(game_map, "units", ()) or ())
+    return [
+        test_unit
+        for test_unit in all_units
+        if test_unit is not None and not _units_share_army_identity(test_unit, unit)
+    ]
+
+
+def _unit_is_valid_enemy_for_move_over(enemy_unit: 'Unit') -> bool:
+    if enemy_unit is None:
+        return False
+    is_alive_fn = getattr(enemy_unit, "is_alive", None)
+    if callable(is_alive_fn) and not bool(is_alive_fn()):
+        return False
+    if not bool(getattr(enemy_unit, "deployed", True)):
+        return False
+    is_in_reserves_fn = getattr(enemy_unit, "is_in_reserves", None)
+    if callable(is_in_reserves_fn) and bool(is_in_reserves_fn()):
+        return False
+    if bool(getattr(enemy_unit, "is_embarked", False)):
+        return False
+    return True
+
+
+def _enemy_models_moved_over_by_sweep(
+    model: 'Model',
+    path: List[Tuple[float, float, float]],
+    game_map: 'Map',
+    *,
+    require_vertical_overlap: bool,
+) -> List['Model']:
+    if model is None or game_map is None:
+        return []
+    if not path or len(path) < 2:
+        return []
+
+    model_base = getattr(model, "model_base", None)
+    if model_base is None:
+        return []
+
+    enemy_units = _enemy_units_for_moved_over(model, game_map)
+    if not enemy_units:
+        return []
+
+    poses = _path_to_sweep_poses(model, path)
+    if len(poses) < 2:
+        return []
+
+    swept_shape = swept_footprint(poses, model_base)
+    z_segments = _path_z_segments(poses)
+    try:
+        moving_height = float(getattr(model_base, "model_height", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        moving_height = 0.0
+
+    moved_records: list[tuple[str, 'Model']] = []
+    seen_model_ids: set[str] = set()
+    for enemy_unit in list(enemy_units or []):
+        if not _unit_is_valid_enemy_for_move_over(enemy_unit):
+            continue
+        for enemy_model in list(getattr(enemy_unit, "models", ()) or ()):
+            if enemy_model is None or not bool(getattr(enemy_model, "is_alive", False)):
+                continue
+            model_id = _entity_key(enemy_model)
+            if model_id in seen_model_ids:
+                continue
+            base = getattr(enemy_model, "model_base", None)
+            if base is None:
+                continue
+            if not swept_shape.intersects(base.get_base_shape()):
+                continue
+            if require_vertical_overlap:
+                try:
+                    enemy_z = float(getattr(base, "z", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    enemy_z = 0.0
+                try:
+                    enemy_height = float(getattr(base, "model_height", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    enemy_height = 0.0
+                if not _segments_overlap_enemy_vertical(
+                    z_segments,
+                    enemy_z=enemy_z,
+                    enemy_height=enemy_height,
+                    moving_height=moving_height,
+                ):
+                    continue
+            seen_model_ids.add(model_id)
+            moved_records.append((model_id, enemy_model))
+
+    moved_records.sort(key=lambda item: item[0])
+    return [enemy_model for _, enemy_model in moved_records]
+
+
 def check_desperate_escape_requirements(model: 'Model', path: List[Tuple[float, float, float]],
                                        validation_rules: dict, game_map: 'Map') -> dict:
     """
@@ -2414,79 +2603,49 @@ def check_desperate_escape_requirements(model: 'Model', path: List[Tuple[float, 
     if not validation_rules.get('check_desperate_escape', False):
         return {'required': False, 'reason': 'Not fall back movement'}
 
-    unit = model.parent_unit
-    if not unit:
+    unit = getattr(model, "parent_unit", None)
+    if unit is None:
         return {'required': False, 'reason': 'No parent unit'}
 
-    # Rule 1: Battle-shocked units always need Desperate Escape tests
-    if unit.is_battle_shocked():
+    # Rule 1: Battle-shocked units always need Desperate Escape tests.
+    if bool(getattr(unit, "is_battle_shocked", lambda: False)()):
         return {
             'required': True,
             'reason': 'Battle-shocked unit falling back',
-            'all_models': True,  # All models in unit must test
-            'path_through_enemy': False  # Doesn't matter for battle-shocked
+            'all_models': True,
+            'path_through_enemy': False,
         }
 
-    # Rule 2: Check if path goes through enemy models (for non-battle-shocked units)
-    path_through_enemy = False
-    if len(path) > 1:
-        # Check each segment of the path for enemy model intersection
-        for i in range(len(path) - 1):
-            start_pos = path[i]
-            end_pos = path[i + 1]
+    path_through_enemy = bool(
+        get_enemy_models_moved_over(
+            model,
+            path,
+            game_map,
+            require_vertical_overlap=True,
+        )
+    )
 
-            # Create line segment for this part of the path
-            from shapely.geometry import LineString
-            path_segment = LineString([start_pos[:2], end_pos[:2]])
-
-            # Check against all enemy models
-            for enemy_unit in game_map.units:
-                if (
-                    _units_share_army_identity(enemy_unit, unit)
-                    or not enemy_unit.is_alive()
-                    or not enemy_unit.deployed
-                ):
-                    continue
-
-                for enemy_model in enemy_unit.models:
-                    if not enemy_model.is_alive:
-                        continue
-
-                    # Get enemy model shape
-                    enemy_shape = enemy_model.model_base.get_base_shape()
-
-                    # Check if path segment intersects enemy model
-                    if path_segment.intersects(enemy_shape):
-                        path_through_enemy = True
-                        break
-
-                if path_through_enemy:
-                    break
-
-            if path_through_enemy:
-                break
-
-    # Rule 3: Check for TITANIC or FLY keywords (exempt from Desperate Escape)
+    # Rule 2: TITANIC/FLY units are exempt from moved-through Desperate Escape tests.
     if path_through_enemy:
-        if unit.is_titanic or unit.is_flying:
+        if bool(getattr(unit, "is_titanic", False)) or bool(getattr(unit, "is_flying", False)):
             return {
                 'required': False,
                 'reason': 'TITANIC or FLY unit exempt from Desperate Escape',
-                'path_through_enemy': True
+                'path_through_enemy': True,
             }
-
         return {
             'required': True,
             'reason': 'Path goes through enemy models',
-            'all_models': False,  # Only models that moved through enemies
-            'path_through_enemy': True
+            'all_models': False,
+            'path_through_enemy': True,
         }
 
     return {
         'required': False,
         'reason': 'Path does not go through enemy models',
-        'path_through_enemy': False
+        'path_through_enemy': False,
     }
+
 
 def get_enemy_units_moved_over(
     model: 'Model',
@@ -2497,113 +2656,31 @@ def get_enemy_units_moved_over(
 ) -> List['Unit']:
     """
     Return enemy unit roots that the model moved over along the given path.
-
-    "Moved over" is approximated by 2D path intersection with enemy base geometry,
-    with an optional vertical overlap check (to avoid counting units moved over on
-    a different floor/height).
     """
-    if model is None or game_map is None:
-        return []
-    if not path or len(path) < 2:
-        return []
-    unit = getattr(model, "parent_unit", None)
-    if unit is None:
-        return []
-
-    try:
-        enemy_units = list(game_map.get_enemy_units(unit) or [])
-    except Exception:
-        try:
-            all_units = list(getattr(game_map, "units", []) or [])
-        except Exception:
-            all_units = []
-        enemy_units = [u for u in all_units if u is not None and not _units_share_army_identity(u, unit)]
-
-    if not enemy_units:
+    moved_models = get_enemy_models_moved_over(
+        model,
+        path,
+        game_map,
+        require_vertical_overlap=require_vertical_overlap,
+    )
+    if not moved_models:
         return []
 
-    moved_over: list['Unit'] = []
-    seen: set[str] = set()
-
-    def _pt(point) -> Optional[Tuple[float, float, float]]:
-        if not point:
-            return None
-        try:
-            x = float(point[0])
-            y = float(point[1])
-        except Exception:
-            return None
-        z = 0.0
-        try:
-            if len(point) > 2:
-                z = float(point[2])
-        except Exception:
-            z = 0.0
-        return (x, y, z)
-
-    try:
-        moving_height = float(getattr(getattr(model, "model_base", None), "model_height", 0.0))
-    except Exception:
-        moving_height = 0.0
-
-    for i in range(len(path) - 1):
-        start = _pt(path[i])
-        end = _pt(path[i + 1])
-        if start is None or end is None:
+    moved_unit_roots: list[tuple[str, 'Unit']] = []
+    seen_root_ids: set[str] = set()
+    for enemy_model in moved_models:
+        enemy_unit = getattr(enemy_model, "parent_unit", None)
+        if enemy_unit is None:
             continue
-        path_segment = LineString([start[:2], end[:2]])
-        seg_z_min = min(start[2], end[2])
-        seg_z_max = max(start[2], end[2])
-
-        for enemy_unit in enemy_units:
-            if enemy_unit is None:
-                continue
-            try:
-                if not enemy_unit.is_alive() or not getattr(enemy_unit, "deployed", True):
-                    continue
-            except Exception:
-                continue
-            try:
-                if getattr(enemy_unit, "is_in_reserves", lambda: False)():
-                    continue
-            except Exception:
-                pass
-            try:
-                if bool(getattr(enemy_unit, "is_embarked", False)):
-                    continue
-            except Exception:
-                pass
-
-            root = enemy_unit.get_attached_unit_root() if hasattr(enemy_unit, "get_attached_unit_root") else enemy_unit
-            root_id = get_entity_id(root)
-            if root_id in seen:
-                continue
-
-            for enemy_model in list(getattr(enemy_unit, "models", []) or []):
-                if not getattr(enemy_model, "is_alive", False):
-                    continue
-                base = getattr(enemy_model, "model_base", None)
-                if base is None:
-                    continue
-                if not path_segment.intersects(base.get_base_shape()):
-                    continue
-                if require_vertical_overlap:
-                    try:
-                        enemy_z = float(getattr(base, "z", 0.0))
-                    except Exception:
-                        enemy_z = 0.0
-                    try:
-                        enemy_height = float(getattr(base, "model_height", 0.0))
-                    except Exception:
-                        enemy_height = 0.0
-                    max_h = max(moving_height, enemy_height)
-                    if seg_z_max < enemy_z - max_h or seg_z_min > enemy_z + max_h:
-                        continue
-                moved_over.append(root)
-                seen.add(root_id)
-                break
-
-    return moved_over
+        get_root = getattr(enemy_unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else enemy_unit
+        root_id = _entity_key(root)
+        if root_id in seen_root_ids:
+            continue
+        seen_root_ids.add(root_id)
+        moved_unit_roots.append((root_id, root))
+    moved_unit_roots.sort(key=lambda item: item[0])
+    return [unit_root for _, unit_root in moved_unit_roots]
 
 
 def get_enemy_models_moved_over(
@@ -2616,102 +2693,12 @@ def get_enemy_models_moved_over(
     """
     Return individual enemy models that the moving model crossed over along the path.
     """
-    if model is None or game_map is None:
-        return []
-    if not path or len(path) < 2:
-        return []
-
-    unit = getattr(model, "parent_unit", None)
-    if unit is None:
-        return []
-
-    try:
-        enemy_units = list(game_map.get_enemy_units(unit) or [])
-    except Exception:
-        enemy_units = []
-    if not enemy_units:
-        return []
-
-    def _pt(point) -> Optional[Tuple[float, float, float]]:
-        if not point:
-            return None
-        try:
-            x = float(point[0])
-            y = float(point[1])
-        except (TypeError, ValueError, IndexError):
-            return None
-        z = 0.0
-        try:
-            if len(point) > 2:
-                z = float(point[2])
-        except (TypeError, ValueError):
-            z = 0.0
-        return (x, y, z)
-
-    try:
-        moving_height = float(getattr(getattr(model, "model_base", None), "model_height", 0.0))
-    except (TypeError, ValueError):
-        moving_height = 0.0
-
-    moved_over_models: list['Model'] = []
-    seen: set[str] = set()
-
-    for i in range(len(path) - 1):
-        start = _pt(path[i])
-        end = _pt(path[i + 1])
-        if start is None or end is None:
-            continue
-        path_segment = LineString([start[:2], end[:2]])
-        seg_z_min = min(start[2], end[2])
-        seg_z_max = max(start[2], end[2])
-
-        for enemy_unit in enemy_units:
-            if enemy_unit is None:
-                continue
-            try:
-                if not enemy_unit.is_alive() or not bool(getattr(enemy_unit, "deployed", True)):
-                    continue
-            except Exception:
-                continue
-            try:
-                if bool(getattr(enemy_unit, "is_embarked", False)):
-                    continue
-            except Exception:
-                pass
-            try:
-                if bool(getattr(enemy_unit, "is_in_reserves", lambda: False)()):
-                    continue
-            except Exception:
-                pass
-
-            for enemy_model in list(getattr(enemy_unit, "models", []) or []):
-                if enemy_model is None or not bool(getattr(enemy_model, "is_alive", False)):
-                    continue
-                model_id = str(get_entity_id(enemy_model) or "")
-                if model_id and model_id in seen:
-                    continue
-                base = getattr(enemy_model, "model_base", None)
-                if base is None:
-                    continue
-                if not path_segment.intersects(base.get_base_shape()):
-                    continue
-                if require_vertical_overlap:
-                    try:
-                        enemy_z = float(getattr(base, "z", 0.0))
-                    except (TypeError, ValueError):
-                        enemy_z = 0.0
-                    try:
-                        enemy_height = float(getattr(base, "model_height", 0.0))
-                    except (TypeError, ValueError):
-                        enemy_height = 0.0
-                    max_h = max(moving_height, enemy_height)
-                    if seg_z_max < enemy_z - max_h or seg_z_min > enemy_z + max_h:
-                        continue
-                moved_over_models.append(enemy_model)
-                if model_id:
-                    seen.add(model_id)
-
-    return moved_over_models
+    return _enemy_models_moved_over_by_sweep(
+        model,
+        path,
+        game_map,
+        require_vertical_overlap=bool(require_vertical_overlap),
+    )
 
 def validate_final_position(model: 'Model', position: Tuple[float, float, float],
                           validation_rules: dict, game_map: 'Map') -> dict:
@@ -3824,4 +3811,3 @@ def query_spatial_index(tree: STRtree, query_geom) -> List:
     except TypeError:
         return [tree.geometries[int(indices)]]
     return [tree.geometries[int(i)] for i in indices]
-

@@ -221,10 +221,15 @@ These constraints are encoded in `get_validation_rules()`:
 #### Move-over mortal wound triggers
 
 Some abilities trigger when a model ends a Normal or Advance move and it moved over an
-enemy unit. The engine detects “moved over” by checking the model’s movement path against
-enemy base geometry; a candidate is recorded if any path segment intersects an enemy base
-in 2D and the model’s vertical band overlaps the enemy’s. This avoids counting vertical-only
-overlaps (e.g., moving above models on RUINS). These triggers are evaluated only for FLY units.
+enemy unit. The engine now detects “moved over” with swept-footprint geometry:
+- the model footprint is swept across sampled path poses (including rotation-sensitive bases),
+- enemy candidates are selected when their base geometry intersects that swept area,
+- optional vertical-band gating is then applied so vertical-only flyovers (e.g. different RUINS
+  floors) are not counted when rules require vertical overlap.
+
+The same swept-overlap detection is used for Fall Back / Desperate Escape checks and for
+move-over triggered abilities. These triggers are evaluated only for FLY units where required
+by the ability text.
 
 When eligible, the UI prompts to select one of the moved-over enemy units (with a Skip option).
 Currently supported pattern:

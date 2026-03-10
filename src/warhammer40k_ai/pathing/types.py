@@ -1,10 +1,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Mapping, Optional, TypeAlias
 
 SurfaceId: TypeAlias = str
 ConnectorId: TypeAlias = str
+
+
+class MovementType(Enum):
+    """Movement types with specific rules and validation."""
+
+    MOVE = "move"
+    ADVANCE = "advance"
+    FALL_BACK = "fall_back"
+    CHARGE = "charge"
+    BLOOD_SURGE = "blood_surge"
+    BRAZEN_FURY = "brazen_fury"
+    HORDE_MOVE = "horde_move"
+    BLISTERING_ASSAULT = "blistering_assault"
+    CAREEN = "careen"
+    PILE_IN = "pile_in"
+    CONSOLIDATE = "consolidate"
+    SCOUT = "scout"
 
 
 @dataclass(frozen=True)
