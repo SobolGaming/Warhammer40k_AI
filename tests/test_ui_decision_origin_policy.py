@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from warhammer40k_ai.engine import ui_decision_bridge
+
 
 UI_ROOT = Path("src/warhammer40k_ai/UI")
 FORBIDDEN_PATTERNS = (
@@ -33,3 +35,9 @@ def test_ui_modules_do_not_bypass_engine_decision_bridge() -> None:
             if pattern in text:
                 violations.append(f"{path}: contains `{pattern}`")
     assert not violations, "UI decision-origin policy violations:\n" + "\n".join(violations)
+
+
+def test_ui_decision_bridge_does_not_expose_enqueue_helpers() -> None:
+    """Bridge module is reader-only for UI-facing usage."""
+    assert not hasattr(ui_decision_bridge, "queue_decision_request")
+    assert not hasattr(ui_decision_bridge, "_create_decision_request")

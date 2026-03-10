@@ -4,63 +4,6 @@ from typing import Optional
 
 from .decisions import CandidateAction, DecisionOption, DecisionRequest
 
-
-def _create_decision_request(
-    decision_type: str,
-    prompt: str,
-    *,
-    player_id: Optional[str] = None,
-    options: list[DecisionOption] | None = None,
-    context: dict | None = None,
-    candidates: list[CandidateAction] | None = None,
-    mask: list[bool] | None = None,
-) -> DecisionRequest:
-    """
-    Engine-owned construction shim for UI/requesting layers.
-
-    UI modules should avoid instantiating DecisionRequest directly and use this
-    bridge so request construction remains anchored in engine code.
-    """
-    return DecisionRequest.create(
-        decision_type,
-        prompt,
-        player_id=player_id,
-        options=list(options or []),
-        context=dict(context or {}),
-        candidates=list(candidates or []),
-        mask=list(mask) if mask is not None else None,
-    )
-
-
-def queue_decision_request(
-    game: object | None,
-    decision_type: str,
-    prompt: str,
-    *,
-    player_id: Optional[str] = None,
-    options: list[DecisionOption] | None = None,
-    context: dict | None = None,
-    candidates: list[CandidateAction] | None = None,
-    mask: list[bool] | None = None,
-) -> DecisionRequest:
-    request = _create_decision_request(
-        decision_type,
-        prompt,
-        player_id=player_id,
-        options=options,
-        context=context,
-        candidates=candidates,
-        mask=mask,
-    )
-    if game is None:
-        return request
-    request_fn = getattr(game, "request_decision", None)
-    if not callable(request_fn):
-        raise RuntimeError("Game missing request_decision.")
-    request_fn(request)
-    return request
-
-
 def _is_context_subset(request_context: dict, expected_context: dict) -> bool:
     for key, expected_value in dict(expected_context or {}).items():
         if key not in request_context:

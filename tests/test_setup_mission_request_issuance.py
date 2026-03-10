@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_MISSION
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.engine.phase import SetupPhase
@@ -67,3 +69,10 @@ def test_advancing_to_select_mission_phase_does_not_queue_on_non_authoritative_c
     assert setup_complete is False
     assert game.setup_phase == SetupPhase.SELECT_MISSION_OBJECTIVES
     assert _pending_mission_requests(game) == []
+
+
+def test_request_mission_selection_rejects_non_authoritative_game() -> None:
+    game = _build_game(authoritative=False)
+
+    with pytest.raises(RuntimeError, match="authoritative game"):
+        game.request_mission_selection()

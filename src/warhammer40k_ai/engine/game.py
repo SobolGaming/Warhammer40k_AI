@@ -10315,6 +10315,8 @@ class Game(
 
     def request_mission_selection(self) -> DecisionRequest:
         """Queue a mission selection decision request and return it."""
+        if not bool(getattr(self, "is_authoritative", True)):
+            raise RuntimeError("Mission selection requests can only be queued by the authoritative game.")
         queue = getattr(self, "decision_queue", None)
         if queue is not None and hasattr(queue, "list"):
             for pending in list(queue.list() or []):
