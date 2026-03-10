@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from math import atan2
-from typing import Optional
+from typing import Mapping, Optional
 
 from shapely.geometry import Point
 from shapely import STRtree
@@ -134,9 +134,58 @@ def _moved_model_identity_tokens(query: PathQuery) -> tuple[str, ...]:
     return tuple(sorted(tokens))
 
 
-def _overlay_for_query(dynamic_overlay: object, query: PathQuery) -> object:
+def _build_validation_rules(query: PathQuery, movement_profile: object) -> dict[str, object]:
+    from ..utility.calcs import get_validation_rules
+
+    moving_unit = getattr(query.model, "parent_unit", None)
+    target_units = tuple(query.target_units or ())
+    rules = dict(
+        get_validation_rules(
+            query.movement_type,
+            query.target_unit,
+            moving_unit=moving_unit,
+            target_units=target_units,
+            movement_profile=movement_profile,
+        )
+    )
+    move_tag = str(getattr(query.movement_type, "value", query.movement_type) or "").strip().lower()
+    if move_tag == "charge" and query.target_unit is not None and moving_unit is not None:
+        engagement_check = getattr(query.game_map, "is_within_engagement_range", None)
+        if callable(engagement_check):
+            unit_already_engaged = bool(engagement_check(moving_unit, query.target_unit))
+            if unit_already_engaged and bool(rules.get("must_end_in_engagement_range", False)):
+                rules["must_end_in_engagement_range"] = False
+                rules["allow_engagement_range_movement"] = True
+    return rules
+
+
+def _overlay_for_query(
+    dynamic_overlay: object,
+    query: PathQuery,
+    movement_profile: object,
+    validation_rules: Mapping[str, object],
+    *,
+    for_pathfinding: bool = True,
+) -> object:
     moved_tokens = _moved_model_identity_tokens(query)
     moved_set = set(moved_tokens)
+    terrain_rules = dict(getattr(movement_profile, "terrain_transition_rules", {}) or {})
+    is_fly_move = bool(terrain_rules.get("is_fly_move", False))
+    can_fly_over_big_models = bool(terrain_rules.get("can_fly_over_big_models", False))
+    allow_through_enemy = bool(
+        validation_rules.get(
+            "can_move_through_enemy_models",
+            getattr(movement_profile, "can_move_through_enemy_models", False),
+        )
+    )
+    allow_through_friendly = bool(
+        validation_rules.get(
+            "can_move_through_friendly_models",
+            getattr(movement_profile, "can_move_through_friendly_models", False),
+        )
+    )
+    ignore_enemy_models_blocking = bool(validation_rules.get("ignore_enemy_models_blocking", False))
+    block_monster_vehicle_models = bool(validation_rules.get("block_monster_vehicle_models", False))
 
     blockers: list[object] = []
     for blocker in dynamic_overlay.blockers:
@@ -145,6 +194,24 @@ def _overlay_for_query(dynamic_overlay: object, query: PathQuery) -> object:
                 continue
             if str(blocker.model_id) not in moved_set:
                 continue
+        if not for_pathfinding:
+            blockers.append(blocker)
+            continue
+        if bool(getattr(blocker, "is_aircraft", False)):
+            # AIRCRAFT are not transit blockers during movement; endpoint legality is checked separately.
+            continue
+        if bool(getattr(blocker, "is_enemy", False)) and allow_through_enemy:
+            blocks_big_models = block_monster_vehicle_models or (
+                is_fly_move
+                and not can_fly_over_big_models
+                and not ignore_enemy_models_blocking
+            )
+            if blocks_big_models and bool(getattr(blocker, "is_big_model", False)):
+                blockers.append(blocker)
+                continue
+            continue
+        if bool(getattr(blocker, "is_friendly", False)) and allow_through_friendly:
+            continue
         blockers.append(blocker)
 
     if len(blockers) == len(dynamic_overlay.blockers):
@@ -170,6 +237,173 @@ def _overlay_for_query(dynamic_overlay: object, query: PathQuery) -> object:
         enemy_engagement_shapes=enemy_engagement_shapes,
         enemy_engagement_tree=enemy_engagement_tree,
     )
+
+
+def _build_collision_trees_for_query(query: PathQuery, movement_profile: object) -> dict[str, object]:
+    from ..utility.calcs import build_collision_trees
+
+    moving_unit = getattr(query.model, "parent_unit", None)
+    moved_models_in_unit = set(tuple(query.moved_models_in_unit or ()))
+    return build_collision_trees(
+        moving_unit,
+        query.movement_type,
+        query.game_map,
+        moving_model=query.model,
+        moved_models_in_unit=moved_models_in_unit,
+        max_distance=float(query.max_distance),
+        movement_profile=movement_profile,
+    )
+
+
+def _validate_final_pose_with_context(
+    query: PathQuery,
+    pose: Pose,
+    *,
+    movement_profile: object,
+    validation_rules: Mapping[str, object],
+    collision_trees: Mapping[str, object],
+) -> ValidationResult:
+    from ..utility.calcs import is_position_valid_unified_detailed
+
+    model = query.model
+    model_base = getattr(model, "model_base", None)
+    if model_base is None:
+        return ValidationResult(valid=False, reason="Invalid input: model has no base")
+
+    pose_shape = model_base.get_base_shape_at(float(pose.x), float(pose.y), float(pose.facing))
+    boundary = getattr(query.game_map, "boundary", None)
+    if boundary is not None and not boundary.covers(pose_shape):
+        return ValidationResult(valid=False, reason="Position outside battlefield boundaries")
+
+    world_snapshot = build_world_snapshot(query.game_map, movement_profile)
+    support_validation = validate_pose_support(
+        model_base,
+        world_snapshot.support_surfaces,
+        x=float(pose.x),
+        y=float(pose.y),
+        z=float(pose.z),
+        facing=float(pose.facing),
+    )
+    if not support_validation.valid:
+        return ValidationResult(valid=False, reason=str(support_validation.reason))
+
+    legacy_validation = is_position_valid_unified_detailed(
+        (float(pose.x), float(pose.y), float(pose.z)),
+        model,
+        dict(collision_trees),
+        dict(validation_rules),
+        query.game_map,
+        is_final_position=True,
+    )
+    if not bool(legacy_validation.get("valid", False)):
+        return ValidationResult(
+            valid=False,
+            reason=str(legacy_validation.get("reason", "Invalid final position")),
+        )
+
+    moving_unit = getattr(model, "parent_unit")
+    dynamic_overlay = build_dynamic_overlay(
+        query.game_map,
+        moving_unit,
+        movement_profile,
+        moving_model=model,
+    )
+    dynamic_overlay = _overlay_for_query(
+        dynamic_overlay,
+        query,
+        movement_profile,
+        validation_rules,
+        for_pathfinding=False,
+    )
+    surface_point = Point(float(pose.x), float(pose.y))
+    for blocker in dynamic_overlay.blockers:
+        if blocker.footprint.disjoint(surface_point) and blocker.footprint.disjoint(pose_shape):
+            continue
+        overlap_area = float(pose_shape.intersection(blocker.footprint).area)
+        if overlap_area > 1e-6:
+            return ValidationResult(valid=False, reason="Position blocked by another model")
+
+    return ValidationResult(valid=True, reason=str(legacy_validation.get("reason", "Valid final position")))
+
+
+def _validate_transit_path_with_context(
+    query: PathQuery,
+    poses: tuple[Pose, ...],
+    *,
+    validation_rules: Mapping[str, object],
+    collision_trees: Mapping[str, object],
+) -> ValidationResult:
+    from ..utility.calcs import is_position_valid_unified_detailed
+
+    if len(poses) < 2:
+        return ValidationResult(valid=True, reason="Valid path")
+
+    model_base = getattr(query.model, "model_base", None)
+    model_facing = float(getattr(model_base, "facing", 0.0) or 0.0)
+    model_radius = 0.5
+    if model_base is not None:
+        get_radius = getattr(model_base, "get_longest_radius", None)
+        if callable(get_radius):
+            model_radius = max(0.05, float(get_radius()))
+    sample_step = max(0.05, min(0.2, model_radius * 0.5))
+    terrain_tree = collision_trees.get("terrain")
+
+    def _tree_query_indices(tree: object, query_geometry: object) -> tuple[int, ...]:
+        query_fn = getattr(tree, "query", None)
+        if not callable(query_fn):
+            return ()
+        indices = query_fn(query_geometry)
+        if indices is None:
+            return ()
+        try:
+            return tuple(int(value) for value in indices)
+        except TypeError:
+            return (int(indices),)
+
+    for segment_index in range(1, len(poses)):
+        prev_pose = poses[segment_index - 1]
+        next_pose = poses[segment_index]
+        if terrain_tree is not None and model_base is not None:
+            start_shape = model_base.get_base_shape_at(float(prev_pose.x), float(prev_pose.y), model_facing)
+            end_shape = model_base.get_base_shape_at(float(next_pose.x), float(next_pose.y), model_facing)
+            swept_shape = start_shape.union(end_shape).convex_hull
+            terrain_geometries = getattr(terrain_tree, "geometries", ())
+            for hit_index in _tree_query_indices(terrain_tree, swept_shape):
+                if not (0 <= int(hit_index) < len(terrain_geometries)):
+                    continue
+                if swept_shape.intersects(terrain_geometries[int(hit_index)]):
+                    return ValidationResult(valid=False, reason="Path crosses terrain between waypoints")
+
+        dx = float(next_pose.x) - float(prev_pose.x)
+        dy = float(next_pose.y) - float(prev_pose.y)
+        dz = float(next_pose.z) - float(prev_pose.z)
+        segment_distance = (dx * dx + dy * dy + dz * dz) ** 0.5
+        samples = max(1, int(segment_distance / sample_step))
+        for sample_index in range(1, samples + 1):
+            if segment_index == len(poses) - 1 and sample_index == samples:
+                # Final pose is validated by `_validate_final_pose_with_context`.
+                continue
+            blend = float(sample_index) / float(samples)
+            sample_position = (
+                float(prev_pose.x) + dx * blend,
+                float(prev_pose.y) + dy * blend,
+                float(prev_pose.z) + dz * blend,
+            )
+            validation = is_position_valid_unified_detailed(
+                sample_position,
+                query.model,
+                dict(collision_trees),
+                dict(validation_rules),
+                query.game_map,
+                is_final_position=False,
+            )
+            if not bool(validation.get("valid", False)):
+                return ValidationResult(
+                    valid=False,
+                    reason=str(validation.get("reason", "Invalid movement segment")),
+                )
+
+    return ValidationResult(valid=True, reason="Valid path")
 
 
 def plan_model_path(query: PathQuery) -> PathResult:
@@ -218,6 +452,9 @@ def plan_model_path(query: PathQuery) -> PathResult:
         target_unit=query.target_unit,
         target_units=target_units,
     )
+    validation_rules = _build_validation_rules(query, movement_profile)
+    move_tag = str(getattr(query.movement_type, "value", query.movement_type) or "").strip().lower()
+    enable_exact_refine = bool(query.enable_exact_refine) and move_tag not in {"pile_in", "consolidate"}
     world_snapshot = build_world_snapshot(query.game_map, movement_profile)
     dynamic_overlay = build_dynamic_overlay(
         query.game_map,
@@ -225,7 +462,13 @@ def plan_model_path(query: PathQuery) -> PathResult:
         movement_profile,
         moving_model=model,
     )
-    dynamic_overlay = _overlay_for_query(dynamic_overlay, query)
+    dynamic_overlay = _overlay_for_query(
+        dynamic_overlay,
+        query,
+        movement_profile,
+        validation_rules,
+        for_pathfinding=True,
+    )
     base_radius, footprint_class = _base_radius_and_footprint_class(model_base)
     graph_path = plan_surface_graph_path(
         world_snapshot,
@@ -240,7 +483,7 @@ def plan_model_path(query: PathQuery) -> PathResult:
         model_base=model_base,
         start_facing=float(start_facing),
         goal_facing=float(query.goal_facing) if query.goal_facing is not None else None,
-        enable_exact_refine=bool(query.enable_exact_refine),
+        enable_exact_refine=enable_exact_refine,
         exact_refine_max_paths=int(query.exact_refine_max_paths),
         exact_refine_safety_margin=float(query.exact_refine_safety_margin),
     )
@@ -278,7 +521,14 @@ def plan_model_path(query: PathQuery) -> PathResult:
         )
 
     if poses:
-        validation = validate_final_pose(query, poses[-1])
+        collision_trees = _build_collision_trees_for_query(query, movement_profile)
+        validation = _validate_final_pose_with_context(
+            query,
+            poses[-1],
+            movement_profile=movement_profile,
+            validation_rules=validation_rules,
+            collision_trees=collision_trees,
+        )
         if not validation.valid:
             return PathResult(
                 valid=False,
@@ -289,6 +539,23 @@ def plan_model_path(query: PathQuery) -> PathResult:
                 used_exact_refiner=bool(graph_path.used_exact_refiner),
                 failure_reason=str(validation.reason),
                 debug_artifacts=dict(validation.debug_artifacts) if query.debug_enabled else {},
+            )
+        transit_validation = _validate_transit_path_with_context(
+            query,
+            poses,
+            validation_rules=validation_rules,
+            collision_trees=collision_trees,
+        )
+        if not transit_validation.valid:
+            return PathResult(
+                valid=False,
+                poses=poses,
+                waypoints=waypoints,
+                distance_cost=float(graph_path.distance_cost),
+                pivot_cost=float(pivot_cost),
+                used_exact_refiner=bool(graph_path.used_exact_refiner),
+                failure_reason=str(transit_validation.reason),
+                debug_artifacts=dict(graph_path.debug_artifacts) if query.debug_enabled else {},
             )
 
     provisional = PathResult(
@@ -345,34 +612,15 @@ def validate_final_pose(query: PathQuery, pose: Pose) -> ValidationResult:
         target_unit=query.target_unit,
         target_units=target_units,
     )
-    world_snapshot = build_world_snapshot(query.game_map, movement_profile)
-    support_validation = validate_pose_support(
-        model_base,
-        world_snapshot.support_surfaces,
-        x=float(pose.x),
-        y=float(pose.y),
-        z=float(pose.z),
-        facing=float(pose.facing),
+    validation_rules = _build_validation_rules(query, movement_profile)
+    collision_trees = _build_collision_trees_for_query(query, movement_profile)
+    return _validate_final_pose_with_context(
+        query,
+        pose,
+        movement_profile=movement_profile,
+        validation_rules=validation_rules,
+        collision_trees=collision_trees,
     )
-    if not support_validation.valid:
-        return ValidationResult(valid=False, reason=str(support_validation.reason))
-
-    dynamic_overlay = build_dynamic_overlay(
-        query.game_map,
-        moving_unit,
-        movement_profile,
-        moving_model=model,
-    )
-    dynamic_overlay = _overlay_for_query(dynamic_overlay, query)
-    surface_point = Point(float(pose.x), float(pose.y))
-    for blocker in dynamic_overlay.blockers:
-        if blocker.footprint.disjoint(surface_point) and blocker.footprint.disjoint(pose_shape):
-            continue
-        overlap_area = float(pose_shape.intersection(blocker.footprint).area)
-        if overlap_area > 1e-6:
-            return ValidationResult(valid=False, reason="Position blocked by another model")
-
-    return ValidationResult(valid=True, reason="Valid final position")
 
 
 def compute_swept_interactions(query: PathQuery, path: PathResult) -> SweepResult:
@@ -399,13 +647,20 @@ def compute_swept_interactions(query: PathQuery, path: PathResult) -> SweepResul
         target_unit=query.target_unit,
         target_units=tuple(query.target_units or ()),
     )
+    validation_rules = _build_validation_rules(query, movement_profile)
     dynamic_overlay = build_dynamic_overlay(
         query.game_map,
         moving_unit,
         movement_profile,
         moving_model=model,
     )
-    dynamic_overlay = _overlay_for_query(dynamic_overlay, query)
+    dynamic_overlay = _overlay_for_query(
+        dynamic_overlay,
+        query,
+        movement_profile,
+        validation_rules,
+        for_pathfinding=False,
+    )
     swept_shape = swept_footprint(path.poses, model_base)
     moved_over_ids = list_models_moved_over(swept_shape, dynamic_overlay.enemy_blockers)
     intersects = intersects_enemy_models(swept_shape, dynamic_overlay.enemy_blockers)

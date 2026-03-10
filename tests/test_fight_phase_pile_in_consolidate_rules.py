@@ -7,7 +7,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.battlefield.map import Map, ObjectivePoint
-from warhammer40k_ai.utility.calcs import unified_pathfinding, MovementType, get_validation_rules, clear_enemy_model_cache, clear_collision_caches
+from warhammer40k_ai.pathing.api import PathQuery, plan_model_path
+from warhammer40k_ai.utility.calcs import MovementType, get_validation_rules, clear_enemy_model_cache, clear_collision_caches
 from warhammer40k_ai.utility.constants import BASE_CONTACT_EPSILON
 
 
@@ -54,6 +55,34 @@ def _place_enemy_at_edge_distance(friendly: Unit, enemy_name: str, enemy_faction
     center_dist = fr + er + edge_dist
     enemy.models[0].set_location(fm.model_base.x + center_dist, fm.model_base.y, 0.0, 0.0)
     return enemy
+
+
+def unified_pathfinding(
+    model,
+    target,
+    movement_type,
+    max_distance,
+    game_map,
+    target_unit=None,
+    target_units=None,
+    moved_models_in_unit=None,
+):
+    if len(target) == 2:
+        target_3d = (float(target[0]), float(target[1]), float(model.model_base.z))
+    else:
+        target_3d = (float(target[0]), float(target[1]), float(target[2]))
+    return plan_model_path(
+        PathQuery(
+            model=model,
+            target=target_3d,
+            movement_type=movement_type,
+            max_distance=float(max_distance),
+            game_map=game_map,
+            target_unit=target_unit,
+            target_units=tuple(target_units or ()),
+            moved_models_in_unit=tuple(moved_models_in_unit or ()),
+        )
+    ).to_legacy_dict()
 
 
 class TestPileInAndConsolidateRules(unittest.TestCase):

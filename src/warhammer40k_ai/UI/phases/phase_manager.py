@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from typing import Protocol, List, Dict, Tuple, Optional
 
 from warhammer40k_ai.engine.fight_phase_manager import FightPhaseManager, FightStage
-from warhammer40k_ai.utility.calcs import get_unit_movement_path_preview, clear_enemy_model_cache
+from warhammer40k_ai.utility.calcs import clear_enemy_model_cache
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 from warhammer40k_ai.utility.dice import get_roll
 
@@ -6055,6 +6055,9 @@ class PreBattlePhaseHandler(BasePhaseHandler):
 
     def _validate_scout_destination(self, unit, destination: Tuple[float, float]) -> dict:
         """Validate if a destination is valid for a scout move using pathfinding."""
+        from warhammer40k_ai.pathing.api import PathQuery, preview_model_path
+        from warhammer40k_ai.utility.calcs import MovementType
+
         game_x, game_y = destination
 
         # Check if destination is within battlefield bounds
@@ -6062,14 +6065,23 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         if game_x < 0 or game_x >= battlefield_width or game_y < 0 or game_y >= battlefield_height:
             return {'valid': False, 'reason': 'Outside battlefield bounds'}
 
-        # Use pathfinding to validate the destination
+        first_model = None
+        for model in unit.models:
+            if model.is_alive:
+                first_model = model
+                break
+        if first_model is None:
+            return {'valid': False, 'reason': 'No valid models in unit'}
 
-        path_result = get_unit_movement_path_preview(
-            unit,
-            (game_x, game_y),
-            self.scout_distance,
-            self.game_view.game.map
-        )
+        path_result = preview_model_path(
+            PathQuery(
+                model=first_model,
+                target=(float(game_x), float(game_y), float(first_model.model_base.z)),
+                movement_type=MovementType.SCOUT,
+                max_distance=float(self.scout_distance),
+                game_map=self.game_view.game.map,
+            )
+        ).to_legacy_dict()
 
         # If pathfinding fails, fall back to basic validation
         if not path_result['valid']:

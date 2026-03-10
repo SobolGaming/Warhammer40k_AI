@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from math import atan2, hypot
 from typing import Mapping, Optional
 
-from shapely.geometry import Point
+from shapely.geometry import LineString, Point
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
@@ -26,6 +26,7 @@ from .world_snapshot import WorldSnapshot
 _CONNECTOR_POLYGON_GRID_FRACTIONS = (0.2, 0.5, 0.8)
 _CONNECTOR_LINE_FRACTIONS = (0.0, 0.25, 0.5, 0.75, 1.0)
 _MAX_CONNECTOR_ANCHORS = 12
+_STATIC_TERRAIN_CLEARANCE_MARGIN = 1e-3
 
 
 @dataclass(frozen=True, eq=False)
@@ -124,13 +125,21 @@ def build_surface_free_space(
         return free_space
 
     static_cutouts: list[BaseGeometry] = []
+    dynamic_cutouts: list[BaseGeometry] = []
     if surface.layer_kind == GROUND_LAYER_KIND:
         static_cutouts.extend(world_snapshot.ground_transit_obstacles)
-    static_cutouts.extend(_surface_dynamic_cutouts(surface, movement_profile, dynamic_overlay))
+    dynamic_cutouts.extend(_surface_dynamic_cutouts(surface, movement_profile, dynamic_overlay))
 
     if static_cutouts:
-        cutout_union = unary_union(static_cutouts)
+        static_expanded = tuple(
+            cutout.buffer(_STATIC_TERRAIN_CLEARANCE_MARGIN, quad_segs=8)
+            for cutout in static_cutouts
+        )
+        cutout_union = unary_union(static_expanded)
         free_space = _normalize_geometry(free_space.difference(cutout_union))
+    if dynamic_cutouts and not free_space.is_empty:
+        dynamic_union = unary_union(dynamic_cutouts)
+        free_space = _normalize_geometry(free_space.difference(dynamic_union))
     if free_space.is_empty:
         return free_space
 
@@ -859,6 +868,29 @@ def _waypoint_distance_cost(
     return float(total)
 
 
+def _path_within_free_space(
+    points_xy: tuple[tuple[float, float], ...],
+    free_space: BaseGeometry,
+) -> bool:
+    if len(points_xy) < 2:
+        return True
+    strict_free_space = free_space.buffer(-1e-6)
+    if strict_free_space.is_empty:
+        strict_free_space = free_space
+    for index in range(1, len(points_xy)):
+        start_point = points_xy[index - 1]
+        end_point = points_xy[index]
+        segment = LineString(
+            [
+                (float(start_point[0]), float(start_point[1])),
+                (float(end_point[0]), float(end_point[1])),
+            ]
+        )
+        if not strict_free_space.covers(segment):
+            return False
+    return True
+
+
 def _dedupe_waypoints(
     points: list[tuple[float, float, float]],
 ) -> tuple[tuple[float, float, float], ...]:
@@ -1069,6 +1101,7 @@ def plan_surface_graph_path(
         current_facing_value = float(start_facing) if start_facing is not None else None
         used_exact_refiner = False
         segment_refinements: list[dict[str, object]] = []
+        smoothing_fallback_used = False
         candidate_failure_reason: Optional[str] = None
 
         for segment_index, (surface_id, triangle_path, connector_out_id) in enumerate(grouped):
@@ -1175,11 +1208,15 @@ def plan_surface_graph_path(
                 )
 
             if not refined_segment:
-                for point_xy in corridor.smoothed_waypoints_xy[1:]:
+                segment_waypoints_xy = corridor.smoothed_waypoints_xy
+                if not _path_within_free_space(segment_waypoints_xy, mesh.free_space):
+                    segment_waypoints_xy = corridor.raw_waypoints_xy
+                    smoothing_fallback_used = True
+                for point_xy in segment_waypoints_xy[1:]:
                     waypoints.append((float(point_xy[0]), float(point_xy[1]), float(surface.surface_z)))
-                if len(corridor.smoothed_waypoints_xy) >= 2:
-                    prev_x, prev_y = corridor.smoothed_waypoints_xy[-2]
-                    next_x, next_y = corridor.smoothed_waypoints_xy[-1]
+                if len(segment_waypoints_xy) >= 2:
+                    prev_x, prev_y = segment_waypoints_xy[-2]
+                    next_x, next_y = segment_waypoints_xy[-1]
                     if abs(float(next_x) - float(prev_x)) > 1e-9 or abs(float(next_y) - float(prev_y)) > 1e-9:
                         current_facing_value = atan2(float(next_y) - float(prev_y), float(next_x) - float(prev_x))
 
@@ -1233,6 +1270,7 @@ def plan_surface_graph_path(
                 "candidate_rank": int(candidate_rank),
                 "candidate_count": len(path_candidates),
                 "segment_refinements": segment_refinements,
+                "smoothing_fallback_used": bool(smoothing_fallback_used),
                 "final_facing": current_facing_value,
             },
         )

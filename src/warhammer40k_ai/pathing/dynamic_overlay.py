@@ -58,6 +58,29 @@ def _bool_attr(entity: object, attr_name: str) -> bool:
     return bool(getattr(entity, attr_name, False))
 
 
+def _unit_has_keyword(unit: object, keyword: str) -> bool:
+    has_any_keyword = getattr(unit, "has_any_keyword", None)
+    if callable(has_any_keyword):
+        return bool(has_any_keyword(keyword))
+    keywords = tuple(getattr(unit, "keywords", ()) or ())
+    target = str(keyword or "").strip().upper()
+    return target in {str(value or "").strip().upper() for value in keywords}
+
+
+def _unit_is_aircraft(unit: object) -> bool:
+    return _bool_attr(unit, "is_aircraft") or _unit_has_keyword(unit, "AIRCRAFT")
+
+
+def _unit_is_big_model(unit: object) -> bool:
+    if _bool_attr(unit, "is_vehicle") or _bool_attr(unit, "is_monster") or _bool_attr(unit, "is_titanic"):
+        return True
+    return (
+        _unit_has_keyword(unit, "VEHICLE")
+        or _unit_has_keyword(unit, "MONSTER")
+        or _unit_has_keyword(unit, "TITANIC")
+    )
+
+
 def _sort_key_for_entity(entity: object, fallback_prefix: str, fallback_index: int) -> str:
     entity_id = maybe_entity_id(entity)
     if entity_id:
@@ -117,8 +140,8 @@ def build_dynamic_overlay(
         is_same_unit = unit is moving_unit
         is_friendly = units_share_army_identity(unit, moving_unit)
         is_enemy = not is_friendly
-        is_aircraft = _bool_attr(unit, "is_aircraft")
-        is_big_model = _bool_attr(unit, "is_vehicle") or _bool_attr(unit, "is_monster") or _bool_attr(unit, "is_titanic")
+        is_aircraft = _unit_is_aircraft(unit)
+        is_big_model = _unit_is_big_model(unit)
 
         model_records: list[tuple[str, int, object]] = []
         for model_index, model in enumerate(_unit_models_for_collision(unit)):

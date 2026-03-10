@@ -5,10 +5,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from warhammer40k_ai.pathing.api import PathQuery, plan_model_path
 from warhammer40k_ai.units.ability import Ability
 from warhammer40k_ai.battlefield.map import Map, TerrainFactory
 from warhammer40k_ai.units.unit import Unit
-from warhammer40k_ai.utility.calcs import MovementType, clear_collision_caches, unified_pathfinding
+from warhammer40k_ai.utility.calcs import MovementType, clear_collision_caches
 from warhammer40k_ai.utility.constants import RUINS_FLOOR_THICKNESS
 from warhammer40k_ai.utility.model_base import Base, BaseType
 
@@ -44,6 +45,34 @@ def _make_unit(name, *, keywords=None, movement=6, faction="A"):
     unit.deployed = True
     unit.faction = faction
     return unit
+
+
+def unified_pathfinding(
+    model,
+    target,
+    movement_type,
+    max_distance,
+    game_map,
+    target_unit=None,
+    target_units=None,
+    moved_models_in_unit=None,
+):
+    if len(target) == 2:
+        target_3d = (float(target[0]), float(target[1]), float(model.model_base.z))
+    else:
+        target_3d = (float(target[0]), float(target[1]), float(target[2]))
+    return plan_model_path(
+        PathQuery(
+            model=model,
+            target=target_3d,
+            movement_type=movement_type,
+            max_distance=float(max_distance),
+            game_map=game_map,
+            target_unit=target_unit,
+            target_units=tuple(target_units or ()),
+            moved_models_in_unit=tuple(moved_models_in_unit or ()),
+        )
+    ).to_legacy_dict()
 
 
 def test_fly_move_over_enemy_models():

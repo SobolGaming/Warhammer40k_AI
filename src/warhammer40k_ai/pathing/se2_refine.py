@@ -313,12 +313,14 @@ def evaluate_se2_refine_trigger(
         reasons.append("non_circular_base")
     if has_compound_parts:
         reasons.append("compound_base")
+
+    requires_oriented_refine = non_circular or has_compound_parts
     if min_clearance < (max_width + float(safety_margin)):
         reasons.append("narrow_corridor")
     if min_portal_width < (max_width + float(safety_margin)):
         reasons.append("narrow_portal")
 
-    if start_facing is not None and goal_facing is not None and (non_circular or has_compound_parts):
+    if start_facing is not None and goal_facing is not None and requires_oriented_refine:
         facing_delta = abs(_shortest_angle_delta(float(start_facing), float(goal_facing)))
         if facing_delta >= (pi / 8.0):
             reasons.append("significant_facing_delta")
@@ -400,7 +402,8 @@ def _pose_valid(
             continue
         if z_here < (float(blocker.z_bottom) - 1.0) or z_here > (float(blocker.z_top) + 1.0):
             continue
-        if pose_shape.intersects(blocker.footprint):
+        overlap_area = float(pose_shape.intersection(blocker.footprint).area)
+        if overlap_area > 1e-6:
             return False, "dynamic_overlap"
     return True, None
 

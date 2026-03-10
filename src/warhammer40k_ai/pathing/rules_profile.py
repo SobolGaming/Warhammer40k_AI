@@ -216,12 +216,20 @@ def _fall_back_interaction_rules(move_tag: str) -> dict[str, object]:
     }
 
 
-def _can_move_through_enemy_models(move_tag: str) -> bool:
-    return move_tag == "fall_back"
+def _can_move_through_enemy_models(unit: "Unit", movement_type: object, move_tag: str) -> bool:
+    if move_tag == "fall_back":
+        return True
+    if unit is None:
+        return False
+    return unit_is_fly_move(unit, movement_type)
 
 
-def _can_move_through_friendly_models(_move_tag: str) -> bool:
-    return False
+def _can_move_through_friendly_models(unit: "Unit", movement_type: object, move_tag: str) -> bool:
+    if move_tag == "fall_back":
+        return True
+    if unit is None:
+        return False
+    return unit_is_fly_move(unit, movement_type)
 
 
 def _pivot_cost_mode(_unit: "Unit") -> str:
@@ -254,8 +262,8 @@ def build_movement_profile(
         can_ignore_vertical_distance=bool(can_ignore_vertical),
         can_breach_ruins_walls=bool(can_breach),
         can_end_on_upper_surfaces=bool(can_end_upper),
-        can_move_through_enemy_models=bool(_can_move_through_enemy_models(move_tag)),
-        can_move_through_friendly_models=bool(_can_move_through_friendly_models(move_tag)),
+        can_move_through_enemy_models=bool(_can_move_through_enemy_models(unit, movement_type, move_tag)),
+        can_move_through_friendly_models=bool(_can_move_through_friendly_models(unit, movement_type, move_tag)),
         pivot_cost_mode=_pivot_cost_mode(unit),
         engagement_buffer_rules=_engagement_buffer_rules(move_tag),
         terrain_transition_rules=_terrain_transition_rules(unit, movement_type, free_climb_height_inches)

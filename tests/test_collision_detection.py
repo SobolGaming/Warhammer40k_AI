@@ -13,10 +13,13 @@ Tests cover:
 import pytest
 
 from warhammer40k_ai.utility.calcs import (
-    unified_pathfinding, 
     MovementType,
     is_position_valid_unified_detailed,
-    build_collision_trees
+    a_star_unified,
+    build_collision_trees,
+    build_movement_profile,
+    get_validation_rules,
+    measure_direct_distance,
 )
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.battlefield.map import Map, TerrainFactory, TerrainType
@@ -29,6 +32,97 @@ import logging
 logger = logging.getLogger(__name__)
 
 pytestmark = pytest.mark.slow
+
+
+def unified_pathfinding(
+    model,
+    target,
+    movement_type,
+    max_distance,
+    game_map,
+    target_unit=None,
+    target_units=None,
+    moved_models_in_unit=None,
+):
+    if model is None:
+        return {"valid": False, "path": [], "distance": 0.0, "reason": "Invalid input: model is None"}
+    if target is None:
+        return {"valid": False, "path": [], "distance": 0.0, "reason": "Invalid input: target is None or incomplete"}
+    if float(max_distance) <= 0.0:
+        return {"valid": False, "path": [], "distance": 0.0, "reason": "Invalid input: max_distance must be positive"}
+
+    if len(target) == 2:
+        target_3d = (float(target[0]), float(target[1]), float(model.model_base.z))
+    elif len(target) >= 3:
+        target_3d = (float(target[0]), float(target[1]), float(target[2]))
+    else:
+        return {"valid": False, "path": [], "distance": 0.0, "reason": "Invalid input: target is None or incomplete"}
+
+    moving_unit = model.parent_unit
+    get_root = getattr(moving_unit, "get_attached_unit_root", None)
+    if callable(get_root):
+        moving_unit = get_root()
+
+    current_pos = model.get_location()
+    if current_pos:
+        start_pos = (float(current_pos[0]), float(current_pos[1]), float(current_pos[2]))
+        straight_line_distance = measure_direct_distance(start_pos, target_3d, moving_unit, movement_type, game_map)
+        if straight_line_distance > float(max_distance):
+            return {
+                "valid": False,
+                "path": [],
+                "distance": straight_line_distance,
+                "reason": f"Distance limit exceeded: {straight_line_distance:.1f}\" > {float(max_distance)}\"",
+            }
+
+    movement_profile = build_movement_profile(
+        moving_unit,
+        movement_type,
+        target_unit=target_unit,
+        target_units=target_units,
+    )
+    moved_set = set(tuple(moved_models_in_unit or ()))
+    collision_trees = build_collision_trees(
+        moving_unit,
+        movement_type,
+        game_map,
+        model,
+        moved_set,
+        float(max_distance),
+        movement_profile=movement_profile,
+    )
+    validation_rules = get_validation_rules(
+        movement_type,
+        target_unit,
+        moving_unit=moving_unit,
+        target_units=target_units,
+        movement_profile=movement_profile,
+    )
+    if movement_type in (
+        MovementType.BLOOD_SURGE,
+        MovementType.BRAZEN_FURY,
+        MovementType.HORDE_MOVE,
+        MovementType.BLISTERING_ASSAULT,
+    ):
+        validation_rules["blood_surge_max_distance"] = float(max_distance)
+
+    if movement_type == MovementType.CHARGE and target_unit is not None:
+        engaged_check = getattr(game_map, "is_within_engagement_range", None)
+        if callable(engaged_check):
+            unit_already_engaged = bool(engaged_check(moving_unit, target_unit))
+            if unit_already_engaged and validation_rules.get("must_end_in_engagement_range", False):
+                validation_rules["must_end_in_engagement_range"] = False
+                validation_rules["allow_engagement_range_movement"] = True
+
+    return a_star_unified(
+        model,
+        target_3d,
+        float(max_distance),
+        collision_trees,
+        validation_rules,
+        game_map,
+        movement_type,
+    )
 
 
 class MockDatasheet:
