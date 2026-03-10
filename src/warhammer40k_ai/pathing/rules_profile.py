@@ -201,7 +201,9 @@ def _terrain_transition_rules(unit: "Unit", movement_type: object, free_climb_he
         "can_breach_ruins_walls": can_breach_ruins_walls(unit),
         "ruins_wall_traversal_allowed": ruins_wall_traversal_allowed(unit, movement_type),
         "is_fly_move": unit_is_fly_move(unit, movement_type),
+        "is_aircraft_unit": bool(getattr(unit, "is_aircraft", False)),
         "is_vehicle_unit": unit_is_vehicle(unit),
+        "is_monster_unit": bool(getattr(unit, "is_monster", False)),
         "can_fly_over_big_models": unit_can_fly_over_big_models(unit, movement_type),
         "can_move_over_friendly_monster_vehicle": unit_can_move_over_friendly_monster_vehicle(unit, movement_type),
     }

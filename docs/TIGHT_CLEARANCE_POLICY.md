@@ -19,5 +19,11 @@ Implemented rules:
   - footprint contained in corridor free-space,
   - support coverage on elevated surfaces,
   - dynamic overlap legality using overlay blockers.
+- Refinement is endpoint-anchored:
+  - first state is the exact requested start pose,
+  - terminal state is the exact segment endpoint (connector anchor or final goal),
+  - in-place start rotations are modeled as explicit validated states.
+- Pivot cost in the local refiner is applied once per corridor using the same
+  unit/base semantics as engine pivot-cost rules (no placeholder constant).
 - If refinement fails for the best global route, the planner attempts additional
   global candidate routes before returning unreachable.

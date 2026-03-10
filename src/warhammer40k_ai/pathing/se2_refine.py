@@ -16,6 +16,8 @@ from .types import MovementProfile, SurfaceId
 
 _ANGLE_EPSILON = 1e-6
 _DISTANCE_EPSILON = 1e-9
+_START_THETA_KEY = -1
+_GOAL_THETA_KEY = -2
 
 
 @dataclass(frozen=True, eq=False)
@@ -349,6 +351,12 @@ def _lateral_offsets(max_offset: float, lateral_bins: int) -> tuple[float, ...]:
     return tuple(deduped)
 
 
+def _closest_zero_offset_index(offsets: tuple[float, ...]) -> int:
+    if not offsets:
+        return 0
+    return min(range(len(offsets)), key=lambda index: abs(float(offsets[index])))
+
+
 def _offset_xy(sample: _SpineSample, lateral_offset: float) -> tuple[float, float]:
     normal_x = -float(sample.tangent_y)
     normal_y = float(sample.tangent_x)
@@ -501,34 +509,37 @@ def refine_corridor_se2(request: Se2RefineRequest) -> Se2RefineResult:
     clearance_radii = [corridor_geometry.boundary.distance(Point(sample.x, sample.y)) for sample in spine]
     max_lateral = max(0.0, max(clearance_radii) - (min_width * 0.5) - float(request.safety_margin))
     offsets = _lateral_offsets(max_lateral, request.lateral_bins)
+    zero_lateral_index = _closest_zero_offset_index(offsets)
 
     start_direction = atan2(spine[0].tangent_y, spine[0].tangent_x)
-    start_facing = float(request.start_facing) if request.start_facing is not None else float(start_direction)
-    start_theta_indices = _nearest_theta_indices(start_facing, theta_bins, count=2)
+    start_facing = _normalize_angle(float(request.start_facing) if request.start_facing is not None else float(start_direction))
+    goal_facing = _normalize_angle(float(request.goal_facing)) if request.goal_facing is not None else None
+    start_anchor_xy = (float(spine[0].x), float(spine[0].y))
+    goal_anchor_xy = (float(spine[-1].x), float(spine[-1].y))
 
     layers: list[dict[tuple[int, int, bool], _StateRecord]] = []
     first_layer: dict[tuple[int, int, bool], _StateRecord] = {}
-    first_sample = spine[0]
-    for lateral_index, lateral_offset in enumerate(offsets):
-        x, y = _offset_xy(first_sample, lateral_offset)
-        for theta_index in start_theta_indices:
-            theta = theta_bins[theta_index]
-            valid, reason = _pose_valid(request, corridor_geometry, x=x, y=y, theta=theta)
-            if not valid:
-                continue
-            key = (lateral_index, theta_index, False)
-            first_layer[key] = _StateRecord(
-                cost=0.0,
-                pose=Se2Pose(
-                    x=float(x),
-                    y=float(y),
-                    z=float(request.surface.surface_z),
-                    facing=float(theta),
-                    surface_id=request.surface.surface_id,
-                    pivot_used=False,
-                ),
-                parent=None,
-            )
+    start_key = (zero_lateral_index, _START_THETA_KEY, False)
+    start_valid, _ = _pose_valid(
+        request,
+        corridor_geometry,
+        x=float(start_anchor_xy[0]),
+        y=float(start_anchor_xy[1]),
+        theta=float(start_facing),
+    )
+    if start_valid:
+        first_layer[start_key] = _StateRecord(
+            cost=0.0,
+            pose=Se2Pose(
+                x=float(start_anchor_xy[0]),
+                y=float(start_anchor_xy[1]),
+                z=float(request.surface.surface_z),
+                facing=float(start_facing),
+                surface_id=request.surface.surface_id,
+                pivot_used=False,
+            ),
+            parent=None,
+        )
 
     if not first_layer:
         return Se2RefineResult(
@@ -545,12 +556,63 @@ def refine_corridor_se2(request: Se2RefineRequest) -> Se2RefineResult:
         )
 
     layers.append(first_layer)
+    # Explicit in-place start-rotation layer; every rotated start state has a
+    # parent edge from the exact requested start pose.
+    start_rotation_layer: dict[tuple[int, int, bool], _StateRecord] = {
+        start_key: _StateRecord(
+            cost=0.0,
+            pose=first_layer[start_key].pose,
+            parent=(0, start_key),
+        )
+    }
+    for theta_index in _nearest_theta_indices(start_facing, theta_bins, count=min(8, len(theta_bins))):
+        theta = float(theta_bins[theta_index])
+        if abs(_shortest_angle_delta(start_facing, theta)) <= _ANGLE_EPSILON:
+            continue
+        valid, _ = _pose_valid(
+            request,
+            corridor_geometry,
+            x=float(start_anchor_xy[0]),
+            y=float(start_anchor_xy[1]),
+            theta=theta,
+        )
+        if not valid:
+            continue
+        yaw_delta = abs(_shortest_angle_delta(start_facing, theta))
+        pivot_used = True
+        transition_cost = float(yaw_delta) * 0.05
+        transition_cost += float(request.pivot_cost_once)
+        state_key = (zero_lateral_index, int(theta_index), pivot_used)
+        existing = start_rotation_layer.get(state_key)
+        if existing is not None and transition_cost >= existing.cost - 1e-9:
+            continue
+        start_rotation_layer[state_key] = _StateRecord(
+            cost=transition_cost,
+            pose=Se2Pose(
+                x=float(start_anchor_xy[0]),
+                y=float(start_anchor_xy[1]),
+                z=float(request.surface.surface_z),
+                facing=float(theta),
+                surface_id=request.surface.surface_id,
+                pivot_used=pivot_used,
+            ),
+            parent=(0, start_key),
+        )
+    layers.append(start_rotation_layer)
     transition_failures: dict[str, int] = {}
+    final_sample_index = len(spine) - 1
 
     for sample_index in range(1, len(spine)):
-        prev_layer = layers[-1]
+        prev_layer_index = len(layers) - 1
+        prev_layer = layers[prev_layer_index]
         current_layer: dict[tuple[int, int, bool], _StateRecord] = {}
         sample = spine[sample_index]
+        final_sample = sample_index == final_sample_index
+
+        if final_sample:
+            lateral_candidates = ((zero_lateral_index, 0.0),)
+        else:
+            lateral_candidates = tuple((index, offset) for index, offset in enumerate(offsets))
 
         for prev_key, prev_record in sorted(prev_layer.items(), key=lambda item: (item[1].cost, item[0])):
             prev_theta = float(prev_record.pose.facing)
@@ -558,13 +620,20 @@ def refine_corridor_se2(request: Se2RefineRequest) -> Se2RefineResult:
                 range(len(theta_bins)),
                 key=lambda idx: (abs(_shortest_angle_delta(prev_theta, theta_bins[idx])), idx),
             )
+            if final_sample and goal_facing is not None:
+                theta_candidates: tuple[tuple[int, float], ...] = ((_GOAL_THETA_KEY, float(goal_facing)),)
+            else:
+                theta_candidates = tuple((int(theta_index), float(theta_bins[theta_index])) for theta_index in candidate_theta_indices)
 
-            for lateral_index, lateral_offset in enumerate(offsets):
-                x, y = _offset_xy(sample, lateral_offset)
-                for theta_index in candidate_theta_indices:
-                    theta = theta_bins[theta_index]
+            for lateral_index, lateral_offset in lateral_candidates:
+                if final_sample:
+                    x, y = goal_anchor_xy
+                else:
+                    x, y = _offset_xy(sample, lateral_offset)
+                for theta_index, theta in theta_candidates:
                     yaw_delta = abs(_shortest_angle_delta(prev_theta, theta))
-                    if yaw_delta > float(request.max_turn_per_step):
+                    is_in_place_rotation = _pose_distance_cost(prev_record.pose, x, y) <= _DISTANCE_EPSILON
+                    if yaw_delta > float(request.max_turn_per_step) and not is_in_place_rotation:
                         continue
                     valid, reason = _pose_valid(request, corridor_geometry, x=x, y=y, theta=theta)
                     if not valid:
@@ -587,7 +656,7 @@ def refine_corridor_se2(request: Se2RefineRequest) -> Se2RefineResult:
 
                     rotated = yaw_delta > _ANGLE_EPSILON
                     pivot_used = bool(prev_record.pose.pivot_used or rotated)
-                    state_key = (lateral_index, theta_index, pivot_used)
+                    state_key = (lateral_index, int(theta_index), pivot_used)
                     transition_cost = _pose_distance_cost(prev_record.pose, x, y)
                     new_cost = prev_record.cost + transition_cost
                     if rotated:
@@ -609,7 +678,7 @@ def refine_corridor_se2(request: Se2RefineRequest) -> Se2RefineResult:
                             surface_id=request.surface.surface_id,
                             pivot_used=pivot_used,
                         ),
-                        parent=(sample_index - 1, prev_key),
+                        parent=(prev_layer_index, prev_key),
                     )
 
         if not current_layer:
@@ -641,7 +710,7 @@ def refine_corridor_se2(request: Se2RefineRequest) -> Se2RefineResult:
 
         layers.append(current_layer)
 
-    final_choice = _choose_goal_record(layers[-1], theta_bins, request.goal_facing)
+    final_choice = _choose_goal_record(layers[-1], theta_bins, goal_facing)
     if final_choice is None:
         return Se2RefineResult(
             success=False,
@@ -664,6 +733,70 @@ def refine_corridor_se2(request: Se2RefineRequest) -> Se2RefineResult:
         layer_index, current_key = record.parent
     reconstruction.reverse()
 
+    if not reconstruction:
+        return Se2RefineResult(
+            success=False,
+            poses=(),
+            pivot_used=False,
+            distance_cost=0.0,
+            failure_reason="SE(2) reconstruction produced no poses",
+            debug_artifacts={},
+        )
+
+    first_pose = reconstruction[0]
+    if hypot(float(first_pose.x) - float(start_anchor_xy[0]), float(first_pose.y) - float(start_anchor_xy[1])) > 1e-6:
+        return Se2RefineResult(
+            success=False,
+            poses=(),
+            pivot_used=False,
+            distance_cost=0.0,
+            failure_reason="Exact refiner did not anchor start pose",
+            debug_artifacts={
+                "observed_start_pose": (float(first_pose.x), float(first_pose.y), float(first_pose.facing)),
+                "expected_start_pose": (float(start_anchor_xy[0]), float(start_anchor_xy[1]), float(start_facing)),
+            },
+        )
+    if abs(_shortest_angle_delta(float(first_pose.facing), float(start_facing))) > 1e-6:
+        return Se2RefineResult(
+            success=False,
+            poses=(),
+            pivot_used=False,
+            distance_cost=0.0,
+            failure_reason="Exact refiner did not preserve requested start facing",
+            debug_artifacts={
+                "observed_start_pose": (float(first_pose.x), float(first_pose.y), float(first_pose.facing)),
+                "expected_start_pose": (float(start_anchor_xy[0]), float(start_anchor_xy[1]), float(start_facing)),
+            },
+        )
+
+    last_pose = reconstruction[-1]
+    if hypot(float(last_pose.x) - float(goal_anchor_xy[0]), float(last_pose.y) - float(goal_anchor_xy[1])) > 1e-6:
+        return Se2RefineResult(
+            success=False,
+            poses=(),
+            pivot_used=False,
+            distance_cost=0.0,
+            failure_reason="Exact refiner did not anchor segment endpoint",
+            debug_artifacts={
+                "observed_end_pose": (float(last_pose.x), float(last_pose.y), float(last_pose.facing)),
+                "expected_end_pose": (float(goal_anchor_xy[0]), float(goal_anchor_xy[1]), float(goal_facing) if goal_facing is not None else None),
+                "layer_count": len(layers),
+                "final_key": final_key,
+            },
+        )
+    if goal_facing is not None and abs(_shortest_angle_delta(float(last_pose.facing), float(goal_facing))) > 1e-6:
+        return Se2RefineResult(
+            success=False,
+            poses=(),
+            pivot_used=False,
+            distance_cost=0.0,
+            failure_reason="Exact refiner did not anchor requested final facing",
+            debug_artifacts={
+                "observed_end_pose": (float(last_pose.x), float(last_pose.y), float(last_pose.facing)),
+                "expected_end_pose": (float(goal_anchor_xy[0]), float(goal_anchor_xy[1]), float(goal_facing)),
+            },
+        )
+
     distance_cost = 0.0
     for index in range(1, len(reconstruction)):
         distance_cost += hypot(
@@ -681,6 +814,8 @@ def refine_corridor_se2(request: Se2RefineRequest) -> Se2RefineResult:
             "spine_samples": len(spine),
             "theta_bins": len(theta_bins),
             "lateral_offsets": offsets,
+            "start_anchor_xy": start_anchor_xy,
+            "goal_anchor_xy": goal_anchor_xy,
             "corridor_min_clearance": _corridor_min_clearance(
                 corridor_geometry,
                 request.corridor,

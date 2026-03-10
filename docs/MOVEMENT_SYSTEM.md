@@ -70,6 +70,8 @@ Pathfinding is A*-based and terrain-aware. Important building blocks:
 - `pathing/se2_refine.py` now provides Phase D local exact corridor refinement for
   non-circular/compound footprints and narrow portal corridors, validating sampled
   pose transitions with exact `get_base_shape_at(...)` geometry and support checks.
+  The SE(2) search is endpoint-anchored (exact start pose and exact segment end
+  pose), and its one-time pivot cost uses existing unit/base pivot semantics.
 - Segment legality uses a swept-base check between waypoints so thin walls cannot be
   tunneled through by center-point interpolation artifacts.
 

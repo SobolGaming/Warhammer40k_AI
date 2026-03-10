@@ -767,6 +767,41 @@ def _dedupe_waypoints(
     return tuple(deduped)
 
 
+def _pivot_cost_once_for_refiner(
+    movement_profile: MovementProfile,
+    model_base: object,
+) -> float:
+    if movement_profile.pivot_cost_mode == "none" or model_base is None:
+        return 0.0
+
+    terrain_rules = movement_profile.terrain_transition_rules
+    is_aircraft = bool(terrain_rules.get("is_aircraft_unit", False))
+    if is_aircraft:
+        return 0.0
+
+    has_circular_base = bool(getattr(model_base, "has_circular_base", False))
+    is_vehicle = bool(terrain_rules.get("is_vehicle_unit", False))
+    is_monster = bool(terrain_rules.get("is_monster_unit", False))
+
+    radius = getattr(model_base, "radius", (0.0, 0.0))
+    if isinstance(radius, tuple):
+        base_size = max(float(radius[0]), float(radius[1]))
+    else:
+        base_size = float(radius)
+    has_flying_base = bool(getattr(model_base, "is_flying_base", False))
+    pivot_threshold = 32.0 / 25.4 / 2.0
+
+    if is_vehicle and has_circular_base:
+        if base_size > pivot_threshold and has_flying_base:
+            return 2.0
+        return 0.0
+    if (is_vehicle or is_monster) and not has_circular_base:
+        return 2.0
+    if not has_circular_base:
+        return 1.0
+    return 0.0
+
+
 def plan_surface_graph_path(
     world_snapshot: WorldSnapshot,
     movement_profile: MovementProfile,
@@ -956,7 +991,7 @@ def plan_surface_graph_path(
                 segment_goal_facing = float(goal_facing)
 
             refined_segment = False
-            if enable_exact_refine and model_base is not None:
+            if enable_exact_refine and model_base is not None and corridor.total_distance > 1e-6:
                 trigger = evaluate_se2_refine_trigger(
                     model_base=model_base,
                     footprint_class=footprint_class,
@@ -980,7 +1015,7 @@ def plan_surface_graph_path(
                             start_facing=current_facing_value,
                             goal_facing=segment_goal_facing,
                             safety_margin=float(exact_refine_safety_margin),
-                            pivot_cost_once=0.0 if movement_profile.pivot_cost_mode == "none" else 0.1,
+                            pivot_cost_once=_pivot_cost_once_for_refiner(movement_profile, model_base),
                         )
                     )
                     segment_refinements.append(
@@ -1019,6 +1054,19 @@ def plan_surface_graph_path(
                             "used_refiner": False,
                         }
                     )
+            elif enable_exact_refine and model_base is not None:
+                segment_refinements.append(
+                    {
+                        "segment_index": int(segment_index),
+                        "surface_id": surface_id,
+                        "trigger_reasons": (),
+                        "corridor_min_clearance": float("inf"),
+                        "footprint_max_width": 0.0,
+                        "theta_bins": 0,
+                        "used_refiner": False,
+                        "skip_reason": "zero_length_segment",
+                    }
+                )
 
             if not refined_segment:
                 for point_xy in corridor.smoothed_waypoints_xy[1:]:
