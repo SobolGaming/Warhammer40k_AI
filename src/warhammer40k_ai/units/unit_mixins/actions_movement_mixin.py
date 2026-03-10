@@ -13989,9 +13989,9 @@ class ActionsMovementMixin:
             
             # Try pathing for Fall Back movement using the unified pathing API.
             from ...pathing.api import PathQuery, plan_model_path
-            from ...utility.calcs import MovementType, get_enemy_models_moved_over
+            from ...utility.calcs import MovementType
 
-            pathfinding_result = plan_model_path(
+            path_result = plan_model_path(
                 PathQuery(
                     model=model,
                     target=(
@@ -14002,29 +14002,24 @@ class ActionsMovementMixin:
                     movement_type=MovementType.FALL_BACK,
                     max_distance=float(self.movement),
                     game_map=game_map,
+                    sweep_require_vertical_overlap=True,
                 )
-            ).to_legacy_dict()
+            )
 
-            if not pathfinding_result or not pathfinding_result.get('valid'):
+            if not path_result.valid:
                 logger.debug(f"Model {model._id} pathfinding failed for fall back - destination may be invalid")
                 continue
 
-            # Convert 2D path to 3D
-            shortest_path = pathfinding_result['path']
+            shortest_path = list(path_result.waypoints or [])
+            if not shortest_path:
+                logger.debug(f"Model {model._id} pathfinding returned no waypoints for fall back")
+                continue
             
             # Calculate path distance
             path_distance = measure_path_distance(shortest_path, self, MovementType.FALL_BACK, game_map)
             
             # Check for Desperate Escape Tests (models that move over enemy models).
-            enemy_models_moved_over = list(
-                get_enemy_models_moved_over(
-                    model,
-                    shortest_path,
-                    game_map,
-                    require_vertical_overlap=True,
-                )
-                or []
-            )
+            enemy_models_moved_over = list(path_result.moved_over_enemy_model_ids or [])
             if enemy_models_moved_over and not self.is_titanic and not self.is_flying:
                 logger.info(f" Model {model._id} must take Desperate Escape Test for moving over {len(enemy_models_moved_over)} enemy model(s)")
                 

@@ -11,7 +11,12 @@ from .dynamic_overlay import build_dynamic_overlay
 from .rules_profile import build_movement_profile
 from .surface_graph import plan_surface_graph_path
 from .surfaces import validate_pose_support
-from .sweep import intersects_enemy_models, list_models_moved_over, swept_footprint
+from .sweep import (
+    intersects_enemy_models,
+    list_models_moved_over,
+    sweep_vertical_segments,
+    swept_footprint,
+)
 from .types import PathQuery, PathResult, Pose, SweepResult, ValidationResult
 from .validation import (
     build_collision_trees as build_validation_collision_trees,
@@ -658,13 +663,31 @@ def compute_swept_interactions(query: PathQuery, path: PathResult) -> SweepResul
         for_pathfinding=False,
     )
     swept_shape = swept_footprint(path.poses, model_base)
-    moved_over_ids = list_models_moved_over(swept_shape, dynamic_overlay.enemy_blockers)
-    intersects = intersects_enemy_models(swept_shape, dynamic_overlay.enemy_blockers)
+    require_vertical_overlap = bool(getattr(query, "sweep_require_vertical_overlap", False))
+    vertical_segments = (
+        sweep_vertical_segments(path.poses, model_base)
+        if require_vertical_overlap
+        else ()
+    )
+    moved_over_ids = list_models_moved_over(
+        swept_shape,
+        dynamic_overlay.enemy_blockers,
+        require_vertical_overlap=require_vertical_overlap,
+        vertical_segments=vertical_segments,
+    )
+    intersects = intersects_enemy_models(
+        swept_shape,
+        dynamic_overlay.enemy_blockers,
+        require_vertical_overlap=require_vertical_overlap,
+        vertical_segments=vertical_segments,
+    )
     debug_artifacts: dict[str, object] = {}
     if query.debug_enabled:
         debug_artifacts = {
             "swept_shape_area": float(swept_shape.area),
             "enemy_blocker_count": len(dynamic_overlay.enemy_blockers),
+            "require_vertical_overlap": require_vertical_overlap,
+            "vertical_segment_count": len(vertical_segments),
         }
     return SweepResult(
         moved_over_enemy_model_ids=tuple(moved_over_ids),

@@ -123,3 +123,48 @@ def test_phase_e_compute_swept_interactions_reports_enemy_models_moved_over() ->
 
     assert sweep.intersects_enemy_models
     assert sweep.moved_over_enemy_model_ids
+
+
+def test_phase_e_compute_swept_interactions_supports_vertical_overlap_gate() -> None:
+    game_map = Map(20, 20)
+    mover = _make_unit("Mover", x=2.0, y=2.0, faction="MirrorFaction")
+    mover.models[0].set_location(2.0, 2.0, 5.0, 0.0)
+    enemy = _make_unit("Enemy", x=5.0, y=2.0, faction="OtherFaction")
+    enemy.models[0].set_location(5.0, 2.0, 0.0, 0.0)
+    game_map.units = [mover, enemy]
+
+    ungated_query = PathQuery(
+        model=mover.models[0],
+        target=(8.0, 2.0, 5.0),
+        movement_type=MovementType.FALL_BACK,
+        max_distance=12.0,
+        game_map=game_map,
+        sweep_require_vertical_overlap=False,
+    )
+    gated_query = PathQuery(
+        model=mover.models[0],
+        target=(8.0, 2.0, 5.0),
+        movement_type=MovementType.FALL_BACK,
+        max_distance=12.0,
+        game_map=game_map,
+        sweep_require_vertical_overlap=True,
+    )
+    synthetic_path = PathResult(
+        valid=True,
+        poses=(
+            Pose(x=2.0, y=2.0, z=5.0, facing=0.0),
+            Pose(x=8.0, y=2.0, z=5.0, facing=0.0),
+        ),
+        waypoints=((2.0, 2.0, 5.0), (8.0, 2.0, 5.0)),
+        distance_cost=6.0,
+        pivot_cost=0.0,
+        used_exact_refiner=False,
+    )
+
+    ungated_sweep = compute_swept_interactions(ungated_query, synthetic_path)
+    gated_sweep = compute_swept_interactions(gated_query, synthetic_path)
+
+    assert ungated_sweep.intersects_enemy_models
+    assert ungated_sweep.moved_over_enemy_model_ids
+    assert not gated_sweep.intersects_enemy_models
+    assert not gated_sweep.moved_over_enemy_model_ids

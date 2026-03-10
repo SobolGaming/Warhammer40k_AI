@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Temporary compatibility bridge for movement validation internals.
+
+The authoritative planner API lives in ``pathing.api``. This module is a narrow
+adapter while legacy validation/collision internals are still hosted in
+``utility.calcs``. Keep all imports here function-local to avoid import cycles.
+"""
+
 from typing import Mapping, Optional
 
 

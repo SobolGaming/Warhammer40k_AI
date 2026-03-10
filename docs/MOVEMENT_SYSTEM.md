@@ -32,21 +32,6 @@ Movement capability extraction lives in `src/warhammer40k_ai/pathing/rules_profi
 as `MovementProfile` (defined in `src/warhammer40k_ai/pathing/types.py`), while
 unit-level action orchestration is in `src/warhammer40k_ai/units/unit.py`.
 
-```9442:9536:src/warhammer40k_ai/units/unit.py
-        from ..utility.calcs import get_individual_model_movement_path, process_unit_movement_with_coherency_check
-        ...
-        # NEW: Validate unit coherency after all models have moved
-        is_coherent, non_coherent_models = process_unit_movement_with_coherency_check(self, model_movements)
-        
-        if not is_coherent:
-            print(f"{self.name} move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
-            # ROLLBACK: Restore original positions (movement ending out of coherency is not allowed)
-            for i, original_pos in enumerate(original_model_positions):
-                if i < len(self.models):
-                    self.models[i].set_location(*original_pos)
-            return False
-```
-
 ### Pathing and movement allowance
 
 Pathfinding is layered CDT + corridor-aware SE(2) refinement. Important building blocks:
@@ -226,6 +211,7 @@ enemy unit. The engine now detects “moved over” with swept-footprint geometr
 - enemy candidates are selected when their base geometry intersects that swept area,
 - optional vertical-band gating is then applied so vertical-only flyovers (e.g. different RUINS
   floors) are not counted when rules require vertical overlap.
+- for API callers, this gate is controlled by `PathQuery.sweep_require_vertical_overlap`.
 
 The same swept-overlap detection is used for Fall Back / Desperate Escape checks and for
 move-over triggered abilities. These triggers are evaluated only for FLY units where required
@@ -259,7 +245,8 @@ Key differences from Normal moves:
 - Requires one or more declared target units (multi-target charges are supported).
 - The unit must end in Engagement Range of every declared target unit.
 - The unit cannot end within Engagement Range of any non-target enemy units.
-- Uses `get_charge_movement_path()` and charge-specific validation rules.
+- Uses `plan_model_path(PathQuery(..., movement_type=MovementType.CHARGE, ...))`
+  with charge-specific validation rules.
 
 Charge roll behavior and modifiers are documented in [Charge roll modifiers](docs/CHARGE_ROLL_MODIFIERS.md).
 
