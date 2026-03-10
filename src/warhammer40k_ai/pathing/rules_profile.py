@@ -131,6 +131,16 @@ def unit_can_fly_over_big_models(unit: "Unit", movement_type: object = None) -> 
     return bool(getattr(unit, "is_monster", False) or getattr(unit, "is_vehicle", False))
 
 
+def unit_is_vehicle(unit: "Unit") -> bool:
+    if bool(getattr(unit, "is_vehicle", False)):
+        return True
+    keywords = tuple(getattr(unit, "keywords", ()) or ())
+    for keyword in keywords:
+        if str(keyword or "").strip().lower() == "vehicle":
+            return True
+    return False
+
+
 def get_freely_climbable_range(unit: "Unit", movement_type: object = None) -> float:
     threshold = float(FREELY_CLIMBABLE_RANGE)
     if super_heavy_walker_active_for_move(unit, movement_type):
@@ -191,6 +201,7 @@ def _terrain_transition_rules(unit: "Unit", movement_type: object, free_climb_he
         "can_breach_ruins_walls": can_breach_ruins_walls(unit),
         "ruins_wall_traversal_allowed": ruins_wall_traversal_allowed(unit, movement_type),
         "is_fly_move": unit_is_fly_move(unit, movement_type),
+        "is_vehicle_unit": unit_is_vehicle(unit),
         "can_fly_over_big_models": unit_can_fly_over_big_models(unit, movement_type),
         "can_move_over_friendly_monster_vehicle": unit_can_move_over_friendly_monster_vehicle(unit, movement_type),
     }
@@ -267,6 +278,7 @@ __all__ = [
     "super_heavy_walker_active_for_move",
     "unit_army_identity_key",
     "unit_can_fly_over_big_models",
+    "unit_is_vehicle",
     "unit_can_move_over_friendly_monster_vehicle",
     "unit_ignores_vertical_distance",
     "unit_is_fly_move",

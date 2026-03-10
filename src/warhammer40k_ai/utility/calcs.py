@@ -917,7 +917,6 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
             extract_ground_transit_obstacles(
                 game_map,
                 movement_profile,
-                moving_unit=moving_unit,
             )
         )
         _terrain_cache[terrain_cache_key] = all_blocking_terrain

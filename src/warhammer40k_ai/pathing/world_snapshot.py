@@ -5,6 +5,7 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any, Mapping, Optional
 
+from shapely import normalize, to_wkb
 from shapely.geometry.base import BaseGeometry
 
 from .surfaces import SupportSurface, extract_ground_transit_obstacles, extract_support_surfaces
@@ -34,12 +35,26 @@ def _round(value: object) -> float:
 
 
 def _geometry_signature(geometry: BaseGeometry) -> dict[str, object]:
+    normalized = normalize(geometry)
+    wkb_hex = to_wkb(
+        normalized,
+        hex=True,
+        output_dimension=2,
+        byte_order=0,
+        include_srid=False,
+    )
+    if isinstance(wkb_hex, bytes):
+        wkb_text = wkb_hex.decode("ascii")
+    else:
+        wkb_text = str(wkb_hex)
+
     bounds = tuple(_round(v) for v in geometry.bounds)
     return {
         "bounds": bounds,
         "area": _round(getattr(geometry, "area", 0.0)),
         "length": _round(getattr(geometry, "length", 0.0)),
         "type": str(getattr(geometry, "geom_type", "")),
+        "fingerprint": hashlib.sha1(wkb_text.encode("ascii")).hexdigest(),
     }
 
 

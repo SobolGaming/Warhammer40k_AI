@@ -59,6 +59,9 @@ Pathfinding is A*-based and terrain-aware. Important building blocks:
   per-query world snapshots.
 - `pathing/dynamic_overlay.py` for deterministic live model blocker overlays keyed by
   army identity rather than faction string.
+- World/surface revisions are fingerprinted from normalized geometry encodings
+  (not only bounds/area summaries), so cache keys can safely distinguish equal-summary
+  but different polygons.
 - Segment legality uses a swept-base check between waypoints so thin walls cannot be
   tunneled through by center-point interpolation artifacts.
 

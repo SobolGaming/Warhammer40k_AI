@@ -198,8 +198,6 @@ def terrain_ignored_for_ground_transit(
 def extract_ground_transit_obstacles(
     game_map: object,
     movement_profile: MovementProfile,
-    *,
-    moving_unit: object = None,
 ) -> tuple[BaseGeometry, ...]:
     """
     Extract deterministic static obstacle geometry for the ground layer.
@@ -236,8 +234,7 @@ def extract_ground_transit_obstacles(
             traversal_rules = getattr(terrain_feature, "traversal_rules", {}) or {}
             if not bool(traversal_rules.get("blocks_vehicles", False)):
                 continue
-            keywords = tuple(getattr(moving_unit, "keywords", ()) or ()) if moving_unit is not None else ()
-            if "Vehicle" not in keywords:
+            if not bool(movement_profile.terrain_transition_rules.get("is_vehicle_unit", False)):
                 continue
             footprint = getattr(terrain_feature, "footprint", None)
             if footprint is not None:

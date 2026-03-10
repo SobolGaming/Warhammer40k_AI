@@ -20,7 +20,7 @@ from warhammer40k_ai.pathing.surfaces import (
 )
 from warhammer40k_ai.pathing.world_snapshot import build_world_snapshot
 from warhammer40k_ai.roster.army import Army
-from warhammer40k_ai.utility.calcs import MovementType
+from warhammer40k_ai.utility.calcs import MovementType, build_collision_trees
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.units.unit import Unit
 
@@ -187,3 +187,75 @@ def test_phase_b_dynamic_overlay_uses_army_identity() -> None:
     assert len(overlay.enemy_blockers) == 1
     assert len(overlay.friendly_blockers) == 1
     assert overlay.enemy_blockers[0].model_id != overlay.friendly_blockers[0].model_id
+
+
+def test_phase_b_world_snapshot_vehicle_barricade_obstacles_match_live_rules() -> None:
+    game_map = Map(60, 44)
+    barricade = TerrainFactory.create_barricade((8.0, 8.0), (14.0, 8.0), height=5.0, thickness=1.0)
+    game_map.add_terrain_feature(barricade)
+
+    vehicle = _make_unit("Vehicle", x=9.0, y=8.0)
+    vehicle.keywords = ["Vehicle"]
+    game_map.units = [vehicle]
+
+    vehicle_profile = build_movement_profile(vehicle, MovementType.MOVE)
+    vehicle_snapshot = build_world_snapshot(game_map, vehicle_profile)
+    assert len(vehicle_snapshot.ground_transit_obstacles) == 1
+
+    vehicle_trees = build_collision_trees(
+        vehicle,
+        MovementType.MOVE,
+        game_map,
+        moving_model=vehicle.models[0],
+        movement_profile=vehicle_profile,
+    )
+    vehicle_tree_count = len(vehicle_trees["terrain"].geometries) if vehicle_trees.get("terrain") is not None else 0
+    assert vehicle_tree_count == 1
+
+    infantry = _make_unit("Infantry", x=9.0, y=8.0)
+    infantry.keywords = ["Infantry"]
+    game_map.units = [infantry]
+
+    infantry_profile = build_movement_profile(infantry, MovementType.MOVE)
+    infantry_snapshot = build_world_snapshot(game_map, infantry_profile)
+    assert len(infantry_snapshot.ground_transit_obstacles) == 0
+
+
+def test_phase_b_terrain_revision_changes_for_same_summary_but_different_geometry() -> None:
+    # Both footprints have identical bounds, area, perimeter, and type.
+    footprint_a = Polygon([
+        (0.0, 1.0), (0.0, 4.0), (1.0, 4.0), (1.0, 1.0), (4.0, 1.0), (4.0, 0.0), (0.0, 0.0)
+    ])
+    footprint_b = Polygon([
+        (0.0, 0.0), (0.0, 4.0), (1.0, 4.0), (1.0, 2.0), (4.0, 2.0), (4.0, 1.0), (1.0, 1.0), (1.0, 0.0)
+    ])
+    assert footprint_a.bounds == footprint_b.bounds
+    assert footprint_a.area == footprint_b.area
+    assert footprint_a.length == footprint_b.length
+
+    map_a = Map(60, 44)
+    map_b = Map(60, 44)
+    ruins_a = RuinsTerrain(
+        footprint=footprint_a,
+        walls=[],
+        openings=[],
+        floors=[{"polygon": footprint_a, "elevation": 0.0, "thickness": 0.12}],
+        height_map={},
+    )
+    ruins_b = RuinsTerrain(
+        footprint=footprint_b,
+        walls=[],
+        openings=[],
+        floors=[{"polygon": footprint_b, "elevation": 0.0, "thickness": 0.12}],
+        height_map={},
+    )
+    map_a.add_terrain_feature(ruins_a)
+    map_b.add_terrain_feature(ruins_b)
+
+    moving = _make_unit("Moving")
+    movement_profile = build_movement_profile(moving, MovementType.MOVE)
+    snapshot_a = build_world_snapshot(map_a, movement_profile)
+    snapshot_b = build_world_snapshot(map_b, movement_profile)
+
+    assert snapshot_a.terrain_revision != snapshot_b.terrain_revision
+    assert snapshot_a.support_surface_revision != snapshot_b.support_surface_revision
