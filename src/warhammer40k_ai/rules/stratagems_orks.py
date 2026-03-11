@@ -53,6 +53,11 @@ class OrksStratagemMixin:
         checker = getattr(mgr, "is_da_big_hunt", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_dread_mob_detachment(self) -> bool:
+        mgr = self._orks_detachment_mgr()
+        checker = getattr(mgr, "is_dread_mob", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_freebooter_krew_detachment(self) -> bool:
         mgr = self._orks_detachment_mgr()
         checker = getattr(mgr, "is_freebooter_krew", None) if mgr is not None else None
@@ -437,6 +442,458 @@ class OrksStratagemMixin:
                 return True
         return False
 
+    def _orks_unit_is_grots_vehicle(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        if not self._orks_unit_contains_keyword(root, "VEHICLE"):
+            return False
+        return bool(self._orks_unit_contains_any_keyword(root, ("GROT", "GROTS", "GRETCHIN")))
+
+    def _orks_unit_is_walker_or_grots_vehicle(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        if self._orks_unit_contains_keyword(root, "WALKER"):
+            return True
+        return self._orks_unit_is_grots_vehicle(root)
+
+    def _orks_unit_is_mek_or_walker_or_grots_vehicle(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        if self._orks_unit_contains_keyword(root, "MEK"):
+            return True
+        return self._orks_unit_is_walker_or_grots_vehicle(root)
+
+    def _orks_temp_combat_choice_spec(self, *, stratagem_name: str, source_name: str) -> dict:
+        source = str(source_name or stratagem_name or "Orks stratagem").strip() or "Orks stratagem"
+        key = self._orks_normalize_name(stratagem_name)
+        if key == "fight proppa":
+            return {
+                "detachment": "taktikal_brigade",
+                "choices": [
+                    {
+                        "key": "sustained_hits_1",
+                        "label": "[SUSTAINED HITS 1]",
+                        "effects": [
+                            {
+                                "id": "fight_proppa:sustained_hits_1",
+                                "source": source,
+                                "effect": "keyword",
+                                "attack_type": "melee",
+                                "keyword": "SUSTAINED HITS 1",
+                                "expires_mode": "phase",
+                            }
+                        ],
+                    },
+                    {
+                        "key": "lethal_hits",
+                        "label": "[LETHAL HITS]",
+                        "effects": [
+                            {
+                                "id": "fight_proppa:lethal_hits",
+                                "source": source,
+                                "effect": "keyword",
+                                "attack_type": "melee",
+                                "keyword": "LETHAL HITS",
+                                "expires_mode": "phase",
+                            }
+                        ],
+                    },
+                ],
+            }
+        if key == "dakka dakka dakka":
+            return {
+                "detachment": "dread_mob",
+                "choices": [
+                    {
+                        "key": "normal",
+                        "label": "Normal: re-roll Hit rolls of 1",
+                        "effects": [
+                            {
+                                "id": "dakka_dakka_dakka:normal:hit_reroll",
+                                "source": source,
+                                "effect": "hit_reroll",
+                                "attack_type": "ranged",
+                                "reroll_mode": "ones",
+                                "expires_mode": "phase",
+                            }
+                        ],
+                    },
+                    {
+                        "key": "push_it",
+                        "label": "Push It: full Hit re-rolls + [HAZARDOUS]",
+                        "effects": [
+                            {
+                                "id": "dakka_dakka_dakka:push_it:hit_reroll",
+                                "source": source,
+                                "effect": "hit_reroll",
+                                "attack_type": "ranged",
+                                "reroll_mode": "full",
+                                "expires_mode": "phase",
+                            },
+                            {
+                                "id": "dakka_dakka_dakka:push_it:hazardous",
+                                "source": source,
+                                "effect": "keyword",
+                                "attack_type": "ranged",
+                                "keyword": "HAZARDOUS",
+                                "expires_mode": "phase",
+                            },
+                        ],
+                    },
+                ],
+            }
+        if key == "bigger shells for bigger gitz":
+            return {
+                "detachment": "dread_mob",
+                "choices": [
+                    {
+                        "key": "normal",
+                        "label": "Normal: +1 to Wound vs MONSTER/VEHICLE",
+                        "effects": [
+                            {
+                                "id": "bigger_shells_for_bigger_gitz:normal:wound_bonus",
+                                "source": source,
+                                "effect": "wound_bonus",
+                                "attack_type": "ranged",
+                                "value": 1,
+                                "target_keywords_any": ["MONSTER", "VEHICLE"],
+                                "expires_mode": "phase",
+                            }
+                        ],
+                    },
+                    {
+                        "key": "push_it",
+                        "label": "Push It: +1 to Wound/+1 Damage vs MONSTER/VEHICLE + [HAZARDOUS]",
+                        "effects": [
+                            {
+                                "id": "bigger_shells_for_bigger_gitz:push_it:wound_bonus",
+                                "source": source,
+                                "effect": "wound_bonus",
+                                "attack_type": "ranged",
+                                "value": 1,
+                                "target_keywords_any": ["MONSTER", "VEHICLE"],
+                                "expires_mode": "phase",
+                            },
+                            {
+                                "id": "bigger_shells_for_bigger_gitz:push_it:damage_bonus",
+                                "source": source,
+                                "effect": "damage_bonus",
+                                "attack_type": "ranged",
+                                "value": 1,
+                                "target_keywords_any": ["MONSTER", "VEHICLE"],
+                                "expires_mode": "phase",
+                            },
+                            {
+                                "id": "bigger_shells_for_bigger_gitz:push_it:hazardous",
+                                "source": source,
+                                "effect": "keyword",
+                                "attack_type": "ranged",
+                                "keyword": "HAZARDOUS",
+                                "expires_mode": "phase",
+                            },
+                        ],
+                    },
+                ],
+            }
+        if key == "klankin klaws":
+            return {
+                "detachment": "dread_mob",
+                "choices": [
+                    {
+                        "key": "normal",
+                        "label": "Normal: +2 Strength (melee)",
+                        "effects": [
+                            {
+                                "id": "klankin_klaws:normal:strength_bonus",
+                                "source": source,
+                                "effect": "strength_bonus",
+                                "attack_type": "melee",
+                                "value": 2,
+                                "expires_mode": "phase",
+                            }
+                        ],
+                    },
+                    {
+                        "key": "push_it",
+                        "label": "Push It: +2 Strength/+1 Damage (melee) + [HAZARDOUS]",
+                        "effects": [
+                            {
+                                "id": "klankin_klaws:push_it:strength_bonus",
+                                "source": source,
+                                "effect": "strength_bonus",
+                                "attack_type": "melee",
+                                "value": 2,
+                                "expires_mode": "phase",
+                            },
+                            {
+                                "id": "klankin_klaws:push_it:damage_bonus",
+                                "source": source,
+                                "effect": "damage_bonus",
+                                "attack_type": "melee",
+                                "value": 1,
+                                "expires_mode": "phase",
+                            },
+                            {
+                                "id": "klankin_klaws:push_it:hazardous",
+                                "source": source,
+                                "effect": "keyword",
+                                "attack_type": "melee",
+                                "keyword": "HAZARDOUS",
+                                "expires_mode": "phase",
+                            },
+                        ],
+                    },
+                ],
+            }
+        return {}
+
+    def _orks_build_temp_combat_choice_request(self, *, stratagem_name: str, unit: Any, choice_spec: dict) -> Any:
+        game = getattr(self, "game", None)
+        if game is None:
+            return None
+        if not bool(getattr(game, "is_authoritative", True)):
+            return None
+        request_decision = getattr(game, "request_decision", None)
+        queue = getattr(game, "decision_queue", None)
+        if not callable(request_decision) and (queue is None or not hasattr(queue, "add")):
+            return None
+
+        root = self._orks_root(unit)
+        if root is None:
+            return None
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return None
+        phase_name = self._orks_current_phase_key()
+        player_id = str(getattr(self.player, "id", "") or "")
+        normalized_stratagem = self._orks_normalize_name(stratagem_name)
+        choices = list(choice_spec.get("choices", []) or [])
+        if not choices:
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                if str(getattr(req, "player_id", "") or "") != player_id:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "orks_temp_combat_stratagem_choice":
+                    continue
+                if str(ctx.get("unit_id", "") or "") != unit_id:
+                    continue
+                if self._orks_normalize_name(str(ctx.get("stratagem_name", "") or "")) != normalized_stratagem:
+                    continue
+                if str(ctx.get("phase_name", "") or "") != phase_name:
+                    continue
+                return None
+
+        option_entries = []
+        for item in list(choices or []):
+            key = str(item.get("key", "") or "").strip().lower()
+            if not key:
+                continue
+            label = str(item.get("label", "") or key).strip() or key
+            option_entries.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "unit_id": unit_id,
+                        "stratagem_name": str(stratagem_name or "").strip(),
+                        "choice_key": key,
+                    },
+                )
+            )
+        if not option_entries:
+            return None
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{str(stratagem_name or '').strip() or 'Orks stratagem'}: choose mode for {getattr(root, 'name', 'Unit')}.",
+            player_id=getattr(self.player, "id", None),
+            options=option_entries,
+            context={
+                "ability": "orks_temp_combat_stratagem_choice",
+                "ability_name": str(stratagem_name or "").strip() or "Orks stratagem",
+                "army_id": str(get_entity_id(getattr(self.player, "army", None)) or ""),
+                "unit_id": unit_id,
+                "stratagem_name": str(stratagem_name or "").strip(),
+                "phase_name": phase_name,
+                "candidate_choice_keys": [
+                    str(item.get("key", "") or "").strip().lower()
+                    for item in list(choices or [])
+                    if str(item.get("key", "") or "").strip()
+                ],
+                "optional": False,
+            },
+        )
+
+    def _orks_submit_decision_request(self, request: Any) -> bool:
+        if request is None:
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        request_decision = getattr(game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+            return True
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "add"):
+            queue.add(request)
+            return True
+        return False
+
+    def validate_orks_temp_combat_stratagem_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        stratagem_name: str = "",
+    ) -> tuple[bool, str]:
+        root = self._orks_root(unit)
+        if root is None:
+            return False, "Orks stratagem choice source unit was not found."
+        if player is not None and player is not self.player:
+            return False, "Orks stratagem choice must be resolved by the owning player."
+        if not self._orks_owned_by_player(root, self.player):
+            return False, "Orks stratagem choice source unit must belong to you."
+        if not self._orks_on_battlefield(root, require_targetable=True):
+            return False, "Orks stratagem choice source unit must be on the battlefield and targetable."
+        if not self._is_orks_unit(root):
+            return False, "Orks stratagem choice source unit must be an ORKS unit."
+
+        resolved_name = str(stratagem_name or dict(payload or {}).get("stratagem_name", "") or "").strip()
+        if not resolved_name:
+            return False, "Orks stratagem choice requires stratagem_name."
+        normalized_name = self._orks_normalize_name(resolved_name)
+        choice_spec = self._orks_temp_combat_choice_spec(stratagem_name=resolved_name, source_name=resolved_name)
+        if not isinstance(choice_spec, dict) or not choice_spec:
+            return False, "Orks stratagem choice is not supported."
+
+        expected_phase = str(phase_name or "").strip().upper()
+        if expected_phase and game is not None:
+            current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if current_phase and current_phase != expected_phase:
+                return False, "Orks stratagem choice request is no longer in the current phase."
+
+        if normalized_name == "fight proppa":
+            if not self._is_taktikal_brigade_detachment():
+                return False, "FIGHT PROPPA requires Taktikal Brigade."
+            if not self._orks_unit_contains_any_keyword(root, ("INFANTRY", "MOUNTED")):
+                return False, "FIGHT PROPPA target must be an Orks Infantry or Orks Mounted unit."
+            if not self._orks_unit_not_selected_for_phase_action(root, phase_key="FIGHT_PHASE"):
+                return False, "FIGHT PROPPA target must not have been selected to fight this phase."
+        elif normalized_name == "dakka dakka dakka":
+            if not self._is_dread_mob_detachment():
+                return False, "DAKKA! DAKKA! DAKKA! requires Dread Mob."
+            if game is not None:
+                get_current = getattr(game, "get_current_player", None)
+                current_player = get_current() if callable(get_current) else None
+                if current_player is not self.player:
+                    return False, "DAKKA! DAKKA! DAKKA! can only be used in your Shooting phase."
+            if not self._orks_unit_is_walker_or_grots_vehicle(root):
+                return False, "DAKKA! DAKKA! DAKKA! target must be an Orks Walker or Grots Vehicle unit."
+            if not self._orks_unit_not_selected_for_phase_action(root, phase_key="SHOOTING_PHASE"):
+                return False, "DAKKA! DAKKA! DAKKA! target must not have been selected to shoot this phase."
+        elif normalized_name == "bigger shells for bigger gitz":
+            if not self._is_dread_mob_detachment():
+                return False, "BIGGER SHELLS FOR BIGGER GITZ requires Dread Mob."
+            if game is not None:
+                get_current = getattr(game, "get_current_player", None)
+                current_player = get_current() if callable(get_current) else None
+                if current_player is not self.player:
+                    return False, "BIGGER SHELLS FOR BIGGER GITZ can only be used in your Shooting phase."
+            if not self._orks_unit_is_mek_or_walker_or_grots_vehicle(root):
+                return False, "BIGGER SHELLS FOR BIGGER GITZ target must be a Mek, Orks Walker, or Grots Vehicle unit."
+            if not self._orks_unit_not_selected_for_phase_action(root, phase_key="SHOOTING_PHASE"):
+                return False, "BIGGER SHELLS FOR BIGGER GITZ target must not have been selected to shoot this phase."
+        elif normalized_name == "klankin klaws":
+            if not self._is_dread_mob_detachment():
+                return False, "KLANKIN' KLAWS requires Dread Mob."
+            if not self._orks_unit_contains_keyword(root, "WALKER"):
+                return False, "KLANKIN' KLAWS target must be an Orks Walker unit."
+            if not self._orks_unit_not_selected_for_phase_action(root, phase_key="FIGHT_PHASE"):
+                return False, "KLANKIN' KLAWS target must not have been selected to fight this phase."
+        else:
+            return False, "Orks stratagem choice is not supported."
+
+        choice_key = str(dict(payload or {}).get("choice_key", "") or "").strip().lower()
+        if not choice_key:
+            return False, "Orks stratagem choice requires choice_key."
+        allowed_keys = {
+            str(item.get("key", "") or "").strip().lower()
+            for item in list(choice_spec.get("choices", []) or [])
+            if str(item.get("key", "") or "").strip()
+        }
+        if choice_key not in allowed_keys:
+            return False, "Selected choice is not an eligible option."
+        return True, ""
+
+    def apply_orks_temp_combat_stratagem_choice(
+        self,
+        unit: Any,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        stratagem_name: str = "",
+    ):
+        valid, _reason = self.validate_orks_temp_combat_stratagem_choice(
+            unit,
+            payload,
+            game=game,
+            player=player,
+            phase_name=phase_name,
+            stratagem_name=stratagem_name,
+        )
+        if not valid:
+            return None
+        root = self._orks_root(unit)
+        if root is None:
+            return None
+
+        resolved_name = str(stratagem_name or dict(payload or {}).get("stratagem_name", "") or "").strip()
+        choice_spec = self._orks_temp_combat_choice_spec(stratagem_name=resolved_name, source_name=resolved_name)
+        if not isinstance(choice_spec, dict) or not choice_spec:
+            return None
+        choice_key = str(dict(payload or {}).get("choice_key", "") or "").strip().lower()
+        selected = None
+        for item in list(choice_spec.get("choices", []) or []):
+            if str(item.get("key", "") or "").strip().lower() == choice_key:
+                selected = dict(item)
+                break
+        if selected is None:
+            return None
+
+        effects = [dict(entry) for entry in list(selected.get("effects", []) or []) if isinstance(entry, dict)]
+        self._orks_apply_temp_effects(
+            root,
+            detachment=str(choice_spec.get("detachment", "") or ""),
+            effects=effects,
+        )
+        return {
+            "unit_id": str(get_entity_id(root) or ""),
+            "unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+            "stratagem_name": resolved_name,
+            "choice_key": choice_key,
+            "choice_label": str(selected.get("label", "") or choice_key),
+            "hazardous": any(
+                str(entry.get("effect", "") or "").strip().lower() == "keyword"
+                and str(entry.get("keyword", "") or "").strip().upper() == "HAZARDOUS"
+                for entry in list(effects or [])
+            ),
+        }
+
     def _orks_effective_cp_cost(self, stratagem: Any, *, target_unit: Any = None) -> int:
         cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         apply_cost = getattr(self.player, "apply_stratagem_cp_cost", None)
@@ -547,6 +1004,7 @@ class OrksStratagemMixin:
         if stratagem is None:
             return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        name_norm = self._orks_normalize_name(getattr(stratagem, "name", "") or "")
         if name_u == "ARMED TO DATEEF":
             return self._use_orks_armed_to_dateef(stratagem, **kwargs)
         if name_u == "DRAG IT DOWN":
@@ -573,6 +1031,14 @@ class OrksStratagemMixin:
             return self._use_orks_huge_show_offs(stratagem, **kwargs)
         if name_u == "COME ON LADZ!":
             return self._use_orks_come_on_ladz(stratagem, **kwargs)
+        if name_u == "FIGHT PROPPA":
+            return self._use_orks_fight_proppa(stratagem, **kwargs)
+        if name_u == "DAKKA! DAKKA! DAKKA!":
+            return self._use_orks_dakka_dakka_dakka(stratagem, **kwargs)
+        if name_u == "BIGGER SHELLS FOR BIGGER GITZ":
+            return self._use_orks_bigger_shells_for_bigger_gitz(stratagem, **kwargs)
+        if name_norm == "klankin klaws":
+            return self._use_orks_klankin_klaws(stratagem, **kwargs)
         return None
 
     def _use_orks_armed_to_dateef(self, stratagem: Any, **kwargs) -> bool:
@@ -1162,6 +1628,203 @@ class OrksStratagemMixin:
             "INFO: HUGE SHOW-OFFS: %s gains +1 Move, +1 Leadership, +1 OC and +1 to hit until next Command phase.",
             getattr(root, "name", "Unit"),
         )
+        return True
+
+    def _use_orks_fight_proppa(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_taktikal_brigade_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Fight phase",),
+            require_your_turn=False,
+            error_prefix="FIGHT PROPPA",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("FIGHT PROPPA", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: FIGHT PROPPA: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="FIGHT PROPPA",
+            target_unit=target_unit,
+            candidates=candidates,
+            keyword_any=("INFANTRY", "MOUNTED"),
+            require_not_selected_phase="Fight phase",
+        )
+        if not ok:
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: FIGHT PROPPA: cannot be used in current state")
+            return False
+        choice_spec = self._orks_temp_combat_choice_spec(
+            stratagem_name=str(getattr(stratagem, "name", "") or "FIGHT PROPPA"),
+            source_name=str(getattr(stratagem, "name", "") or "FIGHT PROPPA"),
+        )
+        request = self._orks_build_temp_combat_choice_request(
+            stratagem_name=str(getattr(stratagem, "name", "") or "FIGHT PROPPA"),
+            unit=root,
+            choice_spec=choice_spec,
+        )
+        if request is None:
+            logger.error("ERROR: FIGHT PROPPA: failed to queue mode choice")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._orks_submit_decision_request(request):
+            logger.error("ERROR: FIGHT PROPPA: failed to submit mode choice decision")
+            return False
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: FIGHT PROPPA: queued mode choice for %s.", getattr(root, "name", "Unit"))
+        return True
+
+    def _use_orks_dakka_dakka_dakka(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_dread_mob_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Shooting phase",),
+            require_your_turn=True,
+            error_prefix="DAKKA! DAKKA! DAKKA!",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("DAKKA! DAKKA! DAKKA!", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: DAKKA! DAKKA! DAKKA!: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="DAKKA! DAKKA! DAKKA!",
+            target_unit=target_unit,
+            candidates=candidates,
+            require_not_selected_phase="Shooting phase",
+        )
+        if not ok:
+            return False
+        if not self._orks_unit_is_walker_or_grots_vehicle(root):
+            logger.error("ERROR: DAKKA! DAKKA! DAKKA!: target must be an Orks Walker or Grots Vehicle unit")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: DAKKA! DAKKA! DAKKA!: cannot be used in current state")
+            return False
+        choice_spec = self._orks_temp_combat_choice_spec(
+            stratagem_name=str(getattr(stratagem, "name", "") or "DAKKA! DAKKA! DAKKA!"),
+            source_name=str(getattr(stratagem, "name", "") or "DAKKA! DAKKA! DAKKA!"),
+        )
+        request = self._orks_build_temp_combat_choice_request(
+            stratagem_name=str(getattr(stratagem, "name", "") or "DAKKA! DAKKA! DAKKA!"),
+            unit=root,
+            choice_spec=choice_spec,
+        )
+        if request is None:
+            logger.error("ERROR: DAKKA! DAKKA! DAKKA!: failed to queue mode choice")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._orks_submit_decision_request(request):
+            logger.error("ERROR: DAKKA! DAKKA! DAKKA!: failed to submit mode choice decision")
+            return False
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: DAKKA! DAKKA! DAKKA!: queued mode choice for %s.", getattr(root, "name", "Unit"))
+        return True
+
+    def _use_orks_bigger_shells_for_bigger_gitz(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_dread_mob_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Shooting phase",),
+            require_your_turn=True,
+            error_prefix="BIGGER SHELLS FOR BIGGER GITZ",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("BIGGER SHELLS FOR BIGGER GITZ", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: BIGGER SHELLS FOR BIGGER GITZ: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="BIGGER SHELLS FOR BIGGER GITZ",
+            target_unit=target_unit,
+            candidates=candidates,
+            require_not_selected_phase="Shooting phase",
+        )
+        if not ok:
+            return False
+        if not self._orks_unit_is_mek_or_walker_or_grots_vehicle(root):
+            logger.error(
+                "ERROR: BIGGER SHELLS FOR BIGGER GITZ: target must be a Mek, Orks Walker, or Grots Vehicle unit"
+            )
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: BIGGER SHELLS FOR BIGGER GITZ: cannot be used in current state")
+            return False
+        choice_spec = self._orks_temp_combat_choice_spec(
+            stratagem_name=str(getattr(stratagem, "name", "") or "BIGGER SHELLS FOR BIGGER GITZ"),
+            source_name=str(getattr(stratagem, "name", "") or "BIGGER SHELLS FOR BIGGER GITZ"),
+        )
+        request = self._orks_build_temp_combat_choice_request(
+            stratagem_name=str(getattr(stratagem, "name", "") or "BIGGER SHELLS FOR BIGGER GITZ"),
+            unit=root,
+            choice_spec=choice_spec,
+        )
+        if request is None:
+            logger.error("ERROR: BIGGER SHELLS FOR BIGGER GITZ: failed to queue mode choice")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._orks_submit_decision_request(request):
+            logger.error("ERROR: BIGGER SHELLS FOR BIGGER GITZ: failed to submit mode choice decision")
+            return False
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BIGGER SHELLS FOR BIGGER GITZ: queued mode choice for %s.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_orks_klankin_klaws(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_dread_mob_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Fight phase",),
+            require_your_turn=False,
+            error_prefix="KLANKIN' KLAWS",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("KLANKIN' KLAWS", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: KLANKIN' KLAWS: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="KLANKIN' KLAWS",
+            target_unit=target_unit,
+            candidates=candidates,
+            keyword_any=("WALKER",),
+            require_not_selected_phase="Fight phase",
+        )
+        if not ok:
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: KLANKIN' KLAWS: cannot be used in current state")
+            return False
+        choice_spec = self._orks_temp_combat_choice_spec(
+            stratagem_name=str(getattr(stratagem, "name", "") or "KLANKIN' KLAWS"),
+            source_name=str(getattr(stratagem, "name", "") or "KLANKIN' KLAWS"),
+        )
+        request = self._orks_build_temp_combat_choice_request(
+            stratagem_name=str(getattr(stratagem, "name", "") or "KLANKIN' KLAWS"),
+            unit=root,
+            choice_spec=choice_spec,
+        )
+        if request is None:
+            logger.error("ERROR: KLANKIN' KLAWS: failed to queue mode choice")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._orks_submit_decision_request(request):
+            logger.error("ERROR: KLANKIN' KLAWS: failed to submit mode choice decision")
+            return False
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: KLANKIN' KLAWS: queued mode choice for %s.", getattr(root, "name", "Unit"))
         return True
 
     def _use_orks_come_on_ladz(self, stratagem: Any, **kwargs) -> bool:

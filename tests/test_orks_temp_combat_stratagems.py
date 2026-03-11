@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from warhammer40k_ai.battlefield.map import ObjectivePoint
+from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.decisions import DecisionRequest, DecisionResult
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
@@ -81,16 +85,38 @@ def _make_unit(
     )
 
 
-def _make_ranged_profile(*, attacks: str = "1", ap: str = "0", range_val: str = "24") -> WargearProfile:
+def _make_ranged_profile(
+    *,
+    attacks: str = "1",
+    ap: str = "0",
+    range_val: str = "24",
+    strength: str = "5",
+    damage: str = "1",
+    description: str = "",
+) -> WargearProfile:
     parent = SimpleNamespace(name="Shoota", is_melee=lambda: False, is_ranged=lambda: True)
     data = {
         "range": str(range_val),
         "A": str(attacks),
         "BS_WS": "4+",
-        "S": "5",
+        "S": str(strength),
         "AP": str(ap),
-        "D": "1",
-        "description": "",
+        "D": str(damage),
+        "description": str(description or ""),
+    }
+    return WargearProfile("Profile", wargear_data=data, parent_wargear=parent)
+
+
+def _make_melee_profile(*, strength: str = "4", damage: str = "1", description: str = "") -> WargearProfile:
+    parent = SimpleNamespace(name="Klaw", is_melee=lambda: True, is_ranged=lambda: False)
+    data = {
+        "range": "Melee",
+        "A": "1",
+        "BS_WS": "3+",
+        "S": str(strength),
+        "AP": "0",
+        "D": str(damage),
+        "description": str(description or ""),
     }
     return WargearProfile("Profile", wargear_data=data, parent_wargear=parent)
 
@@ -140,6 +166,38 @@ def _deploy_unit(game: Game, unit: Unit, x: float, y: float) -> None:
 
 def _use_stratagem(player: Player, name: str, unit: Unit, *, phase_name: str) -> bool:
     return bool(player.stratagems.use(name, unit=unit, phase_name=phase_name))
+
+
+def _find_orks_temp_choice_request(game: Game, *, stratagem_name: str):
+    normalized = str(stratagem_name or "").strip().lower().replace("\u2019", "'")
+    for req in list(game.decision_queue.list() or []):
+        if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+            continue
+        ctx = dict(getattr(req, "context", {}) or {})
+        if str(ctx.get("ability", "") or "") != "orks_temp_combat_stratagem_choice":
+            continue
+        ctx_name = str(ctx.get("stratagem_name", "") or "").strip().lower().replace("\u2019", "'")
+        if ctx_name != normalized:
+            continue
+        return req
+    return None
+
+
+def _find_choice_option(request, *, choice_key: str):
+    expected = str(choice_key or "").strip().lower()
+    for opt in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(opt, "payload", {}) or {})
+        if str(payload.get("choice_key", "") or "").strip().lower() == expected:
+            return opt
+    return None
+
+
+def _stratagem_name_by_id(player: Player, stratagem_id: str, *, fallback_name: str) -> str:
+    target_id = str(stratagem_id or "")
+    for stratagem in list(player.stratagems.available or []):
+        if str(getattr(stratagem, "id", "") or "") == target_id:
+            return str(getattr(stratagem, "name", "") or fallback_name)
+    return str(fallback_name or "")
 
 
 def test_orks_temp_effect_helper_filters_and_sorts_by_effect_id():
@@ -613,6 +671,245 @@ def test_huge_show_offs_expires_at_start_of_owner_next_command_phase():
     assert int(hit_after_owner.get("hit", 0) or 0) == 0
 
 
+def test_fight_proppa_queues_bounded_choice_and_applies_selected_keyword():
+    attacker = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Taktikal Brigade",
+        ork_units=[attacker],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, attacker, 10.0, 10.0)
+    _deploy_unit(game, enemy, 12.0, 10.0)
+    _set_phase(game, phase_name="FIGHT_PHASE", current_player_index=0)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000009796003", fallback_name="FIGHT PROPPA")
+    base_cp = int(ork_player.command_points)
+    assert _use_stratagem(ork_player, strat_name, attacker, phase_name="Fight phase")
+    assert int(ork_player.command_points) == base_cp - 1
+
+    request = _find_orks_temp_choice_request(game, stratagem_name=strat_name)
+    assert request is not None
+    assert [str(getattr(opt, "label", "") or "") for opt in list(request.options or [])] == [
+        "[SUSTAINED HITS 1]",
+        "[LETHAL HITS]",
+    ]
+
+    lethal_option = _find_choice_option(request, choice_key="lethal_hits")
+    assert lethal_option is not None
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=ork_player.id,
+        option_id=lethal_option.option_id,
+        payload={},
+    )
+    applied = dispatch_decision(game, request, result)
+    assert bool(applied.ok)
+
+    bonuses = attacker.get_attack_keyword_bonuses(
+        target=enemy,
+        attack_type="melee",
+        model=attacker.models[0],
+        game_map=game.map,
+    )
+    assert bool(bonuses.get("lethal_hits")) is True
+    assert int(bonuses.get("sustained_hits_value", 0) or 0) == 0
+
+
+def test_orks_temp_choice_candidates_are_deterministic_across_identical_games():
+    attacker = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Taktikal Brigade",
+        ork_units=[attacker],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, attacker, 10.0, 10.0)
+    _deploy_unit(game, enemy, 12.0, 10.0)
+    _set_phase(game, phase_name="FIGHT_PHASE", current_player_index=0)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000009796003", fallback_name="FIGHT PROPPA")
+    assert _use_stratagem(ork_player, strat_name, attacker, phase_name="Fight phase")
+    request = _find_orks_temp_choice_request(game, stratagem_name=strat_name)
+    assert request is not None
+
+    serialized = request.to_dict()
+    restored = DecisionRequest.from_dict(serialized)
+
+    original_candidates = [(str(c.action_id), dict(c.params or {})) for c in list(request.candidates or [])]
+    restored_candidates = [(str(c.action_id), dict(c.params or {})) for c in list(restored.candidates or [])]
+    assert original_candidates == restored_candidates
+
+
+def test_dakka_dakka_push_it_grants_full_rerolls_and_multisource_hazardous_fail_on_two():
+    walker = _make_unit("Deff Dread", keywords=["ORKS", "VEHICLE", "WALKER"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Dread Mob",
+        ork_units=[walker],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, walker, 10.0, 10.0)
+    _deploy_unit(game, enemy, 16.0, 10.0)
+    _set_phase(game, phase_name="SHOOTING_PHASE", current_player_index=0)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008878005", fallback_name="DAKKA! DAKKA! DAKKA!")
+    assert _use_stratagem(ork_player, strat_name, walker, phase_name="Shooting phase")
+    request = _find_orks_temp_choice_request(game, stratagem_name=strat_name)
+    assert request is not None
+
+    push_option = _find_choice_option(request, choice_key="push_it")
+    assert push_option is not None
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=ork_player.id,
+        option_id=push_option.option_id,
+        payload={},
+    )
+    applied = dispatch_decision(game, request, result)
+    assert bool(applied.ok)
+
+    hit_mods = walker.get_unit_hit_reroll_modifiers(
+        "ranged",
+        target=enemy,
+        attacker_model=walker.models[0],
+    )
+    assert bool(hit_mods.get("reroll_hit_full")) is True
+
+    keyword_bonus = walker.get_attack_keyword_bonuses(
+        target=enemy,
+        attack_type="ranged",
+        model=walker.models[0],
+        game_map=game.map,
+    )
+    assert bool(keyword_bonus.get("hazardous")) is True
+
+    profile = _make_ranged_profile(description="Hazardous")
+    with patch("warhammer40k_ai.units.wargear.get_roll", return_value=2):
+        attack_result = profile.attack(enemy, walker.models[0], game_map=game.map)
+    assert int(attack_result.hazardous_roll or 0) == 2
+    assert int(attack_result.hazardous_damage or 0) == 3
+
+
+def test_bigger_shells_push_it_applies_wound_and_damage_bonuses_only_vs_monster_or_vehicle():
+    attacker = _make_unit("Mek", keywords=["ORKS", "INFANTRY", "MEK"], faction_keywords=["ORKS"])
+    vehicle_target = _make_unit("Enemy Tank", keywords=["VEHICLE"], faction_keywords=["ENEMY"])
+    infantry_target = _make_unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Dread Mob",
+        ork_units=[attacker],
+        enemy_units=[vehicle_target, infantry_target],
+    )
+    _deploy_unit(game, attacker, 10.0, 10.0)
+    _deploy_unit(game, vehicle_target, 18.0, 10.0)
+    _deploy_unit(game, infantry_target, 20.0, 10.0)
+    _set_phase(game, phase_name="SHOOTING_PHASE", current_player_index=0)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008878004", fallback_name="BIGGER SHELLS FOR BIGGER GITZ")
+    assert _use_stratagem(ork_player, strat_name, attacker, phase_name="Shooting phase")
+    request = _find_orks_temp_choice_request(game, stratagem_name=strat_name)
+    assert request is not None
+
+    push_option = _find_choice_option(request, choice_key="push_it")
+    assert push_option is not None
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=ork_player.id,
+        option_id=push_option.option_id,
+        payload={},
+    )
+    applied = dispatch_decision(game, request, result)
+    assert bool(applied.ok)
+
+    vehicle_mods = attacker.get_unit_wound_reroll_modifiers(
+        "ranged",
+        target=vehicle_target,
+        attacker_model=attacker.models[0],
+    )
+    infantry_mods = attacker.get_unit_wound_reroll_modifiers(
+        "ranged",
+        target=infantry_target,
+        attacker_model=attacker.models[0],
+    )
+    assert int(vehicle_mods.get("wound", 0) or 0) == 1
+    assert int(infantry_mods.get("wound", 0) or 0) == 0
+
+    profile = _make_ranged_profile(damage="1")
+    vehicle_damage = profile._damage_target_with_tracking(
+        vehicle_target.models[0],
+        attacker.models[0],
+        {"target_unit": vehicle_target},
+        game_map=game.map,
+        allow_rerolls=False,
+    )
+    infantry_damage = profile._damage_target_with_tracking(
+        infantry_target.models[0],
+        attacker.models[0],
+        {"target_unit": infantry_target},
+        game_map=game.map,
+        allow_rerolls=False,
+    )
+    assert int(vehicle_damage.get("damage_applied", 0) or 0) == 2
+    assert int(infantry_damage.get("damage_applied", 0) or 0) == 1
+
+
+def test_klankin_klaws_push_it_applies_melee_strength_damage_and_hazardous():
+    walker = _make_unit("Deff Dread", keywords=["ORKS", "VEHICLE", "WALKER"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], toughness="6", wounds="4")
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Dread Mob",
+        ork_units=[walker],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, walker, 10.0, 10.0)
+    _deploy_unit(game, enemy, 16.0, 10.0)
+    _set_phase(game, phase_name="FIGHT_PHASE", current_player_index=0)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008878002", fallback_name="KLANKIN' KLAWS")
+    assert _use_stratagem(ork_player, strat_name, walker, phase_name="Fight phase")
+    request = _find_orks_temp_choice_request(game, stratagem_name=strat_name)
+    assert request is not None
+
+    push_option = _find_choice_option(request, choice_key="push_it")
+    assert push_option is not None
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=ork_player.id,
+        option_id=push_option.option_id,
+        payload={},
+    )
+    applied = dispatch_decision(game, request, result)
+    assert bool(applied.ok)
+
+    melee_profile = _make_melee_profile(strength="4", damage="1")
+    wound_result = melee_profile._wound_target_with_tracking(
+        enemy,
+        walker.models[0],
+        {},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(wound_result.get("wound")) is True
+
+    damage_result = melee_profile._damage_target_with_tracking(
+        enemy.models[0],
+        walker.models[0],
+        {"target_unit": enemy},
+        game_map=game.map,
+        allow_rerolls=False,
+    )
+    assert int(damage_result.get("damage_applied", 0) or 0) == 2
+
+    keyword_bonus = walker.get_attack_keyword_bonuses(
+        target=enemy,
+        attack_type="melee",
+        model=walker.models[0],
+        game_map=game.map,
+    )
+    assert bool(keyword_bonus.get("hazardous")) is True
+
+
 def test_orks_temp_buff_stratagem_descriptors_are_registered():
     expected = {
         "000008886002": "ARMED TO DATEEF",
@@ -627,6 +924,10 @@ def test_orks_temp_buff_stratagem_descriptors_are_registered():
         "000009992006": "SPESHUL SHELLS",
         "000009796002": "DAT'S OURS",
         "000009992004": "HUGE SHOW-OFFS",
+        "000009796003": "FIGHT PROPPA",
+        "000008878005": "DAKKA! DAKKA! DAKKA!",
+        "000008878004": "BIGGER SHELLS FOR BIGGER GITZ",
+        "000008878002": "KLANKIN' KLAWS",
     }
 
     for stratagem_id, name in sorted(expected.items()):

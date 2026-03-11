@@ -6826,6 +6826,24 @@ class ActionsMovementMixin:
         if callable(temp_effect_iter):
             for effect in list(
                 temp_effect_iter(
+                    effect_type="wound_bonus",
+                    attack_type=atype,
+                    target=target,
+                    model=attacker_model,
+                )
+                or []
+            ):
+                try:
+                    wound_bonus = int(effect.get("value", 0) or 0)
+                except (TypeError, ValueError):
+                    wound_bonus = 0
+                if wound_bonus == 0:
+                    continue
+                mods["wound"] += int(wound_bonus)
+                source = str(effect.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
+                wound_reasons.append(f"{wound_bonus:+d} to wound from {source}")
+            for effect in list(
+                temp_effect_iter(
                     effect_type="wound_reroll",
                     attack_type=atype,
                     target=target,

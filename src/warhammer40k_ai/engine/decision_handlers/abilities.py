@@ -4999,6 +4999,57 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(valid):
             return (str(reason or "Try Dat Button! choice is not valid."),)
         return ()
+    if ability == "orks_temp_combat_stratagem_choice":
+        if is_skip_choice(request, result):
+            return ("Orks stratagem mode selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Orks stratagem mode selection army not found.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        if stratagem_mgr is None:
+            return ("Orks stratagem mode selection manager is unavailable.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("unit_id") or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Orks stratagem mode source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Orks stratagem mode source unit was not found.",)
+        source_id = str(get_entity_id(source_root) or "")
+        if str(ctx.get("unit_id", "") or "") and str(ctx.get("unit_id", "") or "") != source_id:
+            return ("Orks stratagem mode source unit mismatch.",)
+        choice_key = str(payload.get("choice_key", "") or "").strip().lower()
+        candidate_keys = {
+            str(v or "").strip().lower()
+            for v in list(ctx.get("candidate_choice_keys", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_keys and choice_key not in candidate_keys:
+            return ("Orks stratagem mode selected choice is not an eligible option.",)
+        validate_choice = getattr(stratagem_mgr, "validate_orks_temp_combat_stratagem_choice", None)
+        if not callable(validate_choice):
+            return ("Orks stratagem mode validation is unavailable.",)
+        valid, reason = validate_choice(
+            source_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            stratagem_name=str(ctx.get("stratagem_name", "") or payload.get("stratagem_name", "") or ""),
+        )
+        if not bool(valid):
+            return (str(reason or "Orks stratagem mode choice is not valid."),)
+        return ()
     if ability == "taktikal_brigade_lissen_ere":
         payload = dict(_option_payload(request, result) or {})
         if is_skip_choice(request, result):
@@ -11330,6 +11381,54 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 player,
                 f"{ability_name}: {unit_name} selected {effect_label}{hazardous_text}.",
             )
+        return outcome
+    if ability == "orks_temp_combat_stratagem_choice":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        stratagem_mgr = getattr(player, "stratagems", None) if player is not None else None
+        if stratagem_mgr is None:
+            return None
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        apply_choice = getattr(stratagem_mgr, "apply_orks_temp_combat_stratagem_choice", None)
+        if not callable(apply_choice):
+            return None
+        outcome = apply_choice(
+            source_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            stratagem_name=str(ctx.get("stratagem_name", "") or payload.get("stratagem_name", "") or ""),
+        )
+        if not isinstance(outcome, dict):
+            return None
+        ability_name = str(
+            ctx.get("ability_name", "")
+            or outcome.get("stratagem_name", "")
+            or "Orks stratagem"
+        ).strip() or "Orks stratagem"
+        unit_name = str(outcome.get("unit_name", "") or getattr(source_root, "name", "Unit"))
+        choice_label = str(outcome.get("choice_label", "") or outcome.get("choice_key", "") or "choice")
+        hazardous_text = " and [HAZARDOUS]" if bool(outcome.get("hazardous", False)) else ""
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {unit_name} selected {choice_label}{hazardous_text}.",
+        )
         return outcome
     if ability == "taktikal_brigade_lissen_ere":
         payload = dict(_option_payload(request, result) or {})

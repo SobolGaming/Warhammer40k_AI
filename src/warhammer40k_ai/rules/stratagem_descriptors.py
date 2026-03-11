@@ -770,6 +770,67 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "hit_roll_bonus": 1,
         },
     ),
+    "000009796003": StratagemToolDescriptor(
+        stratagem_id="000009796003",
+        name="FIGHT PROPPA",
+        timing="fight_phase_on_select_to_fight",
+        target="orks_infantry_or_mounted_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="bounded_choice_melee_keyword",
+        cp_cost=1,
+        effect_params={
+            "choices": [
+                {"choice_key": "sustained_hits_1", "keyword": "SUSTAINED HITS 1"},
+                {"choice_key": "lethal_hits", "keyword": "LETHAL HITS"},
+            ],
+        },
+    ),
+    "000008878005": StratagemToolDescriptor(
+        stratagem_id="000008878005",
+        name="DAKKA! DAKKA! DAKKA!",
+        timing="shooting_phase_on_select_to_shoot",
+        target="orks_walker_or_grots_vehicle_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="bounded_choice_ranged_hit_reroll_with_optional_hazardous",
+        cp_cost=1,
+        effect_params={
+            "choices": [
+                {"choice_key": "normal", "hit_reroll_mode": "ones", "grant_hazardous": False},
+                {"choice_key": "push_it", "hit_reroll_mode": "full", "grant_hazardous": True},
+            ],
+        },
+    ),
+    "000008878004": StratagemToolDescriptor(
+        stratagem_id="000008878004",
+        name="BIGGER SHELLS FOR BIGGER GITZ",
+        timing="shooting_phase_on_select_to_shoot",
+        target="mek_or_orks_walker_or_grots_vehicle_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="bounded_choice_ranged_wound_damage_vs_monster_vehicle",
+        cp_cost=1,
+        effect_params={
+            "target_keywords_any": ["MONSTER", "VEHICLE"],
+            "choices": [
+                {"choice_key": "normal", "wound_bonus": 1, "damage_bonus": 0, "grant_hazardous": False},
+                {"choice_key": "push_it", "wound_bonus": 1, "damage_bonus": 1, "grant_hazardous": True},
+            ],
+        },
+    ),
+    "000008878002": StratagemToolDescriptor(
+        stratagem_id="000008878002",
+        name="KLANKIN' KLAWS",
+        timing="fight_phase_on_select_to_fight",
+        target="orks_walker_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="bounded_choice_melee_strength_damage_with_optional_hazardous",
+        cp_cost=1,
+        effect_params={
+            "choices": [
+                {"choice_key": "normal", "strength_bonus": 2, "damage_bonus": 0, "grant_hazardous": False},
+                {"choice_key": "push_it", "strength_bonus": 2, "damage_bonus": 1, "grant_hazardous": True},
+            ],
+        },
+    ),
 }
 
 _ORKS_TEMP_BUFF_STRATAGEM_BY_NAME = {

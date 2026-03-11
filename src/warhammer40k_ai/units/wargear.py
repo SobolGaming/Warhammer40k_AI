@@ -15095,6 +15095,31 @@ class WargearProfile:
                 strength = strength + int(s_bonus)
                 if s_reasons:
                     wound_result.setdefault("modifiers", []).extend(list(s_reasons))
+        # Orks temporary effects: Strength modifiers until end of phase.
+        if isinstance(strength, int):
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            temp_effect_iter = getattr(attacker_unit, "iter_active_orks_temp_effects", None) if attacker_unit is not None else None
+            if callable(temp_effect_iter):
+                attack_type = "melee" if bool(getattr(self.parent_wargear, "is_melee", lambda: False)()) else "ranged"
+                for effect in list(
+                    temp_effect_iter(
+                        effect_type="strength_bonus",
+                        attack_type=attack_type,
+                        target=target,
+                        model=attacker,
+                        weapon_profile=self,
+                    )
+                    or []
+                ):
+                    try:
+                        s_bonus = int(effect.get("value", 0) or 0)
+                    except (TypeError, ValueError):
+                        s_bonus = 0
+                    if s_bonus == 0:
+                        continue
+                    strength = int(strength) + int(s_bonus)
+                    source_name = str(effect.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
+                    wound_result.setdefault("modifiers", []).append(f"{s_bonus:+d}S from {source_name}")
         # Fight phase target bonuses: improve Strength vs selected target.
         try:
             if target is not None and isinstance(strength, int):
@@ -21625,6 +21650,33 @@ class WargearProfile:
                 )
                 if d_reasons:
                     damage_result['special_effects'].extend(list(d_reasons))
+        # Orks temporary effects: Damage modifiers until end of phase.
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        temp_effect_iter = getattr(attacker_unit, "iter_active_orks_temp_effects", None) if attacker_unit is not None else None
+        if callable(temp_effect_iter):
+            attack_type = "melee" if bool(getattr(self.parent_wargear, "is_melee", lambda: False)()) else "ranged"
+            target_unit = getattr(target_model, "parent_unit", None) if target_model is not None else None
+            for effect in list(
+                temp_effect_iter(
+                    effect_type="damage_bonus",
+                    attack_type=attack_type,
+                    target=target_unit,
+                    model=attacker,
+                    weapon_profile=self,
+                )
+                or []
+            ):
+                try:
+                    d_bonus = int(effect.get("value", 0) or 0)
+                except (TypeError, ValueError):
+                    d_bonus = 0
+                if d_bonus == 0:
+                    continue
+                source_name = str(effect.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
+                damage_mods.append(
+                    Modifier(ModifierOp.ADD, int(d_bonus), source="stratagem:orks_temp_damage_add")
+                )
+                damage_result['special_effects'].append(f"{source_name} {d_bonus:+d}D")
         # Aeldari (Eldritch Raiders): RUTHLESS KILLERS (+1 Damage until end of phase).
         try:
             attacker_unit = getattr(attacker, "parent_unit", None)
