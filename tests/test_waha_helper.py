@@ -47,6 +47,29 @@ class TestWahaHelper(unittest.TestCase):
         names = [name for name, _ds_id in self.waha_helper.get_all_datasheet_names()]
         self.assertNotIn("Ferren Areios", names)
 
+    def test_mission_tactics_id_is_consistent_between_ability_and_detachment_imports(self):
+        mission_tactics_id = "000008521"
+        ability_row = self.waha_helper.abilities.get(mission_tactics_id)
+        detachment_row = self.waha_helper.detachment_abilities.get(mission_tactics_id)
+        self.assertIsNotNone(ability_row)
+        self.assertIsNotNone(detachment_row)
+        self.assertEqual(str(ability_row.get("name", "") or ""), "Mission Tactics")
+        self.assertEqual(str(detachment_row.get("name", "") or ""), "Mission Tactics")
+        self.assertEqual(
+            str(ability_row.get("description", "") or ""),
+            str(detachment_row.get("description", "") or ""),
+        )
+
+    def test_filtered_datasheets_keep_mission_tactics_links(self):
+        mission_tactics_id = "000008521"
+        linked = []
+        for datasheet in self.waha_helper.datasheets.values():
+            for entry in list(datasheet.get("datasheets_abilities", []) or []):
+                if str(entry.get("ability_id", "") or "").strip() == mission_tactics_id:
+                    linked.append(str(datasheet.get("name", "") or ""))
+                    break
+        self.assertGreater(len(linked), 0)
+
 
 if __name__ == '__main__':
     unittest.main()

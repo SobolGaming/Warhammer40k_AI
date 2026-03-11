@@ -5409,6 +5409,10 @@ def _datasheet_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str
 
 def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
     return {
+        "000008521": (
+            "Supported",
+            "Black Spear Task Force: in each Command phase you can select one unchosen Mission Tactic for the battle round; Furor grants Sustained Hits 1, Malleus grants Lethal Hits, and Purgatus grants Precision on critical hits for ADEPTUS ASTARTES units until your next Command phase.",
+        ),
         "000009125": (
             "Supported",
             "Ordo Xenos Alien Hunters: Deathwatch Mission Tactics command-phase choice is fully implemented (Furor: Sustained Hits 1, Malleus: Lethal Hits, Purgatus: Precision on critical wounds) for DEATHWATCH units, with each tactic selectable once per battle.",
