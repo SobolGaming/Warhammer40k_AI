@@ -4761,6 +4761,18 @@ class RulesParsingMixin:
                     added.extend(_extract_keyword_list(m_combo.group("keywords") or ""))
                 if re.search(r"\b" + re.escape(self._BEARER_LOSES_SMOKE_KEYWORD_TOKENS) + r"\b", norm):
                     removed.append("Smoke")
+                if re.search(
+                    r"\b(?:it|the bearer|bearer) loses the grenades keyword\b",
+                    norm,
+                    flags=re.IGNORECASE,
+                ):
+                    removed.append("Grenades")
+                if re.search(
+                    r"\b(?:it|the bearer|bearer) no longer has the firing deck ability\b",
+                    norm,
+                    flags=re.IGNORECASE,
+                ):
+                    removed.append("Firing Deck")
                 if re.fullmatch(r"(?:the )?bearers unit has the smoke keyword", norm):
                     unit_added.append("Smoke")
                 if re.fullmatch(r"this unit has the smoke keyword", norm):

@@ -213,6 +213,99 @@ class OrksDetachmentManager(DetachmentManagerBase):
             return ""
         return str(get_entity_id(root) or "")
 
+    @staticmethod
+    def _model_id(model) -> str:
+        if model is None:
+            return ""
+        return str(get_entity_id(model) or "")
+
+    def _attached_member_units(self, unit) -> list:
+        root = self._unit_root(unit)
+        if root is None:
+            return []
+        members_fn = getattr(root, "get_attached_unit_members", None)
+        members = list(members_fn() or []) if callable(members_fn) else [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        return members
+
+    def _unit_has_active_enhancement_flag(self, unit, *, flag_key: str) -> bool:
+        if unit is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get(flag_key)):
+            return False
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+        if bearer_id:
+            for model in list(getattr(unit, "models", []) or []):
+                if self._model_id(model) != bearer_id:
+                    continue
+                return self._model_is_alive(model)
+            return False
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            return self._model_is_alive(get_bearer())
+        for model in list(getattr(unit, "models", []) or []):
+            if self._model_is_alive(model):
+                return True
+        return False
+
+    def _collect_active_enhancement_source_units(self, unit, *, flag_key: str) -> list:
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return []
+        sources = []
+        for member in self._attached_member_units(root):
+            if self._unit_has_active_enhancement_flag(member, flag_key=flag_key):
+                sources.append(member)
+        sources.sort(key=lambda member: str(get_entity_id(member) or ""))
+        return sources
+
+    @staticmethod
+    def _enhancement_source_name(unit, *, source_key: str, default: str) -> str:
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict):
+            source = str(sr.get(source_key, "") or "").strip()
+            if source:
+                return source
+        return str(default or "").strip() or default
+
+    def _model_is_active_enhancement_bearer(self, model, *, flag_key: str) -> bool:
+        if model is None:
+            return False
+        source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return False
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+            return False
+        model_id = self._model_id(model)
+        if not model_id:
+            return False
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+        if bearer_id:
+            return bearer_id == model_id and self._model_is_alive(model)
+        return self._model_is_alive(model)
+
+    def _taktikal_issue_range_for_model(self, issuer_model) -> float:
+        base_range = float(self._TAKTIKAL_BRIGADE_RANGE)
+        if issuer_model is None:
+            return base_range
+        if not self._model_is_active_enhancement_bearer(issuer_model, flag_key="enhancement_gob_boomer"):
+            return base_range
+        source_unit = getattr(issuer_model, "parent_unit", None)
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return base_range
+        try:
+            bonus_range = float(sr.get("enhancement_taktikal_issue_range", 18.0) or 18.0)
+        except (TypeError, ValueError):
+            bonus_range = 18.0
+        return float(max(base_range, bonus_range))
+
     def _unit_is_enemy_of_player(self, unit, player) -> bool:
         if unit is None or player is None:
             return False
@@ -553,6 +646,7 @@ class OrksDetachmentManager(DetachmentManagerBase):
         from ..utility.aura_utils import model_within_range_of_unit
 
         battle_round = self._taktikal_current_battle_round(game)
+        issue_range = self._taktikal_issue_range_for_model(issuer_model)
         candidates = []
         seen_ids: set[str] = set()
         for candidate in list(getattr(self.army, "units", []) or []):
@@ -576,7 +670,7 @@ class OrksDetachmentManager(DetachmentManagerBase):
             if not model_within_range_of_unit(
                 issuer_model,
                 root,
-                float(self._TAKTIKAL_BRIGADE_RANGE),
+                float(issue_range),
                 use_attached_aggregate=True,
             ):
                 continue
@@ -774,10 +868,12 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if not model_within_range_of_unit(
             issuer_model,
             target_root,
-            float(self._TAKTIKAL_BRIGADE_RANGE),
+            float(self._taktikal_issue_range_for_model(issuer_model)),
             use_attached_aggregate=True,
         ):
-            return False, "Lissen 'Ere target must be within 6\" of the issuing model."
+            range_in = self._taktikal_issue_range_for_model(issuer_model)
+            range_text = str(int(range_in)) if float(range_in).is_integer() else str(range_in)
+            return False, f"Lissen 'Ere target must be within {range_text}\" of the issuing model."
         return True, ""
 
     def _set_taktikal_effect_on_unit(
@@ -908,6 +1004,67 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if not self._model_has_any_keyword(target_model, ("INFANTRY", "MOUNTED")):
             return False, ""
         return True, f"{self._TAKTIKAL_BRIGADE_SOURCE}: {self._taktikal_label(self._TAKTIKAL_BRIGADE_TAKTIK_SNEAKY_STALKIN)}"
+
+    def mek_kaptin_ranged_hit_reroll_applies(
+        self,
+        attacker_model,
+        *,
+        attack_type: str = "",
+    ) -> tuple[bool, str]:
+        if str(attack_type or "").strip().lower() not in ("", "ranged"):
+            return False, ""
+        if attacker_model is None:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._unit_root(attacker_unit)
+        if attacker_root is None or not self._unit_belongs_to_army(attacker_root):
+            return False, ""
+        sources = self._collect_active_enhancement_source_units(
+            attacker_root,
+            flag_key="enhancement_mek_kaptin",
+        )
+        if not sources:
+            return False, ""
+        source_name = self._enhancement_source_name(
+            sources[0],
+            source_key="enhancement_mek_kaptin_source",
+            default="Mek Kaptin",
+        )
+        return True, source_name
+
+    def surly_as_a_squiggoth_defensive_wound_mod_entry(self, target_unit) -> dict | None:
+        root = self._unit_root(target_unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return None
+        leaders = list(getattr(root, "attached_leaders", []) or [])
+        if not leaders:
+            return None
+        sources = self._collect_active_enhancement_source_units(
+            root,
+            flag_key="enhancement_surly_as_a_squiggoth",
+        )
+        if not sources:
+            return None
+        leader_ids = {str(get_entity_id(leader) or "") for leader in leaders}
+        matched_source = None
+        for source_unit in sources:
+            source_id = str(get_entity_id(source_unit) or "")
+            if source_unit in leaders or source_id in leader_ids:
+                matched_source = source_unit
+                break
+        if matched_source is None:
+            return None
+        source_name = self._enhancement_source_name(
+            matched_source,
+            source_key="enhancement_surly_as_a_squiggoth_source",
+            default="Surly as a Squiggoth",
+        )
+        return {
+            "value": 1,
+            "attack_type": "any",
+            "source": source_name,
+            "requires_strength_gt_toughness": True,
+        }
 
     def apply_taktikal_brigade_stormboyz_battleline_keywords(self, unit=None) -> None:
         if not self.is_taktikal_brigade() or self.army is None:

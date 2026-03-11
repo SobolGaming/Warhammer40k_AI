@@ -4,6 +4,33 @@ from ._common import *
 
 
 class KeywordsDetachmentsMixin:
+    def _attached_unit_rule_is_removed(self, rule_name: str) -> bool:
+        target = str(rule_name or "").strip().lower()
+        if not target:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            removed = [
+                str(value or "").strip().lower()
+                for value in list(sr.get("ability_removed_keywords", []) or [])
+                if str(value or "").strip()
+            ]
+            if target in set(removed):
+                return True
+        return False
+
     def apply_death_mask_of_ollanius_battleshock_oc_override(self, mods: List) -> tuple[List, bool]:
         """Combined Arms: while battle-shocked, bearer unit is -1 OC instead of set to 0."""
         is_battle_shocked = False
@@ -80,6 +107,8 @@ class KeywordsDetachmentsMixin:
                 - A boolean indicating if the unit has Firing Deck ability
                 - The number of weapons that can fire from the deck (0 if no Firing Deck ability)
         """
+        if self._attached_unit_rule_is_removed("firing deck"):
+            return False, 0
         try:
             if hasattr(self, "_trait_flag") and bool(self._trait_flag("firing_deck", default=False)):
                 value = 0
@@ -11190,6 +11219,18 @@ class KeywordsDetachmentsMixin:
                         reason_text = str(reason or "").strip()
                         if reason_text:
                             reroll_full_reasons.append(reason_text)
+            orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+            mek_kaptin_fn = (
+                getattr(orks_mgr, "mek_kaptin_ranged_hit_reroll_applies", None)
+                if orks_mgr is not None
+                else None
+            )
+            if callable(mek_kaptin_fn):
+                applies, source = mek_kaptin_fn(model, attack_type=attack_scope)
+                if bool(applies):
+                    reroll_full = True
+                    source_name = str(source or "Mek Kaptin").strip() or "Mek Kaptin"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         seen = set()
         deduped_reasons: list[str] = []
         for reason in reroll_reasons:

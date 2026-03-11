@@ -144,6 +144,62 @@ def _descriptor_params(desc) -> dict:
         return {}
 
 
+def _append_enhancement_bearer_unit_weapon_keyword_rule(
+    unit,
+    *,
+    attack_type: str,
+    keywords: tuple[str, ...] | list[str],
+    source: str,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    entries = list(sr.get("enhancement_bearer_unit_weapon_keyword_rules", []) or [])
+    normalized_keywords = []
+    for keyword in list(keywords or []):
+        token = str(keyword or "").strip().upper()
+        if token and token not in normalized_keywords:
+            normalized_keywords.append(token)
+    if not normalized_keywords:
+        return
+    entry = {
+        "attack_type": str(attack_type or "any").strip().lower() or "any",
+        "keywords": list(normalized_keywords),
+        "source": str(source or "Enhancement").strip() or "Enhancement",
+        "requires_bearer_leading": bool(requires_bearer_leading),
+    }
+    if source_model_id:
+        entry["source_model_id"] = str(source_model_id)
+    dedupe_key = (
+        entry["attack_type"],
+        tuple(entry["keywords"]),
+        str(entry["source"]).strip().lower(),
+        bool(entry["requires_bearer_leading"]),
+        str(entry.get("source_model_id", "") or ""),
+    )
+    for existing in entries:
+        if not isinstance(existing, dict):
+            continue
+        existing_key = (
+            str(existing.get("attack_type", "any") or "any").strip().lower(),
+            tuple(
+                str(v or "").strip().upper()
+                for v in list(existing.get("keywords", []) or [])
+                if str(v or "").strip()
+            ),
+            str(existing.get("source", "") or "").strip().lower(),
+            bool(existing.get("requires_bearer_leading", False)),
+            str(existing.get("source_model_id", "") or ""),
+        )
+        if existing_key == dedupe_key:
+            return
+    entries.append(entry)
+    sr["enhancement_bearer_unit_weapon_keyword_rules"] = entries
+    unit.special_rules = sr
+
+
 def _apply_selected_ranged_weapon_bonus_enhancement(
     unit,
     *,
@@ -577,10 +633,24 @@ class Enhancement:
         is_shield_host = bool(ac_mgr and ac_mgr.is_shield_host())
         is_solar_spearhead = bool(ac_mgr and ac_mgr.is_solar_spearhead())
         is_talons_of_the_emperor = bool(ac_mgr and ac_mgr.is_talons_of_the_emperor())
-        try:
-            is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
-        except Exception:
-            is_war_horde = False
+        is_war_horde = bool(
+            orks_mgr and callable(getattr(orks_mgr, "is_war_horde", None)) and orks_mgr.is_war_horde()
+        )
+        is_bully_boyz = bool(
+            orks_mgr and callable(getattr(orks_mgr, "is_bully_boyz", None)) and orks_mgr.is_bully_boyz()
+        )
+        is_da_big_hunt = bool(
+            orks_mgr and callable(getattr(orks_mgr, "is_da_big_hunt", None)) and orks_mgr.is_da_big_hunt()
+        )
+        is_dread_mob = bool(
+            orks_mgr and callable(getattr(orks_mgr, "is_dread_mob", None)) and orks_mgr.is_dread_mob()
+        )
+        is_freebooter_krew = bool(
+            orks_mgr and callable(getattr(orks_mgr, "is_freebooter_krew", None)) and orks_mgr.is_freebooter_krew()
+        )
+        is_taktikal_brigade = bool(
+            orks_mgr and callable(getattr(orks_mgr, "is_taktikal_brigade", None)) and orks_mgr.is_taktikal_brigade()
+        )
         try:
             is_daemonic_incursion = bool(cd_mgr and cd_mgr.is_daemonic_incursion_detachment())
         except Exception:
@@ -9890,6 +9960,180 @@ class Enhancement:
             )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "tellyporta" or enh_id == "000008885005":
+            if not is_bully_boyz:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source = str(getattr(desc, "name", "") or "Tellyporta").strip() or "Tellyporta"
+            unit.special_rules["enhancement_tellyporta"] = True
+            unit.special_rules["enhancement_tellyporta_source"] = source
+            unit.special_rules["bearer_unit_deep_strike"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_tellyporta_bearer_model_id"] = bearer_id
+
+        if name == "glory hog" or enh_id == "000008868002":
+            if not is_da_big_hunt:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scout_distance = _coerce_int(params.get("scouts_distance", 9), default=9)
+            source = str(getattr(desc, "name", "") or "Glory Hog").strip() or "Glory Hog"
+            unit.special_rules["enhancement_glory_hog"] = True
+            unit.special_rules["enhancement_glory_hog_source"] = source
+            unit.special_rules["enhancement_scout_distance"] = int(
+                max(
+                    int(unit.special_rules.get("enhancement_scout_distance", 0) or 0),
+                    max(0, int(scout_distance)),
+                )
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_glory_hog_bearer_model_id"] = bearer_id
+
+        if name == "proper killy" or enh_id == "000008868003":
+            if not is_da_big_hunt:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            damage_bonus = _coerce_int(params.get("melee_damage_bonus", 1), default=1)
+            source = str(getattr(desc, "name", "") or "Proper Killy").strip() or "Proper Killy"
+            unit.special_rules["enhancement_proper_killy"] = True
+            unit.special_rules["enhancement_proper_killy_source"] = source
+            unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0
+            ) + int(max(0, damage_bonus))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_proper_killy_bearer_model_id"] = bearer_id
+
+        if name == "surly as a squiggoth" or enh_id == "000008868005":
+            if not is_da_big_hunt:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source = str(getattr(desc, "name", "") or "Surly as a Squiggoth").strip() or "Surly as a Squiggoth"
+            unit.special_rules["enhancement_surly_as_a_squiggoth"] = True
+            unit.special_rules["enhancement_surly_as_a_squiggoth_source"] = source
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_surly_as_a_squiggoth_bearer_model_id"] = bearer_id
+
+        if name == "gitfinder googlez" or enh_id == "000008877002":
+            if not is_dread_mob:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Gitfinder Googlez").strip() or "Gitfinder Googlez"
+            keywords = tuple(
+                str(v or "").strip().upper()
+                for v in list(params.get("keywords", ("IGNORES COVER",)) or ())
+                if str(v or "").strip()
+            )
+            unit.special_rules["enhancement_gitfinder_googlez"] = True
+            unit.special_rules["enhancement_gitfinder_googlez_source"] = source
+            _append_enhancement_bearer_unit_weapon_keyword_rule(
+                unit,
+                attack_type="ranged",
+                keywords=keywords,
+                source=source,
+                requires_bearer_leading=False,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_gitfinder_googlez_bearer_model_id"] = bearer_id
+
+        if name == "smoky gubbinz" or enh_id == "000008877004":
+            if not is_dread_mob:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source = str(getattr(desc, "name", "") or "Smoky Gubbinz").strip() or "Smoky Gubbinz"
+            unit.special_rules["enhancement_smoky_gubbinz"] = True
+            unit.special_rules["enhancement_smoky_gubbinz_source"] = source
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_smoky_gubbinz_bearer_model_id"] = bearer_id
+
+        if name == "git-spotter squig" or enh_id == "000010712003":
+            if not is_freebooter_krew:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Git-spotter Squig").strip() or "Git-spotter Squig"
+            keywords = tuple(
+                str(v or "").strip().upper()
+                for v in list(params.get("keywords", ("IGNORES COVER",)) or ())
+                if str(v or "").strip()
+            )
+            unit.special_rules["enhancement_git_spotter_squig"] = True
+            unit.special_rules["enhancement_git_spotter_squig_source"] = source
+            _append_enhancement_bearer_unit_weapon_keyword_rule(
+                unit,
+                attack_type="ranged",
+                keywords=keywords,
+                source=source,
+                requires_bearer_leading=False,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_git_spotter_squig_bearer_model_id"] = bearer_id
+
+        if name == "skwad leader" or enh_id == "000009795002":
+            if not is_taktikal_brigade:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Skwad Leader").strip() or "Skwad Leader"
+            attach_names = [
+                str(v).strip()
+                for v in list(params.get("attachment_override_unit_names_any", ("Kommandos",)) or ())
+                if str(v or "").strip()
+            ]
+            unit.special_rules["enhancement_skwad_leader"] = True
+            unit.special_rules["enhancement_skwad_leader_source"] = source
+            unit.special_rules["enhancement_skwad_leader_attach_unit_names"] = list(attach_names)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_skwad_leader_bearer_model_id"] = bearer_id
+
+        if name == "mek kaptin" or enh_id == "000009795003":
+            if not is_taktikal_brigade:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Mek Kaptin").strip() or "Mek Kaptin"
+            attach_names = [
+                str(v).strip()
+                for v in list(params.get("attachment_override_unit_names_any", ("Flash Gitz",)) or ())
+                if str(v or "").strip()
+            ]
+            unit.special_rules["enhancement_mek_kaptin"] = True
+            unit.special_rules["enhancement_mek_kaptin_source"] = source
+            unit.special_rules["enhancement_mek_kaptin_attach_unit_names"] = list(attach_names)
+            unit.special_rules["enhancement_mek_kaptin_ranged_hit_reroll_full"] = bool(
+                params.get("reroll_hit_full", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_mek_kaptin_bearer_model_id"] = bearer_id
+
+        if name == "gob boomer" or enh_id == "000009795005":
+            if not is_taktikal_brigade:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Gob Boomer").strip() or "Gob Boomer"
+            issue_range = _coerce_float(params.get("taktik_issue_range", 18.0), default=18.0)
+            if issue_range <= 0:
+                issue_range = 18.0
+            unit.special_rules["enhancement_gob_boomer"] = True
+            unit.special_rules["enhancement_gob_boomer_source"] = source
+            unit.special_rules["enhancement_taktikal_issue_range"] = float(issue_range)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_gob_boomer_bearer_model_id"] = bearer_id
 
         if name == "preyslayer's mantle" or enh_id == "000010312002":
             if not is_houndpack_lance:

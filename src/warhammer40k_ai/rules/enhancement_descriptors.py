@@ -6717,6 +6717,143 @@ _TYRANIDS_ASSIMILATION_SWARM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _TYRANIDS_ASSIMILATION_SWARM_DESCRIPTORS.values()
 }
 
+_ORKS_BULLY_BOYZ_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008885005": EnhancementToolDescriptor(
+        enhancement_id="000008885005",
+        name="Tellyporta",
+        timing="declare_battle_formations",
+        target="bearer_unit",
+        duration="battle_setup",
+        effect="grant_deep_strike",
+        effect_params={"grant_to_bearer_unit": True},
+    ),
+}
+
+_ORKS_BULLY_BOYZ_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORKS_BULLY_BOYZ_DESCRIPTORS.values()
+}
+
+_ORKS_DA_BIG_HUNT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008868002": EnhancementToolDescriptor(
+        enhancement_id="000008868002",
+        name="Glory Hog",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_scouts",
+        effect_params={"scouts_distance": 9.0},
+    ),
+    "000008868003": EnhancementToolDescriptor(
+        enhancement_id="000008868003",
+        name="Proper Killy",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_melee_damage_bonus",
+        effect_params={"melee_damage_bonus": 1},
+    ),
+    "000008868005": EnhancementToolDescriptor(
+        enhancement_id="000008868005",
+        name="Surly as a Squiggoth",
+        timing="passive_while_leading",
+        target="bearer_led_unit",
+        duration="while_bearer_leading",
+        effect="defensive_wound_roll_penalty",
+        effect_params={
+            "wound_roll_penalty": 1,
+            "attack_type": "any",
+            "requires_strength_gt_toughness": True,
+            "requires_bearer_leading": True,
+        },
+    ),
+}
+
+_ORKS_DA_BIG_HUNT_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORKS_DA_BIG_HUNT_DESCRIPTORS.values()
+}
+
+_ORKS_DREAD_MOB_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008877002": EnhancementToolDescriptor(
+        enhancement_id="000008877002",
+        name="Gitfinder Googlez",
+        timing="passive",
+        target="bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={"keywords": ("IGNORES COVER",), "attack_type": "ranged"},
+    ),
+    "000008877004": EnhancementToolDescriptor(
+        enhancement_id="000008877004",
+        name="Smoky Gubbinz",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_stealth",
+    ),
+}
+
+_ORKS_DREAD_MOB_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORKS_DREAD_MOB_DESCRIPTORS.values()
+}
+
+_ORKS_FREEBOOTER_KREW_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010712003": EnhancementToolDescriptor(
+        enhancement_id="000010712003",
+        name="Git-spotter Squig",
+        timing="passive",
+        target="bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={"keywords": ("IGNORES COVER",), "attack_type": "ranged"},
+    ),
+}
+
+_ORKS_FREEBOOTER_KREW_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORKS_FREEBOOTER_KREW_DESCRIPTORS.values()
+}
+
+_ORKS_TAKTIKAL_BRIGADE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009795002": EnhancementToolDescriptor(
+        enhancement_id="000009795002",
+        name="Skwad Leader",
+        timing="declare_battle_formations",
+        target="bearer",
+        duration="battle_setup_and_while_leading",
+        effect="attach_to_kommandos_and_gain_infiltrators_stealth_while_leading",
+        effect_params={
+            "attachment_override_unit_names_any": ("Kommandos",),
+            "requires_bearer_leading_unit_name": "Kommandos",
+            "grants_while_leading": ("INFILTRATORS", "STEALTH"),
+        },
+    ),
+    "000009795003": EnhancementToolDescriptor(
+        enhancement_id="000009795003",
+        name="Mek Kaptin",
+        timing="declare_battle_formations",
+        target="bearer",
+        duration="battle_setup_and_constant",
+        effect="attach_to_flash_gitz_and_ranged_hit_reroll",
+        effect_params={
+            "attachment_override_unit_names_any": ("Flash Gitz",),
+            "attack_type": "ranged",
+            "reroll_hit_full": True,
+        },
+    ),
+    "000009795005": EnhancementToolDescriptor(
+        enhancement_id="000009795005",
+        name="Gob Boomer",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="increase_taktik_issue_range",
+        effect_params={"taktik_issue_range": 18.0, "default_issue_range": 6.0},
+    ),
+}
+
+_ORKS_TAKTIKAL_BRIGADE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORKS_TAKTIKAL_BRIGADE_DESCRIPTORS.values()
+}
+
 
 def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "") -> Optional[EnhancementToolDescriptor]:
     if enhancement_id:
@@ -7119,6 +7256,21 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _TYRANIDS_ASSIMILATION_SWARM_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ORKS_BULLY_BOYZ_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
+        desc = _ORKS_DA_BIG_HUNT_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
+        desc = _ORKS_DREAD_MOB_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
+        desc = _ORKS_FREEBOOTER_KREW_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
+        desc = _ORKS_TAKTIKAL_BRIGADE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -7256,4 +7408,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
         or _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME.get(key)
         or _TYRANIDS_ASSIMILATION_SWARM_BY_NAME.get(key)
+        or _ORKS_BULLY_BOYZ_BY_NAME.get(key)
+        or _ORKS_DA_BIG_HUNT_BY_NAME.get(key)
+        or _ORKS_DREAD_MOB_BY_NAME.get(key)
+        or _ORKS_FREEBOOTER_KREW_BY_NAME.get(key)
+        or _ORKS_TAKTIKAL_BRIGADE_BY_NAME.get(key)
     )

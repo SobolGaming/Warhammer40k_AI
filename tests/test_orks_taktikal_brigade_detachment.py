@@ -13,6 +13,10 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import WargearProfile
 from warhammer40k_ai.utility.entity_ids import get_entity_id
+from warhammer40k_ai.waha_helper.waha_helper import WahaHelper
+
+
+_WAHA = WahaHelper(data_dir="wahapedia_data")
 
 
 class _MockDatasheet:
@@ -72,6 +76,13 @@ def _make_profile(*, is_ranged: bool = True) -> WargearProfile:
         "description": "",
     }
     return WargearProfile("Profile", wargear_data=data, parent_wargear=parent)
+
+
+def _apply_enhancement(unit: Unit, enhancement_name: str) -> None:
+    enhancement = _WAHA.get_enhancement_by_name(enhancement_name)
+    assert enhancement is not None, enhancement_name
+    unit.enhancement = enhancement
+    enhancement.apply_to_unit(unit)
 
 
 def _build_game(*, ork_units: list[Unit], enemy_units: list[Unit]):
@@ -177,6 +188,50 @@ def test_lissen_ere_command_phase_request_and_get_stuck_in_charge_reroll():
     assert bool(apply_result.ok)
 
     assert boyz.can_reroll_charge_roll(target_unit=enemy, game_map=game.map, game=game) is True
+
+
+def test_gob_boomer_extends_only_bearer_taktik_issue_range_to_eighteen():
+    warboss = _create_unit("Warboss", keywords=["INFANTRY", "WARBOSS"], faction_keywords=["ORKS"])
+    mek = _create_unit("Mek", keywords=["INFANTRY", "MEK"], faction_keywords=["ORKS"])
+    boyz = _create_unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _create_unit("Enemy Unit", keywords=["INFANTRY"])
+    _set_unit_location(warboss, 0.0, 0.0)
+    _set_unit_location(mek, 0.0, 1.0)
+    _set_unit_location(boyz, 12.0, 0.0)
+    _set_unit_location(enemy, 24.0, 0.0)
+    game, ork_player, ork_army = _build_game(ork_units=[warboss, mek, boyz], enemy_units=[enemy])
+    mgr = getattr(ork_army, "orks_detachments", None)
+    assert mgr is not None
+
+    _apply_enhancement(warboss, "Gob Boomer")
+
+    warboss_targets = mgr._collect_taktikal_target_units_for_issuer(warboss.models[0], game=game)
+    mek_targets = mgr._collect_taktikal_target_units_for_issuer(mek.models[0], game=game)
+    boyz_root_id = str(get_entity_id(boyz.get_attached_unit_root()) or "")
+    warboss_target_ids = {str(get_entity_id(unit) or "") for unit in list(warboss_targets or [])}
+    mek_target_ids = {str(get_entity_id(unit) or "") for unit in list(mek_targets or [])}
+    assert boyz_root_id in warboss_target_ids
+    assert boyz_root_id not in mek_target_ids
+
+    valid_warboss, _reason_warboss = mgr.validate_taktikal_brigade_lissen_ere_choice(
+        warboss.models[0],
+        {"taktik": "get_stuck_in", "target_unit": boyz},
+        game=game,
+        player=ork_player,
+        battle_round=1,
+        trigger="command_phase",
+    )
+    valid_mek, reason_mek = mgr.validate_taktikal_brigade_lissen_ere_choice(
+        mek.models[0],
+        {"taktik": "get_stuck_in", "target_unit": boyz},
+        game=game,
+        player=ork_player,
+        battle_round=1,
+        trigger="command_phase",
+    )
+    assert valid_warboss is True
+    assert valid_mek is False
+    assert "within 6\"" in str(reason_mek or "")
 
 
 def test_lissen_ere_leadership_failure_inflicts_mortal_wound_and_target_once_per_round():
@@ -386,4 +441,3 @@ def test_lissen_ere_set_up_trigger_queues_request():
         issuer_model_id=str(get_entity_id(mek.models[0]) or ""),
     )
     assert request is not None
-

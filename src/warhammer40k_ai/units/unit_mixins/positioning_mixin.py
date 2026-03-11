@@ -1281,6 +1281,106 @@ class PositioningMixin:
             return False
         return self._catechism_of_divine_penitence_bodyguard_allowed(bodyguard)
 
+    def _enhancement_bearer_model_is_alive(self, *, flag_key: str) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get(flag_key)):
+            return False
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+        if bearer_id:
+            for model in list(getattr(self, "models", []) or []):
+                model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "")
+                if model_id != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            return False
+        bearer = self._get_enhancement_bearer_model()
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def _taktikal_enhancement_attach_override_names(
+        self,
+        *,
+        flag_key: str,
+        attach_names_key: str,
+        defaults: tuple[str, ...],
+    ) -> list[str]:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+            return []
+        configured = [
+            self._normalize_attached_unit_name(v)
+            for v in list(sr.get(attach_names_key, defaults) or [])
+            if str(v or "").strip()
+        ]
+        return [name for name in configured if name]
+
+    def _bodyguard_matches_attach_override_names(self, bodyguard, names: list[str], *, keyword: str) -> bool:
+        if bodyguard is None:
+            return False
+        bodyguard_name = self._normalize_attached_unit_name(getattr(bodyguard, "name", ""))
+        if bodyguard_name in set(names):
+            return True
+        has_any_keyword = getattr(bodyguard, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            try:
+                if bool(has_any_keyword(keyword)):
+                    return True
+            except Exception:
+                return False
+        return False
+
+    def _skwad_leader_can_attach_to(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        if not bool(getattr(self, "is_leader", False)):
+            return False
+        if not self._enhancement_bearer_model_is_alive(flag_key="enhancement_skwad_leader"):
+            return False
+        names = self._taktikal_enhancement_attach_override_names(
+            flag_key="enhancement_skwad_leader",
+            attach_names_key="enhancement_skwad_leader_attach_unit_names",
+            defaults=("Kommandos",),
+        )
+        if not names:
+            return False
+        return self._bodyguard_matches_attach_override_names(bodyguard, names, keyword="KOMMANDOS")
+
+    def _mek_kaptin_can_attach_to(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        if not bool(getattr(self, "is_leader", False)):
+            return False
+        if not self._enhancement_bearer_model_is_alive(flag_key="enhancement_mek_kaptin"):
+            return False
+        names = self._taktikal_enhancement_attach_override_names(
+            flag_key="enhancement_mek_kaptin",
+            attach_names_key="enhancement_mek_kaptin_attach_unit_names",
+            defaults=("Flash Gitz",),
+        )
+        if not names:
+            return False
+        return self._bodyguard_matches_attach_override_names(bodyguard, names, keyword="FLASH GITZ")
+
+    def _skwad_leader_is_leading_kommandos(self) -> bool:
+        if not bool(getattr(self, "is_attached_leader", False)):
+            return False
+        if not self._enhancement_bearer_model_is_alive(flag_key="enhancement_skwad_leader"):
+            return False
+        bodyguard = getattr(self, "attached_to", None)
+        names = self._taktikal_enhancement_attach_override_names(
+            flag_key="enhancement_skwad_leader",
+            attach_names_key="enhancement_skwad_leader_attach_unit_names",
+            defaults=("Kommandos",),
+        )
+        if not names:
+            return False
+        return self._bodyguard_matches_attach_override_names(bodyguard, names, keyword="KOMMANDOS")
+
     def _disciple_of_khorne_active_leaders(self) -> list["Unit"]:
         try:
             root = self.get_attached_unit_root()
@@ -3318,6 +3418,74 @@ class PositioningMixin:
         root._ability_cache[cache_key] = int(total_bonus)
         return int(total_bonus)
 
+    def _enhancement_bearer_unit_weapon_keyword_rules(self, model: Optional['Model'] = None) -> list[dict]:
+        def _entity_id_or_empty(entity) -> str:
+            return str(getattr(entity, "id", getattr(entity, "_id", "")) or "")
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            root = self
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda unit: _entity_id_or_empty(unit))
+        leader_ids = {_entity_id_or_empty(unit) for unit in list(getattr(root, "attached_leaders", []) or [])}
+
+        def _source_model_is_alive(source_unit, source_model_id: str) -> bool:
+            target_id = str(source_model_id or "").strip()
+            if not target_id:
+                return True
+            for source_model in list(getattr(source_unit, "models", []) or []):
+                model_id = _entity_id_or_empty(source_model)
+                if model_id != target_id:
+                    continue
+                alive_attr = getattr(source_model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            return False
+
+        out: list[dict] = []
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            rules = list(sr.get("enhancement_bearer_unit_weapon_keyword_rules", []) or [])
+            if not rules:
+                continue
+            for rule in rules:
+                if not isinstance(rule, dict):
+                    continue
+                requires_leading = bool(rule.get("requires_bearer_leading", False))
+                if requires_leading:
+                    member_id = _entity_id_or_empty(member)
+                    if member_id not in leader_ids:
+                        continue
+                source_model_id = str(rule.get("source_model_id", "") or "")
+                if source_model_id and not _source_model_is_alive(member, source_model_id):
+                    continue
+                attack_type = str(rule.get("attack_type", "any") or "any").strip().lower()
+                if attack_type not in ("any", "ranged", "melee"):
+                    attack_type = "any"
+                source = str(rule.get("source", "") or "Enhancement").strip() or "Enhancement"
+                for keyword in list(rule.get("keywords", []) or []):
+                    token = str(keyword or "").strip().upper()
+                    if not token:
+                        continue
+                    out.append(
+                        {
+                            "attack_type": attack_type,
+                            "keyword": token,
+                            "source": source,
+                        }
+                    )
+        return out
+
     def _get_attack_keyword_bonus_rules(self, model: Optional['Model'] = None) -> list[dict]:
         """Collect objective-target keyword bonuses from ability text."""
         cache_key = f"attack_keyword_bonus_rules:{get_entity_id(model) if model is not None else 'unit'}"
@@ -3660,6 +3828,22 @@ class PositioningMixin:
                     )
         except Exception:
             pass
+
+        for entry in self._enhancement_bearer_unit_weapon_keyword_rules(model=model):
+            attack_type = str(entry.get("attack_type", "any") or "any").strip().lower()
+            keyword = str(entry.get("keyword", "") or "").strip()
+            source_name = str(entry.get("source", "") or "Enhancement").strip() or "Enhancement"
+            key = ("enhancement_unit_weapon_kw", attack_type, keyword.lower(), source_name.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            rules.append(
+                {
+                    "attack_type": attack_type,
+                    "keyword": keyword,
+                    "source": source_name,
+                }
+            )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
@@ -8569,6 +8753,12 @@ class PositioningMixin:
             except (AttributeError, TypeError, ValueError):
                 pass
         if not found:
+            try:
+                if self._skwad_leader_is_leading_kommandos():
+                    found = True
+            except Exception:
+                pass
+        if not found:
             found, _ = self._find_ability_with_patterns(["infiltrators", "infiltrate"])
         
         # Cache the result
@@ -8623,6 +8813,19 @@ class PositioningMixin:
             enhancement_name="pyrebrand",
         ):
             return True
+        # Orks Dread Mob: Smoky Gubbinz grants Stealth to models in the bearer's unit.
+        if self._attached_unit_has_active_enhancement(
+            "enhancement_smoky_gubbinz",
+            enhancement_id="000008877004",
+            enhancement_name="smoky gubbinz",
+        ):
+            return True
+        # Orks Taktikal Brigade: Skwad Leader bearer gains Stealth while leading Kommandos.
+        try:
+            if self._skwad_leader_is_leading_kommandos():
+                return True
+        except Exception:
+            pass
         # Rad-Zone Corps: Malphonic Susurrus grants Stealth while the bearer is leading.
         if self._attached_unit_has_active_leading_enhancement(
             "enhancement_malphonic_susurrus",

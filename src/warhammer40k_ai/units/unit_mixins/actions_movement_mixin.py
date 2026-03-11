@@ -1399,11 +1399,76 @@ class ActionsMovementMixin:
         if not m:
             m = self._BEARER_INVULNERABLE_SAVE_WITH_ALLOCATED_DAMAGE_RE.match(normalized)
         if not m:
+            m = re.search(
+                r"\b(?:the )?bearer has a (?P<inv>[1-6])\+? invulnerable save\b",
+                normalized,
+                flags=re.IGNORECASE,
+            )
+        if not m:
             return None
         try:
-            return int(m.group(1))
+            value = m.group("inv") if "inv" in m.groupdict() else m.group(1)
+            return int(value)
         except Exception:
             return None
+
+    def _parse_bearer_toughness_characteristic_bonus(self, text: str) -> Optional[int]:
+        if not text:
+            return None
+        normalized = self._normalize_rules_text(text)
+        if not normalized:
+            return None
+        normalized = normalized.replace("\u2019", "'").replace("\u2018", "'")
+        normalized = normalized.lower()
+        match = re.search(
+            r"\badd (?P<bonus>\d+) to (?:the )?bearer(?:'s|s)? toughness characteristic\b",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+        try:
+            return int(match.group("bonus"))
+        except (TypeError, ValueError):
+            return None
+
+    def _single_model_bearer_toughness_bonus(self) -> tuple[int, str]:
+        models = list(getattr(self, "models", []) or [])
+        if len(models) != 1:
+            return 0, ""
+        cache_key = "single_model_bearer_toughness_bonus"
+        cache = getattr(self, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            cached = cache.get(cache_key)
+            if isinstance(cached, tuple) and len(cached) == 2:
+                try:
+                    return int(cached[0] or 0), str(cached[1] or "")
+                except (TypeError, ValueError):
+                    return 0, ""
+
+        bonus_total = 0
+        source_names: list[str] = []
+        for ability in list(getattr(self, "possible_abilities", []) or []):
+            if not self._ability_is_active(ability):
+                continue
+            if isinstance(ability, str):
+                source_name = str(ability or "Ability").strip() or "Ability"
+                description = str(ability or "")
+            else:
+                source_name = str(getattr(ability, "name", "") or "Ability").strip() or "Ability"
+                description = str(getattr(ability, "description", "") or "")
+            bonus = self._parse_bearer_toughness_characteristic_bonus(description)
+            if bonus is None or int(bonus) <= 0:
+                continue
+            bonus_total += int(bonus)
+            source_names.append(source_name)
+
+        source = source_names[0] if source_names else ""
+        if not isinstance(cache, dict):
+            cache = {}
+            self._ability_cache = cache
+        cache[cache_key] = (int(bonus_total), str(source))
+        return int(bonus_total), str(source)
 
     def _parse_bearer_allocated_damage_reductions(self, text: str) -> list[dict]:
         if not text:

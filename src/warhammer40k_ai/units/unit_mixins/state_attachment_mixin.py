@@ -3625,6 +3625,18 @@ class StateAttachmentMixin:
                 return True
         except Exception:
             pass
+        # Skwad Leader (Taktikal Brigade): bearer can attach to Kommandos.
+        try:
+            if self._skwad_leader_can_attach_to(bodyguard):
+                return True
+        except Exception:
+            pass
+        # Mek Kaptin (Taktikal Brigade): bearer can attach to Flash Gitz.
+        try:
+            if self._mek_kaptin_can_attach_to(bodyguard):
+                return True
+        except Exception:
+            pass
         # Bodyguard datasheet id must be in leader's allowed attached_to list (IDs)
         allowed = getattr(self, "can_be_attached_to", []) or []
         try:
@@ -4268,8 +4280,16 @@ class StateAttachmentMixin:
                 return 3
         except Exception:
             pass
-
-        return self.models[0].toughness
+        base_toughness = int(self.models[0].toughness)
+        bonus_fn = getattr(self, "_single_model_bearer_toughness_bonus", None)
+        if callable(bonus_fn):
+            try:
+                bonus, _source = bonus_fn()
+            except Exception:
+                bonus = 0
+            if int(bonus or 0) > 0:
+                return int(base_toughness + int(bonus))
+        return int(base_toughness)
 
     @property
     def save(self) -> int:
