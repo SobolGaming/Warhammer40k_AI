@@ -5,11 +5,19 @@ from types import SimpleNamespace
 from shapely.geometry import LineString
 
 from warhammer40k_ai.battlefield.map import Map
+from warhammer40k_ai.pathing.api import (
+    PathQuery,
+    PathResult,
+    Pose,
+    compute_swept_interactions,
+)
+from warhammer40k_ai.pathing.types import MovementType
 from warhammer40k_ai.utility.calcs import (
     check_desperate_escape_requirements,
     get_enemy_models_moved_over,
     get_enemy_units_moved_over,
 )
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.units.unit import Unit
 
@@ -109,3 +117,48 @@ def test_phase_f_desperate_escape_uses_swept_overlap_detection() -> None:
     assert result["required"] is True
     assert result["path_through_enemy"] is True
     assert "path goes through enemy models" in str(result["reason"]).lower()
+
+
+def test_phase_f_public_api_sweep_contract_centerline_miss_and_vertical_gate() -> None:
+    game_map = Map(24, 24)
+    mover = _make_unit("Mover", x=2.0, y=10.0, z=5.0)
+    enemy = _make_unit("Enemy", x=10.0, y=11.8, z=0.0)
+    _assign_armies(mover, enemy)
+    game_map.units = [mover, enemy]
+
+    synthetic_path = PathResult(
+        valid=True,
+        poses=(
+            Pose(x=2.0, y=10.0, z=5.0, facing=0.0),
+            Pose(x=18.0, y=10.0, z=5.0, facing=0.0),
+        ),
+        waypoints=((2.0, 10.0, 5.0), (18.0, 10.0, 5.0)),
+        distance_cost=16.0,
+        pivot_cost=0.0,
+        used_exact_refiner=False,
+    )
+    ungated_query = PathQuery(
+        model=mover.models[0],
+        target=(18.0, 10.0, 5.0),
+        movement_type=MovementType.FALL_BACK,
+        max_distance=20.0,
+        game_map=game_map,
+        sweep_require_vertical_overlap=False,
+    )
+    gated_query = PathQuery(
+        model=mover.models[0],
+        target=(18.0, 10.0, 5.0),
+        movement_type=MovementType.FALL_BACK,
+        max_distance=20.0,
+        game_map=game_map,
+        sweep_require_vertical_overlap=True,
+    )
+
+    expected_enemy_model_id = str(get_entity_id(enemy.models[0]))
+    ungated = compute_swept_interactions(ungated_query, synthetic_path)
+    gated = compute_swept_interactions(gated_query, synthetic_path)
+
+    assert ungated.intersects_enemy_models
+    assert ungated.moved_over_enemy_model_ids == (expected_enemy_model_id,)
+    assert not gated.intersects_enemy_models
+    assert gated.moved_over_enemy_model_ids == ()
