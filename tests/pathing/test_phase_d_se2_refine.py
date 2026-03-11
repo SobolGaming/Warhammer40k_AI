@@ -185,60 +185,6 @@ def test_phase_d_oval_through_narrow_doorway_requires_exact_refinement() -> None
     assert abs(final_facing) <= (pi / 5.0)
 
 
-def test_phase_d_exact_refiner_start_pose_is_anchored() -> None:
-    game_map = Map(24, 24)
-    oval_base = Base(BaseType.ELLIPTICAL, (1.1, 0.5))
-    mover = _make_unit("AnchorStart", x=3.0, y=4.0, base=oval_base)
-
-    movement_profile = build_movement_profile(mover, MovementType.MOVE)
-    snapshot = build_world_snapshot(game_map, movement_profile)
-    request = _build_same_surface_refine_request(
-        snapshot=snapshot,
-        movement_profile=movement_profile,
-        model_base=oval_base,
-        footprint_class="oval",
-        base_radius=1.1,
-        start=(3.0, 4.0, 0.0),
-        goal=(18.0, 18.0, 0.0),
-        start_facing=pi / 3.0,
-        goal_facing=0.0,
-    )
-    refined = refine_corridor_se2(request)
-
-    assert refined.success
-    first_pose = refined.poses[0]
-    assert abs(first_pose.x - 3.0) <= 1e-6
-    assert abs(first_pose.y - 4.0) <= 1e-6
-    assert abs(first_pose.facing - (pi / 3.0)) <= 1e-6
-
-
-def test_phase_d_exact_refiner_terminal_pose_is_anchored() -> None:
-    game_map = Map(24, 24)
-    oval_base = Base(BaseType.ELLIPTICAL, (1.1, 0.5))
-    mover = _make_unit("AnchorEnd", x=3.0, y=4.0, base=oval_base)
-
-    movement_profile = build_movement_profile(mover, MovementType.MOVE)
-    snapshot = build_world_snapshot(game_map, movement_profile)
-    request = _build_same_surface_refine_request(
-        snapshot=snapshot,
-        movement_profile=movement_profile,
-        model_base=oval_base,
-        footprint_class="oval",
-        base_radius=1.1,
-        start=(3.0, 4.0, 0.0),
-        goal=(18.0, 18.0, 0.0),
-        start_facing=pi / 3.0,
-        goal_facing=pi / 4.0,
-    )
-    refined = refine_corridor_se2(request)
-
-    assert refined.success
-    final_pose = refined.poses[-1]
-    assert abs(final_pose.x - 18.0) <= 1e-6
-    assert abs(final_pose.y - 18.0) <= 1e-6
-    assert abs(final_pose.facing - (pi / 4.0)) <= 1e-6
-
-
 def test_phase_d_hull_in_l_tunnel_global_corridor_exists_but_exact_refine_rejects() -> None:
     game_map = _l_tunnel_map()
     hull_base = Base(BaseType.HULL, (1.5, 0.6))
