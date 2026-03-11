@@ -40345,7 +40345,7 @@
         "ability_id": "",
         "model": "",
         "name": "Phaeron of the Stars (Aura)",
-        "description": "While a friendly <span class=\"kwb\">NECRONS</span> unit is within 6\" of this unit\u2019s Szarekh model, each time a model in that unit makes an attack, re-roll a Hit roll of 1 and re-roll a Wound roll of 1.",
+        "description": "While a friendly <span class=\"kwb\">NECRONS</span> unit (excluding Monster units) is within 6\" of this unit\u2019s Szarekh model, each time a model in that unit makes an attack, re-roll a Hit roll of 1 and re-roll a Wound roll of 1.",
         "type": "Primarch",
         "parameter": ""
     },
@@ -40355,7 +40355,7 @@
         "ability_id": "",
         "model": "",
         "name": "Phaeron of the Blades (Aura)",
-        "description": "While a friendly <span class=\"kwb\">NECRONS</span> unit is within 6\" of this unit\u2019s Szarekh model, you can re-roll Charge rolls made for that unit and each time a model in that unit makes a melee attack, add 1 to the Strength characteristic of that attack.",
+        "description": "While a friendly <span class=\"kwb\">NECRONS</span> unit (excluding Monster units) is within 6\" of this unit\u2019s Szarekh model, you can re-roll Charge rolls made for that unit and each time a model in that unit makes a melee attack, add 1 to the Strength characteristic of that attack.",
         "type": "Primarch",
         "parameter": ""
     },
@@ -40365,7 +40365,7 @@
         "ability_id": "",
         "model": "",
         "name": "Relentless March (Aura)",
-        "description": "While a friendly <span class=\"kwb\">NECRONS</span> unit is within 6\" of this unit\u2019s Szarekh model, add 2\" to the Move characteristic of models in that unit.",
+        "description": "While a friendly <span class=\"kwb\">NECRONS</span> unit (excluding Monster units) is within 6\" of this unit\u2019s Szarekh model, add 2\" to the Move characteristic of models in that unit.",
         "type": "Primarch",
         "parameter": ""
     },
@@ -69785,7 +69785,7 @@
         "ability_id": "",
         "model": "",
         "name": "Infectious Murder-madness (Aura)",
-        "description": "While a friendly <span class=\"kwb\">NECRONS</span> unit (excluding Titanic units) is within 6\" of this model, each time a model in that unit makes an attack, if that model has the Destroyer Cult keyword or that enemy unit is the closest eligible target, that attack has the [SUSTAINED HITS 1] ability.",
+        "description": "While a friendly <span class=\"kwb\">NECRONS</span> unit (excluding Monster and Titanic units) is within 6\" of this model, each time a model in that unit makes an attack, if that model has the Destroyer Cult keyword or that enemy unit is the closest eligible target, that attack has the [SUSTAINED HITS 1] ability.",
         "type": "Datasheet",
         "parameter": ""
     },
@@ -70296,7 +70296,7 @@
         "model": "",
         "name": "",
         "description": "",
-        "type": "",
+        "type": "Faction",
         "parameter": ""
     },
     {
@@ -70436,7 +70436,7 @@
         "model": "",
         "name": "",
         "description": "",
-        "type": "",
+        "type": "Faction",
         "parameter": ""
     },
     {
@@ -70486,6 +70486,216 @@
         "model": "",
         "name": "Hallucinogen Grenades",
         "description": "At the start of your opponent\u2019s Shooting phase, this unit can use this ability. If it does, select one Aeldari Infantry unit from your army visible to and within 36\" of this unit: until the end of the phase, that unit has the Stealth ability.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004201",
+        "line": "1",
+        "ability_id": "000008338",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "4+"
+    },
+    {
+        "datasheet_id": "000004201",
+        "line": "2",
+        "ability_id": "000008346",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004201",
+        "line": "3",
+        "ability_id": "000010432",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004201",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Break the Foe",
+        "description": "Melee weapons equipped by models in this model\u2019s unit have the [SUSTAINED HITS 1] ability.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004201",
+        "line": "5",
+        "ability_id": "",
+        "model": "",
+        "name": "Relentless Avalanche",
+        "description": "You can target this model\u2019s unit with the Heroic Intervention Stratagem for 0CP, and can do so even if you have already targeted a different unit with that Stratagem this phase.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004202",
+        "line": "1",
+        "ability_id": "000008346",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004202",
+        "line": "2",
+        "ability_id": "000000707",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004202",
+        "line": "3",
+        "ability_id": "000000705",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004202",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Alpha Warrior",
+        "description": "Weapons equipped by models in this model\u2019s unit have the [SUSTAINED HITS 1] ability.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004202",
+        "line": "5",
+        "ability_id": "",
+        "model": "",
+        "name": "Aggressive Leader-beast",
+        "description": "In your opponent\u2019s Shooting phase, each time an enemy unit has shot, if any models from this unit were destroyed as a result of those attacks, this unit can make a Surge move. To do so, roll one D6: models in this unit move a number of inches up to this result, but this unit must end that move as close as possible to the closest enemy unit (excluding <span class=\"kwb\">AIRCRAFT</span>). When doing so, those models can be moved within Engagement Range of that enemy unit. This unit cannot make a Surge move while it is Battle-shocked or within Engagement Range of one or more enemy units, and can only make one Surge move per phase.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004203",
+        "line": "1",
+        "ability_id": "000008343",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004203",
+        "line": "2",
+        "ability_id": "000008344",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "8\""
+    },
+    {
+        "datasheet_id": "000004203",
+        "line": "3",
+        "ability_id": "000008439",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004203",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Exemplars of Mont\u2019ka",
+        "description": "Each time a model in this unit makes a ranged attack that targets the closest eligible target, that attack has the [SUSTAINED HITS 1] and [IGNORES COVER] abilities.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004203",
+        "line": "5",
+        "ability_id": "",
+        "model": "",
+        "name": "Neocapacitor Shields",
+        "description": "At the start of your opponent\u2019s Charge phase, you can select one enemy unit (excluding <span class=\"kwb\">MONSTER</span> and <span class=\"kwb\">VEHICLE</span> units) within 12\" of this unit. That unit must take a Battle-shock test and, until the end of the turn, subtract 1 from Charge rolls made for that unit.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004203",
+        "line": "6",
+        "ability_id": "",
+        "model": "",
+        "name": "Retro-thrusters",
+        "description": "At the end of the Fight phase, this unit can either make a Normal move of up to 6\" or a Fall Back move.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004203",
+        "line": "7",
+        "ability_id": "",
+        "model": "",
+        "name": "MV15 Gun Drone",
+        "description": "The bearer is equipped with 1 twin pulse blaster.",
+        "type": "Wargear",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004204",
+        "line": "1",
+        "ability_id": "000008346",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004204",
+        "line": "2",
+        "ability_id": "000008350",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004204",
+        "line": "3",
+        "ability_id": "",
+        "model": "",
+        "name": "Master of Rites",
+        "description": "In your Command phase, select one of the following to apply to this model\u2019s unit until the end of the turn:<br><ul><li>This model\u2019s unit is eligible to shoot in a turn in which it Advanced.</li><li>This model\u2019s unit is eligible to declare a charge in a turn in it which it Advanced.</li><li>This model\u2019s unit is eligible to shoot and declare a charge in a turn in which it Fell Back.</li></ul>",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004204",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Unrelenting and Uncompromising",
+        "description": "While this model is leading a unit, each time a model in that unit makes an attack, you can ignore any or all modifiers to that attack\u2019s Ballistic Skill or Weapon Skill characteristics and/or all modifiers to the Hit roll.",
         "type": "Datasheet",
         "parameter": ""
     }

@@ -537,7 +537,7 @@
         "datasheet_id": "000000076",
         "line": "1",
         "description": "1 model",
-        "cost": "70"
+        "cost": "85"
     },
     {
         "datasheet_id": "000000079",
@@ -963,7 +963,7 @@
         "datasheet_id": "000000157",
         "line": "1",
         "description": "1 model",
-        "cost": "95"
+        "cost": "85"
     },
     {
         "datasheet_id": "000000158",
@@ -1407,25 +1407,25 @@
         "datasheet_id": "000000382",
         "line": "1",
         "description": "4 models",
-        "cost": "160"
+        "cost": "150"
     },
     {
         "datasheet_id": "000000382",
         "line": "2",
         "description": "5 models",
-        "cost": "200"
+        "cost": "185"
     },
     {
         "datasheet_id": "000000382",
         "line": "3",
         "description": "8 models",
-        "cost": "320"
+        "cost": "300"
     },
     {
         "datasheet_id": "000000382",
         "line": "4",
         "description": "10 models",
-        "cost": "400"
+        "cost": "375"
     },
     {
         "datasheet_id": "000000383",
@@ -1677,7 +1677,7 @@
         "datasheet_id": "000000417",
         "line": "1",
         "description": "5 models",
-        "cost": "110"
+        "cost": "100"
     },
     {
         "datasheet_id": "000000418",
@@ -2511,13 +2511,13 @@
         "datasheet_id": "000000541",
         "line": "1",
         "description": "1 model",
-        "cost": "315"
+        "cost": "325"
     },
     {
         "datasheet_id": "000000542",
         "line": "1",
         "description": "1 model",
-        "cost": "285"
+        "cost": "295"
     },
     {
         "datasheet_id": "000000543",
@@ -2595,7 +2595,7 @@
         "datasheet_id": "000000555",
         "line": "1",
         "description": "1 model",
-        "cost": "305"
+        "cost": "315"
     },
     {
         "datasheet_id": "000000556",
@@ -2679,7 +2679,7 @@
         "datasheet_id": "000000571",
         "line": "1",
         "description": "1 model",
-        "cost": "125"
+        "cost": "135"
     },
     {
         "datasheet_id": "000000572",
@@ -2865,13 +2865,13 @@
         "datasheet_id": "000000597",
         "line": "1",
         "description": "5 models",
-        "cost": "170"
+        "cost": "160"
     },
     {
         "datasheet_id": "000000598",
         "line": "1",
         "description": "5 models",
-        "cost": "160"
+        "cost": "150"
     },
     {
         "datasheet_id": "000000599",
@@ -2985,7 +2985,7 @@
         "datasheet_id": "000000613",
         "line": "1",
         "description": "1 model",
-        "cost": "140"
+        "cost": "130"
     },
     {
         "datasheet_id": "000000614",
@@ -3195,7 +3195,7 @@
         "datasheet_id": "000000641",
         "line": "1",
         "description": "1 model",
-        "cost": "70"
+        "cost": "60"
     },
     {
         "datasheet_id": "000000642",
@@ -3249,19 +3249,19 @@
         "datasheet_id": "000000650",
         "line": "1",
         "description": "5 models",
-        "cost": "65"
+        "cost": "60"
     },
     {
         "datasheet_id": "000000650",
         "line": "2",
         "description": "8 models",
-        "cost": "105"
+        "cost": "100"
     },
     {
         "datasheet_id": "000000650",
         "line": "3",
         "description": "10 models",
-        "cost": "130"
+        "cost": "120"
     },
     {
         "datasheet_id": "000000651",
@@ -4095,7 +4095,7 @@
         "datasheet_id": "000000856",
         "line": "1",
         "description": "1 model",
-        "cost": "365"
+        "cost": "355"
     },
     {
         "datasheet_id": "000000857",
@@ -4107,7 +4107,7 @@
         "datasheet_id": "000000858",
         "line": "1",
         "description": "1 model",
-        "cost": "365"
+        "cost": "355"
     },
     {
         "datasheet_id": "000000859",
@@ -4238,20 +4238,26 @@
     {
         "datasheet_id": "000000877",
         "line": "1",
-        "description": "1 model",
+        "description": "1 model (<ky>AGENTS OF THE IMPERIUM</ky> Detachment)",
         "cost": "55"
+    },
+    {
+        "datasheet_id": "000000877",
+        "line": "2",
+        "description": "1 model (Assigned Agent)",
+        "cost": "65"
     },
     {
         "datasheet_id": "000000882",
         "line": "1",
         "description": "4 models",
-        "cost": "150"
+        "cost": "160"
     },
     {
         "datasheet_id": "000000882",
         "line": "2",
         "description": "5 models",
-        "cost": "190"
+        "cost": "200"
     },
     {
         "datasheet_id": "000000883",
@@ -5127,7 +5133,7 @@
         "datasheet_id": "000001117",
         "line": "1",
         "description": "1 model",
-        "cost": "285"
+        "cost": "295"
     },
     {
         "datasheet_id": "000001118",
@@ -5145,7 +5151,7 @@
         "datasheet_id": "000001120",
         "line": "1",
         "description": "1 model",
-        "cost": "270"
+        "cost": "285"
     },
     {
         "datasheet_id": "000001125",
@@ -6177,7 +6183,7 @@
         "datasheet_id": "000001481",
         "line": "1",
         "description": "1 model",
-        "cost": "140"
+        "cost": "135"
     },
     {
         "datasheet_id": "000001482",
@@ -6903,7 +6909,7 @@
         "datasheet_id": "000002090",
         "line": "2",
         "description": "1 model (Assigned Agent)",
-        "cost": "95"
+        "cost": "110"
     },
     {
         "datasheet_id": "000002092",
@@ -7197,7 +7203,7 @@
         "datasheet_id": "000002357",
         "line": "1",
         "description": "1 model",
-        "cost": "310"
+        "cost": "320"
     },
     {
         "datasheet_id": "000002358",
@@ -8085,7 +8091,7 @@
         "datasheet_id": "000002617",
         "line": "1",
         "description": "1 model",
-        "cost": "250"
+        "cost": "260"
     },
     {
         "datasheet_id": "000002619",
@@ -8229,7 +8235,7 @@
         "datasheet_id": "000002638",
         "line": "1",
         "description": "1 model",
-        "cost": "170"
+        "cost": "165"
     },
     {
         "datasheet_id": "000002639",
@@ -8505,7 +8511,7 @@
         "datasheet_id": "000002717",
         "line": "1",
         "description": "1 model",
-        "cost": "195"
+        "cost": "205"
     },
     {
         "datasheet_id": "000002718",
@@ -8541,7 +8547,7 @@
         "datasheet_id": "000002722",
         "line": "1",
         "description": "1 model",
-        "cost": "220"
+        "cost": "230"
     },
     {
         "datasheet_id": "000002723",
@@ -8715,7 +8721,7 @@
         "datasheet_id": "000002749",
         "line": "1",
         "description": "1 model",
-        "cost": "195"
+        "cost": "180"
     },
     {
         "datasheet_id": "000002750",
@@ -8955,7 +8961,7 @@
         "datasheet_id": "000002790",
         "line": "1",
         "description": "1 model",
-        "cost": "220"
+        "cost": "235"
     },
     {
         "datasheet_id": "000002791",
@@ -9027,7 +9033,7 @@
         "datasheet_id": "000002799",
         "line": "2",
         "description": "1 Sword Brother, 11 Initiates and 8 Neophytes",
-        "cost": "310"
+        "cost": "300"
     },
     {
         "datasheet_id": "000002801",
@@ -10509,7 +10515,7 @@
         "datasheet_id": "000003892",
         "line": "1",
         "description": "1 model",
-        "cost": "275"
+        "cost": "290"
     },
     {
         "datasheet_id": "000003893",
@@ -10701,7 +10707,7 @@
         "datasheet_id": "000003944",
         "line": "1",
         "description": "1 model",
-        "cost": "275"
+        "cost": "290"
     },
     {
         "datasheet_id": "000003945",
@@ -11007,7 +11013,7 @@
         "datasheet_id": "000003987",
         "line": "1",
         "description": "1 model",
-        "cost": "250"
+        "cost": "260"
     },
     {
         "datasheet_id": "000003988",
@@ -11655,7 +11661,7 @@
         "datasheet_id": "000004079",
         "line": "2",
         "description": "10 models",
-        "cost": "170"
+        "cost": "160"
     },
     {
         "datasheet_id": "000004080",
@@ -11673,7 +11679,7 @@
         "datasheet_id": "000004081",
         "line": "1",
         "description": "5 models",
-        "cost": "155"
+        "cost": "145"
     },
     {
         "datasheet_id": "000004082",
@@ -11721,13 +11727,13 @@
         "datasheet_id": "000004089",
         "line": "1",
         "description": "3 models",
-        "cost": "110"
+        "cost": "100"
     },
     {
         "datasheet_id": "000004089",
         "line": "2",
         "description": "6 models",
-        "cost": "220"
+        "cost": "200"
     },
     {
         "datasheet_id": "000004090",
@@ -11991,13 +11997,13 @@
         "datasheet_id": "000004123",
         "line": "1",
         "description": "1 model",
-        "cost": "285"
+        "cost": "295"
     },
     {
         "datasheet_id": "000004124",
         "line": "1",
         "description": "1 model",
-        "cost": "270"
+        "cost": "285"
     },
     {
         "datasheet_id": "000004125",
@@ -12255,7 +12261,7 @@
         "datasheet_id": "000004157",
         "line": "1",
         "description": "5 models",
-        "cost": "80"
+        "cost": "75"
     },
     {
         "datasheet_id": "000004158",
@@ -12543,7 +12549,7 @@
         "datasheet_id": "000004186",
         "line": "1",
         "description": "1 model",
-        "cost": "165"
+        "cost": "185"
     },
     {
         "datasheet_id": "000004187",
@@ -12555,7 +12561,7 @@
         "datasheet_id": "000004188",
         "line": "1",
         "description": "6 models",
-        "cost": "90"
+        "cost": "105"
     },
     {
         "datasheet_id": "000004189",
@@ -12658,5 +12664,29 @@
         "line": "2",
         "description": "2 models",
         "cost": "150"
+    },
+    {
+        "datasheet_id": "000004201",
+        "line": "1",
+        "description": "1 model",
+        "cost": "110"
+    },
+    {
+        "datasheet_id": "000004202",
+        "line": "1",
+        "description": "1 model",
+        "cost": "85"
+    },
+    {
+        "datasheet_id": "000004203",
+        "line": "1",
+        "description": "2 models",
+        "cost": "160"
+    },
+    {
+        "datasheet_id": "000004204",
+        "line": "1",
+        "description": "1 model",
+        "cost": "80"
     }
 ]

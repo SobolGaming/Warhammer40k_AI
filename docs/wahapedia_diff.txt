@@ -7,505 +7,1085 @@ File: Abilities.json
 Counts: old=90, new=90, added=0, removed=0, changed=0
 
 File: Datasheets.json
-Counts: old=1686, new=1690, added=4, removed=0, changed=1
+Counts: old=1690, new=1694, added=4, removed=0, changed=0
 Added:
-  + id=000004197, name=Kharseth
-  + id=000004198, name=Prince Yriel
-  + id=000004199, name=Corsair Skyreavers
-  + id=000004200, name=Starfangs
-Changed:
-  * id=000002769, name=Armiger Moirax
-      role: Battleline -> Other
+  + id=000004201, name=Berehk Stornbröw
+  + id=000004204, name=Ferren Areios
+  + id=000004203, name=The Twin Lance
+  + id=000004202, name=Tyranid Prime with Lash Whip
 
 File: Datasheets_abilities.json
-Counts: old=7031, new=7049, added=18, removed=0, changed=0
+Counts: old=7049, new=7070, added=21, removed=0, changed=6
 Added:
-  + datasheet_id=000004197, line=1, name=
-  + datasheet_id=000004197, line=2, name=
-  + datasheet_id=000004197, line=3, name=
-  + datasheet_id=000004197, line=4, name=Aethersense (Psychic)
-  + datasheet_id=000004197, line=5, name=Fury of the Void (Psychic)
-  + datasheet_id=000004198, line=1, name=
-  + datasheet_id=000004198, line=2, name=
-  + datasheet_id=000004198, line=3, name=
-  + datasheet_id=000004198, line=4, name=Piratical Hero
-  + datasheet_id=000004198, line=5, name=Prince of Corsairs
-  + datasheet_id=000004199, line=1, name=
-  + datasheet_id=000004199, line=2, name=
-  + datasheet_id=000004199, line=3, name=
-  + datasheet_id=000004199, line=4, name=Raid and Run
-  + datasheet_id=000004200, line=1, name=
-  + datasheet_id=000004200, line=2, name=
-  + datasheet_id=000004200, line=3, name=
-  + datasheet_id=000004200, line=4, name=Hallucinogen Grenades
+  + datasheet_id=000004201, line=1, name=
+  + datasheet_id=000004201, line=2, name=
+  + datasheet_id=000004201, line=3, name=
+  + datasheet_id=000004201, line=4, name=Break the Foe
+  + datasheet_id=000004201, line=5, name=Relentless Avalanche
+  + datasheet_id=000004202, line=1, name=
+  + datasheet_id=000004202, line=2, name=
+  + datasheet_id=000004202, line=3, name=
+  + datasheet_id=000004202, line=4, name=Alpha Warrior
+  + datasheet_id=000004202, line=5, name=Aggressive Leader-beast
+  + datasheet_id=000004203, line=1, name=
+  + datasheet_id=000004203, line=2, name=
+  + datasheet_id=000004203, line=3, name=
+  + datasheet_id=000004203, line=4, name=Exemplars of Mont’ka
+  + datasheet_id=000004203, line=5, name=Neocapacitor Shields
+  + datasheet_id=000004203, line=6, name=Retro-thrusters
+  + datasheet_id=000004203, line=7, name=MV15 Gun Drone
+  + datasheet_id=000004204, line=1, name=
+  + datasheet_id=000004204, line=2, name=
+  + datasheet_id=000004204, line=3, name=Master of Rites
+  + datasheet_id=000004204, line=4, name=Unrelenting and Uncompromising
+Changed:
+  * datasheet_id=000002360, line=7, name=Phaeron of the Stars (Aura)
+      description: While a friendly NECRONS unit is within 6" of this unit's Szarekh model, each time a model in that unit makes an attack, re-roll a Hit roll of 1 and re-roll a Wound roll of 1. -> While a friendly NECRONS unit (excluding Monster units) is within 6" of this unit's Szarekh model, each time a model in that unit makes an attack, re-roll a Hit roll of 1 and re-roll a Wound roll of 1.
+  * datasheet_id=000002360, line=8, name=Phaeron of the Blades (Aura)
+      description: While a friendly NECRONS unit is within 6" of this unit's Szarekh model, you can re-roll Charge rolls made for that unit and each time a model in that unit makes a melee attack, add 1 to the Strength characteristic of that attack. -> While a friendly NECRONS unit (excluding Monster units) is within 6" of this unit's Szarekh model, you can re-roll Charge rolls made for that unit and each time a model in that unit makes a melee attack, add 1 to the Strength characteris...
+  * datasheet_id=000002360, line=9, name=Relentless March (Aura)
+      description: While a friendly NECRONS unit is within 6" of this unit's Szarekh model, add 2" to the Move characteristic of models in that unit. -> While a friendly NECRONS unit (excluding Monster units) is within 6" of this unit's Szarekh model, add 2" to the Move characteristic of models in that unit.
+  * datasheet_id=000004186, line=5, name=Infectious Murder-madness (Aura)
+      description: While a friendly NECRONS unit (excluding Titanic units) is within 6" of this model, each time a model in that unit makes an attack, if that model has the Destroyer Cult keyword or that enemy unit is the closest eligible target, that atta... -> While a friendly NECRONS unit (excluding Monster and Titanic units) is within 6" of this model, each time a model in that unit makes an attack, if that model has the Destroyer Cult keyword or that enemy unit is the closest eligible targe...
+  * datasheet_id=000004196, line=3, name=
+      type:  -> Faction
+  * datasheet_id=000004199, line=3, name=
+      type:  -> Faction
 
 File: Datasheets_detachment_abilities.json
-Counts: old=15705, new=15711, added=6, removed=0, changed=0
+Counts: old=15711, new=15467, added=46, removed=290, changed=0
 Added:
-  + datasheet_id=000004197, detachment_ability_id=000009780
-  + datasheet_id=000004197, detachment_ability_id=000008714
-  + datasheet_id=000004198, detachment_ability_id=000008714
-  + datasheet_id=000004198, detachment_ability_id=000009780
-  + datasheet_id=000004199, detachment_ability_id=000009780
-  + datasheet_id=000004200, detachment_ability_id=000009780
+  + datasheet_id=000004201, detachment_ability_id=000010707
+  + datasheet_id=000004201, detachment_ability_id=000010446
+  + datasheet_id=000004201, detachment_ability_id=000010438
+  + datasheet_id=000004201, detachment_ability_id=000010434
+  + datasheet_id=000004201, detachment_ability_id=000009822
+  + datasheet_id=000004202, detachment_ability_id=000008415
+  + datasheet_id=000004202, detachment_ability_id=000010146
+  + datasheet_id=000004202, detachment_ability_id=000008356
+  + datasheet_id=000004202, detachment_ability_id=000008420
+  + datasheet_id=000004203, detachment_ability_id=000008810
+  + datasheet_id=000004203, detachment_ability_id=000008441
+  + datasheet_id=000004203, detachment_ability_id=000009838
+  + datasheet_id=000004203, detachment_ability_id=000009982
+  + datasheet_id=000004203, detachment_ability_id=000008814
+  + datasheet_id=000004204, detachment_ability_id=000008770
+  + datasheet_id=000004204, detachment_ability_id=000009242
+  + datasheet_id=000004204, detachment_ability_id=000008473
+  + datasheet_id=000004204, detachment_ability_id=000009850
+  + datasheet_id=000004204, detachment_ability_id=000008355
+  + datasheet_id=000004204, detachment_ability_id=000010627
+  + datasheet_id=000004204, detachment_ability_id=000010657
+  + datasheet_id=000004204, detachment_ability_id=000008777
+  + datasheet_id=000004204, detachment_ability_id=000010399
+  + datasheet_id=000004204, detachment_ability_id=000010621
+  + datasheet_id=000004204, detachment_ability_id=000010367
+  + datasheet_id=000004204, detachment_ability_id=000010463
+  + datasheet_id=000004204, detachment_ability_id=000008374
+  + datasheet_id=000004204, detachment_ability_id=000010391
+  + datasheet_id=000004204, detachment_ability_id=000008481
+  + datasheet_id=000004204, detachment_ability_id=000010268
+  + datasheet_id=000004204, detachment_ability_id=000010459
+  + datasheet_id=000004204, detachment_ability_id=000010679
+  + datasheet_id=000004204, detachment_ability_id=000008477
+  + datasheet_id=000004204, detachment_ability_id=000009834
+  + datasheet_id=000004204, detachment_ability_id=000010644
+  + datasheet_id=000004204, detachment_ability_id=000010683
+  + datasheet_id=000004204, detachment_ability_id=000008485
+  + datasheet_id=000004204, detachment_ability_id=000010658
+  + datasheet_id=000004204, detachment_ability_id=000008493
+  + datasheet_id=000004204, detachment_ability_id=000010620
+  + datasheet_id=000004204, detachment_ability_id=000009842
+  + datasheet_id=000004204, detachment_ability_id=000010632
+  + datasheet_id=000004204, detachment_ability_id=000010154
+  + datasheet_id=000004204, detachment_ability_id=000008489
+  + datasheet_id=000004204, detachment_ability_id=000010626
+  + datasheet_id=000004204, detachment_ability_id=000009732
+Removed:
+  - datasheet_id=000000060, detachment_ability_id=000008521
+  - datasheet_id=000000063, detachment_ability_id=000008521
+  - datasheet_id=000000065, detachment_ability_id=000008521
+  - datasheet_id=000000066, detachment_ability_id=000008521
+  - datasheet_id=000000067, detachment_ability_id=000008521
+  - datasheet_id=000000068, detachment_ability_id=000008521
+  - datasheet_id=000000071, detachment_ability_id=000008521
+  - datasheet_id=000000072, detachment_ability_id=000008521
+  - datasheet_id=000000073, detachment_ability_id=000008521
+  - datasheet_id=000000076, detachment_ability_id=000008521
+  - datasheet_id=000000079, detachment_ability_id=000008521
+  - datasheet_id=000000081, detachment_ability_id=000008521
+  - datasheet_id=000000083, detachment_ability_id=000008521
+  - datasheet_id=000000084, detachment_ability_id=000008521
+  - datasheet_id=000000085, detachment_ability_id=000008521
+  - datasheet_id=000000086, detachment_ability_id=000008521
+  - datasheet_id=000000087, detachment_ability_id=000008521
+  - datasheet_id=000000091, detachment_ability_id=000008521
+  - datasheet_id=000000092, detachment_ability_id=000008521
+  - datasheet_id=000000093, detachment_ability_id=000008521
+  - datasheet_id=000000094, detachment_ability_id=000008521
+  - datasheet_id=000000095, detachment_ability_id=000008521
+  - datasheet_id=000000096, detachment_ability_id=000008521
+  - datasheet_id=000000097, detachment_ability_id=000008521
+  - datasheet_id=000000098, detachment_ability_id=000008521
+  - datasheet_id=000000099, detachment_ability_id=000008521
+  - datasheet_id=000000103, detachment_ability_id=000008521
+  - datasheet_id=000000107, detachment_ability_id=000008521
+  - datasheet_id=000000110, detachment_ability_id=000008521
+  - datasheet_id=000000111, detachment_ability_id=000008521
+  - datasheet_id=000000112, detachment_ability_id=000008521
+  - datasheet_id=000000113, detachment_ability_id=000008521
+  - datasheet_id=000000114, detachment_ability_id=000008521
+  - datasheet_id=000000115, detachment_ability_id=000008521
+  - datasheet_id=000000116, detachment_ability_id=000008521
+  - datasheet_id=000000117, detachment_ability_id=000008521
+  - datasheet_id=000000119, detachment_ability_id=000008521
+  - datasheet_id=000000120, detachment_ability_id=000008521
+  - datasheet_id=000000121, detachment_ability_id=000008521
+  - datasheet_id=000000122, detachment_ability_id=000008521
+  - datasheet_id=000000123, detachment_ability_id=000008521
+  - datasheet_id=000000124, detachment_ability_id=000008521
+  - datasheet_id=000000125, detachment_ability_id=000008521
+  - datasheet_id=000000126, detachment_ability_id=000008521
+  - datasheet_id=000000127, detachment_ability_id=000008521
+  - datasheet_id=000000128, detachment_ability_id=000008521
+  - datasheet_id=000000129, detachment_ability_id=000008521
+  - datasheet_id=000000131, detachment_ability_id=000008521
+  - datasheet_id=000000134, detachment_ability_id=000008521
+  - datasheet_id=000000135, detachment_ability_id=000008521
+  - datasheet_id=000000136, detachment_ability_id=000008521
+  - datasheet_id=000000138, detachment_ability_id=000008521
+  - datasheet_id=000000139, detachment_ability_id=000008521
+  - datasheet_id=000000140, detachment_ability_id=000008521
+  - datasheet_id=000000146, detachment_ability_id=000008521
+  - datasheet_id=000000147, detachment_ability_id=000008521
+  - datasheet_id=000000148, detachment_ability_id=000008521
+  - datasheet_id=000000151, detachment_ability_id=000008521
+  - datasheet_id=000000152, detachment_ability_id=000008521
+  - datasheet_id=000000153, detachment_ability_id=000008521
+  - datasheet_id=000000154, detachment_ability_id=000008521
+  - datasheet_id=000000155, detachment_ability_id=000008521
+  - datasheet_id=000000156, detachment_ability_id=000008521
+  - datasheet_id=000000157, detachment_ability_id=000008521
+  - datasheet_id=000000158, detachment_ability_id=000008521
+  - datasheet_id=000000159, detachment_ability_id=000008521
+  - datasheet_id=000000160, detachment_ability_id=000008521
+  - datasheet_id=000000164, detachment_ability_id=000008521
+  - datasheet_id=000000165, detachment_ability_id=000008521
+  - datasheet_id=000000166, detachment_ability_id=000008521
+  - datasheet_id=000000167, detachment_ability_id=000008521
+  - datasheet_id=000000168, detachment_ability_id=000008521
+  - datasheet_id=000000169, detachment_ability_id=000008521
+  - datasheet_id=000000218, detachment_ability_id=000008521
+  - datasheet_id=000000219, detachment_ability_id=000008521
+  - datasheet_id=000000225, detachment_ability_id=000008521
+  - datasheet_id=000000226, detachment_ability_id=000008521
+  - datasheet_id=000000230, detachment_ability_id=000008521
+  - datasheet_id=000000231, detachment_ability_id=000008521
+  - datasheet_id=000000238, detachment_ability_id=000008521
+  - datasheet_id=000000239, detachment_ability_id=000008521
+  - datasheet_id=000000240, detachment_ability_id=000008521
+  - datasheet_id=000000241, detachment_ability_id=000008521
+  - datasheet_id=000000242, detachment_ability_id=000008521
+  - datasheet_id=000000282, detachment_ability_id=000008521
+  - datasheet_id=000000283, detachment_ability_id=000008521
+  - datasheet_id=000000284, detachment_ability_id=000008521
+  - datasheet_id=000000285, detachment_ability_id=000008521
+  - datasheet_id=000000286, detachment_ability_id=000008521
+  - datasheet_id=000000287, detachment_ability_id=000008521
+  - datasheet_id=000000288, detachment_ability_id=000008521
+  - datasheet_id=000000292, detachment_ability_id=000008521
+  - datasheet_id=000000297, detachment_ability_id=000008521
+  - datasheet_id=000000300, detachment_ability_id=000008521
+  - datasheet_id=000000301, detachment_ability_id=000008521
+  - datasheet_id=000000302, detachment_ability_id=000008521
+  - datasheet_id=000000303, detachment_ability_id=000008521
+  - datasheet_id=000000304, detachment_ability_id=000008521
+  - datasheet_id=000000305, detachment_ability_id=000008521
+  - datasheet_id=000000306, detachment_ability_id=000008521
+  - datasheet_id=000000308, detachment_ability_id=000008521
+  - datasheet_id=000000311, detachment_ability_id=000008521
+  - datasheet_id=000000314, detachment_ability_id=000008521
+  - datasheet_id=000000315, detachment_ability_id=000008521
+  - datasheet_id=000000317, detachment_ability_id=000008521
+  - datasheet_id=000000318, detachment_ability_id=000008521
+  - datasheet_id=000000321, detachment_ability_id=000008521
+  - datasheet_id=000000322, detachment_ability_id=000008521
+  - datasheet_id=000000323, detachment_ability_id=000008521
+  - datasheet_id=000000324, detachment_ability_id=000008521
+  - datasheet_id=000000325, detachment_ability_id=000008521
+  - datasheet_id=000000326, detachment_ability_id=000008521
+  - datasheet_id=000000358, detachment_ability_id=000008521
+  - datasheet_id=000000541, detachment_ability_id=000009748
+  - datasheet_id=000000542, detachment_ability_id=000009748
+  - datasheet_id=000000555, detachment_ability_id=000009748
+  - datasheet_id=000000558, detachment_ability_id=000009748
+  - datasheet_id=000000560, detachment_ability_id=000009748
+  - datasheet_id=000001153, detachment_ability_id=000008521
+  - datasheet_id=000001154, detachment_ability_id=000008521
+  - datasheet_id=000001156, detachment_ability_id=000008521
+  - datasheet_id=000001157, detachment_ability_id=000008521
+  - datasheet_id=000001158, detachment_ability_id=000008521
+  - datasheet_id=000001159, detachment_ability_id=000008521
+  - datasheet_id=000001161, detachment_ability_id=000008521
+  - datasheet_id=000001162, detachment_ability_id=000008521
+  - datasheet_id=000001163, detachment_ability_id=000008521
+  - datasheet_id=000001164, detachment_ability_id=000008521
+  - datasheet_id=000001165, detachment_ability_id=000008521
+  - datasheet_id=000001166, detachment_ability_id=000008521
+  - datasheet_id=000001167, detachment_ability_id=000008521
+  - datasheet_id=000001168, detachment_ability_id=000008521
+  - datasheet_id=000001169, detachment_ability_id=000008521
+  - datasheet_id=000001172, detachment_ability_id=000008521
+  - datasheet_id=000001174, detachment_ability_id=000008521
+  - datasheet_id=000001175, detachment_ability_id=000008521
+  - datasheet_id=000001177, detachment_ability_id=000008521
+  - datasheet_id=000001178, detachment_ability_id=000008521
+  - datasheet_id=000001179, detachment_ability_id=000008521
+  - datasheet_id=000001182, detachment_ability_id=000008521
+  - datasheet_id=000001184, detachment_ability_id=000008521
+  - datasheet_id=000001185, detachment_ability_id=000008521
+  - datasheet_id=000001188, detachment_ability_id=000008521
+  - datasheet_id=000001189, detachment_ability_id=000008521
+  - datasheet_id=000001190, detachment_ability_id=000008521
+  - datasheet_id=000001191, detachment_ability_id=000008521
+  - datasheet_id=000001192, detachment_ability_id=000008521
+  - datasheet_id=000001193, detachment_ability_id=000008521
+  - datasheet_id=000001344, detachment_ability_id=000008521
+  - datasheet_id=000001345, detachment_ability_id=000008521
+  - datasheet_id=000001346, detachment_ability_id=000008521
+  - datasheet_id=000001347, detachment_ability_id=000008521
+  - datasheet_id=000001348, detachment_ability_id=000008521
+  - datasheet_id=000001423, detachment_ability_id=000008521
+  - datasheet_id=000001524, detachment_ability_id=000008521
+  - datasheet_id=000001527, detachment_ability_id=000008521
+  - datasheet_id=000001606, detachment_ability_id=000008521
+  - datasheet_id=000001607, detachment_ability_id=000008521
+  - datasheet_id=000001608, detachment_ability_id=000008521
+  - datasheet_id=000001609, detachment_ability_id=000008521
+  - datasheet_id=000001610, detachment_ability_id=000008521
+  - datasheet_id=000001611, detachment_ability_id=000008521
+  - datasheet_id=000001666, detachment_ability_id=000008521
+  - datasheet_id=000001667, detachment_ability_id=000008521
+  - datasheet_id=000001668, detachment_ability_id=000008521
+  - datasheet_id=000001825, detachment_ability_id=000008521
+  - datasheet_id=000001991, detachment_ability_id=000008521
+  - datasheet_id=000001997, detachment_ability_id=000008521
+  - datasheet_id=000002098, detachment_ability_id=000008521
+  - datasheet_id=000002099, detachment_ability_id=000008521
+  - datasheet_id=000002100, detachment_ability_id=000008521
+  - datasheet_id=000002102, detachment_ability_id=000008521
+  - datasheet_id=000002103, detachment_ability_id=000008521
+  - datasheet_id=000002105, detachment_ability_id=000008521
+  - datasheet_id=000002173, detachment_ability_id=000008521
+  - datasheet_id=000002199, detachment_ability_id=000008521
+  - datasheet_id=000002234, detachment_ability_id=000008521
+  - datasheet_id=000002252, detachment_ability_id=000008521
+  - datasheet_id=000002255, detachment_ability_id=000008521
+  - datasheet_id=000002258, detachment_ability_id=000008521
+  - datasheet_id=000002266, detachment_ability_id=000008521
+  - datasheet_id=000002267, detachment_ability_id=000008521
+  - datasheet_id=000002268, detachment_ability_id=000008521
+  - datasheet_id=000002269, detachment_ability_id=000008521
+  - datasheet_id=000002270, detachment_ability_id=000008521
+  - datasheet_id=000002285, detachment_ability_id=000008521
+  - datasheet_id=000002291, detachment_ability_id=000008521
+  - datasheet_id=000002296, detachment_ability_id=000008521
+  - datasheet_id=000002302, detachment_ability_id=000008521
+  - datasheet_id=000002357, detachment_ability_id=000009748
+  - datasheet_id=000002468, detachment_ability_id=000008521
+  - datasheet_id=000002473, detachment_ability_id=000008521
+  - datasheet_id=000002530, detachment_ability_id=000008521
+  - datasheet_id=000002568, detachment_ability_id=000008521
+  - datasheet_id=000002677, detachment_ability_id=000008521
+  - datasheet_id=000002678, detachment_ability_id=000008521
+  - datasheet_id=000002682, detachment_ability_id=000008521
+  - datasheet_id=000002700, detachment_ability_id=000008521
+  - datasheet_id=000002701, detachment_ability_id=000008521
+  - datasheet_id=000002702, detachment_ability_id=000008521
+  - datasheet_id=000002703, detachment_ability_id=000008521
+  - datasheet_id=000002704, detachment_ability_id=000008521
+  - datasheet_id=000002705, detachment_ability_id=000008521
+  - datasheet_id=000002706, detachment_ability_id=000008521
+  - datasheet_id=000002707, detachment_ability_id=000008521
+  - datasheet_id=000002708, detachment_ability_id=000008521
+  - datasheet_id=000002709, detachment_ability_id=000008521
+  - datasheet_id=000002710, detachment_ability_id=000008521
+  - datasheet_id=000002711, detachment_ability_id=000008521
+  - datasheet_id=000002712, detachment_ability_id=000008521
+  - datasheet_id=000002713, detachment_ability_id=000008521
+  - datasheet_id=000002714, detachment_ability_id=000008521
+  - datasheet_id=000002715, detachment_ability_id=000008521
+  - datasheet_id=000002717, detachment_ability_id=000008521
+  - datasheet_id=000002718, detachment_ability_id=000008521
+  - datasheet_id=000002719, detachment_ability_id=000008521
+  - datasheet_id=000002720, detachment_ability_id=000008521
+  - datasheet_id=000002721, detachment_ability_id=000008521
+  - datasheet_id=000002722, detachment_ability_id=000008521
+  - datasheet_id=000002723, detachment_ability_id=000008521
+  - datasheet_id=000002724, detachment_ability_id=000008521
+  - datasheet_id=000002725, detachment_ability_id=000008521
+  - datasheet_id=000002726, detachment_ability_id=000008521
+  - datasheet_id=000002727, detachment_ability_id=000008521
+  - datasheet_id=000002728, detachment_ability_id=000008521
+  - datasheet_id=000002729, detachment_ability_id=000008521
+  - datasheet_id=000002737, detachment_ability_id=000008521
+  - datasheet_id=000002738, detachment_ability_id=000008521
+  - datasheet_id=000002748, detachment_ability_id=000008521
+  - datasheet_id=000002772, detachment_ability_id=000008521
+  - datasheet_id=000002773, detachment_ability_id=000008521
+  - datasheet_id=000002775, detachment_ability_id=000008521
+  - datasheet_id=000002776, detachment_ability_id=000008521
+  - datasheet_id=000002779, detachment_ability_id=000008521
+  - datasheet_id=000002780, detachment_ability_id=000008521
+  - datasheet_id=000002781, detachment_ability_id=000008521
+  - datasheet_id=000002783, detachment_ability_id=000008521
+  - datasheet_id=000002786, detachment_ability_id=000008521
+  - datasheet_id=000002787, detachment_ability_id=000008521
+  - datasheet_id=000002788, detachment_ability_id=000008521
+  - datasheet_id=000002789, detachment_ability_id=000008521
+  - datasheet_id=000002790, detachment_ability_id=000008521
+  - datasheet_id=000002791, detachment_ability_id=000008521
+  - datasheet_id=000002792, detachment_ability_id=000008521
+  - datasheet_id=000002793, detachment_ability_id=000008521
+  - datasheet_id=000002794, detachment_ability_id=000008521
+  - datasheet_id=000002795, detachment_ability_id=000008521
+  - datasheet_id=000002796, detachment_ability_id=000008521
+  - datasheet_id=000002798, detachment_ability_id=000008521
+  - datasheet_id=000002799, detachment_ability_id=000008521
+  - datasheet_id=000002801, detachment_ability_id=000008521
+  - datasheet_id=000002802, detachment_ability_id=000008521
+  - datasheet_id=000002803, detachment_ability_id=000008521
+  - datasheet_id=000002804, detachment_ability_id=000008521
+  - datasheet_id=000002805, detachment_ability_id=000008521
+  - datasheet_id=000002806, detachment_ability_id=000008521
+  - datasheet_id=000003698, detachment_ability_id=000008521
+  - datasheet_id=000003831, detachment_ability_id=000008521
+  - datasheet_id=000003832, detachment_ability_id=000008521
+  - datasheet_id=000003833, detachment_ability_id=000008521
+  - datasheet_id=000003835, detachment_ability_id=000008521
+  - datasheet_id=000003836, detachment_ability_id=000008521
+  - datasheet_id=000003837, detachment_ability_id=000008521
+  - datasheet_id=000003871, detachment_ability_id=000008521
+  - datasheet_id=000003872, detachment_ability_id=000008521
+  - datasheet_id=000003873, detachment_ability_id=000008521
+  - datasheet_id=000003874, detachment_ability_id=000008521
+  - datasheet_id=000003875, detachment_ability_id=000008521
+  - datasheet_id=000004129, detachment_ability_id=000008521
+  - datasheet_id=000004130, detachment_ability_id=000008521
+  - datasheet_id=000004131, detachment_ability_id=000008521
+  - datasheet_id=000004132, detachment_ability_id=000008521
+  - datasheet_id=000004133, detachment_ability_id=000008521
+  - datasheet_id=000004135, detachment_ability_id=000008521
+  - datasheet_id=000004136, detachment_ability_id=000008521
+  - datasheet_id=000004137, detachment_ability_id=000008521
+  - datasheet_id=000004139, detachment_ability_id=000008521
+  - datasheet_id=000004148, detachment_ability_id=000008521
+  - datasheet_id=000004154, detachment_ability_id=000008521
+  - datasheet_id=000004166, detachment_ability_id=000008521
+  - datasheet_id=000004167, detachment_ability_id=000008521
+  - datasheet_id=000004175, detachment_ability_id=000008521
+  - datasheet_id=000004179, detachment_ability_id=000008521
+  - datasheet_id=000004180, detachment_ability_id=000008521
+  - datasheet_id=000004182, detachment_ability_id=000008521
+  - datasheet_id=000004183, detachment_ability_id=000008521
+  - datasheet_id=000004184, detachment_ability_id=000008521
+  - datasheet_id=000004185, detachment_ability_id=000008521
+  - datasheet_id=000004187, detachment_ability_id=000008521
+  - datasheet_id=000004188, detachment_ability_id=000008521
 
 File: Datasheets_enhancements.json
-Counts: old=10437, new=10461, added=24, removed=0, changed=0
+Counts: old=10461, new=10482, added=21, removed=0, changed=0
 Added:
-  + datasheet_id=000001663, enhancement_id=000010312005
-  + datasheet_id=000001663, enhancement_id=000010312002
-  + datasheet_id=000001663, enhancement_id=000010312003
-  + datasheet_id=000001663, enhancement_id=000010312004
-  + datasheet_id=000002562, enhancement_id=000010312003
-  + datasheet_id=000002562, enhancement_id=000010312005
-  + datasheet_id=000002562, enhancement_id=000010312004
-  + datasheet_id=000002562, enhancement_id=000010312002
-  + datasheet_id=000002563, enhancement_id=000010312003
-  + datasheet_id=000002563, enhancement_id=000010312005
-  + datasheet_id=000002563, enhancement_id=000010312002
-  + datasheet_id=000002563, enhancement_id=000010312004
-  + datasheet_id=000002564, enhancement_id=000010312003
-  + datasheet_id=000002564, enhancement_id=000010312004
-  + datasheet_id=000002564, enhancement_id=000010312005
-  + datasheet_id=000002564, enhancement_id=000010312002
-  + datasheet_id=000002565, enhancement_id=000010312004
-  + datasheet_id=000002565, enhancement_id=000010312003
-  + datasheet_id=000002565, enhancement_id=000010312002
-  + datasheet_id=000002565, enhancement_id=000010312005
-  + datasheet_id=000002566, enhancement_id=000010312002
-  + datasheet_id=000002566, enhancement_id=000010312005
-  + datasheet_id=000002566, enhancement_id=000010312003
-  + datasheet_id=000002566, enhancement_id=000010312004
+  + datasheet_id=000004202, enhancement_id=000010147003
+  + datasheet_id=000004202, enhancement_id=000008348004
+  + datasheet_id=000004202, enhancement_id=000008421003
+  + datasheet_id=000004202, enhancement_id=000008408003
+  + datasheet_id=000004202, enhancement_id=000008408004
+  + datasheet_id=000004202, enhancement_id=000008348002
+  + datasheet_id=000004202, enhancement_id=000008417005
+  + datasheet_id=000004202, enhancement_id=000008412004
+  + datasheet_id=000004202, enhancement_id=000009737005
+  + datasheet_id=000004202, enhancement_id=000010147004
+  + datasheet_id=000004202, enhancement_id=000010147002
+  + datasheet_id=000004202, enhancement_id=000008408005
+  + datasheet_id=000004202, enhancement_id=000008421004
+  + datasheet_id=000004202, enhancement_id=000008421005
+  + datasheet_id=000004202, enhancement_id=000008348005
+  + datasheet_id=000004202, enhancement_id=000008412002
+  + datasheet_id=000004202, enhancement_id=000008412003
+  + datasheet_id=000004202, enhancement_id=000008417002
+  + datasheet_id=000004202, enhancement_id=000008412005
+  + datasheet_id=000004202, enhancement_id=000008348003
+  + datasheet_id=000004202, enhancement_id=000008408002
 
 File: Datasheets_keywords.json
-Counts: old=15686, new=15720, added=35, removed=1, changed=0
+Counts: old=15720, new=15749, added=29, removed=0, changed=0
 Note: Duplicate keys detected; duplicates are disambiguated by full-row signature.
 Added:
-  + datasheet_id=000004197, keyword=Asuryani, model=, is_faction_keyword=true
-  + datasheet_id=000004197, keyword=Drukhari, model=, is_faction_keyword=true
-  + datasheet_id=000004197, keyword=Aeldari, model=, is_faction_keyword=false
-  + datasheet_id=000004197, keyword=Character, model=, is_faction_keyword=false
-  + datasheet_id=000004197, keyword=Epic Hero, model=, is_faction_keyword=false
-  + datasheet_id=000004197, keyword=Psyker, model=, is_faction_keyword=false
-  + datasheet_id=000004197, keyword=Anhrathe, model=, is_faction_keyword=false
-  + datasheet_id=000004197, keyword=Kharseth, model=, is_faction_keyword=false
-  + datasheet_id=000004197, keyword=Infantry, model=, is_faction_keyword=false
-  + datasheet_id=000004198, keyword=Asuryani, model=, is_faction_keyword=true
-  + datasheet_id=000004198, keyword=Drukhari, model=, is_faction_keyword=true
-  + datasheet_id=000004198, keyword=Infantry, model=, is_faction_keyword=false
-  + datasheet_id=000004198, keyword=Aeldari, model=, is_faction_keyword=false
-  + datasheet_id=000004198, keyword=Character, model=, is_faction_keyword=false
-  + datasheet_id=000004198, keyword=Epic Hero, model=, is_faction_keyword=false
-  + datasheet_id=000004198, keyword=Anhrathe, model=, is_faction_keyword=false
-  + datasheet_id=000004198, keyword=Prince Yriel, model=, is_faction_keyword=false
-  + datasheet_id=000004199, keyword=Asuryani, model=, is_faction_keyword=true
-  + datasheet_id=000004199, keyword=Drukhari, model=, is_faction_keyword=true
-  + datasheet_id=000004199, keyword=Infantry, model=, is_faction_keyword=false
-  + datasheet_id=000004199, keyword=Aeldari, model=, is_faction_keyword=false
-  + datasheet_id=000004199, keyword=Anhrathe, model=, is_faction_keyword=false
-  + datasheet_id=000004199, keyword=Jump Pack, model=, is_faction_keyword=false
-  + datasheet_id=000004199, keyword=Fly, model=, is_faction_keyword=false
-  + datasheet_id=000004199, keyword=Grenades, model=, is_faction_keyword=false
-  + datasheet_id=000004199, keyword=Corsair Skyreavers, model=, is_faction_keyword=false
-  + datasheet_id=000004200, keyword=Asuryani, model=, is_faction_keyword=true
-  + datasheet_id=000004200, keyword=Drukhari, model=, is_faction_keyword=true
-  + datasheet_id=000004200, keyword=Vehicle, model=, is_faction_keyword=false
-  + datasheet_id=000004200, keyword=Aeldari, model=, is_faction_keyword=false
-  + datasheet_id=000004200, keyword=Anhrathe, model=, is_faction_keyword=false
-  + datasheet_id=000004200, keyword=Fly, model=, is_faction_keyword=false
-  + datasheet_id=000004200, keyword=Smoke, model=, is_faction_keyword=false
-  + datasheet_id=000004200, keyword=Grenades, model=, is_faction_keyword=false
-  + datasheet_id=000004200, keyword=Starfangs, model=, is_faction_keyword=false
-Removed:
-  - datasheet_id=000002769, keyword=Battleline, model=, is_faction_keyword=false
+  + datasheet_id=000004201, keyword=Leagues of Votann, model=, is_faction_keyword=true
+  + datasheet_id=000004201, keyword=Cthonian, model=, is_faction_keyword=false
+  + datasheet_id=000004201, keyword=Berehk Stornbröw, model=, is_faction_keyword=false
+  + datasheet_id=000004201, keyword=Infantry, model=, is_faction_keyword=false
+  + datasheet_id=000004201, keyword=Character, model=, is_faction_keyword=false
+  + datasheet_id=000004201, keyword=Epic Hero, model=, is_faction_keyword=false
+  + datasheet_id=000004202, keyword=Tyranids, model=, is_faction_keyword=true
+  + datasheet_id=000004202, keyword=Synapse, model=, is_faction_keyword=false
+  + datasheet_id=000004202, keyword=Tyranid Prime with Lash Whip, model=, is_faction_keyword=false
+  + datasheet_id=000004202, keyword=Infantry, model=, is_faction_keyword=false
+  + datasheet_id=000004202, keyword=Character, model=, is_faction_keyword=false
+  + datasheet_id=000004202, keyword=Great Devourer, model=, is_faction_keyword=false
+  + datasheet_id=000004203, keyword=T’au Empire, model=, is_faction_keyword=true
+  + datasheet_id=000004203, keyword=Vehicle, model=, is_faction_keyword=false
+  + datasheet_id=000004203, keyword=Walker, model=, is_faction_keyword=false
+  + datasheet_id=000004203, keyword=Fly, model=, is_faction_keyword=false
+  + datasheet_id=000004203, keyword=Character, model=, is_faction_keyword=false
+  + datasheet_id=000004203, keyword=Epic Hero, model=, is_faction_keyword=false
+  + datasheet_id=000004203, keyword=Battlesuit, model=, is_faction_keyword=false
+  + datasheet_id=000004203, keyword=The Twin Lance, model=, is_faction_keyword=false
+  + datasheet_id=000004204, keyword=Adeptus Astartes, model=, is_faction_keyword=true
+  + datasheet_id=000004204, keyword=Infantry, model=, is_faction_keyword=false
+  + datasheet_id=000004204, keyword=Imperium, model=, is_faction_keyword=false
+  + datasheet_id=000004204, keyword=Character, model=, is_faction_keyword=false
+  + datasheet_id=000004204, keyword=Grenades, model=, is_faction_keyword=false
+  + datasheet_id=000004204, keyword=Epic Hero, model=, is_faction_keyword=false
+  + datasheet_id=000004204, keyword=Tacticus, model=, is_faction_keyword=false
+  + datasheet_id=000004204, keyword=Captain, model=, is_faction_keyword=false
+  + datasheet_id=000004204, keyword=Ferren Areios, model=, is_faction_keyword=false
 
 File: Datasheets_leader.json
-Counts: old=1899, new=1903, added=4, removed=0, changed=0
+Counts: old=1903, new=1930, added=27, removed=0, changed=0
 Note: Duplicate keys detected; duplicates are disambiguated by full-row signature.
 Added:
-  + leader_id=000004197, attached_id=000004168
-  + leader_id=000004197, attached_id=000004169
-  + leader_id=000004198, attached_id=000004168
-  + leader_id=000004198, attached_id=000004169
+  + leader_id=000000158, attached_id=000000071
+  + leader_id=000004201, attached_id=000002600
+  + leader_id=000004202, attached_id=000000468
+  + leader_id=000004202, attached_id=000000469
+  + leader_id=000004202, attached_id=000002692
+  + leader_id=000004202, attached_id=000002691
+  + leader_id=000004204, attached_id=000004175
+  + leader_id=000004204, attached_id=000000315
+  + leader_id=000004204, attached_id=000000061
+  + leader_id=000004204, attached_id=000002103
+  + leader_id=000004204, attached_id=000002772
+  + leader_id=000004204, attached_id=000000126
+  + leader_id=000004204, attached_id=000001157
+  + leader_id=000004204, attached_id=000002799
+  + leader_id=000004204, attached_id=000004154
+  + leader_id=000004204, attached_id=000002783
+  + leader_id=000004204, attached_id=000002255
+  + leader_id=000004204, attached_id=000004137
+  + leader_id=000004204, attached_id=000000070
+  + leader_id=000004204, attached_id=000003698
+  + leader_id=000004204, attached_id=000001154
+  + leader_id=000004204, attached_id=000001606
+  + leader_id=000004204, attached_id=000000071
+  + leader_id=000004204, attached_id=000004185
+  + leader_id=000004204, attached_id=000002780
+  + leader_id=000004204, attached_id=000002798
+  + leader_id=000004204, attached_id=000002098
 
 File: Datasheets_models.json
-Counts: old=1792, new=1796, added=4, removed=0, changed=0
+Counts: old=1796, new=1800, added=4, removed=0, changed=0
 Added:
-  + datasheet_id=000004197, line=1, name=Prince Yriel
-  + datasheet_id=000004198, line=1, name=Prince Yriel
-  + datasheet_id=000004199, line=1, name=Corsair Skyreavers
-  + datasheet_id=000004200, line=1, name=Starfangs
+  + datasheet_id=000004201, line=1, name=
+  + datasheet_id=000004202, line=1, name=
+  + datasheet_id=000004203, line=1, name=
+  + datasheet_id=000004204, line=1, name=Ferren Areios
 
 File: Datasheets_models_cost.json
-Counts: old=2104, new=2110, added=6, removed=0, changed=0
+Counts: old=2110, new=2115, added=5, removed=0, changed=47
 Added:
-  + datasheet_id=000004197, line=1
-  + datasheet_id=000004198, line=1
-  + datasheet_id=000004199, line=1
-  + datasheet_id=000004199, line=2
-  + datasheet_id=000004200, line=1
-  + datasheet_id=000004200, line=2
+  + datasheet_id=000000877, line=2
+  + datasheet_id=000004201, line=1
+  + datasheet_id=000004202, line=1
+  + datasheet_id=000004203, line=1
+  + datasheet_id=000004204, line=1
+Changed:
+  * datasheet_id=000000076, line=1
+      cost: 70 -> 85
+  * datasheet_id=000000157, line=1
+      cost: 95 -> 85
+  * datasheet_id=000000382, line=1
+      cost: 160 -> 150
+  * datasheet_id=000000382, line=2
+      cost: 200 -> 185
+  * datasheet_id=000000382, line=3
+      cost: 320 -> 300
+  * datasheet_id=000000382, line=4
+      cost: 400 -> 375
+  * datasheet_id=000000417, line=1
+      cost: 110 -> 100
+  * datasheet_id=000000541, line=1
+      cost: 315 -> 325
+  * datasheet_id=000000542, line=1
+      cost: 285 -> 295
+  * datasheet_id=000000555, line=1
+      cost: 305 -> 315
+  * datasheet_id=000000571, line=1
+      cost: 125 -> 135
+  * datasheet_id=000000597, line=1
+      cost: 170 -> 160
+  * datasheet_id=000000598, line=1
+      cost: 160 -> 150
+  * datasheet_id=000000613, line=1
+      cost: 140 -> 130
+  * datasheet_id=000000641, line=1
+      cost: 70 -> 60
+  * datasheet_id=000000650, line=1
+      cost: 65 -> 60
+  * datasheet_id=000000650, line=2
+      cost: 105 -> 100
+  * datasheet_id=000000650, line=3
+      cost: 130 -> 120
+  * datasheet_id=000000856, line=1
+      cost: 365 -> 355
+  * datasheet_id=000000858, line=1
+      cost: 365 -> 355
+  * datasheet_id=000000877, line=1
+      description: 1 model -> 1 model ( AGENTS OF THE IMPERIUM Detachment)
+  * datasheet_id=000000882, line=1
+      cost: 150 -> 160
+  * datasheet_id=000000882, line=2
+      cost: 190 -> 200
+  * datasheet_id=000001117, line=1
+      cost: 285 -> 295
+  * datasheet_id=000001120, line=1
+      cost: 270 -> 285
+  * datasheet_id=000001481, line=1
+      cost: 140 -> 135
+  * datasheet_id=000002090, line=2
+      cost: 95 -> 110
+  * datasheet_id=000002357, line=1
+      cost: 310 -> 320
+  * datasheet_id=000002617, line=1
+      cost: 250 -> 260
+  * datasheet_id=000002638, line=1
+      cost: 170 -> 165
+  * datasheet_id=000002717, line=1
+      cost: 195 -> 205
+  * datasheet_id=000002722, line=1
+      cost: 220 -> 230
+  * datasheet_id=000002749, line=1
+      cost: 195 -> 180
+  * datasheet_id=000002790, line=1
+      cost: 220 -> 235
+  * datasheet_id=000002799, line=2
+      cost: 310 -> 300
+  * datasheet_id=000003892, line=1
+      cost: 275 -> 290
+  * datasheet_id=000003944, line=1
+      cost: 275 -> 290
+  * datasheet_id=000003987, line=1
+      cost: 250 -> 260
+  * datasheet_id=000004079, line=2
+      cost: 170 -> 160
+  * datasheet_id=000004081, line=1
+      cost: 155 -> 145
+  * datasheet_id=000004089, line=1
+      cost: 110 -> 100
+  * datasheet_id=000004089, line=2
+      cost: 220 -> 200
+  * datasheet_id=000004123, line=1
+      cost: 285 -> 295
+  * datasheet_id=000004124, line=1
+      cost: 270 -> 285
+  * datasheet_id=000004157, line=1
+      cost: 80 -> 75
+  * datasheet_id=000004186, line=1
+      cost: 165 -> 185
+  * datasheet_id=000004188, line=1
+      cost: 90 -> 105
 
 File: Datasheets_options.json
-Counts: old=2790, new=2796, added=6, removed=0, changed=2
+Counts: old=2796, new=2799, added=3, removed=0, changed=0
 Added:
-  + datasheet_id=000004197, line=1
-  + datasheet_id=000004198, line=1
-  + datasheet_id=000004199, line=1
-  + datasheet_id=000004199, line=2
-  + datasheet_id=000004199, line=3
-  + datasheet_id=000004200, line=1
-Changed:
-  * datasheet_id=000002769, line=1
-      description: This model's graviton pulsar can be replaced with one of the following; 1 siege claw and 1 rad cleanser 1 lightning lock 1 conversion beam cannon 1 volkite veuglaire -> This model's volkite veuglaire can be replaced with one of the following: 1 siege claw and 1 rad cleanser 1 graviton pulsar 1 lightning lock 1 conversion beam cannon
-  * datasheet_id=000002769, line=2
-      description: This model's volkite veuglaire can be replaced with one of the following: 1 siege claw and 1 rad cleanser 1 graviton pulsar 1 lightning lock 1 conversion beam cannon -> This model's graviton pulsar can be replaced with one of the following; 1 siege claw and 1 rad cleanser 1 lightning lock 1 conversion beam cannon 1 volkite veuglaire
+  + datasheet_id=000004201, line=1
+  + datasheet_id=000004202, line=1
+  + datasheet_id=000004203, line=1
 
 File: Datasheets_stratagems.json
-Counts: old=84571, new=84679, added=108, removed=0, changed=0
+Counts: old=84679, new=84903, added=242, removed=18, changed=0
 Added:
-  + datasheet_id=000004197, stratagem_id=000010577005
-  + datasheet_id=000004197, stratagem_id=000010575007
-  + datasheet_id=000004197, stratagem_id=000010577003
-  + datasheet_id=000004197, stratagem_id=000009782003
-  + datasheet_id=000004197, stratagem_id=000008335008
-  + datasheet_id=000004197, stratagem_id=000008335010
-  + datasheet_id=000004197, stratagem_id=000010575005
-  + datasheet_id=000004197, stratagem_id=000008335002
-  + datasheet_id=000004197, stratagem_id=000009782005
-  + datasheet_id=000004197, stratagem_id=000010581004
-  + datasheet_id=000004197, stratagem_id=000010577004
-  + datasheet_id=000004197, stratagem_id=000010575003
-  + datasheet_id=000004197, stratagem_id=000010589002
-  + datasheet_id=000004197, stratagem_id=000010585006
-  + datasheet_id=000004197, stratagem_id=000010575004
-  + datasheet_id=000004197, stratagem_id=000009782006
-  + datasheet_id=000004197, stratagem_id=000009782007
-  + datasheet_id=000004197, stratagem_id=000008335005
-  + datasheet_id=000004197, stratagem_id=000009782002
-  + datasheet_id=000004197, stratagem_id=000009782004
-  + datasheet_id=000004197, stratagem_id=000008335004
-  + datasheet_id=000004197, stratagem_id=000008335003
-  + datasheet_id=000004197, stratagem_id=000010581003
-  + datasheet_id=000004197, stratagem_id=000010589003
-  + datasheet_id=000004197, stratagem_id=000010575006
-  + datasheet_id=000004197, stratagem_id=000010585003
-  + datasheet_id=000004197, stratagem_id=000008335009
-  + datasheet_id=000004197, stratagem_id=000008335012
-  + datasheet_id=000004198, stratagem_id=000009782003
-  + datasheet_id=000004198, stratagem_id=000010575005
-  + datasheet_id=000004198, stratagem_id=000008335005
-  + datasheet_id=000004198, stratagem_id=000010577003
-  + datasheet_id=000004198, stratagem_id=000010577005
-  + datasheet_id=000004198, stratagem_id=000010577004
-  + datasheet_id=000004198, stratagem_id=000008335004
-  + datasheet_id=000004198, stratagem_id=000009782004
-  + datasheet_id=000004198, stratagem_id=000009782005
-  + datasheet_id=000004198, stratagem_id=000010581003
-  + datasheet_id=000004198, stratagem_id=000010585003
-  + datasheet_id=000004198, stratagem_id=000009782006
-  + datasheet_id=000004198, stratagem_id=000010575003
-  + datasheet_id=000004198, stratagem_id=000009782007
-  + datasheet_id=000004198, stratagem_id=000009782002
-  + datasheet_id=000004198, stratagem_id=000008335002
-  + datasheet_id=000004198, stratagem_id=000008335008
-  + datasheet_id=000004198, stratagem_id=000008335010
-  + datasheet_id=000004198, stratagem_id=000010589003
-  + datasheet_id=000004198, stratagem_id=000010585006
-  + datasheet_id=000004198, stratagem_id=000010575006
-  + datasheet_id=000004198, stratagem_id=000010581004
-  + datasheet_id=000004198, stratagem_id=000008335009
-  + datasheet_id=000004198, stratagem_id=000010575007
-  + datasheet_id=000004198, stratagem_id=000008335003
-  + datasheet_id=000004198, stratagem_id=000010589002
-  + datasheet_id=000004198, stratagem_id=000010575004
-  + datasheet_id=000004198, stratagem_id=000008335012
-  + datasheet_id=000004199, stratagem_id=000010575003
-  + datasheet_id=000004199, stratagem_id=000010575004
-  + datasheet_id=000004199, stratagem_id=000010575005
-  + datasheet_id=000004199, stratagem_id=000010577005
-  + datasheet_id=000004199, stratagem_id=000008335005
-  + datasheet_id=000004199, stratagem_id=000008335003
-  + datasheet_id=000004199, stratagem_id=000010585003
-  + datasheet_id=000004199, stratagem_id=000009782006
-  + datasheet_id=000004199, stratagem_id=000009782007
-  + datasheet_id=000004199, stratagem_id=000009782003
-  + datasheet_id=000004199, stratagem_id=000010577004
-  + datasheet_id=000004199, stratagem_id=000008335002
-  + datasheet_id=000004199, stratagem_id=000010575007
-  + datasheet_id=000004199, stratagem_id=000010585006
-  + datasheet_id=000004199, stratagem_id=000010589003
-  + datasheet_id=000004199, stratagem_id=000010589002
-  + datasheet_id=000004199, stratagem_id=000009782005
-  + datasheet_id=000004199, stratagem_id=000008335008
-  + datasheet_id=000004199, stratagem_id=000008335010
-  + datasheet_id=000004199, stratagem_id=000010581003
-  + datasheet_id=000004199, stratagem_id=000010575006
-  + datasheet_id=000004199, stratagem_id=000009782002
-  + datasheet_id=000004199, stratagem_id=000010581004
-  + datasheet_id=000004199, stratagem_id=000008335006
-  + datasheet_id=000004199, stratagem_id=000008335009
-  + datasheet_id=000004199, stratagem_id=000010577003
-  + datasheet_id=000004199, stratagem_id=000009782004
-  + datasheet_id=000004199, stratagem_id=000008335012
-  + datasheet_id=000004200, stratagem_id=000008335006
-  + datasheet_id=000004200, stratagem_id=000009782005
-  + datasheet_id=000004200, stratagem_id=000010581003
-  + datasheet_id=000004200, stratagem_id=000010575007
-  + datasheet_id=000004200, stratagem_id=000009782003
-  + datasheet_id=000004200, stratagem_id=000008335005
-  + datasheet_id=000004200, stratagem_id=000010581004
-  + datasheet_id=000004200, stratagem_id=000009782004
-  + datasheet_id=000004200, stratagem_id=000010575005
-  + datasheet_id=000004200, stratagem_id=000008335007
-  + datasheet_id=000004200, stratagem_id=000010577007
-  + datasheet_id=000004200, stratagem_id=000010585006
-  + datasheet_id=000004200, stratagem_id=000008335008
-  + datasheet_id=000004200, stratagem_id=000008335011
-  + datasheet_id=000004200, stratagem_id=000010585003
-  + datasheet_id=000004200, stratagem_id=000008335002
-  + datasheet_id=000004200, stratagem_id=000010575003
-  + datasheet_id=000004200, stratagem_id=000009782002
-  + datasheet_id=000004200, stratagem_id=000010589003
-  + datasheet_id=000004200, stratagem_id=000009782006
-  + datasheet_id=000004200, stratagem_id=000008335009
-  + datasheet_id=000004200, stratagem_id=000008335003
-  + datasheet_id=000004200, stratagem_id=000010575004
-  + datasheet_id=000004200, stratagem_id=000010575006
+  + datasheet_id=000004201, stratagem_id=000010444003
+  + datasheet_id=000004201, stratagem_id=000010709005
+  + datasheet_id=000004201, stratagem_id=000008335010
+  + datasheet_id=000004201, stratagem_id=000008335005
+  + datasheet_id=000004201, stratagem_id=000008335003
+  + datasheet_id=000004201, stratagem_id=000010440005
+  + datasheet_id=000004201, stratagem_id=000008335002
+  + datasheet_id=000004201, stratagem_id=000010448005
+  + datasheet_id=000004201, stratagem_id=000010440007
+  + datasheet_id=000004201, stratagem_id=000010440006
+  + datasheet_id=000004201, stratagem_id=000008335008
+  + datasheet_id=000004201, stratagem_id=000010444006
+  + datasheet_id=000004201, stratagem_id=000010436007
+  + datasheet_id=000004201, stratagem_id=000010448007
+  + datasheet_id=000004201, stratagem_id=000009824006
+  + datasheet_id=000004201, stratagem_id=000010436006
+  + datasheet_id=000004201, stratagem_id=000010709002
+  + datasheet_id=000004201, stratagem_id=000009824003
+  + datasheet_id=000004201, stratagem_id=000010436004
+  + datasheet_id=000004201, stratagem_id=000010436003
+  + datasheet_id=000004201, stratagem_id=000008335012
+  + datasheet_id=000004201, stratagem_id=000008335004
+  + datasheet_id=000004201, stratagem_id=000010436002
+  + datasheet_id=000004201, stratagem_id=000009824004
+  + datasheet_id=000004201, stratagem_id=000010709003
+  + datasheet_id=000004201, stratagem_id=000010709004
+  + datasheet_id=000004201, stratagem_id=000009824005
+  + datasheet_id=000004201, stratagem_id=000010436005
+  + datasheet_id=000004201, stratagem_id=000010709006
+  + datasheet_id=000004201, stratagem_id=000010440002
+  + datasheet_id=000004202, stratagem_id=000008556002
+  + datasheet_id=000004202, stratagem_id=000008349004
+  + datasheet_id=000004202, stratagem_id=000008335005
+  + datasheet_id=000004202, stratagem_id=000008349002
+  + datasheet_id=000004202, stratagem_id=000008418004
+  + datasheet_id=000004202, stratagem_id=000008335003
+  + datasheet_id=000004202, stratagem_id=000008335010
+  + datasheet_id=000004202, stratagem_id=000008335002
+  + datasheet_id=000004202, stratagem_id=000008335012
+  + datasheet_id=000004202, stratagem_id=000010148004
+  + datasheet_id=000004202, stratagem_id=000008556007
+  + datasheet_id=000004202, stratagem_id=000010148007
+  + datasheet_id=000004202, stratagem_id=000008556004
+  + datasheet_id=000004202, stratagem_id=000008335008
+  + datasheet_id=000004202, stratagem_id=000010148005
+  + datasheet_id=000004202, stratagem_id=000008556006
+  + datasheet_id=000004202, stratagem_id=000008556003
+  + datasheet_id=000004202, stratagem_id=000008413006
+  + datasheet_id=000004202, stratagem_id=000008418005
+  + datasheet_id=000004202, stratagem_id=000009738002
+  + datasheet_id=000004202, stratagem_id=000008349006
+  + datasheet_id=000004202, stratagem_id=000008349003
+  + datasheet_id=000004202, stratagem_id=000009738003
+  + datasheet_id=000004202, stratagem_id=000008349005
+  + datasheet_id=000004202, stratagem_id=000008335004
+  + datasheet_id=000004202, stratagem_id=000008556005
+  + datasheet_id=000004202, stratagem_id=000008413007
+  + datasheet_id=000004202, stratagem_id=000008418007
+  + datasheet_id=000004202, stratagem_id=000010148003
+  + datasheet_id=000004203, stratagem_id=000008335008
+  + datasheet_id=000004203, stratagem_id=000008335012
+  + datasheet_id=000004203, stratagem_id=000008443003
+  + datasheet_id=000004203, stratagem_id=000008335005
+  + datasheet_id=000004203, stratagem_id=000008816005
+  + datasheet_id=000004203, stratagem_id=000008443002
+  + datasheet_id=000004203, stratagem_id=000008443004
+  + datasheet_id=000004203, stratagem_id=000008816007
+  + datasheet_id=000004203, stratagem_id=000008816003
+  + datasheet_id=000004203, stratagem_id=000009840004
+  + datasheet_id=000004203, stratagem_id=000009984006
+  + datasheet_id=000004203, stratagem_id=000009984005
+  + datasheet_id=000004203, stratagem_id=000008812002
+  + datasheet_id=000004203, stratagem_id=000008335009
+  + datasheet_id=000004203, stratagem_id=000008816006
+  + datasheet_id=000004203, stratagem_id=000008335007
+  + datasheet_id=000004203, stratagem_id=000009840007
+  + datasheet_id=000004203, stratagem_id=000008812006
+  + datasheet_id=000004203, stratagem_id=000008335003
+  + datasheet_id=000004203, stratagem_id=000009840003
+  + datasheet_id=000004203, stratagem_id=000008816004
+  + datasheet_id=000004203, stratagem_id=000008335002
+  + datasheet_id=000004203, stratagem_id=000009984002
+  + datasheet_id=000004203, stratagem_id=000009840006
+  + datasheet_id=000004203, stratagem_id=000008812003
+  + datasheet_id=000004203, stratagem_id=000008812004
+  + datasheet_id=000004203, stratagem_id=000008816002
+  + datasheet_id=000004203, stratagem_id=000009984004
+  + datasheet_id=000004203, stratagem_id=000008812007
+  + datasheet_id=000004203, stratagem_id=000009984003
+  + datasheet_id=000004203, stratagem_id=000008335004
+  + datasheet_id=000004204, stratagem_id=000009836004
+  + datasheet_id=000004204, stratagem_id=000010270005
+  + datasheet_id=000004204, stratagem_id=000008475006
+  + datasheet_id=000004204, stratagem_id=000009852003
+  + datasheet_id=000004204, stratagem_id=000008475002
+  + datasheet_id=000004204, stratagem_id=000010685006
+  + datasheet_id=000004204, stratagem_id=000010685007
+  + datasheet_id=000004204, stratagem_id=000010393004
+  + datasheet_id=000004204, stratagem_id=000008352003
+  + datasheet_id=000004204, stratagem_id=000010646005
+  + datasheet_id=000004204, stratagem_id=000008335010
+  + datasheet_id=000004204, stratagem_id=000009844003
+  + datasheet_id=000004204, stratagem_id=000010397007
+  + datasheet_id=000004204, stratagem_id=000010369003
+  + datasheet_id=000004204, stratagem_id=000010634002
+  + datasheet_id=000004204, stratagem_id=000010681004
+  + datasheet_id=000004204, stratagem_id=000010630005
+  + datasheet_id=000004204, stratagem_id=000010685002
+  + datasheet_id=000004204, stratagem_id=000010161003
+  + datasheet_id=000004204, stratagem_id=000009734003
+  + datasheet_id=000004204, stratagem_id=000010630002
+  + datasheet_id=000004204, stratagem_id=000010467006
+  + datasheet_id=000004204, stratagem_id=000008487007
+  + datasheet_id=000004204, stratagem_id=000008389007
+  + datasheet_id=000004204, stratagem_id=000008491003
+  + datasheet_id=000004204, stratagem_id=000008335002
+  + datasheet_id=000004204, stratagem_id=000010397005
+  + datasheet_id=000004204, stratagem_id=000009852006
+  + datasheet_id=000004204, stratagem_id=000008475004
+  + datasheet_id=000004204, stratagem_id=000009187003
+  + datasheet_id=000004204, stratagem_id=000010685004
+  + datasheet_id=000004204, stratagem_id=000008479002
+  + datasheet_id=000004204, stratagem_id=000010369005
+  + datasheet_id=000004204, stratagem_id=000010467004
+  + datasheet_id=000004204, stratagem_id=000009836005
+  + datasheet_id=000004204, stratagem_id=000008375006
+  + datasheet_id=000004204, stratagem_id=000010401005
+  + datasheet_id=000004204, stratagem_id=000010677002
+  + datasheet_id=000004204, stratagem_id=000009791003
+  + datasheet_id=000004204, stratagem_id=000010369004
+  + datasheet_id=000004204, stratagem_id=000010467007
+  + datasheet_id=000004204, stratagem_id=000010681007
+  + datasheet_id=000004204, stratagem_id=000008483003
+  + datasheet_id=000004204, stratagem_id=000009836002
+  + datasheet_id=000004204, stratagem_id=000010661003
+  + datasheet_id=000004204, stratagem_id=000008779003
+  + datasheet_id=000004204, stratagem_id=000008491005
+  + datasheet_id=000004204, stratagem_id=000010467002
+  + datasheet_id=000004204, stratagem_id=000010677007
+  + datasheet_id=000004204, stratagem_id=000010266002
+  + datasheet_id=000004204, stratagem_id=000010397003
+  + datasheet_id=000004204, stratagem_id=000010467005
+  + datasheet_id=000004204, stratagem_id=000010369007
+  + datasheet_id=000004204, stratagem_id=000008375004
+  + datasheet_id=000004204, stratagem_id=000008389003
+  + datasheet_id=000004204, stratagem_id=000010624002
+  + datasheet_id=000004204, stratagem_id=000010681002
+  + datasheet_id=000004204, stratagem_id=000009791005
+  + datasheet_id=000004204, stratagem_id=000010634007
+  + datasheet_id=000004204, stratagem_id=000010630003
+  + datasheet_id=000004204, stratagem_id=000009734004
+  + datasheet_id=000004204, stratagem_id=000010161007
+  + datasheet_id=000004204, stratagem_id=000010369002
+  + datasheet_id=000004204, stratagem_id=000009844006
+  + datasheet_id=000004204, stratagem_id=000008483004
+  + datasheet_id=000004204, stratagem_id=000008491004
+  + datasheet_id=000004204, stratagem_id=000010161004
+  + datasheet_id=000004204, stratagem_id=000010661002
+  + datasheet_id=000004204, stratagem_id=000008335005
+  + datasheet_id=000004204, stratagem_id=000008475005
+  + datasheet_id=000004204, stratagem_id=000010681006
+  + datasheet_id=000004204, stratagem_id=000008375007
+  + datasheet_id=000004204, stratagem_id=000009844004
+  + datasheet_id=000004204, stratagem_id=000008483002
+  + datasheet_id=000004204, stratagem_id=000010401006
+  + datasheet_id=000004204, stratagem_id=000008375003
+  + datasheet_id=000004204, stratagem_id=000010634003
+  + datasheet_id=000004204, stratagem_id=000010630004
+  + datasheet_id=000004204, stratagem_id=000010393007
+  + datasheet_id=000004204, stratagem_id=000008479003
+  + datasheet_id=000004204, stratagem_id=000010262007
+  + datasheet_id=000004204, stratagem_id=000008335008
+  + datasheet_id=000004204, stratagem_id=000008335006
+  + datasheet_id=000004204, stratagem_id=000008487002
+  + datasheet_id=000004204, stratagem_id=000009852004
+  + datasheet_id=000004204, stratagem_id=000010266007
+  + datasheet_id=000004204, stratagem_id=000008775002
+  + datasheet_id=000004204, stratagem_id=000009844005
+  + datasheet_id=000004204, stratagem_id=000009836006
+  + datasheet_id=000004204, stratagem_id=000009844002
+  + datasheet_id=000004204, stratagem_id=000008475007
+  + datasheet_id=000004204, stratagem_id=000008352006
+  + datasheet_id=000004204, stratagem_id=000009734002
+  + datasheet_id=000004204, stratagem_id=000008475003
+  + datasheet_id=000004204, stratagem_id=000010262004
+  + datasheet_id=000004204, stratagem_id=000008389005
+  + datasheet_id=000004204, stratagem_id=000010661005
+  + datasheet_id=000004204, stratagem_id=000010685003
+  + datasheet_id=000004204, stratagem_id=000008352002
+  + datasheet_id=000004204, stratagem_id=000008483006
+  + datasheet_id=000004204, stratagem_id=000008352005
+  + datasheet_id=000004204, stratagem_id=000009191002
+  + datasheet_id=000004204, stratagem_id=000010266005
+  + datasheet_id=000004204, stratagem_id=000010461002
+  + datasheet_id=000004204, stratagem_id=000008375005
+  + datasheet_id=000004204, stratagem_id=000008375002
+  + datasheet_id=000004204, stratagem_id=000010161002
+  + datasheet_id=000004204, stratagem_id=000009191003
+  + datasheet_id=000004204, stratagem_id=000010161005
+  + datasheet_id=000004204, stratagem_id=000008491002
+  + datasheet_id=000004204, stratagem_id=000008352007
+  + datasheet_id=000004204, stratagem_id=000008479004
+  + datasheet_id=000004204, stratagem_id=000008389004
+  + datasheet_id=000004204, stratagem_id=000008335003
+  + datasheet_id=000004204, stratagem_id=000010634004
+  + datasheet_id=000004204, stratagem_id=000009852002
+  + datasheet_id=000004204, stratagem_id=000008523002
+  + datasheet_id=000004204, stratagem_id=000008491006
+  + datasheet_id=000004204, stratagem_id=000010646003
+  + datasheet_id=000004204, stratagem_id=000008335009
+  + datasheet_id=000004204, stratagem_id=000010270004
+  + datasheet_id=000004204, stratagem_id=000010661006
+  + datasheet_id=000004204, stratagem_id=000009844007
+  + datasheet_id=000004204, stratagem_id=000010634006
+  + datasheet_id=000004204, stratagem_id=000010393003
+  + datasheet_id=000004204, stratagem_id=000010467003
+  + datasheet_id=000004204, stratagem_id=000008389002
+  + datasheet_id=000004204, stratagem_id=000008523003
+  + datasheet_id=000004204, stratagem_id=000008335004
+  + datasheet_id=000004204, stratagem_id=000009241004
+  + datasheet_id=000004204, stratagem_id=000008483005
+  + datasheet_id=000004204, stratagem_id=000010397004
+  + datasheet_id=000004204, stratagem_id=000010161006
+  + datasheet_id=000004204, stratagem_id=000010677004
+  + datasheet_id=000004204, stratagem_id=000010646007
+  + datasheet_id=000004204, stratagem_id=000009241005
+  + datasheet_id=000004204, stratagem_id=000009836003
+  + datasheet_id=000004204, stratagem_id=000008495002
+  + datasheet_id=000004204, stratagem_id=000008389006
+  + datasheet_id=000004204, stratagem_id=000009791004
+  + datasheet_id=000004204, stratagem_id=000008523007
+  + datasheet_id=000004204, stratagem_id=000008487003
+  + datasheet_id=000004204, stratagem_id=000010685005
+  + datasheet_id=000004204, stratagem_id=000008491007
+  + datasheet_id=000004204, stratagem_id=000010634005
+  + datasheet_id=000004204, stratagem_id=000010393002
+  + datasheet_id=000004204, stratagem_id=000010401002
+  + datasheet_id=000004204, stratagem_id=000010681003
+  + datasheet_id=000004204, stratagem_id=000008335012
+  + datasheet_id=000004204, stratagem_id=000010262003
+  + datasheet_id=000004204, stratagem_id=000010681005
+  + datasheet_id=000004204, stratagem_id=000008352004
+Removed:
+  - datasheet_id=000000541, stratagem_id=000009750002
+  - datasheet_id=000000541, stratagem_id=000009750007
+  - datasheet_id=000000541, stratagem_id=000009750006
+  - datasheet_id=000000542, stratagem_id=000009750002
+  - datasheet_id=000000542, stratagem_id=000009750007
+  - datasheet_id=000000542, stratagem_id=000009750006
+  - datasheet_id=000000555, stratagem_id=000009750006
+  - datasheet_id=000000555, stratagem_id=000009750002
+  - datasheet_id=000000555, stratagem_id=000009750007
+  - datasheet_id=000000558, stratagem_id=000009750002
+  - datasheet_id=000000558, stratagem_id=000009750007
+  - datasheet_id=000000558, stratagem_id=000009750006
+  - datasheet_id=000000560, stratagem_id=000009750006
+  - datasheet_id=000000560, stratagem_id=000009750007
+  - datasheet_id=000000560, stratagem_id=000009750002
+  - datasheet_id=000002357, stratagem_id=000009750007
+  - datasheet_id=000002357, stratagem_id=000009750002
+  - datasheet_id=000002357, stratagem_id=000009750006
 
 File: Datasheets_unit_composition.json
-Counts: old=2138, new=2143, added=5, removed=0, changed=0
+Counts: old=2143, new=2148, added=5, removed=0, changed=0
 Added:
-  + datasheet_id=000004197, line=1
-  + datasheet_id=000004198, line=1
-  + datasheet_id=000004199, line=1
-  + datasheet_id=000004199, line=2
-  + datasheet_id=000004200, line=1
+  + datasheet_id=000004201, line=1
+  + datasheet_id=000004202, line=1
+  + datasheet_id=000004203, line=1
+  + datasheet_id=000004203, line=2
+  + datasheet_id=000004204, line=1
 
 File: Datasheets_wargear.json
-Counts: old=9219, new=9236, added=104, removed=87, changed=14
+Counts: old=9236, new=9253, added=100, removed=83, changed=9
 Note: Duplicate keys detected; duplicates are disambiguated by full-row signature.
 Added:
-  + datasheet_id=000003584, line=, line_in_wargear=2, name=Plasma gun – standard
-  + datasheet_id=000003589, line=, line_in_wargear=1, name=Hellcrusher claws – strike, dup=1
-  + datasheet_id=000003590, line=, line_in_wargear=1, name=Kytan cleaver – strike, dup=1
-  + datasheet_id=000003592, line=, line_in_wargear=2, name=Plasma pistol – standard
-  + datasheet_id=000003600, line=, line_in_wargear=2, name=Infernal Gaze – focused witchfire
-  + datasheet_id=000003608, line=, line_in_wargear=2, name=Quad launcher – thunderfire shells
-  + datasheet_id=000003609, line=, line_in_wargear=1, name=Quad launcher – thunderfire shells, dup=1
-  + datasheet_id=000003610, line=, line_in_wargear=2, name=Quad launcher – shatter shells
-  + datasheet_id=000003625, line=, line_in_wargear=1, name=Hellfire plasma cannonade – standard, dup=1
-  + datasheet_id=000003626, line=, line_in_wargear=1, name=Hellfire plasma cannonade – supercharge, dup=1
-  + datasheet_id=000003631, line=, line_in_wargear=1, name=Kratos battle cannon – AP, dup=1
-  + datasheet_id=000003632, line=, line_in_wargear=1, name=Kratos battle cannon – AP, dup=1
-  + datasheet_id=000003633, line=, line_in_wargear=1, name=Kratos battle cannon – HE, dup=1
-  + datasheet_id=000003634, line=, line_in_wargear=2, name=Kratos battle cannon – HE
-  + datasheet_id=000003655, line=, line_in_wargear=2, name=Cyclone missile launcher – frag
-  + datasheet_id=000003656, line=, line_in_wargear=1, name=Heavy plasma cannon – supercharge, dup=1
-  + datasheet_id=000003656, line=, line_in_wargear=2, name=Plasma blaster – standard, dup=1
-  + datasheet_id=000003657, line=, line_in_wargear=1, name=Cyclone missile launcher – frag, dup=1
-  + datasheet_id=000003657, line=, line_in_wargear=2, name=Plasma blaster – standard, dup=1
-  + datasheet_id=000003658, line=, line_in_wargear=1, name=Plasma blaster – supercharge, dup=1
-  + datasheet_id=000003658, line=, line_in_wargear=2, name=Plasma blaster – standard, dup=1
-  + datasheet_id=000003658, line=, line_in_wargear=2, name=Heavy plasma cannon – standard, dup=1
-  + datasheet_id=000003667, line=, line_in_wargear=1, name=Quad launcher – shatter shells, dup=1
-  + datasheet_id=000003668, line=, line_in_wargear=1, name=Quad launcher – shatter shells, dup=1
-  + datasheet_id=000003670, line=, line_in_wargear=2, name=Quad launcher – shatter shells
-  + datasheet_id=000003671, line=, line_in_wargear=2, name=Typhoon missile launcher – krak
-  + datasheet_id=000003674, line=, line_in_wargear=1, name=Typhoon missile launcher – frag, dup=1
-  + datasheet_id=000003842, line=, line_in_wargear=2, name=Plasma caliver – standard
-  + datasheet_id=000003848, line=, line_in_wargear=1, name=Psychic Strike – witchfire, dup=1
-  + datasheet_id=000003850, line=, line_in_wargear=1, name=Grenade launcher – frag, dup=1
-  + datasheet_id=000003853, line=, line_in_wargear=1, name=Cultist grenade launcher – krak, dup=1
-  + datasheet_id=000003853, line=, line_in_wargear=2, name=Plasma gun – supercharge, dup=1
-  + datasheet_id=000003853, line=, line_in_wargear=2, name=Cultist grenade launcher – frag, dup=1
-  + datasheet_id=000003857, line=, line_in_wargear=2, name=Missile launcher – frag
-  + datasheet_id=000003938, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
-  + datasheet_id=000003939, line=, line_in_wargear=2, name=Plasma gun – standard, dup=1
-  + datasheet_id=000003939, line=, line_in_wargear=2, name=Grenade launcher – krak, dup=1
-  + datasheet_id=000003940, line=, line_in_wargear=1, name=Grenade launcher – frag, dup=1
-  + datasheet_id=000003940, line=, line_in_wargear=1, name=Plasma gun – standard, dup=1
-  + datasheet_id=000003940, line=, line_in_wargear=2, name=Plasma gun – supercharge
-  + datasheet_id=000003941, line=, line_in_wargear=1, name=Plasma gun – supercharge, dup=1
-  + datasheet_id=000003943, line=, line_in_wargear=1, name=Psychic Maelstrom – focused witchfire, dup=1
-  + datasheet_id=000003948, line=, line_in_wargear=1, name=Grenade launcher – krak, dup=1
-  + datasheet_id=000003950, line=, line_in_wargear=1, name=Grenade launcher – frag, dup=1
-  + datasheet_id=000003953, line=, line_in_wargear=1, name=Taurox missile launcher – krak, dup=1
-  + datasheet_id=000003962, line=, line_in_wargear=2, name=Hunting lance – melta tip
-  + datasheet_id=000003967, line=, line_in_wargear=2, name=Missile launcher – krak
-  + datasheet_id=000003968, line=, line_in_wargear=1, name=Missile launcher – frag, dup=1
-  + datasheet_id=000003976, line=, line_in_wargear=1, name=Grenade launcher – krak, dup=1
-  + datasheet_id=000003980, line=, line_in_wargear=2, name=Plasma cannon – supercharge
-  + datasheet_id=000003981, line=, line_in_wargear=2, name=Plasma cannon – supercharge
-  + datasheet_id=000003982, line=, line_in_wargear=1, name=Executioner plasma cannon – standard, dup=1
-  + datasheet_id=000003983, line=, line_in_wargear=2, name=Plasma cannon – supercharge
-  + datasheet_id=000003984, line=, line_in_wargear=1, name=Plasma cannon – supercharge, dup=1
-  + datasheet_id=000003988, line=, line_in_wargear=2, name=Plasma cannon – supercharge
-  + datasheet_id=000004001, line=, line_in_wargear=2, name=Grenade launcher – krak
-  + datasheet_id=000004012, line=, line_in_wargear=1, name=Omega-pattern plasma blastgun – standard, dup=1
-  + datasheet_id=000004021, line=, line_in_wargear=1, name=Grenade launcher – frag, dup=1
-  + datasheet_id=000004021, line=, line_in_wargear=2, name=Plasma pistol – standard, dup=1
-  + datasheet_id=000004022, line=, line_in_wargear=1, name=Plasma cannon – supercharge, dup=1
-  + datasheet_id=000004023, line=, line_in_wargear=1, name=Praetor launcher – firestorm, dup=1
-  + datasheet_id=000004029, line=, line_in_wargear=1, name=Stormblade plasma blastgun – standard, dup=1
-  + datasheet_id=000004032, line=, line_in_wargear=2, name=Tauros grenade launcher – frag
-  + datasheet_id=000004036, line=, line_in_wargear=2, name=Plasma pistol – supercharge
-  + datasheet_id=000004039, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
-  + datasheet_id=000004040, line=, line_in_wargear=2, name=Plasma pistol – standard
-  + datasheet_id=000004054, line=, line_in_wargear=1, name=Cultist grenade launcher – frag, dup=1
-  + datasheet_id=000004058, line=, line_in_wargear=2, name=Missile launcher – krak
-  + datasheet_id=000004063, line=, line_in_wargear=1, name=Havoc missile launcher – frag, dup=1
-  + datasheet_id=000004063, line=, line_in_wargear=1, name=Plasma pistol – supercharge, dup=1
-  + datasheet_id=000004064, line=, line_in_wargear=2, name=Missile launcher – krak, dup=1
-  + datasheet_id=000004064, line=, line_in_wargear=2, name=Plasma gun – supercharge, dup=1
-  + datasheet_id=000004064, line=, line_in_wargear=2, name=Plasma pistol – supercharge, dup=1
-  + datasheet_id=000004065, line=, line_in_wargear=1, name=Rite of Possession – focused witchfire, dup=1
-  + datasheet_id=000004067, line=, line_in_wargear=2, name=Plasma pistol – supercharge, dup=1
-  + datasheet_id=000004067, line=, line_in_wargear=2, name=Plasma gun – supercharge, dup=1
-  + datasheet_id=000004069, line=, line_in_wargear=1, name=Plasma pistol – supercharge, dup=1
-  + datasheet_id=000004069, line=, line_in_wargear=1, name=Infernal Gaze – witchfire, dup=1
-  + datasheet_id=000004069, line=, line_in_wargear=2, name=Infernal Gaze – focused witchfire
-  + datasheet_id=000004070, line=, line_in_wargear=1, name=Infernal Gaze – witchfire, dup=1
-  + datasheet_id=000004070, line=, line_in_wargear=1, name=Plasma pistol – supercharge, dup=1
-  + datasheet_id=000004070, line=, line_in_wargear=2, name=Infernal Gaze – focused witchfire, dup=1
-  + datasheet_id=000004070, line=, line_in_wargear=2, name=Plasma pistol – standard, dup=1
-  + datasheet_id=000004071, line=, line_in_wargear=1, name=Plasma pistol – supercharge, dup=1
-  + datasheet_id=000004099, line=, line_in_wargear=1, name=Blastmaster – single frequency, dup=1
-  + datasheet_id=000004171, line=, line_in_wargear=1, name=Aeldari missile launcher – sunburst, dup=1
-  + datasheet_id=000004172, line=, line_in_wargear=2, name=Aeldari missile launcher – starshot
-  + datasheet_id=000004197, line=, line_in_wargear=1, name=Waystave, dup=1
-  + datasheet_id=000004197, line=, line_in_wargear=1, name=Dread of the Deep Void, dup=1
-  + datasheet_id=000004198, line=, line_in_wargear=1, name=Eye of Wrath, dup=1
-  + datasheet_id=000004198, line=, line_in_wargear=1, name=Shuriken pistol, dup=1
-  + datasheet_id=000004198, line=, line_in_wargear=1, name=Spear of Twilight, dup=1
-  + datasheet_id=000004199, line=, line_in_wargear=1, name=Blast pistol, dup=1
-  + datasheet_id=000004199, line=, line_in_wargear=1, name=Fusion gun, dup=1
-  + datasheet_id=000004199, line=, line_in_wargear=1, name=Close combat weapon, dup=1
-  + datasheet_id=000004199, line=, line_in_wargear=1, name=Corsair blade, dup=1
-  + datasheet_id=000004199, line=, line_in_wargear=1, name=Shuriken pistol, dup=1
-  + datasheet_id=000004199, line=, line_in_wargear=1, name=Blaster, dup=1
-  + datasheet_id=000004199, line=, line_in_wargear=1, name=Neuro disruptor, dup=1
-  + datasheet_id=000004199, line=, line_in_wargear=1, name=Shredder, dup=1
-  + datasheet_id=000004199, line=, line_in_wargear=1, name=Flamer, dup=1
-  + datasheet_id=000004200, line=, line_in_wargear=1, name=Starfang grenade launcher, dup=1
-  + datasheet_id=000004200, line=, line_in_wargear=1, name=Disintegrator cannon, dup=1
-  + datasheet_id=000004200, line=, line_in_wargear=1, name=Wraithbone hull, dup=1
+  + datasheet_id=000003582, line=, line_in_wargear=1, name=Plasma pistol – supercharge, dup=1
+  + datasheet_id=000003584, line=, line_in_wargear=1, name=Plasma gun – standard, dup=1
+  + datasheet_id=000003592, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
+  + datasheet_id=000003600, line=, line_in_wargear=1, name=Infernal Gaze – focused witchfire, dup=1
+  + datasheet_id=000003607, line=, line_in_wargear=2, name=Quad launcher – shatter shells
+  + datasheet_id=000003608, line=, line_in_wargear=1, name=Quad launcher – thunderfire shells, dup=1
+  + datasheet_id=000003609, line=, line_in_wargear=1, name=Quad launcher – shatter shells, dup=1
+  + datasheet_id=000003610, line=, line_in_wargear=1, name=Quad launcher – shatter shells, dup=1
+  + datasheet_id=000003625, line=, line_in_wargear=2, name=Hellfire plasma cannonade – supercharge
+  + datasheet_id=000003631, line=, line_in_wargear=1, name=Kratos battle cannon – HE, dup=1
+  + datasheet_id=000003632, line=, line_in_wargear=1, name=Kratos battle cannon – HE, dup=1
+  + datasheet_id=000003634, line=, line_in_wargear=1, name=Kratos battle cannon – HE, dup=1
+  + datasheet_id=000003651, line=, line_in_wargear=2, name=Fellblade accelerator cannon – HE shells
+  + datasheet_id=000003652, line=, line_in_wargear=2, name=Fellblade accelerator cannon – HE shells
+  + datasheet_id=000003653, line=, line_in_wargear=2, name=Fellblade accelerator cannon – AP shells
+  + datasheet_id=000003655, line=, line_in_wargear=2, name=Cyclone missile launcher – frag, dup=1
+  + datasheet_id=000003655, line=, line_in_wargear=2, name=Plasma blaster – supercharge, dup=1
+  + datasheet_id=000003658, line=, line_in_wargear=1, name=Heavy plasma cannon – standard, dup=1
+  + datasheet_id=000003658, line=, line_in_wargear=1, name=Plasma blaster – standard, dup=1
+  + datasheet_id=000003658, line=, line_in_wargear=2, name=Heavy plasma cannon – supercharge, dup=1
+  + datasheet_id=000003658, line=, line_in_wargear=2, name=Cyclone missile launcher – krak, dup=1
+  + datasheet_id=000003670, line=, line_in_wargear=1, name=Quad launcher – shatter shells, dup=1
+  + datasheet_id=000003671, line=, line_in_wargear=1, name=Typhoon missile launcher – krak, dup=1
+  + datasheet_id=000003672, line=, line_in_wargear=2, name=Typhoon missile launcher – krak
+  + datasheet_id=000003673, line=, line_in_wargear=1, name=Typhoon missile launcher – frag, dup=1
+  + datasheet_id=000003674, line=, line_in_wargear=2, name=Typhoon missile launcher – krak
+  + datasheet_id=000003839, line=, line_in_wargear=2, name=Eradication ray – focused
+  + datasheet_id=000003842, line=, line_in_wargear=1, name=Plasma caliver – standard, dup=1
+  + datasheet_id=000003848, line=, line_in_wargear=2, name=Psychic Strike – focused witchfire
+  + datasheet_id=000003852, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
+  + datasheet_id=000003853, line=, line_in_wargear=1, name=Cultist grenade launcher – frag, dup=1
+  + datasheet_id=000003853, line=, line_in_wargear=1, name=Plasma gun – supercharge, dup=1
+  + datasheet_id=000003853, line=, line_in_wargear=2, name=Plasma gun – standard
+  + datasheet_id=000003938, line=, line_in_wargear=2, name=Plasma pistol – standard
+  + datasheet_id=000003939, line=, line_in_wargear=1, name=Grenade launcher – krak, dup=1
+  + datasheet_id=000003939, line=, line_in_wargear=2, name=Plasma gun – standard
+  + datasheet_id=000003940, line=, line_in_wargear=1, name=Plasma gun – supercharge, dup=1
+  + datasheet_id=000003940, line=, line_in_wargear=2, name=Plasma gun – standard, dup=1
+  + datasheet_id=000003940, line=, line_in_wargear=2, name=Grenade launcher – krak, dup=1
+  + datasheet_id=000003941, line=, line_in_wargear=2, name=Grenade launcher – krak, dup=1
+  + datasheet_id=000003941, line=, line_in_wargear=2, name=Plasma gun – supercharge, dup=1
+  + datasheet_id=000003943, line=, line_in_wargear=2, name=Psychic Maelstrom – witchfire
+  + datasheet_id=000003948, line=, line_in_wargear=2, name=Grenade launcher – krak
+  + datasheet_id=000003950, line=, line_in_wargear=1, name=Plasma gun – supercharge, dup=1
+  + datasheet_id=000003950, line=, line_in_wargear=2, name=Plasma gun – standard, dup=1
+  + datasheet_id=000003950, line=, line_in_wargear=2, name=Grenade launcher – krak, dup=1
+  + datasheet_id=000003953, line=, line_in_wargear=2, name=Taurox missile launcher – frag
+  + datasheet_id=000003967, line=, line_in_wargear=1, name=Missile launcher – krak, dup=1
+  + datasheet_id=000003968, line=, line_in_wargear=1, name=Missile launcher – krak, dup=1
+  + datasheet_id=000003976, line=, line_in_wargear=2, name=Plasma gun – supercharge, dup=1
+  + datasheet_id=000003976, line=, line_in_wargear=2, name=Grenade launcher – frag, dup=1
+  + datasheet_id=000003982, line=, line_in_wargear=2, name=Executioner plasma cannon – supercharge, dup=1
+  + datasheet_id=000003982, line=, line_in_wargear=2, name=Plasma cannon – supercharge, dup=1
+  + datasheet_id=000003985, line=, line_in_wargear=1, name=Plasma cannon – standard, dup=1
+  + datasheet_id=000004001, line=, line_in_wargear=1, name=Grenade launcher – krak, dup=1
+  + datasheet_id=000004001, line=, line_in_wargear=2, name=Grenade launcher – frag, dup=1
+  + datasheet_id=000004001, line=, line_in_wargear=2, name=Plasma gun – supercharge, dup=1
+  + datasheet_id=000004012, line=, line_in_wargear=1, name=Omega-pattern plasma blastgun – supercharge, dup=1
+  + datasheet_id=000004021, line=, line_in_wargear=1, name=Plasma gun – standard, dup=1
+  + datasheet_id=000004021, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
+  + datasheet_id=000004021, line=, line_in_wargear=2, name=Grenade launcher – frag, dup=1
+  + datasheet_id=000004021, line=, line_in_wargear=2, name=Plasma pistol – supercharge, dup=1
+  + datasheet_id=000004022, line=, line_in_wargear=1, name=Plasma cannon – standard, dup=1
+  + datasheet_id=000004029, line=, line_in_wargear=1, name=Stormblade plasma blastgun – supercharge, dup=1
+  + datasheet_id=000004032, line=, line_in_wargear=1, name=Tauros grenade launcher – frag, dup=1
+  + datasheet_id=000004040, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
+  + datasheet_id=000004041, line=, line_in_wargear=2, name=Plasma pistol – standard
+  + datasheet_id=000004042, line=, line_in_wargear=2, name=Plasma pistol – standard
+  + datasheet_id=000004046, line=, line_in_wargear=2, name=Warp Curse – witchfire
+  + datasheet_id=000004049, line=, line_in_wargear=2, name=Psychic Strike – focused witchfire
+  + datasheet_id=000004053, line=, line_in_wargear=2, name=Plasma pistol – standard
+  + datasheet_id=000004054, line=, line_in_wargear=2, name=Plasma gun – supercharge
+  + datasheet_id=000004058, line=, line_in_wargear=1, name=Missile launcher – krak, dup=1
+  + datasheet_id=000004063, line=, line_in_wargear=2, name=Plasma gun – supercharge
+  + datasheet_id=000004065, line=, line_in_wargear=1, name=Rite of Possession – witchfire, dup=1
+  + datasheet_id=000004068, line=, line_in_wargear=2, name=Infernal Gaze – witchfire
+  + datasheet_id=000004069, line=, line_in_wargear=1, name=Infernal Gaze – focused witchfire, dup=1
+  + datasheet_id=000004070, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
+  + datasheet_id=000004070, line=, line_in_wargear=2, name=Infernal Gaze – focused witchfire
+  + datasheet_id=000004071, line=, line_in_wargear=1, name=Infernal Gaze – witchfire, dup=1
+  + datasheet_id=000004099, line=, line_in_wargear=2, name=Blastmaster – varied frequency
+  + datasheet_id=000004171, line=, line_in_wargear=1, name=Aeldari missile launcher – starshot , dup=1
+  + datasheet_id=000004172, line=, line_in_wargear=1, name=Aeldari missile launcher – starshot, dup=1
+  + datasheet_id=000004201, line=1, line_in_wargear=1, name=Kromlôk’s Revenge – graviton strikes
+  + datasheet_id=000004201, line=2, line_in_wargear=2, name=Kromlôk’s Revenge – plasma sweeps
+  + datasheet_id=000004201, line=3, line_in_wargear=1, name=Warforge Gauntlets
+  + datasheet_id=000004202, line=1, line_in_wargear=1, name=Rending claw
+  + datasheet_id=000004202, line=2, line_in_wargear=1, name=Lash whip
+  + datasheet_id=000004202, line=3, line_in_wargear=1, name=Scything talons
+  + datasheet_id=000004203, line=1, line_in_wargear=1, name=Fusion eliminator
+  + datasheet_id=000004203, line=2, line_in_wargear=1, name=Ion scattercannon – standard
+  + datasheet_id=000004203, line=3, line_in_wargear=2, name=Ion scattercannon – overcharge
+  + datasheet_id=000004203, line=4, line_in_wargear=1, name=Shardstorm burst system
+  + datasheet_id=000004203, line=5, line_in_wargear=1, name=Twin pulse blaster
+  + datasheet_id=000004203, line=6, line_in_wargear=1, name=XV pulse pistol
+  + datasheet_id=000004203, line=7, line_in_wargear=1, name=Fusion eliminator
+  + datasheet_id=000004203, line=8, line_in_wargear=1, name=Ion scattercannon
+  + datasheet_id=000004203, line=9, line_in_wargear=1, name=XV pulse pistol
+  + datasheet_id=000004204, line=1, line_in_wargear=1, name=Heavy bolt pistol 
+  + datasheet_id=000004204, line=2, line_in_wargear=1, name=Relic thunder hammer
 Removed:
-  - datasheet_id=000003584, line=, line_in_wargear=1, name=Plasma gun – standard, dup=1
-  - datasheet_id=000003589, line=, line_in_wargear=1, name=Hellcrusher claws – sweep, dup=1
-  - datasheet_id=000003590, line=, line_in_wargear=1, name=Kytan cleaver – sweep, dup=1
-  - datasheet_id=000003592, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
-  - datasheet_id=000003600, line=, line_in_wargear=1, name=Infernal Gaze – focused witchfire, dup=1
-  - datasheet_id=000003608, line=, line_in_wargear=1, name=Quad launcher – thunderfire shells, dup=1
-  - datasheet_id=000003609, line=, line_in_wargear=3, name=Quad launcher – thunderfire shells
-  - datasheet_id=000003610, line=, line_in_wargear=1, name=Quad launcher – shatter shells, dup=1
-  - datasheet_id=000003625, line=, line_in_wargear=2, name=Hellfire plasma cannonade – standard
-  - datasheet_id=000003626, line=, line_in_wargear=2, name=Hellfire plasma cannonade – supercharge
-  - datasheet_id=000003631, line=, line_in_wargear=1, name=Kratos battle cannon – HE, dup=1
-  - datasheet_id=000003632, line=, line_in_wargear=1, name=Kratos battle cannon – HE, dup=1
-  - datasheet_id=000003633, line=, line_in_wargear=2, name=Kratos battle cannon – HE
-  - datasheet_id=000003634, line=, line_in_wargear=1, name=Kratos battle cannon – HE, dup=1
-  - datasheet_id=000003655, line=, line_in_wargear=1, name=Cyclone missile launcher – frag, dup=1
-  - datasheet_id=000003656, line=, line_in_wargear=1, name=Plasma blaster – standard, dup=1
-  - datasheet_id=000003656, line=, line_in_wargear=2, name=Heavy plasma cannon – supercharge, dup=1
-  - datasheet_id=000003657, line=, line_in_wargear=1, name=Plasma blaster – standard, dup=1
-  - datasheet_id=000003657, line=, line_in_wargear=2, name=Cyclone missile launcher – frag, dup=1
-  - datasheet_id=000003658, line=, line_in_wargear=1, name=Heavy plasma cannon – standard, dup=1
-  - datasheet_id=000003658, line=, line_in_wargear=1, name=Plasma blaster – standard, dup=1
-  - datasheet_id=000003658, line=, line_in_wargear=2, name=Plasma blaster – supercharge
-  - datasheet_id=000003667, line=, line_in_wargear=1, name=Quad launcher – thunderfire shells, dup=1
-  - datasheet_id=000003668, line=, line_in_wargear=2, name=Quad launcher – shatter shells
-  - datasheet_id=000003670, line=, line_in_wargear=1, name=Quad launcher – shatter shells, dup=1
-  - datasheet_id=000003671, line=, line_in_wargear=1, name=Typhoon missile launcher – krak, dup=1
-  - datasheet_id=000003674, line=, line_in_wargear=2, name=Typhoon missile launcher – frag
-  - datasheet_id=000003842, line=, line_in_wargear=1, name=Plasma caliver – standard, dup=1
-  - datasheet_id=000003848, line=, line_in_wargear=2, name=Psychic Strike – witchfire
-  - datasheet_id=000003850, line=, line_in_wargear=2, name=Grenade launcher – frag
-  - datasheet_id=000003853, line=, line_in_wargear=1, name=Cultist grenade launcher – frag, dup=1
-  - datasheet_id=000003853, line=, line_in_wargear=1, name=Plasma gun – supercharge, dup=1
-  - datasheet_id=000003853, line=, line_in_wargear=2, name=Cultist grenade launcher – krak
-  - datasheet_id=000003857, line=, line_in_wargear=1, name=Missile launcher – frag, dup=1
-  - datasheet_id=000003938, line=, line_in_wargear=2, name=Plasma pistol – standard
-  - datasheet_id=000003939, line=, line_in_wargear=1, name=Grenade launcher – krak, dup=1
-  - datasheet_id=000003939, line=, line_in_wargear=1, name=Plasma gun – standard, dup=1
-  - datasheet_id=000003940, line=, line_in_wargear=1, name=Plasma gun – supercharge, dup=1
-  - datasheet_id=000003940, line=, line_in_wargear=2, name=Plasma gun – standard, dup=1
-  - datasheet_id=000003940, line=, line_in_wargear=2, name=Grenade launcher – frag, dup=1
-  - datasheet_id=000003941, line=, line_in_wargear=1, name=Grenade launcher – krak, dup=1
-  - datasheet_id=000003943, line=, line_in_wargear=2, name=Psychic Maelstrom – focused witchfire
-  - datasheet_id=000003948, line=, line_in_wargear=2, name=Grenade launcher – krak
-  - datasheet_id=000003950, line=, line_in_wargear=1, name=Plasma gun – supercharge, dup=1
-  - datasheet_id=000003953, line=, line_in_wargear=2, name=Taurox missile launcher – krak
-  - datasheet_id=000003962, line=, line_in_wargear=1, name=Hunting lance – melta tip, dup=1
-  - datasheet_id=000003967, line=, line_in_wargear=1, name=Missile launcher – krak, dup=1
-  - datasheet_id=000003968, line=, line_in_wargear=1, name=Missile launcher – krak, dup=1
-  - datasheet_id=000003976, line=, line_in_wargear=2, name=Grenade launcher – krak
-  - datasheet_id=000003980, line=, line_in_wargear=1, name=Plasma cannon – supercharge, dup=1
-  - datasheet_id=000003981, line=, line_in_wargear=1, name=Plasma cannon – supercharge, dup=1
-  - datasheet_id=000003982, line=, line_in_wargear=2, name=Executioner plasma cannon – standard
-  - datasheet_id=000003983, line=, line_in_wargear=1, name=Plasma cannon – supercharge, dup=1
-  - datasheet_id=000003984, line=, line_in_wargear=2, name=Plasma cannon – supercharge
-  - datasheet_id=000003988, line=, line_in_wargear=1, name=Plasma cannon – supercharge, dup=1
-  - datasheet_id=000004001, line=, line_in_wargear=1, name=Grenade launcher – krak, dup=1
-  - datasheet_id=000004012, line=, line_in_wargear=1, name=Omega-pattern plasma blastgun – supercharge, dup=1
-  - datasheet_id=000004021, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
-  - datasheet_id=000004021, line=, line_in_wargear=2, name=Grenade launcher – frag, dup=1
-  - datasheet_id=000004022, line=, line_in_wargear=1, name=Plasma cannon – standard, dup=1
-  - datasheet_id=000004023, line=, line_in_wargear=2, name=Praetor launcher – firestorm
-  - datasheet_id=000004029, line=, line_in_wargear=1, name=Stormblade plasma blastgun – supercharge, dup=1
-  - datasheet_id=000004032, line=, line_in_wargear=1, name=Tauros grenade launcher – frag, dup=1
-  - datasheet_id=000004036, line=, line_in_wargear=1, name=Plasma pistol – supercharge, dup=1
-  - datasheet_id=000004039, line=, line_in_wargear=2, name=Plasma pistol – standard
-  - datasheet_id=000004040, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
-  - datasheet_id=000004054, line=, line_in_wargear=2, name=Cultist grenade launcher – frag
-  - datasheet_id=000004058, line=, line_in_wargear=1, name=Missile launcher – krak, dup=1
-  - datasheet_id=000004063, line=, line_in_wargear=2, name=Havoc missile launcher – frag, dup=1
-  - datasheet_id=000004063, line=, line_in_wargear=2, name=Plasma pistol – supercharge, dup=1
-  - datasheet_id=000004064, line=, line_in_wargear=1, name=Missile launcher – krak, dup=1
-  - datasheet_id=000004064, line=, line_in_wargear=1, name=Plasma pistol – supercharge, dup=1
-  - datasheet_id=000004064, line=, line_in_wargear=1, name=Plasma gun – supercharge, dup=1
-  - datasheet_id=000004065, line=, line_in_wargear=1, name=Rite of Possession – witchfire, dup=1
-  - datasheet_id=000004067, line=, line_in_wargear=1, name=Plasma pistol – supercharge, dup=1
-  - datasheet_id=000004067, line=, line_in_wargear=2, name=Plasma gun – supercharge
-  - datasheet_id=000004069, line=, line_in_wargear=1, name=Infernal Gaze – focused witchfire, dup=1
-  - datasheet_id=000004069, line=, line_in_wargear=2, name=Infernal Gaze – witchfire, dup=1
-  - datasheet_id=000004069, line=, line_in_wargear=2, name=Plasma pistol – supercharge, dup=1
-  - datasheet_id=000004070, line=, line_in_wargear=1, name=Infernal Gaze – focused witchfire, dup=1
-  - datasheet_id=000004070, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
-  - datasheet_id=000004070, line=, line_in_wargear=2, name=Infernal Gaze – witchfire, dup=1
-  - datasheet_id=000004070, line=, line_in_wargear=2, name=Plasma pistol – supercharge, dup=1
-  - datasheet_id=000004071, line=, line_in_wargear=1, name=Infernal Gaze – witchfire, dup=1
-  - datasheet_id=000004099, line=, line_in_wargear=2, name=Blastmaster – single frequency
-  - datasheet_id=000004171, line=, line_in_wargear=1, name=Aeldari missile launcher – starshot , dup=1
-  - datasheet_id=000004172, line=, line_in_wargear=1, name=Aeldari missile launcher – starshot, dup=1
+  - datasheet_id=000003582, line=, line_in_wargear=2, name=Plasma pistol – supercharge
+  - datasheet_id=000003584, line=, line_in_wargear=2, name=Plasma gun – standard
+  - datasheet_id=000003592, line=, line_in_wargear=2, name=Plasma pistol – standard
+  - datasheet_id=000003600, line=, line_in_wargear=1, name=Infernal Gaze – witchfire, dup=1
+  - datasheet_id=000003607, line=, line_in_wargear=1, name=Quad launcher – shatter shells, dup=1
+  - datasheet_id=000003608, line=, line_in_wargear=2, name=Quad launcher – thunderfire shells
+  - datasheet_id=000003609, line=, line_in_wargear=2, name=Quad launcher – shatter shells
+  - datasheet_id=000003610, line=, line_in_wargear=2, name=Quad launcher – shatter shells
+  - datasheet_id=000003625, line=, line_in_wargear=1, name=Hellfire plasma cannonade – supercharge, dup=1
+  - datasheet_id=000003631, line=, line_in_wargear=2, name=Kratos battle cannon – HE
+  - datasheet_id=000003632, line=, line_in_wargear=1, name=Kratos battle cannon – AP, dup=1
+  - datasheet_id=000003634, line=, line_in_wargear=1, name=Kratos battle cannon – AP, dup=1
+  - datasheet_id=000003651, line=, line_in_wargear=1, name=Fellblade accelerator cannon – HE shells, dup=1
+  - datasheet_id=000003652, line=, line_in_wargear=1, name=Fellblade accelerator cannon – HE shells, dup=1
+  - datasheet_id=000003653, line=, line_in_wargear=1, name=Fellblade accelerator cannon – AP shells, dup=1
+  - datasheet_id=000003655, line=, line_in_wargear=1, name=Plasma blaster – supercharge, dup=1
+  - datasheet_id=000003655, line=, line_in_wargear=2, name=Cyclone missile launcher – frag
+  - datasheet_id=000003658, line=, line_in_wargear=1, name=Heavy plasma cannon – supercharge, dup=1
+  - datasheet_id=000003658, line=, line_in_wargear=1, name=Cyclone missile launcher – krak, dup=1
+  - datasheet_id=000003658, line=, line_in_wargear=2, name=Plasma blaster – standard, dup=1
+  - datasheet_id=000003658, line=, line_in_wargear=2, name=Heavy plasma cannon – standard, dup=1
+  - datasheet_id=000003670, line=, line_in_wargear=1, name=Quad launcher – thunderfire shells, dup=1
+  - datasheet_id=000003671, line=, line_in_wargear=2, name=Typhoon missile launcher – krak
+  - datasheet_id=000003672, line=, line_in_wargear=1, name=Typhoon missile launcher – krak, dup=1
+  - datasheet_id=000003673, line=, line_in_wargear=2, name=Typhoon missile launcher – frag
+  - datasheet_id=000003674, line=, line_in_wargear=1, name=Typhoon missile launcher – krak, dup=1
+  - datasheet_id=000003839, line=, line_in_wargear=1, name=Eradication ray – focused, dup=1
+  - datasheet_id=000003842, line=, line_in_wargear=2, name=Plasma caliver – standard
+  - datasheet_id=000003848, line=, line_in_wargear=1, name=Psychic Strike – focused witchfire, dup=1
+  - datasheet_id=000003852, line=, line_in_wargear=2, name=Plasma pistol – standard
+  - datasheet_id=000003853, line=, line_in_wargear=1, name=Plasma gun – standard, dup=1
+  - datasheet_id=000003853, line=, line_in_wargear=2, name=Plasma gun – supercharge, dup=1
+  - datasheet_id=000003853, line=, line_in_wargear=2, name=Cultist grenade launcher – frag, dup=1
+  - datasheet_id=000003938, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
+  - datasheet_id=000003939, line=, line_in_wargear=2, name=Plasma gun – standard, dup=1
+  - datasheet_id=000003939, line=, line_in_wargear=2, name=Grenade launcher – krak, dup=1
+  - datasheet_id=000003940, line=, line_in_wargear=1, name=Plasma gun – standard, dup=1
+  - datasheet_id=000003940, line=, line_in_wargear=1, name=Grenade launcher – krak, dup=1
+  - datasheet_id=000003940, line=, line_in_wargear=2, name=Plasma gun – supercharge
+  - datasheet_id=000003941, line=, line_in_wargear=1, name=Plasma gun – supercharge, dup=1
+  - datasheet_id=000003941, line=, line_in_wargear=2, name=Grenade launcher – krak
+  - datasheet_id=000003943, line=, line_in_wargear=1, name=Psychic Maelstrom – witchfire, dup=1
+  - datasheet_id=000003948, line=, line_in_wargear=1, name=Grenade launcher – krak, dup=1
+  - datasheet_id=000003950, line=, line_in_wargear=1, name=Grenade launcher – krak, dup=1
+  - datasheet_id=000003950, line=, line_in_wargear=1, name=Plasma gun – standard, dup=1
+  - datasheet_id=000003950, line=, line_in_wargear=2, name=Plasma gun – supercharge
+  - datasheet_id=000003953, line=, line_in_wargear=1, name=Taurox missile launcher – frag, dup=1
+  - datasheet_id=000003967, line=, line_in_wargear=1, name=Missile launcher – frag, dup=1
+  - datasheet_id=000003968, line=, line_in_wargear=2, name=Missile launcher – krak
+  - datasheet_id=000003976, line=, line_in_wargear=1, name=Plasma gun – supercharge, dup=1
+  - datasheet_id=000003976, line=, line_in_wargear=1, name=Grenade launcher – frag, dup=1
+  - datasheet_id=000003982, line=, line_in_wargear=1, name=Executioner plasma cannon – supercharge, dup=1
+  - datasheet_id=000003982, line=, line_in_wargear=1, name=Plasma cannon – supercharge, dup=1
+  - datasheet_id=000003985, line=, line_in_wargear=1, name=Plasma cannon – supercharge, dup=1
+  - datasheet_id=000004001, line=, line_in_wargear=1, name=Plasma gun – supercharge, dup=1
+  - datasheet_id=000004001, line=, line_in_wargear=1, name=Grenade launcher – frag, dup=1
+  - datasheet_id=000004001, line=, line_in_wargear=2, name=Grenade launcher – krak
+  - datasheet_id=000004012, line=, line_in_wargear=2, name=Omega-pattern plasma blastgun – supercharge
+  - datasheet_id=000004021, line=, line_in_wargear=1, name=Plasma pistol – supercharge, dup=1
+  - datasheet_id=000004021, line=, line_in_wargear=1, name=Grenade launcher – frag, dup=1
+  - datasheet_id=000004021, line=, line_in_wargear=2, name=Plasma pistol – standard, dup=1
+  - datasheet_id=000004021, line=, line_in_wargear=2, name=Plasma gun – standard, dup=1
+  - datasheet_id=000004022, line=, line_in_wargear=2, name=Plasma cannon – standard
+  - datasheet_id=000004029, line=, line_in_wargear=2, name=Stormblade plasma blastgun – supercharge
+  - datasheet_id=000004032, line=, line_in_wargear=2, name=Tauros grenade launcher – frag
+  - datasheet_id=000004040, line=, line_in_wargear=1, name=Plasma pistol – supercharge, dup=1
+  - datasheet_id=000004041, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
+  - datasheet_id=000004042, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
+  - datasheet_id=000004046, line=, line_in_wargear=1, name=Warp Curse – witchfire, dup=1
+  - datasheet_id=000004049, line=, line_in_wargear=1, name=Psychic Strike – focused witchfire, dup=1
+  - datasheet_id=000004053, line=, line_in_wargear=1, name=Plasma pistol – standard, dup=1
+  - datasheet_id=000004054, line=, line_in_wargear=1, name=Plasma gun – supercharge, dup=1
+  - datasheet_id=000004058, line=, line_in_wargear=2, name=Missile launcher – krak
+  - datasheet_id=000004063, line=, line_in_wargear=1, name=Plasma gun – supercharge, dup=1
+  - datasheet_id=000004065, line=, line_in_wargear=2, name=Rite of Possession – witchfire
+  - datasheet_id=000004068, line=, line_in_wargear=1, name=Infernal Gaze – witchfire, dup=1
+  - datasheet_id=000004069, line=, line_in_wargear=1, name=Infernal Gaze – witchfire, dup=1
+  - datasheet_id=000004070, line=, line_in_wargear=2, name=Infernal Gaze – focused witchfire, dup=1
+  - datasheet_id=000004070, line=, line_in_wargear=2, name=Plasma pistol – standard, dup=1
+  - datasheet_id=000004071, line=, line_in_wargear=2, name=Infernal Gaze – witchfire
+  - datasheet_id=000004099, line=, line_in_wargear=1, name=Blastmaster – varied frequency, dup=1
+  - datasheet_id=000004171, line=, line_in_wargear=2, name=Aeldari missile launcher – starshot 
+  - datasheet_id=000004172, line=, line_in_wargear=1, name=Aeldari missile launcher – sunburst, dup=1
 Changed:
-  * datasheet_id=000003589, line=, line_in_wargear=2, name=Hellcrusher claws – sweep
-      A: 6 -> 18
-      AP: -3 -> -2
-      D: 6 -> 2
-      S: 14 -> 8
-      name: Hellcrusher claws - strike -> Hellcrusher claws - sweep
-  * datasheet_id=000003590, line=, line_in_wargear=2, name=Kytan cleaver – sweep
-      A: 4 -> 12
-      AP: -4 -> -3
-      D: 6 -> 2
-      S: 14 -> 9
-      name: Kytan cleaver - strike -> Kytan cleaver - sweep
-  * datasheet_id=000003631, line=, line_in_wargear=2, name=Kratos battle cannon – HE
-      A: 1 -> D6+3
-      AP: -4 -> -1
-      D: D6+3 -> 3
-      S: 18 -> 10
-      description: heavy -> blast
-      name: Kratos battle cannon - AP -> Kratos battle cannon - HE
-  * datasheet_id=000003632, line=, line_in_wargear=2, name=Kratos battle cannon – HE
-      A: 1 -> D6+3
-      AP: -4 -> -1
-      D: D6+3 -> 3
-      S: 18 -> 10
-      description: heavy -> blast
-      name: Kratos battle cannon - AP -> Kratos battle cannon - HE
-  * datasheet_id=000003667, line=, line_in_wargear=2, name=Quad launcher – thunderfire shells
+  * datasheet_id=000003600, line=, line_in_wargear=2, name=Infernal Gaze – witchfire
+      AP: -2 -> -1
+      S: 6 -> 5
+      description: devastating wounds, hazardous, psychic -> psychic
+      name: Infernal Gaze - focused witchfire -> Infernal Gaze - witchfire
+  * datasheet_id=000003632, line=, line_in_wargear=2, name=Kratos battle cannon – AP
+      A: D6+3 -> 1
+      AP: -1 -> -4
+      D: 3 -> D6+3
+      S: 10 -> 18
+      description: blast -> heavy
+      name: Kratos battle cannon - HE -> Kratos battle cannon - AP
+  * datasheet_id=000003634, line=, line_in_wargear=2, name=Kratos battle cannon – AP
+      A: D6+3 -> 1
+      AP: -1 -> -4
+      D: 3 -> D6+3
+      S: 10 -> 18
+      description: blast -> heavy
+      name: Kratos battle cannon - HE -> Kratos battle cannon - AP
+  * datasheet_id=000003670, line=, line_in_wargear=2, name=Quad launcher – thunderfire shells
       A: 4 -> D6+4
       AP: -2 -> 0
       D: 3 -> 1
@@ -513,79 +1093,68 @@ Changed:
       description: heavy -> blast, heavy, indirect fire
       name: Quad launcher - shatter shells -> Quad launcher - thunderfire shells
       range: 24 -> 60
-  * datasheet_id=000003941, line=, line_in_wargear=2, name=Grenade launcher – krak
-      AP: -3 -> -2
-      D: 2 -> D3
-      S: 8 -> 9
-      description: hazardous, rapid fire 1 -> 
-      name: Plasma gun - supercharge -> Grenade launcher - krak
-  * datasheet_id=000003950, line=, line_in_wargear=2, name=Plasma gun – supercharge
-      A: D3 -> 1
-      AP: 0 -> -3
-      D: 1 -> 2
-      S: 4 -> 8
-      description: blast -> hazardous, rapid fire 1
-      name: Grenade launcher - frag -> Plasma gun - supercharge
-  * datasheet_id=000003968, line=, line_in_wargear=2, name=Missile launcher – krak
-      A: D6 -> 1
-      AP: 0 -> -2
-      D: 1 -> D6
-      S: 4 -> 9
-      description: blast, heavy -> heavy
-      name: Missile launcher - frag -> Missile launcher - krak
-  * datasheet_id=000004012, line=, line_in_wargear=2, name=Omega-pattern plasma blastgun – supercharge
-      AP: -2 -> -3
-      D: 2 -> 3
-      S: 8 -> 9
-      description: blast -> blast, hazardous
-      name: Omega-pattern plasma blastgun - standard -> Omega-pattern plasma blastgun - supercharge
-  * datasheet_id=000004022, line=, line_in_wargear=2, name=Plasma cannon – standard
-      AP: -3 -> -2
-      D: 2 -> 1
-      S: 8 -> 7
-      description: blast, hazardous, heavy -> blast, heavy
-      name: Plasma cannon - supercharge -> Plasma cannon - standard
-  * datasheet_id=000004029, line=, line_in_wargear=2, name=Stormblade plasma blastgun – supercharge
-      AP: -2 -> -3
-      D: 3 -> 4
-      S: 9 -> 10
-      description: blast -> blast, hazardous
-      name: Stormblade plasma blastgun - standard -> Stormblade plasma blastgun - supercharge
-  * datasheet_id=000004065, line=, line_in_wargear=2, name=Rite of Possession – witchfire
-      D: 3 -> 2
-      S: 6 -> 4
-      description: anti-psyker 2+, hazardous, pistol, precision, psychic -> anti-psyker 2+, pistol, precision, psychic
-      name: Rite of Possession - focused witchfire -> Rite of Possession - witchfire
-  * datasheet_id=000004071, line=, line_in_wargear=2, name=Infernal Gaze – witchfire
+  * datasheet_id=000003967, line=, line_in_wargear=2, name=Missile launcher – frag
       A: 1 -> D6
-      AP: -3 -> -1
-      BS_WS: 2 -> 3
-      D: 2 -> D3
-      S: 8 -> 5
-      description: hazardous, pistol -> psychic
-      name: Plasma pistol - supercharge -> Infernal Gaze - witchfire
-      range: 12 -> 24
-  * datasheet_id=000004171, line=, line_in_wargear=2, name=Aeldari missile launcher – starshot 
-      A: D6 -> 1
-      AP: -1 -> -2
-      D: 1 -> D6
-      S: 4 -> 10
-      description: BLAST -> 
-      name: Aeldari missile launcher - sunburst -> Aeldari missile launcher - starshot
+      AP: -2 -> 0
+      D: D6 -> 1
+      S: 9 -> 4
+      description: heavy -> blast, heavy
+      name: Missile launcher - krak -> Missile launcher - frag
+  * datasheet_id=000003985, line=, line_in_wargear=2, name=Plasma cannon – supercharge
+      AP: -2 -> -3
+      D: 1 -> 2
+      S: 7 -> 8
+      description: blast -> blast, hazardous
+      name: Plasma cannon - standard -> Plasma cannon - supercharge
+  * datasheet_id=000004040, line=, line_in_wargear=2, name=Plasma pistol – supercharge
+      AP: -2 -> -3
+      D: 1 -> 2
+      S: 7 -> 8
+      description: pistol -> hazardous, pistol
+      name: Plasma pistol - standard -> Plasma pistol - supercharge
+  * datasheet_id=000004069, line=, line_in_wargear=2, name=Infernal Gaze – witchfire
+      AP: -2 -> -1
+      S: 6 -> 5
+      description: devastating wounds, hazardous, psychic -> psychic
+      name: Infernal Gaze - focused witchfire -> Infernal Gaze - witchfire
+  * datasheet_id=000004172, line=, line_in_wargear=2, name=Aeldari missile launcher – sunburst
+      A: 1 -> D6
+      AP: -2 -> -1
+      D: D6 -> 1
+      S: 10 -> 4
+      description:  -> BLAST
+      name: Aeldari missile launcher - starshot -> Aeldari missile launcher - sunburst
 
 File: Detachment_abilities.json
-Counts: old=269, new=269, added=0, removed=0, changed=0
+Counts: old=269, new=269, added=0, removed=0, changed=2
+Changed:
+  * id=000010691, name=Slaves to None
+      description: HERETIC ASTARTES models from your army lose the Dark Pacts ability. Ranged weapons equipped by HERETIC ASTARTES models from your army have the [ASSAULT] ability. -> HERETIC ASTARTES models from your army lose the Dark Pacts ability. Ranged weapons equipped by HERETIC ASTARTES models from your army have the [ASSAULT] ability. When mustering your army, you cannot use the Cults of the Dark Gods rule.
+      legend: Many Renegades eschew the gifts of Dark Gods, relying only upon their own prowess to sweep forth and destroy the foe. -> Many Renegades eschew the gifts of Dark Gods, relying only upon their own prowess.
+  * id=000009748, name=Relentless Onslaught
+      description: Each time a NECRONS model from your army makes an attack that targets a unit within range of one or more objective markers, add 1 to the Hit roll. In addition, ranged weapons equipped by Necrons Vehicle and Necrons Mounted models (exclud... -> Each time a NECRONS model (excluding Monster models) from your army makes an attack that targets a unit within range of one or more objective markers, add 1 to the Hit roll. In addition, ranged weapons equipped by Necrons Vehicle and Nec...
 
 File: Detachments.json
 Counts: old=246, new=246, added=0, removed=0, changed=0
 
 File: Enhancements.json
-Counts: old=869, new=873, added=4, removed=0, changed=0
-Added:
-  + id=000010312002, name=Preyslayer’s Mantle
-  + id=000010312003, name=Final Howl (Aura)
-  + id=000010312004, name=Loping Predator
-  + id=000010312005, name=Panoply of the Cursed Knight
+Counts: old=873, new=873, added=0, removed=0, changed=7
+Changed:
+  * id=000009810003, name=Infernal Puppeteer
+      cost: 10 -> 25
+  * id=000010694002, name=Weaponised Hatred
+      cost: 60 -> 35
+      description: HERETIC ASTARTES model only. At the start of your Command phase, after you have selected your Vendetta target, select a second enemy unit. Until the start of your next Command phase, if your Vendetta target is destroyed, that second enem... -> HERETIC ASTARTES model only. Once per battle round, after your Vendetta target is destroyed, if the bearer is on the battlefield, you can select one enemy unit visible to the bearer. That enemy unit becomes your Vendetta target until you...
+  * id=000009749002, name=Dread Majesty (Aura)
+      description: Overlord or Catacomb Command Barge model only. While a friendly NECRONS unit (excluding Titanic units) is within 6" of the bearer, each time a model in that unit makes an attack, re-roll a Hit roll of 1 and re-roll a Wound roll of 1. -> Overlord or Catacomb Command Barge model only. While a friendly NECRONS unit (excluding Monster and Titanic units) is within 6" of the bearer, each time a model in that unit makes an attack, re-roll a Hit roll of 1 and re-roll a Wound ro...
+  * id=000010672002, name=Singularity Matrix
+      cost: 40 -> 55
+  * id=000010672003, name=Quantum Goad
+      cost: 30 -> 45
+  * id=000010672004, name=Animus Damper
+      cost: 20 -> 35
+  * id=000010672005, name=Reletavistic Tether
+      cost: 25 -> 40
 
 File: Factions.json
 Counts: old=26, new=26, added=0, removed=0, changed=0
@@ -593,15 +1162,46 @@ Counts: old=26, new=26, added=0, removed=0, changed=0
 File: Last_update.json
 Counts: old=1, new=1, added=1, removed=1, changed=0
 Added:
-  + last_update=2026-02-26 00:47:31
+  + last_update=2026-03-09 15:42:49
 Removed:
-  - last_update=2026-02-14 02:04:28
+  - last_update=2026-02-26 00:47:31
 
 File: Source.json
-Counts: old=70, new=70, added=0, removed=0, changed=0
+Counts: old=70, new=70, added=0, removed=0, changed=6
+Changed:
+  * id=000000166, name=Balance Dataslate
+      errata_date: 07.01.2026 0:00:00 -> 04.03.2026 0:00:00
+      errata_link: https://assets.warhammer-community.com/eng_07-01_warhammer_40000_core_rules_balance_dataslate-apvctstyr0-8etzbxgbhh.pdf -> https://assets.warhammer-community.com/eng_04-03_wh40k_core&key_balance_dataslate-ysn1jjtd9x-qogz1pqkky.pdf
+      version: 3.3 -> 3.4
+  * id=000000233, name=Munitorum Field Manual
+      errata_date: 12.02.2026 0:00:00 -> 04.03.2026 0:00:00
+      errata_link: https://assets.warhammer-community.com/eng_11-02_warhammer_40000_core_rules_munitorum_field_manua-nhzplimifq-x47lmaz27p.pdf -> https://assets.warhammer-community.com/eng_04-03_wh40k_core&key_munitorum_field_manual-wusmp8gbdw-poy2kdhoy0.pdf
+      version: 3.9 -> 4.0
+  * id=000000029, name=Necrons
+      errata_date: 07.01.2026 0:00:00 -> 04.03.2026 0:00:00
+      errata_link: https://assets.warhammer-community.com/eng_07-01_warhammer_40000_faction_pack_necrons-wgehvvo84t-ijjxadnsk6.pdf -> https://assets.warhammer-community.com/eng_04-03_warhammer40000_faction_pack_necrons-oit9xyrlza-eqprrhthph.pdf
+      version: 1.2 -> 1.3
+  * id=000000203, name=Leagues of Votann
+      errata_date: 11.02.2026 0:00:00 -> 04.03.2026 0:00:00
+      errata_link: https://assets.warhammer-community.com/eng_11-02_wh40k_faction_pack_leagues_of_votann-ochlykavhd-ti0l5bbduf.pdf -> https://assets.warhammer-community.com/eng_04-03_warhammer40000_faction_pack_leagues_of_votann-nga9c4cumk-snm4dohuql.pdf
+      version: 1.1 -> 1.2
+  * id=000000020, name=Tyranids
+      errata_date: 07.01.2026 0:00:00 -> 04.03.2026 0:00:00
+      errata_link: https://assets.warhammer-community.com/eng_07-01_warhammer_40000_faction_pack_tyranids-6a23k8tkwy-5lydlikkxp.pdf -> https://assets.warhammer-community.com/eng_04-03_wh40k_faction_pack_tyranids-ksw1crafj8-tolo4c5tuq.pdf
+      version: 1.1 -> 1.2
+  * id=000000012, name=Chaos Space Marines
+      errata_date: 11.02.2026 0:00:00 -> 04.03.2026 0:00:00
+      errata_link: https://assets.warhammer-community.com/eng_11-02_wh40k_faction_pack_chaos_space_marines-lo3fztfdb6-tavncu27rz.pdf -> https://assets.warhammer-community.com/eng_04-03_warhammer40000_faction_pack_chaos_space_marines-ekqehcsuwl-qmyuudm97y.pdf
+      version: 1.3 -> 1.4
 
 File: Stratagems.json
-Counts: old=1397, new=1397, added=0, removed=0, changed=1
+Counts: old=1397, new=1397, added=0, removed=0, changed=4
 Changed:
-  * id=000008366006, name=MOB RULE
-      description: WHEN: Your Command phase. TARGET: One Mob unit from your army that contains 10 or more models and is not Below Half-strength. EFFECT: Select one friendly Battle-shocked Orks Infantry unit within 6" of that MOB unit. That ORKS INFANTRY un... -> WHEN: End of your Command phase. TARGET: One Mob unit from your army that contains 10 or more models and is not Below Half-strength. EFFECT: Select one friendly Battle-shocked Orks Infantry unit within 6" of that MOB unit. That ORKS INFA...
+  * id=000010448002, name=SECURE POSITIONS
+      description: WHEN: End of any of your phases, if units from your army have Hostile Acquisition. TARGET: One Leagues of Votann Transport unit from your army. EFFECT: One LEAGUES OF VOTANN unit embarked within your TRANSPORT can disembark. When doing s... -> WHEN: End of any of your phases. TARGET: One Leagues of Votann Transport unit from your army. EFFECT: One LEAGUES OF VOTANN unit embarked within your TRANSPORT can disembark. When doing so, models in that unit can be set up anywhere on t...
+  * id=000009750002, name=MERCILESS RECLAMATION
+      description: WHEN: Your Shooting phase or the Fight phase. TARGET: One NECRONS unit (excluding Titanic units) from your army that has not been selected to shoot or fight this phase. EFFECT: Until the end of the phase, each time a model in your unit m... -> WHEN: Your Shooting phase or the Fight phase. TARGET: One NECRONS unit (excluding Monster and Titanic units) from your army that has not been selected to shoot or fight this phase. EFFECT: Until the end of the phase, each time a model in...
+  * id=000009750007, name=REACTIVE REPOSITION
+      description: WHEN: Your opponent's Shooting phase, just after an enemy unit has shot. TARGET: One NECRONS unit from your army (excluding Titanic units) that was the target of one or more of the attacking unit's attacks. EFFECT: Your unit can make a N... -> WHEN: Your opponent's Shooting phase, just after an enemy unit has shot. TARGET: One NECRONS unit from your army (excluding Monster and Titanic units) that was the target of one or more of the attacking unit's attacks. EFFECT: Your unit ...
+  * id=000009750006, name=ENDLESS SERVITUDE
+      description: WHEN: End of your Fight phase. TARGET: One NECRONS unit (excluding Titanic units) from your army that is within range of one or more objective markers you control. EFFECT: Your unit's Reanimation Protocols activate. -> WHEN: End of your Fight phase. TARGET: One NECRONS unit (excluding Monster and Titanic units) from your army that is within range of one or more objective markers you control. EFFECT: Your unit's Reanimation Protocols activate.

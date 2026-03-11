@@ -9452,16 +9452,16 @@
     },
     {
         "faction_id": "LoV",
-        "name": "VENGEANCE FLARE",
-        "id": "000010448007",
+        "name": "SECURE POSITIONS",
+        "id": "000010448002",
         "type": "Brandfast Oathband \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "2",
-        "legend": "With a narrow-band data burst, those of an oathband who have been wronged can call in the devastating vengeance of their armoured support.",
-        "turn": "Opponent\u2019s turn",
-        "phase": "Shooting phase",
+        "cp_cost": "1",
+        "legend": "While there are resources to secure, the Kin will seize any opportunity to effect a rapid and ordered deployment to establish defensive positions.",
+        "turn": "Either player\u2019s turn",
+        "phase": "Any phase",
         "detachment": "Brandfast Oathband",
         "detachment_id": "000001099",
-        "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase, just after an enemy unit has shot.<br><br><b>TARGET:</b> One Leagues of Votann Infantry unit that was hit by one or more of those attacks.<br><br><b>EFFECT:</b> Each time you use this Stratagem, you can spend 2YP. Select one friendly Kapricus or Sagitaur unit within 6\" of your <span class=\"kwb\">INFANTRY</span> unit. If you spent YP during this use of this Stratagem, you can select one friendly Hekaton Land Fortress unit within 6\" of your <span class=\"kwb\">INFANTRY</span> unit instead. The selected unit can shoot as if it were your Shooting phase. When doing so, models in the selected unit can only target that enemy unit (and only if it is an eligible target)."
+        "description": "<b>WHEN:</b> End of any of your phases.<br><br><b>TARGET:</b> One Leagues of Votann Transport unit from your army.<br><br><b>EFFECT:</b> One <span class=\"kwb\">LEAGUES</span> <span class=\"kwb2\">OF</span> <span class=\"kwb\">VOTANN</span> unit embarked within your <span class=\"kwb\">TRANSPORT</span> can disembark. When doing so, models in that unit can be set up anywhere on the battlefield wholly within 6\" of your <span class=\"kwb\">TRANSPORT</span>. That unit cannot declare a charge in the same turn, but can otherwise act normally in the remainder of the turn."
     },
     {
         "faction_id": "LoV",
@@ -9478,19 +9478,6 @@
     },
     {
         "faction_id": "LoV",
-        "name": "SECURE POSITIONS",
-        "id": "000010448002",
-        "type": "Brandfast Oathband \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "1",
-        "legend": "While there are resources to secure, the Kin will seize any opportunity to effect a rapid and ordered deployment to establish defensive positions.",
-        "turn": "Either player\u2019s turn",
-        "phase": "Any phase",
-        "detachment": "Brandfast Oathband",
-        "detachment_id": "000001099",
-        "description": "<b>WHEN:</b> End of any of your phases, if units from your army have Hostile Acquisition.<br><br><b>TARGET:</b> One Leagues of Votann Transport unit from your army.<br><br><b>EFFECT:</b> One <span class=\"kwb\">LEAGUES</span> <span class=\"kwb2\">OF</span> <span class=\"kwb\">VOTANN</span> unit embarked within your <span class=\"kwb\">TRANSPORT</span> can disembark. When doing so, models in that unit can be set up anywhere on the battlefield wholly within 6\" of your <span class=\"kwb\">TRANSPORT</span>. That unit cannot declare a charge in the same turn, but can otherwise act normally in the remainder of the turn."
-    },
-    {
-        "faction_id": "LoV",
         "name": "OPPORTUNISTIC ESCALATION",
         "id": "000010448006",
         "type": "Brandfast Oathband \u2013 Strategic Ploy Stratagem",
@@ -9501,6 +9488,19 @@
         "detachment": "Brandfast Oathband",
         "detachment_id": "000001099",
         "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase, just after an enemy unit has shot, if units from your army have Hostile Acquisition.<br><br><b>TARGET:</b> One Leagues of Votann Vehicle unit from your army (excluding Hekaton Land Fortress units) that was hit by one or more of those attacks.<br><br><b>EFFECT:</b> Your unit can make a Normal move of up to D6\"."
+    },
+    {
+        "faction_id": "LoV",
+        "name": "VENGEANCE FLARE",
+        "id": "000010448007",
+        "type": "Brandfast Oathband \u2013 Strategic Ploy Stratagem",
+        "cp_cost": "2",
+        "legend": "With a narrow-band data burst, those of an oathband who have been wronged can call in the devastating vengeance of their armoured support.",
+        "turn": "Opponent\u2019s turn",
+        "phase": "Shooting phase",
+        "detachment": "Brandfast Oathband",
+        "detachment_id": "000001099",
+        "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase, just after an enemy unit has shot.<br><br><b>TARGET:</b> One Leagues of Votann Infantry unit that was hit by one or more of those attacks.<br><br><b>EFFECT:</b> Each time you use this Stratagem, you can spend 2YP. Select one friendly Kapricus or Sagitaur unit within 6\" of your <span class=\"kwb\">INFANTRY</span> unit. If you spent YP during this use of this Stratagem, you can select one friendly Hekaton Land Fortress unit within 6\" of your <span class=\"kwb\">INFANTRY</span> unit instead. The selected unit can shoot as if it were your Shooting phase. When doing so, models in the selected unit can only target that enemy unit (and only if it is an eligible target)."
     },
     {
         "faction_id": "LoV",
@@ -10167,19 +10167,6 @@
     },
     {
         "faction_id": "NEC",
-        "name": "PROTOCOL OF THE HUNGRY VOID",
-        "id": "000008371004",
-        "type": "Awakened Dynasty \u2013 Battle Tactic Stratagem",
-        "cp_cost": "1",
-        "legend": "Necrons strike with data-augmented accuracy.",
-        "turn": "Either player\u2019s turn",
-        "phase": "Fight phase",
-        "detachment": "Awakened Dynasty",
-        "detachment_id": "000000756",
-        "description": "<b>WHEN:</b> Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit from your army that has not been selected to fight this phase.<br><br><b>EFFECT:</b> Until the end of the phase, add 1 to the Strength characteristic of melee weapons equipped by models in your unit. In addition, If a Necrons Character is leading your unit, until the end of the phase, improve the Armour Penetration characteristic of melee weapons equipped by models in your unit by 1. (this is not cumulative with any other modifiers that improve Armour Penetration]."
-    },
-    {
-        "faction_id": "NEC",
         "name": "PROTOCOL OF THE CONQUERING TYRANT",
         "id": "000008371006",
         "type": "Awakened Dynasty \u2013 Battle Tactic Stratagem",
@@ -10190,6 +10177,19 @@
         "detachment": "Awakened Dynasty",
         "detachment_id": "000000756",
         "description": "<b>WHEN:</b> Your Shooting phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit from your army that has not been selected to shoot this phase.<br><br><b>EFFECT:</b> Until the end of the phase, each time a model in your unit makes an attack that targets a unit within half range, re-roll a Hit roll of 1. If a NECRONS CHARACTER is leading your unit, until the end of the phase, you can re-roll the Hit roll for that attack instead."
+    },
+    {
+        "faction_id": "NEC",
+        "name": "PROTOCOL OF THE HUNGRY VOID",
+        "id": "000008371004",
+        "type": "Awakened Dynasty \u2013 Battle Tactic Stratagem",
+        "cp_cost": "1",
+        "legend": "Necrons strike with data-augmented accuracy.",
+        "turn": "Either player\u2019s turn",
+        "phase": "Fight phase",
+        "detachment": "Awakened Dynasty",
+        "detachment_id": "000000756",
+        "description": "<b>WHEN:</b> Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit from your army that has not been selected to fight this phase.<br><br><b>EFFECT:</b> Until the end of the phase, add 1 to the Strength characteristic of melee weapons equipped by models in your unit. In addition, If a Necrons Character is leading your unit, until the end of the phase, improve the Armour Penetration characteristic of melee weapons equipped by models in your unit by 1. (this is not cumulative with any other modifiers that improve Armour Penetration]."
     },
     {
         "faction_id": "NEC",
@@ -10271,19 +10271,6 @@
     },
     {
         "faction_id": "NEC",
-        "name": "SUBOPTIMAL FACADE",
-        "id": "000008547007",
-        "type": "Canoptek Court \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "1",
-        "legend": "Canoptek constructs use sophisticated metalogic to craft sinister ambushes. Luring the foe in by appearing at suboptimal operation, a surge of reanimation protocols suddenly swells their numbers.",
-        "turn": "Opponent\u2019s turn",
-        "phase": "Charge phase",
-        "detachment": "Canoptek Court",
-        "detachment_id": "000000816",
-        "description": "<b>WHEN:</b> Your opponent\u2019s Charge phase, just after an enemy unit has declared a charge.<br><br><b>TARGET:</b> One CANOPTEK unit from your army that was selected as a target of that charge and is wholly within your army\u2019s Power Matrix.<br><br><b>EFFECT:</b> Your unit\u2019s Reanimation Protocols activate."
-    },
-    {
-        "faction_id": "NEC",
         "name": "COUNTERTEMPORAL SHIFT",
         "id": "000008547006",
         "type": "Canoptek Court \u2013 Strategic Ploy Stratagem",
@@ -10294,6 +10281,19 @@
         "detachment": "Canoptek Court",
         "detachment_id": "000000816",
         "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase, just after an enemy unit has selected its targets.<br><br><b>TARGET:</b> One CANOPTEK unit from your army that was selected as the target of one or more of the attacking unit\u2019s attacks.<br><br><b>EFFECT:</b> Until the end of the phase, your unit can only be selected as the target of a ranged attack if the attacking model is within 18\"."
+    },
+    {
+        "faction_id": "NEC",
+        "name": "SUBOPTIMAL FACADE",
+        "id": "000008547007",
+        "type": "Canoptek Court \u2013 Strategic Ploy Stratagem",
+        "cp_cost": "1",
+        "legend": "Canoptek constructs use sophisticated metalogic to craft sinister ambushes. Luring the foe in by appearing at suboptimal operation, a surge of reanimation protocols suddenly swells their numbers.",
+        "turn": "Opponent\u2019s turn",
+        "phase": "Charge phase",
+        "detachment": "Canoptek Court",
+        "detachment_id": "000000816",
+        "description": "<b>WHEN:</b> Your opponent\u2019s Charge phase, just after an enemy unit has declared a charge.<br><br><b>TARGET:</b> One CANOPTEK unit from your army that was selected as a target of that charge and is wholly within your army\u2019s Power Matrix.<br><br><b>EFFECT:</b> Your unit\u2019s Reanimation Protocols activate."
     },
     {
         "faction_id": "NEC",
@@ -10401,19 +10401,6 @@
     },
     {
         "faction_id": "NEC",
-        "name": "POTENTIALITY SYPHON",
-        "id": "000010665007",
-        "type": "Cryptek Conclave \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "1",
-        "legend": "Drawing upon the accumulated precausal potential energies that coalesce around significant locations, the conclave are able to steal that power and use it to trigger the unrealized probable remanifestation matrices of their own forces.",
-        "turn": "Opponent\u2019s turn",
-        "phase": "Command phase",
-        "detachment": "Cryptek Conclave",
-        "detachment_id": "000001127",
-        "description": "<b>WHEN:</b> Your opponent\u2019s Command phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit from your army within range of one or more objective markers.<br><br><b>EFFECT:</b> Your unit\u2019s Reanimation Protocols activate. If it is a Cryptek unit, it reanimates an additional 1 wound."
-    },
-    {
-        "faction_id": "NEC",
         "name": "SYNERGISTIC EMPOWERMENT",
         "id": "000010665005",
         "type": "Cryptek Conclave \u2013 Strategic Ploy Stratagem",
@@ -10427,16 +10414,16 @@
     },
     {
         "faction_id": "NEC",
-        "name": "ANIMUS CURSE",
-        "id": "000010665004",
-        "type": "Cryptek Conclave \u2013 Wargear Stratagem",
+        "name": "POTENTIALITY SYPHON",
+        "id": "000010665007",
+        "type": "Cryptek Conclave \u2013 Strategic Ploy Stratagem",
         "cp_cost": "1",
-        "legend": "A portion of the Cryptek\u2019s animus clings to the battlefield just long enough to possess their servants and use them to exact revenge.",
-        "turn": "Either player\u2019s turn",
-        "phase": "Shooting or Fight phase",
+        "legend": "Drawing upon the accumulated precausal potential energies that coalesce around significant locations, the conclave are able to steal that power and use it to trigger the unrealized probable remanifestation matrices of their own forces.",
+        "turn": "Opponent\u2019s turn",
+        "phase": "Command phase",
         "detachment": "Cryptek Conclave",
         "detachment_id": "000001127",
-        "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase or the Fight phase, just after an enemy unit has shot or fought.<br><br><b>TARGET:</b> One Cryptek model from your army that was destroyed by one of the attacking unit\u2019s attacks. You can use this Stratagem on that model even though it was just destroyed.<br><br><b>EFFECT:</b> Until the end of the battle, each time a friendly <span class=\"kwb\">NECRONS</span> model makes an attack that targets the attacking unit, you can re-roll the Hit roll."
+        "description": "<b>WHEN:</b> Your opponent\u2019s Command phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit from your army within range of one or more objective markers.<br><br><b>EFFECT:</b> Your unit\u2019s Reanimation Protocols activate. If it is a Cryptek unit, it reanimates an additional 1 wound."
     },
     {
         "faction_id": "NEC",
@@ -10453,16 +10440,29 @@
     },
     {
         "faction_id": "NEC",
-        "name": "METHODICAL MURDER",
-        "id": "000010669002",
-        "type": "Cursed Legion \u2013 Battle Tactic Stratagem",
+        "name": "ANIMUS CURSE",
+        "id": "000010665004",
+        "type": "Cryptek Conclave \u2013 Wargear Stratagem",
         "cp_cost": "1",
-        "legend": "In the grip of the Destroyer madness, these Necrons strike and slay with inhuman speed and efficiency.",
+        "legend": "A portion of the Cryptek\u2019s animus clings to the battlefield just long enough to possess their servants and use them to exact revenge.",
         "turn": "Either player\u2019s turn",
         "phase": "Shooting or Fight phase",
+        "detachment": "Cryptek Conclave",
+        "detachment_id": "000001127",
+        "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase or the Fight phase, just after an enemy unit has shot or fought.<br><br><b>TARGET:</b> One Cryptek model from your army that was destroyed by one of the attacking unit\u2019s attacks. You can use this Stratagem on that model even though it was just destroyed.<br><br><b>EFFECT:</b> Until the end of the battle, each time a friendly <span class=\"kwb\">NECRONS</span> model makes an attack that targets the attacking unit, you can re-roll the Hit roll."
+    },
+    {
+        "faction_id": "NEC",
+        "name": "SPREADING MADNESS",
+        "id": "000010669006",
+        "type": "Cursed Legion \u2013 Battle Tactic Stratagem",
+        "cp_cost": "1",
+        "legend": "It is as though witnessing other Necrons engaged in acts of merciless butchery stokes the Destroyer madness in their fellows.",
+        "turn": "Your turn",
+        "phase": "Charge phase",
         "detachment": "Cursed Legion",
         "detachment_id": "000001128",
-        "description": "<b>WHEN:</b> Your Shooting phase or the Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit (excluding Monsters and Vehicles) from your army that has not been selected to shoot or fight this phase.<br><br><b>EFFECT:</b> Until the end of the phase, weapons equipped by models in your unit have the [SUSTAINED HITS 1] ability."
+        "description": "<b>WHEN:</b> Your Charge phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit (excluding Monsters and Vehicles) from your army that has not declared a charge this phase.<br><br><b>EFFECT:</b> Until the end of the phase, each time your unit declares a charge, if one or more targets of that charge are within Engagement Range of one or more friendly units, add 2 to the Charge roll."
     },
     {
         "faction_id": "NEC",
@@ -10479,16 +10479,29 @@
     },
     {
         "faction_id": "NEC",
-        "name": "SPREADING MADNESS",
-        "id": "000010669006",
+        "name": "METHODICAL MURDER",
+        "id": "000010669002",
         "type": "Cursed Legion \u2013 Battle Tactic Stratagem",
         "cp_cost": "1",
-        "legend": "It is as though witnessing other Necrons engaged in acts of merciless butchery stokes the Destroyer madness in their fellows.",
-        "turn": "Your turn",
-        "phase": "Charge phase",
+        "legend": "In the grip of the Destroyer madness, these Necrons strike and slay with inhuman speed and efficiency.",
+        "turn": "Either player\u2019s turn",
+        "phase": "Shooting or Fight phase",
         "detachment": "Cursed Legion",
         "detachment_id": "000001128",
-        "description": "<b>WHEN:</b> Your Charge phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit (excluding Monsters and Vehicles) from your army that has not declared a charge this phase.<br><br><b>EFFECT:</b> Until the end of the phase, each time your unit declares a charge, if one or more targets of that charge are within Engagement Range of one or more friendly units, add 2 to the Charge roll."
+        "description": "<b>WHEN:</b> Your Shooting phase or the Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit (excluding Monsters and Vehicles) from your army that has not been selected to shoot or fight this phase.<br><br><b>EFFECT:</b> Until the end of the phase, weapons equipped by models in your unit have the [SUSTAINED HITS 1] ability."
+    },
+    {
+        "faction_id": "NEC",
+        "name": "MORTIS PROTOCOLS",
+        "id": "000010669004",
+        "type": "Cursed Legion \u2013 Strategic Ploy Stratagem",
+        "cp_cost": "1",
+        "legend": "In the absolute destruction of their enemies, the corrupted Necrons find fresh purpose and a macabre simulacrum of new life.",
+        "turn": "Either player\u2019s turn",
+        "phase": "Shooting or Fight phase",
+        "detachment": "Cursed Legion",
+        "detachment_id": "000001128",
+        "description": "<b>WHEN:</b> Your Shooting phase or the Fight phase, just after the first time a Destroyer Cult unit from your army destroys an enemy unit this turn.<br><br><b>TARGET:</b> One friendly <span class=\"kwb\">NECRONS</span> unit (excluding Monsters and Vehicles) within 9\" of that <span class=\"kwb\">DESTROYER</span> <span class=\"kwb\">CULT</span> unit.<br><br><b>EFFECT:</b> The friendly unit\u2019s Reanimation Protocols activate."
     },
     {
         "faction_id": "NEC",
@@ -10518,16 +10531,29 @@
     },
     {
         "faction_id": "NEC",
-        "name": "MORTIS PROTOCOLS",
-        "id": "000010669004",
-        "type": "Cursed Legion \u2013 Strategic Ploy Stratagem",
+        "name": "RUSH TO SLAUGHTER",
+        "id": "000009597004",
+        "type": "Deranged Outcasts \u2013 Strategic Ploy Stratagem",
         "cp_cost": "1",
-        "legend": "In the absolute destruction of their enemies, the corrupted Necrons find fresh purpose and a macabre simulacrum of new life.",
-        "turn": "Either player\u2019s turn",
-        "phase": "Shooting or Fight phase",
-        "detachment": "Cursed Legion",
-        "detachment_id": "000001128",
-        "description": "<b>WHEN:</b> Your Shooting phase or the Fight phase, just after the first time a Destroyer Cult unit from your army destroys an enemy unit this turn.<br><br><b>TARGET:</b> One friendly <span class=\"kwb\">NECRONS</span> unit (excluding Monsters and Vehicles) within 9\" of that <span class=\"kwb\">DESTROYER</span> <span class=\"kwb\">CULT</span> unit.<br><br><b>EFFECT:</b> The friendly unit\u2019s Reanimation Protocols activate."
+        "legend": "Often drawn to the same blood-soaked environs, Flayed Ones and Destroyers weave around one another in their desire to kill.",
+        "turn": "Your turn",
+        "phase": "Movement phase",
+        "detachment": "Deranged Outcasts",
+        "detachment_id": "000000960",
+        "description": "<b>WHEN:</b> Your Movement phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit from your army that has not been selected to move this phase.<br><br><b>EFFECT:</b> Until the end of the phase, if your unit has the FLAYED ONES keyword, each time it moves, models in that unit can move through friendly DESTROYER CULT models as if they were not there. If your unit has the <span class=\"kwb\">DESTROYER</span> <span class=\"kwb\">CULT</span> keyword, models in it can move through friendly <span class=\"kwb\">FLAYED</span> <span class=\"kwb\">ONES</span> models as if they were not there."
+    },
+    {
+        "faction_id": "NEC",
+        "name": "TERRIFYING AMBUSH",
+        "id": "000009597005",
+        "type": "Deranged Outcasts \u2013 Strategic Ploy Stratagem",
+        "cp_cost": "1",
+        "legend": "The sudden appearance through a bulkhead or a hatchway of a blood-slick Necron Destroyer is enough to cause the boldest warrior to quiver.",
+        "turn": "Your turn",
+        "phase": "Movement phase",
+        "detachment": "Deranged Outcasts",
+        "detachment_id": "000000960",
+        "description": "<b>WHEN:</b> Your Movement phase, just after a DESTROYER CULT unit from your army opens a Hatchway.<br><br><b>TARGET:</b> That <span class=\"kwb\">DESTROYER</span> <span class=\"kwb\">CULT</span> unit.<br><br><b>EFFECT:</b> For each enemy unit within 3\" of that Hatchway, if that Hatchway is visible to that unit and that unit is wholly on the opposite side of it from your unit, that unit must take a Leadership test, subtracting 2 from the result: if failed, until the end of the phase, that enemy unit cannot fire Overwatch."
     },
     {
         "faction_id": "NEC",
@@ -10557,29 +10583,16 @@
     },
     {
         "faction_id": "NEC",
-        "name": "RUSH TO SLAUGHTER",
-        "id": "000009597004",
-        "type": "Deranged Outcasts \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "1",
-        "legend": "Often drawn to the same blood-soaked environs, Flayed Ones and Destroyers weave around one another in their desire to kill.",
+        "name": "DIMENSIONAL CORRIDOR",
+        "id": "000008555006",
+        "type": "Hypercrypt Legion \u2013 Strategic Ploy Stratagem",
+        "cp_cost": "2",
+        "legend": "As the tomb's warriors pass through a dimensional displacement corridor, the passage\u2019s surface is lit with data-glyphs providing hyperlogical tactical information. When they step from an eternity gate, they are already prepared for the hunt.",
         "turn": "Your turn",
-        "phase": "Movement phase",
-        "detachment": "Deranged Outcasts",
-        "detachment_id": "000000960",
-        "description": "<b>WHEN:</b> Your Movement phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit from your army that has not been selected to move this phase.<br><br><b>EFFECT:</b> Until the end of the phase, if your unit has the FLAYED ONES keyword, each time it moves, models in that unit can move through friendly DESTROYER CULT models as if they were not there. If your unit has the <span class=\"kwb\">DESTROYER</span> <span class=\"kwb\">CULT</span> keyword, models in it can move through friendly <span class=\"kwb\">FLAYED</span> <span class=\"kwb\">ONES</span> models as if they were not there."
-    },
-    {
-        "faction_id": "NEC",
-        "name": "TERRIFYING AMBUSH",
-        "id": "000009597005",
-        "type": "Deranged Outcasts \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "1",
-        "legend": "The sudden appearance through a bulkhead or a hatchway of a blood-slick Necron Destroyer is enough to cause the boldest warrior to quiver.",
-        "turn": "Your turn",
-        "phase": "Movement phase",
-        "detachment": "Deranged Outcasts",
-        "detachment_id": "000000960",
-        "description": "<b>WHEN:</b> Your Movement phase, just after a DESTROYER CULT unit from your army opens a Hatchway.<br><br><b>TARGET:</b> That <span class=\"kwb\">DESTROYER</span> <span class=\"kwb\">CULT</span> unit.<br><br><b>EFFECT:</b> For each enemy unit within 3\" of that Hatchway, if that Hatchway is visible to that unit and that unit is wholly on the opposite side of it from your unit, that unit must take a Leadership test, subtracting 2 from the result: if failed, until the end of the phase, that enemy unit cannot fire Overwatch."
+        "phase": "Charge phase",
+        "detachment": "Hypercrypt Legion",
+        "detachment_id": "000000818",
+        "description": "<b>WHEN:</b> Your Charge phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit from your army that was set up on the battlefield this turn using the Eternity Gate ability of a MONOLITH model that started the turn on the battlefield.<br><br><b>EFFECT:</b> Your unit is eligible to charge this phase."
     },
     {
         "faction_id": "NEC",
@@ -10596,19 +10609,6 @@
     },
     {
         "faction_id": "NEC",
-        "name": "HYPERPHASIC RECALL",
-        "id": "000008555002",
-        "type": "Hypercrypt Legion \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "2",
-        "legend": "Obeying recall protocols, threatened tomb defenders will phase out of existence, only to be relocated to a more advantageous position by the tomb's hulking Monoliths.",
-        "turn": "Either player\u2019s turn",
-        "phase": "Shooting or Fight phase",
-        "detachment": "Hypercrypt Legion",
-        "detachment_id": "000000818",
-        "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase or the Fight phase, just after an enemy unit has shot or fought.<br><br><b>TARGET:</b> One NECRONS INFANTRY unit from your army that had one or more of its models destroyed as a result of the attacking unit\u2019s attacks and one friendly MONOLITH model.<br><br><b>EFFECT:</b> Remove your <span class=\"kwb\">INFANTRY</span> unit from the battlefield and then set it back up anywhere on the battlefield that is wholly within 6\" of your <span class=\"kwb\">MONOLITH</span> model and not within Engagement Range of one or more enemy units."
-    },
-    {
-        "faction_id": "NEC",
         "name": "REANIMATION CRYPTS",
         "id": "000008555004",
         "type": "Hypercrypt Legion \u2013 Strategic Ploy Stratagem",
@@ -10622,29 +10622,16 @@
     },
     {
         "faction_id": "NEC",
-        "name": "DIMENSIONAL CORRIDOR",
-        "id": "000008555006",
+        "name": "HYPERPHASIC RECALL",
+        "id": "000008555002",
         "type": "Hypercrypt Legion \u2013 Strategic Ploy Stratagem",
         "cp_cost": "2",
-        "legend": "As the tomb's warriors pass through a dimensional displacement corridor, the passage\u2019s surface is lit with data-glyphs providing hyperlogical tactical information. When they step from an eternity gate, they are already prepared for the hunt.",
-        "turn": "Your turn",
-        "phase": "Charge phase",
-        "detachment": "Hypercrypt Legion",
-        "detachment_id": "000000818",
-        "description": "<b>WHEN:</b> Your Charge phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit from your army that was set up on the battlefield this turn using the Eternity Gate ability of a MONOLITH model that started the turn on the battlefield.<br><br><b>EFFECT:</b> Your unit is eligible to charge this phase."
-    },
-    {
-        "faction_id": "NEC",
-        "name": "QUANTUM DEFLECTION",
-        "id": "000008555003",
-        "type": "Hypercrypt Legion \u2013 Wargear Stratagem",
-        "cp_cost": "1",
-        "legend": "Necron quantum shielding is a true marvel of techno-arcana. Channelled with energy reserves from the rising tomb structures, the shielding is capable of adaptive remodulation to diffuse and deflect the most powerful enemy attacks.",
+        "legend": "Obeying recall protocols, threatened tomb defenders will phase out of existence, only to be relocated to a more advantageous position by the tomb's hulking Monoliths.",
         "turn": "Either player\u2019s turn",
         "phase": "Shooting or Fight phase",
         "detachment": "Hypercrypt Legion",
         "detachment_id": "000000818",
-        "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase or the Fight phase, just after an enemy unit has selected its targets.<br><br><b>TARGET:</b> One NECRONS VEHICLE unit from your army that was selected as the target of one or more of the attacking unit\u2019s attacks.<br><br><b>EFFECT:</b> Until the end of the phase, models in your unit have a 4+ invulnerable save."
+        "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase or the Fight phase, just after an enemy unit has shot or fought.<br><br><b>TARGET:</b> One NECRONS INFANTRY unit from your army that had one or more of its models destroyed as a result of the attacking unit\u2019s attacks and one friendly MONOLITH model.<br><br><b>EFFECT:</b> Remove your <span class=\"kwb\">INFANTRY</span> unit from the battlefield and then set it back up anywhere on the battlefield that is wholly within 6\" of your <span class=\"kwb\">MONOLITH</span> model and not within Engagement Range of one or more enemy units."
     },
     {
         "faction_id": "NEC",
@@ -10658,6 +10645,19 @@
         "detachment": "Hypercrypt Legion",
         "detachment_id": "000000818",
         "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase, just after an enemy unit has selected its targets.<br><br><b>TARGET:</b> One TITANIC model from your army that was selected as the target of one or more of the attacking unit\u2019s attacks and is within 18\" of the attacking unit.<br><br><b>EFFECT:</b> Until the end of the phase, weapons equipped by models in the attacking unit have the [HAZARDOUS] ability."
+    },
+    {
+        "faction_id": "NEC",
+        "name": "QUANTUM DEFLECTION",
+        "id": "000008555003",
+        "type": "Hypercrypt Legion \u2013 Wargear Stratagem",
+        "cp_cost": "1",
+        "legend": "Necron quantum shielding is a true marvel of techno-arcana. Channelled with energy reserves from the rising tomb structures, the shielding is capable of adaptive remodulation to diffuse and deflect the most powerful enemy attacks.",
+        "turn": "Either player\u2019s turn",
+        "phase": "Shooting or Fight phase",
+        "detachment": "Hypercrypt Legion",
+        "detachment_id": "000000818",
+        "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase or the Fight phase, just after an enemy unit has selected its targets.<br><br><b>TARGET:</b> One NECRONS VEHICLE unit from your army that was selected as the target of one or more of the attacking unit\u2019s attacks.<br><br><b>EFFECT:</b> Until the end of the phase, models in your unit have a 4+ invulnerable save."
     },
     {
         "faction_id": "NEC",
@@ -10791,19 +10791,6 @@
     },
     {
         "faction_id": "NEC",
-        "name": "MOLECULAR EROSION",
-        "id": "000010673003",
-        "type": "Pantheon of Woe \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "1",
-        "legend": "Those without the will to hold themselves together start to physically tatter apart in a molecular haze in the presence of so many god shards.",
-        "turn": "Either player\u2019s turn",
-        "phase": "Command phase",
-        "detachment": "Pantheon of Woe",
-        "detachment_id": "000001129",
-        "description": "<b>WHEN:</b> Command phase.<br><br><b>TARGET:</b> One Necrons Monster unit from your army.<br><br><b>EFFECT:</b> Select one unravelling enemy unit visible to your unit. That enemy unit must take a Battle-shock test. When doing so, subtract 1 from the result. If that test is failed, that enemy unit suffers D3+1 mortal wounds.<br><br><b>RESTRICTIONS:</b> You can only use this Stratagem once per battle round."
-    },
-    {
-        "faction_id": "NEC",
         "name": "PHASE MELDING",
         "id": "000010673007",
         "type": "Pantheon of Woe \u2013 Strategic Ploy Stratagem",
@@ -10817,16 +10804,16 @@
     },
     {
         "faction_id": "NEC",
-        "name": "MERCILESS RECLAMATION",
-        "id": "000009750002",
-        "type": "Starshatter Arsenal \u2013 Battle Tactic Stratagem",
-        "cp_cost": "2",
-        "legend": "The Necrons are driven to reclaim what is theirs, exterminating all who would impede such efforts without mercy.",
+        "name": "MOLECULAR EROSION",
+        "id": "000010673003",
+        "type": "Pantheon of Woe \u2013 Strategic Ploy Stratagem",
+        "cp_cost": "1",
+        "legend": "Those without the will to hold themselves together start to physically tatter apart in a molecular haze in the presence of so many god shards.",
         "turn": "Either player\u2019s turn",
-        "phase": "Shooting or Fight phase",
-        "detachment": "Starshatter Arsenal",
-        "detachment_id": "000000985",
-        "description": "<b>WHEN:</b> Your Shooting phase or the Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit (excluding Titanic units) from your army that has not been selected to shoot or fight this phase.<br><br><b>EFFECT:</b> Until the end of the phase, each time a model in your unit makes an attack, if the target of that attack is within range of one or more objective markers, add 1 to the Wound roll."
+        "phase": "Command phase",
+        "detachment": "Pantheon of Woe",
+        "detachment_id": "000001129",
+        "description": "<b>WHEN:</b> Command phase.<br><br><b>TARGET:</b> One Necrons Monster unit from your army.<br><br><b>EFFECT:</b> Select one unravelling enemy unit visible to your unit. That enemy unit must take a Battle-shock test. When doing so, subtract 1 from the result. If that test is failed, that enemy unit suffers D3+1 mortal wounds.<br><br><b>RESTRICTIONS:</b> You can only use this Stratagem once per battle round."
     },
     {
         "faction_id": "NEC",
@@ -10843,16 +10830,16 @@
     },
     {
         "faction_id": "NEC",
-        "name": "ENDLESS SERVITUDE",
-        "id": "000009750006",
-        "type": "Starshatter Arsenal \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "1",
-        "legend": "Should the unclean thralls of lesser species threaten dynastic territories, the fallen Necron soldiery will rise to repel the interlopers.",
-        "turn": "Your turn",
-        "phase": "Fight phase",
+        "name": "MERCILESS RECLAMATION",
+        "id": "000009750002",
+        "type": "Starshatter Arsenal \u2013 Battle Tactic Stratagem",
+        "cp_cost": "2",
+        "legend": "The Necrons are driven to reclaim what is theirs, exterminating all who would impede such efforts without mercy.",
+        "turn": "Either player\u2019s turn",
+        "phase": "Shooting or Fight phase",
         "detachment": "Starshatter Arsenal",
         "detachment_id": "000000985",
-        "description": "<b>WHEN:</b> End of your Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit (excluding Titanic units) from your army that is within range of one or more objective markers you control.<br><br><b>EFFECT:</b> Your unit\u2019s Reanimation Protocols activate."
+        "description": "<b>WHEN:</b> Your Shooting phase or the Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit (excluding Monster and Titanic units) from your army that has not been selected to shoot or fight this phase.<br><br><b>EFFECT:</b> Until the end of the phase, each time a model in your unit makes an attack, if the target of that attack is within range of one or more objective markers, add 1 to the Wound roll."
     },
     {
         "faction_id": "NEC",
@@ -10865,7 +10852,7 @@
         "phase": "Shooting phase",
         "detachment": "Starshatter Arsenal",
         "detachment_id": "000000985",
-        "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase, just after an enemy unit has shot.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit from your army (excluding Titanic units) that was the target of one or more of the attacking unit\u2019s attacks.<br><br><b>EFFECT:</b> Your unit can make a Normal move of up to D6\"."
+        "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase, just after an enemy unit has shot.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit from your army (excluding Monster and Titanic units) that was the target of one or more of the attacking unit\u2019s attacks.<br><br><b>EFFECT:</b> Your unit can make a Normal move of up to D6\"."
     },
     {
         "faction_id": "NEC",
@@ -10895,16 +10882,29 @@
     },
     {
         "faction_id": "NEC",
-        "name": "DISRUPTION FIELDS",
-        "id": "000009589002",
+        "name": "ENDLESS SERVITUDE",
+        "id": "000009750006",
+        "type": "Starshatter Arsenal \u2013 Strategic Ploy Stratagem",
+        "cp_cost": "1",
+        "legend": "Should the unclean thralls of lesser species threaten dynastic territories, the fallen Necron soldiery will rise to repel the interlopers.",
+        "turn": "Your turn",
+        "phase": "Fight phase",
+        "detachment": "Starshatter Arsenal",
+        "detachment_id": "000000985",
+        "description": "<b>WHEN:</b> End of your Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit (excluding Monster and Titanic units) from your army that is within range of one or more objective markers you control.<br><br><b>EFFECT:</b> Your unit\u2019s Reanimation Protocols activate."
+    },
+    {
+        "faction_id": "NEC",
+        "name": "CONCENTRATED ATOMISATION",
+        "id": "000009589004",
         "type": "Tomb Ship Complement \u2013 Battle Tactic Stratagem",
         "cp_cost": "1",
-        "legend": "Fitted by ingenious Cryptek engineers, disruption fields lend Necron infantry greater killing power.",
-        "turn": "Either player\u2019s turn",
-        "phase": "Fight phase",
+        "legend": "Concentrated gauss fire is exceptionally difficult to avoid in the tight confines of a voidship.",
+        "turn": "Your turn",
+        "phase": "Shooting phase",
         "detachment": "Tomb Ship Complement",
         "detachment_id": "000000959",
-        "description": "<b>WHEN:</b> Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit from your army.<br><br><b>EFFECT:</b> Until the end of the phase, add 1 to the Strength characteristic of melee weapons equipped by models in your unit."
+        "description": "<b>WHEN:</b> Your Shooting phase.<br><br><b>TARGET:</b> One NEcRON WARRIORS or IMMORTALS unit from your army that has not been selected to shoot this phase.<br><br><b>EFFECT:</b> Until the end of the phase, each time a model in your unit makes an attack, you can re-roll the Hit roll."
     },
     {
         "faction_id": "NEC",
@@ -10921,16 +10921,16 @@
     },
     {
         "faction_id": "NEC",
-        "name": "CONCENTRATED ATOMISATION",
-        "id": "000009589004",
+        "name": "DISRUPTION FIELDS",
+        "id": "000009589002",
         "type": "Tomb Ship Complement \u2013 Battle Tactic Stratagem",
         "cp_cost": "1",
-        "legend": "Concentrated gauss fire is exceptionally difficult to avoid in the tight confines of a voidship.",
-        "turn": "Your turn",
-        "phase": "Shooting phase",
+        "legend": "Fitted by ingenious Cryptek engineers, disruption fields lend Necron infantry greater killing power.",
+        "turn": "Either player\u2019s turn",
+        "phase": "Fight phase",
         "detachment": "Tomb Ship Complement",
         "detachment_id": "000000959",
-        "description": "<b>WHEN:</b> Your Shooting phase.<br><br><b>TARGET:</b> One NEcRON WARRIORS or IMMORTALS unit from your army that has not been selected to shoot this phase.<br><br><b>EFFECT:</b> Until the end of the phase, each time a model in your unit makes an attack, you can re-roll the Hit roll."
+        "description": "<b>WHEN:</b> Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">NECRONS</span> unit from your army.<br><br><b>EFFECT:</b> Until the end of the phase, add 1 to the Strength characteristic of melee weapons equipped by models in your unit."
     },
     {
         "faction_id": "NEC",
@@ -10960,19 +10960,6 @@
     },
     {
         "faction_id": "ORK",
-        "name": "ARMED TO DATEEF",
-        "id": "000008886002",
-        "type": "Bully Boyz \u2013 Battle Tactic Stratagem",
-        "cp_cost": "1",
-        "legend": "Nobz load themselves with all manner of weapons in shows of wealth and influence, enabling them to smash the foe with a ceaseless barrage of attacks.",
-        "turn": "Either player\u2019s turn",
-        "phase": "Shooting or Fight phase",
-        "detachment": "Bully Boyz",
-        "detachment_id": "000000857",
-        "description": "<b>WHEN:</b> Your Shooting phase or the Fight phase.<br><br><b>TARGET:</b> One Nobz or Meganobz unit from your army that has not been selected to shoot or fight this phase.<br><br><b>EFFECT:</b> Until the end of the phase, each time a model in your unit makes an attack, re-roll a Hit roll of 1. If a Waaagh! is active for your unit, you can re-roll the Hit roll instead."
-    },
-    {
-        "faction_id": "ORK",
         "name": "CUT\u2019EM DOWN",
         "id": "000008886006",
         "type": "Bully Boyz \u2013 Battle Tactic Stratagem",
@@ -10983,6 +10970,19 @@
         "detachment": "Bully Boyz",
         "detachment_id": "000000857",
         "description": "<b>WHEN:</b> Your opponent\u2019s Movement phase, just after an enemy unit is selected to Fall Back.<br><br><b>TARGET:</b> One Nobz or Meganobz unit from your army within Engagement Range of that enemy unit.<br><br><b>EFFECT:</b> When that enemy unit Falls Back, all models in that enemy unit must take a Desperate Escape test. When doing so, if a Waaagh! is active for your unit, subtract 1 from each of those tests."
+    },
+    {
+        "faction_id": "ORK",
+        "name": "ARMED TO DATEEF",
+        "id": "000008886002",
+        "type": "Bully Boyz \u2013 Battle Tactic Stratagem",
+        "cp_cost": "1",
+        "legend": "Nobz load themselves with all manner of weapons in shows of wealth and influence, enabling them to smash the foe with a ceaseless barrage of attacks.",
+        "turn": "Either player\u2019s turn",
+        "phase": "Shooting or Fight phase",
+        "detachment": "Bully Boyz",
+        "detachment_id": "000000857",
+        "description": "<b>WHEN:</b> Your Shooting phase or the Fight phase.<br><br><b>TARGET:</b> One Nobz or Meganobz unit from your army that has not been selected to shoot or fight this phase.<br><br><b>EFFECT:</b> Until the end of the phase, each time a model in your unit makes an attack, re-roll a Hit roll of 1. If a Waaagh! is active for your unit, you can re-roll the Hit roll instead."
     },
     {
         "faction_id": "ORK",
@@ -10999,19 +10999,6 @@
     },
     {
         "faction_id": "ORK",
-        "name": "ALWAYS LOOKIN\u2019 FER A FIGHT",
-        "id": "000008886004",
-        "type": "Bully Boyz \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "1",
-        "legend": "As one enemy falls to the choppas of a battle-hungry mob of Nobz, they immediately seek out more.",
-        "turn": "Either player\u2019s turn",
-        "phase": "Fight phase",
-        "detachment": "Bully Boyz",
-        "detachment_id": "000000857",
-        "description": "<b>WHEN:</b> Fight phase, just after an enemy unit is destroyed.<br><br><b>TARGET:</b> One Nobz or Meganobz unit from your army that destroyed that enemy unit.<br><br><b>EFFECT:</b> Until the end of the phase, each time your unit makes a Consolidation move, it can move up to D3+3\" instead of up to 3\". If a Waaagh! is active for your unit, it can move up to 6\" instead."
-    },
-    {
-        "faction_id": "ORK",
         "name": "TOO ARROGANT TO DIE",
         "id": "000008886003",
         "type": "Bully Boyz \u2013 Strategic Ploy Stratagem",
@@ -11022,6 +11009,19 @@
         "detachment": "Bully Boyz",
         "detachment_id": "000000857",
         "description": "<b>WHEN:</b> Your opponent\u2019s Shooting phase or the Fight phase, just after an enemy unit has selected its targets.<br><br><b>TARGET:</b> One Nobz or Meganobz unit from your army that was selected as the target of one or more of the attacking unit\u2019s attacks.<br><br><b>EFFECT:</b> Until the end of the phase, each time a model in your unit is destroyed, if that model has not shot or fought this phase, roll one D6, adding 2 to the result if a Waaagh! is active for your unit. On a 5+, do not remove the destroyed model from play; it can shoot or fight after the attacking unit has finished making its attacks, and is then removed from play."
+    },
+    {
+        "faction_id": "ORK",
+        "name": "ALWAYS LOOKIN\u2019 FER A FIGHT",
+        "id": "000008886004",
+        "type": "Bully Boyz \u2013 Strategic Ploy Stratagem",
+        "cp_cost": "1",
+        "legend": "As one enemy falls to the choppas of a battle-hungry mob of Nobz, they immediately seek out more.",
+        "turn": "Either player\u2019s turn",
+        "phase": "Fight phase",
+        "detachment": "Bully Boyz",
+        "detachment_id": "000000857",
+        "description": "<b>WHEN:</b> Fight phase, just after an enemy unit is destroyed.<br><br><b>TARGET:</b> One Nobz or Meganobz unit from your army that destroyed that enemy unit.<br><br><b>EFFECT:</b> Until the end of the phase, each time your unit makes a Consolidation move, it can move up to D3+3\" instead of up to 3\". If a Waaagh! is active for your unit, it can move up to 6\" instead."
     },
     {
         "faction_id": "ORK",
@@ -11064,19 +11064,6 @@
     },
     {
         "faction_id": "ORK",
-        "name": "DAT ONE\u2019S EVEN BIGGA!",
-        "id": "000008869004",
-        "type": "Da Big Hunt \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "1",
-        "legend": "When bigger prey is sighted, nothing can keep a mob of Beast Snaggas from it. A great hunting chant erupts, and lesser gitz are swiftly forgotten in the enthusiastic impetus to pile into a bigger challenge.",
-        "turn": "Your turn",
-        "phase": "Charge phase",
-        "detachment": "Da Big Hunt",
-        "detachment_id": "000000853",
-        "description": "<b>WHEN:</b> Your Charge phase.<br><br><b>TARGET:</b> One Beast Snagga unit from your army.<br><br><b>EFFECT:</b> Until the end of the phase, your unit is eligible to charge in a turn in which it Advanced or Fell Back. In addition, you can re-roll Charge rolls made for your unit, provided one of the targets of that charge is your Prey."
-    },
-    {
-        "faction_id": "ORK",
         "name": "UNSTOPPABLE MOMENTUM",
         "id": "000008869003",
         "type": "Da Big Hunt \u2013 Strategic Ploy Stratagem",
@@ -11087,6 +11074,19 @@
         "detachment": "Da Big Hunt",
         "detachment_id": "000000853",
         "description": "<b>WHEN:</b> Your Charge phase, just after a Beast Snagga Mounted unit from your army ends a Charge move.<br><br><b>TARGET:</b> That Beast Snagga unit.<br><br><b>EFFECT:</b> Select one enemy unit within Engagement Range of your unit and roll one D6 for each model in your unit: for each 4+, that enemy unit suffers 1 mortal wound (to a maximum of 6 mortal wounds). If that enemy unit is your Prey, roll three additional D6."
+    },
+    {
+        "faction_id": "ORK",
+        "name": "DAT ONE\u2019S EVEN BIGGA!",
+        "id": "000008869004",
+        "type": "Da Big Hunt \u2013 Strategic Ploy Stratagem",
+        "cp_cost": "1",
+        "legend": "When bigger prey is sighted, nothing can keep a mob of Beast Snaggas from it. A great hunting chant erupts, and lesser gitz are swiftly forgotten in the enthusiastic impetus to pile into a bigger challenge.",
+        "turn": "Your turn",
+        "phase": "Charge phase",
+        "detachment": "Da Big Hunt",
+        "detachment_id": "000000853",
+        "description": "<b>WHEN:</b> Your Charge phase.<br><br><b>TARGET:</b> One Beast Snagga unit from your army.<br><br><b>EFFECT:</b> Until the end of the phase, your unit is eligible to charge in a turn in which it Advanced or Fell Back. In addition, you can re-roll Charge rolls made for your unit, provided one of the targets of that charge is your Prey."
     },
     {
         "faction_id": "ORK",
@@ -11116,6 +11116,19 @@
     },
     {
         "faction_id": "ORK",
+        "name": "KLANKIN\u2019 KLAWS",
+        "id": "000008878002",
+        "type": "Dread Mob \u2013 Battle Tactic Stratagem",
+        "cp_cost": "1",
+        "legend": "The krews of a Mek\u2019s stompiest contraptions revel in ripping apart anything they can get their kiaws on, heedless of the damage done to their own gubbinz.",
+        "turn": "Either player\u2019s turn",
+        "phase": "Fight phase",
+        "detachment": "Dread Mob",
+        "detachment_id": "000000855",
+        "description": "<b>WHEN:</b> Fight phase.<br><br><b>TARGET:</b> One Orks Walker unit from your army that has not been selected to fight this phase.<br><br><b>EFFECT:</b> Each time you use this Stratagem, you can choose to push it. Until the end of the phase, add 2 to the Strength characteristic of melee weapons equipped by models in your unit and, if you chose to push it, until the end of the phase, add 1 to the Damage characteristic of those weapons and they have the [HAZARDOUS] ability as well."
+    },
+    {
+        "faction_id": "ORK",
         "name": "DAKKA! DAKKA! DAKKA!",
         "id": "000008878005",
         "type": "Dread Mob \u2013 Battle Tactic Stratagem",
@@ -11142,16 +11155,16 @@
     },
     {
         "faction_id": "ORK",
-        "name": "KLANKIN\u2019 KLAWS",
-        "id": "000008878002",
-        "type": "Dread Mob \u2013 Battle Tactic Stratagem",
+        "name": "CONNIVING RUNTS",
+        "id": "000008878006",
+        "type": "Dread Mob \u2013 Strategic Ploy Stratagem",
         "cp_cost": "1",
-        "legend": "The krews of a Mek\u2019s stompiest contraptions revel in ripping apart anything they can get their kiaws on, heedless of the damage done to their own gubbinz.",
-        "turn": "Either player\u2019s turn",
-        "phase": "Fight phase",
+        "legend": "A Gretchin\u2019s lot is often a wretched one, and the spiteful zoggers will take any chance to cause pain and mischief using sneaky traps before legging it.",
+        "turn": "Opponent\u2019s turn",
+        "phase": "Movement phase",
         "detachment": "Dread Mob",
         "detachment_id": "000000855",
-        "description": "<b>WHEN:</b> Fight phase.<br><br><b>TARGET:</b> One Orks Walker unit from your army that has not been selected to fight this phase.<br><br><b>EFFECT:</b> Each time you use this Stratagem, you can choose to push it. Until the end of the phase, add 2 to the Strength characteristic of melee weapons equipped by models in your unit and, if you chose to push it, until the end of the phase, add 1 to the Damage characteristic of those weapons and they have the [HAZARDOUS] ability as well."
+        "description": "<b>WHEN:</b> Your opponent\u2019s Movement phase, just after an enemy unit ends a Normal, Advance or Fall Back move.<br><br><b>TARGET:</b> One Gretchin unit from your army that is within 9\" of that enemy unit and not within Engagement Range of any enemy units.<br><br><b>EFFECT:</b> Roll one D6: on a 4+, that enemy unit suffers D3+1 mortal wounds. Your unit can then make a Normal move."
     },
     {
         "faction_id": "ORK",
@@ -11165,19 +11178,6 @@
         "detachment": "Dread Mob",
         "detachment_id": "000000855",
         "description": "<b>WHEN:</b> Your Movement phase, just after an Orks Walker unit from your army has been selected to Advance.<br><br><b>TARGET:</b> That Orks Walker unit.<br><br><b>EFFECT:</b> Until the end of the turn, you can re-roll Advance rolls made for your unit and ranged weapons equipped by models in your unit have the [ASSAULT] ability."
-    },
-    {
-        "faction_id": "ORK",
-        "name": "CONNIVING RUNTS",
-        "id": "000008878006",
-        "type": "Dread Mob \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "1",
-        "legend": "A Gretchin\u2019s lot is often a wretched one, and the spiteful zoggers will take any chance to cause pain and mischief using sneaky traps before legging it.",
-        "turn": "Opponent\u2019s turn",
-        "phase": "Movement phase",
-        "detachment": "Dread Mob",
-        "detachment_id": "000000855",
-        "description": "<b>WHEN:</b> Your opponent\u2019s Movement phase, just after an enemy unit ends a Normal, Advance or Fall Back move.<br><br><b>TARGET:</b> One Gretchin unit from your army that is within 9\" of that enemy unit and not within Engagement Range of any enemy units.<br><br><b>EFFECT:</b> Roll one D6: on a 4+, that enemy unit suffers D3+1 mortal wounds. Your unit can then make a Normal move."
     },
     {
         "faction_id": "ORK",
@@ -11207,19 +11207,6 @@
     },
     {
         "faction_id": "ORK",
-        "name": "ROLLING LOOT-HEAP",
-        "id": "000010713006",
-        "type": "Freebooter Krew \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "1",
-        "legend": "Just because an enemy vehicle is still mobile and fighting doesn\u2019t stop any suitably arrogant Flash Gitz from claiming it as their loot, especially when their snazzguns are more than capable of explosively backing up that claim.",
-        "turn": "Your turn",
-        "phase": "Shooting phase",
-        "detachment": "Freebooter Krew",
-        "detachment_id": "000001138",
-        "description": "<b>WHEN:</b> Your Shooting phase.<br><br><b>TARGET:</b> One Flash Gitz unit from your army that has not been selected to shoot this phase.<br><br><b>EFFECT:</b> Until the end of the phase, ranged weapons equipped by models in your unit have the [ANTI-VEHICLE 4+] ability."
-    },
-    {
-        "faction_id": "ORK",
         "name": "KRUMP AND RUN",
         "id": "000010713007",
         "type": "Freebooter Krew \u2013 Strategic Ploy Stratagem",
@@ -11230,6 +11217,19 @@
         "detachment": "Freebooter Krew",
         "detachment_id": "000001138",
         "description": "<b>WHEN:</b> Your opponent\u2019s Movement phase, just after an enemy unit falls back.<br><br><b>TARGET:</b> One <span class=\"kwb\">ORKS</span> unit from your army that was within engagement range of that enemy unit at the start of the phase and is not within range of one or more enemy units.<br><br><b>EFFECT:</b> Your unit can make a Normal move of up to 6\"."
+    },
+    {
+        "faction_id": "ORK",
+        "name": "ROLLING LOOT-HEAP",
+        "id": "000010713006",
+        "type": "Freebooter Krew \u2013 Strategic Ploy Stratagem",
+        "cp_cost": "1",
+        "legend": "Just because an enemy vehicle is still mobile and fighting doesn\u2019t stop any suitably arrogant Flash Gitz from claiming it as their loot, especially when their snazzguns are more than capable of explosively backing up that claim.",
+        "turn": "Your turn",
+        "phase": "Shooting phase",
+        "detachment": "Freebooter Krew",
+        "detachment_id": "000001138",
+        "description": "<b>WHEN:</b> Your Shooting phase.<br><br><b>TARGET:</b> One Flash Gitz unit from your army that has not been selected to shoot this phase.<br><br><b>EFFECT:</b> Until the end of the phase, ranged weapons equipped by models in your unit have the [ANTI-VEHICLE 4+] ability."
     },
     {
         "faction_id": "ORK",
@@ -11298,19 +11298,6 @@
     },
     {
         "faction_id": "ORK",
-        "name": "BRAGGIN\u2019 RIGHTS",
-        "id": "000008882004",
-        "type": "Green Tide \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "1",
-        "legend": "With volleys of wagers, threats, insults, dung and the occasional hurled rock, mobs of Orks bolster each other\u2019s spirits in the most Orky ways possible.",
-        "turn": "Your turn",
-        "phase": "Command phase",
-        "detachment": "Green Tide",
-        "detachment_id": "000000856",
-        "description": "<b>WHEN:</b> Your Command phase.<br><br><b>TARGET:</b> Two Boyz units from your army that are within 6\" of each other.<br><br><b>EFFECT:</b> Until the start of your next Command phase, while those two units are within 6\" of each other, they both count as containing 10 or more models for the purposes of your Detachment rule, any Enhancements models from your army have and any Stratagems you use."
-    },
-    {
-        "faction_id": "ORK",
         "name": "COME ON LADZ!",
         "id": "000008882005",
         "type": "Green Tide \u2013 Strategic Ploy Stratagem",
@@ -11321,6 +11308,19 @@
         "detachment": "Green Tide",
         "detachment_id": "000000856",
         "description": "<b>WHEN:</b> Your Command phase.<br><br><b>TARGET:</b> One Boyz unit from your army.<br><br><b>EFFECT:</b> Return up to D3+2 destroyed models to your unit (excluding Character models)."
+    },
+    {
+        "faction_id": "ORK",
+        "name": "BRAGGIN\u2019 RIGHTS",
+        "id": "000008882004",
+        "type": "Green Tide \u2013 Strategic Ploy Stratagem",
+        "cp_cost": "1",
+        "legend": "With volleys of wagers, threats, insults, dung and the occasional hurled rock, mobs of Orks bolster each other\u2019s spirits in the most Orky ways possible.",
+        "turn": "Your turn",
+        "phase": "Command phase",
+        "detachment": "Green Tide",
+        "detachment_id": "000000856",
+        "description": "<b>WHEN:</b> Your Command phase.<br><br><b>TARGET:</b> Two Boyz units from your army that are within 6\" of each other.<br><br><b>EFFECT:</b> Until the start of your next Command phase, while those two units are within 6\" of each other, they both count as containing 10 or more models for the purposes of your Detachment rule, any Enhancements models from your army have and any Stratagems you use."
     },
     {
         "faction_id": "ORK",
@@ -11363,19 +11363,6 @@
     },
     {
         "faction_id": "ORK",
-        "name": "LOOT ON THE MOVE",
-        "id": "000009624002",
-        "type": "Kaptin Killers \u2013 Strategic Ploy Stratagem",
-        "cp_cost": "1",
-        "legend": "Not only does ripping a door hatch right off its hinges allow for ease of progress, but the resultant large slab of bulletproof metal can make a handy temporary shield.",
-        "turn": "Your turn",
-        "phase": "Movement phase",
-        "detachment": "Kaptin Killers",
-        "detachment_id": "000000964",
-        "description": "<b>WHEN:</b> Your Movement phase, just after an ORKS unit from your army opens a Hatchway.<br><br><b>TARGET:</b> That <span class=\"kwb\">ORKS</span> unit.<br><br><b>EFFECT:</b> Until the end of the battle, that Hatchway cannot be closed. Until the end of the turn, each time an attack targets your unit, worsen the Armour Penetration characteristic of that attack by 1."
-    },
-    {
-        "faction_id": "ORK",
         "name": "PILE THROUGH",
         "id": "000009624003",
         "type": "Kaptin Killers \u2013 Strategic Ploy Stratagem",
@@ -11389,16 +11376,29 @@
     },
     {
         "faction_id": "ORK",
-        "name": "DAKKASTORM",
-        "id": "000008873004",
+        "name": "LOOT ON THE MOVE",
+        "id": "000009624002",
+        "type": "Kaptin Killers \u2013 Strategic Ploy Stratagem",
+        "cp_cost": "1",
+        "legend": "Not only does ripping a door hatch right off its hinges allow for ease of progress, but the resultant large slab of bulletproof metal can make a handy temporary shield.",
+        "turn": "Your turn",
+        "phase": "Movement phase",
+        "detachment": "Kaptin Killers",
+        "detachment_id": "000000964",
+        "description": "<b>WHEN:</b> Your Movement phase, just after an ORKS unit from your army opens a Hatchway.<br><br><b>TARGET:</b> That <span class=\"kwb\">ORKS</span> unit.<br><br><b>EFFECT:</b> Until the end of the battle, that Hatchway cannot be closed. Until the end of the turn, each time an attack targets your unit, worsen the Armour Penetration characteristic of that attack by 1."
+    },
+    {
+        "faction_id": "ORK",
+        "name": "FULL THROTTLE!",
+        "id": "000008873006",
         "type": "Kult of Speed \u2013 Battle Tactic Stratagem",
         "cp_cost": "1",
-        "legend": "Often all an enemy will see of a Kult of Speed is a blur as they speed by, all guns blazing.",
+        "legend": "When racing buggies and warbikes charge at full pelt, the power behind their crews\u2019 assault is so great that they can smash through the enemy.",
         "turn": "Your turn",
-        "phase": "Shooting phase",
+        "phase": "Charge phase",
         "detachment": "Kult of Speed",
         "detachment_id": "000000854",
-        "description": "<b>WHEN:</b> Your Shooting phase.<br><br><b>TARGET:</b> One Speed Freeks unit from your army that has not been selected to shoot this phase.<br><br><b>EFFECT:</b> Until the end of the phase, ranged weapons equipped by models in your unit have the [SUSTAINED HITS 1] ability. While targeting a unit within 9\", they have the [SUSTAINED HITS 2] ability instead.<br><br><b>RESTRICTIONS:</b> A unit cannot be targeted by this and the Blitza Fire Stratagem in the same phase."
+        "description": "<b>WHEN:</b> Your Charge phase, just after a <span class=\"kwb\">SPEED</span> <span class=\"kwb\">FREEKS</span> unit from your army ends a Charge move.<br><br><b>TARGET:</b> That Speed Freeks unit.<br><br><b>EFFECT:</b> Until the end of the turn, each time a model in your unit makes a melee attack, add 1 to the Wound roll."
     },
     {
         "faction_id": "ORK",
@@ -11415,16 +11415,16 @@
     },
     {
         "faction_id": "ORK",
-        "name": "FULL THROTTLE!",
-        "id": "000008873006",
+        "name": "DAKKASTORM",
+        "id": "000008873004",
         "type": "Kult of Speed \u2013 Battle Tactic Stratagem",
         "cp_cost": "1",
-        "legend": "When racing buggies and warbikes charge at full pelt, the power behind their crews\u2019 assault is so great that they can smash through the enemy.",
+        "legend": "Often all an enemy will see of a Kult of Speed is a blur as they speed by, all guns blazing.",
         "turn": "Your turn",
-        "phase": "Charge phase",
+        "phase": "Shooting phase",
         "detachment": "Kult of Speed",
         "detachment_id": "000000854",
-        "description": "<b>WHEN:</b> Your Charge phase, just after a <span class=\"kwb\">SPEED</span> <span class=\"kwb\">FREEKS</span> unit from your army ends a Charge move.<br><br><b>TARGET:</b> That Speed Freeks unit.<br><br><b>EFFECT:</b> Until the end of the turn, each time a model in your unit makes a melee attack, add 1 to the Wound roll."
+        "description": "<b>WHEN:</b> Your Shooting phase.<br><br><b>TARGET:</b> One Speed Freeks unit from your army that has not been selected to shoot this phase.<br><br><b>EFFECT:</b> Until the end of the phase, ranged weapons equipped by models in your unit have the [SUSTAINED HITS 1] ability. While targeting a unit within 9\", they have the [SUSTAINED HITS 2] ability instead.<br><br><b>RESTRICTIONS:</b> A unit cannot be targeted by this and the Blitza Fire Stratagem in the same phase."
     },
     {
         "faction_id": "ORK",
@@ -11467,19 +11467,6 @@
     },
     {
         "faction_id": "ORK",
-        "name": "LONG, UNCONTROLLED BURSTS",
-        "id": "000009992005",
-        "type": "More Dakka! \u2013 Battle Tactic Stratagem",
-        "cp_cost": "1",
-        "legend": "When facing off against sneaky gitz who like to lurk in cover, most Orks believe the most effective strategy is to fire off so many bullets and munitions that something is bound to hit the target.",
-        "turn": "Your turn",
-        "phase": "Shooting phase",
-        "detachment": "More Dakka!",
-        "detachment_id": "000001030",
-        "description": "<b>WHEN:</b> Your Shooting phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">ORKS</span> unit from your army that has not been selected to shoot this phase.<br><br><b>EFFECT:</b> Until the end of the phase, ranged weapons equipped by models in your unit have the [IGNORES COVER] ability."
-    },
-    {
-        "faction_id": "ORK",
         "name": "ORKS IS STILL ORKS",
         "id": "000009992002",
         "type": "More Dakka! \u2013 Battle Tactic Stratagem",
@@ -11490,6 +11477,19 @@
         "detachment": "More Dakka!",
         "detachment_id": "000001030",
         "description": "<b>WHEN:</b> Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">ORKS</span> unit from your army that has not been selected to fight this phase.<br><br><b>EFFECT:</b> Until the end of the phase, each time a model in your unit makes an attack that targets an enemy unit, re-roll a Wound roll of 1. If that enemy unit is within range of an objective marker, you can re-roll the Wound roll instead."
+    },
+    {
+        "faction_id": "ORK",
+        "name": "LONG, UNCONTROLLED BURSTS",
+        "id": "000009992005",
+        "type": "More Dakka! \u2013 Battle Tactic Stratagem",
+        "cp_cost": "1",
+        "legend": "When facing off against sneaky gitz who like to lurk in cover, most Orks believe the most effective strategy is to fire off so many bullets and munitions that something is bound to hit the target.",
+        "turn": "Your turn",
+        "phase": "Shooting phase",
+        "detachment": "More Dakka!",
+        "detachment_id": "000001030",
+        "description": "<b>WHEN:</b> Your Shooting phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">ORKS</span> unit from your army that has not been selected to shoot this phase.<br><br><b>EFFECT:</b> Until the end of the phase, ranged weapons equipped by models in your unit have the [IGNORES COVER] ability."
     },
     {
         "faction_id": "ORK",

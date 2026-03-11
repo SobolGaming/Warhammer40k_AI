@@ -10713,5 +10713,30 @@
         "datasheet_id": "000004200",
         "line": "1",
         "description": "1-2 Starfangs"
+    },
+    {
+        "datasheet_id": "000004201",
+        "line": "1",
+        "description": "1 Berehk Stornbr\u00f6w \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004202",
+        "line": "1",
+        "description": "1 Tyranid Prime with Lash Whip"
+    },
+    {
+        "datasheet_id": "000004203",
+        "line": "1",
+        "description": "1 Ri\u2019Lantar \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004203",
+        "line": "2",
+        "description": "1 Ri\u2019Locai \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004204",
+        "line": "1",
+        "description": "1 Ferren Areios \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
     }
 ]

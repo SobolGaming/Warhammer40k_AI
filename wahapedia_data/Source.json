@@ -13,18 +13,18 @@
         "name": "Balance Dataslate",
         "type": "Rulebook",
         "edition": "10",
-        "version": "3.3",
-        "errata_date": "07.01.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_07-01_warhammer_40000_core_rules_balance_dataslate-apvctstyr0-8etzbxgbhh.pdf"
+        "version": "3.4",
+        "errata_date": "04.03.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_04-03_wh40k_core&key_balance_dataslate-ysn1jjtd9x-qogz1pqkky.pdf"
     },
     {
         "id": "000000233",
         "name": "Munitorum Field Manual",
         "type": "Expansion",
         "edition": "10",
-        "version": "3.9",
-        "errata_date": "12.02.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_11-02_warhammer_40000_core_rules_munitorum_field_manua-nhzplimifq-x47lmaz27p.pdf"
+        "version": "4.0",
+        "errata_date": "04.03.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_04-03_wh40k_core&key_munitorum_field_manual-wusmp8gbdw-poy2kdhoy0.pdf"
     },
     {
         "id": "000000259",
@@ -58,9 +58,9 @@
         "name": "Necrons",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.2",
-        "errata_date": "07.01.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_07-01_warhammer_40000_faction_pack_necrons-wgehvvo84t-ijjxadnsk6.pdf"
+        "version": "1.3",
+        "errata_date": "04.03.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_04-03_warhammer40000_faction_pack_necrons-oit9xyrlza-eqprrhthph.pdf"
     },
     {
         "id": "000000186",
@@ -130,9 +130,9 @@
         "name": "Leagues of Votann",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.1",
-        "errata_date": "11.02.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_11-02_wh40k_faction_pack_leagues_of_votann-ochlykavhd-ti0l5bbduf.pdf"
+        "version": "1.2",
+        "errata_date": "04.03.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_04-03_warhammer40000_faction_pack_leagues_of_votann-nga9c4cumk-snm4dohuql.pdf"
     },
     {
         "id": "000000015",
@@ -220,9 +220,9 @@
         "name": "Tyranids",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.1",
-        "errata_date": "07.01.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_07-01_warhammer_40000_faction_pack_tyranids-6a23k8tkwy-5lydlikkxp.pdf"
+        "version": "1.2",
+        "errata_date": "04.03.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_04-03_wh40k_faction_pack_tyranids-ksw1crafj8-tolo4c5tuq.pdf"
     },
     {
         "id": "000000024",
@@ -247,9 +247,9 @@
         "name": "Chaos Space Marines",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.3",
-        "errata_date": "11.02.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_11-02_wh40k_faction_pack_chaos_space_marines-lo3fztfdb6-tavncu27rz.pdf"
+        "version": "1.4",
+        "errata_date": "04.03.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_04-03_warhammer40000_faction_pack_chaos_space_marines-ekqehcsuwl-qmyuudm97y.pdf"
     },
     {
         "id": "000000031",
