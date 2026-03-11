@@ -127,6 +127,14 @@ def _find_target_option(request, *, target_unit_id: str):
     return None
 
 
+def _find_skip_option(request):
+    for opt in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(opt, "payload", {}) or {})
+        if str(payload.get("action", "") or "").strip().lower() == "skip":
+            return opt
+    return None
+
+
 def _set_bearer_enhancement(unit: Unit, *, flag_key: str, values: dict):
     sr = dict(getattr(unit, "special_rules", {}) or {})
     sr[flag_key] = True
@@ -140,7 +148,7 @@ def _set_bearer_enhancement(unit: Unit, *, flag_key: str, values: dict):
 
 
 class TestCsmRenegadeWarbandEnhancements(unittest.TestCase):
-    def test_weaponised_hatred_secondary_target_promotes_to_vendetta(self):
+    def test_weaponised_hatred_reactive_retargets_vendetta(self):
         game, p1, _p2, army1, army2 = _build_game()
         attacker = _make_unit(
             "Legionaries",
@@ -174,22 +182,88 @@ class TestCsmRenegadeWarbandEnhancements(unittest.TestCase):
         self.assertIsNotNone(vendetta_option)
         result = resolve_decision_command(game, vendetta_req, vendetta_option.option_id, player_id=p1.id)
         self.assertTrue(bool(getattr(result, "ok", False)))
+        self.assertIsNone(_find_request(game, "renegade_warband_weaponised_hatred_target"))
 
+        mgr = army1.chaos_space_marines_detachments
+        self.assertEqual(str(mgr.renegade_warband_vendetta_target_unit_id), enemy_a_id)
+
+        game._on_unit_destroyed_rules(unit=enemy_a, destroyed_by_unit=attacker)
         weaponised_req = _find_request(game, "renegade_warband_weaponised_hatred_target")
         self.assertIsNotNone(weaponised_req)
+        weaponised_ctx = dict(getattr(weaponised_req, "context", {}) or {})
+        self.assertTrue(bool(weaponised_ctx.get("optional", False)))
+        self.assertEqual(str(weaponised_ctx.get("destroyed_vendetta_target_unit_id", "") or ""), enemy_a_id)
         enemy_b_id = str(get_entity_id(enemy_b) or "")
         weaponised_option = _find_target_option(weaponised_req, target_unit_id=enemy_b_id)
         self.assertIsNotNone(weaponised_option)
         result = resolve_decision_command(game, weaponised_req, weaponised_option.option_id, player_id=p1.id)
         self.assertTrue(bool(getattr(result, "ok", False)))
 
-        mgr = army1.chaos_space_marines_detachments
-        self.assertEqual(str(mgr.renegade_warband_vendetta_target_unit_id), enemy_a_id)
+        self.assertEqual(str(mgr.renegade_warband_vendetta_target_unit_id), enemy_b_id)
         self.assertEqual(str(mgr.renegade_warband_weaponised_hatred_target_unit_id), enemy_b_id)
+        self.assertEqual(
+            str(getattr(mgr, "_renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id", "") or ""),
+            "",
+        )
+
+        game._on_unit_destroyed_rules(unit=enemy_b, destroyed_by_unit=attacker)
+        self.assertIsNone(_find_request(game, "renegade_warband_weaponised_hatred_target"))
+        self.assertEqual(str(mgr.renegade_warband_vendetta_target_unit_id), "")
+        self.assertEqual(str(mgr.renegade_warband_weaponised_hatred_target_unit_id), "")
+
+    def test_weaponised_hatred_reactive_choice_can_be_skipped(self):
+        game, p1, _p2, army1, army2 = _build_game()
+        attacker = _make_unit(
+            "Legionaries",
+            keywords=["HERETIC ASTARTES", "INFANTRY"],
+            faction_keywords=["HERETIC ASTARTES"],
+        )
+        enemy_a = _make_unit("Enemy A", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+        enemy_b = _make_unit("Enemy B", faction_name="Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+        _set_bearer_enhancement(
+            attacker,
+            flag_key="enhancement_weaponised_hatred",
+            values={
+                "enhancement_weaponised_hatred_source": "Weaponised Hatred",
+                "enhancement_weaponised_hatred_requires_vendetta_target": True,
+                "enhancement_weaponised_hatred_requires_bearer_on_battlefield": True,
+            },
+        )
+        army1.add_unit(attacker)
+        army2.add_unit(enemy_a)
+        army2.add_unit(enemy_b)
+        game.map.units = [attacker, enemy_a, enemy_b]
+        game.rebuild_entity_registry()
+
+        game._maybe_prompt_csm_vendetta()
+        vendetta_req = _find_request(game, "renegade_warband_vendetta_target")
+        self.assertIsNotNone(vendetta_req)
+        enemy_a_id = str(get_entity_id(enemy_a) or "")
+        vendetta_option = _find_target_option(vendetta_req, target_unit_id=enemy_a_id)
+        self.assertIsNotNone(vendetta_option)
+        result = resolve_decision_command(game, vendetta_req, vendetta_option.option_id, player_id=p1.id)
+        self.assertTrue(bool(getattr(result, "ok", False)))
 
         game._on_unit_destroyed_rules(unit=enemy_a, destroyed_by_unit=attacker)
-        self.assertEqual(str(mgr.renegade_warband_vendetta_target_unit_id), enemy_b_id)
+        weaponised_req = _find_request(game, "renegade_warband_weaponised_hatred_target")
+        self.assertIsNotNone(weaponised_req)
+        skip_option = _find_skip_option(weaponised_req)
+        self.assertIsNotNone(skip_option)
+        result = resolve_decision_command(game, weaponised_req, skip_option.option_id, player_id=p1.id)
+        self.assertTrue(bool(getattr(result, "ok", False)))
+
+        mgr = army1.chaos_space_marines_detachments
+        self.assertEqual(str(mgr.renegade_warband_vendetta_target_unit_id), "")
         self.assertEqual(str(mgr.renegade_warband_weaponised_hatred_target_unit_id), "")
+
+    def test_weaponised_hatred_descriptor_uses_reactive_optional_selection(self):
+        from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
+
+        descriptor = get_enhancement_tool_descriptor(enhancement_id="000010694002")
+        self.assertIsNotNone(descriptor)
+        self.assertEqual(descriptor.timing, "after_vendetta_target_destroyed_once_per_battle_round")
+        self.assertTrue(bool(descriptor.effect_params.get("optional", False)))
+        self.assertTrue(bool(descriptor.effect_params.get("requires_visibility", False)))
 
     def test_eyes_of_the_hunter_sets_ranged_ignores_cover(self):
         game, _p1, _p2, army1, army2 = _build_game()

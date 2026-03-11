@@ -7968,6 +7968,8 @@ class StratagemManager(
                             try:
                                 if not mgr.unit_is_necrons(root):
                                     continue
+                                if mgr.unit_is_monster(root):
+                                    continue
                                 if mgr.unit_is_titanic(root):
                                     continue
                             except Exception:
@@ -8653,6 +8655,8 @@ class StratagemManager(
                 if mgr is not None:
                     try:
                         if not mgr.unit_is_necrons(root):
+                            continue
+                        if mgr.unit_is_monster(root):
                             continue
                         if mgr.unit_is_titanic(root):
                             continue
@@ -19608,6 +19612,9 @@ class StratagemManager(
                     if not mgr.unit_is_necrons(root):
                         logger.error("ERROR: MERCILESS RECLAMATION: target is not NECRONS")
                         return False
+                    if mgr.unit_is_monster(root):
+                        logger.error("ERROR: MERCILESS RECLAMATION: target is MONSTER")
+                        return False
                     if mgr.unit_is_titanic(root):
                         logger.error("ERROR: MERCILESS RECLAMATION: target is TITANIC")
                         return False
@@ -19914,6 +19921,9 @@ class StratagemManager(
                     if not mgr.unit_is_necrons(root):
                         logger.error("ERROR: ENDLESS SERVITUDE: target is not NECRONS")
                         return False
+                    if mgr.unit_is_monster(root):
+                        logger.error("ERROR: ENDLESS SERVITUDE: target is MONSTER")
+                        return False
                     if mgr.unit_is_titanic(root):
                         logger.error("ERROR: ENDLESS SERVITUDE: target is TITANIC")
                         return False
@@ -20060,6 +20070,9 @@ class StratagemManager(
                 try:
                     if not mgr.unit_is_necrons(root):
                         logger.error("ERROR: REACTIVE REPOSITION: target is not NECRONS")
+                        return False
+                    if mgr.unit_is_monster(root):
+                        logger.error("ERROR: REACTIVE REPOSITION: target is MONSTER")
                         return False
                     if mgr.unit_is_titanic(root):
                         logger.error("ERROR: REACTIVE REPOSITION: target is TITANIC")

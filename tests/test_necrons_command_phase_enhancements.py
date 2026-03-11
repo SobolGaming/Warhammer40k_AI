@@ -241,6 +241,26 @@ class TestNecronsCommandPhaseEnhancements(unittest.TestCase):
         mgr.on_command_phase_start(game=None, player=player)
         self.assertFalse(target.special_rules.get("allocated_damage_reductions", []), "Expected damage reduction to clear")
 
+    def test_starshatter_enhancement_descriptors_registered(self):
+        from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
+
+        dread = get_enhancement_tool_descriptor(enhancement_id="000009749002")
+        self.assertIsNotNone(dread)
+        self.assertIn("MONSTER", tuple(dread.effect_params.get("excluded_keywords", ())))
+        self.assertIn("TITANIC", tuple(dread.effect_params.get("excluded_keywords", ())))
+
+        nebuloscope = get_enhancement_tool_descriptor(enhancement_id="000009749003")
+        self.assertIsNotNone(nebuloscope)
+        self.assertEqual(nebuloscope.effect, "grant_weapon_keywords")
+
+        demanding = get_enhancement_tool_descriptor(enhancement_id="000009749004")
+        self.assertIsNotNone(demanding)
+        self.assertEqual(float(demanding.effect_params.get("range_in", 0.0)), 6.0)
+
+        chrono = get_enhancement_tool_descriptor(enhancement_id="000009749005")
+        self.assertIsNotNone(chrono)
+        self.assertEqual(int(chrono.effect_params.get("damage_modifier", 0)), -1)
+
 
 if __name__ == "__main__":
     unittest.main()

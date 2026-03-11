@@ -1974,11 +1974,6 @@ class Game(
         queue_fn = getattr(mgr, "queue_renegade_warband_vendetta_choice_request", None) if mgr is not None else None
         if callable(queue_fn):
             queue_fn(game=self, player=player)
-        weaponised_queue_fn = (
-            getattr(mgr, "queue_renegade_warband_weaponised_hatred_choice_request", None) if mgr is not None else None
-        )
-        if callable(weaponised_queue_fn):
-            weaponised_queue_fn(game=self, player=player)
 
     def _maybe_prompt_csm_focus_of_hatred(self) -> None:
         player = self.get_current_player()
@@ -8450,7 +8445,7 @@ class Game(
         destroyed_unit_id = str(get_entity_id(unit) or getattr(unit, "_id", "") or "").strip()
 
         # Chaos Space Marines: Renegade Warband (Weaponised Hatred)
-        # If the current Vendetta target is destroyed, promote the selected secondary target.
+        # If the current Vendetta target is destroyed, queue reactive retarget selection.
         if destroyed_unit_id:
             try:
                 for maybe_player in list(getattr(self, "players", []) or []):

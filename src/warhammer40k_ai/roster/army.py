@@ -2328,6 +2328,13 @@ class Army:
         if not cult_units:
             return
 
+        csm_mgr = getattr(self, "chaos_space_marines_detachments", None)
+        is_renegade_warband = bool(getattr(csm_mgr, "is_renegade_warband", lambda: False)()) if csm_mgr is not None else False
+        if is_renegade_warband:
+            raise ArmyValidationError(
+                "Slaves to None: Renegade Warband armies cannot use the Cults of the Dark Gods rule."
+            )
+
         for unit in cult_units:
             unit.faction_keywords = ["Heretic Astartes"]
             sr = getattr(unit, "special_rules", None)

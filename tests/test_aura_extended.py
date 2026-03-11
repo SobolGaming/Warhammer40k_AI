@@ -79,7 +79,7 @@ class TestAuraExtendedShapes(unittest.TestCase):
         self.assertEqual(res["roll"], 4)
         self.assertIn("Aura: re-roll Hit rolls of 1", res["special_effects"])
 
-    def test_enhancement_aura_reroll_hit_and_wound_ones_excludes_titanic(self):
+    def test_enhancement_aura_reroll_hit_and_wound_ones_excludes_monster_and_titanic(self):
         from warhammer40k_ai.rules.enhancement import Enhancement
 
         profile = self._make_profile(melee=True)
@@ -91,7 +91,7 @@ class TestAuraExtendedShapes(unittest.TestCase):
             detachment="Starshatter Arsenal",
             description=(
                 "Overlord or Catacomb Command Barge model only. While a friendly NECRONS unit "
-                "(excluding Titanic units) is within 6\" of the bearer, each time a model in that unit "
+                "(excluding Monster and Titanic units) is within 6\" of the bearer, each time a model in that unit "
                 "makes an attack, re-roll a Hit roll of 1 and re-roll a Wound roll of 1."
             ),
         )
@@ -149,6 +149,14 @@ class TestAuraExtendedShapes(unittest.TestCase):
             with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[1, 4]):
                 wound_res = profile._wound_target_with_tracking(target, attacker_model, {})
         self.assertTrue(any("Aura: re-roll Wound rolls of 1" in s for s in wound_res.get("special_effects", [])))
+
+        monster_attacker = _Unit(keywords=["NECRONS", "MONSTER"])
+        monster_attacker._army = army
+        monster_model = SimpleNamespace(name="Monster", parent_unit=monster_attacker)
+        with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
+            with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[1]):
+                monster_res = profile._hit_target_with_tracking(target, monster_model, {})
+        self.assertNotIn("Aura: re-roll Hit rolls of 1", monster_res.get("special_effects", []))
 
         titanic_attacker = _Unit(keywords=["NECRONS", "TITANIC"])
         titanic_attacker._army = army

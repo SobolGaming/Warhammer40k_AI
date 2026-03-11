@@ -4398,8 +4398,11 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             return ("Vendetta selected target is invalid.",)
         return ()
     if ability == "renegade_warband_weaponised_hatred_target":
-        if is_skip_choice(request, result):
-            return ("Weaponised Hatred target selection cannot be skipped.",)
+        skip_choice = is_skip_choice(request, result)
+        if skip_choice:
+            if not bool(ctx.get("optional", False)):
+                return ("Weaponised Hatred target selection cannot be skipped.",)
+            return ()
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
         if army is None:
@@ -10382,14 +10385,18 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         player = _resolve_player(game, request, payload)
         if player is None:
             player = getattr(army, "player", None)
-        target_unit_id = str(
-            payload.get("target_unit_id")
-            or payload.get("unit_id")
-            or ctx.get("target_unit_id")
-            or ""
-        ).strip()
-        if not target_unit_id:
-            return None
+        skip_choice = is_skip_choice(request, result)
+        if skip_choice:
+            target_unit_id = ""
+        else:
+            target_unit_id = str(
+                payload.get("target_unit_id")
+                or payload.get("unit_id")
+                or ctx.get("target_unit_id")
+                or ""
+            ).strip()
+            if not target_unit_id:
+                return None
         select_fn = getattr(mgr, "select_weaponised_hatred_target", None)
         if not callable(select_fn):
             return None
@@ -10397,8 +10404,11 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
             return None
         ability_name = str(ctx.get("ability_name", "") or "Weaponised Hatred").strip() or "Weaponised Hatred"
-        target_name = str((outcome or {}).get("target_name", "") or "Enemy Unit").strip() or "Enemy Unit"
-        _log_action_for_players(game, player, f"{ability_name}: selected {target_name} as your secondary Vendetta target.")
+        if bool(outcome.get("skipped", False)):
+            _log_action_for_players(game, player, f"{ability_name}: no new Vendetta target selected.")
+        else:
+            target_name = str((outcome or {}).get("target_name", "") or "Enemy Unit").strip() or "Enemy Unit"
+            _log_action_for_players(game, player, f"{ability_name}: selected {target_name} as your Vendetta target.")
         return dict(outcome)
     if ability == "veterans_of_the_long_war_focus_of_hatred_target":
         payload = _option_payload(request, result)

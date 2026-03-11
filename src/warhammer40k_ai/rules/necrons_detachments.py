@@ -1307,13 +1307,28 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             pass
         return self._unit_has_keyword(unit, "TITANIC")
 
+    def unit_is_monster(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            if bool(getattr(unit, "is_monster", False)):
+                return True
+        except Exception:
+            pass
+        return self._unit_has_keyword(unit, "MONSTER")
+
     def relentless_onslaught_applies(self, unit) -> bool:
         if not self.is_starshatter_arsenal():
             return False
         return self.unit_is_necrons(unit)
 
+    def relentless_onslaught_hit_bonus_applies(self, unit) -> bool:
+        if not self.relentless_onslaught_applies(unit):
+            return False
+        return not self.unit_is_monster(unit)
+
     def relentless_onslaught_hit_bonus(self, attacker_unit, target_unit, *, game=None) -> tuple[int, str]:
-        if not self.relentless_onslaught_applies(attacker_unit):
+        if not self.relentless_onslaught_hit_bonus_applies(attacker_unit):
             return 0, ""
         if attacker_unit is None or target_unit is None:
             return 0, ""

@@ -110,10 +110,12 @@ class TestRelentlessOnslaught(unittest.TestCase):
         army.necrons_detachments = NecronsDetachmentManager(army)
 
         attacker_unit = _DummyUnit("Necron", army, keywords=["NECRONS"])
+        monster_attacker_unit = _DummyUnit("Monster", army, keywords=["NECRONS", "MONSTER"])
         target_army = _DummyArmy(faction_id="ENEMY", detachment_type="Other")
         target_unit = _DummyUnit("Target", target_army, within_objective=True)
 
         attacker_model = SimpleNamespace(name="Attacker", parent_unit=attacker_unit)
+        monster_attacker_model = SimpleNamespace(name="Monster Attacker", parent_unit=monster_attacker_unit)
         profile = self._make_profile()
 
         aura_stub = SimpleNamespace(
@@ -135,6 +137,10 @@ class TestRelentlessOnslaught(unittest.TestCase):
 
             target_unit.within_objective = False
             hit = profile._hit_target_with_tracking(target_unit, attacker_model, {"_aura_attack_mods": aura_stub})
+            self.assertFalse(any("Relentless Onslaught" in x for x in hit.get("modifiers", [])))
+
+            target_unit.within_objective = True
+            hit = profile._hit_target_with_tracking(target_unit, monster_attacker_model, {"_aura_attack_mods": aura_stub})
             self.assertFalse(any("Relentless Onslaught" in x for x in hit.get("modifiers", [])))
         finally:
             wargear_mod.get_roll = old_get_roll

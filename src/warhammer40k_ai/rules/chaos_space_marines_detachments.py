@@ -158,6 +158,8 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         self._tyrannical_motivation_phase_mobile_unit_ids: set[str] = set()
         self.renegade_warband_vendetta_target_unit_id: str = ""
         self.renegade_warband_weaponised_hatred_target_unit_id: str = ""
+        self._renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id: str = ""
+        self._renegade_warband_weaponised_hatred_last_used_battle_round: int = 0
         self.veterans_focus_of_hatred_target_unit_id: str = ""
 
     def is_cabal_of_chaos(self) -> bool:
@@ -1085,6 +1087,59 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
 
     def clear_renegade_warband_weaponised_hatred_target(self) -> None:
         self.renegade_warband_weaponised_hatred_target_unit_id = ""
+        self._renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id = ""
+
+    def _weaponised_hatred_source_entry(self):
+        if not self.is_renegade_warband() or self.army is None:
+            return None
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            source_root, source_member, source_sr, source_bearer = self._renegade_warband_enhancement_source_member(
+                root,
+                flag_key="enhancement_weaponised_hatred",
+                require_bearer_alive=True,
+                require_bearer_on_battlefield=True,
+            )
+            if source_root is None or source_member is None or source_sr is None or source_bearer is None:
+                continue
+            if not self._unit_on_battlefield(source_root):
+                continue
+            return source_root, source_member, source_sr, source_bearer
+        return None
+
+    def _weaponised_hatred_target_visible_to_bearer(self, target_unit, *, source_bearer, game=None) -> bool:
+        if target_unit is None or source_bearer is None:
+            return False
+        target_root = self._unit_root(target_unit)
+        if target_root is None or not self._unit_on_battlefield(target_root):
+            return False
+        source_unit = self._unit_root(getattr(source_bearer, "parent_unit", None))
+        if source_unit is target_root:
+            return True
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return False
+        resolved_map = getattr(resolved_game, "map", None)
+        can_see_unit_fn = getattr(resolved_game, "_model_can_see_unit", None)
+        if callable(can_see_unit_fn):
+            try:
+                return bool(can_see_unit_fn(source_bearer, target_root, game_map=resolved_map))
+            except TypeError:
+                return bool(can_see_unit_fn(source_bearer, target_root))
+        can_see_model_fn = getattr(resolved_map, "can_model_see_model", None) if resolved_map is not None else None
+        if not callable(can_see_model_fn):
+            return True
+        target_models_fn = getattr(target_root, "get_attached_unit_models", None)
+        target_models = (
+            list(target_models_fn() or [])
+            if callable(target_models_fn)
+            else list(getattr(target_root, "models", []) or [])
+        )
+        for tm in target_models:
+            if tm is None or not bool(getattr(tm, "is_alive", True)):
+                continue
+            if bool(can_see_model_fn(source_bearer, tm)):
+                return True
+        return False
 
     def _iter_enemy_units_for_player(self, *, game=None, player=None) -> list:
         resolved_game = self._resolve_game(game=game)
@@ -1122,13 +1177,29 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     def weaponised_hatred_candidate_enemy_units(self, *, game=None, player=None) -> list:
         if not self.is_renegade_warband() or self.army is None:
             return []
+        source_entry = self._weaponised_hatred_source_entry()
+        if source_entry is None:
+            return []
+        _source_root, _source_member, _source_sr, source_bearer = source_entry
         vendetta_target_id = str(self.renegade_warband_vendetta_target_unit_id or "").strip()
+        pending_destroyed_target_id = str(
+            self._renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id or ""
+        ).strip()
+        resolved_game = self._resolve_game(game=game)
         out = []
         for unit in list(self.vendetta_candidate_enemy_units(game=game, player=player) or []):
             unit_id = str(get_entity_id(unit) or "").strip()
             if not unit_id:
                 continue
             if vendetta_target_id and unit_id == vendetta_target_id:
+                continue
+            if pending_destroyed_target_id and unit_id == pending_destroyed_target_id:
+                continue
+            if not self._weaponised_hatred_target_visible_to_bearer(
+                unit,
+                source_bearer=source_bearer,
+                game=resolved_game,
+            ):
                 continue
             out.append(unit)
         out.sort(key=lambda unit: str(get_entity_id(unit) or self._unit_root_key(unit)))
@@ -1206,21 +1277,22 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     def can_select_weaponised_hatred_target(self, *, game=None, player=None) -> bool:
         if not self.is_renegade_warband() or self.army is None:
             return False
-        if not self.can_select_vendetta_target(game=game, player=player):
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
             return False
-        vendetta_target_id = str(self.renegade_warband_vendetta_target_unit_id or "").strip()
-        if not vendetta_target_id:
+        army_player = getattr(self.army, "player", None)
+        if army_player is not None:
+            if str(getattr(army_player, "id", "") or "") != str(getattr(owner, "id", "") or ""):
+                return False
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
             return False
-        candidates = list(self.vendetta_candidate_enemy_units(game=game, player=player) or [])
-        candidate_ids = {str(get_entity_id(unit) or "").strip() for unit in candidates}
-        if vendetta_target_id not in candidate_ids:
+        if not str(self._renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id or "").strip():
             return False
-        source_entry = self._renegade_warband_first_enhancement_source(
-            flag_key="enhancement_weaponised_hatred",
-            require_bearer_alive=True,
-            require_bearer_on_battlefield=True,
-        )
-        if source_entry is None:
+        battle_round = int(self._current_turn(game=resolved_game) or 0)
+        if battle_round > 0 and int(self._renegade_warband_weaponised_hatred_last_used_battle_round or 0) == battle_round:
+            return False
+        if self._weaponised_hatred_source_entry() is None:
             return False
         return True
 
@@ -1291,21 +1363,22 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if hasattr(resolved_game, "request_decision"):
             resolved_game.request_decision(request)
 
-    def queue_renegade_warband_weaponised_hatred_choice_request(self, *, game=None, player=None) -> None:
+    def queue_renegade_warband_weaponised_hatred_choice_request(self, *, game=None, player=None) -> bool:
         if not self.is_renegade_warband() or self.army is None:
-            return
+            return False
         resolved_game = self._resolve_game(game=game)
         if resolved_game is None or not bool(getattr(resolved_game, "is_authoritative", True)):
-            return
+            return False
         owner = player if player is not None else getattr(self.army, "player", None)
         if owner is None:
-            return
+            return False
         if not self.can_select_weaponised_hatred_target(game=resolved_game, player=owner):
-            return
+            return False
 
         candidates = list(self.weaponised_hatred_candidate_enemy_units(game=resolved_game, player=owner) or [])
         if not candidates:
-            return
+            self._renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id = ""
+            return False
 
         from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
         from ..engine.decisions import DecisionOption, DecisionRequest
@@ -1317,9 +1390,9 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             army_id=army_id,
             battle_round=battle_round,
         ):
-            return
+            return False
 
-        options: list[DecisionOption] = []
+        options: list[DecisionOption] = [DecisionOption.create("None", payload={"action": "skip", "army_id": army_id})]
         candidate_ids: list[str] = []
         for unit in candidates:
             unit_id = str(get_entity_id(unit) or "").strip()
@@ -1336,26 +1409,31 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                 )
             )
         if not options:
-            return
+            self._renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id = ""
+            return False
 
         request = DecisionRequest.create(
             DECISION_CHOOSE_QUARRY,
-            "Weaponised Hatred: select a second enemy unit.",
+            "Weaponised Hatred: select one visible enemy unit to become your Vendetta target (or None).",
             player_id=getattr(owner, "id", None),
             options=options,
             context={
                 "ability": self._RENEGADE_WARBAND_WEAPONISED_HATRED_ABILITY,
                 "ability_name": self._RENEGADE_WARBAND_WEAPONISED_HATRED_SOURCE,
-                "phase": "Command phase",
+                "phase": "Reactive (after Vendetta target destroyed)",
                 "army_id": army_id,
                 "battle_round": int(battle_round),
-                "vendetta_target_unit_id": str(self.renegade_warband_vendetta_target_unit_id or "").strip(),
+                "destroyed_vendetta_target_unit_id": str(
+                    self._renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id or ""
+                ).strip(),
                 "candidate_unit_ids": list(candidate_ids),
-                "optional": False,
+                "optional": True,
             },
         )
         if hasattr(resolved_game, "request_decision"):
             resolved_game.request_decision(request)
+            return True
+        return False
 
     def vendetta_target_is_valid(self, target_unit_id: str, *, game=None, player=None) -> bool:
         target_id = str(target_unit_id or "").strip()
@@ -1400,9 +1478,25 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self.can_select_weaponised_hatred_target(game=game, player=player):
             return {"ok": False, "reason": "Weaponised Hatred target cannot be selected right now."}
         target_id = str(target_unit_id or "").strip()
+        if not target_id:
+            self.renegade_warband_weaponised_hatred_target_unit_id = ""
+            self._renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id = ""
+            current_round = int(self._current_turn(game=game) or 0)
+            if current_round > 0:
+                self._renegade_warband_weaponised_hatred_last_used_battle_round = current_round
+            return {
+                "ok": True,
+                "skipped": True,
+                "source": self._RENEGADE_WARBAND_WEAPONISED_HATRED_SOURCE,
+            }
         if not self.weaponised_hatred_target_is_valid(target_id, game=game, player=player):
             return {"ok": False, "reason": "Weaponised Hatred target is invalid."}
+        self.renegade_warband_vendetta_target_unit_id = target_id
         self.renegade_warband_weaponised_hatred_target_unit_id = target_id
+        self._renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id = ""
+        current_round = int(self._current_turn(game=game) or 0)
+        if current_round > 0:
+            self._renegade_warband_weaponised_hatred_last_used_battle_round = current_round
         target_name = ""
         for unit in list(self.weaponised_hatred_candidate_enemy_units(game=game, player=player) or []):
             if str(get_entity_id(unit) or "").strip() == target_id:
@@ -1470,21 +1564,22 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         primary_target = str(self.renegade_warband_vendetta_target_unit_id or "").strip()
         if not primary_target or primary_target != str(destroyed_unit_id or "").strip():
             return False
-        backup_target = str(self.renegade_warband_weaponised_hatred_target_unit_id or "").strip()
-        if not backup_target:
-            return False
+        resolved_game = self._resolve_game(game=None)
         owner = getattr(self.army, "player", None) if self.army is not None else None
-        candidate_ids = {
-            str(get_entity_id(unit) or "").strip()
-            for unit in list(self.vendetta_candidate_enemy_units(game=None, player=owner) or [])
-            if str(get_entity_id(unit) or "").strip()
-        }
-        if backup_target not in candidate_ids:
-            self.renegade_warband_weaponised_hatred_target_unit_id = ""
-            return False
-        self.renegade_warband_vendetta_target_unit_id = backup_target
+        battle_round = int(self._current_turn(game=resolved_game) or 0)
+
+        self.renegade_warband_vendetta_target_unit_id = ""
         self.renegade_warband_weaponised_hatred_target_unit_id = ""
-        return True
+
+        if battle_round > 0 and int(self._renegade_warband_weaponised_hatred_last_used_battle_round or 0) == battle_round:
+            self._renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id = ""
+            return False
+        if self._weaponised_hatred_source_entry() is None:
+            self._renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id = ""
+            return False
+
+        self._renegade_warband_weaponised_hatred_pending_destroyed_vendetta_unit_id = primary_target
+        return bool(self.queue_renegade_warband_weaponised_hatred_choice_request(game=resolved_game, player=owner))
 
     def renegade_warband_ignores_cover_active(self, unit: Unit, *, attack_type: str = "ranged") -> bool:
         if not self.is_renegade_warband():

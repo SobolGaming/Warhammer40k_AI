@@ -2391,14 +2391,17 @@ _RENEGADE_WARBAND_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010694002": EnhancementToolDescriptor(
         enhancement_id="000010694002",
         name="Weaponised Hatred",
-        timing="start_of_command_phase_after_vendetta_selection",
-        target="second_enemy_unit",
-        duration="until_start_of_next_owner_command_phase_or_until_new_vendetta_selected",
-        effect="select_second_vendetta_target_and_promote_when_vendetta_destroyed",
+        timing="after_vendetta_target_destroyed_once_per_battle_round",
+        target="visible_enemy_unit_or_skip",
+        duration="instant",
+        effect="optional_select_new_vendetta_target",
         effect_params={
-            "optional": False,
-            "requires_vendetta_target": True,
+            "optional": True,
+            "requires_vendetta_target_destroyed": True,
             "requires_bearer_on_battlefield": True,
+            "requires_visibility": True,
+            "excludes_destroyed_vendetta_target": True,
+            "excludes_current_vendetta_target": True,
         },
     ),
     "000010694003": EnhancementToolDescriptor(
@@ -6674,6 +6677,75 @@ _NECRONS_AWAKENED_DYNASTY_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS.values()
 }
 
+_NECRONS_STARSHATTER_ARSENAL_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009749002": EnhancementToolDescriptor(
+        enhancement_id="000009749002",
+        name="Dread Majesty (Aura)",
+        timing="passive_aura",
+        target="friendly_necrons_units_within_6",
+        duration="constant",
+        effect="reroll_hit_and_wound_ones_aura",
+        effect_params={
+            "range_in": 6.0,
+            "reroll_hit_ones": True,
+            "reroll_wound_ones": True,
+            "excluded_keywords": ("MONSTER", "TITANIC"),
+            "requires_bearer_alive": True,
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+    "000009749003": EnhancementToolDescriptor(
+        enhancement_id="000009749003",
+        name="Miniaturised Nebuloscope",
+        timing="passive",
+        target="bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={
+            "keywords": ("IGNORES COVER",),
+            "attack_type": "ranged",
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000009749004": EnhancementToolDescriptor(
+        enhancement_id="000009749004",
+        name="Demanding Leader",
+        timing="command_phase",
+        target="friendly_necrons_vehicle_or_mounted_within_6",
+        duration="until_start_of_next_owner_command_phase",
+        effect="grant_fall_back_and_shoot",
+        effect_params={
+            "range_in": 6.0,
+            "requires_vehicle_or_mounted": True,
+            "excluded_keywords": ("TITANIC",),
+            "requires_bearer_alive": True,
+            "requires_bearer_on_battlefield": True,
+            "optional": True,
+        },
+    ),
+    "000009749005": EnhancementToolDescriptor(
+        enhancement_id="000009749005",
+        name="Chrono-impedance Fields",
+        timing="command_phase",
+        target="friendly_necrons_vehicle_or_mounted_within_6",
+        duration="until_start_of_next_owner_command_phase",
+        effect="reduce_allocated_damage",
+        effect_params={
+            "range_in": 6.0,
+            "damage_modifier": -1,
+            "requires_vehicle_or_mounted": True,
+            "excluded_keywords": ("TITANIC",),
+            "requires_bearer_alive": True,
+            "requires_bearer_on_battlefield": True,
+            "optional": True,
+        },
+    ),
+}
+
+_NECRONS_STARSHATTER_ARSENAL_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _NECRONS_STARSHATTER_ARSENAL_DESCRIPTORS.values()
+}
+
 _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008417005": EnhancementToolDescriptor(
         enhancement_id="000008417005",
@@ -7250,6 +7322,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _NECRONS_AWAKENED_DYNASTY_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _NECRONS_STARSHATTER_ARSENAL_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _TYRANIDS_VANGUARD_ONSLAUGHT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -7406,6 +7481,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _TAU_KAUYON_BY_NAME.get(key)
         or _THOUSAND_SONS_CHANGEHOST_OF_DECEIT_BY_NAME.get(key)
         or _NECRONS_AWAKENED_DYNASTY_BY_NAME.get(key)
+        or _NECRONS_STARSHATTER_ARSENAL_BY_NAME.get(key)
         or _TYRANIDS_VANGUARD_ONSLAUGHT_BY_NAME.get(key)
         or _TYRANIDS_ASSIMILATION_SWARM_BY_NAME.get(key)
         or _ORKS_BULLY_BOYZ_BY_NAME.get(key)

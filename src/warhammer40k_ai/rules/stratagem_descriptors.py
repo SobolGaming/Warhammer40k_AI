@@ -3736,6 +3736,55 @@ _HYPERCRYPT_LEGION_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS.values()
 }
 
+_STARSHATTER_ARSENAL_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009750002": StratagemToolDescriptor(
+        stratagem_id="000009750002",
+        name="MERCILESS RECLAMATION",
+        timing="shooting_or_fight_phase_on_select",
+        target="necrons_non_monster_non_titanic_unit_not_yet_selected",
+        duration="until_end_of_phase",
+        effect="wound_bonus_vs_targets_within_objective_range",
+        cp_cost=2,
+        effect_params={
+            "wound_bonus": 1,
+            "requires_objective_range_target": True,
+            "excluded_keywords": ("MONSTER", "TITANIC"),
+        },
+    ),
+    "000009750006": StratagemToolDescriptor(
+        stratagem_id="000009750006",
+        name="ENDLESS SERVITUDE",
+        timing="end_of_fight_phase",
+        target="necrons_non_monster_non_titanic_unit_within_controlled_objective",
+        duration="immediate",
+        effect="trigger_reanimation_protocols",
+        cp_cost=1,
+        effect_params={
+            "reanimation_roll": "D3",
+            "requires_reanimation_protocols": True,
+            "excluded_keywords": ("MONSTER", "TITANIC"),
+        },
+    ),
+    "000009750007": StratagemToolDescriptor(
+        stratagem_id="000009750007",
+        name="REACTIVE REPOSITION",
+        timing="opponent_shooting_phase_after_enemy_shooting_resolved",
+        target="necrons_non_monster_non_titanic_unit_targeted_by_attacker",
+        duration="immediate",
+        effect="reactive_normal_move",
+        cp_cost=1,
+        effect_params={
+            "move_roll": "D6",
+            "excluded_keywords": ("MONSTER", "TITANIC"),
+            "requires_not_in_engagement_range": True,
+        },
+    ),
+}
+
+_STARSHATTER_ARSENAL_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _STARSHATTER_ARSENAL_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -3916,6 +3965,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _HYPERCRYPT_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _STARSHATTER_ARSENAL_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -3979,4 +4031,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _IMPERIALIS_FLEET_STRATAGEM_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _HYPERCRYPT_LEGION_STRATAGEM_BY_NAME.get(key)
+        or _STARSHATTER_ARSENAL_STRATAGEM_BY_NAME.get(key)
     )

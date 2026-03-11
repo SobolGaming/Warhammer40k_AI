@@ -28,8 +28,8 @@ def make_unit(name: str, *, keywords=None, faction_keywords=None, cost=100) -> U
     return Unit(datasheet)
 
 
-def setup_csm_army(points_limit=2000) -> Army:
-    army = Army("Chaos Space Marines", "Detachment", points_limit=points_limit)
+def setup_csm_army(points_limit=2000, detachment="Detachment") -> Army:
+    army = Army("Chaos Space Marines", detachment, points_limit=points_limit)
     army.faction_id = "CSM"
     base = make_unit("CSM Unit", faction_keywords=["Heretic Astartes"])
     army.add_unit(base)
@@ -77,3 +77,12 @@ def test_cult_of_dark_gods_disables_plague_marines_infusion():
     army.validate_cult_of_dark_gods()
 
     assert cult.special_rules.get("infused_blessings_of_nurgle_disabled") is True
+
+
+def test_cult_of_dark_gods_blocked_for_renegade_warband_slaves_to_none():
+    army = setup_csm_army(points_limit=2000, detachment="Renegade Warband")
+    cult = make_unit("Noise Marines", faction_keywords=["Emperor's Children"], cost=200)
+    army.add_unit(cult)
+
+    with pytest.raises(ArmyValidationError, match="Slaves to None"):
+        army.validate_cult_of_dark_gods()

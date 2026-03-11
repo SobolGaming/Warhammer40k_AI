@@ -227,6 +227,23 @@ class TestNecronsStarshatterStratagems(unittest.TestCase):
         far_result = profile._wound_target_with_tracking(target_far, attacker.models[0], dict(attack_instance))
         self.assertFalse(any("Merciless Reclamation" in m for m in far_result.get("modifiers", [])))
 
+    def test_merciless_reclamation_rejects_monster_and_titanic_targets(self):
+        game, p1, _p2, army1, _army2 = _build_game()
+        monster = _make_unit("Canoptek Monster", keywords=["MONSTER"], faction_keywords=["NECRONS"])
+        titanic = _make_unit("Titanic Construct", keywords=["TITANIC"], faction_keywords=["NECRONS"])
+        army1.add_unit(monster)
+        army1.add_unit(titanic)
+        monster.deployed = True
+        titanic.deployed = True
+
+        phase = SimpleNamespace(name="SHOOTING_PHASE")
+        game.current_player_index = 0
+        game.phase = phase
+        game.event_system.publish("phase_start", player=p1, phase=phase)
+
+        self.assertFalse(p1.stratagems.use("MERCILESS RECLAMATION", unit=monster, phase_name="Shooting phase"))
+        self.assertFalse(p1.stratagems.use("MERCILESS RECLAMATION", unit=titanic, phase_name="Shooting phase"))
+
     def test_dimensional_tunnel_sets_and_clears_move_types(self):
         from warhammer40k_ai.utility.calcs import MovementType, get_validation_rules
 
@@ -322,6 +339,23 @@ class TestNecronsStarshatterStratagems(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(unit.models[0].wounds, 2)
 
+    def test_endless_servitude_rejects_monster_and_titanic_targets(self):
+        game, p1, _p2, army1, _army2 = _build_game()
+        monster = _make_unit("Canoptek Monster", keywords=["MONSTER"], faction_keywords=["NECRONS"])
+        titanic = _make_unit("Titanic Construct", keywords=["TITANIC"], faction_keywords=["NECRONS"])
+        army1.add_unit(monster)
+        army1.add_unit(titanic)
+        monster.deployed = True
+        titanic.deployed = True
+
+        phase = SimpleNamespace(name="FIGHT_PHASE")
+        game.current_player_index = 0
+        game.phase = phase
+        game.event_system.publish("phase_start", player=p1, phase=phase)
+
+        self.assertFalse(p1.stratagems.use("ENDLESS SERVITUDE", unit=monster, phase_name="Fight phase"))
+        self.assertFalse(p1.stratagems.use("ENDLESS SERVITUDE", unit=titanic, phase_name="Fight phase"))
+
     def test_reactive_reposition_queues_move_decision(self):
         from warhammer40k_ai.utility import dice as dice_module
         from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
@@ -377,6 +411,53 @@ class TestNecronsStarshatterStratagems(unittest.TestCase):
         self.assertEqual(ctx.get("max_distance"), 4)
         self.assertEqual(ctx.get("movement_type"), "reactive")
         self.assertEqual(ctx.get("reactive_move_kind"), "reactive_reposition")
+
+    def test_reactive_reposition_excludes_monster_and_titanic_reaction_targets(self):
+        game, p1, p2, army1, army2 = _build_game()
+        monster = _make_unit("Canoptek Monster", keywords=["MONSTER"], faction_keywords=["NECRONS"])
+        titanic = _make_unit("Titanic Construct", keywords=["TITANIC"], faction_keywords=["NECRONS"])
+        enemy = _make_unit("Enemy Shooters", keywords=["INFANTRY"])
+        army1.add_unit(monster)
+        army1.add_unit(titanic)
+        army2.add_unit(enemy)
+
+        monster.deployed = True
+        titanic.deployed = True
+        enemy.deployed = True
+        monster.models[0].set_location(5.0, 5.0, 0.0, 0.0)
+        titanic.models[0].set_location(6.0, 5.0, 0.0, 0.0)
+        enemy.models[0].set_location(10.0, 5.0, 0.0, 0.0)
+        game.map.place_unit(monster)
+        game.map.place_unit(titanic)
+        game.map.place_unit(enemy)
+
+        phase = SimpleNamespace(name="SHOOTING_PHASE")
+        game.current_player_index = 1
+        game.phase = phase
+        game.event_system.publish("phase_start", player=p2, phase=phase)
+        game.event_system.publish("shooting_targets_selected", attacking_unit=enemy, target_units=[monster, titanic])
+        game.event_system.publish("unit_shooting_resolved", attacker_unit=enemy, hits_by_target={monster: 1, titanic: 1})
+
+        reactions = [r for r in p1.stratagems.get_pending_reactions() if r.get("stratagem") == "REACTIVE REPOSITION"]
+        self.assertFalse(reactions)
+
+    def test_starshatter_descriptor_entries_registered(self):
+        from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
+
+        merciless = get_stratagem_tool_descriptor(stratagem_id="000009750002")
+        self.assertIsNotNone(merciless)
+        self.assertEqual(merciless.cp_cost, 2)
+        self.assertIn("MONSTER", tuple(merciless.effect_params.get("excluded_keywords", ())))
+
+        endless = get_stratagem_tool_descriptor(stratagem_id="000009750006")
+        self.assertIsNotNone(endless)
+        self.assertEqual(endless.cp_cost, 1)
+        self.assertIn("MONSTER", tuple(endless.effect_params.get("excluded_keywords", ())))
+
+        reactive = get_stratagem_tool_descriptor(name="REACTIVE REPOSITION")
+        self.assertIsNotNone(reactive)
+        self.assertEqual(reactive.stratagem_id, "000009750007")
+        self.assertIn("TITANIC", tuple(reactive.effect_params.get("excluded_keywords", ())))
 
 
 if __name__ == "__main__":

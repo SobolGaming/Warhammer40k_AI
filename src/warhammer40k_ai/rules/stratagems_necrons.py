@@ -29,6 +29,7 @@ class NecronsStratagemMixin:
         require_not_moved: bool = False,
         require_not_shot: bool = False,
         require_not_fought: bool = False,
+        exclude_monster: bool = False,
     ) -> List[Any]:
         if not self._is_starshatter_arsenal():
             return []
@@ -59,6 +60,8 @@ class NecronsStratagemMixin:
                 continue
             if not mgr.unit_is_necrons(root):
                 continue
+            if exclude_monster and mgr.unit_is_monster(root):
+                continue
             if mgr.unit_is_titanic(root):
                 continue
             if require_vehicle_or_mounted and not mgr.unit_is_vehicle_or_mounted(root):
@@ -80,6 +83,7 @@ class NecronsStratagemMixin:
             require_vehicle_or_mounted=False,
             require_not_shot=require_not_shot,
             require_not_fought=require_not_fought,
+            exclude_monster=True,
         )
 
     def _starshatter_dimensional_tunnel_candidates(self) -> List[Any]:

@@ -110,10 +110,33 @@ class WahaHelper:
         try:
             with open(datasheets_path, 'r', encoding='utf-8') as f:
                 datasheets = json.load(f)
-            self.datasheets = {sheet['id']: self.clean_data(sheet) for sheet in datasheets}
+            filtered_datasheets: dict[str, dict] = {}
+            for sheet in datasheets:
+                cleaned_sheet = self.clean_data(sheet)
+                source_id = str(cleaned_sheet.get("source_id", "") or "").strip()
+                source_row = self.sources.get(source_id) if source_id else None
+                if self._source_is_excluded(source_row):
+                    continue
+                ds_id = str(cleaned_sheet.get("id", "") or "").strip()
+                if not ds_id:
+                    continue
+                filtered_datasheets[ds_id] = cleaned_sheet
+            self.datasheets = filtered_datasheets
             self.merge_additional_data()
         except Exception as e:
             logger.exception(f"Error loading data: {str(e)}")
+
+    @staticmethod
+    def _source_is_excluded(source_row) -> bool:
+        if not isinstance(source_row, dict):
+            return False
+        source_name = str(source_row.get("name", "") or "").strip().lower()
+        source_type = str(source_row.get("type", "") or "").strip().lower()
+        if "(forge world)" in source_name or "legends" in source_name or "warhammer 40,000:" in source_name:
+            return True
+        if source_type == "boarding actions" or source_name == "boarding actions":
+            return True
+        return False
 
     def get_stratagems_for_faction(self, faction_id: str | None = None, detachment: str | None = None) -> list[dict]:
         """
@@ -256,7 +279,10 @@ class WahaHelper:
             if 'faction_id' in datasheet and datasheet['faction_id'] in self.factions:
                 datasheet['faction_data'] = self.factions[datasheet['faction_id']]
             if 'id' in datasheet and datasheet['id'] in self.datasheets_leaders:
-                attached_ids = list(self.datasheets_leaders[datasheet['id']])
+                attached_ids = [
+                    aid for aid in list(self.datasheets_leaders[datasheet['id']])
+                    if aid in self.datasheets
+                ]
                 datasheet['attached_to'] = attached_ids
                 attached_names = []
                 seen_names = set()
