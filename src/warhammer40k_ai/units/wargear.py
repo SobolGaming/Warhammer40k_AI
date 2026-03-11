@@ -3732,11 +3732,29 @@ class WargearProfile:
                     except Exception:
                         bonus = 0
                     if bonus > 0:
+                        max_distance = rule.get("max_distance", None)
+                        if max_distance is not None:
+                            try:
+                                max_distance = float(max_distance)
+                            except (TypeError, ValueError):
+                                max_distance = None
+                        require_keywords = {
+                            str(value or "").strip().upper()
+                            for value in list(rule.get("require_keywords", []) or [])
+                            if str(value or "").strip()
+                        }
                         game_map = self._get_game_map_from_model(attacker)
                         if (
                             game_map is not None
                             and callable(getattr(unit, "is_target_closest_eligible", None))
-                            and unit.is_target_closest_eligible(attacker, self, target, game_map)
+                            and unit.is_target_closest_eligible(
+                                attacker,
+                                self,
+                                target,
+                                game_map,
+                                max_distance=max_distance,
+                                require_keywords=require_keywords if require_keywords else None,
+                            )
                         ):
                             ap_val -= int(bonus)
         except Exception:
@@ -5774,13 +5792,41 @@ class WargearProfile:
         except Exception:
             pass
 
-        if self.is_blast():
+        has_blast = bool(self.is_blast())
+        blast_source = "weapon"
+        if (
+            not has_blast
+            and self.parent_wargear is not None
+            and callable(getattr(self.parent_wargear, "is_ranged", None))
+            and self.parent_wargear.is_ranged()
+        ):
+            unit = getattr(attacker, "parent_unit", None)
+            get_bonus = getattr(unit, "get_attack_keyword_bonuses", None) if unit is not None else None
+            if callable(get_bonus):
+                bonus = get_bonus(
+                    target=target,
+                    attack_type="ranged",
+                    model=attacker,
+                    game_map=game_map,
+                )
+                if isinstance(bonus, dict) and bool(bonus.get("blast")):
+                    has_blast = True
+                    for source_entry in list(bonus.get("sources", ()) or ()):
+                        text = str(source_entry or "").strip()
+                        if text.startswith("Blast (") and text.endswith(")"):
+                            blast_source = str(text[len("Blast ("):-1] or "").strip() or blast_source
+                            break
+
+        if has_blast:
             try:
                 target_model_count = len(target.models)
             except Exception:
                 target_model_count = 0
             num_attacks_modifier = int(target_model_count / 5)
-            attack_result.attacks_special_modifiers.append(f"Blast +{num_attacks_modifier}")
+            if blast_source and blast_source.lower() != "weapon":
+                attack_result.attacks_special_modifiers.append(f"Blast +{num_attacks_modifier} ({blast_source})")
+            else:
+                attack_result.attacks_special_modifiers.append(f"Blast +{num_attacks_modifier}")
             atk_mods.append(Modifier(ModifierOp.ADD, int(num_attacks_modifier), source="weapon:blast"))
 
         num_attacks, _dbg = apply_numeric_modifiers(int(num_attacks), atk_mods, base_raw=getattr(self, "_raw_attacks", None))
@@ -9038,6 +9084,8 @@ class WargearProfile:
         bonus_precision = False
         bonus_hazardous = False
         bonus_hazardous_label = ""
+        bonus_blast = False
+        bonus_blast_label = ""
         try:
             if attack_is_ranged and self._purging_fire_lethal_hits_active(attacker):
                 bonus_lethal = True
@@ -9223,7 +9271,7 @@ class WargearProfile:
             nonlocal bonus_lethal, bonus_sustained_value, bonus_sustained_label, bonus_sustained_dice
             nonlocal bonus_devastating, bonus_twin_linked, bonus_heavy, bonus_heavy_label
             nonlocal bonus_lance, bonus_lance_label, bonus_anti_specs, bonus_precision
-            nonlocal bonus_hazardous, bonus_hazardous_label
+            nonlocal bonus_hazardous, bonus_hazardous_label, bonus_blast, bonus_blast_label
             if not isinstance(bonus, dict):
                 return
             def _extract_source(keyword_name: str) -> str:
@@ -9243,6 +9291,11 @@ class WargearProfile:
                 inferred_hazardous_label = _extract_source("Hazardous")
                 if inferred_hazardous_label and not bonus_hazardous_label:
                     bonus_hazardous_label = inferred_hazardous_label
+            if bool(bonus.get("blast")):
+                bonus_blast = True
+                inferred_blast_label = _extract_source("Blast")
+                if inferred_blast_label and not bonus_blast_label:
+                    bonus_blast_label = inferred_blast_label
             bonus_sustained_val = int(bonus.get("sustained_hits_value", 0) or 0)
             if bonus_sustained_val:
                 _set_bonus_sustained(bonus_sustained_val, sustained_label)
@@ -9343,6 +9396,10 @@ class WargearProfile:
                 attack_instance["bonus_hazardous"] = True
                 if bonus_hazardous_label:
                     attack_instance["bonus_hazardous_source"] = bonus_hazardous_label
+            if bonus_blast:
+                attack_instance["bonus_blast"] = True
+                if bonus_blast_label:
+                    attack_instance["bonus_blast_source"] = bonus_blast_label
         except Exception:
             bonus_lethal = False
             bonus_sustained_value = 0
@@ -9359,6 +9416,8 @@ class WargearProfile:
             bonus_precision = False
             bonus_hazardous = False
             bonus_hazardous_label = ""
+            bonus_blast = False
+            bonus_blast_label = ""
         try:
             if attack_is_ranged and self._purging_fire_lethal_hits_active(attacker):
                 bonus_lethal = True

@@ -8852,6 +8852,246 @@ class KeywordsDetachmentsMixin:
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
 
+    def _orks_temp_effect_root(self):
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        return root if root is not None else self
+
+    @staticmethod
+    def _orks_temp_effect_unit_root(unit):
+        if unit is None:
+            return None
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        return root if root is not None else unit
+
+    @staticmethod
+    def _orks_temp_effect_unit_has_keyword(unit, keyword: str) -> bool:
+        token = str(keyword or "").strip().upper()
+        if unit is None or not token:
+            return False
+        has_any = getattr(unit, "has_any_keyword", None)
+        if callable(has_any) and bool(has_any(token)):
+            return True
+        has_kw = getattr(unit, "has_keyword", None)
+        if callable(has_kw) and bool(has_kw(token)):
+            return True
+        return False
+
+    def _orks_temp_effect_army(self):
+        root = self._orks_temp_effect_root()
+        get_parent_army = getattr(root, "get_parent_army", None)
+        return get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+
+    def _orks_temp_effect_game(self):
+        army = self._orks_temp_effect_army()
+        player = getattr(army, "player", None) if army is not None else None
+        return getattr(player, "game", None) if player is not None else None
+
+    def _orks_temp_effect_entries(self) -> list[dict]:
+        root = self._orks_temp_effect_root()
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            return []
+        entries = list(special_rules.get("orks_temp_effects", []) or [])
+        normalized = [dict(entry) for entry in entries if isinstance(entry, dict)]
+        normalized.sort(key=lambda entry: str(entry.get("id", "") or ""))
+        return normalized
+
+    def _orks_temp_effect_detachment_active(self, detachment_key: str) -> bool:
+        key = str(detachment_key or "").strip().lower()
+        if not key:
+            return True
+        army = self._orks_temp_effect_army()
+        mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        checker = getattr(mgr, f"is_{key}", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _orks_temp_effect_is_active(self, entry: dict) -> bool:
+        detachment_key = str(entry.get("detachment", "") or "").strip().lower()
+        if detachment_key and not self._orks_temp_effect_detachment_active(detachment_key):
+            return False
+
+        expires_mode = str(entry.get("expires_mode", "") or "").strip().lower()
+        if expires_mode != "phase":
+            return True
+
+        game = self._orks_temp_effect_game()
+        if game is None:
+            return False
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expires_phase = str(entry.get("expires_phase", "") or "").strip().upper()
+        if expires_phase and phase_name and expires_phase != phase_name:
+            return False
+
+        owner_id = str(entry.get("turn_owner_id", "") or "").strip()
+        if owner_id:
+            get_current_player = getattr(game, "get_current_player", None)
+            current_player = get_current_player() if callable(get_current_player) else None
+            current_owner = str(getattr(current_player, "id", "") or "").strip()
+            if current_owner and current_owner != owner_id:
+                return False
+
+        try:
+            effect_turn = int(entry.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        return True
+
+    @staticmethod
+    def _orks_temp_effect_matches_attack_type(entry: dict, *, attack_type: str) -> bool:
+        required = str(entry.get("attack_type", "any") or "any").strip().lower()
+        atype = str(attack_type or "any").strip().lower()
+        if atype not in ("melee", "ranged", "any"):
+            atype = "any"
+        if required not in ("melee", "ranged", "any"):
+            required = "any"
+        return required == "any" or atype == "any" or required == atype
+
+    def _orks_temp_effect_target_matches(
+        self,
+        entry: dict,
+        *,
+        target=None,
+        model: Optional['Model'] = None,
+        weapon_profile=None,
+        game_map=None,
+    ) -> bool:
+        target_root = self._orks_temp_effect_unit_root(target)
+
+        if bool(entry.get("target_is_prey")):
+            if target_root is None:
+                return False
+            army = self._orks_temp_effect_army()
+            mgr = getattr(army, "orks_detachments", None) if army is not None else None
+            prey_check = getattr(mgr, "is_da_big_hunt_prey_target", None) if mgr is not None else None
+            if not callable(prey_check) or not bool(prey_check(target_root)):
+                return False
+
+        if bool(entry.get("target_within_objective")):
+            check = getattr(self, "_target_within_objective_range", None)
+            if not callable(check) or not bool(check(target_root, game_map=game_map)):
+                return False
+
+        if bool(entry.get("target_within_loot_objective")):
+            if target_root is None:
+                return False
+            army = self._orks_temp_effect_army()
+            mgr = getattr(army, "orks_detachments", None) if army is not None else None
+            active_loot = getattr(mgr, "_active_here_be_loot_objective_point", None) if mgr is not None else None
+            objective_data = active_loot(game=None, game_map=game_map) if callable(active_loot) else None
+            if not isinstance(objective_data, tuple):
+                return False
+            _objective, point = objective_data
+            target_check = getattr(target_root, "is_within_objective_range", None)
+            if not callable(target_check) or not bool(target_check(point)):
+                return False
+
+        raw_keywords = tuple(
+            str(token or "").strip().upper()
+            for token in list(entry.get("target_keywords_any", []) or [])
+            if str(token or "").strip()
+        )
+        if raw_keywords:
+            if target_root is None:
+                return False
+            if not any(self._orks_temp_effect_unit_has_keyword(target_root, keyword) for keyword in raw_keywords):
+                return False
+
+        if "target_within_distance" in entry:
+            try:
+                max_distance = float(entry.get("target_within_distance", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                max_distance = 0.0
+            if max_distance <= 0.0 or model is None or target_root is None:
+                return False
+            get_models = getattr(target_root, "get_models_for_collision", None)
+            target_models = list(get_models() or []) if callable(get_models) else list(getattr(target_root, "models", []) or [])
+            from ...utility.aura_utils import distance_between_models_bases_3d
+            in_range = False
+            for target_model in list(target_models or []):
+                alive_attr = getattr(target_model, "is_alive", False)
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not is_alive:
+                    continue
+                if float(distance_between_models_bases_3d(model, target_model)) <= max_distance + 1e-6:
+                    in_range = True
+                    break
+            if not in_range:
+                return False
+
+        if bool(entry.get("target_closest_eligible")):
+            if model is None or weapon_profile is None or target_root is None:
+                return False
+            gm = game_map
+            if gm is None:
+                game = self._orks_temp_effect_game()
+                gm = getattr(game, "map", None) if game is not None else None
+            if gm is None:
+                return False
+            max_distance = entry.get("closest_max_distance", None)
+            if max_distance is not None:
+                try:
+                    max_distance = float(max_distance)
+                except (TypeError, ValueError):
+                    max_distance = None
+            req_keywords = {
+                str(token or "").strip().upper()
+                for token in list(entry.get("closest_require_keywords_any", []) or [])
+                if str(token or "").strip()
+            }
+            is_closest = getattr(self, "is_target_closest_eligible", None)
+            if not callable(is_closest):
+                return False
+            if not bool(
+                is_closest(
+                    model,
+                    weapon_profile,
+                    target_root,
+                    gm,
+                    max_distance=max_distance,
+                    require_keywords=req_keywords if req_keywords else None,
+                )
+            ):
+                return False
+        return True
+
+    def iter_active_orks_temp_effects(
+        self,
+        *,
+        effect_type: str = "",
+        attack_type: str = "any",
+        target=None,
+        model: Optional['Model'] = None,
+        weapon_profile=None,
+        game_map=None,
+        require_target_match: bool = True,
+    ):
+        expected = str(effect_type or "").strip().lower()
+        for entry in self._orks_temp_effect_entries():
+            effect = str(entry.get("effect", "") or "").strip().lower()
+            if expected and effect != expected:
+                continue
+            if not self._orks_temp_effect_is_active(entry):
+                continue
+            if not self._orks_temp_effect_matches_attack_type(entry, attack_type=attack_type):
+                continue
+            if require_target_match and not self._orks_temp_effect_target_matches(
+                entry,
+                target=target,
+                model=model,
+                weapon_profile=weapon_profile,
+                game_map=game_map,
+            ):
+                continue
+            yield dict(entry)
+
     def get_closest_enemy_hit_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return rule info for abilities like:
@@ -9021,6 +9261,54 @@ class KeywordsDetachmentsMixin:
                 break
         except Exception:
             rule = None
+
+        temp_effect_iter = getattr(self, "iter_active_orks_temp_effects", None)
+        if callable(temp_effect_iter):
+            for entry in list(
+                temp_effect_iter(
+                    effect_type="closest_eligible_ap_bonus",
+                    attack_type="ranged",
+                    model=model,
+                    require_target_match=False,
+                )
+                or []
+            ):
+                try:
+                    ap_bonus = int(entry.get("value", entry.get("ap_bonus", 0)) or 0)
+                except (TypeError, ValueError):
+                    ap_bonus = 0
+                if ap_bonus <= 0:
+                    continue
+                source = str(entry.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
+                temp_rule = {
+                    "attack_type": "ranged",
+                    "ap_bonus": int(ap_bonus),
+                    "source": source,
+                }
+                max_distance = entry.get("closest_max_distance", None)
+                if max_distance is not None:
+                    try:
+                        parsed = float(max_distance)
+                    except (TypeError, ValueError):
+                        parsed = 0.0
+                    if parsed > 0.0:
+                        temp_rule["max_distance"] = float(parsed)
+                require_keywords = tuple(
+                    str(token or "").strip().upper()
+                    for token in list(entry.get("closest_require_keywords_any", []) or [])
+                    if str(token or "").strip()
+                )
+                if require_keywords:
+                    temp_rule["require_keywords"] = require_keywords
+                if rule is None:
+                    rule = temp_rule
+                    continue
+                try:
+                    current_bonus = int(rule.get("ap_bonus", 0) or 0)
+                except (TypeError, ValueError):
+                    current_bonus = 0
+                if int(ap_bonus) > current_bonus:
+                    rule = temp_rule
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

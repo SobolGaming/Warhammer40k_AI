@@ -4210,6 +4210,7 @@ class PositioningMixin:
             "lethal_hits": False,
             "assault": False,
             "hazardous": False,
+            "blast": False,
             "sustained_hits_value": 0,
             "sustained_hits_dice": "",
             "devastating_wounds": False,
@@ -4242,6 +4243,9 @@ class PositioningMixin:
             elif kw == "HAZARDOUS":
                 bonuses["hazardous"] = True
                 sources.append(f"Hazardous ({source})")
+            elif kw == "BLAST":
+                bonuses["blast"] = True
+                sources.append(f"Blast ({source})")
             elif kw == "LETHAL HITS":
                 bonuses["lethal_hits"] = True
                 sources.append(f"Lethal Hits ({source})")
@@ -4290,6 +4294,7 @@ class PositioningMixin:
             or bonuses["lethal_hits"]
             or bonuses["assault"]
             or bonuses["hazardous"]
+            or bonuses["blast"]
             or bonuses["devastating_wounds"]
             or bonuses["twin_linked"]
             or bonuses["heavy"]
@@ -5837,6 +5842,32 @@ class PositioningMixin:
                         break
         except Exception:
             pass
+        temp_effect_iter = getattr(self, "iter_active_orks_temp_effects", None)
+        if callable(temp_effect_iter):
+            attack_kind = str(attack_type or "any").strip().lower()
+            if attack_kind not in ("any", "melee", "ranged"):
+                attack_kind = "any"
+            for effect in list(
+                temp_effect_iter(
+                    effect_type="keyword",
+                    attack_type=attack_kind,
+                    target=target,
+                    model=model,
+                    game_map=game_map,
+                )
+                or []
+            ):
+                keyword = str(effect.get("keyword", "") or "").strip().upper()
+                if not keyword:
+                    continue
+                source_name = str(effect.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
+                rules.append(
+                    {
+                        "attack_type": str(effect.get("attack_type", "any") or "any"),
+                        "keyword": keyword,
+                        "source": source_name,
+                    }
+                )
         if not rules:
             return {}
         if target is None:

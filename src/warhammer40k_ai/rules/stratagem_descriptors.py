@@ -641,6 +641,141 @@ _GREEN_TIDE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GREEN_TIDE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008886002": StratagemToolDescriptor(
+        stratagem_id="000008886002",
+        name="ARMED TO DATEEF",
+        timing="shooting_or_fight_phase_on_select",
+        target="orks_nobz_or_meganobz_unit_not_yet_selected",
+        duration="until_end_of_phase",
+        effect="hit_reroll_ones_or_full_if_waaagh",
+        cp_cost=1,
+        effect_params={"attack_type": "any", "reroll_mode": "ones", "reroll_mode_if_waaagh": "full"},
+    ),
+    "000008869002": StratagemToolDescriptor(
+        stratagem_id="000008869002",
+        name="DRAG IT DOWN",
+        timing="fight_phase_on_select_to_fight",
+        target="orks_beast_snagga_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="melee_sustained_hits_and_prey_critical_hits_5plus",
+        cp_cost=1,
+        effect_params={"sustained_hits": 1, "prey_critical_hit_threshold": 5},
+    ),
+    "000010713002": StratagemToolDescriptor(
+        stratagem_id="000010713002",
+        name="BASH AND GRAB",
+        timing="fight_phase_on_select_to_fight",
+        target="orks_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="melee_wound_reroll_vs_loot_objective",
+        cp_cost=1,
+        effect_params={"reroll_mode": "full", "target_condition": "loot_objective_range"},
+    ),
+    "000010713005": StratagemToolDescriptor(
+        stratagem_id="000010713005",
+        name="DECK FRAGGERS",
+        timing="shooting_phase_on_select_to_shoot",
+        target="orks_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_blast_vs_infantry",
+        cp_cost=1,
+        effect_params={"keyword": "BLAST", "target_keywords_any": ["INFANTRY"]},
+    ),
+    "000010713006": StratagemToolDescriptor(
+        stratagem_id="000010713006",
+        name="ROLLING LOOT-HEAP",
+        timing="shooting_phase_on_select_to_shoot",
+        target="flash_gitz_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_anti_vehicle_4plus",
+        cp_cost=1,
+        effect_params={"keyword": "ANTI-VEHICLE 4+"},
+    ),
+    "000008873005": StratagemToolDescriptor(
+        stratagem_id="000008873005",
+        name="BLITZA FIRE",
+        timing="shooting_phase_on_select_to_shoot",
+        target="speed_freeks_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_lethal_hits_and_critical_hits_5plus_within_9",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={"keyword": "LETHAL HITS", "critical_hit_threshold": 5, "critical_hit_target_range": 9.0},
+    ),
+    "000008873004": StratagemToolDescriptor(
+        stratagem_id="000008873004",
+        name="DAKKASTORM",
+        timing="shooting_phase_on_select_to_shoot",
+        target="speed_freeks_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_sustained_hits_within_9_upgrade",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={"sustained_hits": 1, "sustained_hits_within_range": 2, "range_in": 9.0},
+    ),
+    "000009992005": StratagemToolDescriptor(
+        stratagem_id="000009992005",
+        name="LONG, UNCONTROLLED BURSTS",
+        timing="shooting_phase_on_select_to_shoot",
+        target="orks_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_ignores_cover",
+        cp_cost=1,
+        effect_params={"keyword": "IGNORES COVER"},
+    ),
+    "000009992002": StratagemToolDescriptor(
+        stratagem_id="000009992002",
+        name="ORKS IS STILL ORKS",
+        timing="fight_phase_on_select_to_fight",
+        target="orks_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="melee_wound_reroll_ones_or_full_on_objective_targets",
+        cp_cost=1,
+        effect_params={"base_reroll_mode": "ones", "objective_target_reroll_mode": "full"},
+    ),
+    "000009992006": StratagemToolDescriptor(
+        stratagem_id="000009992006",
+        name="SPESHUL SHELLS",
+        timing="shooting_phase_on_select_to_shoot",
+        target="orks_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_ap_bonus_vs_closest_eligible_within_18",
+        cp_cost=1,
+        range_in=18.0,
+        effect_params={"ap_bonus": 1, "closest_eligible_only": True, "max_target_range": 18.0},
+    ),
+    "000009796002": StratagemToolDescriptor(
+        stratagem_id="000009796002",
+        name="DAT'S OURS",
+        timing="command_phase",
+        target="orks_unit_within_engagement_range",
+        duration="until_start_of_next_command_phase",
+        effect="objective_control_bonus",
+        cp_cost=1,
+        effect_params={"objective_control_bonus": 1},
+    ),
+    "000009992004": StratagemToolDescriptor(
+        stratagem_id="000009992004",
+        name="HUGE SHOW-OFFS",
+        timing="command_phase",
+        target="orks_walker_unit_excluding_killa_kans",
+        duration="until_start_of_next_command_phase",
+        effect="characteristic_and_hit_roll_bonus",
+        cp_cost=1,
+        effect_params={
+            "movement_bonus": 1,
+            "leadership_bonus": 1,
+            "objective_control_bonus": 1,
+            "hit_roll_bonus": 1,
+        },
+    ),
+}
+
+_ORKS_TEMP_BUFF_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS.values()
+}
+
 _POSSESSED_SLAUGHTERBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010083002": StratagemToolDescriptor(
         stratagem_id="000010083002",
@@ -3631,6 +3766,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _GREEN_TIDE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _POSSESSED_SLAUGHTERBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3791,6 +3929,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _LEGION_OF_EXCESS_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _GREEN_TIDE_STRATAGEM_BY_NAME.get(key)
+        or _ORKS_TEMP_BUFF_STRATAGEM_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME.get(key)
         or _HOST_OF_ASCENSION_STRATAGEM_BY_NAME.get(key)
         or _BROOD_BROTHER_AUXILIA_STRATAGEM_BY_NAME.get(key)

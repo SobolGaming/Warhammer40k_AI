@@ -5627,6 +5627,63 @@ class ActionsMovementMixin:
                 mods["reroll_hit_full"] = True
                 reroll_hit_full_reasons.append("Overseer of Redemption: re-roll Hit roll (Sisters Repentia melee)")
 
+        temp_effect_iter = getattr(self, "iter_active_orks_temp_effects", None)
+        if callable(temp_effect_iter):
+            for effect in list(
+                temp_effect_iter(
+                    effect_type="hit_bonus",
+                    attack_type=atype,
+                    target=target,
+                    model=attacker_model,
+                )
+                or []
+            ):
+                try:
+                    hit_bonus = int(effect.get("value", 0) or 0)
+                except (TypeError, ValueError):
+                    hit_bonus = 0
+                if hit_bonus == 0:
+                    continue
+                mods["hit"] += int(hit_bonus)
+                source = str(effect.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
+                hit_reasons.append(f"{hit_bonus:+d} to hit from {source}")
+            for effect in list(
+                temp_effect_iter(
+                    effect_type="hit_reroll",
+                    attack_type=atype,
+                    target=target,
+                    model=attacker_model,
+                )
+                or []
+            ):
+                reroll_mode = str(effect.get("reroll_mode", "") or "").strip().lower()
+                source = str(effect.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
+                if reroll_mode == "full":
+                    mods["reroll_hit_full"] = True
+                    reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll")
+                elif reroll_mode == "ones":
+                    reroll_hit_values.add(1)
+                    reroll_hit_reasons.append(f"{source}: re-roll Hit rolls of 1")
+            for effect in list(
+                temp_effect_iter(
+                    effect_type="crit_hit_threshold",
+                    attack_type=atype,
+                    target=target,
+                    model=attacker_model,
+                )
+                or []
+            ):
+                try:
+                    threshold = int(effect.get("value", 0) or 0)
+                except (TypeError, ValueError):
+                    threshold = 0
+                if threshold <= 0:
+                    continue
+                threshold = max(2, min(6, int(threshold)))
+                crit_hit_threshold = threshold if crit_hit_threshold is None else min(int(crit_hit_threshold), int(threshold))
+                source = str(effect.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
+                crit_hit_reasons.append(f"{source}: critical hit on {threshold}+")
+
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
         mods["crit_hit_threshold"] = crit_hit_threshold
@@ -6764,6 +6821,26 @@ class ActionsMovementMixin:
             ):
                 mods["reroll_wound_full"] = True
                 reroll_wound_full_reasons.append("Overseer of Redemption: re-roll Wound roll (Sisters Repentia melee)")
+
+        temp_effect_iter = getattr(self, "iter_active_orks_temp_effects", None)
+        if callable(temp_effect_iter):
+            for effect in list(
+                temp_effect_iter(
+                    effect_type="wound_reroll",
+                    attack_type=atype,
+                    target=target,
+                    model=attacker_model,
+                )
+                or []
+            ):
+                reroll_mode = str(effect.get("reroll_mode", "") or "").strip().lower()
+                source = str(effect.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
+                if reroll_mode == "full":
+                    mods["reroll_wound_full"] = True
+                    reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll")
+                elif reroll_mode == "ones":
+                    reroll_wound_values.add(1)
+                    reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of 1")
 
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
         mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)

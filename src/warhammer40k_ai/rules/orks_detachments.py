@@ -50,6 +50,12 @@ class OrksDetachmentManager(DetachmentManagerBase):
         _DREAD_MOB_BUTTON_LETHAL: "Lethal Hits",
         _DREAD_MOB_BUTTON_CRIT_AP: "Critical Wound AP +2",
     }
+    _NEXT_COMMAND_PHASE_ANY_SOURCE_PREFIXES = (
+        "stratagem:orks_next_command_phase:dats_ours:",
+    )
+    _NEXT_COMMAND_PHASE_OWNER_SOURCE_PREFIXES = (
+        "stratagem:orks_next_command_phase:huge_show_offs:",
+    )
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -1205,11 +1211,65 @@ class OrksDetachmentManager(DetachmentManagerBase):
         self.da_big_hunt_prey_turn = 0
         self.da_big_hunt_prey_owner_id = ""
 
+    def _iter_unique_army_unit_roots(self) -> list:
+        if self.army is None:
+            return []
+        seen: set[str] = set()
+        roots: list = []
+        for entry in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(entry)
+            if root is None:
+                continue
+            root_id = self._unit_root_id(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            roots.append(root)
+        roots.sort(key=lambda unit: self._unit_root_id(unit))
+        return roots
+
+    def clear_orks_next_command_phase_effects(self, *, player=None) -> None:
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        owner_command_phase = owner is not None and player is owner
+        for root in self._iter_unique_army_unit_roots():
+            remove_mods = getattr(root, "remove_characteristic_modifiers_by_source", None)
+            if callable(remove_mods):
+                for prefix in self._NEXT_COMMAND_PHASE_ANY_SOURCE_PREFIXES:
+                    remove_mods(prefix)
+                if owner_command_phase:
+                    for prefix in self._NEXT_COMMAND_PHASE_OWNER_SOURCE_PREFIXES:
+                        remove_mods(prefix)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            effects = list(special_rules.get("orks_temp_effects", []) or [])
+            if not effects:
+                continue
+            kept = []
+            for entry in effects:
+                if not isinstance(entry, dict):
+                    continue
+                if str(entry.get("expires_mode", "") or "").strip().lower() == "next_command_phase":
+                    expires_scope = str(entry.get("expires_scope", "") or "").strip().lower()
+                    if expires_scope == "owner_command_phase" and not owner_command_phase:
+                        kept.append(dict(entry))
+                        continue
+                    continue
+                kept.append(dict(entry))
+            updated = dict(special_rules)
+            if kept:
+                updated["orks_temp_effects"] = kept
+            else:
+                updated.pop("orks_temp_effects", None)
+            root.special_rules = updated
+
     def on_command_phase_start(self, *, game=None, player=None) -> None:
         if self.army is None:
             self.clear_da_big_hunt_prey()
             self.clear_taktikal_brigade_active_taktiks()
             return
+        self.clear_orks_next_command_phase_effects(player=player)
         army_player = getattr(self.army, "player", None)
         if player is not None and army_player is not None and army_player is not player:
             return
