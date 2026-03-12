@@ -60,15 +60,18 @@ class TestWahaHelper(unittest.TestCase):
             str(detachment_row.get("description", "") or ""),
         )
 
-    def test_filtered_datasheets_keep_mission_tactics_links(self):
+    def test_filtered_datasheets_preserve_expected_mission_tactics_ownership(self):
         mission_tactics_id = "000008521"
-        linked = []
+        linked = set()
         for datasheet in self.waha_helper.datasheets.values():
             for entry in list(datasheet.get("datasheets_abilities", []) or []):
                 if str(entry.get("ability_id", "") or "").strip() == mission_tactics_id:
-                    linked.append(str(datasheet.get("name", "") or ""))
+                    linked.add(str(datasheet.get("name", "") or ""))
                     break
-        self.assertGreater(len(linked), 0)
+        self.assertIn("Watch Master", linked)
+        self.assertIn("Watch Captain Artemis", linked)
+        self.assertIn("Deathwatch Veterans", linked)
+        self.assertNotIn("Intercessor Squad", linked)
 
 
 if __name__ == '__main__':

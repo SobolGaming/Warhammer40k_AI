@@ -31,4 +31,6 @@ def test_black_spear_mission_tactics_detachment_ability_is_supported():
     assert status == "Supported"
     notes_text = str(notes or "").lower()
     assert "black spear task force" in notes_text
+    assert "with this ability" in notes_text
+    assert "adaptive tactics" in notes_text
     assert "critical hits" in notes_text

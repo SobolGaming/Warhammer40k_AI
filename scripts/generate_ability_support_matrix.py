@@ -3074,7 +3074,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         ),
         "Mission Tactics": (
             "Supported",
-            "Black Spear Task Force: in each Command phase you can select one unchosen Mission Tactic for the battle round; Furor grants Sustained Hits 1, Malleus grants Lethal Hits, and Purgatus grants Precision on critical hits for ADEPTUS ASTARTES units until your next Command phase.",
+            "Black Spear Task Force: in each Command phase you can select one unchosen Mission Tactic for the battle round; Furor grants Sustained Hits 1, Malleus grants Lethal Hits, and Purgatus grants Precision on critical hits for units from your army with this ability until your next Command phase. Adaptive Tactics is the explicit exception path for granting a Mission Tactic to an ADEPTUS ASTARTES unit that does not have this ability (tracked under stratagem support).",
         ),
         "Legendary Slayers": (
             "Supported",
@@ -5411,7 +5411,7 @@ def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
     return {
         "000008521": (
             "Supported",
-            "Black Spear Task Force: in each Command phase you can select one unchosen Mission Tactic for the battle round; Furor grants Sustained Hits 1, Malleus grants Lethal Hits, and Purgatus grants Precision on critical hits for ADEPTUS ASTARTES units until your next Command phase.",
+            "Black Spear Task Force: in each Command phase you can select one unchosen Mission Tactic for the battle round; Furor grants Sustained Hits 1, Malleus grants Lethal Hits, and Purgatus grants Precision on critical hits for units from your army with this ability until your next Command phase. Adaptive Tactics is the explicit exception path for granting a Mission Tactic to an ADEPTUS ASTARTES unit that does not have this ability (tracked under stratagem support).",
         ),
         "000009125": (
             "Supported",
