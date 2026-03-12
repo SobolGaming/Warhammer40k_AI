@@ -274,6 +274,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DAKKA! DAKKA! DAKKA!",
     "BIGGER SHELLS FOR BIGGER GITZ",
     "KLANKIN' KLAWS",
+    "STALKIN' TAKTIKS",
+    "STALKIN\u2019 TAKTIKS",
+    "SPEEDIEST FREEKS",
+    "EXTRA GUBBINZ",
     "RUN THEM THROUGH!",
     "CAREEN!",
     "'ARD AS NAILS",
@@ -1669,6 +1673,10 @@ class StratagemManager(
             "IMPLACABLE GUARDIANS",
             "SMOKESCREEN",
             "ARMOUR OF CONTEMPT",
+            "STALKIN' TAKTIKS",
+            "STALKIN’ TAKTIKS",
+            "SPEEDIEST FREEKS",
+            "EXTRA GUBBINZ",
             "COUNTERFIRE DEFENCE SYSTEMS",
             "REACTIVE IMPACT DAMPENERS",
             "CAPRICIOUS REACTIONS",
@@ -1705,6 +1713,7 @@ class StratagemManager(
             "BERSERK FUGUE",
             "BEAUTIFUL DEATH",
             "VICIOUS BLADES",
+            "SPEEDIEST FREEKS",
             "COMBAT STIMMS",
             "CONTEMPTUOUS DISREGARD",
             "DEATH FRENZY",
@@ -2216,6 +2225,7 @@ class StratagemManager(
                 "defensive_hit_mods",
                 "defensive_wound_mods",
                 "defensive_damage_reductions",
+                "defensive_cover_bonuses",
                 "defensive_invuln_overrides",
                 "defensive_fnp_overrides",
                 "defensive_ap_worsen_phase",
@@ -2245,6 +2255,7 @@ class StratagemManager(
                 "defensive_hit_mods",
                 "defensive_wound_mods",
                 "defensive_damage_reductions",
+                "defensive_cover_bonuses",
                 "defensive_invuln_overrides",
                 "defensive_fnp_overrides",
             ):
@@ -4877,6 +4888,10 @@ class StratagemManager(
             "CAREEN!": "Target: destroyed ORKS VEHICLE (Deadly Demise 6)",
             "'ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
             "\u2019ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
+            "STALKIN' TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
+            "STALKIN\u2019 TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
+            "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
+            "EXTRA GUBBINZ": "Target: ORKS WALKER/GROTS VEHICLE unit selected by the attacking enemy's targets (excluding TITANIC)",
             "PROFANE SYMBIOSIS": "Target: CHAOS KNIGHTS unit (not Empowered)",
             "CORRUPTING TAINT": "Target: CHAOS KNIGHTS CHARACTER; select objective you control",
             "UNLEASH BALEFIRE": "Target: CHAOS KNIGHTS unit (not yet shot)",
@@ -9706,6 +9721,14 @@ class StratagemManager(
                             self._queue_reaction(payload)
         except Exception:
             raise
+        try:
+            self._queue_orks_target_selected_defensive_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name="Shooting phase",
+            )
+        except Exception:
+            raise
         # ARMOUR OF CONTEMPT / THE FOE FORESEEN (opponent Shooting phase, after targets selected).
         try:
             for strat_name in ("ARMOUR OF CONTEMPT", "THE FOE FORESEEN"):
@@ -10971,6 +10994,14 @@ class StratagemManager(
                             if len(candidates) == 1:
                                 payload["target_unit"] = candidates[0]
                             self._queue_reaction(payload)
+        except Exception:
+            raise
+        try:
+            self._queue_orks_target_selected_defensive_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name="Fight phase",
+            )
         except Exception:
             raise
         # Khorne Daemonkin: BLESSING OF BURNING BLOOD (opponent Fight phase, after targets selected).

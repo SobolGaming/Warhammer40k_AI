@@ -1000,6 +1000,417 @@ class OrksStratagemMixin:
             return False, None
         return True, root
 
+    def _orks_get_available_stratagem_by_names(self, *names: str) -> Any:
+        normalized = {
+            self._orks_normalize_name(name)
+            for name in list(names or ())
+            if self._orks_normalize_name(name)
+        }
+        if not normalized:
+            return None
+        for stratagem in list(getattr(self, "available", []) or []):
+            if self._orks_normalize_name(getattr(stratagem, "name", "")) in normalized:
+                return stratagem
+        return None
+
+    def _orks_reaction_already_queued(self, *, event_name: str, stratagem_name: str, attacking_unit: Any) -> bool:
+        target_name = str(stratagem_name or "").strip().upper()
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "").strip() != str(event_name or "").strip():
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != target_name:
+                continue
+            if reaction.get("attacking_unit") is attacking_unit:
+                return True
+        return False
+
+    def _orks_target_selected_reaction_candidates(self, target_units: list[Any], *, matcher) -> list[Any]:
+        seen: set[str] = set()
+        candidates: list[Any] = []
+        for unit in list(target_units or []):
+            root = self._orks_root(unit)
+            if root is None:
+                continue
+            uid = self._orks_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._orks_owned_by_player(root, self.player):
+                continue
+            if not self._orks_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_orks_unit(root):
+                continue
+            if not bool(matcher(root)):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._orks_sort_key)
+        return candidates
+
+    def _orks_is_beast_snagga_infantry_or_mounted(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        if not self._orks_unit_contains_keyword(root, "BEAST SNAGGA"):
+            return False
+        return self._orks_unit_contains_any_keyword(root, ("INFANTRY", "MOUNTED"))
+
+    def _orks_is_speed_freeks_or_trukk(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        if self._orks_unit_contains_keyword(root, "SPEED FREEKS"):
+            return True
+        if self._orks_unit_contains_keyword(root, "TRUKK"):
+            return True
+        return self._orks_unit_name_contains(root, "trukk")
+
+    def _orks_is_walker_or_grots_vehicle_not_titanic(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        if self._orks_unit_contains_keyword(root, "TITANIC"):
+            return False
+        return self._orks_unit_is_walker_or_grots_vehicle(root)
+
+    def _orks_unit_unmodified_toughness(self, unit: Any) -> int:
+        root = self._orks_root(unit)
+        if root is None:
+            return 0
+        models = list(getattr(root, "models", []) or [])
+        if not models:
+            return 0
+        model = models[0]
+        raw_value = getattr(model, "_base_toughness", None)
+        if raw_value is None:
+            raw_value = getattr(model, "_toughness", None)
+        try:
+            return int(raw_value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _orks_stalkin_taktiks_defensive_effects(self, unit: Any, *, source_name: str) -> list[dict]:
+        root = self._orks_root(unit)
+        if root is None:
+            return []
+        effects = [
+            {
+                "key": "defensive_cover_bonuses",
+                "value": 1,
+                "attack_type": "ranged",
+                "duration": "phase",
+                "source": source_name,
+            }
+        ]
+        if self._orks_unit_contains_keyword(root, "INFANTRY"):
+            effects.append(
+                {
+                    "key": "defensive_hit_mods",
+                    "value": 1,
+                    "attack_type": "ranged",
+                    "duration": "phase",
+                    "source": source_name,
+                }
+            )
+        return effects
+
+    def _orks_speediest_freeks_defensive_effects(self, unit: Any, *, source_name: str) -> list[dict]:
+        root = self._orks_root(unit)
+        if root is None:
+            return []
+        invuln_value = 5
+        if self._orks_unit_contains_keyword(root, "VEHICLE"):
+            unmodified_toughness = self._orks_unit_unmodified_toughness(root)
+            if unmodified_toughness > 0 and unmodified_toughness <= 8:
+                invuln_value = 4
+        return [
+            {
+                "key": "defensive_invuln_overrides",
+                "value": int(invuln_value),
+                "attack_type": "any",
+                "duration": "phase",
+                "source": source_name,
+            }
+        ]
+
+    def _orks_extra_gubbinz_defensive_effects(self, *, source_name: str) -> list[dict]:
+        return [
+            {
+                "key": "defensive_damage_reductions",
+                "value": 1,
+                "attack_type": "any",
+                "duration": "phase",
+                "source": source_name,
+            }
+        ]
+
+    def _orks_apply_defensive_reaction_effects(
+        self,
+        unit: Any,
+        *,
+        attacking_unit: Any,
+        phase_name: str,
+        source_name: str,
+        effects: list[dict],
+    ) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        append_effect = getattr(self, "_append_defensive_effect", None)
+        if not callable(append_effect):
+            return False
+
+        phase_key = self._orks_phase_key(phase_name)
+        attacker_key = self._attacker_unit_key(attacking_unit) if attacking_unit is not None else None
+
+        applied = False
+        for spec in list(effects or []):
+            if not isinstance(spec, dict):
+                continue
+            key = str(spec.get("key", "") or "").strip()
+            if not key:
+                continue
+            duration = str(spec.get("duration", "phase") or "phase").strip().lower()
+            entry = {
+                "value": int(spec.get("value", 0) or 0),
+                "attack_type": str(spec.get("attack_type", "any") or "any").strip().lower(),
+                "source": str(spec.get("source", "") or source_name or "Orks defensive stratagem").strip(),
+            }
+            if duration == "phase":
+                entry["expires_phase"] = phase_key
+            elif duration == "attacker":
+                if not attacker_key:
+                    return False
+                entry["attacker_key"] = attacker_key
+            else:
+                return False
+            for field in (
+                "exclude_allocated_model_keyword",
+                "requires_strength_gt_toughness",
+                "requires_leading_keyword",
+                "requires_unit_contains_keyword",
+            ):
+                if field in spec:
+                    entry[field] = spec[field]
+            append_effect(root, key, entry)
+            applied = True
+        return applied
+
+    def _orks_resolve_target_selected_reaction_context(self, stratagem_name: str, **kwargs) -> tuple[Any, Any, list[Any], str]:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        selected_targets = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        phase_name = str(kwargs.get("phase_name") or "").strip()
+
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None and not candidates and len(selected_targets) == 1:
+            target_unit = selected_targets[0]
+
+        normalized_name = self._orks_normalize_name(stratagem_name)
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if self._orks_normalize_name(str(reaction.get("stratagem", "") or "")) != normalized_name:
+                continue
+            if target_unit is None:
+                target_unit = reaction.get("target_unit") or reaction.get("unit")
+            if attacking_unit is None:
+                attacking_unit = reaction.get("attacking_unit") or reaction.get("attacker_unit")
+            if not selected_targets:
+                selected_targets = list(reaction.get("target_units") or [])
+            if not candidates:
+                candidates = list(reaction.get("candidates") or reaction.get("target_units") or [])
+            if not phase_name:
+                phase_name = str(reaction.get("phase_name") or "").strip()
+            if target_unit is None and len(candidates) == 1:
+                target_unit = candidates[0]
+            break
+
+        return target_unit, attacking_unit, candidates, phase_name
+
+    def _use_orks_target_selected_defensive_reaction(
+        self,
+        stratagem: Any,
+        *,
+        stratagem_name: str,
+        expected_phases: tuple[str, ...],
+        detachment_check,
+        target_matcher,
+        target_error: str,
+        effect_builder,
+        **kwargs,
+    ) -> bool:
+        if not bool(detachment_check()):
+            return False
+
+        target_unit, attacking_unit, candidates, phase_name = self._orks_resolve_target_selected_reaction_context(
+            stratagem_name,
+            **kwargs,
+        )
+        if target_unit is None:
+            logger.error("ERROR: %s: no target unit provided", stratagem_name)
+            return False
+
+        phase_label = self._orks_phase_label(phase_name or self._orks_current_phase_label())
+        allowed = {self._orks_phase_label(item) for item in list(expected_phases or ())}
+        if phase_label not in allowed:
+            logger.error("ERROR: %s: wrong phase", stratagem_name)
+            return False
+        if self._orks_is_players_turn():
+            logger.error("ERROR: %s: not opponent's phase", stratagem_name)
+            return False
+
+        root = self._orks_root(target_unit)
+        if root is None:
+            return False
+        if not self._orks_owned_by_player(root, self.player):
+            logger.error("ERROR: %s: target unit is not yours", stratagem_name)
+            return False
+        if not self._orks_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: %s: target must be on battlefield and targetable", stratagem_name)
+            return False
+        if not self._is_orks_unit(root):
+            logger.error("ERROR: %s: target must be an ORKS unit", stratagem_name)
+            return False
+        if candidates and not self._orks_unit_in_candidates(root, candidates):
+            logger.error("ERROR: %s: target was not selected by the attacker", stratagem_name)
+            return False
+
+        attacker_root = self._orks_root(attacking_unit)
+        if attacker_root is not None and self._orks_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: %s: attacker is not enemy", stratagem_name)
+            return False
+
+        if not bool(target_matcher(root)):
+            logger.error("ERROR: %s: %s", stratagem_name, target_error)
+            return False
+
+        phase_title = "Shooting phase" if phase_label == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=root,
+            unit=root,
+            attacking_unit=attacker_root,
+            phase_name=phase_title,
+        ):
+            logger.error("ERROR: %s: cannot be used in current state", stratagem_name)
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or stratagem_name)
+        effects = list(effect_builder(root, source_name=source_name) or [])
+        if not effects:
+            logger.error("ERROR: %s: no defensive effects configured", stratagem_name)
+            return False
+        if not self._orks_apply_defensive_reaction_effects(
+            root,
+            attacking_unit=attacker_root,
+            phase_name=phase_title,
+            source_name=source_name,
+            effects=effects,
+        ):
+            logger.error("ERROR: %s: failed to apply defensive effects", stratagem_name)
+            return False
+
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: %s: %s gains defensive effects this phase.", stratagem_name, getattr(root, "name", "Unit"))
+        return True
+
+    def _queue_single_orks_target_selected_defensive_reaction(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+        phase_name: str,
+        stratagem_names: tuple[str, ...],
+        detachment_check,
+        target_matcher,
+    ) -> None:
+        if not bool(detachment_check()):
+            return
+        stratagem = self._orks_get_available_stratagem_by_names(*stratagem_names)
+        if stratagem is None:
+            return
+        if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if (str(getattr(stratagem, "name", "") or "").strip().upper()) in set(self._used_stratagems_this_phase):
+            return
+
+        candidates = self._orks_target_selected_reaction_candidates(
+            list(target_units or []),
+            matcher=target_matcher,
+        )
+        if not candidates:
+            return
+
+        phase_label = self._orks_phase_label(phase_name)
+        event_name = "shooting_targets_selected" if phase_label == "shooting phase" else "fight_targets_selected"
+        stratagem_name = str(getattr(stratagem, "name", "") or stratagem_names[0]).strip()
+        if self._orks_reaction_already_queued(
+            event_name=event_name,
+            stratagem_name=stratagem_name,
+            attacking_unit=attacking_unit,
+        ):
+            return
+
+        payload = {
+            "event": event_name,
+            "phase_name": "Shooting phase" if phase_label == "shooting phase" else "Fight phase",
+            "stratagem": stratagem_name,
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_orks_target_selected_defensive_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+        phase_name: str,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        phase_label = self._orks_phase_label(phase_name)
+        if phase_label not in {"shooting phase", "fight phase"}:
+            return
+        if self._orks_is_players_turn():
+            return
+
+        if phase_label == "shooting phase":
+            self._queue_single_orks_target_selected_defensive_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name=phase_name,
+                stratagem_names=("STALKIN' TAKTIKS", "STALKIN’ TAKTIKS"),
+                detachment_check=self._is_da_big_hunt_detachment,
+                target_matcher=self._orks_is_beast_snagga_infantry_or_mounted,
+            )
+            self._queue_single_orks_target_selected_defensive_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name=phase_name,
+                stratagem_names=("EXTRA GUBBINZ",),
+                detachment_check=self._is_dread_mob_detachment,
+                target_matcher=self._orks_is_walker_or_grots_vehicle_not_titanic,
+            )
+
+        self._queue_single_orks_target_selected_defensive_reaction(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+            phase_name=phase_name,
+            stratagem_names=("SPEEDIEST FREEKS",),
+            detachment_check=self._is_kult_of_speed_detachment,
+            target_matcher=self._orks_is_speed_freeks_or_trukk,
+        )
+
     def _use_orks_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -1039,6 +1450,12 @@ class OrksStratagemMixin:
             return self._use_orks_bigger_shells_for_bigger_gitz(stratagem, **kwargs)
         if name_norm == "klankin klaws":
             return self._use_orks_klankin_klaws(stratagem, **kwargs)
+        if name_norm == "stalkin taktiks":
+            return self._use_orks_stalkin_taktiks(stratagem, **kwargs)
+        if name_u == "SPEEDIEST FREEKS":
+            return self._use_orks_speediest_freeks(stratagem, **kwargs)
+        if name_u == "EXTRA GUBBINZ":
+            return self._use_orks_extra_gubbinz(stratagem, **kwargs)
         return None
 
     def _use_orks_armed_to_dateef(self, stratagem: Any, **kwargs) -> bool:
@@ -1826,6 +2243,42 @@ class OrksStratagemMixin:
         self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info("INFO: KLANKIN' KLAWS: queued mode choice for %s.", getattr(root, "name", "Unit"))
         return True
+
+    def _use_orks_stalkin_taktiks(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_target_selected_defensive_reaction(
+            stratagem,
+            stratagem_name="STALKIN' TAKTIKS",
+            expected_phases=("Shooting phase",),
+            detachment_check=self._is_da_big_hunt_detachment,
+            target_matcher=self._orks_is_beast_snagga_infantry_or_mounted,
+            target_error="target must be a Beast Snagga Infantry or Beast Snagga Mounted unit",
+            effect_builder=self._orks_stalkin_taktiks_defensive_effects,
+            **kwargs,
+        )
+
+    def _use_orks_speediest_freeks(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_target_selected_defensive_reaction(
+            stratagem,
+            stratagem_name="SPEEDIEST FREEKS",
+            expected_phases=("Shooting phase", "Fight phase"),
+            detachment_check=self._is_kult_of_speed_detachment,
+            target_matcher=self._orks_is_speed_freeks_or_trukk,
+            target_error="target must be a Speed Freeks or Trukk unit",
+            effect_builder=self._orks_speediest_freeks_defensive_effects,
+            **kwargs,
+        )
+
+    def _use_orks_extra_gubbinz(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_target_selected_defensive_reaction(
+            stratagem,
+            stratagem_name="EXTRA GUBBINZ",
+            expected_phases=("Shooting phase",),
+            detachment_check=self._is_dread_mob_detachment,
+            target_matcher=self._orks_is_walker_or_grots_vehicle_not_titanic,
+            target_error="target must be an Orks Walker or Grots Vehicle unit (excluding TITANIC)",
+            effect_builder=lambda _unit, *, source_name: self._orks_extra_gubbinz_defensive_effects(source_name=source_name),
+            **kwargs,
+        )
 
     def _use_orks_come_on_ladz(self, stratagem: Any, **kwargs) -> bool:
         target_unit = kwargs.get("unit") or kwargs.get("target_unit")

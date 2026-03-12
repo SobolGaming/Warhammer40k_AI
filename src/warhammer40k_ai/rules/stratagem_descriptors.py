@@ -831,6 +831,43 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             ],
         },
     ),
+    "000008869006": StratagemToolDescriptor(
+        stratagem_id="000008869006",
+        name="STALKIN' TAKTIKS",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="beast_snagga_infantry_or_mounted_unit_targeted",
+        duration="until_end_of_phase",
+        effect="defensive_cover_and_conditional_stealth",
+        cp_cost=1,
+        effect_params={
+            "cover_attack_type": "ranged",
+            "conditional_stealth_if_unit_has_keyword": "INFANTRY",
+        },
+    ),
+    "000008873002": StratagemToolDescriptor(
+        stratagem_id="000008873002",
+        name="SPEEDIEST FREEKS",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="speed_freeks_or_trukk_unit_targeted",
+        duration="until_end_of_phase",
+        effect="defensive_conditional_invulnerable_save",
+        cp_cost=1,
+        effect_params={
+            "base_invulnerable_save": 5,
+            "vehicle_unmodified_toughness_max_for_improved_invulnerable": 8,
+            "improved_invulnerable_save": 4,
+        },
+    ),
+    "000008878007": StratagemToolDescriptor(
+        stratagem_id="000008878007",
+        name="EXTRA GUBBINZ",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="orks_walker_or_grots_vehicle_unit_targeted_excluding_titanic",
+        duration="until_end_of_phase",
+        effect="defensive_damage_reduction",
+        cp_cost=1,
+        effect_params={"damage_reduction": 1},
+    ),
 }
 
 _ORKS_TEMP_BUFF_STRATAGEM_BY_NAME = {

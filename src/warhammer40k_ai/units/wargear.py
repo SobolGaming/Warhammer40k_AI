@@ -19263,6 +19263,42 @@ class WargearProfile:
             if isinstance(sr, dict) and sr.get("smokescreen_active") is True:
                 attack_instance.setdefault("benefit_of_cover", True)
                 attack_instance.setdefault("benefit_of_cover_source", "SMOKESCREEN")
+            t_root = t_unit.get_attached_unit_root() if (t_unit is not None and hasattr(t_unit, "get_attached_unit_root")) else t_unit
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            attacker_key = attack_instance.get("attacker_key")
+            if not attacker_key and isinstance(attack_instance, dict):
+                attacker_unit = attack_instance.get("attacker_unit")
+                if attacker_unit is not None and hasattr(attacker_unit, "get_attached_unit_root"):
+                    attacker_key = get_entity_id(attacker_unit.get_attached_unit_root())
+                elif attacker_unit is not None:
+                    attacker_key = get_entity_id(attacker_unit)
+            phase_key = self._resolve_phase_key(
+                attacker_unit=attack_instance.get("attacker_unit") if isinstance(attack_instance, dict) else None,
+                target_unit=t_root,
+            )
+            cover_sources = []
+            for entry in self._iter_defensive_entries(
+                t_root,
+                "defensive_cover_bonuses",
+                attacker_key=attacker_key,
+                attack_type=attack_type,
+                phase_key=phase_key,
+            ):
+                source_name = str(entry.get("source", "") or "Defensive stratagem").strip() or "Defensive stratagem"
+                cover_sources.append(source_name)
+            if cover_sources:
+                attack_instance.setdefault("benefit_of_cover", True)
+                existing_source = str(attack_instance.get("benefit_of_cover_source", "") or "").strip()
+                source_parts = [part.strip() for part in existing_source.split(",") if part.strip()]
+                seen = {part.lower() for part in source_parts}
+                for source_name in list(cover_sources):
+                    lowered = source_name.lower()
+                    if lowered in seen:
+                        continue
+                    seen.add(lowered)
+                    source_parts.append(source_name)
+                if source_parts:
+                    attack_instance["benefit_of_cover_source"] = ", ".join(source_parts)
         except Exception:
             pass
         try:
