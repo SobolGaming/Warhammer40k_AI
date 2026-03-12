@@ -278,6 +278,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "STALKIN\u2019 TAKTIKS",
     "SPEEDIEST FREEKS",
     "EXTRA GUBBINZ",
+    "WHERE D'YA FINK YOU'RE GOING?",
+    "WHERE D’YA FINK YOU’RE GOING?",
+    "KRUMP AND RUN",
+    "ON TO DA NEXT",
+    "MORE GITZ OVER 'ERE!",
+    "MORE GITZ OVER ’ERE!",
     "RUN THEM THROUGH!",
     "CAREEN!",
     "'ARD AS NAILS",
@@ -525,6 +531,12 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CAREEN!",
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
+    "WHERE D'YA FINK YOU'RE GOING?",
+    "WHERE D’YA FINK YOU’RE GOING?",
+    "KRUMP AND RUN",
+    "ON TO DA NEXT",
+    "MORE GITZ OVER 'ERE!",
+    "MORE GITZ OVER ’ERE!",
     "PROFANE SYMBIOSIS",
     "CORRUPTING TAINT",
     "AEGIS ETERNAL",
@@ -1567,6 +1579,10 @@ class StratagemManager(
             "WEAVING STRIDE",
             "CAVALCADE OF BLADES",
             "FOOLS' FLIGHT",
+            "WHERE D'YA FINK YOU'RE GOING?",
+            "KRUMP AND RUN",
+            "ON TO DA NEXT",
+            "MORE GITZ OVER 'ERE!",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES", "A DEADLY SNARE", "SHADE PATH"}:
@@ -4892,6 +4908,12 @@ class StratagemManager(
             "STALKIN\u2019 TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
             "EXTRA GUBBINZ": "Target: ORKS WALKER/GROTS VEHICLE unit selected by the attacking enemy's targets (excluding TITANIC)",
+            "WHERE D'YA FINK YOU'RE GOING?": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",
+            "WHERE D’YA FINK YOU’RE GOING?": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",
+            "KRUMP AND RUN": "Target: ORKS unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",
+            "ON TO DA NEXT": "Target: ORKS unit that was in Engagement Range of the enemy that just Fell Back at phase start",
+            "MORE GITZ OVER 'ERE!": "Target: SPEED FREEKS unit within 9\" of enemy that just ended a Normal/Advance/Fall Back move and not in Engagement Range",
+            "MORE GITZ OVER ’ERE!": "Target: SPEED FREEKS unit within 9\" of enemy that just ended a Normal/Advance/Fall Back move and not in Engagement Range",
             "PROFANE SYMBIOSIS": "Target: CHAOS KNIGHTS unit (not Empowered)",
             "CORRUPTING TAINT": "Target: CHAOS KNIGHTS CHARACTER; select objective you control",
             "UNLEASH BALEFIRE": "Target: CHAOS KNIGHTS unit (not yet shot)",
@@ -5524,6 +5546,7 @@ class StratagemManager(
             raise
         try:
             self._capture_aeldari_corsair_movement_phase_start_engagements(player=player, phase=phase)
+            self._capture_orks_opponent_movement_phase_start_engagements(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -8379,6 +8402,7 @@ class StratagemManager(
         self._queue_blood_legion_move_end_reactions(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
+        self._queue_orks_reactive_reposition_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_drukhari_reapers_wager_scintillating_tempo_reactions(
