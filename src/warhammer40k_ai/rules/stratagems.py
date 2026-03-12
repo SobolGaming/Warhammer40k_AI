@@ -258,6 +258,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ERE WE GO",
     "MOB RULE",
     "COME ON LADZ!",
+    "BRAGGIN' RIGHTS",
+    "BRAGGIN’ RIGHTS",
+    "COMPETITIVE STREAK",
+    "TIDE OF MUSCLE",
     "GET STUCK IN, LADZ!",
     "ARMED TO DATEEF",
     "CRUSHING IMPACT",
@@ -4310,6 +4314,36 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Command phase and a friendly BOYZ unit with destroyed non-CHARACTER models"
             return result
+        if name_u in {"BRAGGIN' RIGHTS", "BRAGGIN’ RIGHTS"}:
+            pairs = list(context.get("pair_candidates") or context.get("pairs") or context.get("candidates") or [])
+            if not pairs:
+                pairs = self._orks_green_tide_braggin_rights_pairs()
+            if pairs:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase and two friendly BOYZ units within 6\" of each other"
+            return result
+        if name_u == "COMPETITIVE STREAK":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_green_tide_competitive_streak_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the Fight phase and a friendly BOYZ unit that has not been selected to fight this phase"
+            return result
+        if name_u == "TIDE OF MUSCLE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_green_tide_tide_of_muscle_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Charge phase and a friendly BOYZ unit that has not declared a charge this phase"
+            return result
         if name_u == "GET STUCK IN, LADZ!":
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -5007,6 +5041,10 @@ class StratagemManager(
             "ERE WE GO": "Target: ORKS INFANTRY unit",
             "MOB RULE": "Target: ORKS MOB unit (10+ models) at end of your Command phase",
             "COME ON LADZ!": "Target: BOYZ unit with destroyed non-CHARACTER models; return up to D3+2",
+            "BRAGGIN' RIGHTS": "Target: two BOYZ units within 6\"; while they remain within 6\", both count as 10+ models for detachment/enhancement/stratagem checks until your next Command phase",
+            "BRAGGIN’ RIGHTS": "Target: two BOYZ units within 6\"; while they remain within 6\", both count as 10+ models for detachment/enhancement/stratagem checks until your next Command phase",
+            "COMPETITIVE STREAK": "Target: BOYZ unit not yet selected to fight; gains melee Wound re-roll 1s (or full Wound re-rolls while effectively 10+ for stratagem checks) until end of phase",
+            "TIDE OF MUSCLE": "Target: BOYZ unit that has not declared a charge this phase; gains +1 to Charge rolls and (while effectively 10+ for stratagem checks) Charge re-rolls until end of phase",
             "GET STUCK IN, LADZ!": "Target: non-GRETCHIN ORKS unit; that unit counts as Waaagh-active until your next Command phase",
             "CAREEN!": "Target: destroyed ORKS VEHICLE (Deadly Demise 6)",
             "'ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",

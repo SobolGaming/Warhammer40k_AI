@@ -12418,6 +12418,44 @@ class Game(
                 if val:
                     modifiers.append((int(val), source))
 
+        temp_effect_iter = getattr(charging_unit, "iter_active_orks_temp_effects", None)
+        if callable(temp_effect_iter):
+            targets_for_match = []
+            if target_unit is None:
+                targets_for_match = [None]
+            elif isinstance(target_unit, (list, tuple, set)):
+                targets_for_match = [tgt for tgt in list(target_unit or []) if tgt is not None]
+                if not targets_for_match:
+                    targets_for_match = [None]
+            else:
+                targets_for_match = [target_unit]
+            seen_temp_effects: set[str] = set()
+            for tgt in targets_for_match:
+                require_target_match = tgt is not None
+                for effect in list(
+                    temp_effect_iter(
+                        effect_type="charge_roll_bonus",
+                        attack_type="any",
+                        target=tgt,
+                        game_map=getattr(self, "map", None),
+                        require_target_match=require_target_match,
+                    )
+                    or []
+                ):
+                    effect_id = str(effect.get("id", "") or "").strip()
+                    if effect_id:
+                        if effect_id in seen_temp_effects:
+                            continue
+                        seen_temp_effects.add(effect_id)
+                    try:
+                        bonus_val = int(effect.get("value", 0) or 0)
+                    except (TypeError, ValueError):
+                        bonus_val = 0
+                    if not bonus_val:
+                        continue
+                    source = str(effect.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
+                    modifiers.append((int(bonus_val), source))
+
         try:
             targets = []
             if target_unit is None:

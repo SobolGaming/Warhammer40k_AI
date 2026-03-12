@@ -648,6 +648,9 @@ class Enhancement:
         is_freebooter_krew = bool(
             orks_mgr and callable(getattr(orks_mgr, "is_freebooter_krew", None)) and orks_mgr.is_freebooter_krew()
         )
+        is_green_tide = bool(
+            orks_mgr and callable(getattr(orks_mgr, "is_green_tide", None)) and orks_mgr.is_green_tide()
+        )
         is_taktikal_brigade = bool(
             orks_mgr and callable(getattr(orks_mgr, "is_taktikal_brigade", None)) and orks_mgr.is_taktikal_brigade()
         )
@@ -9926,6 +9929,59 @@ class Enhancement:
             ) + 1
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "bloodthirsty belligerence" or enh_id == "000008881002":
+            if not is_green_tide:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            source = str(getattr(desc, "name", "") or "Bloodthirsty Belligerence").strip() or "Bloodthirsty Belligerence"
+            unit.special_rules["enhancement_green_tide_bloodthirsty_belligerence"] = True
+            unit.special_rules["enhancement_green_tide_bloodthirsty_belligerence_source"] = source
+            unit.special_rules.pop("enhancement_reroll_advance", None)
+            unit.special_rules.pop("enhancement_charge_reroll", None)
+            unit.special_rules.pop("enhancement_reroll_advance_charge", None)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_green_tide_bloodthirsty_belligerence_bearer_model_id"] = bearer_id
+
+        if name == "ferocious show off" or enh_id == "000008881004":
+            if not is_green_tide:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Ferocious Show Off").strip() or "Ferocious Show Off"
+            base_bonus = _coerce_int(params.get("base_melee_strength_bonus", 1), default=1)
+            enhanced_bonus = _coerce_int(params.get("enhanced_melee_strength_bonus", 3), default=3)
+            unit.special_rules["enhancement_green_tide_ferocious_show_off"] = True
+            unit.special_rules["enhancement_green_tide_ferocious_show_off_source"] = source
+            unit.special_rules["enhancement_green_tide_ferocious_show_off_base_bonus"] = int(max(0, base_bonus))
+            unit.special_rules["enhancement_green_tide_ferocious_show_off_enhanced_bonus"] = int(max(0, enhanced_bonus))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_green_tide_ferocious_show_off_bearer_model_id"] = bearer_id
+
+        if name == "raucous warcaller" or enh_id == "000008881005":
+            if not is_green_tide:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Raucous Warcaller").strip() or "Raucous Warcaller"
+            raw_scopes = list(params.get("effective_model_count_scopes", ("detachment", "stratagem")) or ())
+            scopes = []
+            for entry in raw_scopes:
+                token = str(entry or "").strip().lower()
+                if token and token not in scopes:
+                    scopes.append(token)
+            if not scopes:
+                scopes = ["detachment", "stratagem"]
+            floor = _coerce_int(params.get("effective_model_floor", 10), default=10)
+            unit.special_rules["enhancement_green_tide_raucous_warcaller"] = True
+            unit.special_rules["enhancement_green_tide_raucous_warcaller_source"] = source
+            unit.special_rules["enhancement_green_tide_raucous_warcaller_effective_model_scopes"] = list(scopes)
+            unit.special_rules["enhancement_green_tide_effective_model_floor"] = int(max(0, floor))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_green_tide_raucous_warcaller_bearer_model_id"] = bearer_id
 
         if name == "follow me ladz" or enh_id == "000008367002":
             if not is_war_horde:

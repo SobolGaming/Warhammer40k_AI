@@ -14580,6 +14580,26 @@ class WargearProfile:
                         wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
         except Exception:
             pass
+        # Orks: Green Tide (Ferocious Show Off) adjusts bearer melee Strength by +1 or +3.
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+                bonus_fn = (
+                    getattr(orks_mgr, "green_tide_ferocious_show_off_melee_strength_bonus", None)
+                    if orks_mgr is not None
+                    else None
+                )
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    s_bonus, source = bonus_fn(attacker, attack_type="melee", game=game)
+                    if s_bonus:
+                        strength = strength + int(s_bonus)
+                        source_name = str(source or "Ferocious Show Off").strip() or "Ferocious Show Off"
+                        wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
+        except (AttributeError, TypeError, ValueError):
+            pass
         # Drukhari: Power from Pain (Macro-steroids) set melee Strength.
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():

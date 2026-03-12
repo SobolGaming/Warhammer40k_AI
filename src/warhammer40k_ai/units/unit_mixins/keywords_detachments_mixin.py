@@ -8894,6 +8894,251 @@ class KeywordsDetachmentsMixin:
         player = getattr(army, "player", None) if army is not None else None
         return getattr(player, "game", None) if player is not None else None
 
+    @staticmethod
+    def _orks_effective_model_scope(scope: str) -> str:
+        value = str(scope or "").strip().lower()
+        if value in {"detachment", "stratagem", "enhancement"}:
+            return value
+        return ""
+
+    @staticmethod
+    def _orks_temp_effect_scope_tokens(raw_scopes) -> set[str]:
+        if isinstance(raw_scopes, str):
+            entries = [raw_scopes]
+        elif isinstance(raw_scopes, (list, tuple, set)):
+            entries = list(raw_scopes or [])
+        else:
+            entries = []
+        tokens: set[str] = set()
+        for entry in entries:
+            token = str(entry or "").strip().lower()
+            if token:
+                tokens.add(token)
+        return tokens
+
+    @classmethod
+    def _orks_temp_effect_scope_matches(cls, raw_scopes, *, scope: str) -> bool:
+        scope_key = cls._orks_effective_model_scope(scope)
+        if not scope_key:
+            return False
+        tokens = cls._orks_temp_effect_scope_tokens(raw_scopes)
+        if not tokens:
+            return True
+        if "all" in tokens:
+            return True
+        return scope_key in tokens
+
+    @staticmethod
+    def _orks_model_is_alive(model) -> bool:
+        if model is None:
+            return False
+        alive_attr = getattr(model, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def _orks_effective_model_count_actual(self) -> int:
+        root = self._orks_temp_effect_root()
+        if root is None:
+            return 0
+        get_models = getattr(root, "get_attached_unit_models", None)
+        if callable(get_models):
+            models = list(get_models() or [])
+        else:
+            members_fn = getattr(root, "get_attached_unit_members", None)
+            members = list(members_fn() or []) if callable(members_fn) else [root]
+            if not members:
+                members = [root]
+            models = []
+            for member in members:
+                models.extend(list(getattr(member, "models", []) or []))
+        return int(sum(1 for model in list(models or []) if self._orks_model_is_alive(model)))
+
+    def _orks_effective_model_floor_from_active_leading_enhancement(
+        self,
+        *,
+        flag_key: str,
+        source_key: str,
+        scope: str,
+        default_floor: int = 10,
+    ) -> int:
+        scope_key = self._orks_effective_model_scope(scope)
+        if not scope_key:
+            return 0
+        root = self._orks_temp_effect_root()
+        if root is None:
+            return 0
+        leaders = list(getattr(root, "attached_leaders", []) or [])
+        if not leaders:
+            return 0
+        leaders.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        for leader in leaders:
+            sr = getattr(leader, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get(flag_key)):
+                continue
+            if not self._orks_temp_effect_scope_matches(sr.get(source_key, ()), scope=scope_key):
+                continue
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+            if bearer_id:
+                bearer_alive = False
+                for model in list(getattr(leader, "models", []) or []):
+                    if str(get_entity_id(model) or "").strip() != bearer_id:
+                        continue
+                    bearer_alive = self._orks_model_is_alive(model)
+                    break
+                if not bearer_alive:
+                    continue
+            else:
+                bearer = getattr(leader, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is not None:
+                    if not self._orks_model_is_alive(bearer):
+                        continue
+                else:
+                    if not any(self._orks_model_is_alive(model) for model in list(getattr(leader, "models", []) or [])):
+                        continue
+            try:
+                floor = int(sr.get("enhancement_green_tide_effective_model_floor", default_floor) or default_floor)
+            except (TypeError, ValueError):
+                floor = int(default_floor)
+            return max(0, int(floor))
+        return 0
+
+    def _orks_temp_effect_resolve_unit_by_id(self, unit_id: str, *, game=None, game_map=None):
+        target_id = str(unit_id or "").strip()
+        if not target_id:
+            return None
+        resolver = getattr(game, "_resolve_unit_by_id", None) if game is not None else None
+        if callable(resolver):
+            resolved = resolver(target_id)
+            if resolved is not None:
+                return resolved
+        if game_map is not None:
+            for candidate in list(getattr(game_map, "units", []) or []):
+                root = self._orks_temp_effect_unit_root(candidate)
+                if str(get_entity_id(root) or "").strip() == target_id:
+                    return root
+        players = list(getattr(game, "players", []) or []) if game is not None else []
+        for player in players:
+            army = getattr(player, "army", None)
+            for candidate in list(getattr(army, "units", []) or []):
+                root = self._orks_temp_effect_unit_root(candidate)
+                if str(get_entity_id(root) or "").strip() == target_id:
+                    return root
+        return None
+
+    def _orks_temp_effect_within_distance_condition_matches(
+        self,
+        entry: dict,
+        *,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        target_id = str(entry.get("while_within_distance_of_unit_id", "") or "").strip()
+        if not target_id:
+            return True
+        try:
+            max_distance = float(entry.get("while_within_distance", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            max_distance = 0.0
+        if max_distance <= 0.0:
+            return False
+        root = self._orks_temp_effect_root()
+        other = self._orks_temp_effect_resolve_unit_by_id(target_id, game=game, game_map=game_map)
+        other_root = self._orks_temp_effect_unit_root(other)
+        if root is None or other_root is None:
+            return False
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        distance_fn = getattr(game_map, "get_distance_between_units", None) if game_map is not None else None
+        if not callable(distance_fn):
+            return False
+        try:
+            distance = float(distance_fn(root, other_root))
+        except (TypeError, ValueError, AttributeError):
+            return False
+        return bool(distance <= float(max_distance) + 1e-6)
+
+    def _orks_effective_model_floor_from_temp_effects(
+        self,
+        *,
+        scope: str,
+        game=None,
+        game_map=None,
+    ) -> int:
+        scope_key = self._orks_effective_model_scope(scope)
+        if not scope_key:
+            return 0
+        max_floor = 0
+        for effect in self._orks_temp_effect_entries():
+            if str(effect.get("effect", "") or "").strip().lower() != "effective_model_count_floor":
+                continue
+            if not self._orks_temp_effect_is_active(effect, game=game, game_map=game_map):
+                continue
+            scopes = effect.get("effective_model_count_scopes", effect.get("scopes", ()))
+            if not self._orks_temp_effect_scope_matches(scopes, scope=scope_key):
+                continue
+            try:
+                floor = int(effect.get("value", effect.get("minimum_count", 0)) or 0)
+            except (TypeError, ValueError):
+                floor = 0
+            if floor > max_floor:
+                max_floor = int(floor)
+        return max(0, int(max_floor))
+
+    def orks_effective_model_count_for_evaluation(
+        self,
+        scope: str,
+        *,
+        game=None,
+        game_map=None,
+    ) -> int:
+        scope_key = self._orks_effective_model_scope(scope)
+        if not scope_key:
+            return self._orks_effective_model_count_actual()
+        if game is None:
+            game = self._orks_temp_effect_game()
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        actual_count = self._orks_effective_model_count_actual()
+        floor = 0
+        floor = max(
+            floor,
+            self._orks_effective_model_floor_from_active_leading_enhancement(
+                flag_key="enhancement_green_tide_raucous_warcaller",
+                source_key="enhancement_green_tide_raucous_warcaller_effective_model_scopes",
+                scope=scope_key,
+                default_floor=10,
+            ),
+        )
+        floor = max(
+            floor,
+            self._orks_effective_model_floor_from_temp_effects(
+                scope=scope_key,
+                game=game,
+                game_map=game_map,
+            ),
+        )
+        return max(int(actual_count), int(floor))
+
+    def orks_effectively_counts_as_ten_models(
+        self,
+        scope: str,
+        *,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        return bool(
+            int(
+                self.orks_effective_model_count_for_evaluation(
+                    scope,
+                    game=game,
+                    game_map=game_map,
+                )
+                or 0
+            )
+            >= 10
+        )
+
     def _orks_temp_effect_entries(self) -> list[dict]:
         root = self._orks_temp_effect_root()
         special_rules = getattr(root, "special_rules", None)
@@ -8913,16 +9158,21 @@ class KeywordsDetachmentsMixin:
         checker = getattr(mgr, f"is_{key}", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
-    def _orks_temp_effect_is_active(self, entry: dict) -> bool:
+    def _orks_temp_effect_is_active(self, entry: dict, *, game=None, game_map=None) -> bool:
         detachment_key = str(entry.get("detachment", "") or "").strip().lower()
         if detachment_key and not self._orks_temp_effect_detachment_active(detachment_key):
             return False
 
         expires_mode = str(entry.get("expires_mode", "") or "").strip().lower()
         if expires_mode != "phase":
+            if game is None:
+                game = self._orks_temp_effect_game()
+            if not self._orks_temp_effect_within_distance_condition_matches(entry, game=game, game_map=game_map):
+                return False
             return True
 
-        game = self._orks_temp_effect_game()
+        if game is None:
+            game = self._orks_temp_effect_game()
         if game is None:
             return False
         phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
@@ -8947,6 +9197,8 @@ class KeywordsDetachmentsMixin:
         except (TypeError, ValueError):
             current_turn = 0
         if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+        if not self._orks_temp_effect_within_distance_condition_matches(entry, game=game, game_map=game_map):
             return False
         return True
 
@@ -9084,7 +9336,11 @@ class KeywordsDetachmentsMixin:
             effect = str(entry.get("effect", "") or "").strip().lower()
             if expected and effect != expected:
                 continue
-            if not self._orks_temp_effect_is_active(entry):
+            if not self._orks_temp_effect_is_active(
+                entry,
+                game=self._orks_temp_effect_game(),
+                game_map=game_map,
+            ):
                 continue
             if not self._orks_temp_effect_matches_attack_type(entry, attack_type=attack_type):
                 continue

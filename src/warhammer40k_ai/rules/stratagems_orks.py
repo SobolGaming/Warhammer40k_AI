@@ -711,6 +711,100 @@ class OrksStratagemMixin:
             candidates.append(root)
         return sorted(candidates, key=self._orks_sort_key)
 
+    def _orks_resolve_unit_list(self, selected: Any) -> list[Any]:
+        if selected is None:
+            return []
+        raw = list(selected) if isinstance(selected, (list, tuple, set)) else [selected]
+        seen: set[str] = set()
+        roots: list[Any] = []
+        for item in raw:
+            root = self._orks_root(item)
+            if root is None:
+                continue
+            root_id = self._orks_sort_key(root)
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            roots.append(root)
+        roots.sort(key=self._orks_sort_key)
+        return roots
+
+    def _orks_green_tide_boyz_candidates(self, *, require_not_selected_phase: str = "") -> list[Any]:
+        if not self._is_green_tide_detachment():
+            return []
+        candidates = self._orks_offensive_candidates(
+            require_targetable=True,
+            require_not_selected_phase=require_not_selected_phase,
+        )
+        kept: list[Any] = []
+        for root in list(candidates or []):
+            if self._orks_unit_is_boyz(root):
+                kept.append(root)
+        kept.sort(key=self._orks_sort_key)
+        return kept
+
+    def _orks_green_tide_competitive_streak_candidates(self) -> list[Any]:
+        return self._orks_green_tide_boyz_candidates(require_not_selected_phase="Fight phase")
+
+    def _orks_green_tide_tide_of_muscle_candidates(self) -> list[Any]:
+        candidates = self._orks_green_tide_boyz_candidates()
+        kept: list[Any] = []
+        for root in list(candidates or []):
+            round_state = getattr(root, "round_state", None)
+            if bool(getattr(round_state, "attempted_charge_this_round", False)):
+                continue
+            kept.append(root)
+        kept.sort(key=self._orks_sort_key)
+        return kept
+
+    def _orks_green_tide_braggin_rights_pairs(self) -> list[tuple[Any, Any]]:
+        units = self._orks_green_tide_boyz_candidates()
+        pairs: list[tuple[Any, Any]] = []
+        for idx, first in enumerate(list(units or [])):
+            for second in units[idx + 1 :]:
+                distance = self._orks_distance_between_units(first, second)
+                if distance is None or float(distance) > 6.0 + 1e-6:
+                    continue
+                root_a, root_b = sorted([first, second], key=self._orks_sort_key)
+                pairs.append((root_a, root_b))
+        pairs.sort(key=lambda pair: (self._orks_sort_key(pair[0]), self._orks_sort_key(pair[1])))
+        return pairs
+
+    def _orks_green_tide_pair_in_candidates(
+        self,
+        first_unit: Any,
+        second_unit: Any,
+        candidates: list[tuple[Any, Any]],
+    ) -> bool:
+        first_root = self._orks_root(first_unit)
+        second_root = self._orks_root(second_unit)
+        if first_root is None or second_root is None:
+            return False
+        pair_ids = tuple(sorted([self._orks_sort_key(first_root), self._orks_sort_key(second_root)]))
+        for item in list(candidates or []):
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                continue
+            cand_a = self._orks_root(item[0])
+            cand_b = self._orks_root(item[1])
+            if cand_a is None or cand_b is None:
+                continue
+            cand_ids = tuple(sorted([self._orks_sort_key(cand_a), self._orks_sort_key(cand_b)]))
+            if pair_ids == cand_ids:
+                return True
+        return False
+
+    def _orks_green_tide_effectively_counts_as_ten(self, unit: Any, *, scope: str) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        fn = getattr(root, "orks_effectively_counts_as_ten_models", None)
+        if not callable(fn):
+            return False
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        return bool(fn(str(scope or ""), game=game, game_map=game_map))
+
     @staticmethod
     def _unit_is_grots(unit: Any) -> bool:
         if unit is None:
@@ -2557,6 +2651,12 @@ class OrksStratagemMixin:
             return self._use_orks_get_stuck_in_ladz(stratagem, **kwargs)
         if name_u == "GRAB AND BASH" or name_norm == "grab and bash":
             return self._use_orks_grab_and_bash(stratagem, **kwargs)
+        if name_norm == "braggin rights":
+            return self._use_orks_braggin_rights(stratagem, **kwargs)
+        if name_u == "COMPETITIVE STREAK":
+            return self._use_orks_competitive_streak(stratagem, **kwargs)
+        if name_u == "TIDE OF MUSCLE":
+            return self._use_orks_tide_of_muscle(stratagem, **kwargs)
         if name_u == "INSTINCTIVE HUNTERS":
             return self._use_orks_instinctive_hunters(stratagem, **kwargs)
         if name_u == "DED SNEAKY":
@@ -4116,6 +4216,253 @@ class OrksStratagemMixin:
             reactive_move_kind="more_gitz_over_ere",
             **kwargs,
         )
+
+    def _use_orks_braggin_rights(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_green_tide_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Command phase",),
+            require_your_turn=True,
+            error_prefix="BRAGGIN' RIGHTS",
+        ):
+            return False
+
+        normalized_pair_candidates: list[tuple[Any, Any]] = []
+        seen_pair_keys: set[tuple[str, str]] = set()
+        for item in list(kwargs.get("pair_candidates") or kwargs.get("candidates") or []):
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                continue
+            first = self._orks_root(item[0])
+            second = self._orks_root(item[1])
+            if first is None or second is None:
+                continue
+            first, second = sorted([first, second], key=self._orks_sort_key)
+            pair_key = (self._orks_sort_key(first), self._orks_sort_key(second))
+            if pair_key in seen_pair_keys:
+                continue
+            seen_pair_keys.add(pair_key)
+            normalized_pair_candidates.append((first, second))
+        if not normalized_pair_candidates:
+            normalized_pair_candidates = self._orks_green_tide_braggin_rights_pairs()
+
+        selected_units = self._orks_resolve_unit_list(
+            kwargs.get("target_units")
+            or kwargs.get("units")
+            or kwargs.get("selected_units")
+        )
+        if not selected_units:
+            first = kwargs.get("unit") or kwargs.get("target_unit")
+            second = kwargs.get("secondary_unit") or kwargs.get("other_unit") or kwargs.get("unit_b")
+            if first is not None and second is not None:
+                selected_units = self._orks_resolve_unit_list([first, second])
+        if not selected_units:
+            if len(normalized_pair_candidates) == 1:
+                selected_units = self._orks_resolve_unit_list(
+                    [normalized_pair_candidates[0][0], normalized_pair_candidates[0][1]]
+                )
+            else:
+                logger.error("ERROR: BRAGGIN' RIGHTS: must select exactly two BOYZ units")
+                return False
+        if len(selected_units) != 2:
+            logger.error("ERROR: BRAGGIN' RIGHTS: must select exactly two BOYZ units")
+            return False
+        first_root, second_root = sorted(selected_units, key=self._orks_sort_key)
+
+        boyz_candidates = self._orks_green_tide_boyz_candidates()
+        ok, first_root = self._orks_validate_offensive_target(
+            stratagem_name="BRAGGIN' RIGHTS",
+            target_unit=first_root,
+            candidates=boyz_candidates,
+        )
+        if not ok or not self._orks_unit_is_boyz(first_root):
+            logger.error("ERROR: BRAGGIN' RIGHTS: first target must be a BOYZ unit")
+            return False
+        ok, second_root = self._orks_validate_offensive_target(
+            stratagem_name="BRAGGIN' RIGHTS",
+            target_unit=second_root,
+            candidates=boyz_candidates,
+        )
+        if not ok or not self._orks_unit_is_boyz(second_root):
+            logger.error("ERROR: BRAGGIN' RIGHTS: second target must be a BOYZ unit")
+            return False
+        if first_root is second_root:
+            logger.error("ERROR: BRAGGIN' RIGHTS: selected units must be different")
+            return False
+        if not self._orks_green_tide_pair_in_candidates(first_root, second_root, normalized_pair_candidates):
+            logger.error("ERROR: BRAGGIN' RIGHTS: selected pair is not currently eligible")
+            return False
+        distance = self._orks_distance_between_units(first_root, second_root)
+        if distance is None or float(distance) > 6.0 + 1e-6:
+            logger.error("ERROR: BRAGGIN' RIGHTS: selected units must be within 6\" of each other")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=first_root,
+            unit=first_root,
+            target_units=[first_root, second_root],
+            phase_name="Command phase",
+        ):
+            logger.error("ERROR: BRAGGIN' RIGHTS: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=first_root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "BRAGGIN' RIGHTS").strip() or "BRAGGIN' RIGHTS"
+        first_id = self._orks_sort_key(first_root)
+        second_id = self._orks_sort_key(second_root)
+        pair_key = f"{first_id}:{second_id}"
+        base_effect = {
+            "source": source_name,
+            "effect": "effective_model_count_floor",
+            "value": 10,
+            "effective_model_count_scopes": ["detachment", "enhancement", "stratagem"],
+            "expires_mode": "next_command_phase",
+            "expires_scope": "owner_command_phase",
+            "while_within_distance": 6.0,
+        }
+        first_effect = dict(base_effect)
+        first_effect["id"] = f"braggin_rights:{pair_key}:first"
+        first_effect["while_within_distance_of_unit_id"] = second_id
+        second_effect = dict(base_effect)
+        second_effect["id"] = f"braggin_rights:{pair_key}:second"
+        second_effect["while_within_distance_of_unit_id"] = first_id
+
+        self._orks_apply_temp_effects(first_root, detachment="green_tide", effects=[first_effect])
+        self._orks_apply_temp_effects(second_root, detachment="green_tide", effects=[second_effect])
+
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BRAGGIN' RIGHTS: %s and %s count as 10+ models for detachment/enhancement/stratagem checks while within 6\" until your next Command phase.",
+            getattr(first_root, "name", "Unit"),
+            getattr(second_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_orks_competitive_streak(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_green_tide_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Fight phase",),
+            require_your_turn=False,
+            error_prefix="COMPETITIVE STREAK",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("COMPETITIVE STREAK", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: COMPETITIVE STREAK: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._orks_green_tide_competitive_streak_candidates()
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="COMPETITIVE STREAK",
+            target_unit=target_unit,
+            candidates=candidates,
+            require_not_selected_phase="Fight phase",
+        )
+        if not ok:
+            return False
+        if not self._orks_unit_is_boyz(root):
+            logger.error("ERROR: COMPETITIVE STREAK: target must be a BOYZ unit")
+            return False
+        if not candidates or not self._orks_unit_in_candidates(root, candidates):
+            logger.error("ERROR: COMPETITIVE STREAK: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: COMPETITIVE STREAK: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        reroll_mode = "full" if self._orks_green_tide_effectively_counts_as_ten(root, scope="stratagem") else "ones"
+        root_id = self._orks_sort_key(root)
+        effects = [
+            {
+                "id": f"competitive_streak:{root_id}:wound_reroll",
+                "source": str(getattr(stratagem, "name", "") or "COMPETITIVE STREAK"),
+                "effect": "wound_reroll",
+                "attack_type": "melee",
+                "reroll_mode": str(reroll_mode),
+                "expires_mode": "phase",
+            }
+        ]
+        self._orks_apply_temp_effects(root, detachment="green_tide", effects=effects)
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: COMPETITIVE STREAK: %s gains melee wound re-roll mode '%s' until end of phase.",
+            getattr(root, "name", "Unit"),
+            reroll_mode,
+        )
+        return True
+
+    def _use_orks_tide_of_muscle(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_green_tide_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Charge phase",),
+            require_your_turn=True,
+            error_prefix="TIDE OF MUSCLE",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("TIDE OF MUSCLE", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: TIDE OF MUSCLE: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._orks_green_tide_tide_of_muscle_candidates()
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="TIDE OF MUSCLE",
+            target_unit=target_unit,
+            candidates=candidates,
+        )
+        if not ok:
+            return False
+        if not self._orks_unit_is_boyz(root):
+            logger.error("ERROR: TIDE OF MUSCLE: target must be a BOYZ unit")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "attempted_charge_this_round", False)):
+            logger.error("ERROR: TIDE OF MUSCLE: target has already declared a charge this phase")
+            return False
+        if not candidates or not self._orks_unit_in_candidates(root, candidates):
+            logger.error("ERROR: TIDE OF MUSCLE: selected unit is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Charge phase"):
+            logger.error("ERROR: TIDE OF MUSCLE: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        root_id = self._orks_sort_key(root)
+        effects: list[dict[str, Any]] = [
+            {
+                "id": f"tide_of_muscle:{root_id}:charge_bonus",
+                "source": str(getattr(stratagem, "name", "") or "TIDE OF MUSCLE"),
+                "effect": "charge_roll_bonus",
+                "value": 1,
+                "expires_mode": "phase",
+            }
+        ]
+        if self._orks_green_tide_effectively_counts_as_ten(root, scope="stratagem"):
+            effects.append(
+                {
+                    "id": f"tide_of_muscle:{root_id}:charge_reroll",
+                    "source": str(getattr(stratagem, "name", "") or "TIDE OF MUSCLE"),
+                    "effect": "charge_reroll",
+                    "reroll_mode": "full",
+                    "expires_mode": "phase",
+                }
+            )
+        self._orks_apply_temp_effects(root, detachment="green_tide", effects=effects)
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TIDE OF MUSCLE: %s gains +1 to Charge rolls%s until end of phase.",
+            getattr(root, "name", "Unit"),
+            " and Charge re-rolls" if len(effects) > 1 else "",
+        )
+        return True
 
     def _use_orks_come_on_ladz(self, stratagem: Any, **kwargs) -> bool:
         target_unit = kwargs.get("unit") or kwargs.get("target_unit")

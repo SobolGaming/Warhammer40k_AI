@@ -6884,6 +6884,54 @@ _ORKS_FREEBOOTER_KREW_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ORKS_FREEBOOTER_KREW_DESCRIPTORS.values()
 }
 
+_ORKS_GREEN_TIDE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008881002": EnhancementToolDescriptor(
+        enhancement_id="000008881002",
+        name="Bloodthirsty Belligerence",
+        timing="passive_while_leading",
+        target="bearer_led_unit",
+        duration="constant_conditional",
+        effect="reroll_advance_and_conditional_charge_reroll",
+        effect_params={
+            "reroll_advance": True,
+            "reroll_charge_if_effective_model_count_at_least": 10,
+            "effective_model_count_scope": "enhancement",
+            "requires_bearer_leading": True,
+        },
+    ),
+    "000008881004": EnhancementToolDescriptor(
+        enhancement_id="000008881004",
+        name="Ferocious Show Off",
+        timing="while_bearer_fights",
+        target="bearer_melee_weapons",
+        duration="constant_conditional",
+        effect="conditional_bearer_melee_strength_bonus",
+        effect_params={
+            "base_melee_strength_bonus": 1,
+            "enhanced_melee_strength_bonus": 3,
+            "enhanced_if_effective_model_count_at_least": 10,
+            "effective_model_count_scope": "enhancement",
+        },
+    ),
+    "000008881005": EnhancementToolDescriptor(
+        enhancement_id="000008881005",
+        name="Raucous Warcaller",
+        timing="passive_while_leading",
+        target="bearer_led_unit",
+        duration="constant",
+        effect="effective_model_count_floor_while_leading",
+        effect_params={
+            "effective_model_floor": 10,
+            "effective_model_count_scopes": ("detachment", "stratagem"),
+            "requires_bearer_leading": True,
+        },
+    ),
+}
+
+_ORKS_GREEN_TIDE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORKS_GREEN_TIDE_DESCRIPTORS.values()
+}
+
 _ORKS_TAKTIKAL_BRIGADE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009795002": EnhancementToolDescriptor(
         enhancement_id="000009795002",
@@ -7343,6 +7391,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _ORKS_FREEBOOTER_KREW_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ORKS_GREEN_TIDE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _ORKS_TAKTIKAL_BRIGADE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -7488,5 +7539,6 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _ORKS_DA_BIG_HUNT_BY_NAME.get(key)
         or _ORKS_DREAD_MOB_BY_NAME.get(key)
         or _ORKS_FREEBOOTER_KREW_BY_NAME.get(key)
+        or _ORKS_GREEN_TIDE_BY_NAME.get(key)
         or _ORKS_TAKTIKAL_BRIGADE_BY_NAME.get(key)
     )

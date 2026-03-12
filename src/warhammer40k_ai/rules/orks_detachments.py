@@ -367,6 +367,19 @@ class OrksDetachmentManager(DetachmentManagerBase):
             total += len(list(getattr(member, "models", []) or []))
         return int(total)
 
+    def _green_tide_effective_model_count(self, unit, *, scope: str, game=None) -> int:
+        root = self._unit_root(unit)
+        if root is None:
+            return 0
+        fn = getattr(root, "orks_effective_model_count_for_evaluation", None)
+        if callable(fn):
+            if game is None:
+                army_player = getattr(self.army, "player", None) if self.army is not None else None
+                game = getattr(army_player, "game", None) if army_player is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+            return int(fn(scope, game=game, game_map=game_map) or 0)
+        return int(self._unit_total_model_count(root) or 0)
+
     def green_tide_mob_mentality_invulnerable_save(self, target_model, *, attack_type: str = "") -> tuple[int, str]:
         del attack_type
         if not self.is_green_tide():
@@ -380,12 +393,90 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if not self._unit_contains_keyword(root, "BOYZ"):
             if not self._unit_name_matches_any(root, self._GREEN_TIDE_BOYZ_NAMED_UNITS):
                 return 0, ""
-        model_count = self._unit_total_model_count(root)
+        model_count = self._green_tide_effective_model_count(root, scope="detachment")
         if model_count >= 10:
             return 5, self._GREEN_TIDE_MOB_MENTALITY_SOURCE
         if model_count > 0:
             return 6, self._GREEN_TIDE_MOB_MENTALITY_SOURCE
         return 0, ""
+
+    def _green_tide_bloodthirsty_belligerence_source_unit(self, unit):
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return None
+        leaders = list(getattr(root, "attached_leaders", []) or [])
+        if not leaders:
+            return None
+        leader_ids = {str(get_entity_id(leader) or "") for leader in leaders}
+        sources = self._collect_active_enhancement_source_units(
+            root,
+            flag_key="enhancement_green_tide_bloodthirsty_belligerence",
+        )
+        for source_unit in sources:
+            source_id = str(get_entity_id(source_unit) or "")
+            if source_unit in leaders or source_id in leader_ids:
+                return source_unit
+        return None
+
+    def green_tide_bloodthirsty_belligerence_reroll_advance_applies(self, unit, *, game=None) -> bool:
+        del game
+        if not self.is_green_tide():
+            return False
+        return self._green_tide_bloodthirsty_belligerence_source_unit(unit) is not None
+
+    def green_tide_bloodthirsty_belligerence_reroll_charge_applies(self, unit, *, game=None) -> bool:
+        if not self.green_tide_bloodthirsty_belligerence_reroll_advance_applies(unit, game=game):
+            return False
+        return bool(
+            self._green_tide_effective_model_count(
+                unit,
+                scope="enhancement",
+                game=game,
+            )
+            >= 10
+        )
+
+    def green_tide_ferocious_show_off_melee_strength_bonus(
+        self,
+        attacker_model,
+        *,
+        attack_type: str = "",
+        game=None,
+    ) -> tuple[int, str]:
+        if str(attack_type or "").strip().lower() not in ("", "melee"):
+            return 0, ""
+        if not self.is_green_tide():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        if not self._model_is_active_enhancement_bearer(
+            attacker_model,
+            flag_key="enhancement_green_tide_ferocious_show_off",
+        ):
+            return 0, ""
+        source_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(source_unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return 0, ""
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0, ""
+        try:
+            base_bonus = int(sr.get("enhancement_green_tide_ferocious_show_off_base_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            base_bonus = 1
+        try:
+            enhanced_bonus = int(sr.get("enhancement_green_tide_ferocious_show_off_enhanced_bonus", 3) or 3)
+        except (TypeError, ValueError):
+            enhanced_bonus = 3
+        effective_count = self._green_tide_effective_model_count(root, scope="enhancement", game=game)
+        bonus = int(enhanced_bonus if int(effective_count or 0) >= 10 else base_bonus)
+        source_name = self._enhancement_source_name(
+            source_unit,
+            source_key="enhancement_green_tide_ferocious_show_off_source",
+            default="Ferocious Show Off",
+        )
+        return int(max(0, bonus)), source_name
 
     def kult_of_speed_adrenaline_junkies_applies(self, unit) -> bool:
         if not self.is_kult_of_speed():

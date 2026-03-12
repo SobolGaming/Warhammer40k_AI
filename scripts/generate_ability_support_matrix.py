@@ -2928,7 +2928,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         ),
         "Mob Mentality": (
             "Supported",
-            "Green Tide: each time an attack targets a BOYZ unit from your army, models in that unit gain a 6+ invulnerable save against that attack, improving to 5+ while that unit contains 10 or more models.",
+            "Green Tide: each time an attack targets a BOYZ unit from your army, models in that unit gain a 6+ invulnerable save against that attack, improving to 5+ while that unit effectively counts as containing 10 or more models for detachment evaluation.",
         ),
         "Here Be Loot": (
             "Supported",
@@ -5447,7 +5447,7 @@ def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
         ),
         "000008880": (
             "Supported",
-            "Green Tide: BOYZ units gain a 6+ invulnerable save when targeted, improving to 5+ while the unit contains 10 or more models.",
+            "Green Tide: BOYZ units gain a 6+ invulnerable save when targeted, improving to 5+ while the unit effectively counts as containing 10 or more models for detachment evaluation.",
         ),
         "000008871": (
             "Supported",
@@ -15143,6 +15143,9 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000008367003": "Headwoppa's Killchoppa: bearer melee weapons (excluding Extra Attacks) gain Devastating Wounds.",
         "000008367004": "Kunnin' But Brutal: while leading, bearer unit can shoot and charge after Falling Back.",
         "000008367005": "Supa-Cybork Body: bearer gains Feel No Pain 4+.",
+        "000008881002": "Bloodthirsty Belligerence: while the bearer is leading, the bearer unit can re-roll Advance rolls and can also re-roll Charge rolls while the unit effectively counts as containing 10 or more models for enhancement evaluation.",
+        "000008881004": "Ferocious Show Off: each time the bearer fights, add 1 to the Strength characteristic of the bearer's melee weapons, or add 3 while the bearer's unit effectively counts as containing 10 or more models for enhancement evaluation.",
+        "000008881005": "Raucous Warcaller: while the bearer is leading, the bearer unit effectively counts as containing 10 or more models for Green Tide detachment-rule and stratagem evaluations.",
         "000008885005": "Tellyporta: models in the bearer's unit gain Deep Strike.",
         "000008868002": "Glory Hog: models in the bearer's unit gain Scouts 9\".",
         "000008868003": "Proper Killy: melee weapons equipped by the bearer gain +1 Damage.",
@@ -15539,6 +15542,9 @@ def _stratagem_support(
         "CAREEN!": "On Deadly Demise roll of 6: ORKS VEHICLE moves (Normal/Fall Back) before explosion; can move over enemy units except MONSTER/VEHICLE.",
         "'ARD AS NAILS": "Opponent Shooting/Fight phase: targeted ORKS unit (excluding Grots/Monsters/Vehicles) suffers -1 to wound until end of phase.",
         "\u2019ARD AS NAILS": "Opponent Shooting/Fight phase: targeted ORKS unit (excluding Grots/Monsters/Vehicles) suffers -1 to wound until end of phase.",
+        "BRAGGIN' RIGHTS": "Your Command phase: select two BOYZ units within 6\"; until your next Command phase, while they remain within 6\" of each other, both units effectively count as containing 10 or more models for Green Tide detachment, enhancement, and stratagem checks.",
+        "COMPETITIVE STREAK": "Fight phase: selected BOYZ unit that has not been selected to fight gains melee Wound re-rolls of 1, or full melee Wound re-rolls while the unit effectively counts as containing 10 or more models for stratagem evaluation, until end of phase.",
+        "TIDE OF MUSCLE": "Your Charge phase: selected BOYZ unit that has not declared a charge gains +1 to Charge rolls, and while it effectively counts as containing 10 or more models for stratagem evaluation it can also re-roll Charge rolls, until end of phase.",
         "GET STUCK IN LADZ": "Your Command phase: selected non-GRETCHIN ORKS unit counts as Waaagh-active until the start of your next Command phase without consuming or altering army-level Waaagh call tracking.",
         "ARMED TO DATEEF": "Shooting/Fight phase: selected NOBZ/MEGANOBZ unit not yet selected this phase re-rolls Hit rolls of 1 (or full Hit re-rolls while Waaagh! is active) until end of phase.",
         "CRUSHING IMPACT": "Your Charge phase reaction after a NOBZ/MEGANOBZ unit ends a Charge move: select one enemy within Engagement Range, roll one D6 for each model in your unit that is within Engagement Range of that enemy, and inflict 1 mortal wound on each 5+ (4+ while Waaagh-active), capped at 6.",

@@ -7576,6 +7576,16 @@ class ActionsMovementMixin:
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             if bool(vile_vigour_reroll(self, game=game)):
                 return True
+        orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        green_tide_adv_reroll = (
+            getattr(orks_mgr, "green_tide_bloodthirsty_belligerence_reroll_advance_applies", None)
+            if orks_mgr is not None
+            else None
+        )
+        if callable(green_tide_adv_reroll):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if bool(green_tide_adv_reroll(self, game=game)):
+                return True
         try:
             active_fn = getattr(self, "_avatar_of_perfection_phase_active", None)
             if callable(active_fn) and bool(active_fn()):
@@ -9665,6 +9675,14 @@ class ActionsMovementMixin:
         da_big_hunt_applies = getattr(orks_mgr, "da_big_hunt_charge_reroll_applies", None) if orks_mgr is not None else None
         if callable(da_big_hunt_applies):
             if da_big_hunt_applies(self, target_units=target_units, game=game):
+                return True
+        green_tide_charge_reroll = (
+            getattr(orks_mgr, "green_tide_bloodthirsty_belligerence_reroll_charge_applies", None)
+            if orks_mgr is not None
+            else None
+        )
+        if callable(green_tide_charge_reroll):
+            if bool(green_tide_charge_reroll(self, game=game)):
                 return True
         taktikal_get_stuck_in = (
             getattr(orks_mgr, "taktikal_brigade_get_stuck_in_charge_reroll_applies", None)

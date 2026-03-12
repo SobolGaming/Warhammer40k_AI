@@ -621,6 +621,38 @@ _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME = {
 }
 
 _GREEN_TIDE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008882004": StratagemToolDescriptor(
+        stratagem_id="000008882004",
+        name="BRAGGIN' RIGHTS",
+        timing="command_phase",
+        target="two_orks_boyz_units_within_6_of_each_other",
+        duration="until_start_of_next_command_phase_while_within_6",
+        effect="effective_model_count_floor",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "effective_model_floor": 10,
+            "effective_model_count_scopes": ("detachment", "enhancement", "stratagem"),
+            "condition": "while_within_6_of_each_other",
+            "expires_mode": "next_command_phase",
+            "expires_scope": "owner_command_phase",
+        },
+    ),
+    "000008882002": StratagemToolDescriptor(
+        stratagem_id="000008882002",
+        name="COMPETITIVE STREAK",
+        timing="fight_phase",
+        target="orks_boyz_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="conditional_melee_wound_reroll",
+        cp_cost=1,
+        effect_params={
+            "default_reroll_mode": "ones",
+            "enhanced_reroll_mode_if_effective_10_models": "full",
+            "effective_model_count_scope": "stratagem",
+            "attack_type": "melee",
+        },
+    ),
     "000008882005": StratagemToolDescriptor(
         stratagem_id="000008882005",
         name="COME ON LADZ!",
@@ -633,6 +665,20 @@ _GREEN_TIDE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "return_roll": "D3+2",
             "required_keyword": "BOYZ",
             "exclude_character": True,
+        },
+    ),
+    "000008882006": StratagemToolDescriptor(
+        stratagem_id="000008882006",
+        name="TIDE OF MUSCLE",
+        timing="charge_phase",
+        target="orks_boyz_unit_not_yet_declared_charge",
+        duration="until_end_of_phase",
+        effect="charge_roll_bonus_and_conditional_reroll",
+        cp_cost=1,
+        effect_params={
+            "charge_roll_bonus": 1,
+            "grant_charge_reroll_if_effective_10_models": True,
+            "effective_model_count_scope": "stratagem",
         },
     ),
 }
