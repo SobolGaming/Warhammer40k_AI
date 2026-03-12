@@ -457,6 +457,228 @@ def test_get_stuck_in_ladz_does_not_double_stack_with_global_waaagh():
     assert int(attack_result.attacks_rolled or 0) == 2
 
 
+def test_orks_place_unit_into_strategic_reserves_helper_marks_midgame_and_removes_from_map():
+    target = _make_unit(
+        "Beast Snagga Boyz",
+        keywords=["ORKS", "INFANTRY", "BEAST SNAGGA"],
+        faction_keywords=["ORKS"],
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Da Big Hunt",
+        ork_units=[target],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+
+    assert target in list(getattr(game.map, "units", []) or [])
+    assert str(getattr(target, "reserve_status", "") or "") == "deployed"
+    assert bool(getattr(target, "_entered_reserves_midgame", False)) is False
+
+    ok = bool(
+        ork_player.stratagems._orks_place_unit_into_strategic_reserves(
+            target,
+            reason="helper-test",
+        )
+    )
+    assert ok is True
+    assert str(getattr(target, "reserve_status", "") or "") == "strategic_reserves"
+    assert target not in list(getattr(game.map, "units", []) or [])
+    assert bool(getattr(target, "_entered_reserves_midgame", False)) is True
+
+
+def test_instinctive_hunters_queues_and_places_unit_into_strategic_reserves():
+    beast_snagga = _make_unit(
+        "Beast Snagga Boyz",
+        keywords=["ORKS", "INFANTRY", "BEAST SNAGGA"],
+        faction_keywords=["ORKS"],
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player, _ork_army = _build_game(
+        detachment="Da Big Hunt",
+        ork_units=[beast_snagga],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, beast_snagga, 10.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    game.turn = 2
+
+    _set_phase(game, phase_name="FIGHT_PHASE", current_player_index=1)
+    game.event_system.publish("phase_start", player=enemy_player, phase=game.phase)
+    game.event_system.publish("phase_end", player=enemy_player, phase=game.phase)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008869007", fallback_name="INSTINCTIVE HUNTERS")
+    pending = _pending_reaction_by_name(ork_player, strat_name)
+    assert pending is not None
+
+    cp_before = int(ork_player.command_points or 0)
+    ok = ork_player.stratagems.use(
+        str(pending.get("stratagem", "") or strat_name),
+        unit=beast_snagga,
+        dequeue=True,
+    )
+    assert ok is True
+    assert int(ork_player.command_points or 0) == cp_before - 1
+    assert str(getattr(beast_snagga, "reserve_status", "") or "") == "strategic_reserves"
+    assert beast_snagga not in list(getattr(game.map, "units", []) or [])
+
+
+def test_ded_sneaky_queues_and_places_unit_into_strategic_reserves():
+    kommandos = _make_unit(
+        "Kommandos",
+        keywords=["ORKS", "INFANTRY", "KOMMANDOS"],
+        faction_keywords=["ORKS"],
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player, _ork_army = _build_game(
+        detachment="Taktikal Brigade",
+        ork_units=[kommandos],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, kommandos, 10.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    game.turn = 2
+
+    _set_phase(game, phase_name="FIGHT_PHASE", current_player_index=1)
+    game.event_system.publish("phase_start", player=enemy_player, phase=game.phase)
+    game.event_system.publish("phase_end", player=enemy_player, phase=game.phase)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000009796007", fallback_name="DED SNEAKY")
+    pending = _pending_reaction_by_name(ork_player, strat_name)
+    assert pending is not None
+
+    cp_before = int(ork_player.command_points or 0)
+    ok = ork_player.stratagems.use(
+        str(pending.get("stratagem", "") or strat_name),
+        unit=kommandos,
+        dequeue=True,
+    )
+    assert ok is True
+    assert int(ork_player.command_points or 0) == cp_before - 1
+    assert str(getattr(kommandos, "reserve_status", "") or "") == "strategic_reserves"
+    assert kommandos not in list(getattr(game.map, "units", []) or [])
+
+
+def test_instinctive_hunters_rejects_wrong_phase():
+    beast_snagga = _make_unit(
+        "Beast Snagga Boyz",
+        keywords=["ORKS", "INFANTRY", "BEAST SNAGGA"],
+        faction_keywords=["ORKS"],
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Da Big Hunt",
+        ork_units=[beast_snagga],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, beast_snagga, 10.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    _set_phase(game, phase_name="COMMAND_PHASE", current_player_index=1)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008869007", fallback_name="INSTINCTIVE HUNTERS")
+    assert ork_player.stratagems.use(strat_name, unit=beast_snagga, phase_name="Command phase") is False
+
+
+def test_instinctive_hunters_rejects_non_beast_snagga_unit():
+    boyz = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Da Big Hunt",
+        ork_units=[boyz],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, boyz, 10.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    _set_phase(game, phase_name="FIGHT_PHASE", current_player_index=1)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008869007", fallback_name="INSTINCTIVE HUNTERS")
+    assert ork_player.stratagems.use(strat_name, unit=boyz, phase_name="Fight phase") is False
+
+
+def test_ded_sneaky_rejects_non_kommandos_or_stormboyz():
+    boyz = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Taktikal Brigade",
+        ork_units=[boyz],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, boyz, 10.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    _set_phase(game, phase_name="FIGHT_PHASE", current_player_index=1)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000009796007", fallback_name="DED SNEAKY")
+    assert ork_player.stratagems.use(strat_name, unit=boyz, phase_name="Fight phase") is False
+
+
+def test_instinctive_hunters_rejects_unit_within_engagement_range():
+    beast_snagga = _make_unit(
+        "Beast Snagga Boyz",
+        keywords=["ORKS", "INFANTRY", "BEAST SNAGGA"],
+        faction_keywords=["ORKS"],
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Da Big Hunt",
+        ork_units=[beast_snagga],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, beast_snagga, 10.0, 10.0)
+    _deploy_unit(game, enemy, 12.0, 10.0)
+    _set_phase(game, phase_name="FIGHT_PHASE", current_player_index=1)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008869007", fallback_name="INSTINCTIVE HUNTERS")
+    assert ork_player.stratagems.use(strat_name, unit=beast_snagga, phase_name="Fight phase") is False
+
+
+def test_ded_sneaky_rejects_embarked_unit():
+    stormboyz = _make_unit(
+        "Stormboyz",
+        keywords=["ORKS", "INFANTRY", "STORMBOYZ"],
+        faction_keywords=["ORKS"],
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Taktikal Brigade",
+        ork_units=[stormboyz],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, stormboyz, 10.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    stormboyz.embarked_in = object()
+    _set_phase(game, phase_name="FIGHT_PHASE", current_player_index=1)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000009796007", fallback_name="DED SNEAKY")
+    assert ork_player.stratagems.use(strat_name, unit=stormboyz, phase_name="Fight phase") is False
+
+
+def test_instinctive_hunters_candidates_deduplicate_attached_root_unit():
+    bodyguard = _make_unit(
+        "Beast Snagga Boyz",
+        keywords=["ORKS", "INFANTRY", "BEAST SNAGGA"],
+        faction_keywords=["ORKS"],
+    )
+    leader = _make_unit("Warboss", keywords=["ORKS", "INFANTRY", "CHARACTER"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Da Big Hunt",
+        ork_units=[bodyguard, leader],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, bodyguard, 10.0, 10.0)
+    _deploy_unit(game, enemy, 20.0, 10.0)
+    leader.get_attached_unit_root = lambda: bodyguard
+
+    candidates = list(
+        ork_player.stratagems._orks_end_of_opponent_fight_phase_strategic_reserves_candidates(
+            target_matcher=ork_player.stratagems._orks_is_beast_snagga_unit,
+        )
+    )
+    candidate_ids = [str(get_entity_id(unit) or "") for unit in candidates]
+    assert candidate_ids == [str(get_entity_id(bodyguard) or "")]
+
+
 def test_drag_it_down_applies_crit_threshold_only_against_prey():
     attacker = _make_unit(
         "Beast Snagga Boyz",
@@ -1312,6 +1534,7 @@ def test_orks_temp_buff_stratagem_descriptors_are_registered():
         "000008886002": "ARMED TO DATEEF",
         "000008869002": "DRAG IT DOWN",
         "000008869004": "DAT ONE'S EVEN BIGGA!",
+        "000008869007": "INSTINCTIVE HUNTERS",
         "000010713002": "BASH AND GRAB",
         "000010713003": "GRAB AND BASH",
         "000010713004": "BOARDIN' RUSH",
@@ -1325,6 +1548,7 @@ def test_orks_temp_buff_stratagem_descriptors_are_registered():
         "000009992006": "SPESHUL SHELLS",
         "000009796002": "DAT'S OURS",
         "000009796004": "TAKTIKAL RETREAT",
+        "000009796007": "DED SNEAKY",
         "000009992004": "HUGE SHOW-OFFS",
         "000009796003": "FIGHT PROPPA",
         "000008878005": "DAKKA! DAKKA! DAKKA!",

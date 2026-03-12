@@ -690,6 +690,16 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "charge_reroll_requires_prey_target": True,
         },
     ),
+    "000008869007": StratagemToolDescriptor(
+        stratagem_id="000008869007",
+        name="INSTINCTIVE HUNTERS",
+        timing="end_of_opponent_fight_phase",
+        target="orks_beast_snagga_unit_not_in_engagement_range",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={"requires_not_in_engagement_range": True, "reserve_status": "strategic_reserves"},
+    ),
     "000010713002": StratagemToolDescriptor(
         stratagem_id="000010713002",
         name="BASH AND GRAB",
@@ -991,6 +1001,16 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "trigger_enemy_actions": ["fall_back"],
             "requires_start_phase_engagement_with_trigger_unit": True,
         },
+    ),
+    "000009796007": StratagemToolDescriptor(
+        stratagem_id="000009796007",
+        name="DED SNEAKY",
+        timing="end_of_opponent_fight_phase",
+        target="orks_kommandos_or_stormboyz_unit_not_in_engagement_range",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={"requires_not_in_engagement_range": True, "reserve_status": "strategic_reserves"},
     ),
     "000008873007": StratagemToolDescriptor(
         stratagem_id="000008873007",

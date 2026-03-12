@@ -353,6 +353,52 @@ class OrksStratagemMixin:
         kept.sort(key=self._orks_sort_key)
         return kept
 
+    def _orks_end_of_opponent_fight_phase_strategic_reserves_candidates(self, *, target_matcher) -> list[Any]:
+        candidates = self._orks_offensive_candidates(require_targetable=True)
+        kept: list[Any] = []
+        for root in list(candidates or []):
+            if not bool(target_matcher(root)):
+                continue
+            if self._orks_is_unit_engaged(root):
+                continue
+            kept.append(root)
+        kept.sort(key=self._orks_sort_key)
+        return kept
+
+    def _orks_place_unit_into_strategic_reserves(self, unit: Any, *, reason: str = "") -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        place_fn = getattr(root, "enter_strategic_reserves_midgame", None)
+        if callable(place_fn):
+            return bool(place_fn(game=game, game_map=game_map, reason=reason))
+
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            set_status = getattr(member, "set_reserve_status", None)
+            if callable(set_status):
+                set_status("strategic_reserves")
+            else:
+                setattr(member, "reserve_status", "strategic_reserves")
+            mark_midgame = getattr(member, "mark_entered_reserves_midgame", None)
+            if callable(mark_midgame):
+                mark_midgame(game=game)
+            if bool(getattr(member, "is_aircraft", False)) and not bool(getattr(member, "hover_mode", False)):
+                setattr(member, "_aircraft_return_turn", int(getattr(game, "turn", 0) or 0) + 1 if game is not None else 0)
+            member.deployed = True
+            member.reserve_turn_deployed = None
+            member.arrived_from_reserves_this_turn = False
+            if game_map is not None and isinstance(getattr(game_map, "units", None), list) and member in game_map.units:
+                game_map.units.remove(member)
+        return True
+
     def _orks_apply_unit_waaagh_override(self, unit: Any, *, source_name: str) -> bool:
         root = self._orks_root(unit)
         if root is None:
@@ -1111,6 +1157,20 @@ class OrksStratagemMixin:
             return False
         return self._orks_unit_contains_any_keyword(root, ("INFANTRY", "MOUNTED"))
 
+    def _orks_is_beast_snagga_unit(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        return self._orks_unit_contains_keyword(root, "BEAST SNAGGA")
+
+    def _orks_is_kommandos_or_stormboyz_unit(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        if self._orks_unit_contains_any_keyword(root, ("KOMMANDOS", "KOMMANDO", "STORMBOYZ", "STORMBOY")):
+            return True
+        return self._orks_unit_name_contains(root, "kommandos") or self._orks_unit_name_contains(root, "stormboyz")
+
     def _orks_is_speed_freeks_or_trukk(self, unit: Any) -> bool:
         root = self._orks_root(unit)
         if root is None:
@@ -1489,6 +1549,69 @@ class OrksStratagemMixin:
             if root_id and queued_id and root_id == queued_id:
                 return True
         return False
+
+    def _orks_phase_end_reaction_already_queued(self, *, stratagem_name: str) -> bool:
+        expected = self._orks_normalize_name(stratagem_name)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "").strip() != "phase_end":
+                continue
+            if self._orks_phase_label(reaction.get("phase_name")) != "fight phase":
+                continue
+            if self._orks_normalize_name(str(reaction.get("stratagem", "") or "")) != expected:
+                continue
+            return True
+        return False
+
+    def _queue_single_orks_end_of_opponent_fight_phase_reserves_reaction(
+        self,
+        *,
+        stratagem_names: tuple[str, ...],
+        detachment_check,
+        target_matcher,
+    ) -> None:
+        if not bool(detachment_check()):
+            return
+        stratagem = self._orks_get_available_stratagem_by_names(*stratagem_names)
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._orks_phase_end_reaction_already_queued(stratagem_name=str(getattr(stratagem, "name", "") or "")):
+            return
+
+        candidates = self._orks_end_of_opponent_fight_phase_strategic_reserves_candidates(target_matcher=target_matcher)
+        if not candidates:
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": str(getattr(stratagem, "name", "") or stratagem_names[0]),
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "candidates": list(candidates),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_orks_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if str(getattr(phase, "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        if player is self.player:
+            return
+        self._queue_single_orks_end_of_opponent_fight_phase_reserves_reaction(
+            stratagem_names=("INSTINCTIVE HUNTERS",),
+            detachment_check=self._is_da_big_hunt_detachment,
+            target_matcher=self._orks_is_beast_snagga_unit,
+        )
+        self._queue_single_orks_end_of_opponent_fight_phase_reserves_reaction(
+            stratagem_names=("DED SNEAKY",),
+            detachment_check=self._is_taktikal_brigade_detachment,
+            target_matcher=self._orks_is_kommandos_or_stormboyz_unit,
+        )
 
     def _queue_orks_move_started_reactions(self, *, unit: Any, action: str) -> None:
         self._queue_orks_superfuelled_boiler_move_started_reaction(unit=unit, action=action)
@@ -2138,6 +2261,10 @@ class OrksStratagemMixin:
             return self._use_orks_get_stuck_in_ladz(stratagem, **kwargs)
         if name_u == "GRAB AND BASH" or name_norm == "grab and bash":
             return self._use_orks_grab_and_bash(stratagem, **kwargs)
+        if name_u == "INSTINCTIVE HUNTERS":
+            return self._use_orks_instinctive_hunters(stratagem, **kwargs)
+        if name_u == "DED SNEAKY":
+            return self._use_orks_ded_sneaky(stratagem, **kwargs)
         if name_u == "DRAG IT DOWN":
             return self._use_orks_drag_it_down(stratagem, **kwargs)
         if name_u == "BASH AND GRAB":
@@ -2193,6 +2320,93 @@ class OrksStratagemMixin:
         if name_norm == "more gitz over ere":
             return self._use_orks_more_gitz_over_ere(stratagem, **kwargs)
         return None
+
+    def _use_orks_end_of_opponent_fight_phase_reserves_stratagem(
+        self,
+        stratagem: Any,
+        *,
+        stratagem_name: str,
+        detachment_check,
+        target_matcher,
+        target_error: str,
+        **kwargs,
+    ) -> bool:
+        if not bool(detachment_check()):
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Fight phase",),
+            require_your_turn=False,
+            error_prefix=stratagem_name,
+        ):
+            return False
+        if self._orks_is_players_turn():
+            logger.error("ERROR: %s: not opponent's Fight phase", stratagem_name)
+            return False
+
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._orks_end_of_opponent_fight_phase_strategic_reserves_candidates(target_matcher=target_matcher)
+
+        target_unit = self._orks_resolve_target_unit(stratagem_name, **kwargs)
+        if target_unit is None:
+            if len(candidates) == 1:
+                target_unit = candidates[0]
+            else:
+                logger.error("ERROR: %s: no target unit provided", stratagem_name)
+                return False
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name=stratagem_name,
+            target_unit=target_unit,
+            candidates=candidates,
+        )
+        if not ok:
+            return False
+        if not bool(target_matcher(root)):
+            logger.error("ERROR: %s: %s", stratagem_name, target_error)
+            return False
+        if self._orks_is_unit_engaged(root):
+            logger.error("ERROR: %s: target must not be within Engagement Range", stratagem_name)
+            return False
+        if not candidates or not self._orks_unit_in_candidates(root, candidates):
+            logger.error("ERROR: %s: selected unit is not currently eligible", stratagem_name)
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: %s: cannot be used in current state", stratagem_name)
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or stratagem_name).strip() or stratagem_name
+        if not self._orks_place_unit_into_strategic_reserves(root, reason=source_name):
+            logger.error("ERROR: %s: failed to place target into Strategic Reserves", stratagem_name)
+            return False
+
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: %s: %s placed into Strategic Reserves.",
+            stratagem_name,
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_orks_instinctive_hunters(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_end_of_opponent_fight_phase_reserves_stratagem(
+            stratagem,
+            stratagem_name="INSTINCTIVE HUNTERS",
+            detachment_check=self._is_da_big_hunt_detachment,
+            target_matcher=self._orks_is_beast_snagga_unit,
+            target_error="target must be a Beast Snagga unit",
+            **kwargs,
+        )
+
+    def _use_orks_ded_sneaky(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_end_of_opponent_fight_phase_reserves_stratagem(
+            stratagem,
+            stratagem_name="DED SNEAKY",
+            detachment_check=self._is_taktikal_brigade_detachment,
+            target_matcher=self._orks_is_kommandos_or_stormboyz_unit,
+            target_error="target must be a Kommandos or Stormboyz unit",
+            **kwargs,
+        )
 
     def _use_orks_unit_waaagh_override_stratagem(
         self,

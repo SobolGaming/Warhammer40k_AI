@@ -263,6 +263,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DRAG IT DOWN",
     "BASH AND GRAB",
     "GRAB AND BASH",
+    "INSTINCTIVE HUNTERS",
     "DECK FRAGGERS",
     "ROLLING LOOT-HEAP",
     "BLITZA FIRE",
@@ -276,6 +277,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ORKS IS STILL ORKS",
     "SPESHUL SHELLS",
     "DAT'S OURS",
+    "DED SNEAKY",
     "TAKTIKAL RETREAT",
     "HUGE SHOW-OFFS",
     "FIGHT PROPPA",
@@ -539,12 +541,14 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CAREEN!",
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
+    "INSTINCTIVE HUNTERS",
     "WHERE D'YA FINK YOU'RE GOING?",
     "WHERE D’YA FINK YOU’RE GOING?",
     "KRUMP AND RUN",
     "ON TO DA NEXT",
     "MORE GITZ OVER 'ERE!",
     "MORE GITZ OVER ’ERE!",
+    "DED SNEAKY",
     "PROFANE SYMBIOSIS",
     "CORRUPTING TAINT",
     "AEGIS ETERNAL",
@@ -1841,6 +1845,8 @@ class StratagemManager(
             "RETURN TO THE SHADOWS",
             "WALL OF MIRRORS",
             "INVISIBLE HUNTER",
+            "INSTINCTIVE HUNTERS",
+            "DED SNEAKY",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -4312,6 +4318,30 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Command phase, an active loot objective, and one eligible non-Gretchin ORKS unit within range"
             return result
+        if name_u == "INSTINCTIVE HUNTERS":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_end_of_opponent_fight_phase_strategic_reserves_candidates(
+                    target_matcher=self._orks_is_beast_snagga_unit,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires end of opponent's Fight phase and a friendly BEAST SNAGGA unit not within Engagement Range"
+            return result
+        if name_u == "DED SNEAKY":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_end_of_opponent_fight_phase_strategic_reserves_candidates(
+                    target_matcher=self._orks_is_kommandos_or_stormboyz_unit,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires end of opponent's Fight phase and a friendly KOMMANDOS or STORMBOYZ unit not within Engagement Range"
+            return result
         if name_u == "RAPID REGENERATION":
             attacking_unit = (
                 context.get("attacking_unit")
@@ -4934,6 +4964,7 @@ class StratagemManager(
             "'ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
             "\u2019ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
             "GRAB AND BASH": "Target: non-GRETCHIN ORKS unit within range of the active loot objective; that unit counts as Waaagh-active until your next Command phase",
+            "INSTINCTIVE HUNTERS": "Target: BEAST SNAGGA unit from your army that is not within Engagement Range at end of opponent's Fight phase; remove it and place it into Strategic Reserves",
             "STALKIN' TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
             "STALKIN\u2019 TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
@@ -4944,6 +4975,7 @@ class StratagemManager(
             "ON TO DA NEXT": "Target: ORKS unit that was in Engagement Range of the enemy that just Fell Back at phase start",
             "MORE GITZ OVER 'ERE!": "Target: SPEED FREEKS unit within 9\" of enemy that just ended a Normal/Advance/Fall Back move and not in Engagement Range",
             "MORE GITZ OVER ’ERE!": "Target: SPEED FREEKS unit within 9\" of enemy that just ended a Normal/Advance/Fall Back move and not in Engagement Range",
+            "DED SNEAKY": "Target: KOMMANDOS or STORMBOYZ unit from your army that is not within Engagement Range at end of opponent's Fight phase; remove it and place it into Strategic Reserves",
             "PROFANE SYMBIOSIS": "Target: CHAOS KNIGHTS unit (not Empowered)",
             "CORRUPTING TAINT": "Target: CHAOS KNIGHTS CHARACTER; select objective you control",
             "UNLEASH BALEFIRE": "Target: CHAOS KNIGHTS unit (not yet shot)",
@@ -6622,6 +6654,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_aeldari_spirit_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_orks_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
