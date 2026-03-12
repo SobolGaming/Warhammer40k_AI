@@ -18,6 +18,9 @@ class GamePhaseHandlersMixin:
             return
 
         from ...utility.event_bus import append_action, append_dice
+        from ...rules.enhancement import (
+            resolve_enhancement_command_phase_cp_gain_roll_specs,
+        )
 
         def _unit_sort_key(u):
             try:
@@ -34,7 +37,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -53,9 +56,12 @@ class GamePhaseHandlersMixin:
             sr = getattr(root, "special_rules", None)
             if not isinstance(sr, dict):
                 continue
-            specs = list(sr.get("command_phase_bonus_cp_roll_specs", []) or [])
-            if not specs:
-                continue
+            root_is_embarked = bool(getattr(root, "is_embarked", False)) or bool(
+                getattr(root, "embarked_in", None)
+            )
+            specs = []
+            if not root_is_embarked:
+                specs = list(sr.get("command_phase_bonus_cp_roll_specs", []) or [])
             for spec in specs:
                 if not isinstance(spec, dict):
                     continue
@@ -97,6 +103,57 @@ class GamePhaseHandlersMixin:
                     player,
                     f"{source}: gained {int(gained)}CP.",
                 )
+
+            enhancement_results = list(
+                resolve_enhancement_command_phase_cp_gain_roll_specs(
+                    root,
+                    player=player,
+                    game=self,
+                )
+                or []
+            )
+            for result in enhancement_results:
+                if not isinstance(result, dict) or not bool(result.get("triggered", False)):
+                    continue
+                source = str(result.get("source", "") or "Enhancement").strip() or "Enhancement"
+                try:
+                    rolled = int(result.get("roll", 0) or 0)
+                except (TypeError, ValueError):
+                    rolled = 0
+                try:
+                    modifier = int(result.get("roll_modifier", 0) or 0)
+                except (TypeError, ValueError):
+                    modifier = 0
+                try:
+                    total = int(result.get("total", rolled + modifier) or (rolled + modifier))
+                except (TypeError, ValueError):
+                    total = int(rolled + modifier)
+                try:
+                    success_on = int(result.get("success_on", 5) or 5)
+                except (TypeError, ValueError):
+                    success_on = 5
+                try:
+                    gained = int(result.get("gained", 0) or 0)
+                except (TypeError, ValueError):
+                    gained = 0
+
+                bonus_txt = ""
+                if modifier:
+                    bonus_txt = f" + {int(modifier)}"
+                append_dice(
+                    player,
+                    f"{source}: rolled D6={int(rolled)}{bonus_txt} -> {int(total)} (need {int(success_on)}+).",
+                )
+                if total < success_on:
+                    append_action(
+                        player,
+                        f"{source}: failed to gain CP ({int(total)} < {int(success_on)}).",
+                    )
+                else:
+                    append_action(
+                        player,
+                        f"{source}: gained {int(gained)}CP.",
+                    )
 
         csm_mgr = getattr(army, "chaos_space_marines_detachments", None)
         eater_fn = getattr(csm_mgr, "dread_talons_eater_of_dread_on_command_phase_start", None) if csm_mgr is not None else None
@@ -6716,7 +6773,7 @@ class GamePhaseHandlersMixin:
             if not bool(getattr(unit, "deployed", False)):
                 return False
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     return False
             except Exception:
                 pass
@@ -7485,7 +7542,7 @@ class GamePhaseHandlersMixin:
                 if not unit.is_alive() or not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -7621,7 +7678,7 @@ class GamePhaseHandlersMixin:
                 if not unit.is_alive() or not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -7772,7 +7829,7 @@ class GamePhaseHandlersMixin:
                 if not unit.is_alive() or not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -7943,7 +8000,7 @@ class GamePhaseHandlersMixin:
                 if not unit.is_alive() or not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -8150,7 +8207,7 @@ class GamePhaseHandlersMixin:
                 if not unit.is_alive() or not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -8316,7 +8373,7 @@ class GamePhaseHandlersMixin:
                 if not unit.is_alive() or not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -8422,7 +8479,7 @@ class GamePhaseHandlersMixin:
                 if not unit.is_alive() or not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -8597,7 +8654,7 @@ class GamePhaseHandlersMixin:
                 if not unit.is_alive() or not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -8774,7 +8831,7 @@ class GamePhaseHandlersMixin:
                 if not unit.is_alive() or not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -9268,7 +9325,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -9359,7 +9416,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -9476,7 +9533,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -9625,7 +9682,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -9813,7 +9870,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -10006,7 +10063,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -10186,7 +10243,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -11180,7 +11237,7 @@ class GamePhaseHandlersMixin:
                 if not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -11380,7 +11437,7 @@ class GamePhaseHandlersMixin:
                 if not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -13818,7 +13875,7 @@ class GamePhaseHandlersMixin:
             except Exception:
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -13984,7 +14041,7 @@ class GamePhaseHandlersMixin:
             except Exception:
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -14434,7 +14491,7 @@ class GamePhaseHandlersMixin:
                 if not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -14531,7 +14588,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -16165,7 +16222,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -17708,7 +17765,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -17817,7 +17874,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -17909,7 +17966,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -17995,7 +18052,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -18115,7 +18172,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -18207,7 +18264,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -18516,7 +18573,7 @@ class GamePhaseHandlersMixin:
             if not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass
@@ -18663,7 +18720,7 @@ class GamePhaseHandlersMixin:
                         if not unit.is_alive() or not getattr(unit, "deployed", True):
                             continue
                         try:
-                            if unit.is_in_reserves() or unit.is_embarked:
+                            if unit.is_in_reserves():
                                 continue
                         except Exception:
                             pass
@@ -18919,7 +18976,7 @@ class GamePhaseHandlersMixin:
                 if not unit.is_alive() or not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -19050,7 +19107,7 @@ class GamePhaseHandlersMixin:
                 if not unit.is_alive() or not getattr(unit, "deployed", True):
                     continue
                 try:
-                    if unit.is_in_reserves() or unit.is_embarked:
+                    if unit.is_in_reserves():
                         continue
                 except Exception:
                     pass
@@ -19504,7 +19561,7 @@ class GamePhaseHandlersMixin:
             if not unit.is_alive() or not getattr(unit, "deployed", True):
                 continue
             try:
-                if unit.is_in_reserves() or unit.is_embarked:
+                if unit.is_in_reserves():
                     continue
             except Exception:
                 pass

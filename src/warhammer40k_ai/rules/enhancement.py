@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from typing import Set, Tuple
 import re
 
+from ..utility.dice import get_roll
+
 
 def _ensure_enhancement_fnp_entry(
     unit,
@@ -142,6 +144,392 @@ def _descriptor_params(desc) -> dict:
         return dict(raw_params or {})
     except (TypeError, ValueError):
         return {}
+
+
+def _enhancement_cp_gain_unit_root(unit):
+    if unit is None:
+        return None
+    root_fn = getattr(unit, "get_attached_unit_root", None)
+    if callable(root_fn):
+        root = root_fn()
+        if root is not None:
+            return root
+    return unit
+
+
+def _enhancement_cp_gain_unit_sort_key(unit) -> str:
+    return str(get_entity_id(_enhancement_cp_gain_unit_root(unit)) or "")
+
+
+def _enhancement_cp_gain_model_sort_key(model) -> str:
+    return str(get_entity_id(model) or "")
+
+
+def _enhancement_cp_gain_model_id(model) -> str:
+    if model is None:
+        return ""
+    return str(getattr(model, "id", getattr(model, "_id", "")) or "")
+
+
+def _enhancement_cp_gain_model_is_alive(model) -> bool:
+    if model is None:
+        return False
+    is_alive_attr = getattr(model, "is_alive", True)
+    if callable(is_alive_attr):
+        return bool(is_alive_attr())
+    return bool(is_alive_attr)
+
+
+def _enhancement_cp_gain_unit_is_alive(unit) -> bool:
+    if unit is None:
+        return False
+    is_alive_fn = getattr(unit, "is_alive", None)
+    if callable(is_alive_fn):
+        return bool(is_alive_fn())
+    return bool(getattr(unit, "is_alive", True))
+
+
+def _enhancement_cp_gain_unit_is_deployed_on_battlefield(unit) -> bool:
+    if unit is None:
+        return False
+    if not _enhancement_cp_gain_unit_is_alive(unit):
+        return False
+    if not bool(getattr(unit, "deployed", False)):
+        return False
+    status = str(getattr(unit, "reserve_status", "deployed") or "deployed").strip().lower()
+    if status != "deployed":
+        return False
+    in_reserves_fn = getattr(unit, "is_in_reserves", None)
+    if callable(in_reserves_fn):
+        return not bool(in_reserves_fn())
+    return True
+
+
+def _enhancement_cp_gain_unit_is_on_battlefield_or_embarked(unit) -> bool:
+    root = _enhancement_cp_gain_unit_root(unit)
+    if root is None:
+        return False
+    get_army = getattr(root, "get_parent_army", None)
+    if callable(get_army):
+        army = get_army()
+    else:
+        army = getattr(root, "parent_army", None)
+    orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+    checker = getattr(orks_mgr, "_unit_is_on_battlefield_or_embarked", None) if orks_mgr is not None else None
+    if callable(checker):
+        return bool(checker(root))
+    embarked_in = getattr(root, "embarked_in", None)
+    if embarked_in is not None:
+        return _enhancement_cp_gain_unit_is_deployed_on_battlefield(embarked_in)
+    return _enhancement_cp_gain_unit_is_deployed_on_battlefield(root)
+
+
+def _enhancement_cp_gain_member_units(root) -> list:
+    if root is None:
+        return []
+    members_fn = getattr(root, "get_attached_unit_members", None)
+    members = list(members_fn() or []) if callable(members_fn) else [root]
+    if not members:
+        members = [root]
+    members.sort(key=_enhancement_cp_gain_unit_sort_key)
+    return members
+
+
+def _enhancement_cp_gain_model_matches_source_id(model, source_model_id: str) -> bool:
+    if model is None:
+        return False
+    source_id = str(source_model_id or "").strip()
+    if not source_id:
+        return False
+    entity_id = str(get_entity_id(model) or "").strip()
+    if entity_id and entity_id == source_id:
+        return True
+    local_id = _enhancement_cp_gain_model_id(model)
+    if local_id and local_id == source_id:
+        return True
+    return False
+
+
+def _enhancement_cp_gain_find_source_model(member, *, source_model_id: str):
+    models = list(getattr(member, "models", []) or [])
+    models.sort(key=_enhancement_cp_gain_model_sort_key)
+    source_id = str(source_model_id or "").strip()
+    if source_id:
+        for model in models:
+            if _enhancement_cp_gain_model_matches_source_id(model, source_id):
+                return model
+    get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+    if callable(get_bearer):
+        bearer = get_bearer()
+        if bearer is not None:
+            return bearer
+    for model in models:
+        if _enhancement_cp_gain_model_is_alive(model):
+            return model
+    return None
+
+
+def _enhancement_cp_gain_model_parent_root(model, *, fallback_unit=None):
+    parent = getattr(model, "parent_unit", None) if model is not None else None
+    if parent is None:
+        parent = fallback_unit
+    return _enhancement_cp_gain_unit_root(parent)
+
+
+def _enhancement_cp_gain_unit_effective_model_count(
+    unit,
+    *,
+    scope: str,
+    game=None,
+) -> int:
+    root = _enhancement_cp_gain_unit_root(unit)
+    if root is None:
+        return 0
+    game_map = getattr(game, "map", None) if game is not None else None
+    count_fn = getattr(root, "orks_effective_model_count_for_evaluation", None)
+    if callable(count_fn):
+        value = count_fn(str(scope or "enhancement"), game=game, game_map=game_map)
+        return int(value or 0)
+    total = 0
+    for member in _enhancement_cp_gain_member_units(root):
+        total += len(list(getattr(member, "models", []) or []))
+    return int(total)
+
+
+def _enhancement_cp_gain_enemy_units_for_player(player, *, game=None) -> list:
+    if player is None or game is None:
+        return []
+    units = []
+    seen_ids: set[str] = set()
+    for other in list(getattr(game, "players", []) or []):
+        if other is None or other is player:
+            continue
+        army = getattr(other, "army", None)
+        for unit in list(getattr(army, "units", []) or []):
+            root = _enhancement_cp_gain_unit_root(unit)
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "").strip()
+            if root_id and root_id in seen_ids:
+                continue
+            if root_id:
+                seen_ids.add(root_id)
+            if not _enhancement_cp_gain_unit_is_deployed_on_battlefield(root):
+                continue
+            if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                continue
+            units.append(root)
+    units.sort(key=_enhancement_cp_gain_unit_sort_key)
+    return units
+
+
+def _enhancement_cp_gain_unit_has_enemy_within_distance(
+    unit,
+    *,
+    distance_in: float,
+    player,
+    game=None,
+) -> bool:
+    root = _enhancement_cp_gain_unit_root(unit)
+    if root is None:
+        return False
+    if not _enhancement_cp_gain_unit_is_deployed_on_battlefield(root):
+        return False
+    game_map = getattr(game, "map", None) if game is not None else None
+    if game_map is None:
+        return False
+    max_distance = float(distance_in)
+    for enemy in _enhancement_cp_gain_enemy_units_for_player(player, game=game):
+        try:
+            distance = float(game_map.get_distance_between_units(root, enemy))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if distance <= max_distance + 1e-6:
+            return True
+    return False
+
+
+def _register_enhancement_command_phase_cp_gain_roll_spec(
+    unit,
+    *,
+    source_name: str,
+    source_model_id: str,
+    success_on: int,
+    cp_gain: int,
+    requires_bearer_on_battlefield_or_embarked_transport: bool,
+    enemy_range_max: float | None = None,
+    enemy_range_reference: str = "",
+    roll_bonus_if_effective_model_count_at_least: int = 0,
+    effective_model_count_threshold: int = 10,
+    effective_model_count_scope: str = "enhancement",
+) -> None:
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    specs = list(sr.get("enhancement_command_phase_cp_gain_roll_specs", []) or [])
+    normalized_scope = str(effective_model_count_scope or "enhancement").strip().lower() or "enhancement"
+    spec = {
+        "type": "enhancement_command_phase_cp_gain_roll",
+        "source": str(source_name or "Enhancement").strip() or "Enhancement",
+        "source_model_id": str(source_model_id or "").strip(),
+        "success_on": int(min(6, max(2, int(success_on)))),
+        "cp_gain": int(max(1, int(cp_gain))),
+        "requires_bearer_on_battlefield_or_embarked_transport": bool(
+            requires_bearer_on_battlefield_or_embarked_transport
+        ),
+        "enemy_range_reference": str(enemy_range_reference or "").strip().lower(),
+        "roll_bonus_if_effective_model_count_at_least": int(roll_bonus_if_effective_model_count_at_least or 0),
+        "effective_model_count_threshold": int(max(0, int(effective_model_count_threshold or 0))),
+        "effective_model_count_scope": normalized_scope,
+    }
+    if enemy_range_max is not None:
+        spec["enemy_range_max"] = float(max(0.0, _coerce_float(enemy_range_max, default=0.0)))
+    dedupe_key = (
+        str(spec.get("source", "") or "").strip().lower(),
+        str(spec.get("source_model_id", "") or "").strip(),
+        int(spec.get("success_on", 0) or 0),
+        int(spec.get("cp_gain", 0) or 0),
+        bool(spec.get("requires_bearer_on_battlefield_or_embarked_transport", False)),
+        _coerce_float(spec.get("enemy_range_max", -1.0) if "enemy_range_max" in spec else -1.0, default=-1.0),
+        str(spec.get("enemy_range_reference", "") or "").strip().lower(),
+        int(spec.get("roll_bonus_if_effective_model_count_at_least", 0) or 0),
+        int(spec.get("effective_model_count_threshold", 0) or 0),
+        str(spec.get("effective_model_count_scope", "") or "").strip().lower(),
+    )
+    seen = set()
+    deduped: list[dict] = []
+    for existing in specs:
+        if not isinstance(existing, dict):
+            continue
+        existing_key = (
+            str(existing.get("source", "") or "").strip().lower(),
+            str(existing.get("source_model_id", "") or "").strip(),
+            int(existing.get("success_on", 0) or 0),
+            int(existing.get("cp_gain", 0) or 0),
+            bool(existing.get("requires_bearer_on_battlefield_or_embarked_transport", False)),
+            _coerce_float(
+                existing.get("enemy_range_max", -1.0) if "enemy_range_max" in existing else -1.0,
+                default=-1.0,
+            ),
+            str(existing.get("enemy_range_reference", "") or "").strip().lower(),
+            int(existing.get("roll_bonus_if_effective_model_count_at_least", 0) or 0),
+            int(existing.get("effective_model_count_threshold", 0) or 0),
+            str(existing.get("effective_model_count_scope", "") or "").strip().lower(),
+        )
+        if existing_key in seen:
+            continue
+        seen.add(existing_key)
+        deduped.append(existing)
+    if dedupe_key not in seen:
+        deduped.append(spec)
+    deduped.sort(
+        key=lambda entry: (
+            str(entry.get("source_model_id", "") or ""),
+            str(entry.get("source", "") or "").strip().lower(),
+            int(entry.get("success_on", 0) or 0),
+            int(entry.get("cp_gain", 0) or 0),
+        )
+    )
+    sr["enhancement_command_phase_cp_gain_roll_specs"] = deduped
+    unit.special_rules = sr
+
+
+def resolve_enhancement_command_phase_cp_gain_roll_specs(
+    root_unit,
+    *,
+    player,
+    game=None,
+) -> list[dict]:
+    root = _enhancement_cp_gain_unit_root(root_unit)
+    if root is None or player is None:
+        return []
+    gain_cp = getattr(player, "gain_command_points", None)
+    if not callable(gain_cp):
+        return []
+
+    outcomes: list[dict] = []
+    for member in _enhancement_cp_gain_member_units(root):
+        sr = getattr(member, "special_rules", None)
+        if not isinstance(sr, dict):
+            continue
+        specs = [dict(spec) for spec in list(sr.get("enhancement_command_phase_cp_gain_roll_specs", []) or []) if isinstance(spec, dict)]
+        specs.sort(
+            key=lambda spec: (
+                str(spec.get("source_model_id", "") or ""),
+                str(spec.get("source", "") or "").strip().lower(),
+                int(spec.get("success_on", 0) or 0),
+                int(spec.get("cp_gain", 0) or 0),
+            )
+        )
+        for spec in specs:
+            source_model_id = str(spec.get("source_model_id", "") or "").strip()
+            source_name = str(spec.get("source", "") or "Enhancement").strip() or "Enhancement"
+            source_model = _enhancement_cp_gain_find_source_model(member, source_model_id=source_model_id)
+            if source_model_id and source_model is None:
+                continue
+            requires_bearer_on_battlefield = bool(
+                spec.get("requires_bearer_on_battlefield_or_embarked_transport", False)
+            )
+            source_root = _enhancement_cp_gain_model_parent_root(source_model, fallback_unit=member)
+            if source_root is None:
+                continue
+            if requires_bearer_on_battlefield and not _enhancement_cp_gain_unit_is_on_battlefield_or_embarked(source_root):
+                continue
+
+            enemy_range_max = spec.get("enemy_range_max", None)
+            if enemy_range_max is not None:
+                max_distance = float(max(0.0, _coerce_float(enemy_range_max, default=0.0)))
+                range_reference = str(spec.get("enemy_range_reference", "") or "").strip().lower()
+                range_root = source_root
+                if range_reference in {"source_or_transport", "bearer_or_transport"}:
+                    embarked_transport = getattr(source_root, "embarked_in", None)
+                    if embarked_transport is not None:
+                        range_root = _enhancement_cp_gain_unit_root(embarked_transport)
+                if not _enhancement_cp_gain_unit_has_enemy_within_distance(
+                    range_root,
+                    distance_in=max_distance,
+                    player=player,
+                    game=game,
+                ):
+                    continue
+
+            success_on = int(min(6, max(2, int(spec.get("success_on", 5) or 5))))
+            cp_gain = int(max(1, int(spec.get("cp_gain", 1) or 1)))
+            roll_bonus = int(spec.get("roll_bonus_if_effective_model_count_at_least", 0) or 0)
+            modifier = 0
+            if roll_bonus != 0:
+                threshold = int(max(0, int(spec.get("effective_model_count_threshold", 10) or 10)))
+                scope = str(spec.get("effective_model_count_scope", "enhancement") or "enhancement").strip().lower()
+                count = _enhancement_cp_gain_unit_effective_model_count(
+                    source_root,
+                    scope=scope,
+                    game=game,
+                )
+                if count >= threshold:
+                    modifier += int(roll_bonus)
+
+            roll = int(get_roll("D6") or 0)
+            total = int(roll + modifier)
+            gained = 0
+            if total >= success_on:
+                gained = int(gain_cp(cp_gain, reason=source_name) or 0)
+
+            outcomes.append(
+                {
+                    "triggered": True,
+                    "source": source_name,
+                    "roll": int(roll),
+                    "roll_modifier": int(modifier),
+                    "total": int(total),
+                    "success_on": int(success_on),
+                    "cp_gain": int(cp_gain),
+                    "gained": int(gained),
+                    "source_unit_id": str(get_entity_id(source_root) or ""),
+                    "source_model_id": str(get_entity_id(source_model) or "") if source_model is not None else "",
+                    "source_member_unit_id": str(get_entity_id(member) or ""),
+                }
+            )
+    return outcomes
 
 
 def _append_enhancement_bearer_unit_weapon_keyword_rule(
@@ -650,6 +1038,9 @@ class Enhancement:
         )
         is_green_tide = bool(
             orks_mgr and callable(getattr(orks_mgr, "is_green_tide", None)) and orks_mgr.is_green_tide()
+        )
+        is_kult_of_speed = bool(
+            orks_mgr and callable(getattr(orks_mgr, "is_kult_of_speed", None)) and orks_mgr.is_kult_of_speed()
         )
         is_taktikal_brigade = bool(
             orks_mgr and callable(getattr(orks_mgr, "is_taktikal_brigade", None)) and orks_mgr.is_taktikal_brigade()
@@ -9944,6 +10335,55 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_green_tide_bloodthirsty_belligerence_bearer_model_id"] = bearer_id
 
+        if name in ("brutal but kunnin'", "brutal but kunnin") or enh_id == "000008881003":
+            if not is_green_tide:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Brutal But Kunnin'").strip() or "Brutal But Kunnin'"
+            success_on = _coerce_int(params.get("success_on", 5) or 5, default=5)
+            cp_gain = _coerce_int(params.get("cp_gain", 1) or 1, default=1)
+            roll_bonus = _coerce_int(
+                params.get("roll_bonus_if_effective_model_count_at_least", 2) or 2,
+                default=2,
+            )
+            count_threshold = _coerce_int(
+                params.get("effective_model_count_threshold", 10) or 10,
+                default=10,
+            )
+            count_scope = str(params.get("effective_model_count_scope", "enhancement") or "enhancement").strip().lower()
+            if not count_scope:
+                count_scope = "enhancement"
+            unit.special_rules["enhancement_green_tide_brutal_but_kunnin"] = True
+            unit.special_rules["enhancement_green_tide_brutal_but_kunnin_source"] = source
+            unit.special_rules["enhancement_green_tide_brutal_but_kunnin_success_on"] = int(
+                min(6, max(2, success_on))
+            )
+            unit.special_rules["enhancement_green_tide_brutal_but_kunnin_cp_gain"] = int(max(1, cp_gain))
+            unit.special_rules["enhancement_green_tide_brutal_but_kunnin_roll_bonus_if_effective_model_count_at_least"] = int(
+                roll_bonus
+            )
+            unit.special_rules["enhancement_green_tide_brutal_but_kunnin_effective_model_count_threshold"] = int(
+                max(0, count_threshold)
+            )
+            unit.special_rules["enhancement_green_tide_brutal_but_kunnin_effective_model_count_scope"] = count_scope
+            _register_enhancement_command_phase_cp_gain_roll_spec(
+                unit,
+                source_name=source,
+                source_model_id=bearer_id,
+                success_on=int(min(6, max(2, success_on))),
+                cp_gain=int(max(1, cp_gain)),
+                requires_bearer_on_battlefield_or_embarked_transport=bool(
+                    params.get("requires_bearer_on_battlefield_or_embarked_transport", True)
+                ),
+                roll_bonus_if_effective_model_count_at_least=int(roll_bonus),
+                effective_model_count_threshold=int(max(0, count_threshold)),
+                effective_model_count_scope=count_scope,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_green_tide_brutal_but_kunnin_bearer_model_id"] = bearer_id
+
         if name == "ferocious show off" or enh_id == "000008881004":
             if not is_green_tide:
                 return
@@ -10016,6 +10456,44 @@ class Enhancement:
             )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "speed makes right" or enh_id == "000008872003":
+            if not is_kult_of_speed:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Speed Makes Right").strip() or "Speed Makes Right"
+            success_on = _coerce_int(params.get("success_on", 3) or 3, default=3)
+            cp_gain = _coerce_int(params.get("cp_gain", 1) or 1, default=1)
+            range_in = _coerce_float(
+                params.get("enemy_range_max", params.get("enemy_within", 9.0)) or 9.0,
+                default=9.0,
+            )
+            unit.special_rules["enhancement_kult_of_speed_speed_makes_right"] = True
+            unit.special_rules["enhancement_kult_of_speed_speed_makes_right_source"] = source
+            unit.special_rules["enhancement_kult_of_speed_speed_makes_right_success_on"] = int(
+                min(6, max(2, success_on))
+            )
+            unit.special_rules["enhancement_kult_of_speed_speed_makes_right_cp_gain"] = int(max(1, cp_gain))
+            unit.special_rules["enhancement_kult_of_speed_speed_makes_right_enemy_range"] = float(max(0.0, range_in))
+            _register_enhancement_command_phase_cp_gain_roll_spec(
+                unit,
+                source_name=source,
+                source_model_id=bearer_id,
+                success_on=int(min(6, max(2, success_on))),
+                cp_gain=int(max(1, cp_gain)),
+                requires_bearer_on_battlefield_or_embarked_transport=bool(
+                    params.get("requires_bearer_on_battlefield_or_embarked_transport", True)
+                ),
+                enemy_range_max=float(max(0.0, range_in)),
+                enemy_range_reference=str(
+                    params.get("enemy_range_reference", "bearer_or_transport")
+                    or "bearer_or_transport"
+                ).strip().lower(),
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_kult_of_speed_speed_makes_right_bearer_model_id"] = bearer_id
 
         if name == "tellyporta" or enh_id == "000008885005":
             if not is_bully_boyz:

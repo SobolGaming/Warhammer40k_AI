@@ -6899,6 +6899,23 @@ _ORKS_GREEN_TIDE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
             "requires_bearer_leading": True,
         },
     ),
+    "000008881003": EnhancementToolDescriptor(
+        enhancement_id="000008881003",
+        name="Brutal But Kunnin'",
+        timing="command_phase",
+        target="bearer",
+        duration="instant",
+        effect="command_phase_cp_roll_with_effective_model_count_bonus",
+        effect_params={
+            "roll": "D6",
+            "success_on": 5,
+            "cp_gain": 1,
+            "requires_bearer_on_battlefield_or_embarked_transport": True,
+            "roll_bonus_if_effective_model_count_at_least": 2,
+            "effective_model_count_threshold": 10,
+            "effective_model_count_scope": "enhancement",
+        },
+    ),
     "000008881004": EnhancementToolDescriptor(
         enhancement_id="000008881004",
         name="Ferocious Show Off",
@@ -6930,6 +6947,29 @@ _ORKS_GREEN_TIDE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
 
 _ORKS_GREEN_TIDE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ORKS_GREEN_TIDE_DESCRIPTORS.values()
+}
+
+_ORKS_KULT_OF_SPEED_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008872003": EnhancementToolDescriptor(
+        enhancement_id="000008872003",
+        name="Speed Makes Right",
+        timing="command_phase",
+        target="bearer_or_transport_bearer_is_embarked_within",
+        duration="instant",
+        effect="command_phase_cp_roll_if_bearer_or_transport_within_enemy_range",
+        effect_params={
+            "roll": "D6",
+            "success_on": 3,
+            "cp_gain": 1,
+            "enemy_range_max": 9.0,
+            "enemy_range_reference": "bearer_or_transport",
+            "requires_bearer_on_battlefield_or_embarked_transport": True,
+        },
+    ),
+}
+
+_ORKS_KULT_OF_SPEED_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORKS_KULT_OF_SPEED_DESCRIPTORS.values()
 }
 
 _ORKS_TAKTIKAL_BRIGADE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
@@ -7394,6 +7434,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _ORKS_GREEN_TIDE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ORKS_KULT_OF_SPEED_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _ORKS_TAKTIKAL_BRIGADE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -7540,5 +7583,6 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _ORKS_DREAD_MOB_BY_NAME.get(key)
         or _ORKS_FREEBOOTER_KREW_BY_NAME.get(key)
         or _ORKS_GREEN_TIDE_BY_NAME.get(key)
+        or _ORKS_KULT_OF_SPEED_BY_NAME.get(key)
         or _ORKS_TAKTIKAL_BRIGADE_BY_NAME.get(key)
     )

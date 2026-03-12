@@ -436,6 +436,7 @@ def test_green_tide_tool_descriptors_registered_for_new_rules():
 
     expected_enhancements = {
         "000008881002": "Bloodthirsty Belligerence",
+        "000008881003": "Brutal But Kunnin'",
         "000008881004": "Ferocious Show Off",
         "000008881005": "Raucous Warcaller",
     }
