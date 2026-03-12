@@ -6878,6 +6878,20 @@ _ORKS_FREEBOOTER_KREW_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
         effect="grant_weapon_keywords",
         effect_params={"keywords": ("IGNORES COVER",), "attack_type": "ranged"},
     ),
+    "000010712005": EnhancementToolDescriptor(
+        enhancement_id="000010712005",
+        name="Razgit's Magik Map",
+        timing="after_deployment",
+        target="friendly_orks_infantry_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "allow_strategic_reserves": True,
+            "redeploy_filters": ("ORKS", "INFANTRY"),
+            "strategic_reserves_ignore_current_unit_count_limit": True,
+        },
+    ),
 }
 
 _ORKS_FREEBOOTER_KREW_BY_NAME = {
@@ -6997,6 +7011,20 @@ _ORKS_TAKTIKAL_BRIGADE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
             "attachment_override_unit_names_any": ("Flash Gitz",),
             "attack_type": "ranged",
             "reroll_hit_full": True,
+        },
+    ),
+    "000009795004": EnhancementToolDescriptor(
+        enhancement_id="000009795004",
+        name="Mork's Kunnin'",
+        timing="after_deployment",
+        target="friendly_orks_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "allow_strategic_reserves": True,
+            "redeploy_filters": ("ORKS",),
+            "strategic_reserves_ignore_current_unit_count_limit": True,
         },
     ),
     "000009795005": EnhancementToolDescriptor(

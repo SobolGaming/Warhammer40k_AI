@@ -697,7 +697,7 @@ class Army:
             _add(s)
 
         # transport passengers + their attached leaders
-        if bool(getattr(root, "is_transport", False)):
+        if bool(getattr(root, "is_transport", False)) or bool(getattr(root, "transport_passengers", []) or []):
             for p in list(getattr(root, "transport_passengers", []) or []):
                 _add(p)
                 for l in list(getattr(p, "attached_leaders", []) or []):
@@ -790,7 +790,45 @@ class Army:
         
         return can_add_units and can_add_points
 
-    def validate_reserves_decisions(self, reserves_decisions: dict) -> dict:
+    def get_current_reserves_decisions(self) -> dict[str, str]:
+        decisions: dict[str, str] = {}
+        for root in self._reserve_group_roots():
+            decisions[get_entity_id(root)] = str(getattr(root, "reserve_status", "deployed") or "deployed")
+        return decisions
+
+    def validate_redeploy_to_strategic_reserves(
+        self,
+        root: Unit,
+        *,
+        ignore_unit_cap_root_ids: Optional[Set[str]] = None,
+    ) -> dict:
+        if root is None:
+            return {
+                "valid": False,
+                "errors": ["Redeploy to Strategic Reserves requires a unit."],
+                "reserve_units": 0,
+                "reserve_points": 0,
+                "strategic_points": 0,
+                "limits": self.get_reserve_limits(),
+            }
+        get_root = getattr(root, "get_attached_unit_root", None)
+        if callable(get_root):
+            resolved_root = get_root()
+            if resolved_root is not None:
+                root = resolved_root
+        decisions = self.get_current_reserves_decisions()
+        decisions[get_entity_id(root)] = "strategic_reserves"
+        return self.validate_reserves_decisions(
+            decisions,
+            ignore_unit_cap_root_ids=ignore_unit_cap_root_ids,
+        )
+
+    def validate_reserves_decisions(
+        self,
+        reserves_decisions: dict,
+        *,
+        ignore_unit_cap_root_ids: Optional[Set[str]] = None,
+    ) -> dict:
         """
         Validate reserves decisions against the 50% limits.
         
@@ -802,6 +840,11 @@ class Army:
         """
         limits = self.get_reserve_limits()
         errors: List[str] = []
+        ignored_unit_cap_root_ids = {
+            str(value or "").strip()
+            for value in set(ignore_unit_cap_root_ids or set())
+            if str(value or "").strip()
+        }
 
         reserve_units = 0
         reserve_points = 0
@@ -824,7 +867,10 @@ class Army:
                     errors.append(f"FORTIFICATIONS cannot be placed in Strategic Reserves: {getattr(root, 'name', 'Unit')}")
                     continue
             if decision in ["reserves", "strategic_reserves"]:
-                if self._reserve_group_counts_towards_unit_cap(root, decision=decision):
+                counts_towards_unit_cap = self._reserve_group_counts_towards_unit_cap(root, decision=decision)
+                if counts_towards_unit_cap and not (
+                    decision == "strategic_reserves" and rid in ignored_unit_cap_root_ids
+                ):
                     reserve_units += 1
                 pts = self._reserve_group_points(root)
                 reserve_points += pts
@@ -847,6 +893,7 @@ class Army:
             "reserve_points": reserve_points,
             "strategic_points": strategic_points,
             "limits": limits,
+            "ignored_unit_cap_root_ids": sorted(ignored_unit_cap_root_ids),
         }
 
     def enforce_reserves_limits(self, reserves_decisions: dict) -> dict:

@@ -9408,6 +9408,67 @@ class PositioningMixin:
         
         return min(scout_distance / max_scout_distance, 1.0)
 
+    def _enhancement_redeploy_specs(self) -> list[dict]:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return []
+        raw_specs = list(sr.get("enhancement_redeploy_specs", []) or [])
+        specs: list[dict] = []
+        for raw in raw_specs:
+            if not isinstance(raw, dict):
+                continue
+            filters: list[str] = []
+            for value in list(raw.get("filters", []) or []):
+                token = str(value or "").strip().upper()
+                if token and token not in filters:
+                    filters.append(token)
+            excluded_keywords: list[str] = []
+            for value in list(raw.get("excluded_keywords", []) or []):
+                token = str(value or "").strip().upper()
+                if token and token not in excluded_keywords:
+                    excluded_keywords.append(token)
+            filter_any_groups: list[list[str]] = []
+            for raw_group in list(raw.get("filter_any_groups", []) or []):
+                raw_values = [raw_group] if isinstance(raw_group, str) else list(raw_group or [])
+                group: list[str] = []
+                for value in raw_values:
+                    token = str(value or "").strip().upper()
+                    if token and token not in group:
+                        group.append(token)
+                if group:
+                    filter_any_groups.append(group)
+            specs.append(
+                {
+                    "source": str(raw.get("source", "") or "").strip() or "Redeploy",
+                    "source_model_id": str(raw.get("source_model_id", "") or "").strip(),
+                    "max_units": max(1, int(raw.get("max_units", 1) or 1)),
+                    "can_place_in_reserves": bool(raw.get("can_place_in_reserves", False)),
+                    "filters": list(filters),
+                    "excluded_keywords": list(excluded_keywords),
+                    "filter_any_groups": [list(group) for group in filter_any_groups],
+                    "requires_source_on_battlefield": bool(raw.get("requires_source_on_battlefield", False)),
+                    "allow_embarked_transport_on_battlefield": bool(
+                        raw.get("allow_embarked_transport_on_battlefield", False)
+                    ),
+                    "exclude_source_unit": bool(raw.get("exclude_source_unit", False)),
+                    "must_include_source_unit": bool(raw.get("must_include_source_unit", False)),
+                    "require_exact_count": bool(raw.get("require_exact_count", False)),
+                    "army_once_per_ability": bool(raw.get("army_once_per_ability", False)),
+                    "strategic_reserves_ignore_current_unit_count_limit": bool(
+                        raw.get("strategic_reserves_ignore_current_unit_count_limit", False)
+                    ),
+                }
+            )
+        specs.sort(
+            key=lambda spec: (
+                str(spec.get("source_model_id", "") or ""),
+                str(spec.get("source", "") or "").lower(),
+                int(spec.get("max_units", 0) or 0),
+                tuple(spec.get("filters", []) or []),
+            )
+        )
+        return specs
+
     def has_redeploy(self) -> Tuple[bool, int, bool]:
         """Check if the unit grants redeploy capability.
 
@@ -9424,6 +9485,45 @@ class PositioningMixin:
         # Use cached result if available
         if 'redeploy' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['redeploy']
+
+        redeploy_specs = self._enhancement_redeploy_specs()
+        if redeploy_specs:
+            spec = dict(redeploy_specs[0] or {})
+            result = (
+                True,
+                int(spec.get("max_units", 1) or 1),
+                bool(spec.get("can_place_in_reserves", False)),
+            )
+            if not hasattr(self, "_ability_cache"):
+                self._ability_cache = {}
+            self._ability_cache["redeploy"] = result
+            if list(spec.get("filters", []) or []):
+                self._ability_cache["redeploy_filters"] = list(spec.get("filters", []) or [])
+            if list(spec.get("excluded_keywords", []) or []):
+                self._ability_cache["redeploy_excluded_keywords"] = list(spec.get("excluded_keywords", []) or [])
+            if list(spec.get("filter_any_groups", []) or []):
+                self._ability_cache["redeploy_filter_any_groups"] = [
+                    list(group) for group in list(spec.get("filter_any_groups", []) or [])
+                ]
+            self._ability_cache["redeploy_ability_name"] = str(spec.get("source", "") or "Redeploy")
+            self._ability_cache["redeploy_requires_source_on_battlefield"] = bool(
+                spec.get("requires_source_on_battlefield", False)
+            )
+            self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = bool(
+                spec.get("allow_embarked_transport_on_battlefield", False)
+            )
+            self._ability_cache["redeploy_exclude_source_unit"] = bool(spec.get("exclude_source_unit", False))
+            self._ability_cache["redeploy_must_include_source_unit"] = bool(
+                spec.get("must_include_source_unit", False)
+            )
+            self._ability_cache["redeploy_require_exact_count"] = bool(spec.get("require_exact_count", False))
+            self._ability_cache["redeploy_army_once_per_ability"] = bool(
+                spec.get("army_once_per_ability", False)
+            )
+            self._ability_cache["redeploy_strategic_reserves_ignore_current_unit_count_limit"] = bool(
+                spec.get("strategic_reserves_ignore_current_unit_count_limit", False)
+            )
+            return result
 
         sr = getattr(self, "special_rules", None)
         if isinstance(sr, dict) and bool(sr.get("enhancement_orbital_uplink_reliquary", False)):

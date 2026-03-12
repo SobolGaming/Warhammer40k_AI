@@ -532,6 +532,138 @@ def resolve_enhancement_command_phase_cp_gain_roll_specs(
     return outcomes
 
 
+def _normalize_enhancement_redeploy_keyword_list(values) -> list[str]:
+    keywords: list[str] = []
+    for value in list(values or ()):
+        token = str(value or "").strip().upper()
+        if token and token not in keywords:
+            keywords.append(token)
+    return keywords
+
+
+def _normalize_enhancement_redeploy_filter_any_groups(values) -> list[list[str]]:
+    groups: list[list[str]] = []
+    for raw_group in list(values or ()):
+        raw_values = [raw_group] if isinstance(raw_group, str) else list(raw_group or ())
+        group = _normalize_enhancement_redeploy_keyword_list(raw_values)
+        if group:
+            groups.append(group)
+    return groups
+
+
+def _register_enhancement_redeploy_spec(
+    unit,
+    *,
+    source_name: str,
+    source_model_id: str = "",
+    max_units: int,
+    can_place_in_reserves: bool,
+    redeploy_filters=(),
+    excluded_keywords=(),
+    filter_any_groups=(),
+    requires_source_on_battlefield: bool = False,
+    allow_embarked_transport_on_battlefield: bool = False,
+    exclude_source_unit: bool = False,
+    must_include_source_unit: bool = False,
+    require_exact_count: bool = False,
+    army_once_per_ability: bool = False,
+    strategic_reserves_ignore_current_unit_count_limit: bool = False,
+) -> None:
+    if unit is None:
+        return
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    specs = [dict(spec) for spec in list(sr.get("enhancement_redeploy_specs", []) or ()) if isinstance(spec, dict)]
+    normalized_filters = _normalize_enhancement_redeploy_keyword_list(redeploy_filters)
+    normalized_excluded = _normalize_enhancement_redeploy_keyword_list(excluded_keywords)
+    normalized_any_groups = _normalize_enhancement_redeploy_filter_any_groups(filter_any_groups)
+    spec = {
+        "source": str(source_name or "Redeploy").strip() or "Redeploy",
+        "source_model_id": str(source_model_id or "").strip(),
+        "max_units": int(max(1, int(max_units or 1))),
+        "can_place_in_reserves": bool(can_place_in_reserves),
+        "filters": list(normalized_filters),
+        "excluded_keywords": list(normalized_excluded),
+        "filter_any_groups": [list(group) for group in normalized_any_groups],
+        "requires_source_on_battlefield": bool(requires_source_on_battlefield),
+        "allow_embarked_transport_on_battlefield": bool(allow_embarked_transport_on_battlefield),
+        "exclude_source_unit": bool(exclude_source_unit),
+        "must_include_source_unit": bool(must_include_source_unit),
+        "require_exact_count": bool(require_exact_count),
+        "army_once_per_ability": bool(army_once_per_ability),
+        "strategic_reserves_ignore_current_unit_count_limit": bool(
+            strategic_reserves_ignore_current_unit_count_limit
+        ),
+    }
+    dedupe_key = (
+        str(spec.get("source", "") or "").strip().lower(),
+        str(spec.get("source_model_id", "") or "").strip(),
+        int(spec.get("max_units", 0) or 0),
+        bool(spec.get("can_place_in_reserves", False)),
+        tuple(spec.get("filters", ()) or ()),
+        tuple(spec.get("excluded_keywords", ()) or ()),
+        tuple(tuple(group) for group in list(spec.get("filter_any_groups", ()) or ())),
+        bool(spec.get("requires_source_on_battlefield", False)),
+        bool(spec.get("allow_embarked_transport_on_battlefield", False)),
+        bool(spec.get("exclude_source_unit", False)),
+        bool(spec.get("must_include_source_unit", False)),
+        bool(spec.get("require_exact_count", False)),
+        bool(spec.get("army_once_per_ability", False)),
+        bool(spec.get("strategic_reserves_ignore_current_unit_count_limit", False)),
+    )
+    deduped: list[dict] = []
+    seen: set[tuple] = set()
+    for existing in specs:
+        existing_key = (
+            str(existing.get("source", "") or "").strip().lower(),
+            str(existing.get("source_model_id", "") or "").strip(),
+            int(existing.get("max_units", 0) or 0),
+            bool(existing.get("can_place_in_reserves", False)),
+            tuple(
+                str(value or "").strip().upper()
+                for value in list(existing.get("filters", ()) or ())
+                if str(value or "").strip()
+            ),
+            tuple(
+                str(value or "").strip().upper()
+                for value in list(existing.get("excluded_keywords", ()) or ())
+                if str(value or "").strip()
+            ),
+            tuple(
+                tuple(
+                    str(value or "").strip().upper()
+                    for value in ([group] if isinstance(group, str) else list(group or ()))
+                    if str(value or "").strip()
+                )
+                for group in list(existing.get("filter_any_groups", ()) or ())
+            ),
+            bool(existing.get("requires_source_on_battlefield", False)),
+            bool(existing.get("allow_embarked_transport_on_battlefield", False)),
+            bool(existing.get("exclude_source_unit", False)),
+            bool(existing.get("must_include_source_unit", False)),
+            bool(existing.get("require_exact_count", False)),
+            bool(existing.get("army_once_per_ability", False)),
+            bool(existing.get("strategic_reserves_ignore_current_unit_count_limit", False)),
+        )
+        if existing_key in seen:
+            continue
+        seen.add(existing_key)
+        deduped.append(existing)
+    if dedupe_key not in seen:
+        deduped.append(spec)
+    deduped.sort(
+        key=lambda entry: (
+            str(entry.get("source_model_id", "") or ""),
+            str(entry.get("source", "") or "").strip().lower(),
+            int(entry.get("max_units", 0) or 0),
+            tuple(str(value or "").strip().upper() for value in list(entry.get("filters", ()) or ())),
+        )
+    )
+    sr["enhancement_redeploy_specs"] = deduped
+    unit.special_rules = sr
+
+
 def _append_enhancement_bearer_unit_weapon_keyword_rule(
     unit,
     *,
@@ -10614,6 +10746,32 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_git_spotter_squig_bearer_model_id"] = bearer_id
 
+        if name == "razgit's magik map" or enh_id == "000010712005":
+            if not is_freebooter_krew:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Razgit's Magik Map").strip() or "Razgit's Magik Map"
+            unit.special_rules["enhancement_razgits_magik_map"] = True
+            unit.special_rules["enhancement_razgits_magik_map_source"] = source
+            _register_enhancement_redeploy_spec(
+                unit,
+                source_name=source,
+                source_model_id=bearer_id,
+                max_units=_coerce_int(params.get("max_units", 3) or 3, default=3),
+                can_place_in_reserves=bool(params.get("allow_strategic_reserves", True)),
+                redeploy_filters=list(params.get("redeploy_filters", ("ORKS", "INFANTRY")) or ()),
+                strategic_reserves_ignore_current_unit_count_limit=bool(
+                    params.get("strategic_reserves_ignore_current_unit_count_limit", False)
+                ),
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_razgits_magik_map_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
         if name == "skwad leader" or enh_id == "000009795002":
             if not is_taktikal_brigade:
                 return
@@ -10652,6 +10810,32 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_mek_kaptin_bearer_model_id"] = bearer_id
+
+        if name == "mork's kunnin'" or enh_id == "000009795004":
+            if not is_taktikal_brigade:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Mork's Kunnin'").strip() or "Mork's Kunnin'"
+            unit.special_rules["enhancement_morks_kunnin"] = True
+            unit.special_rules["enhancement_morks_kunnin_source"] = source
+            _register_enhancement_redeploy_spec(
+                unit,
+                source_name=source,
+                source_model_id=bearer_id,
+                max_units=_coerce_int(params.get("max_units", 3) or 3, default=3),
+                can_place_in_reserves=bool(params.get("allow_strategic_reserves", True)),
+                redeploy_filters=list(params.get("redeploy_filters", ("ORKS",)) or ()),
+                strategic_reserves_ignore_current_unit_count_limit=bool(
+                    params.get("strategic_reserves_ignore_current_unit_count_limit", False)
+                ),
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_morks_kunnin_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
 
         if name == "gob boomer" or enh_id == "000009795005":
             if not is_taktikal_brigade:

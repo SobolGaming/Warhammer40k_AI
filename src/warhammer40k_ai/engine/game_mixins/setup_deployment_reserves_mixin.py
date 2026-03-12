@@ -3196,6 +3196,10 @@ class GameSetupDeploymentReservesMixin:
                         "require_exact_count": bool(require_exact_count),
                         "selections_made": 0,
                         "ability_name": ability_name,
+                        "strategic_reserves_ignore_current_unit_count_limit": bool(
+                            cache.get("redeploy_strategic_reserves_ignore_current_unit_count_limit", False)
+                        ),
+                        "strategic_reserves_ignored_unit_cap_root_ids": [],
                     }
                 )
             if tokens:
@@ -3223,6 +3227,31 @@ class GameSetupDeploymentReservesMixin:
         if state.get("pending_move"):
             return
         self._queue_redeploy_selection()
+
+    def _redeploy_strategic_reserves_is_legal(
+        self,
+        army,
+        unit,
+        *,
+        ignore_unit_cap_root_ids=None,
+    ) -> bool:
+        if army is None or unit is None:
+            return False
+        reserve_group_roots = getattr(army, "_reserve_group_roots", None)
+        if callable(reserve_group_roots):
+            for root in list(reserve_group_roots() or []):
+                if not hasattr(root, "models_cost"):
+                    return True
+        validate_fn = getattr(army, "validate_redeploy_to_strategic_reserves", None)
+        if not callable(validate_fn):
+            return True
+        ignored_ids = {
+            str(value or "").strip()
+            for value in list(ignore_unit_cap_root_ids or [])
+            if str(value or "").strip()
+        }
+        outcome = dict(validate_fn(unit, ignore_unit_cap_root_ids=ignored_ids) or {})
+        return bool(outcome.get("valid", False))
 
     def _queue_redeploy_selection(self) -> None:
         state = getattr(self, "_redeploy_state", None)
@@ -3290,6 +3319,14 @@ class GameSetupDeploymentReservesMixin:
         source_unit_id = str(token.get("source_unit_id", "") or "")
         must_include_source_unit = bool(token.get("must_include_source_unit", False))
         selections_made = int(token.get("selections_made", 0) or 0)
+        strategic_reserves_ignore_current_unit_count_limit = bool(
+            token.get("strategic_reserves_ignore_current_unit_count_limit", False)
+        )
+        strategic_reserves_ignored_unit_cap_root_ids = {
+            str(value or "").strip()
+            for value in list(token.get("strategic_reserves_ignored_unit_cap_root_ids", []) or [])
+            if str(value or "").strip()
+        }
         raw_any_groups = list(token.get("filter_any_groups") or [])
         filter_any_groups: list[list[str]] = []
         for raw_group in raw_any_groups:
@@ -3386,12 +3423,20 @@ class GameSetupDeploymentReservesMixin:
                         payload={"target_unit_id": cid, "redeploy_action": "battlefield"},
                     )
                 )
-                options.append(
-                    DecisionOption.create(
-                        f"{label} - Strategic Reserves",
-                        payload={"target_unit_id": cid, "redeploy_action": "strategic_reserves"},
+                ignored_unit_cap_root_ids = set(strategic_reserves_ignored_unit_cap_root_ids)
+                if strategic_reserves_ignore_current_unit_count_limit:
+                    ignored_unit_cap_root_ids.add(str(cid))
+                if self._redeploy_strategic_reserves_is_legal(
+                    army,
+                    cand,
+                    ignore_unit_cap_root_ids=ignored_unit_cap_root_ids,
+                ):
+                    options.append(
+                        DecisionOption.create(
+                            f"{label} - Strategic Reserves",
+                            payload={"target_unit_id": cid, "redeploy_action": "strategic_reserves"},
+                        )
                     )
-                )
             else:
                 options.append(
                     DecisionOption.create(
@@ -3478,6 +3523,13 @@ class GameSetupDeploymentReservesMixin:
                 used.append(root_id)
         token["selections_made"] = int(token.get("selections_made", 0) or 0) + 1
         token["remaining"] = max(int(token.get("remaining", 0) or 0) - 1, 0)
+        if action == "strategic_reserves" and bool(
+            token.get("strategic_reserves_ignore_current_unit_count_limit", False)
+        ):
+            ignored_root_ids = list(token.get("strategic_reserves_ignored_unit_cap_root_ids", []) or [])
+            if root_id not in ignored_root_ids:
+                ignored_root_ids.append(root_id)
+            token["strategic_reserves_ignored_unit_cap_root_ids"] = ignored_root_ids
         if token["remaining"] <= 0:
             tokens.pop(0)
         queues[player_id] = tokens
@@ -3552,62 +3604,39 @@ class GameSetupDeploymentReservesMixin:
     def _redeploy_unit_to_strategic_reserves(self, unit) -> None:
         if unit is None:
             return
-        try:
-            root = unit.get_attached_unit_root()
-        except Exception:
-            root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
         if root is None:
             return
-        try:
-            members = list(root.get_attached_unit_members() or [])
-        except Exception:
-            members = [root]
+        get_army = getattr(root, "get_parent_army", None)
+        army = get_army() if callable(get_army) else getattr(root, "parent_army", None)
+        reserve_group_members = getattr(army, "_reserve_group_members", None) if army is not None else None
+        if callable(reserve_group_members):
+            group_units = list(reserve_group_members(root) or [])
+        else:
+            get_members = getattr(root, "get_attached_unit_members", None)
+            group_units = list(get_members() or []) if callable(get_members) else [root]
+            if bool(getattr(root, "is_transport", False)):
+                for passenger in list(getattr(root, "transport_passengers", []) or []):
+                    if passenger not in group_units:
+                        group_units.append(passenger)
+                    for leader in list(getattr(passenger, "attached_leaders", []) or []):
+                        if leader not in group_units:
+                            group_units.append(leader)
+        group_units.sort(key=lambda member: str(get_entity_id(member) or ""))
         game_map = getattr(self, "map", None)
-
-        for member in members:
-            try:
-                member.set_reserve_status("strategic_reserves")
-            except Exception:
-                try:
-                    member.reserve_status = "strategic_reserves"
-                except Exception:
-                    pass
-            try:
-                member.deployed = True
-                member.reserve_turn_deployed = None
-                member.arrived_from_reserves_this_turn = False
-            except Exception:
-                pass
-            try:
-                if game_map is not None and hasattr(game_map, "units") and member in game_map.units:
-                    game_map.units.remove(member)
-            except Exception:
-                pass
-
-        # Keep embarked passengers embarked; ensure they follow the transport into reserves.
-        try:
-            passengers = list(getattr(root, "transport_passengers", []) or [])
-        except Exception:
-            passengers = []
-        for passenger in passengers:
-            try:
-                passenger.set_reserve_status("strategic_reserves")
-            except Exception:
-                try:
-                    passenger.reserve_status = "strategic_reserves"
-                except Exception:
-                    pass
-            try:
-                passenger.deployed = True
-                passenger.reserve_turn_deployed = None
-                passenger.arrived_from_reserves_this_turn = False
-            except Exception:
-                pass
-            try:
-                if game_map is not None and hasattr(game_map, "units") and passenger in game_map.units:
-                    game_map.units.remove(passenger)
-            except Exception:
-                pass
+        for member in group_units:
+            set_reserve_status = getattr(member, "set_reserve_status", None)
+            if callable(set_reserve_status):
+                set_reserve_status("strategic_reserves")
+            else:
+                member.reserve_status = "strategic_reserves"
+            member.deployed = True
+            member.reserve_turn_deployed = None
+            member.arrived_from_reserves_this_turn = False
+            member._started_in_reserves = True
+            if game_map is not None and hasattr(game_map, "units") and member in game_map.units:
+                game_map.units.remove(member)
 
     def _find_valid_redeploy_position(self, player: 'Player', unit: 'Unit') -> tuple | None:
         """Return None unless a controller provides a redeploy position."""

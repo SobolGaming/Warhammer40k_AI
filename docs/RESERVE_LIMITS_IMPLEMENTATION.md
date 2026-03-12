@@ -23,6 +23,10 @@ Key methods in `src/warhammer40k_ai/roster/army.py`:
 - `get_reserve_limits()` returns totals and caps (`max_units`, `max_points`, `max_strategic_points`).
 - `validate_reserves_decisions()` counts reserves and strategic points and forces
   `must_start_in_reserves` units into standard reserves.
+- `validate_redeploy_to_strategic_reserves()` evaluates a single mid-battle/pregame move into
+  Strategic Reserves against the current army state, with an optional scoped
+  `ignore_unit_cap_root_ids` override for rules that explicitly ignore the current
+  Strategic Reserves unit-count cap during that resolution only.
 - `enforce_reserves_limits()` resolves overages in this order:
   1. Force AIRCRAFT to standard reserves.
   2. If strategic points exceed the cap, downgrade to standard reserves when eligible
@@ -42,6 +46,9 @@ Key methods in `src/warhammer40k_ai/roster/army.py`:
 - `DeploymentManager.set_reserves_status()` applies decisions to the root unit and propagates the
   status to attached leaders and embarked passengers.
 - Units starting in reserves are tagged with `_started_in_reserves` for round-3 destruction logic.
+- Pregame redeploy rules that place units into Strategic Reserves should reuse reserve-group roots
+  and may only bypass the reserve unit-count cap via a narrowly scoped `ignore_unit_cap_root_ids`
+  override for the units selected by that specific rule resolution. Points caps still apply.
 
 ## Files
 - `src/warhammer40k_ai/roster/army.py`
