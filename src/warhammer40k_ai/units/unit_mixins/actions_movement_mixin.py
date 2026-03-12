@@ -5,6 +5,57 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _iter_orks_temp_movement_effects_for_unit(
+    unit,
+    *,
+    effect_type: str,
+    target=None,
+    require_target_match: bool = False,
+) -> list[dict]:
+    temp_effect_iter = getattr(unit, "iter_active_orks_temp_effects", None)
+    if not callable(temp_effect_iter):
+        return []
+    entries = list(
+        temp_effect_iter(
+            effect_type=str(effect_type or ""),
+            attack_type="any",
+            target=target,
+            require_target_match=bool(require_target_match),
+        )
+        or []
+    )
+    return [dict(entry) for entry in entries if isinstance(entry, dict)]
+
+
+def _has_orks_temp_movement_effect_for_unit(unit, effect_type: str) -> bool:
+    return bool(_iter_orks_temp_movement_effects_for_unit(unit, effect_type=effect_type))
+
+
+def _orks_temp_charge_reroll_applies_for_unit(unit, *, target_units=None) -> bool:
+    if target_units is None:
+        return False
+    if isinstance(target_units, (list, tuple, set)):
+        targets = [target for target in list(target_units or []) if target is not None]
+    else:
+        targets = [target_units]
+    seen_ids: set[str] = set()
+    for target in targets:
+        target_id = str(get_entity_id(target) or "")
+        if target_id and target_id in seen_ids:
+            continue
+        if target_id:
+            seen_ids.add(target_id)
+        entries = _iter_orks_temp_movement_effects_for_unit(
+            unit,
+            effect_type="charge_reroll",
+            target=target,
+            require_target_match=True,
+        )
+        if entries:
+            return True
+    return False
+
+
 class ActionsMovementMixin:
     def apply_command_abilities(self) -> None:
         """Applies command abilities during the Command phase."""
@@ -7345,12 +7396,34 @@ class ActionsMovementMixin:
             )
         )
 
+    def _iter_orks_temp_movement_effects(
+        self,
+        *,
+        effect_type: str,
+        target=None,
+        require_target_match: bool = False,
+    ) -> list[dict]:
+        return _iter_orks_temp_movement_effects_for_unit(
+            self,
+            effect_type=effect_type,
+            target=target,
+            require_target_match=require_target_match,
+        )
+
+    def _has_orks_temp_movement_effect(self, effect_type: str) -> bool:
+        return _has_orks_temp_movement_effect_for_unit(self, effect_type)
+
+    def _orks_temp_charge_reroll_applies(self, *, target_units=None) -> bool:
+        return _orks_temp_charge_reroll_applies_for_unit(self, target_units=target_units)
+
     def can_reroll_advance_roll(self) -> bool:
         """
         Best-effort detection for abilities that allow re-rolling Advance rolls for this unit/model.
 
         This is intentionally text-based so it can support multiple datasheets without hardcoding.
         """
+        if _has_orks_temp_movement_effect_for_unit(self, "reroll_advance_roll"):
+            return True
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "prioritised_efficiency", None) if army is not None else None
@@ -9509,6 +9582,9 @@ class ActionsMovementMixin:
                     seen.add(rid)
                 deduped.append(root)
             target_units = deduped
+
+        if _orks_temp_charge_reroll_applies_for_unit(self, target_units=target_units):
+            return True
 
         if target_units:
             is_gsc_unit = False
@@ -14731,6 +14807,11 @@ class ActionsMovementMixin:
         Returns:
             bool: True if the unit can shoot this weapon after advancing
         """
+        parent_wargear = getattr(profile, "parent_wargear", None)
+        is_ranged_fn = getattr(parent_wargear, "is_ranged", None) if parent_wargear is not None else None
+        if callable(is_ranged_fn) and bool(is_ranged_fn()):
+            if _has_orks_temp_movement_effect_for_unit(self, "assault_ranged"):
+                return True
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("battle_focus_star_engines_active"):
@@ -14979,6 +15060,8 @@ class ActionsMovementMixin:
         Returns:
             bool: True if the unit can shoot this weapon after falling back
         """
+        if _has_orks_temp_movement_effect_for_unit(self, "shoot_after_fall_back"):
+            return True
         # Check for unit abilities that allow shooting after falling back
         if self.has_fell_back_and_shoot():
             # Some abilities restrict this to models equipped with specific wargear.
@@ -15452,6 +15535,8 @@ class ActionsMovementMixin:
         Returns:
             bool: True if the unit can charge after advancing
         """
+        if _has_orks_temp_movement_effect_for_unit(self, "charge_after_advance"):
+            return True
         try:
             if Unit._advance_and_charge_always_available(self):
                 return True
@@ -15488,6 +15573,8 @@ class ActionsMovementMixin:
     def can_charge_after_fall_back(self) -> bool:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
+            return True
+        if _has_orks_temp_movement_effect_for_unit(self, "charge_after_fall_back"):
             return True
         army = self.get_parent_army()
         mgr = getattr(army, "orks_detachments", None) if army is not None else None

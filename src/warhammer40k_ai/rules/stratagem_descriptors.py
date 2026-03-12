@@ -662,6 +662,20 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         cp_cost=1,
         effect_params={"sustained_hits": 1, "prey_critical_hit_threshold": 5},
     ),
+    "000008869004": StratagemToolDescriptor(
+        stratagem_id="000008869004",
+        name="DAT ONE'S EVEN BIGGA!",
+        timing="charge_phase",
+        target="orks_beast_snagga_unit",
+        duration="until_end_of_phase",
+        effect="charge_after_advance_or_fall_back_with_prey_gated_charge_reroll",
+        cp_cost=1,
+        effect_params={
+            "charge_after_advance": True,
+            "charge_after_fall_back": True,
+            "charge_reroll_requires_prey_target": True,
+        },
+    ),
     "000010713002": StratagemToolDescriptor(
         stratagem_id="000010713002",
         name="BASH AND GRAB",
@@ -671,6 +685,16 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         effect="melee_wound_reroll_vs_loot_objective",
         cp_cost=1,
         effect_params={"reroll_mode": "full", "target_condition": "loot_objective_range"},
+    ),
+    "000010713004": StratagemToolDescriptor(
+        stratagem_id="000010713004",
+        name="BOARDIN' RUSH",
+        timing="movement_phase_on_select_to_move",
+        target="orks_unit_not_yet_moved",
+        duration="until_end_of_phase",
+        effect="advance_no_roll_fixed_distance",
+        cp_cost=1,
+        effect_params={"fixed_advance_distance": 6},
     ),
     "000010713005": StratagemToolDescriptor(
         stratagem_id="000010713005",
@@ -724,6 +748,20 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         cp_cost=1,
         effect_params={"keyword": "IGNORES COVER"},
     ),
+    "000008878003": StratagemToolDescriptor(
+        stratagem_id="000008878003",
+        name="SUPERFUELLED BOILER",
+        timing="movement_phase_after_select_to_advance",
+        target="orks_walker_unit_selected_to_advance",
+        duration="until_end_of_turn",
+        effect="reroll_advance_and_ranged_assault",
+        cp_cost=1,
+        effect_params={
+            "reroll_advance": True,
+            "grant_keyword": "ASSAULT",
+            "attack_type": "ranged",
+        },
+    ),
     "000009992002": StratagemToolDescriptor(
         stratagem_id="000009992002",
         name="ORKS IS STILL ORKS",
@@ -754,6 +792,19 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         effect="objective_control_bonus",
         cp_cost=1,
         effect_params={"objective_control_bonus": 1},
+    ),
+    "000009796004": StratagemToolDescriptor(
+        stratagem_id="000009796004",
+        name="TAKTIKAL RETREAT",
+        timing="movement_phase_after_fall_back",
+        target="orks_unit_after_fall_back",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_fall_back",
+        cp_cost=1,
+        effect_params={
+            "shoot_after_fall_back": True,
+            "charge_after_fall_back": True,
+        },
     ),
     "000009992004": StratagemToolDescriptor(
         stratagem_id="000009992004",

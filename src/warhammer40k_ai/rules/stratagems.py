@@ -266,9 +266,15 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLITZA FIRE",
     "DAKKASTORM",
     "LONG, UNCONTROLLED BURSTS",
+    "SUPERFUELLED BOILER",
+    "BOARDIN' RUSH",
+    "BOARDIN’ RUSH",
+    "DAT ONE'S EVEN BIGGA!",
+    "DAT ONE’S EVEN BIGGA!",
     "ORKS IS STILL ORKS",
     "SPESHUL SHELLS",
     "DAT'S OURS",
+    "TAKTIKAL RETREAT",
     "HUGE SHOW-OFFS",
     "FIGHT PROPPA",
     "DAKKA! DAKKA! DAKKA!",
@@ -8371,6 +8377,7 @@ class StratagemManager(
         self._queue_bringers_of_flame_move_started_reactions(unit=unit, action=action)
         self._queue_aeldari_aspect_host_move_start_reactions(unit=unit, action=action)
         self._queue_world_eaters_vessels_move_start_reactions(unit=unit, action=action)
+        self._queue_orks_move_started_reactions(unit=unit, action=action)
 
     def _on_unit_disembarked(self, unit, transport_unit=None, **_kwargs):
         self._queue_drukhari_skysplinter_unit_disembarked_reactions(
@@ -8402,6 +8409,7 @@ class StratagemManager(
         self._queue_blood_legion_move_end_reactions(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
+        self._queue_orks_move_end_reactions(unit=unit, action=action)
         self._queue_orks_reactive_reposition_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):

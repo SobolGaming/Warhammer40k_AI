@@ -1411,6 +1411,181 @@ class OrksStratagemMixin:
             target_matcher=self._orks_is_speed_freeks_or_trukk,
         )
 
+    def _orks_unit_reaction_already_queued(
+        self,
+        *,
+        event_name: str,
+        stratagem_name: str,
+        unit: Any,
+    ) -> bool:
+        expected_event = str(event_name or "").strip()
+        expected_name = self._orks_normalize_name(stratagem_name)
+        root = self._orks_root(unit)
+        root_id = self._orks_sort_key(root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "").strip() != expected_event:
+                continue
+            if self._orks_normalize_name(str(reaction.get("stratagem", "") or "")) != expected_name:
+                continue
+            queued_unit = self._orks_root(reaction.get("target_unit") or reaction.get("unit"))
+            queued_id = self._orks_sort_key(queued_unit)
+            if queued_unit is root:
+                return True
+            if root_id and queued_id and root_id == queued_id:
+                return True
+        return False
+
+    def _queue_orks_move_started_reactions(self, *, unit: Any, action: str) -> None:
+        self._queue_orks_superfuelled_boiler_move_started_reaction(unit=unit, action=action)
+
+    def _queue_orks_superfuelled_boiler_move_started_reaction(self, *, unit: Any, action: str) -> None:
+        if unit is None:
+            return
+        if not self._is_dread_mob_detachment():
+            return
+        if self._orks_phase_label(getattr(self, "_current_phase_name", "")) != "movement phase":
+            return
+        if not self._orks_is_players_turn():
+            return
+        if self._orks_normalize_move_action(action) != "advance":
+            return
+
+        root = self._orks_root(unit)
+        if root is None:
+            return
+        if not self._orks_owned_by_player(root, self.player):
+            return
+        if not self._orks_on_battlefield(root, require_targetable=True):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return
+        if not self._is_orks_unit(root):
+            return
+        if not self._orks_unit_contains_keyword(root, "WALKER"):
+            return
+
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "moved_this_round", False)):
+            return
+        if bool(getattr(round_state, "advanced_this_round", False)):
+            return
+        if bool(getattr(round_state, "fell_back_this_round", False)):
+            return
+
+        stratagem = self._orks_get_available_stratagem_by_names("SUPERFUELLED BOILER")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(self._used_stratagems_this_phase):
+            return
+        if self._orks_unit_reaction_already_queued(
+            event_name="unit_move_started",
+            stratagem_name=str(getattr(stratagem, "name", "") or "SUPERFUELLED BOILER"),
+            unit=root,
+        ):
+            return
+
+        payload = {
+            "event": "unit_move_started",
+            "phase_name": "Movement phase",
+            "stratagem": str(getattr(stratagem, "name", "") or "SUPERFUELLED BOILER"),
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "unit": root,
+            "target_unit": root,
+            "candidates": [root],
+            "action": "advance",
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_orks_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        self._queue_orks_taktikal_retreat_move_end_reaction(unit=unit, action=action)
+
+    def _queue_orks_taktikal_retreat_move_end_reaction(self, *, unit: Any, action: str) -> None:
+        if unit is None:
+            return
+        if not self._is_taktikal_brigade_detachment():
+            return
+        if self._orks_phase_label(getattr(self, "_current_phase_name", "")) != "movement phase":
+            return
+        if not self._orks_is_players_turn():
+            return
+        if self._orks_normalize_move_action(action) != "fall_back":
+            return
+
+        root = self._orks_root(unit)
+        if root is None:
+            return
+        if not self._orks_owned_by_player(root, self.player):
+            return
+        if not self._orks_on_battlefield(root, require_targetable=True):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(root)):
+            return
+        if not self._is_orks_unit(root):
+            return
+
+        round_state = getattr(root, "round_state", None)
+        if not bool(getattr(round_state, "fell_back_this_round", False)):
+            return
+
+        stratagem = self._orks_get_available_stratagem_by_names("TAKTIKAL RETREAT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(self._used_stratagems_this_phase):
+            return
+        if self._orks_unit_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=str(getattr(stratagem, "name", "") or "TAKTIKAL RETREAT"),
+            unit=root,
+        ):
+            return
+
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": str(getattr(stratagem, "name", "") or "TAKTIKAL RETREAT"),
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "unit": root,
+            "target_unit": root,
+            "candidates": [root],
+            "action": "fall_back",
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _orks_resolve_move_trigger_context(
+        self,
+        stratagem_name: str,
+        **kwargs,
+    ) -> tuple[Any, list[Any], str, str, bool]:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        action = str(kwargs.get("action") or kwargs.get("trigger") or "").strip()
+        phase_name = str(kwargs.get("phase_name") or "").strip()
+        from_pending = False
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+
+        normalized_name = self._orks_normalize_name(stratagem_name)
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if self._orks_normalize_name(str(reaction.get("stratagem", "") or "")) != normalized_name:
+                continue
+            from_pending = True
+            if target_unit is None:
+                target_unit = reaction.get("target_unit") or reaction.get("unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if not action:
+                action = str(reaction.get("action") or "").strip()
+            if not phase_name:
+                phase_name = str(reaction.get("phase_name") or "").strip()
+            if target_unit is None and len(candidates) == 1:
+                target_unit = candidates[0]
+            break
+        return target_unit, candidates, action, phase_name, from_pending
+
     @staticmethod
     def _orks_normalize_move_action(action: Any) -> str:
         action_key = str(action or "").strip().lower().replace("-", "_").replace(" ", "_")
@@ -1918,12 +2093,20 @@ class OrksStratagemMixin:
             return self._use_orks_dakkastorm(stratagem, **kwargs)
         if name_u == "LONG, UNCONTROLLED BURSTS":
             return self._use_orks_long_uncontrolled_bursts(stratagem, **kwargs)
+        if name_u == "SUPERFUELLED BOILER":
+            return self._use_orks_superfuelled_boiler(stratagem, **kwargs)
+        if name_norm == "boardin rush":
+            return self._use_orks_boardin_rush(stratagem, **kwargs)
         if name_u == "ORKS IS STILL ORKS":
             return self._use_orks_is_still_orks(stratagem, **kwargs)
         if name_u == "SPESHUL SHELLS":
             return self._use_orks_speshul_shells(stratagem, **kwargs)
+        if name_norm == "dat one s even bigga":
+            return self._use_orks_dat_ones_even_bigga(stratagem, **kwargs)
         if name_u == "DAT'S OURS":
             return self._use_orks_dats_ours(stratagem, **kwargs)
+        if name_u == "TAKTIKAL RETREAT":
+            return self._use_orks_taktikal_retreat(stratagem, **kwargs)
         if name_u == "HUGE SHOW-OFFS":
             return self._use_orks_huge_show_offs(stratagem, **kwargs)
         if name_u == "COME ON LADZ!":
@@ -2350,6 +2533,114 @@ class OrksStratagemMixin:
         logger.info("INFO: LONG, UNCONTROLLED BURSTS: %s gains Ignores Cover this phase.", getattr(root, "name", "Unit"))
         return True
 
+    def _use_orks_superfuelled_boiler(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_dread_mob_detachment():
+            return False
+        target_unit, candidates, action, phase_name, _from_pending = self._orks_resolve_move_trigger_context(
+            "SUPERFUELLED BOILER",
+            **kwargs,
+        )
+        if target_unit is None:
+            logger.error("ERROR: SUPERFUELLED BOILER: no target unit provided")
+            return False
+
+        phase_label = self._orks_phase_label(phase_name or self._orks_current_phase_label())
+        if phase_label != "movement phase":
+            logger.error("ERROR: SUPERFUELLED BOILER: wrong phase")
+            return False
+        if not self._orks_is_players_turn():
+            logger.error("ERROR: SUPERFUELLED BOILER: not your Movement phase")
+            return False
+        if self._orks_normalize_move_action(action) != "advance":
+            logger.error("ERROR: SUPERFUELLED BOILER: invalid trigger action")
+            return False
+
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="SUPERFUELLED BOILER",
+            target_unit=target_unit,
+            candidates=candidates,
+            keyword_any=("WALKER",),
+        )
+        if not ok:
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: SUPERFUELLED BOILER: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "SUPERFUELLED BOILER")
+        effects = [
+            {
+                "id": "superfuelled_boiler:reroll_advance",
+                "source": source_name,
+                "effect": "reroll_advance_roll",
+                "expires_mode": "phase",
+                "expires_phase": "",
+            },
+            {
+                "id": "superfuelled_boiler:assault_ranged",
+                "source": source_name,
+                "effect": "assault_ranged",
+                "attack_type": "ranged",
+                "expires_mode": "phase",
+                "expires_phase": "",
+            },
+        ]
+        self._orks_apply_temp_effects(root, detachment="dread_mob", effects=effects)
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SUPERFUELLED BOILER: %s gains Advance re-rolls and Assault on ranged weapons until end of turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_orks_boardin_rush(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_freebooter_krew_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Movement phase",),
+            require_your_turn=True,
+            error_prefix="BOARDIN' RUSH",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("BOARDIN' RUSH", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: BOARDIN' RUSH: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="BOARDIN' RUSH",
+            target_unit=target_unit,
+            candidates=candidates,
+            require_not_selected_phase="Movement phase",
+        )
+        if not ok:
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: BOARDIN' RUSH: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "BOARDIN' RUSH")
+        effects = [
+            {
+                "id": "boardin_rush:advance_no_roll",
+                "source": source_name,
+                "effect": "advance_no_roll",
+                "distance": 6,
+                "expires_mode": "phase",
+            }
+        ]
+        self._orks_apply_temp_effects(root, detachment="freebooter_krew", effects=effects)
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BOARDIN' RUSH: %s uses fixed 6\" Advance distance until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_orks_is_still_orks(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_more_dakka_detachment():
             return False
@@ -2448,6 +2739,64 @@ class OrksStratagemMixin:
         logger.info("INFO: SPESHUL SHELLS: %s gains AP bonus vs closest eligible targets within 18\" this phase.", getattr(root, "name", "Unit"))
         return True
 
+    def _use_orks_dat_ones_even_bigga(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_da_big_hunt_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Charge phase",),
+            require_your_turn=True,
+            error_prefix="DAT ONE'S EVEN BIGGA!",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("DAT ONE'S EVEN BIGGA!", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: DAT ONE'S EVEN BIGGA!: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="DAT ONE'S EVEN BIGGA!",
+            target_unit=target_unit,
+            candidates=candidates,
+            keyword_any=("BEAST SNAGGA",),
+        )
+        if not ok:
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Charge phase"):
+            logger.error("ERROR: DAT ONE'S EVEN BIGGA!: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "DAT ONE'S EVEN BIGGA!")
+        effects = [
+            {
+                "id": "dat_ones_even_bigga:charge_after_advance",
+                "source": source_name,
+                "effect": "charge_after_advance",
+                "expires_mode": "phase",
+            },
+            {
+                "id": "dat_ones_even_bigga:charge_after_fall_back",
+                "source": source_name,
+                "effect": "charge_after_fall_back",
+                "expires_mode": "phase",
+            },
+            {
+                "id": "dat_ones_even_bigga:charge_reroll_prey",
+                "source": source_name,
+                "effect": "charge_reroll",
+                "target_is_prey": True,
+                "expires_mode": "phase",
+            },
+        ]
+        self._orks_apply_temp_effects(root, detachment="da_big_hunt", effects=effects)
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DAT ONE'S EVEN BIGGA!: %s gains charge eligibility buffs and prey-gated charge re-rolls this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_orks_dats_ours(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_taktikal_brigade_detachment():
             return False
@@ -2485,6 +2834,66 @@ class OrksStratagemMixin:
         )
         self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info("INFO: DAT'S OURS: %s gains +1 Objective Control until the start of the next Command phase.", getattr(root, "name", "Unit"))
+        return True
+
+    def _use_orks_taktikal_retreat(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_taktikal_brigade_detachment():
+            return False
+        target_unit, candidates, action, phase_name, _from_pending = self._orks_resolve_move_trigger_context(
+            "TAKTIKAL RETREAT",
+            **kwargs,
+        )
+        if target_unit is None:
+            logger.error("ERROR: TAKTIKAL RETREAT: no target unit provided")
+            return False
+
+        phase_label = self._orks_phase_label(phase_name or self._orks_current_phase_label())
+        if phase_label != "movement phase":
+            logger.error("ERROR: TAKTIKAL RETREAT: wrong phase")
+            return False
+        if not self._orks_is_players_turn():
+            logger.error("ERROR: TAKTIKAL RETREAT: not your Movement phase")
+            return False
+        if self._orks_normalize_move_action(action) != "fall_back":
+            logger.error("ERROR: TAKTIKAL RETREAT: invalid trigger action")
+            return False
+
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="TAKTIKAL RETREAT",
+            target_unit=target_unit,
+            candidates=candidates,
+        )
+        if not ok:
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: TAKTIKAL RETREAT: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "TAKTIKAL RETREAT")
+        effects = [
+            {
+                "id": "taktikal_retreat:shoot_after_fall_back",
+                "source": source_name,
+                "effect": "shoot_after_fall_back",
+                "expires_mode": "phase",
+                "expires_phase": "",
+            },
+            {
+                "id": "taktikal_retreat:charge_after_fall_back",
+                "source": source_name,
+                "effect": "charge_after_fall_back",
+                "expires_mode": "phase",
+                "expires_phase": "",
+            },
+        ]
+        self._orks_apply_temp_effects(root, detachment="taktikal_brigade", effects=effects)
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TAKTIKAL RETREAT: %s can shoot and charge after Falling Back until end of turn.",
+            getattr(root, "name", "Unit"),
+        )
         return True
 
     def _use_orks_huge_show_offs(self, stratagem: Any, **kwargs) -> bool:

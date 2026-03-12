@@ -200,6 +200,15 @@ def _stratagem_name_by_id(player: Player, stratagem_id: str, *, fallback_name: s
     return str(fallback_name or "")
 
 
+def _pending_reaction_by_name(player: Player, name: str):
+    expected = str(name or "").strip().lower().replace("\u2019", "'")
+    for reaction in list(player.stratagems.get_pending_reactions() or []):
+        reaction_name = str(reaction.get("stratagem", "") or "").strip().lower().replace("\u2019", "'")
+        if reaction_name == expected:
+            return reaction
+    return None
+
+
 def test_orks_temp_effect_helper_filters_and_sorts_by_effect_id():
     attacker = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
     enemy_infantry = _make_unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
@@ -910,19 +919,268 @@ def test_klankin_klaws_push_it_applies_melee_strength_damage_and_hazardous():
     assert bool(keyword_bonus.get("hazardous")) is True
 
 
+def test_orks_temp_movement_effect_helper_respects_turn_owner_and_turn_number():
+    unit = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Taktikal Brigade",
+        ork_units=[unit],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, unit, 10.0, 10.0)
+    _deploy_unit(game, enemy, 16.0, 10.0)
+
+    unit.special_rules = {
+        "orks_temp_effects": [
+            {
+                "id": "helper:test:charge_after_advance",
+                "detachment": "taktikal_brigade",
+                "effect": "charge_after_advance",
+                "expires_mode": "phase",
+                "expires_phase": "",
+                "turn_owner_id": ork_player.id,
+                "turn": game.turn,
+            },
+            {
+                "id": "helper:test:shoot_after_fall_back",
+                "detachment": "taktikal_brigade",
+                "effect": "shoot_after_fall_back",
+                "expires_mode": "phase",
+                "expires_phase": "",
+                "turn_owner_id": ork_player.id,
+                "turn": game.turn,
+            },
+        ]
+    }
+
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=0)
+    profile = _make_ranged_profile()
+    assert unit.can_charge_after_advance() is True
+    assert unit.can_shoot_after_fall_back(profile) is True
+
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=1)
+    assert unit.can_charge_after_advance() is False
+    assert unit.can_shoot_after_fall_back(profile) is False
+
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=0)
+    game.turn = game.turn + 1
+    assert unit.can_charge_after_advance() is False
+    assert unit.can_shoot_after_fall_back(profile) is False
+
+
+def test_orks_temp_movement_effect_helper_supports_fixed_advance_no_roll_effect():
+    unit = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Freebooter Krew",
+        ork_units=[unit],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, unit, 10.0, 10.0)
+    _deploy_unit(game, enemy, 18.0, 10.0)
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=0)
+
+    unit.special_rules = {
+        "orks_temp_effects": [
+            {
+                "id": "helper:test:advance_no_roll",
+                "detachment": "freebooter_krew",
+                "effect": "advance_no_roll",
+                "distance": 6,
+                "expires_mode": "phase",
+                "expires_phase": "MOVEMENT_PHASE",
+                "turn_owner_id": ork_player.id,
+                "turn": game.turn,
+            }
+        ]
+    }
+
+    effect = unit._get_advance_no_roll_effect()
+    assert effect is not None
+    assert int(effect.get("distance", 0) or 0) == 6
+    with patch("warhammer40k_ai.units.unit.get_roll") as roll_mock:
+        assert int(unit.prepare_advance() or 0) == 6
+    roll_mock.assert_not_called()
+
+    _set_phase(game, phase_name="SHOOTING_PHASE", current_player_index=0)
+    assert unit._get_advance_no_roll_effect() is None
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=1)
+    assert unit._get_advance_no_roll_effect() is None
+
+
+def test_superfuelled_boiler_queues_on_advance_start_and_applies_effects():
+    walker = _make_unit("Deff Dread", keywords=["ORKS", "WALKER", "VEHICLE"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Dread Mob",
+        ork_units=[walker],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, walker, 10.0, 10.0)
+    _deploy_unit(game, enemy, 16.0, 10.0)
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=0)
+    game.event_system.publish("phase_start", player=ork_player, phase=game.phase)
+
+    game.event_system.publish("unit_move_started", unit=walker, action="advance")
+    strat_name = _stratagem_name_by_id(ork_player, "000008878003", fallback_name="SUPERFUELLED BOILER")
+    assert _pending_reaction_by_name(ork_player, strat_name) is not None
+
+    cp_before = int(ork_player.command_points or 0)
+    ok = ork_player.stratagems.use(
+        strat_name,
+        unit=walker,
+        action="advance",
+        phase_name="Movement phase",
+        dequeue=True,
+    )
+    assert ok is True
+    assert int(ork_player.command_points or 0) == cp_before - 1
+    assert walker.can_reroll_advance_roll() is True
+    assert walker.can_shoot_after_advance(_make_ranged_profile()) is True
+
+
+def test_superfuelled_boiler_rejects_non_walker_target_unit():
+    boyz = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Dread Mob",
+        ork_units=[boyz],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, boyz, 10.0, 10.0)
+    _deploy_unit(game, enemy, 16.0, 10.0)
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=0)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008878003", fallback_name="SUPERFUELLED BOILER")
+    ok = ork_player.stratagems.use(
+        strat_name,
+        unit=boyz,
+        action="advance",
+        phase_name="Movement phase",
+    )
+    assert ok is False
+
+
+def test_boardin_rush_grants_fixed_advance_distance_until_end_of_phase():
+    unit = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Freebooter Krew",
+        ork_units=[unit],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, unit, 10.0, 10.0)
+    _deploy_unit(game, enemy, 18.0, 10.0)
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=0)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000010713004", fallback_name="BOARDIN' RUSH")
+    assert _use_stratagem(ork_player, strat_name, unit, phase_name="Movement phase")
+
+    with patch("warhammer40k_ai.units.unit.get_roll") as roll_mock:
+        prepared = unit.prepare_advance()
+    assert int(prepared or 0) == 6
+    roll_mock.assert_not_called()
+
+    _set_phase(game, phase_name="SHOOTING_PHASE", current_player_index=0)
+    assert unit._get_advance_no_roll_effect() is None
+
+
+def test_boardin_rush_rejects_wrong_timing_window():
+    unit = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Freebooter Krew",
+        ork_units=[unit],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, unit, 10.0, 10.0)
+    _deploy_unit(game, enemy, 18.0, 10.0)
+    _set_phase(game, phase_name="SHOOTING_PHASE", current_player_index=0)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000010713004", fallback_name="BOARDIN' RUSH")
+    assert _use_stratagem(ork_player, strat_name, unit, phase_name="Shooting phase") is False
+
+
+def test_taktikal_retreat_queues_on_fall_back_end_and_applies_effects():
+    unit = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Taktikal Brigade",
+        ork_units=[unit],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, unit, 10.0, 10.0)
+    _deploy_unit(game, enemy, 12.0, 10.0)
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=0)
+    game.event_system.publish("phase_start", player=ork_player, phase=game.phase)
+
+    unit.round_state.fell_back_this_round = True
+    game.event_system.publish("unit_move_ended", unit=unit, action="fall_back")
+    strat_name = _stratagem_name_by_id(ork_player, "000009796004", fallback_name="TAKTIKAL RETREAT")
+    assert _pending_reaction_by_name(ork_player, strat_name) is not None
+
+    assert ork_player.stratagems.use(
+        strat_name,
+        unit=unit,
+        action="fall_back",
+        phase_name="Movement phase",
+        dequeue=True,
+    )
+    assert unit.can_shoot_after_fall_back(_make_ranged_profile()) is True
+    assert unit.can_charge_after_fall_back() is True
+
+
+def test_dat_ones_even_bigga_grants_charge_eligibility_and_prey_gated_reroll():
+    beast_snagga = _make_unit(
+        "Beast Snagga Boyz",
+        keywords=["ORKS", "INFANTRY", "BEAST SNAGGA"],
+        faction_keywords=["ORKS"],
+    )
+    non_prey = _make_unit("Enemy Infantry", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    prey = _make_unit("Enemy Tank", keywords=["VEHICLE"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, ork_army = _build_game(
+        detachment="Da Big Hunt",
+        ork_units=[beast_snagga],
+        enemy_units=[prey, non_prey],
+    )
+    _deploy_unit(game, beast_snagga, 10.0, 10.0)
+    _deploy_unit(game, prey, 16.0, 10.0)
+    _deploy_unit(game, non_prey, 18.0, 10.0)
+    _set_phase(game, phase_name="CHARGE_PHASE", current_player_index=0)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008869004", fallback_name="DAT ONE'S EVEN BIGGA!")
+    assert _use_stratagem(ork_player, strat_name, beast_snagga, phase_name="Charge phase")
+    assert beast_snagga.can_charge_after_advance() is True
+    assert beast_snagga.can_charge_after_fall_back() is True
+
+    mgr = ork_army.orks_detachments
+    mgr.da_big_hunt_prey_unit_id = ""
+    mgr.da_big_hunt_prey_turn = int(game.turn)
+    mgr.da_big_hunt_prey_owner_id = str(ork_player.id)
+    assert beast_snagga.can_reroll_charge_roll(target_unit=prey, game_map=game.map, game=game) is False
+
+    mgr.da_big_hunt_prey_unit_id = str(get_entity_id(prey) or "")
+    assert beast_snagga.can_reroll_charge_roll(target_unit=prey, game_map=game.map, game=game) is True
+    assert beast_snagga.can_reroll_charge_roll(target_unit=non_prey, game_map=game.map, game=game) is False
+
+
 def test_orks_temp_buff_stratagem_descriptors_are_registered():
     expected = {
         "000008886002": "ARMED TO DATEEF",
         "000008869002": "DRAG IT DOWN",
+        "000008869004": "DAT ONE'S EVEN BIGGA!",
         "000010713002": "BASH AND GRAB",
+        "000010713004": "BOARDIN' RUSH",
         "000010713005": "DECK FRAGGERS",
         "000010713006": "ROLLING LOOT-HEAP",
         "000008873005": "BLITZA FIRE",
         "000008873004": "DAKKASTORM",
         "000009992005": "LONG, UNCONTROLLED BURSTS",
+        "000008878003": "SUPERFUELLED BOILER",
         "000009992002": "ORKS IS STILL ORKS",
         "000009992006": "SPESHUL SHELLS",
         "000009796002": "DAT'S OURS",
+        "000009796004": "TAKTIKAL RETREAT",
         "000009992004": "HUGE SHOW-OFFS",
         "000009796003": "FIGHT PROPPA",
         "000008878005": "DAKKA! DAKKA! DAKKA!",

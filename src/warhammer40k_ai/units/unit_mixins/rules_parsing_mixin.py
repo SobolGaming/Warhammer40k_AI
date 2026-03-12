@@ -4583,6 +4583,32 @@ class RulesParsingMixin:
             mailed_fist_effect = mailed_fist_fn(root)
             if isinstance(mailed_fist_effect, dict):
                 effects.append(dict(mailed_fist_effect))
+        temp_effect_iter = getattr(root, "iter_active_orks_temp_effects", None)
+        if callable(temp_effect_iter):
+            for entry in list(
+                temp_effect_iter(
+                    effect_type="advance_no_roll",
+                    require_target_match=False,
+                )
+                or []
+            ):
+                try:
+                    distance = int(entry.get("distance", entry.get("value", 0)) or 0)
+                except (TypeError, ValueError):
+                    distance = 0
+                if distance <= 0:
+                    continue
+                source = str(entry.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
+                entry_id = str(entry.get("id", "") or "").strip() or "orks_temp_effect:advance_no_roll"
+                expires_phase = str(entry.get("expires_phase", "") or "").strip().upper()
+                effects.append(
+                    {
+                        "distance": int(distance),
+                        "source": source,
+                        "tag": entry_id,
+                        "expires_phase": expires_phase,
+                    }
+                )
         if not effects:
             return None
 
