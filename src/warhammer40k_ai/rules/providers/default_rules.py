@@ -392,6 +392,17 @@ def build_default_rule_providers() -> List[RuleProvider]:
 
     providers.append(
         RuleProvider(
+            name="orks",
+            predicate=lambda ctxs, _g: any_faction(ctxs, "ORK"),
+            subscriptions=[
+                ("phase_start", "_on_phase_start_master_of_mechanisms_cleanup"),
+                ("phase_end", "_on_phase_start_master_of_mechanisms"),
+            ],
+        )
+    )
+
+    providers.append(
+        RuleProvider(
             name="chaos_knights",
             predicate=lambda ctxs, _g: any_faction(ctxs, "QT"),
             subscriptions=[

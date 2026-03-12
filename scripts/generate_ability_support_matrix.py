@@ -4936,6 +4936,18 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("NEC", "Soulless Reaper"): ("Supported", "Enemy units within Engagement Range selected to Fall Back roll D6; on 3+ they cannot Fall Back and must remain stationary."),
         ("ORK", "Full Throttle"): ("Supported", "Charge-after-Advance and charge-after-Fall-Back eligibility."),
         ("ORK", "Mekboy"): ("Supported", "Conditional Lone Operative within 3\" of friendly ORKS VEHICLE units."),
+        ("ORK", "Grot Oiler"): (
+            "Supported",
+            "End of Movement phase: once-per-battle bearer-unit model D3 heal with eligibility/usage tracking.",
+        ),
+        ("ORK", "Mekaniak"): (
+            "Supported",
+            "End of Movement phase: select friendly ORKS VEHICLE model within 3\" to heal D3 and gain +1 to hit until your next Movement phase; per-model once-per-turn and expiry are enforced.",
+        ),
+        ("ORK", "Sawbonez"): (
+            "Supported",
+            "End of Movement phase: select friendly BEAST SNAGGA CHARACTER model within 3\" to heal up to 3 wounds; each model can only be healed once per turn.",
+        ),
         ("ORK", "BODYGUARD"): (
             "Supported",
             "Boyz BODYGUARD enforces two attached Leaders only at Starting Strength 20 and requires one attached Leader to have the WARBOSS keyword when two Leaders are attached.",

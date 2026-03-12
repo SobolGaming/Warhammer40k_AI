@@ -2088,8 +2088,6 @@ class KeywordsDetachmentsMixin:
                 norm = re.sub(r"'s\b", "s", norm)
                 norm = re.sub(r"[^a-z0-9]+", " ", norm)
                 norm = re.sub(r"\s+", " ", norm).strip()
-                if "select one friendly" not in norm:
-                    continue
                 if "regains" not in norm or "lost wounds" not in norm:
                     continue
 
@@ -2101,6 +2099,20 @@ class KeywordsDetachmentsMixin:
                 if not phase_name:
                     continue
 
+                source_name = str(name or "Master of Mechanisms").strip() or "Master of Mechanisms"
+                source_name_norm = re.sub(r"[^a-z0-9]+", " ", source_name.lower()).strip()
+                source_name_norm = re.sub(r"\s+", " ", source_name_norm)
+                is_grot_oiler_rule = bool(
+                    "grot oiler" in source_name_norm
+                    and "once per battle" in norm
+                    and "end of your movement phase" in norm
+                    and (
+                        "one model in the bearers unit regains d3 lost wounds" in norm
+                        or "one model in the bearer s unit regains d3 lost wounds" in norm
+                    )
+                )
+                if "select one friendly" not in norm and not is_grot_oiler_rule:
+                    continue
                 target_phrase = ""
                 m_target = re.search(r"select\s+one\s+friendly\s+(.+?)\s+within\s+\d+", norm)
                 if m_target:
@@ -2115,17 +2127,55 @@ class KeywordsDetachmentsMixin:
                     target_keyword = "HERETIC ASTARTES"
                 elif "necrons" in norm:
                     target_keyword = "NECRONS"
+                target_keywords: list[str] = []
+                if target_keyword:
+                    target_keywords.append(str(target_keyword).strip().upper())
+
+                is_mekaniak_rule = bool(
+                    "mekaniak" in source_name_norm
+                    and "end of your movement phase" in norm
+                    and "friendly orks vehicle model within 3 of this model" in norm
+                    and "regains up to d3 lost wounds" in norm
+                    and "until the start of your next movement phase" in norm
+                    and "add 1 to the hit roll" in norm
+                )
+                is_sawbonez_rule = bool(
+                    "sawbonez" in source_name_norm
+                    and "end of your movement phase" in norm
+                    and "friendly beast snagga character model within 3 of this model" in norm
+                    and "regains up to 3 lost wounds" in norm
+                    and "only be healed once per turn" in norm
+                )
+                if is_mekaniak_rule:
+                    target_requires_vehicle = True
+                    target_keywords = ["ORKS"]
+                elif is_sawbonez_rule:
+                    target_keywords = ["BEAST SNAGGA", "CHARACTER"]
+                elif is_grot_oiler_rule:
+                    target_keywords = []
 
                 has_next_command_phase_duration = "until the start of your next command phase" in norm
-                has_hit_bonus_clause = bool(has_next_command_phase_duration and "hit roll" in norm)
+                has_next_movement_phase_duration = "until the start of your next movement phase" in norm
+                has_hit_bonus_clause = bool(
+                    (has_next_command_phase_duration or has_next_movement_phase_duration)
+                    and "hit roll" in norm
+                )
                 has_fnp_clause = bool(has_next_command_phase_duration and "feel no pain" in norm)
-                source_name = str(name or "").strip().lower()
                 is_technomancer_rule = bool(
-                    "technomancer" in source_name
+                    "technomancer" in source_name_norm
                     and "end of your movement phase" in norm
                     and "friendly necrons model" in norm
                 )
-                if not has_hit_bonus_clause and not has_fnp_clause and not is_technomancer_rule:
+                if not any(
+                    (
+                        has_hit_bonus_clause,
+                        has_fnp_clause,
+                        is_technomancer_rule,
+                        is_grot_oiler_rule,
+                        is_mekaniak_rule,
+                        is_sawbonez_rule,
+                    )
+                ):
                     continue
                 range_value = 3
                 m_range = re.search(r"within\s+(\d+)", norm)
@@ -2134,9 +2184,11 @@ class KeywordsDetachmentsMixin:
                         range_value = int(m_range.group(1) or 3)
                     except Exception:
                         range_value = 3
+                if is_grot_oiler_rule:
+                    range_value = 0
                 heal_roll = ""
                 heal_flat = 0
-                m_heal = re.search(r"regains?\s+up\s+to\s+(\d+|d\d+)\s+lost wounds", norm)
+                m_heal = re.search(r"regains?\s+(?:up\s+to\s+)?(\d+|d\d+)\s+lost wounds", norm)
                 if m_heal:
                     token = str(m_heal.group(1) or "").strip().lower()
                     if token.startswith("d"):
@@ -2182,19 +2234,38 @@ class KeywordsDetachmentsMixin:
                     "select one friendly" in norm
                     and "other friendly" not in norm
                 )
-                selection_kind = "model" if is_technomancer_rule else "unit"
+                target_in_source_unit = bool(is_grot_oiler_rule)
+                if target_in_source_unit:
+                    allow_self_target = True
+                selection_kind = "unit"
+                if is_technomancer_rule or is_grot_oiler_rule or is_mekaniak_rule or is_sawbonez_rule:
+                    selection_kind = "model"
                 limit_once_per_turn = (
                     "only be selected for this ability once per turn" in norm
                     or "only be selected for this ability once per command phase" in norm
                 )
+                if "each model can only be healed once per turn" in norm:
+                    limit_once_per_turn = True
                 limit_scope = "unit"
                 if "each model can only be selected for this ability once per turn" in norm:
                     limit_scope = "model"
+                elif "each model can only be healed once per turn" in norm:
+                    limit_scope = "model"
                 elif selection_kind == "model":
                     limit_scope = "model"
-                source = str(name or "Master of Mechanisms").strip() or "Master of Mechanisms"
+                expires_phase = "COMMAND_PHASE"
+                if has_next_movement_phase_duration:
+                    expires_phase = "MOVEMENT_PHASE"
+                once_per_battle = bool(is_grot_oiler_rule and "once per battle" in norm)
+                once_per_battle_scope = "model" if selection_kind == "model" else "unit"
+                if is_grot_oiler_rule:
+                    once_per_battle_scope = "unit"
+                once_per_battle_key = ""
+                if once_per_battle:
+                    once_per_battle_key = "grot_oiler"
+                requires_damaged_target = bool(is_grot_oiler_rule or is_mekaniak_rule or is_sawbonez_rule)
                 rule = {
-                    "source": source,
+                    "source": source_name,
                     "phase": str(phase_name or "COMMAND_PHASE"),
                     "range": int(range_value),
                     "heal_roll": str(heal_roll or ""),
@@ -2204,10 +2275,18 @@ class KeywordsDetachmentsMixin:
                     "fnp_requires_vehicle": bool(fnp_requires_vehicle),
                     "target_requires_vehicle": bool(target_requires_vehicle),
                     "target_keyword": str(target_keyword or "").strip().upper(),
+                    "target_keywords": list(target_keywords),
+                    "target_in_source_unit": bool(target_in_source_unit),
                     "allow_self_target": bool(allow_self_target),
                     "selection_kind": str(selection_kind),
                     "limit_once_per_turn": bool(limit_once_per_turn),
                     "limit_scope": str(limit_scope),
+                    "once_per_battle": bool(once_per_battle),
+                    "once_per_battle_scope": str(once_per_battle_scope),
+                    "once_per_battle_key": str(once_per_battle_key),
+                    "requires_damaged_target": bool(requires_damaged_target),
+                    "expires_phase": str(expires_phase),
+                    "hit_bonus_model_only": bool(selection_kind == "model"),
                 }
                 break
             if rule is not None:

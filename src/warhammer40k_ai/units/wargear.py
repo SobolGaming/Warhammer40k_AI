@@ -9982,10 +9982,13 @@ class WargearProfile:
         # Master of Mechanisms: selected friendly VEHICLE gets +1 to hit until next Command phase.
         sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)
         if isinstance(sr, dict) and sr.get("master_of_mechanisms_hit_bonus_active"):
-            bonus = int(sr.get("master_of_mechanisms_hit_bonus", 1) or 1)
-            if bonus:
-                source = str(sr.get("master_of_mechanisms_source", "") or "Master of Mechanisms").strip() or "Master of Mechanisms"
-                _add_hit_mod(int(bonus), f"+{int(bonus)} from {source}")
+            model_id = str(sr.get("master_of_mechanisms_hit_bonus_model_id", "") or "")
+            attacker_model_id = str(getattr(attacker, "id", getattr(attacker, "_id", "")) or "")
+            if not model_id or (attacker_model_id and attacker_model_id == model_id):
+                bonus = int(sr.get("master_of_mechanisms_hit_bonus", 1) or 1)
+                if bonus:
+                    source = str(sr.get("master_of_mechanisms_source", "") or "Master of Mechanisms").strip() or "Master of Mechanisms"
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} from {source}")
 
         # INDIRECT FIRE: if no target models were visible at selection time, -1 to hit
         if attack_instance.get("indirect_fire_no_visible", False):

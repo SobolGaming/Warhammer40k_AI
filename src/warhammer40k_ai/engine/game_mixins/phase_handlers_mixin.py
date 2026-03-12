@@ -10372,7 +10372,7 @@ class GamePhaseHandlersMixin:
 
     def _on_phase_start_master_of_mechanisms_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         pname = str(getattr(phase, "name", "") or "").strip().upper()
-        if pname != "COMMAND_PHASE":
+        if pname not in ("COMMAND_PHASE", "MOVEMENT_PHASE"):
             return
         if player is None or player is not self.get_current_player():
             return
@@ -10409,6 +10409,9 @@ class GamePhaseHandlersMixin:
                 or "master_of_mechanisms_selected_turn" in sr
             )
             if not has_hit_bonus and not has_fnp_bonus and not has_selection_marker:
+                continue
+            expires_phase = str(sr.get("master_of_mechanisms_expires_phase", "COMMAND_PHASE") or "COMMAND_PHASE").strip().upper()
+            if expires_phase != pname:
                 continue
             effect_owner = str(sr.get("master_of_mechanisms_hit_bonus_owner", "") or "")
             if not effect_owner:
@@ -10450,6 +10453,8 @@ class GamePhaseHandlersMixin:
                 "master_of_mechanisms_source",
                 "master_of_mechanisms_selected_turn_owner",
                 "master_of_mechanisms_selected_turn",
+                "master_of_mechanisms_hit_bonus_model_id",
+                "master_of_mechanisms_expires_phase",
             ):
                 sr.pop(key, None)
             root.special_rules = sr
@@ -10547,7 +10552,7 @@ class GamePhaseHandlersMixin:
                 selection_range = float(rule.get("range", 3) or 3)
             except Exception:
                 selection_range = 3.0
-            if selection_range <= 0:
+            if selection_range < 0:
                 selection_range = 3.0
             ability_name = str(rule.get("source", "") or "Master of Mechanisms").strip() or "Master of Mechanisms"
             try:
@@ -10561,6 +10566,22 @@ class GamePhaseHandlersMixin:
             fnp_requires_vehicle = bool(rule.get("fnp_requires_vehicle", False))
             target_requires_vehicle = bool(rule.get("target_requires_vehicle", False))
             target_keyword = str(rule.get("target_keyword", "") or "").strip().upper()
+            target_keywords = [
+                str(value or "").strip().upper()
+                for value in list(rule.get("target_keywords", []) or [])
+                if str(value or "").strip()
+            ]
+            if target_keyword and target_keyword not in target_keywords:
+                target_keywords.append(target_keyword)
+            target_in_source_unit = bool(rule.get("target_in_source_unit", False))
+            requires_damaged_target = bool(rule.get("requires_damaged_target", False))
+            once_per_battle = bool(rule.get("once_per_battle", False))
+            once_per_battle_key = str(rule.get("once_per_battle_key", "") or "").strip().lower()
+            once_per_battle_scope = str(rule.get("once_per_battle_scope", "unit") or "unit").strip().lower()
+            if once_per_battle_scope not in ("unit", "model"):
+                once_per_battle_scope = "unit"
+            expires_phase = str(rule.get("expires_phase", "COMMAND_PHASE") or "COMMAND_PHASE").strip().upper()
+            hit_bonus_model_only = bool(rule.get("hit_bonus_model_only", False))
             allow_self_target = bool(rule.get("allow_self_target", False))
             selection_kind = str(rule.get("selection_kind", "unit") or "unit").strip().lower()
             if selection_kind not in ("unit", "model"):
@@ -10578,6 +10599,10 @@ class GamePhaseHandlersMixin:
                 heal_roll = "D3"
             if hit_bonus <= 0 and fnp_value <= 0 and not heal_roll and heal_flat <= 0:
                 continue
+            if once_per_battle and once_per_battle_key:
+                if once_per_battle_scope == "unit":
+                    if bool(getattr(root, "has_used_unit_once_per_battle", lambda _k: False)(once_per_battle_key)):
+                        continue
             try:
                 models = list(root.get_attached_unit_models() or [])
             except Exception:
@@ -10591,6 +10616,30 @@ class GamePhaseHandlersMixin:
                     break
             if bearer is None:
                 continue
+            if once_per_battle and once_per_battle_key and once_per_battle_scope == "model":
+                if bool(getattr(bearer, "has_used_once_per_battle", lambda _k: False)(once_per_battle_key)):
+                    continue
+
+            def _model_is_damaged(model_obj) -> bool:
+                current_wounds = int(getattr(model_obj, "wounds", 0) or 0)
+                base_wounds = int(getattr(model_obj, "_base_wounds", current_wounds) or current_wounds)
+                return base_wounds > 0 and current_wounds < base_wounds
+
+            def _model_has_all_keywords(model_obj, keywords: list[str]) -> bool:
+                if not keywords:
+                    return True
+                for keyword in list(keywords or []):
+                    if not bool(getattr(model_obj, "has_any_keyword", lambda _kw: False)(keyword)):
+                        return False
+                return True
+
+            def _unit_has_all_keywords(unit_obj, keywords: list[str]) -> bool:
+                if not keywords:
+                    return True
+                for keyword in list(keywords or []):
+                    if not bool(getattr(unit_obj, "has_any_keyword", lambda _kw: False)(keyword)):
+                        return False
+                return True
 
             candidates_units = []
             candidates_models = []
@@ -10606,7 +10655,10 @@ class GamePhaseHandlersMixin:
                 if not target_id or target_id in seen_targets:
                     continue
                 seen_targets.add(target_id)
-                if target_root is root and not allow_self_target:
+                if target_in_source_unit:
+                    if target_root is not root:
+                        continue
+                elif target_root is root and not allow_self_target:
                     continue
                 if not target_root.is_alive() or not getattr(target_root, "deployed", True):
                     continue
@@ -10627,6 +10679,8 @@ class GamePhaseHandlersMixin:
                             continue
                     except Exception:
                         continue
+                if selection_kind != "model" and target_keywords and not _unit_has_all_keywords(target_root, target_keywords):
+                    continue
 
                 if selection_kind == "model":
                     try:
@@ -10643,6 +10697,10 @@ class GamePhaseHandlersMixin:
                             target_alive = False
                         if not target_alive:
                             continue
+                        if target_keywords and not _model_has_all_keywords(target_model, target_keywords):
+                            continue
+                        if requires_damaged_target and not _model_is_damaged(target_model):
+                            continue
                         if limit_once_per_turn and limit_scope == "model":
                             msr = getattr(target_model, "special_rules", None)
                             if isinstance(msr, dict):
@@ -10651,15 +10709,34 @@ class GamePhaseHandlersMixin:
                                     and int(msr.get("master_of_mechanisms_selected_turn", 0) or 0) == int(turn or 0)
                                 ):
                                     continue
-                        try:
-                            if float(distance_between_models_bases_3d(bearer, target_model)) > float(selection_range) + 1e-6:
+                        if not target_in_source_unit:
+                            try:
+                                if float(distance_between_models_bases_3d(bearer, target_model)) > float(selection_range) + 1e-6:
+                                    continue
+                            except Exception:
                                 continue
-                        except Exception:
-                            continue
                         candidates_models.append((target_root, target_model))
                 else:
                     if not model_within_range_of_unit(bearer, target_root, selection_range):
                         continue
+                    if requires_damaged_target:
+                        try:
+                            target_models = list(target_root.get_attached_unit_models() or [])
+                        except Exception:
+                            target_models = list(getattr(target_root, "models", []) or [])
+                        has_damaged = False
+                        for target_model in list(target_models or []):
+                            if target_model is None:
+                                continue
+                            alive_attr = getattr(target_model, "is_alive", False)
+                            target_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                            if not target_alive:
+                                continue
+                            if _model_is_damaged(target_model):
+                                has_damaged = True
+                                break
+                        if not has_damaged:
+                            continue
                     if limit_once_per_turn and limit_scope == "unit":
                         tsr = getattr(target_root, "special_rules", None)
                         if isinstance(tsr, dict):
@@ -10701,17 +10778,23 @@ class GamePhaseHandlersMixin:
             if not options:
                 continue
             if selection_kind == "model":
-                prompt_target = "friendly model"
-                if target_keyword:
-                    prompt_target = f"friendly {target_keyword} model"
+                if target_in_source_unit:
+                    prompt_target = "model in this unit"
+                elif target_keywords:
+                    prompt_target = f"friendly {' '.join(target_keywords)} model"
+                else:
+                    prompt_target = "friendly model"
             else:
                 prompt_target = "friendly VEHICLE unit" if target_requires_vehicle else "friendly unit"
-                if target_keyword and not target_requires_vehicle:
-                    prompt_target = f"friendly {target_keyword} unit"
+                if target_keywords and not target_requires_vehicle:
+                    prompt_target = f"friendly {' '.join(target_keywords)} unit"
             phase_label = "Command phase" if pname == "COMMAND_PHASE" else "Movement phase"
+            range_clause = ""
+            if not target_in_source_unit:
+                range_clause = f" within {int(selection_range)}\""
             request = DecisionRequest.create(
                 DECISION_CHOOSE_QUARRY,
-                f"{ability_name}: select a {prompt_target} within {int(selection_range)}\" (or None).",
+                f"{ability_name}: select a {prompt_target}{range_clause} (or None).",
                 player_id=getattr(player, "id", None),
                 options=options,
                 context={
@@ -10728,10 +10811,18 @@ class GamePhaseHandlersMixin:
                     "fnp_requires_vehicle": bool(fnp_requires_vehicle),
                     "target_requires_vehicle": bool(target_requires_vehicle),
                     "target_keyword": str(target_keyword or ""),
+                    "target_keywords": list(target_keywords),
+                    "target_in_source_unit": bool(target_in_source_unit),
                     "allow_self_target": bool(allow_self_target),
                     "selection_kind": str(selection_kind),
                     "limit_once_per_turn": bool(limit_once_per_turn),
                     "limit_scope": str(limit_scope),
+                    "once_per_battle": bool(once_per_battle),
+                    "once_per_battle_key": str(once_per_battle_key),
+                    "once_per_battle_scope": str(once_per_battle_scope),
+                    "requires_damaged_target": bool(requires_damaged_target),
+                    "expires_phase": str(expires_phase),
+                    "hit_bonus_model_only": bool(hit_bonus_model_only),
                     "heal_roll": heal_roll,
                     "heal_flat": int(heal_flat),
                     "turn_owner": owner_id,
