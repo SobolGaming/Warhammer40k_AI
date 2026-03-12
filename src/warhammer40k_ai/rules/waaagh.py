@@ -24,6 +24,7 @@ class WaaaghManager:
         self.called_turn: int | None = None
         self.called_player = None
         self.active_scope: str = "all"
+        self._unit_override_effect = "waaagh_active_override"
 
     @staticmethod
     def _normalized(text: str) -> str:
@@ -87,6 +88,105 @@ class WaaaghManager:
         if callable(getter):
             return getter()
         return getattr(unit, "parent_army", None)
+
+    @staticmethod
+    def _unit_root(unit):
+        if unit is None:
+            return None
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            return get_root()
+        return unit
+
+    @staticmethod
+    def _player_id(player) -> str:
+        return str(getattr(player, "id", "") or "").strip()
+
+    def _unit_override_source_key(self, source: str) -> str:
+        normalized = re.sub(r"[^a-z0-9]+", "_", self._normalized(source)).strip("_")
+        return normalized or "source"
+
+    def _unit_override_id(self, *, owner_id: str, source: str) -> str:
+        owner_key = str(owner_id or "").strip() or "owner"
+        source_key = self._unit_override_source_key(source)
+        return f"waaagh_override:{owner_key}:{source_key}"
+
+    def _iter_unit_override_entries(self, unit) -> list[dict]:
+        root = self._unit_root(unit)
+        if root is None:
+            return []
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            return []
+        entries = list(special_rules.get("orks_temp_effects", []) or [])
+        normalized = [dict(entry) for entry in entries if isinstance(entry, dict)]
+        normalized.sort(key=lambda entry: str(entry.get("id", "") or ""))
+        return normalized
+
+    def apply_unit_override_until_next_command_phase(self, unit, *, player=None, source: str = "Waaagh override") -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        parent_army = self._unit_parent_army(root)
+        if parent_army is not None and self.army is not None and parent_army is not self.army:
+            return False
+        owner_player = player
+        if owner_player is None and parent_army is not None:
+            owner_player = getattr(parent_army, "player", None)
+        if owner_player is None and self.army is not None:
+            owner_player = getattr(self.army, "player", None)
+        owner_id = self._player_id(owner_player)
+        source_name = str(source or "Waaagh override").strip() or "Waaagh override"
+        effect_id = self._unit_override_id(owner_id=owner_id, source=source_name)
+        entry = {
+            "id": effect_id,
+            "source": source_name,
+            "effect": self._unit_override_effect,
+            "expires_mode": "next_command_phase",
+            "expires_scope": "owner_command_phase",
+        }
+        if owner_id:
+            entry["owner_id"] = owner_id
+        game = getattr(owner_player, "game", None) if owner_player is not None else None
+        current_turn = self._current_turn(game)
+        if current_turn is not None:
+            entry["turn"] = int(current_turn)
+
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        effects = list(special_rules.get("orks_temp_effects", []) or [])
+        kept: list[dict] = []
+        for effect in effects:
+            if not isinstance(effect, dict):
+                continue
+            if str(effect.get("id", "") or "").strip() == effect_id:
+                continue
+            kept.append(dict(effect))
+        kept.append(entry)
+        kept.sort(key=lambda effect: str(effect.get("id", "") or ""))
+        updated = dict(special_rules)
+        updated["orks_temp_effects"] = kept
+        root.special_rules = updated
+        return True
+
+    def _unit_has_active_override(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        owner_player = None
+        parent_army = self._unit_parent_army(root)
+        if parent_army is not None:
+            owner_player = getattr(parent_army, "player", None)
+        owner_id = self._player_id(owner_player)
+        for entry in self._iter_unit_override_entries(root):
+            if str(entry.get("effect", "") or "").strip().lower() != self._unit_override_effect:
+                continue
+            expected_owner = str(entry.get("owner_id", "") or "").strip()
+            if expected_owner and owner_id and expected_owner != owner_id:
+                continue
+            return True
+        return False
 
     @staticmethod
     def _unit_has_keyword(unit, keyword: str) -> bool:
@@ -217,6 +317,7 @@ class WaaaghManager:
         return bool(self.next_call_scope(game=game, player=player))
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:
+        self._clear_unit_overrides_for_command_phase_start(game=game, player=player)
         if not self.active:
             return
         if player is None or self.called_player is not player:
@@ -229,6 +330,58 @@ class WaaaghManager:
         if current_turn > int(self.called_turn):
             self.active = False
             self.active_scope = "all"
+
+    def _clear_unit_overrides_for_command_phase_start(self, *, game=None, player=None) -> None:
+        if self.army is None:
+            return
+        owner_id = self._player_id(player)
+        current_turn = self._current_turn(game)
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            effects = list(special_rules.get("orks_temp_effects", []) or [])
+            if not effects:
+                continue
+            kept: list[dict] = []
+            changed = False
+            for effect in effects:
+                if not isinstance(effect, dict):
+                    changed = True
+                    continue
+                if str(effect.get("effect", "") or "").strip().lower() != self._unit_override_effect:
+                    kept.append(dict(effect))
+                    continue
+                expires_mode = str(effect.get("expires_mode", "") or "").strip().lower()
+                if expires_mode != "next_command_phase":
+                    kept.append(dict(effect))
+                    continue
+                expires_scope = str(effect.get("expires_scope", "") or "").strip().lower()
+                expected_owner = str(effect.get("owner_id", "") or "").strip()
+                owner_matches = not expected_owner or (owner_id and expected_owner == owner_id)
+                if expires_scope == "owner_command_phase" and not owner_matches:
+                    kept.append(dict(effect))
+                    continue
+                effect_turn_raw = effect.get("turn", None)
+                try:
+                    effect_turn = int(effect_turn_raw) if effect_turn_raw is not None else 0
+                except (TypeError, ValueError):
+                    effect_turn = 0
+                if effect_turn and current_turn is not None and int(current_turn) <= int(effect_turn):
+                    kept.append(dict(effect))
+                    continue
+                changed = True
+            if not changed:
+                continue
+            updated = dict(special_rules)
+            if kept:
+                updated["orks_temp_effects"] = kept
+            else:
+                updated.pop("orks_temp_effects", None)
+            root.special_rules = updated
 
     def call_waaagh(self, *, game=None, player=None) -> bool:
         if not self.can_call_now(game=game, player=player):
@@ -264,17 +417,20 @@ class WaaaghManager:
         return self.unit_is_affected(unit, game=game)
 
     def unit_is_affected(self, unit, *, game=None) -> bool:
-        if unit is None:
+        root = self._unit_root(unit)
+        if root is None:
             return False
-        if not self.active:
+        if self._unit_is_embarked(root):
             return False
-        if not self._unit_has_waaagh(unit):
-            return False
-        if self._unit_is_embarked(unit):
-            return False
-        parent_army = self._unit_parent_army(unit)
+        parent_army = self._unit_parent_army(root)
         if parent_army is not None and parent_army is not self.army:
             return False
+        if self._unit_has_active_override(root):
+            return True
+        if not self.active:
+            return False
+        if not self._unit_has_waaagh(root):
+            return False
         if str(self.active_scope or "").strip().lower() == "bully_boyz_restricted":
-            return self._second_waaagh_unit_applies(unit)
+            return self._second_waaagh_unit_applies(root)
         return True

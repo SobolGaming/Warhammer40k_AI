@@ -166,3 +166,72 @@ class TestWaaagh(unittest.TestCase):
         target_unit.embarked_in = object()
         save_res = profile._save_with_tracking(target_model, {}, ap=0)
         self.assertEqual(int(save_res.get("final_save", 0)), 6)
+
+    def test_unit_override_helper_affects_only_target_and_preserves_global_state(self):
+        from warhammer40k_ai.rules.waaagh import WaaaghManager
+
+        game = SimpleNamespace(phase=SimpleNamespace(name="COMMAND_PHASE"), turn=1)
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, game=game)
+        game.get_current_player = lambda: player
+        army = SimpleNamespace(faction_id="ORK", units=[], player=player)
+
+        mgr = WaaaghManager(army)
+        army.waaagh = mgr
+        mgr.calls_this_battle = 1
+        mgr.used_this_battle = True
+        mgr.active = False
+
+        target = self._make_unit("Boyz")
+        other = self._make_unit("Nobz")
+        target.set_army(army)
+        other.set_army(army)
+        army.units = [target, other]
+
+        self.assertTrue(
+            mgr.apply_unit_override_until_next_command_phase(
+                target,
+                player=player,
+                source="GET STUCK IN, LADZ!",
+            )
+        )
+
+        self.assertTrue(mgr.unit_is_affected(target, game=game))
+        self.assertFalse(mgr.unit_is_affected(other, game=game))
+        self.assertEqual(int(mgr.calls_this_battle), 1)
+        self.assertTrue(mgr.used_this_battle)
+        self.assertFalse(mgr.active)
+
+    def test_unit_override_helper_expires_at_owner_next_command_phase(self):
+        from warhammer40k_ai.rules.waaagh import WaaaghManager
+
+        game = SimpleNamespace(phase=SimpleNamespace(name="COMMAND_PHASE"), turn=1)
+        owner = SimpleNamespace(name="Owner", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, game=game)
+        other = SimpleNamespace(name="Enemy", id="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, game=game)
+        game.get_current_player = lambda: owner
+        army = SimpleNamespace(faction_id="ORK", units=[], player=owner)
+
+        mgr = WaaaghManager(army)
+        army.waaagh = mgr
+
+        target = self._make_unit("Boyz")
+        target.set_army(army)
+        army.units = [target]
+
+        self.assertTrue(
+            mgr.apply_unit_override_until_next_command_phase(
+                target,
+                player=owner,
+                source="GRAB AND BASH",
+            )
+        )
+        self.assertTrue(mgr.unit_is_affected(target, game=game))
+
+        mgr.on_command_phase_start(game=game, player=owner)
+        self.assertTrue(mgr.unit_is_affected(target, game=game))
+
+        game.turn = 2
+        mgr.on_command_phase_start(game=game, player=other)
+        self.assertTrue(mgr.unit_is_affected(target, game=game))
+
+        mgr.on_command_phase_start(game=game, player=owner)
+        self.assertFalse(mgr.unit_is_affected(target, game=game))

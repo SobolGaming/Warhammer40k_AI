@@ -315,6 +315,148 @@ def test_armed_to_dateef_switches_hit_reroll_mode_with_waaagh():
     assert bool(active_mods.get("reroll_hit_full")) is True
 
 
+def test_get_stuck_in_ladz_applies_unit_scoped_waaagh_without_changing_global_state_and_expires():
+    target = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    other = _make_unit("Nobz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player, ork_army = _build_game(
+        detachment="More Dakka!",
+        ork_units=[target, other],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, other, 12.0, 10.0)
+    _deploy_unit(game, enemy, 18.0, 10.0)
+    _set_phase(game, phase_name="COMMAND_PHASE", current_player_index=0)
+
+    ork_army.waaagh.active = False
+    ork_army.waaagh.used_this_battle = True
+    ork_army.waaagh.calls_this_battle = 1
+
+    calls_before = int(ork_army.waaagh.calls_this_battle or 0)
+    used_before = bool(ork_army.waaagh.used_this_battle)
+    active_before = bool(ork_army.waaagh.active)
+    strat_name = _stratagem_name_by_id(ork_player, "000009992003", fallback_name="GET STUCK IN, LADZ!")
+    assert _use_stratagem(ork_player, strat_name, target, phase_name="Command phase")
+
+    assert int(ork_army.waaagh.calls_this_battle or 0) == calls_before
+    assert bool(ork_army.waaagh.used_this_battle) is used_before
+    assert bool(ork_army.waaagh.active) is active_before
+    assert bool(ork_army.waaagh.unit_is_affected(target, game=game)) is True
+    assert bool(ork_army.waaagh.unit_is_affected(other, game=game)) is False
+    assert target.can_charge_after_advance() is True
+
+    _set_phase(game, phase_name="SHOOTING_PHASE", current_player_index=0)
+    target_sustained = ork_army.orks_detachments.more_dakka_sustained_hits_value(
+        target.models[0],
+        attack_type="ranged",
+        game=game,
+    )
+    other_sustained = ork_army.orks_detachments.more_dakka_sustained_hits_value(
+        other.models[0],
+        attack_type="ranged",
+        game=game,
+    )
+    assert int(target_sustained or 0) == 1
+    assert int(other_sustained or 0) == 0
+
+    melee = _make_melee_profile()
+    target_attacks = melee.attack(enemy, target.models[0], game_map=game.map)
+    other_attacks = melee.attack(enemy, other.models[0], game_map=game.map)
+    assert int(target_attacks.attacks_rolled or 0) == 2
+    assert int(other_attacks.attacks_rolled or 0) == 1
+
+    game.turn = 2
+    ork_army.waaagh.on_command_phase_start(game=game, player=enemy_player)
+    assert bool(ork_army.waaagh.unit_is_affected(target, game=game)) is True
+
+    game.turn = 3
+    ork_army.waaagh.on_command_phase_start(game=game, player=ork_player)
+    assert bool(ork_army.waaagh.unit_is_affected(target, game=game)) is False
+
+
+def test_get_stuck_in_ladz_rejects_gretchin_units():
+    gretchin = _make_unit("Gretchin", keywords=["ORKS", "INFANTRY", "GRETCHIN"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="More Dakka!",
+        ork_units=[gretchin],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, gretchin, 10.0, 10.0)
+    _deploy_unit(game, enemy, 16.0, 10.0)
+    _set_phase(game, phase_name="COMMAND_PHASE", current_player_index=0)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000009992003", fallback_name="GET STUCK IN, LADZ!")
+    assert _use_stratagem(ork_player, strat_name, gretchin, phase_name="Command phase") is False
+
+
+def test_grab_and_bash_requires_loot_objective_range_and_rejects_gretchin():
+    in_range = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    off_range = _make_unit("Nobz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    gretchin = _make_unit("Gretchin", keywords=["ORKS", "INFANTRY", "GRETCHIN"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player, ork_army = _build_game(
+        detachment="Freebooter Krew",
+        ork_units=[in_range, off_range, gretchin],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, in_range, 10.0, 10.0)
+    _deploy_unit(game, off_range, 22.0, 10.0)
+    _deploy_unit(game, gretchin, 10.5, 12.0)
+    _deploy_unit(game, enemy, 18.0, 10.0)
+    _set_phase(game, phase_name="COMMAND_PHASE", current_player_index=0)
+
+    loot_objective = ObjectivePoint(10.0, 10.0, 0.0, control_radius=3.0)
+    game.map.objectives = [loot_objective]
+    game.objectives = [loot_objective]
+    ork_army.orks_detachments.freebooter_loot_objective_id = str(get_entity_id(loot_objective) or "")
+    ork_army.orks_detachments.freebooter_loot_battle_round = int(game.turn)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000010713003", fallback_name="GRAB AND BASH")
+    assert _use_stratagem(ork_player, strat_name, off_range, phase_name="Command phase") is False
+    assert _use_stratagem(ork_player, strat_name, gretchin, phase_name="Command phase") is False
+    assert _use_stratagem(ork_player, strat_name, in_range, phase_name="Command phase") is True
+
+    assert bool(ork_army.waaagh.unit_is_affected(in_range, game=game)) is True
+    assert bool(ork_army.waaagh.unit_is_affected(off_range, game=game)) is False
+    assert bool(ork_army.waaagh.unit_is_affected(gretchin, game=game)) is False
+    assert in_range.can_charge_after_advance() is True
+
+    game.turn = 2
+    ork_army.waaagh.on_command_phase_start(game=game, player=enemy_player)
+    assert bool(ork_army.waaagh.unit_is_affected(in_range, game=game)) is True
+
+    game.turn = 3
+    ork_army.waaagh.on_command_phase_start(game=game, player=ork_player)
+    assert bool(ork_army.waaagh.unit_is_affected(in_range, game=game)) is False
+
+
+def test_get_stuck_in_ladz_does_not_double_stack_with_global_waaagh():
+    target = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, ork_army = _build_game(
+        detachment="More Dakka!",
+        ork_units=[target],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, enemy, 12.0, 10.0)
+    _set_phase(game, phase_name="COMMAND_PHASE", current_player_index=0)
+
+    ork_army.waaagh.active = True
+    ork_army.waaagh.used_this_battle = True
+    ork_army.waaagh.calls_this_battle = 1
+    ork_army.waaagh.active_scope = "all"
+
+    strat_name = _stratagem_name_by_id(ork_player, "000009992003", fallback_name="GET STUCK IN, LADZ!")
+    assert _use_stratagem(ork_player, strat_name, target, phase_name="Command phase")
+
+    melee = _make_melee_profile()
+    attack_result = melee.attack(enemy, target.models[0], game_map=game.map)
+    assert int(attack_result.attacks_rolled or 0) == 2
+
+
 def test_drag_it_down_applies_crit_threshold_only_against_prey():
     attacker = _make_unit(
         "Beast Snagga Boyz",
@@ -1166,10 +1308,12 @@ def test_dat_ones_even_bigga_grants_charge_eligibility_and_prey_gated_reroll():
 
 def test_orks_temp_buff_stratagem_descriptors_are_registered():
     expected = {
+        "000009992003": "GET STUCK IN, LADZ!",
         "000008886002": "ARMED TO DATEEF",
         "000008869002": "DRAG IT DOWN",
         "000008869004": "DAT ONE'S EVEN BIGGA!",
         "000010713002": "BASH AND GRAB",
+        "000010713003": "GRAB AND BASH",
         "000010713004": "BOARDIN' RUSH",
         "000010713005": "DECK FRAGGERS",
         "000010713006": "ROLLING LOOT-HEAP",

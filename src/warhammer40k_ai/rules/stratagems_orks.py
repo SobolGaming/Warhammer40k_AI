@@ -316,6 +316,61 @@ class OrksStratagemMixin:
         results.sort(key=self._orks_sort_key)
         return results
 
+    def _orks_active_loot_objective_point(self):
+        mgr = self._orks_detachment_mgr()
+        resolver = getattr(mgr, "_active_here_be_loot_objective_point", None) if mgr is not None else None
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        objective_data = resolver(game=game, game_map=game_map) if callable(resolver) else None
+        if not isinstance(objective_data, tuple):
+            return None
+        _objective, point = objective_data
+        return point
+
+    def _orks_unit_within_active_loot_objective(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        point = self._orks_active_loot_objective_point()
+        if point is None:
+            return False
+        is_within = getattr(root, "is_within_objective_range", None)
+        if not callable(is_within):
+            return False
+        return bool(is_within(point))
+
+    def _orks_unit_waaagh_override_candidates(self, *, require_loot_objective_range: bool) -> list[Any]:
+        candidates = self._orks_offensive_candidates(
+            require_targetable=True,
+            keyword_exclude_any=("GRETCHIN",),
+        )
+        if not bool(require_loot_objective_range):
+            return candidates
+        kept: list[Any] = []
+        for root in list(candidates or []):
+            if self._orks_unit_within_active_loot_objective(root):
+                kept.append(root)
+        kept.sort(key=self._orks_sort_key)
+        return kept
+
+    def _orks_apply_unit_waaagh_override(self, unit: Any, *, source_name: str) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+        waaagh_mgr = getattr(army, "waaagh", None) if army is not None else None
+        apply_override = getattr(waaagh_mgr, "apply_unit_override_until_next_command_phase", None) if waaagh_mgr is not None else None
+        if not callable(apply_override):
+            return False
+        return bool(
+            apply_override(
+                root,
+                player=self.player,
+                source=str(source_name or "Waaagh override"),
+            )
+        )
+
     def _orks_owned_by_player(self, unit: Any, player: Any) -> bool:
         root = self._orks_root(unit)
         if root is None or player is None:
@@ -2079,6 +2134,10 @@ class OrksStratagemMixin:
         name_norm = self._orks_normalize_name(getattr(stratagem, "name", "") or "")
         if name_u == "ARMED TO DATEEF":
             return self._use_orks_armed_to_dateef(stratagem, **kwargs)
+        if name_u == "GET STUCK IN, LADZ!" or name_norm == "get stuck in ladz":
+            return self._use_orks_get_stuck_in_ladz(stratagem, **kwargs)
+        if name_u == "GRAB AND BASH" or name_norm == "grab and bash":
+            return self._use_orks_grab_and_bash(stratagem, **kwargs)
         if name_u == "DRAG IT DOWN":
             return self._use_orks_drag_it_down(stratagem, **kwargs)
         if name_u == "BASH AND GRAB":
@@ -2134,6 +2193,80 @@ class OrksStratagemMixin:
         if name_norm == "more gitz over ere":
             return self._use_orks_more_gitz_over_ere(stratagem, **kwargs)
         return None
+
+    def _use_orks_unit_waaagh_override_stratagem(
+        self,
+        stratagem: Any,
+        *,
+        stratagem_name: str,
+        require_loot_objective_range: bool,
+        **kwargs,
+    ) -> bool:
+        if not self._orks_validate_phase(
+            expected_phases=("Command phase",),
+            require_your_turn=True,
+            error_prefix=stratagem_name,
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit(stratagem_name, **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: %s: no target unit provided", stratagem_name)
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._orks_unit_waaagh_override_candidates(
+                require_loot_objective_range=bool(require_loot_objective_range),
+            )
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name=stratagem_name,
+            target_unit=target_unit,
+            candidates=candidates,
+            keyword_exclude_any=("GRETCHIN",),
+        )
+        if not ok:
+            return False
+        if not candidates or not self._orks_unit_in_candidates(root, candidates):
+            logger.error("ERROR: %s: selected unit is not currently eligible", stratagem_name)
+            return False
+        if require_loot_objective_range and not self._orks_unit_within_active_loot_objective(root):
+            logger.error("ERROR: %s: target must be within range of the loot objective", stratagem_name)
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Command phase"):
+            logger.error("ERROR: %s: cannot be used in current state", stratagem_name)
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+        source_name = str(getattr(stratagem, "name", "") or stratagem_name).strip() or stratagem_name
+        if not self._orks_apply_unit_waaagh_override(root, source_name=source_name):
+            logger.error("ERROR: %s: failed to apply unit Waaagh override", stratagem_name)
+            return False
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: %s: %s counts as having Waaagh active until your next Command phase.",
+            stratagem_name,
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_orks_get_stuck_in_ladz(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_more_dakka_detachment():
+            return False
+        return self._use_orks_unit_waaagh_override_stratagem(
+            stratagem,
+            stratagem_name="GET STUCK IN, LADZ!",
+            require_loot_objective_range=False,
+            **kwargs,
+        )
+
+    def _use_orks_grab_and_bash(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_freebooter_krew_detachment():
+            return False
+        return self._use_orks_unit_waaagh_override_stratagem(
+            stratagem,
+            stratagem_name="GRAB AND BASH",
+            require_loot_objective_range=True,
+            **kwargs,
+        )
 
     def _use_orks_armed_to_dateef(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_bully_boyz_detachment():

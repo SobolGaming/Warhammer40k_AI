@@ -258,9 +258,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ERE WE GO",
     "MOB RULE",
     "COME ON LADZ!",
+    "GET STUCK IN, LADZ!",
     "ARMED TO DATEEF",
     "DRAG IT DOWN",
     "BASH AND GRAB",
+    "GRAB AND BASH",
     "DECK FRAGGERS",
     "ROLLING LOOT-HEAP",
     "BLITZA FIRE",
@@ -4290,6 +4292,26 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Command phase and a friendly BOYZ unit with destroyed non-CHARACTER models"
             return result
+        if name_u == "GET STUCK IN, LADZ!":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_unit_waaagh_override_candidates(require_loot_objective_range=False)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase and one eligible non-Gretchin ORKS unit on the battlefield"
+            return result
+        if name_u == "GRAB AND BASH":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_unit_waaagh_override_candidates(require_loot_objective_range=True)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Command phase, an active loot objective, and one eligible non-Gretchin ORKS unit within range"
+            return result
         if name_u == "RAPID REGENERATION":
             attacking_unit = (
                 context.get("attacking_unit")
@@ -4907,9 +4929,11 @@ class StratagemManager(
             "ERE WE GO": "Target: ORKS INFANTRY unit",
             "MOB RULE": "Target: ORKS MOB unit (10+ models) at end of your Command phase",
             "COME ON LADZ!": "Target: BOYZ unit with destroyed non-CHARACTER models; return up to D3+2",
+            "GET STUCK IN, LADZ!": "Target: non-GRETCHIN ORKS unit; that unit counts as Waaagh-active until your next Command phase",
             "CAREEN!": "Target: destroyed ORKS VEHICLE (Deadly Demise 6)",
             "'ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
             "\u2019ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
+            "GRAB AND BASH": "Target: non-GRETCHIN ORKS unit within range of the active loot objective; that unit counts as Waaagh-active until your next Command phase",
             "STALKIN' TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
             "STALKIN\u2019 TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",

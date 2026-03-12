@@ -642,6 +642,20 @@ _GREEN_TIDE_STRATAGEM_BY_NAME = {
 }
 
 _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009992003": StratagemToolDescriptor(
+        stratagem_id="000009992003",
+        name="GET STUCK IN, LADZ!",
+        timing="command_phase",
+        target="orks_non_gretchin_unit",
+        duration="until_start_of_next_command_phase",
+        effect="unit_scoped_waaagh_active_override",
+        cp_cost=2,
+        effect_params={
+            "scope": "single_unit",
+            "expires_scope": "owner_command_phase",
+            "does_not_consume_army_waaagh": True,
+        },
+    ),
     "000008886002": StratagemToolDescriptor(
         stratagem_id="000008886002",
         name="ARMED TO DATEEF",
@@ -685,6 +699,21 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         effect="melee_wound_reroll_vs_loot_objective",
         cp_cost=1,
         effect_params={"reroll_mode": "full", "target_condition": "loot_objective_range"},
+    ),
+    "000010713003": StratagemToolDescriptor(
+        stratagem_id="000010713003",
+        name="GRAB AND BASH",
+        timing="command_phase",
+        target="orks_non_gretchin_unit_within_loot_objective",
+        duration="until_start_of_next_command_phase",
+        effect="unit_scoped_waaagh_active_override",
+        cp_cost=1,
+        effect_params={
+            "scope": "single_unit",
+            "requires_loot_objective_range": True,
+            "expires_scope": "owner_command_phase",
+            "does_not_consume_army_waaagh": True,
+        },
     ),
     "000010713004": StratagemToolDescriptor(
         stratagem_id="000010713004",
