@@ -353,6 +353,184 @@ class OrksStratagemMixin:
         kept.sort(key=self._orks_sort_key)
         return kept
 
+    def _orks_charge_end_mortal_wound_source_candidates(self, *, target_matcher) -> list[Any]:
+        candidates = self._orks_offensive_candidates(require_targetable=True)
+        kept: list[Any] = []
+        for root in list(candidates or []):
+            if not bool(target_matcher(root)):
+                continue
+            if not bool(getattr(getattr(root, "round_state", None), "charged_this_round", False)):
+                continue
+            if not self._orks_charge_end_mortal_wound_enemy_candidates(root):
+                continue
+            kept.append(root)
+        kept.sort(key=self._orks_sort_key)
+        return kept
+
+    def _orks_charge_end_mortal_wound_enemy_candidates(self, source_unit: Any) -> list[Any]:
+        source_root = self._orks_root(source_unit)
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if source_root is None or game_map is None:
+            return []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        within_engagement = getattr(game_map, "is_within_engagement_range", None)
+        if not callable(get_enemy_units) or not callable(within_engagement):
+            return []
+        seen: set[str] = set()
+        candidates: list[Any] = []
+        for enemy_unit in list(get_enemy_units(source_root) or []):
+            enemy_root = self._orks_root(enemy_unit)
+            if enemy_root is None:
+                continue
+            if self._orks_owned_by_player(enemy_root, self.player):
+                continue
+            if not self._orks_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            if not bool(within_engagement(source_root, enemy_root)):
+                continue
+            enemy_id = self._orks_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            candidates.append(enemy_root)
+        candidates.sort(key=self._orks_sort_key)
+        return candidates
+
+    def _orks_alive_models(self, unit: Any) -> list[Any]:
+        root = self._orks_root(unit)
+        if root is None:
+            return []
+        get_models = getattr(root, "get_attached_unit_models", None)
+        if callable(get_models):
+            models = list(get_models() or [])
+        else:
+            models = list(getattr(root, "models", []) or [])
+        alive = [model for model in models if bool(getattr(model, "is_alive", True))]
+        alive.sort(key=self._orks_sort_key)
+        return alive
+
+    def _orks_models_within_engagement_count(self, source_unit: Any, enemy_unit: Any) -> int:
+        source_root = self._orks_root(source_unit)
+        enemy_root = self._orks_root(enemy_unit)
+        if source_root is None or enemy_root is None:
+            return 0
+        from ..utility.aura_utils import model_within_engagement_range_of_unit
+
+        count = 0
+        for model in self._orks_alive_models(source_root):
+            if model_within_engagement_range_of_unit(model, enemy_root):
+                count += 1
+        return int(count)
+
+    def _orks_charge_end_mortal_roll_count(
+        self,
+        source_unit: Any,
+        enemy_unit: Any,
+        *,
+        count_mode: str,
+        bonus_dice: int = 0,
+    ) -> int:
+        mode = str(count_mode or "").strip().lower()
+        if mode == "unit_models":
+            base_count = len(self._orks_alive_models(source_unit))
+        elif mode == "engagement_models":
+            base_count = self._orks_models_within_engagement_count(source_unit, enemy_unit)
+        else:
+            base_count = 0
+        total = int(base_count) + int(bonus_dice or 0)
+        return max(0, int(total))
+
+    def _orks_unit_has_active_waaagh(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+        waaagh_mgr = getattr(army, "waaagh", None) if army is not None else None
+        unit_is_affected = getattr(waaagh_mgr, "unit_is_affected", None) if waaagh_mgr is not None else None
+        if not callable(unit_is_affected):
+            return False
+        return bool(unit_is_affected(root, game=getattr(self, "game", None)))
+
+    def _orks_enemy_is_da_big_hunt_prey(self, enemy_unit: Any) -> bool:
+        enemy_root = self._orks_root(enemy_unit)
+        if enemy_root is None:
+            return False
+        mgr = self._orks_detachment_mgr()
+        prey_check = getattr(mgr, "is_da_big_hunt_prey_target", None) if mgr is not None else None
+        if not callable(prey_check):
+            return False
+        return bool(prey_check(enemy_root))
+
+    def _orks_roll_capped_mortal_wounds(
+        self,
+        *,
+        roll_count: int,
+        success_on: int,
+        max_mortal_wounds: int = 6,
+    ) -> tuple[list[int], int]:
+        count = max(0, int(roll_count or 0))
+        threshold = max(2, min(6, int(success_on or 0)))
+        cap = max(0, int(max_mortal_wounds or 0))
+        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(count)]
+        successes = sum(1 for roll in rolls if int(roll or 0) >= threshold)
+        return rolls, min(int(successes), cap)
+
+    def _orks_resolve_charge_end_mortal_wounds(
+        self,
+        *,
+        source_unit: Any,
+        enemy_unit: Any,
+        count_mode: str,
+        success_on: int,
+        success_on_if_waaagh: int | None = None,
+        extra_dice_if_prey: int = 0,
+        max_mortal_wounds: int = 6,
+    ) -> dict[str, Any]:
+        source_root = self._orks_root(source_unit)
+        enemy_root = self._orks_root(enemy_unit)
+        if source_root is None or enemy_root is None:
+            return {
+                "roll_count": 0,
+                "success_on": int(success_on or 0),
+                "rolls": [],
+                "mortal_wounds": 0,
+                "extra_dice": 0,
+            }
+        success_threshold = int(success_on or 0)
+        if success_on_if_waaagh is not None and self._orks_unit_has_active_waaagh(source_root):
+            success_threshold = int(success_on_if_waaagh or success_on)
+        bonus_dice = 0
+        if int(extra_dice_if_prey or 0) > 0 and self._orks_enemy_is_da_big_hunt_prey(enemy_root):
+            bonus_dice = int(extra_dice_if_prey or 0)
+        roll_count = self._orks_charge_end_mortal_roll_count(
+            source_root,
+            enemy_root,
+            count_mode=str(count_mode or ""),
+            bonus_dice=int(bonus_dice),
+        )
+        rolls, mortal_wounds = self._orks_roll_capped_mortal_wounds(
+            roll_count=int(roll_count),
+            success_on=int(success_threshold),
+            max_mortal_wounds=int(max_mortal_wounds),
+        )
+        if int(mortal_wounds or 0) > 0:
+            apply_mortal_wounds = getattr(source_root, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortal_wounds):
+                apply_mortal_wounds(
+                    enemy_root,
+                    int(mortal_wounds),
+                    game_map=getattr(getattr(self, "game", None), "map", None),
+                )
+        return {
+            "roll_count": int(roll_count),
+            "success_on": int(success_threshold),
+            "rolls": list(rolls),
+            "mortal_wounds": int(mortal_wounds),
+            "extra_dice": int(bonus_dice),
+        }
+
     def _orks_end_of_opponent_fight_phase_strategic_reserves_candidates(self, *, target_matcher) -> list[Any]:
         candidates = self._orks_offensive_candidates(require_targetable=True)
         kept: list[Any] = []
@@ -1157,11 +1335,35 @@ class OrksStratagemMixin:
             return False
         return self._orks_unit_contains_any_keyword(root, ("INFANTRY", "MOUNTED"))
 
+    def _orks_is_nobz_or_meganobz_unit(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        if self._orks_unit_contains_any_keyword(root, ("NOBZ", "MEGANOBZ")):
+            return True
+        return self._orks_unit_name_contains(root, "nobz") or self._orks_unit_name_contains(root, "meganobz")
+
     def _orks_is_beast_snagga_unit(self, unit: Any) -> bool:
         root = self._orks_root(unit)
         if root is None:
             return False
         return self._orks_unit_contains_keyword(root, "BEAST SNAGGA")
+
+    def _orks_is_beast_snagga_mounted_unit(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        if not self._orks_unit_contains_keyword(root, "BEAST SNAGGA"):
+            return False
+        return self._orks_unit_contains_keyword(root, "MOUNTED")
+
+    def _orks_is_stormboyz_unit(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        if self._orks_unit_contains_any_keyword(root, ("STORMBOYZ", "STORMBOY")):
+            return True
+        return self._orks_unit_name_contains(root, "stormboyz")
 
     def _orks_is_kommandos_or_stormboyz_unit(self, unit: Any) -> bool:
         root = self._orks_root(unit)
@@ -1677,7 +1879,99 @@ class OrksStratagemMixin:
         self._queue_reaction(payload, use_timer=False)
 
     def _queue_orks_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        self._queue_orks_charge_end_mortal_wound_reactions(unit=unit, action=action)
         self._queue_orks_taktikal_retreat_move_end_reaction(unit=unit, action=action)
+
+    def _queue_single_orks_charge_end_mortal_wound_reaction(
+        self,
+        *,
+        unit: Any,
+        action: str,
+        stratagem_names: tuple[str, ...],
+        detachment_check,
+        source_matcher,
+    ) -> None:
+        if unit is None:
+            return
+        if not bool(detachment_check()):
+            return
+        if self._orks_phase_label(getattr(self, "_current_phase_name", "")) != "charge phase":
+            return
+        if not self._orks_is_players_turn():
+            return
+        if self._orks_normalize_move_action(action) != "charge":
+            return
+
+        source_root = self._orks_root(unit)
+        if source_root is None:
+            return
+        if not self._orks_owned_by_player(source_root, self.player):
+            return
+        if not self._orks_on_battlefield(source_root, require_targetable=True):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(source_root)):
+            return
+        if not self._is_orks_unit(source_root):
+            return
+        if not bool(source_matcher(source_root)):
+            return
+
+        stratagem = self._orks_get_available_stratagem_by_names(*stratagem_names)
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(self._used_stratagems_this_phase):
+            return
+        if self._orks_unit_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=str(getattr(stratagem, "name", "") or stratagem_names[0]),
+            unit=source_root,
+        ):
+            return
+
+        enemy_candidates = self._orks_charge_end_mortal_wound_enemy_candidates(source_root)
+        if not enemy_candidates:
+            return
+
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Charge phase",
+            "stratagem": str(getattr(stratagem, "name", "") or stratagem_names[0]),
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "unit": source_root,
+            "target_unit": source_root,
+            "source_unit": source_root,
+            "candidates": [source_root],
+            "enemy_candidates": list(enemy_candidates),
+            "action": "charge",
+        }
+        if len(enemy_candidates) == 1:
+            payload["enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_orks_charge_end_mortal_wound_reactions(self, *, unit: Any, action: str) -> None:
+        self._queue_single_orks_charge_end_mortal_wound_reaction(
+            unit=unit,
+            action=action,
+            stratagem_names=("CRUSHING IMPACT",),
+            detachment_check=self._is_bully_boyz_detachment,
+            source_matcher=self._orks_is_nobz_or_meganobz_unit,
+        )
+        self._queue_single_orks_charge_end_mortal_wound_reaction(
+            unit=unit,
+            action=action,
+            stratagem_names=("UNSTOPPABLE MOMENTUM",),
+            detachment_check=self._is_da_big_hunt_detachment,
+            source_matcher=self._orks_is_beast_snagga_mounted_unit,
+        )
+        self._queue_single_orks_charge_end_mortal_wound_reaction(
+            unit=unit,
+            action=action,
+            stratagem_names=("KRUNCHIN' DESCENT", "KRUNCHIN’ DESCENT"),
+            detachment_check=self._is_taktikal_brigade_detachment,
+            source_matcher=self._orks_is_stormboyz_unit,
+        )
 
     def _queue_orks_taktikal_retreat_move_end_reaction(self, *, unit: Any, action: str) -> None:
         if unit is None:
@@ -1774,6 +2068,8 @@ class OrksStratagemMixin:
             return "advance"
         if action_key in {"fall_back", "fallback"}:
             return "fall_back"
+        if action_key in {"charge", "charge_move"}:
+            return "charge"
         return ""
 
     def _orks_distance_between_units(self, source_unit: Any, target_unit: Any) -> Optional[float]:
@@ -2265,6 +2561,12 @@ class OrksStratagemMixin:
             return self._use_orks_instinctive_hunters(stratagem, **kwargs)
         if name_u == "DED SNEAKY":
             return self._use_orks_ded_sneaky(stratagem, **kwargs)
+        if name_u == "CRUSHING IMPACT":
+            return self._use_orks_crushing_impact(stratagem, **kwargs)
+        if name_u == "UNSTOPPABLE MOMENTUM":
+            return self._use_orks_unstoppable_momentum(stratagem, **kwargs)
+        if name_norm == "krunchin descent":
+            return self._use_orks_krunchin_descent(stratagem, **kwargs)
         if name_u == "DRAG IT DOWN":
             return self._use_orks_drag_it_down(stratagem, **kwargs)
         if name_u == "BASH AND GRAB":
@@ -2320,6 +2622,231 @@ class OrksStratagemMixin:
         if name_norm == "more gitz over ere":
             return self._use_orks_more_gitz_over_ere(stratagem, **kwargs)
         return None
+
+    def _orks_resolve_charge_end_mortal_context(
+        self,
+        stratagem_name: str,
+        **kwargs,
+    ) -> tuple[Any, list[Any], Any, list[Any], str, str, bool]:
+        source_unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("source_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+        action = str(kwargs.get("action") or kwargs.get("trigger") or "").strip()
+        phase_name = str(kwargs.get("phase_name") or "").strip()
+        from_pending = False
+
+        if source_unit is None and len(candidates) == 1:
+            source_unit = candidates[0]
+        if enemy_unit is None and len(enemy_candidates) == 1:
+            enemy_unit = enemy_candidates[0]
+
+        normalized_name = self._orks_normalize_name(stratagem_name)
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if self._orks_normalize_name(str(reaction.get("stratagem", "") or "")) != normalized_name:
+                continue
+            from_pending = True
+            if source_unit is None:
+                source_unit = reaction.get("target_unit") or reaction.get("unit") or reaction.get("source_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = reaction.get("enemy_unit") or reaction.get("target_enemy_unit")
+            if not enemy_candidates:
+                enemy_candidates = list(reaction.get("enemy_candidates") or [])
+            if not action:
+                action = str(reaction.get("action") or "").strip()
+            if not phase_name:
+                phase_name = str(reaction.get("phase_name") or "").strip()
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if enemy_unit is None and len(enemy_candidates) == 1:
+                enemy_unit = enemy_candidates[0]
+            break
+        return source_unit, candidates, enemy_unit, enemy_candidates, action, phase_name, from_pending
+
+    def _use_orks_charge_end_mortal_wound_stratagem(
+        self,
+        stratagem: Any,
+        *,
+        stratagem_name: str,
+        detachment_check,
+        source_matcher,
+        source_error: str,
+        count_mode: str,
+        success_on: int,
+        success_on_if_waaagh: int | None = None,
+        extra_dice_if_prey: int = 0,
+        **kwargs,
+    ) -> bool:
+        if not bool(detachment_check()):
+            return False
+        source_unit, candidates, enemy_unit, enemy_candidates, action, phase_name, from_pending = (
+            self._orks_resolve_charge_end_mortal_context(stratagem_name, **kwargs)
+        )
+        if source_unit is None:
+            logger.error("ERROR: %s: no target unit provided", stratagem_name)
+            return False
+
+        phase_label = self._orks_phase_label(phase_name or self._orks_current_phase_label())
+        if phase_label != "charge phase":
+            logger.error("ERROR: %s: wrong phase", stratagem_name)
+            return False
+        if not self._orks_is_players_turn():
+            logger.error("ERROR: %s: not your Charge phase", stratagem_name)
+            return False
+        action_key = self._orks_normalize_move_action(action)
+        if not from_pending and not action_key:
+            logger.error("ERROR: %s: missing movement trigger context", stratagem_name)
+            return False
+        if action_key and action_key != "charge":
+            logger.error("ERROR: %s: invalid trigger action", stratagem_name)
+            return False
+
+        source_root = self._orks_root(source_unit)
+        if source_root is None:
+            return False
+        if not self._orks_owned_by_player(source_root, self.player):
+            logger.error("ERROR: %s: target unit is not yours", stratagem_name)
+            return False
+        if not self._orks_on_battlefield(source_root, require_targetable=True):
+            logger.error("ERROR: %s: target must be on battlefield and targetable", stratagem_name)
+            return False
+        if not self._is_orks_unit(source_root):
+            logger.error("ERROR: %s: target must be an ORKS unit", stratagem_name)
+            return False
+        if not bool(source_matcher(source_root)):
+            logger.error("ERROR: %s: %s", stratagem_name, source_error)
+            return False
+        charged_this_round = bool(getattr(getattr(source_root, "round_state", None), "charged_this_round", False))
+        if action_key != "charge" and not charged_this_round:
+            logger.error("ERROR: %s: target must have ended a Charge move this phase", stratagem_name)
+            return False
+
+        expected_sources = list(candidates or [])
+        if not expected_sources:
+            expected_sources = self._orks_charge_end_mortal_wound_source_candidates(target_matcher=source_matcher)
+        if expected_sources and not self._orks_unit_in_candidates(source_root, expected_sources):
+            logger.error("ERROR: %s: selected unit is not currently eligible", stratagem_name)
+            return False
+
+        enemy_roots = [self._orks_root(unit) for unit in list(enemy_candidates or [])]
+        enemy_roots = [unit for unit in enemy_roots if unit is not None]
+        if enemy_unit is None and len(enemy_roots) == 1:
+            enemy_unit = enemy_roots[0]
+        enemy_root = self._orks_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            enemy_roots = self._orks_charge_end_mortal_wound_enemy_candidates(source_root)
+            if len(enemy_roots) == 1:
+                enemy_root = enemy_roots[0]
+            else:
+                logger.error("ERROR: %s: no enemy unit within Engagement Range selected", stratagem_name)
+                return False
+        if self._orks_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: %s: selected enemy unit is not enemy", stratagem_name)
+            return False
+        if not self._orks_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: %s: selected enemy unit must be on battlefield", stratagem_name)
+            return False
+        if enemy_roots and not self._orks_unit_in_candidates(enemy_root, enemy_roots):
+            logger.error("ERROR: %s: selected enemy unit is not within Engagement Range", stratagem_name)
+            return False
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        within_engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+        if callable(within_engagement) and not bool(within_engagement(source_root, enemy_root)):
+            logger.error("ERROR: %s: selected enemy unit is not within Engagement Range", stratagem_name)
+            return False
+
+        bonus_dice = 0
+        if int(extra_dice_if_prey or 0) > 0 and self._orks_enemy_is_da_big_hunt_prey(enemy_root):
+            bonus_dice = int(extra_dice_if_prey or 0)
+        roll_count = self._orks_charge_end_mortal_roll_count(
+            source_root,
+            enemy_root,
+            count_mode=str(count_mode or ""),
+            bonus_dice=int(bonus_dice),
+        )
+        if roll_count <= 0:
+            logger.error("ERROR: %s: no qualifying models to roll dice for", stratagem_name)
+            return False
+
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=source_root,
+            unit=source_root,
+            enemy_unit=enemy_root,
+            phase_name="Charge phase",
+        ):
+            logger.error("ERROR: %s: cannot be used in current state", stratagem_name)
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=source_root):
+            return False
+
+        result = self._orks_resolve_charge_end_mortal_wounds(
+            source_unit=source_root,
+            enemy_unit=enemy_root,
+            count_mode=str(count_mode or ""),
+            success_on=int(success_on or 0),
+            success_on_if_waaagh=(
+                int(success_on_if_waaagh) if success_on_if_waaagh is not None else None
+            ),
+            extra_dice_if_prey=int(extra_dice_if_prey or 0),
+            max_mortal_wounds=6,
+        )
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: %s: %s rolled %d D6 (%d+) and dealt %d mortal wound(s) to %s.",
+            stratagem_name,
+            getattr(source_root, "name", "Unit"),
+            int(result.get("roll_count", 0) or 0),
+            int(result.get("success_on", 0) or 0),
+            int(result.get("mortal_wounds", 0) or 0),
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_orks_crushing_impact(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_charge_end_mortal_wound_stratagem(
+            stratagem,
+            stratagem_name="CRUSHING IMPACT",
+            detachment_check=self._is_bully_boyz_detachment,
+            source_matcher=self._orks_is_nobz_or_meganobz_unit,
+            source_error="target must be a Nobz or Meganobz unit",
+            count_mode="engagement_models",
+            success_on=5,
+            success_on_if_waaagh=4,
+            extra_dice_if_prey=0,
+            **kwargs,
+        )
+
+    def _use_orks_unstoppable_momentum(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_charge_end_mortal_wound_stratagem(
+            stratagem,
+            stratagem_name="UNSTOPPABLE MOMENTUM",
+            detachment_check=self._is_da_big_hunt_detachment,
+            source_matcher=self._orks_is_beast_snagga_mounted_unit,
+            source_error="target must be a Beast Snagga Mounted unit",
+            count_mode="unit_models",
+            success_on=4,
+            success_on_if_waaagh=None,
+            extra_dice_if_prey=3,
+            **kwargs,
+        )
+
+    def _use_orks_krunchin_descent(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_charge_end_mortal_wound_stratagem(
+            stratagem,
+            stratagem_name="KRUNCHIN' DESCENT",
+            detachment_check=self._is_taktikal_brigade_detachment,
+            source_matcher=self._orks_is_stormboyz_unit,
+            source_error="target must be a Stormboyz unit",
+            count_mode="engagement_models",
+            success_on=4,
+            success_on_if_waaagh=None,
+            extra_dice_if_prey=0,
+            **kwargs,
+        )
 
     def _use_orks_end_of_opponent_fight_phase_reserves_stratagem(
         self,

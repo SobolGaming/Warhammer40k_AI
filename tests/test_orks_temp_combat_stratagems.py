@@ -679,6 +679,410 @@ def test_instinctive_hunters_candidates_deduplicate_attached_root_unit():
     assert candidate_ids == [str(get_entity_id(bodyguard) or "")]
 
 
+def test_orks_charge_end_mortal_wound_helper_enforces_cap():
+    source = _make_unit("Nobz", keywords=["ORKS", "INFANTRY", "NOBZ"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds="20")
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Bully Boyz",
+        ork_units=[source],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, source, 10.0, 10.0)
+    _deploy_unit(game, enemy, 11.5, 10.0)
+
+    with patch("warhammer40k_ai.rules.stratagems_orks.dice_module.get_roll", return_value=6):
+        rolls, mortals = ork_player.stratagems._orks_roll_capped_mortal_wounds(
+            roll_count=12,
+            success_on=4,
+            max_mortal_wounds=6,
+        )
+    assert len(rolls) == 12
+    assert int(mortals) == 6
+
+
+def test_crushing_impact_queues_and_deals_mortal_wounds_after_charge_end():
+    nobz = _make_unit(
+        "Nobz",
+        keywords=["ORKS", "INFANTRY", "NOBZ"],
+        faction_keywords=["ORKS"],
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds="6")
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Bully Boyz",
+        ork_units=[nobz],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, nobz, 10.0, 10.0)
+    _deploy_unit(game, enemy, 11.5, 10.0)
+    _set_phase(game, phase_name="CHARGE_PHASE", current_player_index=0)
+    game.event_system.publish("phase_start", player=ork_player, phase=game.phase)
+
+    game.event_system.publish("unit_move_ended", unit=nobz, action="charge")
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008886005", fallback_name="CRUSHING IMPACT")
+    pending = _pending_reaction_by_name(ork_player, strat_name)
+    assert pending is not None
+    assert enemy in list(pending.get("enemy_candidates") or [])
+
+    cp_before = int(ork_player.command_points or 0)
+    before_wounds = int(enemy.models[0].wounds or 0)
+    with patch("warhammer40k_ai.rules.stratagems_orks.dice_module.get_roll", return_value=5):
+        ok = ork_player.stratagems.use(
+            str(pending.get("stratagem", "") or strat_name),
+            unit=nobz,
+            enemy_unit=enemy,
+            dequeue=True,
+        )
+    assert ok is True
+    assert int(ork_player.command_points or 0) == cp_before - 1
+    assert int(before_wounds - int(enemy.models[0].wounds or 0)) == 1
+
+
+def test_unstoppable_momentum_queues_and_deals_mortal_wounds_after_charge_end():
+    mounted = _make_unit(
+        "Squighog Boyz",
+        keywords=["ORKS", "MOUNTED", "BEAST SNAGGA"],
+        faction_keywords=["ORKS"],
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds="6")
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Da Big Hunt",
+        ork_units=[mounted],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, mounted, 10.0, 10.0)
+    _deploy_unit(game, enemy, 30.0, 10.0)
+    enemy.models[0].set_location(11.5, 10.0, 0.0, 0.0)
+    _set_phase(game, phase_name="CHARGE_PHASE", current_player_index=0)
+    game.event_system.publish("phase_start", player=ork_player, phase=game.phase)
+
+    game.event_system.publish("unit_move_ended", unit=mounted, action="charge")
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008869003", fallback_name="UNSTOPPABLE MOMENTUM")
+    pending = _pending_reaction_by_name(ork_player, strat_name)
+    assert pending is not None
+    assert enemy in list(pending.get("enemy_candidates") or [])
+
+    cp_before = int(ork_player.command_points or 0)
+    before_wounds = int(enemy.models[0].wounds or 0)
+    with patch("warhammer40k_ai.rules.stratagems_orks.dice_module.get_roll", return_value=4):
+        ok = ork_player.stratagems.use(
+            str(pending.get("stratagem", "") or strat_name),
+            unit=mounted,
+            enemy_unit=enemy,
+            dequeue=True,
+        )
+    assert ok is True
+    assert int(ork_player.command_points or 0) == cp_before - 1
+    assert int(before_wounds - int(enemy.models[0].wounds or 0)) == 1
+
+
+def test_krunchin_descent_queues_and_deals_mortal_wounds_after_charge_end():
+    stormboyz = _make_unit(
+        "Stormboyz",
+        keywords=["ORKS", "INFANTRY", "STORMBOYZ"],
+        faction_keywords=["ORKS"],
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds="6")
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Taktikal Brigade",
+        ork_units=[stormboyz],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, stormboyz, 10.0, 10.0)
+    _deploy_unit(game, enemy, 11.5, 10.0)
+    _set_phase(game, phase_name="CHARGE_PHASE", current_player_index=0)
+    game.event_system.publish("phase_start", player=ork_player, phase=game.phase)
+
+    game.event_system.publish("unit_move_ended", unit=stormboyz, action="charge")
+
+    strat_name = _stratagem_name_by_id(ork_player, "000009796005", fallback_name="KRUNCHIN' DESCENT")
+    pending = _pending_reaction_by_name(ork_player, strat_name)
+    assert pending is not None
+    assert enemy in list(pending.get("enemy_candidates") or [])
+
+    cp_before = int(ork_player.command_points or 0)
+    before_wounds = int(enemy.models[0].wounds or 0)
+    with patch("warhammer40k_ai.rules.stratagems_orks.dice_module.get_roll", return_value=4):
+        ok = ork_player.stratagems.use(
+            str(pending.get("stratagem", "") or strat_name),
+            unit=stormboyz,
+            enemy_unit=enemy,
+            dequeue=True,
+        )
+    assert ok is True
+    assert int(ork_player.command_points or 0) == cp_before - 1
+    assert int(before_wounds - int(enemy.models[0].wounds or 0)) == 1
+
+
+def test_charge_end_mortal_wound_stratagems_reject_wrong_phase():
+    nobz = _make_unit(
+        "Nobz",
+        keywords=["ORKS", "INFANTRY", "NOBZ"],
+        faction_keywords=["ORKS"],
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Bully Boyz",
+        ork_units=[nobz],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, nobz, 10.0, 10.0)
+    _deploy_unit(game, enemy, 11.5, 10.0)
+    _set_phase(game, phase_name="COMMAND_PHASE", current_player_index=0)
+    nobz.round_state.charged_this_round = True
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008886005", fallback_name="CRUSHING IMPACT")
+    assert ork_player.stratagems.use(
+        strat_name,
+        unit=nobz,
+        enemy_unit=enemy,
+        action="charge",
+        phase_name="Command phase",
+    ) is False
+
+
+def test_crushing_impact_rejects_wrong_unit_type():
+    boyz = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Bully Boyz",
+        ork_units=[boyz],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, boyz, 10.0, 10.0)
+    _deploy_unit(game, enemy, 11.5, 10.0)
+    _set_phase(game, phase_name="CHARGE_PHASE", current_player_index=0)
+    boyz.round_state.charged_this_round = True
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008886005", fallback_name="CRUSHING IMPACT")
+    assert ork_player.stratagems.use(
+        strat_name,
+        unit=boyz,
+        enemy_unit=enemy,
+        action="charge",
+        phase_name="Charge phase",
+    ) is False
+
+
+def test_unstoppable_momentum_rejects_when_no_enemy_within_engagement_range():
+    mounted = _make_unit(
+        "Squighog Boyz",
+        keywords=["ORKS", "MOUNTED", "BEAST SNAGGA"],
+        faction_keywords=["ORKS"],
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Da Big Hunt",
+        ork_units=[mounted],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, mounted, 10.0, 10.0)
+    _deploy_unit(game, enemy, 24.0, 10.0)
+    _set_phase(game, phase_name="CHARGE_PHASE", current_player_index=0)
+    mounted.round_state.charged_this_round = True
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008869003", fallback_name="UNSTOPPABLE MOMENTUM")
+    assert ork_player.stratagems.use(
+        strat_name,
+        unit=mounted,
+        enemy_unit=enemy,
+        action="charge",
+        phase_name="Charge phase",
+    ) is False
+
+
+def test_unstoppable_momentum_enforces_mortal_wound_cap_of_six():
+    mounted = _make_unit(
+        "Squighog Boyz",
+        keywords=["ORKS", "MOUNTED", "BEAST SNAGGA"],
+        faction_keywords=["ORKS"],
+        model_count=10,
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds="20")
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Da Big Hunt",
+        ork_units=[mounted],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, mounted, 10.0, 10.0)
+    _deploy_unit(game, enemy, 30.0, 10.0)
+    enemy.models[0].set_location(11.5, 10.0, 0.0, 0.0)
+    _set_phase(game, phase_name="CHARGE_PHASE", current_player_index=0)
+    game.event_system.publish("phase_start", player=ork_player, phase=game.phase)
+
+    game.event_system.publish("unit_move_ended", unit=mounted, action="charge")
+    strat_name = _stratagem_name_by_id(ork_player, "000008869003", fallback_name="UNSTOPPABLE MOMENTUM")
+    pending = _pending_reaction_by_name(ork_player, strat_name)
+    assert pending is not None
+
+    before_wounds = int(enemy.models[0].wounds or 0)
+    with patch("warhammer40k_ai.rules.stratagems_orks.dice_module.get_roll", return_value=6):
+        ok = ork_player.stratagems.use(
+            str(pending.get("stratagem", "") or strat_name),
+            unit=mounted,
+            enemy_unit=enemy,
+            dequeue=True,
+        )
+    assert ok is True
+    assert int(before_wounds - int(enemy.models[0].wounds or 0)) == 6
+
+
+def test_crushing_impact_uses_waaagh_threshold_4plus_when_active():
+    def _run_case(*, waaagh_active: bool) -> int:
+        nobz = _make_unit(
+            "Nobz",
+            keywords=["ORKS", "INFANTRY", "NOBZ"],
+            faction_keywords=["ORKS"],
+        )
+        enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds="6")
+        game, ork_player, _enemy_player, ork_army = _build_game(
+            detachment="Bully Boyz",
+            ork_units=[nobz],
+            enemy_units=[enemy],
+        )
+        _deploy_unit(game, nobz, 10.0, 10.0)
+        _deploy_unit(game, enemy, 11.5, 10.0)
+        _set_phase(game, phase_name="CHARGE_PHASE", current_player_index=0)
+        nobz.round_state.charged_this_round = True
+
+        if waaagh_active:
+            ork_army.waaagh.active = True
+            ork_army.waaagh.active_scope = "all"
+            ork_army.waaagh.used_this_battle = True
+
+        strat_name = _stratagem_name_by_id(ork_player, "000008886005", fallback_name="CRUSHING IMPACT")
+        before_wounds = int(enemy.models[0].wounds or 0)
+        with patch("warhammer40k_ai.rules.stratagems_orks.dice_module.get_roll", return_value=4):
+            ok = ork_player.stratagems.use(
+                strat_name,
+                unit=nobz,
+                enemy_unit=enemy,
+                action="charge",
+                phase_name="Charge phase",
+            )
+        assert ok is True
+        return int(before_wounds - int(enemy.models[0].wounds or 0))
+
+    assert _run_case(waaagh_active=False) == 0
+    assert _run_case(waaagh_active=True) == 1
+
+
+def test_unstoppable_momentum_adds_three_dice_against_prey():
+    mounted = _make_unit(
+        "Squighog Boyz",
+        keywords=["ORKS", "MOUNTED", "BEAST SNAGGA"],
+        faction_keywords=["ORKS"],
+        model_count=1,
+    )
+    prey = _make_unit("Enemy Tank", keywords=["VEHICLE"], faction_keywords=["ENEMY"], wounds="10")
+    game, ork_player, _enemy_player, ork_army = _build_game(
+        detachment="Da Big Hunt",
+        ork_units=[mounted],
+        enemy_units=[prey],
+    )
+    _deploy_unit(game, mounted, 10.0, 10.0)
+    _deploy_unit(game, prey, 11.5, 10.0)
+    _set_phase(game, phase_name="CHARGE_PHASE", current_player_index=0)
+    mounted.round_state.charged_this_round = True
+
+    mgr = ork_army.orks_detachments
+    mgr.da_big_hunt_prey_unit_id = str(get_entity_id(prey) or "")
+    mgr.da_big_hunt_prey_turn = int(game.turn)
+    mgr.da_big_hunt_prey_owner_id = str(ork_player.id)
+
+    with patch("warhammer40k_ai.rules.stratagems_orks.dice_module.get_roll", side_effect=[4, 4, 4, 4]) as roll_mock:
+        result = ork_player.stratagems._orks_resolve_charge_end_mortal_wounds(
+            source_unit=mounted,
+            enemy_unit=prey,
+            count_mode="unit_models",
+            success_on=4,
+            success_on_if_waaagh=None,
+            extra_dice_if_prey=3,
+            max_mortal_wounds=6,
+        )
+    assert int(result.get("roll_count", 0) or 0) == 4
+    assert int(result.get("extra_dice", 0) or 0) == 3
+    assert int(result.get("mortal_wounds", 0) or 0) == 4
+    assert int(roll_mock.call_count) == 4
+
+
+def test_crushing_impact_counts_only_models_within_engagement_range_of_selected_enemy():
+    nobz = _make_unit(
+        "Nobz",
+        keywords=["ORKS", "INFANTRY", "NOBZ"],
+        faction_keywords=["ORKS"],
+        model_count=3,
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds="10")
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Bully Boyz",
+        ork_units=[nobz],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, nobz, 10.0, 10.0)
+    _deploy_unit(game, enemy, 30.0, 10.0)
+    enemy.models[0].set_location(10.5, 10.0, 0.0, 0.0)
+    _set_phase(game, phase_name="CHARGE_PHASE", current_player_index=0)
+    nobz.round_state.charged_this_round = True
+
+    nobz.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    nobz.models[1].set_location(15.0, 10.0, 0.0, 0.0)
+    nobz.models[2].set_location(20.0, 10.0, 0.0, 0.0)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000008886005", fallback_name="CRUSHING IMPACT")
+    before_wounds = int(enemy.models[0].wounds or 0)
+    with patch("warhammer40k_ai.rules.stratagems_orks.dice_module.get_roll", return_value=5) as roll_mock:
+        ok = ork_player.stratagems.use(
+            strat_name,
+            unit=nobz,
+            enemy_unit=enemy,
+            action="charge",
+            phase_name="Charge phase",
+        )
+    assert ok is True
+    assert int(roll_mock.call_count) == 1
+    assert int(before_wounds - int(enemy.models[0].wounds or 0)) == 1
+
+
+def test_krunchin_descent_counts_only_models_within_engagement_range_of_selected_enemy():
+    stormboyz = _make_unit(
+        "Stormboyz",
+        keywords=["ORKS", "INFANTRY", "STORMBOYZ"],
+        faction_keywords=["ORKS"],
+        model_count=3,
+    )
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"], wounds="10")
+    game, ork_player, _enemy_player, _ork_army = _build_game(
+        detachment="Taktikal Brigade",
+        ork_units=[stormboyz],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, stormboyz, 10.0, 10.0)
+    _deploy_unit(game, enemy, 30.0, 10.0)
+    enemy.models[0].set_location(10.5, 10.0, 0.0, 0.0)
+    _set_phase(game, phase_name="CHARGE_PHASE", current_player_index=0)
+    stormboyz.round_state.charged_this_round = True
+
+    stormboyz.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    stormboyz.models[1].set_location(15.0, 10.0, 0.0, 0.0)
+    stormboyz.models[2].set_location(20.0, 10.0, 0.0, 0.0)
+
+    strat_name = _stratagem_name_by_id(ork_player, "000009796005", fallback_name="KRUNCHIN' DESCENT")
+    before_wounds = int(enemy.models[0].wounds or 0)
+    with patch("warhammer40k_ai.rules.stratagems_orks.dice_module.get_roll", return_value=4) as roll_mock:
+        ok = ork_player.stratagems.use(
+            strat_name,
+            unit=stormboyz,
+            enemy_unit=enemy,
+            action="charge",
+            phase_name="Charge phase",
+        )
+    assert ok is True
+    assert int(roll_mock.call_count) == 1
+    assert int(before_wounds - int(enemy.models[0].wounds or 0)) == 1
+
+
 def test_drag_it_down_applies_crit_threshold_only_against_prey():
     attacker = _make_unit(
         "Beast Snagga Boyz",
@@ -1532,7 +1936,9 @@ def test_orks_temp_buff_stratagem_descriptors_are_registered():
     expected = {
         "000009992003": "GET STUCK IN, LADZ!",
         "000008886002": "ARMED TO DATEEF",
+        "000008886005": "CRUSHING IMPACT",
         "000008869002": "DRAG IT DOWN",
+        "000008869003": "UNSTOPPABLE MOMENTUM",
         "000008869004": "DAT ONE'S EVEN BIGGA!",
         "000008869007": "INSTINCTIVE HUNTERS",
         "000010713002": "BASH AND GRAB",
@@ -1548,6 +1954,7 @@ def test_orks_temp_buff_stratagem_descriptors_are_registered():
         "000009992006": "SPESHUL SHELLS",
         "000009796002": "DAT'S OURS",
         "000009796004": "TAKTIKAL RETREAT",
+        "000009796005": "KRUNCHIN' DESCENT",
         "000009796007": "DED SNEAKY",
         "000009992004": "HUGE SHOW-OFFS",
         "000009796003": "FIGHT PROPPA",

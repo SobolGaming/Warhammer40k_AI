@@ -260,10 +260,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "COME ON LADZ!",
     "GET STUCK IN, LADZ!",
     "ARMED TO DATEEF",
+    "CRUSHING IMPACT",
     "DRAG IT DOWN",
     "BASH AND GRAB",
     "GRAB AND BASH",
     "INSTINCTIVE HUNTERS",
+    "UNSTOPPABLE MOMENTUM",
     "DECK FRAGGERS",
     "ROLLING LOOT-HEAP",
     "BLITZA FIRE",
@@ -278,6 +280,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SPESHUL SHELLS",
     "DAT'S OURS",
     "DED SNEAKY",
+    "KRUNCHIN' DESCENT",
+    "KRUNCHIN’ DESCENT",
     "TAKTIKAL RETREAT",
     "HUGE SHOW-OFFS",
     "FIGHT PROPPA",
@@ -541,6 +545,10 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CAREEN!",
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
+    "CRUSHING IMPACT",
+    "UNSTOPPABLE MOMENTUM",
+    "KRUNCHIN' DESCENT",
+    "KRUNCHIN’ DESCENT",
     "INSTINCTIVE HUNTERS",
     "WHERE D'YA FINK YOU'RE GOING?",
     "WHERE D’YA FINK YOU’RE GOING?",
@@ -1590,6 +1598,10 @@ class StratagemManager(
             "ISHA\u2019S FURY",
             "WEAVING STRIDE",
             "CAVALCADE OF BLADES",
+            "CRUSHING IMPACT",
+            "UNSTOPPABLE MOMENTUM",
+            "KRUNCHIN' DESCENT",
+            "KRUNCHIN\u2019 DESCENT",
             "FOOLS' FLIGHT",
             "WHERE D'YA FINK YOU'RE GOING?",
             "KRUMP AND RUN",
@@ -4318,6 +4330,42 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Command phase, an active loot objective, and one eligible non-Gretchin ORKS unit within range"
             return result
+        if name_u == "CRUSHING IMPACT":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_charge_end_mortal_wound_source_candidates(
+                    target_matcher=self._orks_is_nobz_or_meganobz_unit,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Charge phase trigger after a Nobz or Meganobz unit ends a Charge move and an enemy unit in Engagement Range"
+            return result
+        if name_u == "UNSTOPPABLE MOMENTUM":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_charge_end_mortal_wound_source_candidates(
+                    target_matcher=self._orks_is_beast_snagga_mounted_unit,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Charge phase trigger after a Beast Snagga Mounted unit ends a Charge move and an enemy unit in Engagement Range"
+            return result
+        if name_u in {"KRUNCHIN' DESCENT", "KRUNCHIN’ DESCENT"}:
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_charge_end_mortal_wound_source_candidates(
+                    target_matcher=self._orks_is_stormboyz_unit,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Charge phase trigger after a STORMBOYZ unit ends a Charge move and an enemy unit in Engagement Range"
+            return result
         if name_u == "INSTINCTIVE HUNTERS":
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -4964,9 +5012,11 @@ class StratagemManager(
             "'ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
             "\u2019ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
             "GRAB AND BASH": "Target: non-GRETCHIN ORKS unit within range of the active loot objective; that unit counts as Waaagh-active until your next Command phase",
+            "CRUSHING IMPACT": "Target: NOBZ or MEGANOBZ unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per engaged model (5+, or 4+ if Waaagh-active, max 6 mortals)",
             "INSTINCTIVE HUNTERS": "Target: BEAST SNAGGA unit from your army that is not within Engagement Range at end of opponent's Fight phase; remove it and place it into Strategic Reserves",
             "STALKIN' TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
             "STALKIN\u2019 TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
+            "UNSTOPPABLE MOMENTUM": "Target: BEAST SNAGGA MOUNTED unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per model in your unit (plus 3D6 if target is your Prey), 4+ deals 1 mortal (max 6)",
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
             "EXTRA GUBBINZ": "Target: ORKS WALKER/GROTS VEHICLE unit selected by the attacking enemy's targets (excluding TITANIC)",
             "WHERE D'YA FINK YOU'RE GOING?": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",
@@ -4976,6 +5026,8 @@ class StratagemManager(
             "MORE GITZ OVER 'ERE!": "Target: SPEED FREEKS unit within 9\" of enemy that just ended a Normal/Advance/Fall Back move and not in Engagement Range",
             "MORE GITZ OVER ’ERE!": "Target: SPEED FREEKS unit within 9\" of enemy that just ended a Normal/Advance/Fall Back move and not in Engagement Range",
             "DED SNEAKY": "Target: KOMMANDOS or STORMBOYZ unit from your army that is not within Engagement Range at end of opponent's Fight phase; remove it and place it into Strategic Reserves",
+            "KRUNCHIN' DESCENT": "Target: STORMBOYZ unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per engaged model (4+ deals 1 mortal, max 6)",
+            "KRUNCHIN’ DESCENT": "Target: STORMBOYZ unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per engaged model (4+ deals 1 mortal, max 6)",
             "PROFANE SYMBIOSIS": "Target: CHAOS KNIGHTS unit (not Empowered)",
             "CORRUPTING TAINT": "Target: CHAOS KNIGHTS CHARACTER; select objective you control",
             "UNLEASH BALEFIRE": "Target: CHAOS KNIGHTS unit (not yet shot)",
