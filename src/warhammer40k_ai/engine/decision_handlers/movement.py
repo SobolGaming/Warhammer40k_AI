@@ -2060,6 +2060,8 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             member.mark_unhinged_vengeance_used(game)
         if movement_type == "blistering_assault":
             member.mark_blistering_assault_used(game)
+        if movement_type == "aggressive_leader_beast":
+            member.mark_aggressive_leader_beast_used(game)
     if movement_type == "reactive":
         _clear_battle_focus_reactive_flags(unit)
         if str(ctx.get("reactive_move_kind", "") or "").strip() in (

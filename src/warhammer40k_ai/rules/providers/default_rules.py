@@ -157,6 +157,8 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_horde_move"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_blistering_assault"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_blistering_assault"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_aggressive_leader_beast"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_aggressive_leader_beast"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_frenzy"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_integrated_tactics"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_orks_try_dat_button"),

@@ -4129,8 +4129,10 @@ class GameReactiveDecisionsMixin:
                 "blood_surge",
                 "brazen_fury",
                 "horde_move",
+                "aggressive_leader_beast",
                 "unhinged_vengeance",
                 "blistering_assault",
+                "retro_thrusters",
                 "librarius_prescience",
                 "gleaming_pinions",
                 "martial_philosopher",
@@ -4356,6 +4358,25 @@ class GameReactiveDecisionsMixin:
                     source=source,
                 )
                 return
+            if kind == "aggressive_leader_beast":
+                if not unit.can_aggressive_leader_beast(game=self, game_map=getattr(self, "map", None)):
+                    return
+                max_distance = int(self.roll_aggressive_leader_beast_distance(unit) or 0)
+                if max_distance <= 0:
+                    return
+                attacker_unit_id = str(ctx.get("reactive_move_attacker_unit_id") or "")
+                attacker_unit = self._resolve_unit_by_id(attacker_unit_id)
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    attacker_unit=attacker_unit,
+                    max_distance=max_distance,
+                    kind=kind,
+                    movement_type=movement_type or "aggressive_leader_beast",
+                    source=source,
+                    allow_engagement_range=True,
+                )
+                return
             if kind == "unhinged_vengeance":
                 if not unit.can_unhinged_vengeance(game=self, game_map=getattr(self, "map", None)):
                     return
@@ -4392,6 +4413,53 @@ class GameReactiveDecisionsMixin:
                     movement_type=movement_type or "blistering_assault",
                     source=source,
                     allow_engagement_range=True,
+                )
+                return
+            if kind == "retro_thrusters":
+                selected_mode = str(payload.get("retro_thrusters_mode", "") or "").strip().lower()
+                if selected_mode == "normal_move":
+                    try:
+                        max_distance = int(ctx.get("retro_thrusters_normal_max_distance", 0) or 0)
+                    except Exception:
+                        max_distance = 0
+                    if max_distance <= 0:
+                        try:
+                            normal_expr = str(ctx.get("retro_thrusters_normal_move_expr", "") or "").strip().upper()
+                        except Exception:
+                            normal_expr = ""
+                        if normal_expr:
+                            try:
+                                if normal_expr.startswith("D"):
+                                    max_distance = int(get_roll(normal_expr) or 0)
+                                else:
+                                    max_distance = int(normal_expr)
+                            except Exception:
+                                max_distance = 0
+                    if max_distance <= 0:
+                        return
+                    selected_movement_type = "move"
+                elif selected_mode == "fall_back_move":
+                    try:
+                        max_distance = int(ctx.get("retro_thrusters_fall_back_max_distance", 0) or 0)
+                    except Exception:
+                        max_distance = 0
+                    if max_distance <= 0:
+                        try:
+                            max_distance = int(float(getattr(unit, "movement", 0) or 0))
+                        except Exception:
+                            max_distance = 0
+                    if max_distance <= 0:
+                        return
+                    selected_movement_type = "fall_back"
+                else:
+                    return
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    max_distance=int(max_distance),
+                    kind=kind,
+                    movement_type=selected_movement_type,
+                    source=source,
                 )
                 return
             if kind == "librarius_prescience":

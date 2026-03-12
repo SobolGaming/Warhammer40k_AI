@@ -1018,11 +1018,19 @@ class DatasheetWargearMixin:
             return s
 
         entries = (loadout or "").replace('\u2019', "'").lower().split('.')
+        model_name_norm = _norm_item(model_name)
 
         def _parse_loadout_quantity(item_name: str) -> Tuple[int, str]:
-            if quantity_match := re.match(r"^(\d+) (.*)s$", item_name.strip()):
-                return int(quantity_match.group(1)), quantity_match.group(2)
-            return 1, item_name.strip()
+            token = str(item_name or "").strip()
+            if not token:
+                return 1, ""
+            if quantity_match := re.match(r"^(?P<count>\d+)\s+(?P<item>.+)$", token):
+                count = int(quantity_match.group("count"))
+                parsed_item = str(quantity_match.group("item") or "").strip()
+                if count != 1 and parsed_item.endswith("s"):
+                    parsed_item = parsed_item[:-1].strip()
+                return count, parsed_item
+            return 1, token
 
         starting_wargear = []
         optional_wargear: List[str] = []
@@ -1076,14 +1084,14 @@ class DatasheetWargearMixin:
                 if " and " in actors[0]:
                     actors = actors[0].split(" and ")
                 for actor in actors:
-                    if model_name and model_name == actor.strip():
+                    if model_name_norm and model_name_norm == _norm_item(actor.strip()):
                         for item_name in match.group(2).split(";"):
                             quantity, item_name = _parse_loadout_quantity(item_name)
                             _record_item(item_name, quantity)
                     else:
                         continue
             elif match := re.match(r"^(?:the|every) (.*) model is equipped with: (.*)$", entry):
-                if model_name and model_name == match.group(1).strip():
+                if model_name_norm and model_name_norm == _norm_item(match.group(1).strip()):
                     for item_name in match.group(2).split(";"):
                         quantity, item_name = _parse_loadout_quantity(item_name)
                         _record_item(item_name, quantity)
@@ -1094,7 +1102,7 @@ class DatasheetWargearMixin:
                 if " and " in actors[0]:
                     actors = actors[0].split(" and ")
                 for actor in actors:
-                    if model_name and model_name == actor.strip():
+                    if model_name_norm and model_name_norm == _norm_item(actor.strip()):
                         for item_name in match.group(2).split(";"):
                             quantity, item_name = _parse_loadout_quantity(item_name)
                             _record_item(item_name, quantity)
@@ -1105,7 +1113,7 @@ class DatasheetWargearMixin:
                 if " and " in actors[0]:
                     actors = actors[0].split(" and ")
                 for actor in actors:
-                    if model_name and model_name == actor.strip():
+                    if model_name_norm and model_name_norm == _norm_item(actor.strip()):
                         for item_name in match.group(2).split(";"):
                             quantity, item_name = _parse_loadout_quantity(item_name)
                             _record_item(item_name, quantity)
@@ -2066,6 +2074,93 @@ class DatasheetWargearMixin:
                     model.optional_wargear.append(str(ow))
                 except Exception:
                     continue
+        self._apply_optional_wargear_weapon_grants(model)
+
+    def _apply_optional_wargear_weapon_grants(self, model: Model) -> None:
+        """Materialize weapon grants from optional wargear abilities onto the bearer model."""
+        if model is None:
+            return
+        optional_items = [str(v or "").strip() for v in list(getattr(model, "optional_wargear", []) or []) if str(v or "").strip()]
+        if not optional_items:
+            return
+
+        wargear_by_name: dict[str, Wargear] = {}
+        for wargear in list(getattr(self, "possible_wargear", []) or []):
+            if wargear is None:
+                continue
+            key = self._norm_wargear_name(getattr(wargear, "name", "") or "")
+            if key and key not in wargear_by_name:
+                wargear_by_name[key] = wargear
+        if not wargear_by_name:
+            return
+
+        ability_by_name: dict[str, Ability] = {}
+        for ability in list(getattr(self, "possible_abilities", []) or []):
+            if ability is None:
+                continue
+            try:
+                atype = str(getattr(ability, "type", "") or "").lower()
+            except Exception:
+                atype = ""
+            if "wargear" not in atype:
+                continue
+            key = self._norm_wargear_name(str(getattr(ability, "name", "") or ""))
+            if key and key not in ability_by_name:
+                ability_by_name[key] = ability
+        if not ability_by_name:
+            return
+
+        desired_counts: dict[str, int] = {}
+        for optional_name in optional_items:
+            ability = ability_by_name.get(self._norm_wargear_name(optional_name))
+            if ability is None:
+                continue
+            text = self._normalize_rules_text(str(getattr(ability, "description", "") or getattr(ability, "name", "") or ""))
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            for match in re.finditer(
+                r"(?:the\s+)?bearer\s+is\s+equipped\s+with\s+(?P<count>\d+|one)\s+(?P<weapon>[a-z0-9][a-z0-9 '\-]+?)(?:\.|,|;| and |$)",
+                norm,
+                flags=re.IGNORECASE,
+            ):
+                count_token = str(match.group("count") or "").strip().lower()
+                if not count_token:
+                    continue
+                if count_token == "one":
+                    count = 1
+                else:
+                    try:
+                        count = int(count_token)
+                    except Exception:
+                        count = 0
+                if count <= 0:
+                    continue
+                weapon_key = self._norm_wargear_name(str(match.group("weapon") or ""))
+                if weapon_key not in wargear_by_name:
+                    continue
+                desired_counts[weapon_key] = int(desired_counts.get(weapon_key, 0) or 0) + int(count)
+
+        if not desired_counts:
+            return
+
+        current_counts: dict[str, int] = {}
+        for wargear in list(getattr(model, "wargear", []) or []):
+            key = self._norm_wargear_name(getattr(wargear, "name", "") or "")
+            if not key:
+                continue
+            current_counts[key] = int(current_counts.get(key, 0) or 0) + 1
+
+        for weapon_key, desired in desired_counts.items():
+            template = wargear_by_name.get(weapon_key)
+            if template is None:
+                continue
+            current = int(current_counts.get(weapon_key, 0) or 0)
+            missing = max(0, int(desired) - current)
+            for _ in range(missing):
+                model.wargear.append(template.clone())
+            if missing > 0:
+                current_counts[weapon_key] = int(current + missing)
 
     def add_wargear(self, wargear: List[Wargear]=[], model_name: str=None) -> None:
         for model_instance in self.models:
@@ -2098,6 +2193,7 @@ class DatasheetWargearMixin:
                         model_instance.optional_wargear.append(str(ow))
                     except Exception:
                         continue
+            self._apply_optional_wargear_weapon_grants(model_instance)
         if wargear:
             self.validate_wargear_selection()
 

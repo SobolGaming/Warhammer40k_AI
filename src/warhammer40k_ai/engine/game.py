@@ -256,6 +256,8 @@ class Game(
         self._unhinged_vengeance_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         # Tyranids: Blistering Assault snapshots (attacker -> {target: total_alive_wounds_before_attacks})
         self._blistering_assault_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
+        # Tyranids: Aggressive Leader-beast snapshots (attacker -> {target: model_count_before_attacks})
+        self._aggressive_leader_beast_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         # CSM: Guns Blazing trigger snapshots (attacker -> [reactive shooters])
         self._guns_blazing_shooting_targets: Dict['Unit', List['Unit']] = {}
         # World Eaters: Frenzy (Helbrute) target snapshots (attacker -> [targets])
@@ -11905,6 +11907,21 @@ class Game(
         if player is not None:
             append_dice(player, f"Blistering Assault roll: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
         return int(max_distance)
+
+    def roll_aggressive_leader_beast_distance(self, unit: 'Unit') -> int:
+        """Roll Aggressive Leader-beast distance (D6)."""
+        if unit is None:
+            return 0
+        from ..utility.dice import get_roll
+        base_roll = int(get_roll("D6") or 0)
+        from ..utility.event_bus import append_dice
+        player = getattr(unit.get_parent_army(), "player", None)
+        if player is not None:
+            append_dice(
+                player,
+                f"Aggressive Leader-beast roll: {int(base_roll or 0)}\" for {unit.name}",
+            )
+        return int(base_roll or 0)
 
     def roll_brazen_fury_distance(self, unit: 'Unit') -> int:
         """Roll Brazen Fury distance (D6)."""

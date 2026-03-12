@@ -3592,6 +3592,63 @@ class PositioningMixin:
                     if token and token not in candidates:
                         candidates.append(token)
             return candidates
+
+        def _parse_model_keyword_requirement(condition: str) -> str:
+            cond = self._normalize_rules_text(condition or "")
+            if not cond:
+                return ""
+            cond = cond.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            patterns = (
+                r"(?:that|the attacking|an attacking|this)\s+model\s+has\s+(?:the\s+)?(?P<keyword>[a-z0-9 \-]+?)\s+keyword",
+                r"models?\s+with\s+the\s+(?P<keyword>[a-z0-9 \-]+?)\s+keyword",
+            )
+            for pat in patterns:
+                match = re.search(pat, cond, flags=re.IGNORECASE)
+                if not match:
+                    continue
+                keyword = self._normalize_keyword_phrase(str(match.group("keyword") or ""))
+                if keyword:
+                    return keyword
+            return ""
+
+        def _condition_rule_specs(condition_raw: str) -> list[dict]:
+            cond = self._normalize_rules_text(condition_raw or "")
+            if not cond:
+                return [{}]
+            cond = cond.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            parts = [cond]
+            if re.search(r"\bor\b", cond):
+                parts = [str(p or "").strip() for p in re.split(r"\bor\b", cond) if str(p or "").strip()]
+            specs: list[dict] = []
+            for part in parts:
+                if not part:
+                    continue
+                spec: dict = {}
+                parsed = False
+                requires_closest_eligible_target = bool(
+                    re.search(r"closest\s+(?:eligible\s+)?(?:enemy\s+)?(?:target|unit)", part)
+                )
+                if requires_closest_eligible_target:
+                    parsed = True
+                    spec["requires_closest_eligible_target"] = True
+                    closest_clause = re.sub(
+                        r"(?:the\s+)?closest\s+(?:eligible\s+)?(?:enemy\s+)?(?:target|unit)",
+                        " ",
+                        part,
+                    )
+                    closest_clause = re.sub(r"\b(?:that|is|are|an?|enemy|unit|target)\b", " ", closest_clause)
+                    closest_clause = re.sub(r"\s+", " ", closest_clause).strip()
+                    closest_require_keywords = _parse_target_keywords(closest_clause)
+                    if closest_require_keywords:
+                        spec["closest_require_keywords_any"] = closest_require_keywords
+                required_model_keyword = _parse_model_keyword_requirement(part)
+                if required_model_keyword:
+                    parsed = True
+                    spec["requires_model_keyword"] = required_model_keyword
+                if parsed:
+                    specs.append(spec)
+            return specs
+
         for name, desc in entries:
             text = self._normalize_rules_text(desc or name or "")
             if not text:
@@ -3639,10 +3696,26 @@ class PositioningMixin:
                 )
             for match in self._ATTACK_TARGET_KEYWORD_BONUS_RE.finditer(text):
                 target_raw = str(match.groupdict().get("target_clause") or match.groupdict().get("target") or "").strip()
+                target_low = self._normalize_rules_text(target_raw).replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                requires_closest_eligible_target = bool(
+                    re.search(r"closest\s+(?:eligible\s+)?(?:enemy\s+)?(?:target|unit)", target_low)
+                )
+                closest_require_keywords: tuple[str, ...] = ()
+                if requires_closest_eligible_target:
+                    closest_clause = re.sub(
+                        r"(?:the\s+)?closest\s+(?:eligible\s+)?(?:enemy\s+)?(?:target|unit)",
+                        " ",
+                        target_low,
+                    )
+                    closest_clause = re.sub(r"\b(?:that|is|are|an?|enemy|unit|target)\b", " ", closest_clause)
+                    closest_clause = re.sub(r"\s+", " ", closest_clause).strip()
+                    closest_require_keywords = _parse_target_keywords(closest_clause)
                 target_keywords = _parse_target_keywords(target_raw)
+                if requires_closest_eligible_target:
+                    target_keywords = ()
                 if (not target_keywords) and ("afflicted" in target_raw.lower()):
                     target_keywords = ("AFFLICTED",)
-                if not target_keywords:
+                if not target_keywords and not requires_closest_eligible_target:
                     continue
                 atype = str(match.group("atype") or "").strip().lower()
                 if atype not in ("melee", "ranged"):
@@ -3652,18 +3725,68 @@ class PositioningMixin:
                 if not bonus_keywords:
                     continue
                 for bonus_kw in bonus_keywords:
-                    key = ("target_kw", atype, bonus_kw.strip().lower(), target_keywords)
+                    key = (
+                        "target_kw",
+                        atype,
+                        bonus_kw.strip().lower(),
+                        target_keywords,
+                        requires_closest_eligible_target,
+                        closest_require_keywords,
+                    )
                     if key in seen:
                         continue
                     seen.add(key)
-                    rules.append(
-                        {
+                    entry = {
+                        "attack_type": atype,
+                        "keyword": bonus_kw.strip(),
+                        "source": str(name or "Ability"),
+                        "target_keywords_any": target_keywords,
+                    }
+                    if requires_closest_eligible_target:
+                        entry["requires_closest_eligible_target"] = True
+                        if closest_require_keywords:
+                            entry["closest_require_keywords_any"] = closest_require_keywords
+                    rules.append(entry)
+            for match in self._ATTACK_CONDITIONAL_KEYWORD_BONUS_RE.finditer(text):
+                condition_raw = str(match.group("condition") or "").strip()
+                condition_specs = _condition_rule_specs(condition_raw)
+                if not condition_specs:
+                    continue
+                atype = str(match.group("atype") or "").strip().lower()
+                if atype not in ("melee", "ranged"):
+                    atype = "any"
+                kw_section = str(match.group("kw_section") or "")
+                bonus_keywords = _parse_bonus_keywords(kw_section)
+                if not bonus_keywords:
+                    continue
+                for cond_spec in condition_specs:
+                    for bonus_kw in bonus_keywords:
+                        key = (
+                            "conditional_kw",
+                            atype,
+                            bonus_kw.strip().lower(),
+                            bool(cond_spec.get("requires_closest_eligible_target", False)),
+                            tuple(cond_spec.get("closest_require_keywords_any", ()) or ()),
+                            str(cond_spec.get("requires_model_keyword", "") or "").strip().lower(),
+                        )
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        entry = {
                             "attack_type": atype,
                             "keyword": bonus_kw.strip(),
                             "source": str(name or "Ability"),
-                            "target_keywords_any": target_keywords,
+                            "target_keywords_any": (),
                         }
-                    )
+                        if bool(cond_spec.get("requires_closest_eligible_target", False)):
+                            entry["requires_closest_eligible_target"] = True
+                            closest_require_keywords = tuple(cond_spec.get("closest_require_keywords_any", ()) or ())
+                            if closest_require_keywords:
+                                entry["closest_require_keywords_any"] = closest_require_keywords
+                        required_model_keyword = str(cond_spec.get("requires_model_keyword", "") or "").strip()
+                        if required_model_keyword:
+                            entry["requires_model_keyword"] = required_model_keyword
+                        rules.append(entry)
             for match in self._ATTACK_ALWAYS_KEYWORD_BONUS_RE.finditer(text):
                 atype = str(match.group("atype") or "").strip().lower()
                 if atype not in ("melee", "ranged"):
@@ -5638,6 +5761,7 @@ class PositioningMixin:
         target=None,
         attack_type: Optional[str] = None,
         model: Optional['Model'] = None,
+        weapon_profile=None,
         game_map=None,
     ) -> dict:
         """
@@ -5909,9 +6033,55 @@ class PositioningMixin:
                         contains_required_model = bool(contains_named_fn(required_contains_keyword))
                 if not contains_required_model:
                     continue
+            required_model_keyword = str(rule.get("requires_model_keyword", "") or "").strip()
+            if required_model_keyword:
+                if model is None:
+                    continue
+                has_required_model_keyword = False
+                try:
+                    has_required_model_keyword = bool(model.has_keyword(required_model_keyword.upper()))
+                except Exception:
+                    try:
+                        has_required_model_keyword = bool(model.has_any_keyword(required_model_keyword.upper()))
+                    except Exception:
+                        has_required_model_keyword = False
+                if not has_required_model_keyword:
+                    continue
             target_keywords_any = tuple(rule.get("target_keywords_any") or ())
             if target_keywords_any:
                 if not any(_target_has_keyword(k) for k in target_keywords_any):
+                    continue
+            if bool(rule.get("requires_closest_eligible_target", False)):
+                if model is None or weapon_profile is None:
+                    continue
+                gm = game_map
+                if gm is None:
+                    try:
+                        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                    except Exception:
+                        army = None
+                    player = getattr(army, "player", None) if army is not None else None
+                    game = getattr(player, "game", None) if player is not None else None
+                    gm = getattr(game, "map", None) if game is not None else None
+                if gm is None:
+                    continue
+                req_keywords = {
+                    str(token or "").strip().upper()
+                    for token in list(rule.get("closest_require_keywords_any", []) or [])
+                    if str(token or "").strip()
+                }
+                is_closest = getattr(self, "is_target_closest_eligible", None)
+                if not callable(is_closest):
+                    continue
+                if not bool(
+                    is_closest(
+                        model,
+                        weapon_profile,
+                        target,
+                        gm,
+                        require_keywords=req_keywords if req_keywords else None,
+                    )
+                ):
                     continue
             filtered.append(rule)
         if not filtered:
@@ -5986,6 +6156,20 @@ class PositioningMixin:
                     if callable(contains_named_fn):
                         contains_required_model = bool(contains_named_fn(required_contains_keyword))
                 if not contains_required_model:
+                    continue
+            required_model_keyword = str(rule.get("requires_model_keyword", "") or "").strip()
+            if required_model_keyword:
+                if model is None:
+                    continue
+                has_required_model_keyword = False
+                try:
+                    has_required_model_keyword = bool(model.has_keyword(required_model_keyword.upper()))
+                except Exception:
+                    try:
+                        has_required_model_keyword = bool(model.has_any_keyword(required_model_keyword.upper()))
+                    except Exception:
+                        has_required_model_keyword = False
+                if not has_required_model_keyword:
                     continue
             target_keywords_any = tuple(rule.get("target_keywords_any") or ())
             if target_keywords_any:

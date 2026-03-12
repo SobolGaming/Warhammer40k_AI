@@ -9327,6 +9327,16 @@ class WargearProfile:
         if attack_is_ranged and isinstance(ftgg_guided_bonus, dict):
             _apply_keyword_bonus(ftgg_guided_bonus, sustained_label="For the Greater Good: Coordinated Exploitation")
 
+        game_map = None
+        try:
+            source_unit = getattr(attacker, "parent_unit", None)
+            source_army = source_unit.get_parent_army() if source_unit is not None else None
+            source_player = getattr(source_army, "player", None) if source_army is not None else None
+            source_game = getattr(source_player, "game", None) if source_player is not None else None
+            game_map = getattr(source_game, "map", None) if source_game is not None else None
+        except Exception:
+            game_map = None
+
         try:
             unit = getattr(attacker, "parent_unit", None)
             attack_type = "melee" if attack_is_melee else "ranged" if attack_is_ranged else "any"
@@ -9336,6 +9346,8 @@ class WargearProfile:
                     target=target,
                     attack_type=attack_type,
                     model=attacker,
+                    weapon_profile=self,
+                    game_map=game_map,
                 )
                 _apply_keyword_bonus(bonus, sustained_label="Objective Target", heavy_label="Objective Target", lance_label="Objective Target")
             within_half_range = None

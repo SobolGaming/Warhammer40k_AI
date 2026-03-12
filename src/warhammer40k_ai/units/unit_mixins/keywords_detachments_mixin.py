@@ -2319,6 +2319,12 @@ class KeywordsDetachmentsMixin:
             patterns=["blistering assault"],
         )
 
+    def has_aggressive_leader_beast(self) -> bool:
+        return self._attached_unit_has_ability_patterns(
+            cache_key="aggressive_leader_beast",
+            patterns=["aggressive leader-beast", "aggressive leader beast"],
+        )
+
     def get_resource_transmutation_model(self):
         models = list(self._iter_attached_models_with_ability_patterns(["resource transmutation"]) or [])
         if not models:
@@ -10458,6 +10464,9 @@ class KeywordsDetachmentsMixin:
     def _blistering_assault_phase_key(self, game=None) -> str:
         return self._blood_surge_phase_key(game)
 
+    def _aggressive_leader_beast_phase_key(self, game=None) -> str:
+        return self._blood_surge_phase_key(game)
+
     def _guns_blazing_turn_key(self, game=None) -> str:
         if game is None:
             try:
@@ -10545,6 +10554,20 @@ class KeywordsDetachmentsMixin:
         if not isinstance(sr, dict):
             sr = {}
         sr["blistering_assault_used_phase_key"] = self._blistering_assault_phase_key(game)
+        self.special_rules = sr
+
+    def aggressive_leader_beast_used_this_phase(self, game=None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._aggressive_leader_beast_phase_key(game)
+        return str(sr.get("aggressive_leader_beast_used_phase_key", "")) == key
+
+    def mark_aggressive_leader_beast_used(self, game=None) -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["aggressive_leader_beast_used_phase_key"] = self._aggressive_leader_beast_phase_key(game)
         self.special_rules = sr
 
     def geomantic_hunters_uses(self) -> int:
@@ -10679,6 +10702,54 @@ class KeywordsDetachmentsMixin:
                 return False
         except Exception:
             pass
+        return True
+
+    def can_aggressive_leader_beast(self, game=None, game_map=None) -> bool:
+        if not self.has_aggressive_leader_beast():
+            return False
+        if not self.is_alive() or not getattr(self, "deployed", False):
+            return False
+        if self.is_battle_shocked():
+            return False
+        if self.aggressive_leader_beast_used_this_phase(game):
+            return False
+        try:
+            if self.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(self, "is_embarked", False)) or bool(getattr(self, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        if game is not None:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if "SHOOT" not in phase_name:
+                return False
+            try:
+                current_player = game.get_current_player()
+            except Exception:
+                current_player = None
+            owner_player = None
+            try:
+                owner_player = self.get_parent_army().player
+            except Exception:
+                owner_player = None
+            if current_player is not None and owner_player is not None and current_player is owner_player:
+                return False
+        if game_map is None:
+            try:
+                game_map = getattr(game, "map", None)
+            except Exception:
+                game_map = None
+        if game_map is not None:
+            try:
+                for enemy in game_map.get_enemy_units(self):
+                    if game_map.is_within_engagement_range(self, enemy):
+                        return False
+            except Exception:
+                pass
         return True
 
     def can_horde_move(self, game=None, game_map=None) -> bool:

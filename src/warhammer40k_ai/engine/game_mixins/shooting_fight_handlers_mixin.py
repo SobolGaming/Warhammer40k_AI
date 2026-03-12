@@ -13491,6 +13491,112 @@ class GameShootingFightHandlersMixin:
                 allow_engagement_range=True,
             )
 
+    def _on_shooting_targets_selected_aggressive_leader_beast(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        attacker_army = attacker_root.get_parent_army() if attacker_root is not None else None
+        snapshots = getattr(self, "_aggressive_leader_beast_shooting_snapshot", None)
+        if not isinstance(snapshots, dict):
+            snapshots = {}
+        snapshot = dict(snapshots.get(attacking_unit, {}) or {})
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                root = target.get_attached_unit_root()
+            except Exception:
+                root = target
+            if root is None:
+                continue
+            if attacker_army is not None and root.get_parent_army() is attacker_army:
+                continue
+            try:
+                if not root.has_aggressive_leader_beast():
+                    continue
+            except Exception:
+                continue
+            can_fn = getattr(root, "can_aggressive_leader_beast", None)
+            if callable(can_fn):
+                if not can_fn(game=self, game_map=getattr(self, "map", None)):
+                    continue
+            count = int(self._alive_model_count(root) or 0)
+            if count <= 0:
+                continue
+            snapshot[root] = int(count)
+        if snapshot:
+            if not hasattr(self, "_aggressive_leader_beast_shooting_snapshot") or not isinstance(
+                getattr(self, "_aggressive_leader_beast_shooting_snapshot", None), dict
+            ):
+                self._aggressive_leader_beast_shooting_snapshot = {}
+            self._aggressive_leader_beast_shooting_snapshot[attacking_unit] = snapshot
+
+    def _on_unit_shooting_resolved_aggressive_leader_beast(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        snapshots = getattr(self, "_aggressive_leader_beast_shooting_snapshot", None)
+        if not isinstance(snapshots, dict):
+            return
+        snapshot = snapshots.pop(attacker_unit, {})
+        if not snapshot:
+            return
+        if not self.is_shooting_phase():
+            return
+        current_player = self.get_current_player()
+        for target, before in snapshot.items():
+            if target is None:
+                continue
+            try:
+                target_player = target.get_parent_army().player
+            except Exception:
+                target_player = None
+            if target_player is None or target_player is current_player:
+                continue
+            after = int(self._alive_model_count(target) or 0)
+            if after >= int(before or 0):
+                continue
+            can_fn = getattr(target, "can_aggressive_leader_beast", None)
+            if callable(can_fn):
+                if not can_fn(game=self, game_map=getattr(self, "map", None)):
+                    continue
+            player = target_player
+            is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+            es = getattr(self, "event_system", None)
+            subs = getattr(es, "subscribers", None) if es is not None else None
+            has_sub = bool(isinstance(subs, dict) and subs.get("aggressive_leader_beast_prompt"))
+            if is_human and es is not None:
+                es.publish(
+                    "aggressive_leader_beast_prompt",
+                    player=player,
+                    unit=target,
+                    attacker_unit=attacker_unit,
+                    game=self,
+                )
+                if has_sub:
+                    continue
+            msg = (
+                "Aggressive Leader-beast: Roll D6 and make a Surge move up to that distance.\n"
+                "The move must end as close as possible to the closest non-AIRCRAFT enemy unit, "
+                "can end within Engagement Range, and cannot be made while Battle-shocked or already within Engagement Range."
+            )
+            self._queue_reactive_move_confirmation(
+                player=player,
+                unit=target,
+                kind="aggressive_leader_beast",
+                movement_type="aggressive_leader_beast",
+                source="Aggressive Leader-beast",
+                message=msg,
+                attacker_unit=attacker_unit,
+                allow_engagement_range=True,
+            )
+
     def _on_shooting_targets_selected_frenzy(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return

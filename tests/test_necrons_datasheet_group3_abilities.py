@@ -754,7 +754,7 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
         ability = {
             "name": "Infectious Murder-madness (Aura)",
             "description": (
-                "While a friendly NECRONS unit (excluding Titanic units) is within 6\" of this model, each time a model "
+                "While a friendly NECRONS unit (excluding Monster and Titanic units) is within 6\" of this model, each time a model "
                 "in that unit makes an attack, if that model has the Destroyer Cult keyword or that enemy unit is the "
                 "closest eligible target, that attack has the [SUSTAINED HITS 1] ability."
             ),
@@ -764,6 +764,8 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
         nekrosor = _make_unit("Nekrosor Ammentar", abilities=[ability], keywords=["NECRONS", "CHARACTER", "INFANTRY"])
         necron_unit = _make_unit("Necron Unit", keywords=["NECRONS", "INFANTRY"])
         destroyer_unit = _make_unit("Destroyer Unit", keywords=["NECRONS", "INFANTRY", "DESTROYER CULT"])
+        monster_unit = _make_unit("Monster Unit", keywords=["NECRONS", "MONSTER"])
+        titanic_unit = _make_unit("Titanic Unit", keywords=["NECRONS", "TITANIC"])
         close_enemy = _make_unit("Close Enemy", keywords=["INFANTRY"])
         far_enemy = _make_unit("Far Enemy", keywords=["INFANTRY"])
 
@@ -776,21 +778,23 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
         game.add_player(player_one)
         game.add_player(player_two)
 
-        for unit in (nekrosor, necron_unit, destroyer_unit):
+        for unit in (nekrosor, necron_unit, destroyer_unit, monster_unit, titanic_unit):
             army_one.add_unit(unit)
         for unit in (close_enemy, far_enemy):
             army_two.add_unit(unit)
 
-        for unit in (nekrosor, necron_unit, destroyer_unit, close_enemy, far_enemy):
+        for unit in (nekrosor, necron_unit, destroyer_unit, monster_unit, titanic_unit, close_enemy, far_enemy):
             unit.deployed = True
             unit.reserve_status = "deployed"
 
         nekrosor.models[0].set_location(0.0, 0.0, 0.0, 0.0)
         necron_unit.models[0].set_location(3.0, 0.0, 0.0, 0.0)
         destroyer_unit.models[0].set_location(4.0, 0.0, 0.0, 0.0)
+        monster_unit.models[0].set_location(5.0, 0.0, 0.0, 0.0)
+        titanic_unit.models[0].set_location(5.5, 0.0, 0.0, 0.0)
         close_enemy.models[0].set_location(10.0, 0.0, 0.0, 0.0)
         far_enemy.models[0].set_location(18.0, 0.0, 0.0, 0.0)
-        game.map.units = [nekrosor, necron_unit, destroyer_unit, close_enemy, far_enemy]
+        game.map.units = [nekrosor, necron_unit, destroyer_unit, monster_unit, titanic_unit, close_enemy, far_enemy]
         game.current_player_index = 0
         game.rebuild_entity_registry()
 
@@ -821,6 +825,14 @@ class TestNecronsDatasheetGroup3Abilities(unittest.TestCase):
             destroyer_attack = {"_aura_attack_mods": SimpleNamespace(hit=0, hit_reasons=())}
             profile._hit_target_with_tracking(far_enemy, destroyer_unit.models[0], destroyer_attack, log_roll=False)
             self.assertEqual(int(destroyer_attack.get("sustained_hit", 0) or 0), 1)
+
+            monster_attack = {"_aura_attack_mods": SimpleNamespace(hit=0, hit_reasons=())}
+            profile._hit_target_with_tracking(close_enemy, monster_unit.models[0], monster_attack, log_roll=False)
+            self.assertEqual(int(monster_attack.get("sustained_hit", 0) or 0), 0)
+
+            titanic_attack = {"_aura_attack_mods": SimpleNamespace(hit=0, hit_reasons=())}
+            profile._hit_target_with_tracking(close_enemy, titanic_unit.models[0], titanic_attack, log_roll=False)
+            self.assertEqual(int(titanic_attack.get("sustained_hit", 0) or 0), 0)
 
     def test_prophet_of_destruction_queues_target_and_applies_wound_reroll_ones_until_phase_end(self):
         from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game

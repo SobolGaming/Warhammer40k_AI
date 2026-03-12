@@ -117,6 +117,14 @@ import pytest
             ),
         ),
         (
+            "Infectious Murder-madness (Aura)",
+            (
+                "While a friendly NECRONS unit (excluding Monster and Titanic units) is within 6\" of this model, each time "
+                "a model in that unit makes an attack, if that model has the Destroyer Cult keyword or that enemy unit is "
+                "the closest eligible target, that attack has the [SUSTAINED HITS 1] ability."
+            ),
+        ),
+        (
             "Plasmacyte",
             (
                 "Once per battle for each Plasmacyte this unit has, when this unit is selected to fight, you can use this "

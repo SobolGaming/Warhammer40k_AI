@@ -3013,7 +3013,9 @@ class Unit(
         re.IGNORECASE,
     )
     _BEARER_UNIT_SUSTAINED_HITS_RE = re.compile(
-        r"(?:weapons?\s+equipped\s+by\s+models\s+in|models\s+in)\s+the\s+bearer'?s\s+unit.*?\bsustained\s+hits\b\s*(\d+)",
+        r"(?:weapons?\s+equipped\s+by\s+models\s+in|models\s+in)\s+"
+        r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+model'?s\s+unit).*?"
+        r"\bsustained\s+hits\b\s*(\d+)",
         re.IGNORECASE,
     )
     _BEARER_UNIT_IGNORES_COVER_RE = re.compile(
@@ -3180,6 +3182,12 @@ class Unit(
     _ATTACK_TARGET_KEYWORD_BONUS_RE = re.compile(
         r"each\s+time\s+(?:this\s+(?:model|unit)|a\s+model\s+in\s+(?:this\s+unit|that\s+unit|the\s+bearer'?s\s+unit))\s+makes\s+"
         r"(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+that\s+targets\s+(?P<target_clause>.+?)(?:,|\s+)that\s+attack\s+has\s+"
+        r"(?P<kw_section>.+?)\s+abilit",
+        re.IGNORECASE,
+    )
+    _ATTACK_CONDITIONAL_KEYWORD_BONUS_RE = re.compile(
+        r"each\s+time\s+(?:this\s+(?:model|unit)|a\s+model\s+in\s+(?:this\s+unit|that\s+unit|the\s+bearer'?s\s+unit))\s+makes\s+"
+        r"(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack(?:,|\s+)\s*if\s+(?P<condition>.+?)(?:,|\s+)that\s+attack\s+has\s+"
         r"(?P<kw_section>.+?)\s+abilit",
         re.IGNORECASE,
     )
@@ -3533,7 +3541,8 @@ class Unit(
         re.IGNORECASE,
     )
     _SNARLING_PROTECTOR_HEROIC_RE = re.compile(
-        r"you can target this (?:model|unit) with the heroic intervention stratagem for 0cp and can do so even if you have already "
+        r"you can target (?:this (?:model|unit)|this model s unit|this models unit|the bearer s unit|that unit) "
+        r"with the heroic intervention stratagem for 0cp and can do so even if you have already "
         r"(?:targeted (?:a )?(?:different|another) unit with that stratagem|used that stratagem on (?:a )?(?:different|another) unit) "
         r"this (?:phase|turn)",
         re.IGNORECASE,
@@ -4344,6 +4353,12 @@ class Unit(
         r"at the end of the fight phase if this unit was eligible to fight this phase and is not within engagement range of one or more enemy units "
         r"it can make a normal move of up to d3 3 "
         r"otherwise if this unit was eligible to fight this phase this unit can make a fall back move of up to d3 3",
+        re.IGNORECASE,
+    )
+    _END_OF_FIGHT_NORMAL_OR_FALL_BACK_MOVE_RE = re.compile(
+        r"at the end of the fight phase(?: if this unit was eligible to fight this phase)? "
+        r"this unit can either make a normal move of up to (?P<normal>d\d+(?: \d+)?|\d+) "
+        r"or a fall back move",
         re.IGNORECASE,
     )
     _END_OF_FIGHT_ENGAGED_FALL_BACK_MOVE_RE = re.compile(

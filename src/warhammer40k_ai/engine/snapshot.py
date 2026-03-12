@@ -1156,6 +1156,9 @@ def _serialize_game_state(game: Game) -> dict:
         "_horde_move_shooting_snapshot": encode_refs(getattr(game, "_horde_move_shooting_snapshot", {}) or {}),
         "_unhinged_vengeance_shooting_snapshot": encode_refs(getattr(game, "_unhinged_vengeance_shooting_snapshot", {}) or {}),
         "_blistering_assault_shooting_snapshot": encode_refs(getattr(game, "_blistering_assault_shooting_snapshot", {}) or {}),
+        "_aggressive_leader_beast_shooting_snapshot": encode_refs(
+            getattr(game, "_aggressive_leader_beast_shooting_snapshot", {}) or {}
+        ),
         "_frenzy_shooting_targets": encode_refs(getattr(game, "_frenzy_shooting_targets", {}) or {}),
         "_frenzy_fight_targets": encode_refs(getattr(game, "_frenzy_fight_targets", {}) or {}),
         "_pain_parasite_shooting_snapshot": encode_refs(getattr(game, "_pain_parasite_shooting_snapshot", {}) or {}),
@@ -1230,6 +1233,10 @@ def _apply_game_state(game: Game, data: dict, registry: EntityRegistry) -> None:
     game._horde_move_shooting_snapshot = decode_refs(data.get("_horde_move_shooting_snapshot", {}) or {}, registry)
     game._unhinged_vengeance_shooting_snapshot = decode_refs(data.get("_unhinged_vengeance_shooting_snapshot", {}) or {}, registry)
     game._blistering_assault_shooting_snapshot = decode_refs(data.get("_blistering_assault_shooting_snapshot", {}) or {}, registry)
+    game._aggressive_leader_beast_shooting_snapshot = decode_refs(
+        data.get("_aggressive_leader_beast_shooting_snapshot", {}) or {},
+        registry,
+    )
     game._frenzy_shooting_targets = decode_refs(data.get("_frenzy_shooting_targets", {}) or {}, registry)
     game._frenzy_fight_targets = decode_refs(data.get("_frenzy_fight_targets", {}) or {}, registry)
     game._pain_parasite_shooting_snapshot = decode_refs(data.get("_pain_parasite_shooting_snapshot", {}) or {}, registry)

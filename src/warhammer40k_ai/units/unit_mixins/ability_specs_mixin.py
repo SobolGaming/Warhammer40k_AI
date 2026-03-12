@@ -6406,6 +6406,9 @@ class AbilitySpecsMixin:
             - engaged_only: bool
             - engaged_movement_type: str
             - non_engaged_movement_type: str
+            - select_movement_mode: bool
+            - normal_move_expr: str
+            - fall_back_move_expr: str
         """
         cache_key = "unit_end_of_fight_raid_and_run_specs"
         if cache_key in getattr(self, "_ability_cache", {}):
@@ -6438,6 +6441,27 @@ class AbilitySpecsMixin:
                         "engaged_only": False,
                         "engaged_movement_type": "fall_back",
                         "non_engaged_movement_type": "move",
+                    }
+                )
+                continue
+
+            normal_or_fall_back = self._END_OF_FIGHT_NORMAL_OR_FALL_BACK_MOVE_RE.search(normalized)
+            if normal_or_fall_back:
+                normal_expr = str(normal_or_fall_back.group("normal") or "").strip().upper().replace(" ", "+")
+                if not normal_expr:
+                    continue
+                key = f"{source.lower()}:{normal_expr}:normal_or_fall_back"
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "requires_eligible_to_fight": False,
+                        "select_movement_mode": True,
+                        "normal_move_expr": normal_expr,
+                        "fall_back_move_expr": "M",
+                        "reactive_move_kind": "retro_thrusters",
                     }
                 )
                 continue

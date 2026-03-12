@@ -18903,10 +18903,28 @@ class GamePhaseHandlersMixin:
         if game_map is None:
             return
 
-        def _roll_move_expr(expr: str) -> int:
+        def _roll_move_expr(expr: str, unit_obj=None) -> int:
             token = str(expr or "").strip().upper().replace(" ", "")
             if not token:
                 return 0
+            if token == "M":
+                try:
+                    move_val = int(float(getattr(unit_obj, "movement", 0) or 0))
+                except Exception:
+                    move_val = 0
+                if move_val <= 0 and unit_obj is not None:
+                    try:
+                        models = list(getattr(unit_obj, "models", []) or [])
+                    except Exception:
+                        models = []
+                    for model in models:
+                        try:
+                            move_val = int(float(getattr(model, "movement", 0) or 0))
+                        except Exception:
+                            move_val = 0
+                        if move_val > 0:
+                            break
+                return int(max(0, move_val))
             if token == "D3+3":
                 return int(get_roll("D3") or 0) + 3
             if token == "D6":
@@ -18997,6 +19015,58 @@ class GamePhaseHandlersMixin:
                         continue
                     if bool(spec.get("not_engaged_only", False)) and engaged:
                         continue
+                    ability_name = str(spec.get("source", "") or "Raid and Run").strip() or "Raid and Run"
+                    move_kind = str(spec.get("reactive_move_kind", "raid_and_run") or "raid_and_run").strip()
+                    if bool(spec.get("select_movement_mode", False)):
+                        normal_expr = str(spec.get("normal_move_expr", "") or "").strip() or "6"
+                        fall_back_expr = str(spec.get("fall_back_move_expr", "") or "").strip() or "M"
+                        options = [DecisionOption.create("Skip", payload={"choice": False})]
+                        if not engaged:
+                            options.append(
+                                DecisionOption.create(
+                                    f"Normal Move ({normal_expr})",
+                                    payload={"choice": True, "retro_thrusters_mode": "normal_move"},
+                                )
+                            )
+                        if engaged:
+                            options.append(
+                                DecisionOption.create(
+                                    "Fall Back Move",
+                                    payload={"choice": True, "retro_thrusters_mode": "fall_back_move"},
+                                )
+                            )
+                        # No eligible mode option; nothing to queue.
+                        if len(options) <= 1:
+                            continue
+                        mode_lines = []
+                        if not engaged:
+                            mode_lines.append(f"- Normal move up to {normal_expr}\".")
+                        if engaged:
+                            mode_lines.append("- Fall Back move.")
+                        message = (
+                            f"{ability_name}: choose one option:\n"
+                            + "\n".join(mode_lines)
+                        )
+                        request = DecisionRequest.create(
+                            DECISION_CONFIRM_YES_NO,
+                            ability_name,
+                            player_id=getattr(p, "id", None),
+                            options=options,
+                            context={
+                                **self._reactive_move_context(
+                                    kind=move_kind or "retro_thrusters",
+                                    unit_id=root_id,
+                                    movement_type="retro_thrusters",
+                                    source=ability_name,
+                                ),
+                                "message": message,
+                                "retro_thrusters_normal_move_expr": normal_expr,
+                                "retro_thrusters_fall_back_move_expr": fall_back_expr,
+                                "retro_thrusters_engaged": bool(engaged),
+                            },
+                        )
+                        self.request_decision(request)
+                        continue
                     if engaged:
                         movement_type = str(spec.get("engaged_movement_type", "fall_back") or "").strip().lower()
                     else:
@@ -19004,11 +19074,9 @@ class GamePhaseHandlersMixin:
                     if movement_type not in {"move", "fall_back"}:
                         continue
                     move_expr = str(spec.get("move_expr", "") or "D3+3").strip() or "D3+3"
-                    max_distance = _roll_move_expr(move_expr)
+                    max_distance = _roll_move_expr(move_expr, root)
                     if max_distance <= 0:
                         continue
-                    ability_name = str(spec.get("source", "") or "Raid and Run").strip() or "Raid and Run"
-                    move_kind = str(spec.get("reactive_move_kind", "raid_and_run") or "raid_and_run").strip()
                     self._queue_reactive_move_movement_decision(
                         player=p,
                         unit=root,

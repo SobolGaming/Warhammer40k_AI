@@ -5706,15 +5706,19 @@ def _necrons_named_datasheet_support(name: str, description: str, *, faction_id:
                 "Reinforcements step: optional selection of a friendly NECRONS INFANTRY unit (in reserves or on battlefield), with setup constrained to wholly within 6\" of this model and outside Engagement Range of enemy models; selected unit cannot charge this turn.",
             )
     if name_norm == "infectious murder madness aura":
+        has_supported_exclusion_clause = (
+            "while a friendly necrons unit excluding monster and titanic units is within 6 of this model" in norm
+            or "while a friendly necrons unit excluding titanic units is within 6 of this model" in norm
+        )
         if (
-            "while a friendly necrons unit excluding titanic units is within 6 of this model" in norm
+            has_supported_exclusion_clause
             and "each time a model in that unit makes an attack" in norm
             and "if that model has the destroyer cult keyword or that enemy unit is the closest eligible target" in norm
             and "that attack has the sustained hits 1 ability" in norm
         ):
             return (
                 "Supported",
-                "Aura: friendly NECRONS units (excluding TITANIC) within 6\" gain [SUSTAINED HITS 1] on attacks when the attacking model has DESTROYER CULT or when targeting the closest eligible target.",
+                "Aura: friendly NECRONS units (excluding MONSTER and TITANIC) within 6\" gain [SUSTAINED HITS 1] on attacks when the attacking model has DESTROYER CULT or when targeting the closest eligible target.",
             )
     if name_norm == "prophet of destruction":
         if (
@@ -5772,6 +5776,86 @@ def _necrons_named_datasheet_support(name: str, description: str, *, faction_id:
     return None
 
 
+def _tau_named_datasheet_support(name: str, description: str, *, faction_id: str = "") -> Optional[Tuple[str, str]]:
+    fid = str(faction_id or "").strip().upper()
+    if fid and fid != "TAU":
+        return None
+    name_norm = _norm(name)
+    norm = _norm_rules_text(description)
+    if not name_norm or not norm:
+        return None
+    if name_norm == "exemplars of mont ka":
+        if (
+            "each time a model in this unit makes a ranged attack that targets the closest eligible target" in norm
+            and "that attack has the sustained hits 1 and ignores cover abilities" in norm
+        ):
+            return (
+                "Supported",
+                "Ranged attacks that target the closest eligible target gain Sustained Hits 1 and Ignores Cover.",
+            )
+    if name_norm == "retro thrusters":
+        move_match = re.fullmatch(
+            r"at the end of the fight phase this unit can either make a normal move of up to (?P<move>d6|\d+) or a fall back move",
+            norm,
+        )
+        if move_match:
+            move_text = str(move_match.group("move") or "").strip().upper()
+            move_note = f"up to {move_text}\"" if move_text else ""
+            return (
+                "Supported",
+                f"End of Fight phase: this unit can make a Normal move {move_note} or make a Fall Back move.".strip(),
+            )
+    if name_norm == "mv15 gun drone":
+        weapon_match = re.fullmatch(
+            r"the bearer is equipped with (?P<count>\d+|one) (?P<weapon>[a-z0-9][a-z0-9 \-']+)",
+            norm,
+        )
+        if weapon_match:
+            count_token = str(weapon_match.group("count") or "").strip().lower()
+            if count_token == "one":
+                count = 1
+            else:
+                try:
+                    count = int(count_token)
+                except Exception:
+                    count = 0
+            weapon = str(weapon_match.group("weapon") or "").strip()
+            if count > 0 and weapon:
+                return (
+                    "Supported",
+                    f"Wargear ability: bearer is equipped with {count} {weapon}.",
+                )
+    return None
+
+
+def _tyranids_named_datasheet_support(name: str, description: str, *, faction_id: str = "") -> Optional[Tuple[str, str]]:
+    fid = str(faction_id or "").strip().upper()
+    if fid and fid != "TYR":
+        return None
+    name_norm = _norm(name)
+    norm = _norm_rules_text(description)
+    if not name_norm or not norm:
+        return None
+    if name_norm == "aggressive leader beast":
+        if (
+            "in your opponents shooting phase" in norm
+            and "each time an enemy unit has shot" in norm
+            and "if any models from this unit were destroyed as a result of those attacks" in norm
+            and "this unit can make a surge move" in norm
+            and ("roll one d6" in norm or "roll a d6" in norm)
+            and "as close as possible to the closest enemy unit" in norm
+            and "excluding aircraft" in norm
+            and "within engagement range" in norm
+            and "battle shocked" in norm
+            and "one surge move per phase" in norm
+        ):
+            return (
+                "Supported",
+                "Opponent Shooting phase reaction: if one or more models are destroyed by enemy shooting, this unit can make a D6\" Surge move toward the closest non-AIRCRAFT enemy (can end in Engagement Range), once per phase and blocked while Battle-shocked or already in Engagement Range.",
+            )
+    return None
+
+
 def _classify_ability_base(
     name: str,
     description: str,
@@ -5816,6 +5900,12 @@ def _classify_ability_base(
     necrons_named_support = _necrons_named_datasheet_support(name, description, faction_id=faction_id)
     if necrons_named_support:
         return necrons_named_support
+    tau_named_support = _tau_named_datasheet_support(name, description, faction_id=faction_id)
+    if tau_named_support:
+        return tau_named_support
+    tyranids_named_support = _tyranids_named_datasheet_support(name, description, faction_id=faction_id)
+    if tyranids_named_support:
+        return tyranids_named_support
     closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
     monster_vehicle_reroll_support = _monster_vehicle_reroll_support(description)
     unit_contains_oc_support = _unit_contains_oc_support(description)
@@ -6991,7 +7081,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             notes.append(f"Unit gains a {m.group(1)}+ invulnerable save.")
 
     m = re.search(
-        r"models?\s+in\s+(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+have\s+the\s+deep\s+strike\s+ability",
+        r"models?\s+in\s+(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit|this\s+model'?s\s+unit)\s+have\s+the\s+deep\s+strike\s+ability",
         low,
         flags=re.IGNORECASE,
     )
@@ -7005,7 +7095,8 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             notes.append("Unit gains Deep Strike.")
 
     m = re.search(
-        r"(?:(melee|ranged)\s+)?weapons?\s+equipped\s+by\s+models\s+in\s+(?:the\s+bearer'?s\s+unit|that\s+unit).*?"
+        r"(?:(melee|ranged)\s+)?weapons?\s+equipped\s+by\s+models\s+in\s+"
+        r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+model'?s\s+unit).*?"
         r"sustained\s+hits\s*(\d+)",
         low,
         flags=re.IGNORECASE,
@@ -7015,7 +7106,8 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         val = m.group(2)
         has_lance = bool(
             re.search(
-                r"(?:(melee|ranged)\s+)?weapons?\s+equipped\s+by\s+models\s+in\s+(?:the\s+bearer'?s\s+unit|that\s+unit).*?lance",
+                r"(?:(melee|ranged)\s+)?weapons?\s+equipped\s+by\s+models\s+in\s+"
+                r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+model'?s\s+unit).*?lance",
                 low,
                 flags=re.IGNORECASE,
             )
@@ -7046,7 +7138,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
 
     m = re.search(
         r"(?:(melee|ranged)\s+)?(?:weapons?\s+equipped\s+by\s+models\s+in|attacks?\s+made\s+by\s+models\s+in)\s+"
-        r"(?:the\s+bearer'?s\s+unit|that\s+unit).*?ignores\s+cover",
+        r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+model'?s\s+unit).*?ignores\s+cover",
         low,
         flags=re.IGNORECASE,
     )
@@ -7143,7 +7235,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             normalized_sentences.append(norm_sentence)
 
     lead_prefix = r"(?:(?:while (?:this model|this unit|(?:the )?bearer) is leading a unit )?)"
-    unit_ref = r"(?:the )?(?:bearers|that|this|your) unit"
+    unit_ref = r"(?:the )?(?:bearers|that|this|your|this model s|this models) unit"
     patterns = [
         rf"{lead_prefix}add \d+ to charge rolls made for {unit_ref}",
         rf"{lead_prefix}add \d+ to advance and charge rolls made for {unit_ref}",
@@ -8364,8 +8456,8 @@ def _target_keyword_attack_keyword_support(description: str) -> Optional[Tuple[s
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
-    label = _attack_keyword_label_from_text(m.group("keyword") or "")
-    if not label:
+    labels = _attack_keyword_labels_from_text(m.group("keyword") or "")
+    if not labels:
         return None
     target_raw = str(m.group("target_clause") or "").strip()
     if not target_raw:
@@ -8391,7 +8483,13 @@ def _target_keyword_attack_keyword_support(description: str) -> Optional[Tuple[s
         scope_text = "Melee attacks"
     elif scope == "ranged":
         scope_text = "Ranged attacks"
-    note = f"{scope_text} vs {target_label} targets gain {label}."
+    if len(labels) == 1:
+        label_text = labels[0]
+    elif len(labels) == 2:
+        label_text = f"{labels[0]} and {labels[1]}"
+    else:
+        label_text = ", ".join(labels[:-1]) + f", and {labels[-1]}"
+    note = f"{scope_text} vs {target_label} targets gain {label_text}."
     return ("Supported", note)
 
 
@@ -8424,6 +8522,21 @@ def _attack_keyword_label_from_text(raw: str) -> Optional[str]:
             anti_kw = m_val.group(1).strip().upper().replace(" ", "-")
             return f"Anti-{anti_kw} {m_val.group(2)}+"
     return None
+
+
+def _attack_keyword_labels_from_text(raw: str) -> list[str]:
+    text = re.sub(r"\s+", " ", str(raw or "")).strip().lower()
+    if not text:
+        return []
+    labels: list[str] = []
+    parts = [p.strip() for p in re.split(r"\s+and\s+", text) if p.strip()]
+    if not parts:
+        parts = [text]
+    for part in parts:
+        label = _attack_keyword_label_from_text(part)
+        if label and label not in labels:
+            labels.append(label)
+    return labels
 
 
 def _half_range_attack_keyword_support(description: str) -> Optional[Tuple[str, str]]:
@@ -9524,6 +9637,8 @@ def _heroic_intervention_zero_cp_repeat_support(description: str) -> Optional[Tu
     if (
         "target this unit with the heroic intervention stratagem for 0cp" not in norm
         and "target this model with the heroic intervention stratagem for 0cp" not in norm
+        and "target this model s unit with the heroic intervention stratagem for 0cp" not in norm
+        and "target this models unit with the heroic intervention stratagem for 0cp" not in norm
         and "targeted with the heroic intervention stratagem for 0cp" not in norm
     ):
         return None
@@ -9539,7 +9654,15 @@ def _heroic_intervention_zero_cp_repeat_support(description: str) -> Optional[Tu
     )
     if not repeat_clause:
         return None
-    subject = "this model" if "target this model with the heroic intervention stratagem for 0cp" in norm else "this unit"
+    if "target this model with the heroic intervention stratagem for 0cp" in norm:
+        subject = "this model"
+    elif (
+        "target this model s unit with the heroic intervention stratagem for 0cp" in norm
+        or "target this models unit with the heroic intervention stratagem for 0cp" in norm
+    ):
+        subject = "this model's unit"
+    else:
+        subject = "this unit"
     return (
         "Supported",
         f"Heroic Intervention can target {subject} for 0CP even if that Stratagem already targeted a different unit this phase/turn.",
