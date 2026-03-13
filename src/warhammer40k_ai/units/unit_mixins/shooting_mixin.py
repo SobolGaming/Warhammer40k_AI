@@ -6,6 +6,59 @@ logger = logging.getLogger(__name__)
 
 
 class ShootingMixin:
+    def can_shoot_out_of_phase_at_target(self, target_unit, game_map: 'Map') -> bool:
+        """Return whether this unit can currently make any ranged attacks into the target out of phase."""
+        if target_unit is None or game_map is None:
+            return False
+        if not self.is_alive() or not target_unit.is_alive():
+            return False
+
+        if bool(getattr(getattr(self, "round_state", None), "action_locked_until_turn_end", False)):
+            army = self.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            allow_shoot_while_action = False
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            allow_seekers_companions = (
+                getattr(sm_mgr, "seekers_companions_allow_shoot_while_action", None)
+                if sm_mgr is not None
+                else None
+            )
+            if callable(allow_seekers_companions):
+                allow_shoot_while_action = bool(
+                    allow_seekers_companions(
+                        self,
+                        game=game,
+                    )
+                )
+            if not allow_shoot_while_action:
+                allow_fn = getattr(self, "allows_shoot_while_started_action_from_unit_contains_rule", None)
+                if callable(allow_fn):
+                    allow_shoot_while_action = bool(allow_fn(game=game))
+            if not allow_shoot_while_action:
+                return False
+
+        if bool(getattr(self, "_reserves_edge_touch_this_turn", False)) and bool(
+            getattr(self, "arrived_from_reserves_this_turn", False)
+        ):
+            return False
+
+        get_models = getattr(self, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(self, "models", []) or [])
+        for model in models:
+            if not bool(getattr(model, "is_alive", False)):
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if not wargear.is_ranged():
+                    continue
+                profiles = getattr(wargear, "profiles", {}) or {}
+                for profile in list(profiles.values()):
+                    if profile is None:
+                        continue
+                    validation = self._validate_shooting_declaration(profile, target_unit, [model], game_map)
+                    if bool(validation.get("valid", False)):
+                        return True
+        return False
+
     def execute_shooting_declarations(self, weapon_declarations: List[dict], game_map: 'Map', *, out_of_phase: bool = False) -> bool:
         """
         Execute shooting declarations according to Warhammer 40k rules.

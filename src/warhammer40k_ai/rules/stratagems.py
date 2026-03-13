@@ -273,6 +273,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DECK FRAGGERS",
     "ROLLING LOOT-HEAP",
     "BLITZA FIRE",
+    "CALL DAT DAKKA?",
     "DAKKASTORM",
     "LONG, UNCONTROLLED BURSTS",
     "SUPERFUELLED BOILER",
@@ -448,6 +449,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BERSERK FUGUE",
     "BLIND GRENADES",
     "BEAUTIFUL DEATH",
+    "CALL DAT DAKKA?",
     "CUT DOWN THE WEAK",
     "DEFIANT TO THE LAST",
     "DEATH FRENZY",
@@ -1667,6 +1669,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_ficklefire)
         if "PRAISE THE FALLEN" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_praise_the_fallen)
+        if "CALL DAT DAKKA?" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_call_dat_dakka)
         if "CATALYTIC STIMULUS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_catalytic_stimulus)
         if "VENGEFUL SURGE" in names:
@@ -1724,6 +1728,7 @@ class StratagemManager(
             "COUNTERFIRE DEFENCE SYSTEMS",
             "REACTIVE IMPACT DAMPENERS",
             "CAPRICIOUS REACTIONS",
+            "CALL DAT DAKKA?",
             "PRAISE THE FALLEN",
             "THE FOE FORESEEN",
             "BRAZEN CONTEMPT",
@@ -4994,6 +4999,7 @@ class StratagemManager(
             "SUFFERING AND SACRIFICE": "Target: ADEPTA SORORITAS INFANTRY or WALKER unit",
             "SPIRIT OF THE MARTYR": "Target: ADEPTA SORORITAS unit targeted in Fight phase (not fought)",
             "PRAISE THE FALLEN": "Target: ADEPTA SORORITAS unit that lost models to the enemy shooter",
+            "CALL DAT DAKKA?": "Target: ORKS unit that lost models to the enemy shooter; shoot the attacking enemy unit",
             "SANCTIFIED IMMOLATION": "Target: destroyed ADEPTA SORORITAS VEHICLE model with Deadly Demise",
             "DIVINE INTERVENTION": "Target: destroyed ADEPTA SORORITAS CHARACTER (not Saint Celestine); discard 1-3 Miracle dice",
             "BALEFUL BLESSING": "Target: HERETIC ASTARTES unit after a mortal wound is allocated to it",
@@ -9265,6 +9271,9 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_call_dat_dakka(self, attacker_unit=None, **_kwargs):
+        self._queue_orks_more_dakka_call_dat_dakka_reactions(attacker_unit=attacker_unit)
+
     def _on_unit_shooting_resolved_catalytic_stimulus(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         try:
             self._queue_emperors_children_court_shooting_resolved_reactions(
@@ -9581,6 +9590,10 @@ class StratagemManager(
             self._capture_hallowed_martyrs_praise_the_fallen_targets(
                 attacking_unit=attacking_unit,
                 target_units=target_units,
+            )
+            self._capture_orks_more_dakka_call_dat_dakka_targets(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
             )
         except Exception:
             raise

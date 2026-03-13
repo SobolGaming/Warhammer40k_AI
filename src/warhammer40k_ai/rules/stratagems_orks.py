@@ -1397,6 +1397,333 @@ class OrksStratagemMixin:
                 return True
         return False
 
+    def _orks_reactive_shooting_loss_snapshots(self) -> dict[str, dict[str, dict[str, dict[str, Any]]]]:
+        snapshots = getattr(self, "_orks_reactive_shooting_loss_snapshots_cache", None)
+        if isinstance(snapshots, dict):
+            return snapshots
+        snapshots = {}
+        setattr(self, "_orks_reactive_shooting_loss_snapshots_cache", snapshots)
+        return snapshots
+
+    def _orks_alive_model_count(self, unit: Any) -> int:
+        root = self._orks_root(unit)
+        if root is None:
+            return 0
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        count = 0
+        for model in models:
+            if bool(getattr(model, "is_alive", False)):
+                count += 1
+        return count
+
+    def _capture_orks_after_enemy_shoot_reactive_shooting_targets(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+        stratagem_names: tuple[str, ...],
+        detachment_check,
+        target_matcher=None,
+    ) -> None:
+        if attacking_unit is None or not bool(detachment_check()):
+            return
+        if self._orks_current_phase_label() != "shooting phase":
+            return
+        if self._orks_is_players_turn():
+            return
+        attacker_root = self._orks_root(attacking_unit)
+        if attacker_root is None or self._orks_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self._orks_get_available_stratagem_by_names(*stratagem_names)
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        attacker_key = str(self._attacker_unit_key(attacker_root) or "")
+        if not attacker_key:
+            return
+
+        snapshot_by_unit: dict[str, dict[str, Any]] = {}
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._orks_root(unit)
+            if root is None:
+                continue
+            uid = self._orks_sort_key(root)
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            if not self._orks_owned_by_player(root, self.player):
+                continue
+            if not self._orks_on_battlefield(root, require_targetable=False):
+                continue
+            if not self._is_orks_unit(root):
+                continue
+            if callable(target_matcher) and not bool(target_matcher(root)):
+                continue
+            models_before = self._orks_alive_model_count(root)
+            if models_before <= 0:
+                continue
+            snapshot_by_unit[uid] = {
+                "unit": root,
+                "models_before": models_before,
+            }
+        if not snapshot_by_unit:
+            return
+
+        stratagem_key = self._orks_normalize_name(str(getattr(stratagem, "name", "") or stratagem_names[0]))
+        snapshots = self._orks_reactive_shooting_loss_snapshots()
+        stratagem_snapshots = snapshots.setdefault(stratagem_key, {})
+        stratagem_snapshots[attacker_key] = snapshot_by_unit
+
+    def _queue_orks_after_enemy_shoot_reactive_shooting_reaction(
+        self,
+        *,
+        attacker_unit: Any,
+        stratagem_names: tuple[str, ...],
+        detachment_check,
+        target_matcher=None,
+    ) -> None:
+        if attacker_unit is None or not bool(detachment_check()):
+            return
+        if self._orks_current_phase_label() != "shooting phase":
+            return
+        if self._orks_is_players_turn():
+            return
+        attacker_root = self._orks_root(attacker_unit)
+        if attacker_root is None or self._orks_owned_by_player(attacker_root, self.player):
+            return
+        stratagem = self._orks_get_available_stratagem_by_names(*stratagem_names)
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        attacker_key = str(self._attacker_unit_key(attacker_root) or "")
+        if not attacker_key:
+            return
+
+        stratagem_key = self._orks_normalize_name(str(getattr(stratagem, "name", "") or stratagem_names[0]))
+        snapshots = self._orks_reactive_shooting_loss_snapshots()
+        stratagem_snapshots = snapshots.get(stratagem_key)
+        snapshot_by_unit: dict[str, dict[str, Any]] = {}
+        if isinstance(stratagem_snapshots, dict):
+            snapshot_by_unit = dict(stratagem_snapshots.pop(attacker_key, {}) or {})
+            if not stratagem_snapshots:
+                snapshots.pop(stratagem_key, None)
+        if not snapshot_by_unit:
+            return
+
+        can_shoot_fn = getattr(getattr(self, "game", None), "_setup_reactive_can_shoot_target", None)
+        if not callable(can_shoot_fn):
+            return
+
+        candidates: list[Any] = []
+        for uid in sorted(snapshot_by_unit):
+            entry = snapshot_by_unit.get(uid)
+            if not isinstance(entry, dict):
+                continue
+            root = self._orks_root(entry.get("unit"))
+            if root is None:
+                continue
+            if not self._orks_owned_by_player(root, self.player):
+                continue
+            if not self._orks_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_orks_unit(root):
+                continue
+            if callable(target_matcher) and not bool(target_matcher(root)):
+                continue
+            before = int(entry.get("models_before", 0) or 0)
+            if before <= 0:
+                continue
+            if self._orks_alive_model_count(root) >= before:
+                continue
+            if not can_shoot_fn(root, attacker_root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._orks_sort_key)
+        if not candidates:
+            return
+
+        stratagem_name = str(getattr(stratagem, "name", "") or stratagem_names[0]).strip()
+        if self._orks_reaction_already_queued(
+            event_name="unit_shooting_resolved",
+            stratagem_name=stratagem_name,
+            attacking_unit=attacker_root,
+        ):
+            return
+
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem_name,
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _orks_resolve_unit_shooting_resolved_reaction_context(
+        self,
+        stratagem_name: str,
+        **kwargs,
+    ) -> tuple[Any, Any, list[Any], str]:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        phase_name = str(kwargs.get("phase_name") or "").strip()
+
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+
+        normalized_name = self._orks_normalize_name(stratagem_name)
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if self._orks_normalize_name(str(reaction.get("stratagem", "") or "")) != normalized_name:
+                continue
+            if target_unit is None:
+                target_unit = reaction.get("target_unit") or reaction.get("unit")
+            if attacking_unit is None:
+                attacking_unit = reaction.get("enemy_unit") or reaction.get("attacking_unit") or reaction.get("attacker_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if not phase_name:
+                phase_name = str(reaction.get("phase_name") or "").strip()
+            if target_unit is None and len(candidates) == 1:
+                target_unit = candidates[0]
+            break
+
+        return target_unit, attacking_unit, candidates, phase_name
+
+    def _use_orks_after_enemy_shoot_reactive_shooting_stratagem(
+        self,
+        stratagem: Any,
+        *,
+        stratagem_name: str,
+        detachment_check,
+        target_matcher=None,
+        target_error: str = "",
+        **kwargs,
+    ) -> bool:
+        if not bool(detachment_check()):
+            return False
+
+        target_unit, attacking_unit, candidates, phase_name = self._orks_resolve_unit_shooting_resolved_reaction_context(
+            stratagem_name,
+            **kwargs,
+        )
+        if target_unit is None:
+            logger.error("ERROR: %s: no target unit provided", stratagem_name)
+            return False
+        if not candidates:
+            logger.error("ERROR: %s: no valid trigger context", stratagem_name)
+            return False
+
+        if self._orks_phase_label(phase_name or self._orks_current_phase_label()) != "shooting phase":
+            logger.error("ERROR: %s: wrong phase", stratagem_name)
+            return False
+        if self._orks_is_players_turn():
+            logger.error("ERROR: %s: not opponent's Shooting phase", stratagem_name)
+            return False
+
+        root = self._orks_root(target_unit)
+        attacker_root = self._orks_root(attacking_unit)
+        if root is None or attacker_root is None:
+            logger.error("ERROR: %s: missing attacker context", stratagem_name)
+            return False
+        if not self._orks_owned_by_player(root, self.player):
+            logger.error("ERROR: %s: target unit is not yours", stratagem_name)
+            return False
+        if not self._orks_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: %s: target must be on battlefield and targetable", stratagem_name)
+            return False
+        if not self._is_orks_unit(root):
+            logger.error("ERROR: %s: target must be an ORKS unit", stratagem_name)
+            return False
+        if callable(target_matcher) and not bool(target_matcher(root)):
+            logger.error("ERROR: %s: %s", stratagem_name, target_error or "target does not match required criteria")
+            return False
+        if candidates and not self._orks_unit_in_candidates(root, candidates):
+            logger.error("ERROR: %s: target was not selected by the trigger", stratagem_name)
+            return False
+        if self._orks_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: %s: attacker is not enemy", stratagem_name)
+            return False
+        if not self._orks_on_battlefield(attacker_root, require_targetable=False):
+            logger.error("ERROR: %s: attacker is not on the battlefield", stratagem_name)
+            return False
+
+        can_shoot_fn = getattr(getattr(self, "game", None), "_setup_reactive_can_shoot_target", None)
+        if not callable(can_shoot_fn):
+            logger.error("ERROR: %s: reactive shooting target validation unavailable", stratagem_name)
+            return False
+        if not can_shoot_fn(root, attacker_root):
+            logger.error("ERROR: %s: attacker is not an eligible target", stratagem_name)
+            return False
+
+        queue_fn = getattr(getattr(self, "game", None), "_queue_setup_reactive_shooting_decision", None)
+        if not callable(queue_fn):
+            logger.error("ERROR: %s: reactive shooting decision queue unavailable", stratagem_name)
+            return False
+
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=root,
+            unit=root,
+            enemy_unit=attacker_root,
+            attacking_unit=attacker_root,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: %s: cannot be used in current state", stratagem_name)
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        request = queue_fn(
+            player=self.player,
+            unit=root,
+            target_unit=attacker_root,
+            source=str(getattr(stratagem, "name", "") or stratagem_name),
+        )
+        if request is None:
+            logger.error("ERROR: %s: failed to queue reactive shooting decision", stratagem_name)
+            return False
+        request.context["call_dat_dakka_flow"] = True
+        request.context["call_dat_dakka_enemy_unit_id"] = self._orks_sort_key(attacker_root)
+        request.context["call_dat_dakka_unit_id"] = self._orks_sort_key(root)
+
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: %s: %s can shoot reactively into %s.",
+            stratagem_name,
+            getattr(root, "name", "Unit"),
+            getattr(attacker_root, "name", "Enemy"),
+        )
+        return True
+
+    def _capture_orks_more_dakka_call_dat_dakka_targets(self, *, attacking_unit: Any, target_units: list[Any]) -> None:
+        self._capture_orks_after_enemy_shoot_reactive_shooting_targets(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+            stratagem_names=("CALL DAT DAKKA?",),
+            detachment_check=self._is_more_dakka_detachment,
+        )
+
+    def _queue_orks_more_dakka_call_dat_dakka_reactions(self, *, attacker_unit: Any) -> None:
+        self._queue_orks_after_enemy_shoot_reactive_shooting_reaction(
+            attacker_unit=attacker_unit,
+            stratagem_names=("CALL DAT DAKKA?",),
+            detachment_check=self._is_more_dakka_detachment,
+        )
+
     def _orks_target_selected_reaction_candidates(self, target_units: list[Any], *, matcher) -> list[Any]:
         seen: set[str] = set()
         candidates: list[Any] = []
@@ -2679,6 +3006,8 @@ class OrksStratagemMixin:
             return self._use_orks_blitza_fire(stratagem, **kwargs)
         if name_u == "DAKKASTORM":
             return self._use_orks_dakkastorm(stratagem, **kwargs)
+        if name_u == "CALL DAT DAKKA?" or name_norm == "call dat dakka":
+            return self._use_orks_call_dat_dakka(stratagem, **kwargs)
         if name_u == "LONG, UNCONTROLLED BURSTS":
             return self._use_orks_long_uncontrolled_bursts(stratagem, **kwargs)
         if name_u == "SUPERFUELLED BOILER":
@@ -3506,6 +3835,14 @@ class OrksStratagemMixin:
         self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info("INFO: LONG, UNCONTROLLED BURSTS: %s gains Ignores Cover this phase.", getattr(root, "name", "Unit"))
         return True
+
+    def _use_orks_call_dat_dakka(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_after_enemy_shoot_reactive_shooting_stratagem(
+            stratagem,
+            stratagem_name="CALL DAT DAKKA?",
+            detachment_check=self._is_more_dakka_detachment,
+            **kwargs,
+        )
 
     def _use_orks_superfuelled_boiler(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_dread_mob_detachment():

@@ -15578,6 +15578,7 @@ def _stratagem_support(
         "BLITZA FIRE": "Shooting phase: selected SPEED FREEKS unit not yet selected to shoot gains [LETHAL HITS] on ranged weapons and scores Critical Hits on 5+ when targeting units within 9\" until end of phase.",
         "DAKKASTORM": "Shooting phase: selected SPEED FREEKS unit not yet selected to shoot gains [SUSTAINED HITS 1] on ranged weapons (or [SUSTAINED HITS 2] while targeting units within 9\") until end of phase.",
         "LONG UNCONTROLLED BURSTS": "Shooting phase: selected ORKS unit not yet selected to shoot gains [IGNORES COVER] on ranged weapons until end of phase.",
+        "CALL DAT DAKKA?": "Opponent Shooting phase reaction after an enemy unit finishes shooting: selected ORKS unit that lost one or more models to that attacker can make a reactive shooting attack into the attacking unit, but only if that enemy remains an eligible target.",
         "SUPERFUELLED BOILER": "Your Movement phase reaction after a friendly ORKS WALKER is selected to Advance: that unit gains Advance re-rolls and [ASSAULT] on ranged weapons until end of turn.",
         "BOARDIN' RUSH": "Your Movement phase: selected ORKS unit that has not been selected to move uses a fixed +6\" Advance distance (no Advance roll) until end of phase.",
         "ORKS IS STILL ORKS": "Fight phase: selected ORKS unit not yet selected to fight re-rolls Wound rolls of 1 on melee attacks, and can re-roll Wound rolls instead when targeting enemy units within range of an objective marker, until end of phase.",

@@ -867,6 +867,20 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         cp_cost=1,
         effect_params={"keyword": "IGNORES COVER"},
     ),
+    "000009992007": StratagemToolDescriptor(
+        stratagem_id="000009992007",
+        name="CALL DAT DAKKA?",
+        timing="opponent_shooting_phase_after_enemy_shoots_with_models_destroyed",
+        target="orks_unit_that_lost_models_to_attacker",
+        duration="immediate",
+        effect="reactive_shooting_at_attacker",
+        cp_cost=1,
+        effect_params={
+            "force_target_attacker": True,
+            "requires_destroyed_models": True,
+            "target_restriction": "attacking_enemy_unit_only",
+        },
+    ),
     "000008878003": StratagemToolDescriptor(
         stratagem_id="000008878003",
         name="SUPERFUELLED BOILER",

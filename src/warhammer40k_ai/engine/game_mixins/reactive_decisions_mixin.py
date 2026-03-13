@@ -8166,46 +8166,9 @@ class GameReactiveDecisionsMixin:
         game_map = getattr(self, "map", None)
         if game_map is None:
             return False
-        if bool(getattr(getattr(unit, "round_state", None), "action_locked_until_turn_end", False)):
-            allow_shoot_while_action = False
-            try:
-                army = unit.get_parent_army()
-                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
-                if sm_mgr is not None and getattr(sm_mgr, "seekers_companions_allow_shoot_while_action", None):
-                    allow_shoot_while_action = bool(
-                        sm_mgr.seekers_companions_allow_shoot_while_action(
-                            unit,
-                            game=self,
-                        )
-                    )
-            except Exception:
-                allow_shoot_while_action = False
-            if not allow_shoot_while_action:
-                try:
-                    allow_fn = getattr(unit, "allows_shoot_while_started_action_from_unit_contains_rule", None)
-                    if callable(allow_fn):
-                        allow_shoot_while_action = bool(allow_fn(game=self))
-                except Exception:
-                    allow_shoot_while_action = False
-            if not allow_shoot_while_action:
-                return False
-        if bool(getattr(unit, "_reserves_edge_touch_this_turn", False)) and bool(
-            getattr(unit, "arrived_from_reserves_this_turn", False)
-        ):
-            return False
-        for model in list(getattr(unit, "models", []) or []):
-            if not getattr(model, "is_alive", True):
-                continue
-            for wargear in list(getattr(model, "wargear", []) or []):
-                if not wargear.is_ranged():
-                    continue
-                profiles = getattr(wargear, "profiles", {}) or {}
-                for profile in list(profiles.values()):
-                    if profile is None:
-                        continue
-                    validation = unit._validate_shooting_declaration(profile, target_unit, [model], game_map)
-                    if bool(validation.get("valid", False)):
-                        return True
+        can_shoot_out_of_phase = getattr(unit, "can_shoot_out_of_phase_at_target", None)
+        if callable(can_shoot_out_of_phase):
+            return bool(can_shoot_out_of_phase(target_unit, game_map))
         return False
 
     def _setup_reactive_available_actions(self, unit, target_unit) -> list[str]:
