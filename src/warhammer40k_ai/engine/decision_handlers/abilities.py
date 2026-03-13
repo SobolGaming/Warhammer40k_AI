@@ -8386,6 +8386,7 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         "harbinger_of_despair_battleshock",
         "fight_phase_select_engagement_battleshock",
         "command_phase_select_enemy_battleshock",
+        "supa_glowy_fing",
     }:
         payload = _option_payload(request, result)
         error_prefix = "Harbinger of Despair"
@@ -8499,6 +8500,11 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if callable(in_range_fn):
                 if not bool(in_range_fn(model, target_root, range_value=float(range_value))):
                     return (f"{error_prefix} target is out of range.",)
+        if bool(ctx.get("requires_visibility", False)):
+            can_see_fn = getattr(game, "_model_can_see_unit", None)
+            if callable(can_see_fn):
+                if not bool(can_see_fn(model, target_root, game_map=getattr(game, "map", None))):
+                    return (f"{error_prefix} target must be visible to the source model.",)
         return ()
     if ability == "start_any_command_phase_objective_battleshock":
         payload = _option_payload(request, result)
@@ -16944,6 +16950,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         "harbinger_of_despair_battleshock",
         "fight_phase_select_engagement_battleshock",
         "command_phase_select_enemy_battleshock",
+        "supa_glowy_fing",
     }:
         payload = _option_payload(request, result)
         model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
@@ -17014,8 +17021,26 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             test_penalty = 0
         if test_penalty < 0:
             test_penalty = abs(int(test_penalty))
-        modifier = -abs(int(test_penalty)) if test_penalty > 0 else 0
         mark_used = getattr(model, "mark_used_once_per_battle_round", None)
+        if ability == "supa_glowy_fing":
+            if once_per_turn and callable(mark_used) and ability_key and current_turn > 0:
+                mark_used(
+                    ability_key,
+                    battle_round=int(current_turn),
+                    ability_name=ability_name,
+                    source="enhancement",
+                )
+            _apply_supa_glowy_fing_roll_table(
+                game,
+                source_root=source_root,
+                source_model=model,
+                target_root=target_root,
+                ability_name=ability_name,
+                player=player,
+                current_turn=int(current_turn or 1),
+            )
+            return target_root
+        modifier = -abs(int(test_penalty)) if test_penalty > 0 else 0
         if once_per_turn and callable(mark_used) and ability_key and current_turn > 0:
             mark_used(
                 ability_key,
@@ -22742,6 +22767,183 @@ def _apply_start_shooting_battleshock_target(game: object, request: DecisionRequ
     return target_unit
 
 
+def _resolve_unit_root(unit):
+    if unit is None:
+        return None
+    if hasattr(unit, "get_attached_unit_root"):
+        return unit.get_attached_unit_root()
+    return unit
+
+
+def _unit_is_on_battlefield(unit) -> bool:
+    if unit is None:
+        return False
+    is_alive_fn = getattr(unit, "is_alive", None)
+    alive = bool(is_alive_fn()) if callable(is_alive_fn) else bool(getattr(unit, "is_alive", False))
+    if not alive:
+        return False
+    if not bool(getattr(unit, "deployed", True)):
+        return False
+    in_reserves_fn = getattr(unit, "is_in_reserves", None)
+    in_reserves = bool(in_reserves_fn()) if callable(in_reserves_fn) else (
+        str(getattr(unit, "reserve_status", "deployed") or "deployed") in ("reserves", "strategic_reserves")
+    )
+    is_embarked = bool(getattr(unit, "is_embarked", False)) or bool(getattr(unit, "embarked_in", None))
+    return not in_reserves and not is_embarked
+
+
+def _model_is_alive(model) -> bool:
+    if model is None:
+        return False
+    is_alive_attr = getattr(model, "is_alive", True)
+    return bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+
+
+def _resolve_source_model(game: object, source_root, *, ctx: dict, payload: dict):
+    source_model_id = str(ctx.get("source_model_id", "") or ctx.get("model_id", "") or "").strip()
+    if not source_model_id:
+        source_model_id = str(payload.get("model_id", "") or "").strip()
+    if not source_model_id:
+        return None
+    model = resolve_model(game, source_model_id)
+    if model is None:
+        return None
+    model_parent_root = _resolve_unit_root(getattr(model, "parent_unit", None))
+    if model_parent_root is not None and source_root is not None and model_parent_root is not source_root:
+        return None
+    return model
+
+
+def _apply_mortal_wounds_roll_to_unit(
+    game: object,
+    *,
+    source_root,
+    source_model,
+    target_root,
+    roll_expr: str,
+    ability_name: str,
+    player,
+) -> int:
+    roll_key = str(roll_expr or "").strip().upper()
+    if not roll_key:
+        return 0
+    from ...utility.dice import get_roll
+    from ...utility.event_bus import append_dice
+
+    mortal_wounds = int(get_roll(roll_key) or 0)
+    if player is not None:
+        append_dice(player, f"{ability_name} mortal wounds: {int(mortal_wounds)}")
+    if mortal_wounds <= 0:
+        return 0
+    apply_mortals = getattr(source_root, "_apply_mortal_wounds_to_unit", None)
+    if callable(apply_mortals):
+        apply_mortals(
+            target_root,
+            int(mortal_wounds),
+            game_map=getattr(game, "map", None),
+            attacker_unit=source_root,
+            attacker_model=source_model,
+            damage_source=ability_name,
+        )
+    return int(mortal_wounds)
+
+
+def _apply_owner_command_phase_attack_hit_penalty_to_root(
+    target_root,
+    *,
+    owner_id: str,
+    current_turn: int,
+    ability_name: str,
+    source_model_id: str,
+) -> bool:
+    root = _resolve_unit_root(target_root)
+    if root is None:
+        return False
+    get_members = getattr(root, "get_attached_unit_members", None)
+    members = list(get_members() or []) if callable(get_members) else [root]
+    if not members:
+        members = [root]
+    applied = False
+    for member in list(members or []):
+        if member is None:
+            continue
+        apply_penalty = getattr(member, "apply_owner_command_phase_attack_hit_penalty", None)
+        if not callable(apply_penalty):
+            continue
+        apply_penalty(
+            owner_id=owner_id,
+            turn=int(current_turn or 0),
+            source=ability_name,
+            penalty=1,
+            source_model_id=source_model_id or None,
+        )
+        applied = True
+    return applied
+
+
+def _apply_supa_glowy_fing_roll_table(
+    game: object,
+    *,
+    source_root,
+    source_model,
+    target_root,
+    ability_name: str,
+    player,
+    current_turn: int,
+) -> None:
+    from ...utility.dice import get_roll
+    from ...utility.event_bus import append_dice
+
+    if player is None and source_root is not None and hasattr(source_root, "get_parent_army"):
+        source_army = source_root.get_parent_army()
+        player = getattr(source_army, "player", None) if source_army is not None else None
+    roll = int(get_roll("D6") or 0)
+    if player is not None:
+        append_dice(player, f"{ability_name} roll table: {int(roll)}")
+    target_name = getattr(target_root, "name", "Unit")
+    if roll <= 2:
+        force_test = getattr(target_root, "force_battle_shock_test", None)
+        if callable(force_test):
+            force_test(int(current_turn or 1), modifier=0, source=ability_name)
+        else:
+            take_test = getattr(target_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(int(current_turn or 1))
+        _log_action_for_players(game, player, f"{ability_name}: {target_name} takes a Battle-shock test.")
+        return
+    if roll <= 4:
+        mortal_wounds = _apply_mortal_wounds_roll_to_unit(
+            game,
+            source_root=source_root,
+            source_model=source_model,
+            target_root=target_root,
+            roll_expr="D3",
+            ability_name=ability_name,
+            player=player,
+        )
+        if mortal_wounds > 0:
+            _log_action_for_players(game, player, f"{ability_name}: {target_name} suffers {int(mortal_wounds)} mortal wounds.")
+        else:
+            _log_action_for_players(game, player, f"{ability_name}: {target_name} suffers no mortal wounds.")
+        return
+    source_model_id = ""
+    if source_model is not None:
+        source_model_id = str(get_entity_id(source_model) or getattr(source_model, "id", getattr(source_model, "_id", "")) or "")
+    owner_id = str(getattr(player, "id", "") or "")
+    _apply_owner_command_phase_attack_hit_penalty_to_root(
+        target_root,
+        owner_id=owner_id,
+        current_turn=int(current_turn or 0),
+        ability_name=ability_name,
+        source_model_id=source_model_id,
+    )
+    _log_action_for_players(
+        game,
+        player,
+        f"{ability_name}: {target_name} is -1 to hit until the start of your next Command phase.",
+    )
+
+
 def _validate_battleshock_clear_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -22749,11 +22951,77 @@ def _validate_battleshock_clear_target(game: object, request: DecisionRequest, r
     if is_skip_choice(request, result):
         return ()
     payload = _option_payload(request, result)
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "Battle-shock clear").strip() or "Battle-shock clear"
+    ability_key = str(ctx.get("ability_key", "") or "start_any_phase_clear_battleshock").strip().lower()
     target_val = payload.get("unit_id") or payload.get("target_unit_id")
     if not target_val:
-        return ("Battle-shock clear requires target unit.",)
-    if resolve_unit(game, target_val) is None:
-        return ("Battle-shock clear target not found.",)
+        return (f"{ability_name} requires target unit.",)
+    source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+    source_root = _resolve_unit_root(source_unit)
+    if source_root is None:
+        return (f"{ability_name} source unit was not found.",)
+    if not _unit_is_on_battlefield(source_root):
+        return (f"{ability_name} source unit is not on the battlefield.",)
+    source_model = _resolve_source_model(game, source_root, ctx=ctx, payload=payload)
+    if source_model is None:
+        return (f"{ability_name} source model was not found.",)
+    if bool(ctx.get("requires_bearer_alive", False)) and not _model_is_alive(source_model):
+        return (f"{ability_name} bearer must be alive.",)
+    phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
+    current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+    if phase_name and current_phase and phase_name != current_phase:
+        return (f"{ability_name} can only be resolved in the queued phase.",)
+    try:
+        queued_turn = int(ctx.get("turn", 0) or 0)
+    except (TypeError, ValueError):
+        queued_turn = 0
+    try:
+        current_turn = int(getattr(game, "turn", 0) or 0)
+    except (TypeError, ValueError):
+        current_turn = 0
+    if queued_turn > 0 and current_turn > 0 and queued_turn != current_turn:
+        return (f"{ability_name} decision is no longer valid this turn.",)
+    if bool(ctx.get("once_per_battle", True)) and bool(
+        getattr(source_root, "has_used_unit_once_per_battle", lambda _k: False)(ability_key)
+    ):
+        return (f"{ability_name} has already been used this battle.",)
+    if bool(ctx.get("once_per_battle_round", False)) and current_turn > 0:
+        has_used_round = getattr(source_model, "has_used_once_per_battle_round", None)
+        if callable(has_used_round) and bool(has_used_round(ability_key, battle_round=int(current_turn))):
+            return (f"{ability_name} has already been used this battle round.",)
+    target_unit = resolve_unit(game, target_val)
+    target_root = _resolve_unit_root(target_unit)
+    if target_root is None:
+        return (f"{ability_name} target unit was not found.",)
+    if not _unit_is_on_battlefield(target_root):
+        return (f"{ability_name} target unit is not on the battlefield.",)
+    source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+    target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+    if source_army is not None and target_army is not None and source_army is not target_army:
+        return (f"{ability_name} target must be a friendly unit.",)
+    target_id = str(get_entity_id(target_root) or "")
+    candidate_ids = {
+        str(value or "").strip()
+        for value in list(ctx.get("candidate_unit_ids", []) or [])
+        if str(value or "").strip()
+    }
+    if candidate_ids and target_id not in candidate_ids:
+        return (f"{ability_name} target is not an eligible candidate.",)
+    if bool(ctx.get("requires_target_battle_shocked", True)):
+        is_battle_shocked = getattr(target_root, "is_battle_shocked", None)
+        if not callable(is_battle_shocked) or not bool(is_battle_shocked()):
+            return (f"{ability_name} target must be Battle-shocked.",)
+    try:
+        range_value = float(ctx.get("range", 0) or 0)
+    except (TypeError, ValueError):
+        range_value = 0.0
+    if range_value <= 0:
+        return (f"{ability_name} range is invalid.",)
+    in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+    if callable(in_range_fn):
+        if not bool(in_range_fn(source_model, target_root, range_value=float(range_value))):
+            return (f"{ability_name} target is out of range.",)
     return ()
 
 
@@ -22762,35 +23030,70 @@ def _apply_battleshock_clear_target(game: object, request: DecisionRequest, resu
         return None
     payload = _option_payload(request, result)
     target_unit = resolve_unit(game, payload.get("unit_id") or payload.get("target_unit_id"))
-    if target_unit is None:
+    target_root = _resolve_unit_root(target_unit)
+    if target_root is None:
         raise RuntimeError("Battle-shock clear target not found.")
     ctx = dict(getattr(request, "context", {}) or {})
     source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+    source_root = _resolve_unit_root(source_unit)
     ability_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "Battle-shock clear").strip()
     ability_key = str(ctx.get("ability_key", "") or "start_any_phase_clear_battleshock").strip().lower()
+    source_model = _resolve_source_model(game, source_root, ctx=ctx, payload=payload) if source_root is not None else None
+    player = _resolve_player(game, request, payload)
+    if player is None and source_root is not None and hasattr(source_root, "get_parent_army"):
+        source_army = source_root.get_parent_army()
+        player = getattr(source_army, "player", None) if source_army is not None else None
+    mortal_wounds_roll = str(ctx.get("mortal_wounds_roll", "") or "").strip().upper()
+    mortal_wounds = 0
+    if source_root is not None and mortal_wounds_roll:
+        mortal_wounds = _apply_mortal_wounds_roll_to_unit(
+            game,
+            source_root=source_root,
+            source_model=source_model,
+            target_root=target_root,
+            roll_expr=mortal_wounds_roll,
+            ability_name=ability_name,
+            player=player,
+        )
     cleared = False
-    try:
-        if target_unit.is_battle_shocked():
-            target_unit.clear_battle_shock()
-            cleared = True
-    except Exception:
-        cleared = False
-    if cleared and source_unit is not None:
-        try:
-            source_unit.mark_unit_once_per_battle_used(ability_key, ability_name=ability_name)
-        except Exception:
-            pass
-    try:
+    is_battle_shocked = getattr(target_root, "is_battle_shocked", None)
+    clear_battle_shock = getattr(target_root, "clear_battle_shock", None)
+    target_alive = _unit_is_on_battlefield(target_root)
+    if target_alive and callable(is_battle_shocked) and bool(is_battle_shocked()) and callable(clear_battle_shock):
+        cleared = bool(clear_battle_shock())
+    if bool(ctx.get("once_per_battle_round", False)) and source_model is not None:
+        mark_used_round = getattr(source_model, "mark_used_once_per_battle_round", None)
+        if callable(mark_used_round):
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if current_turn > 0:
+                mark_used_round(
+                    ability_key,
+                    battle_round=int(current_turn),
+                    ability_name=ability_name,
+                    source="enhancement",
+                )
+    elif cleared and source_root is not None:
+        mark_used = getattr(source_root, "mark_unit_once_per_battle_used", None)
+        if callable(mark_used):
+            mark_used(ability_key, ability_name=ability_name)
+    target_name = getattr(target_root, "name", "Unit")
+    if mortal_wounds_roll:
+        if cleared:
+            label = f"suffers {int(mortal_wounds)} mortal wounds and clears Battle-shock"
+        elif _unit_is_on_battlefield(target_root):
+            label = f"suffers {int(mortal_wounds)} mortal wounds and remains Battle-shocked"
+        else:
+            label = f"suffers {int(mortal_wounds)} mortal wounds and is destroyed"
+    else:
+        label = "cleared Battle-shock" if cleared else "could not clear Battle-shock"
+    if player is not None:
         from ...utility.event_bus import append_action
-        player = _resolve_player(game, request, payload)
-        if player is None and source_unit is not None:
-            player = getattr(source_unit.get_parent_army(), "player", None)
-        if player is not None:
-            label = "cleared Battle-shock" if cleared else "could not clear Battle-shock"
-            append_action(player, f"{ability_name}: {getattr(target_unit, 'name', 'Unit')} {label}.")
-    except Exception:
-        pass
-    return target_unit
+
+        append_action(player, f"{ability_name}: {target_name} {label}.")
+    return target_root
 
 
 def _validate_post_shoot_mortal_wounds_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

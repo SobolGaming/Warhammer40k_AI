@@ -1329,21 +1329,46 @@ class GamePhaseHandlersMixin:
                         ability_key = str(spec.get("ability_key") or "start_any_phase_clear_battleshock").strip().lower()
                         if not ability_key:
                             ability_key = "start_any_phase_clear_battleshock"
-                        if root.has_used_unit_once_per_battle(ability_key):
+                        once_per_battle_round = bool(spec.get("once_per_battle_round", False))
+                        once_per_battle = bool(spec.get("once_per_battle", not once_per_battle_round))
+                        if once_per_battle and root.has_used_unit_once_per_battle(ability_key):
                             continue
+                        try:
+                            current_turn = int(getattr(self, "turn", 0) or 0)
+                        except (TypeError, ValueError):
+                            current_turn = 0
                         model_name = str(spec.get("model_name", "") or "").strip()
+                        source_model_id = str(spec.get("source_model_id", "") or "").strip()
                         anchor_model = None
-                        if model_name:
+                        get_model_by_id = getattr(root, "get_attached_unit_model_by_id", None)
+                        if source_model_id and callable(get_model_by_id):
+                            anchor_model = get_model_by_id(source_model_id)
+                        if anchor_model is None and model_name:
                             find_model = getattr(root, "_find_model_named", None)
                             if callable(find_model):
                                 anchor_model = find_model(model_name)
                         if anchor_model is None:
+                            get_models = getattr(root, "get_attached_unit_models", None)
+                            models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
                             anchor_model = next(
-                                (m for m in list(getattr(root, "models", []) or []) if getattr(m, "is_alive", False)),
+                                (
+                                    m
+                                    for m in list(models or [])
+                                    if bool(getattr(m, "is_alive", False)() if callable(getattr(m, "is_alive", False)) else getattr(m, "is_alive", False))
+                                ),
                                 None,
                             )
                         if anchor_model is None:
                             continue
+                        requires_bearer_alive = bool(spec.get("requires_bearer_alive", False))
+                        anchor_alive_attr = getattr(anchor_model, "is_alive", False)
+                        anchor_alive = bool(anchor_alive_attr() if callable(anchor_alive_attr) else anchor_alive_attr)
+                        if requires_bearer_alive and not anchor_alive:
+                            continue
+                        if once_per_battle_round and current_turn > 0:
+                            has_used_round = getattr(anchor_model, "has_used_once_per_battle_round", None)
+                            if callable(has_used_round) and bool(has_used_round(ability_key, battle_round=int(current_turn))):
+                                continue
 
                         keyword = str(spec.get("keyword", "") or "").strip()
                         try:
@@ -1352,6 +1377,7 @@ class GamePhaseHandlersMixin:
                             range_value = 0
                         if range_value <= 0 or not keyword:
                             continue
+                        requires_target_battle_shocked = bool(spec.get("requires_target_battle_shocked", True))
                         candidates = []
                         seen_candidates: set[str] = set()
                         for other in list(getattr(army, "units", []) or []):
@@ -1380,9 +1406,10 @@ class GamePhaseHandlersMixin:
                             is_embarked = bool(getattr(other_root, "is_embarked", False)) or bool(getattr(other_root, "embarked_in", None))
                             if in_reserves or is_embarked:
                                 continue
-                            is_battle_shocked_fn = getattr(other_root, "is_battle_shocked", None)
-                            if not callable(is_battle_shocked_fn) or not is_battle_shocked_fn():
-                                continue
+                            if requires_target_battle_shocked:
+                                is_battle_shocked_fn = getattr(other_root, "is_battle_shocked", None)
+                                if not callable(is_battle_shocked_fn) or not is_battle_shocked_fn():
+                                    continue
                             matches_keyword = getattr(root, "_unit_matches_keyword_phrase", None)
                             if not callable(matches_keyword) or not matches_keyword(other_root, keyword):
                                 continue
@@ -1399,6 +1426,7 @@ class GamePhaseHandlersMixin:
                             model=anchor_model,
                             candidates=candidates,
                             spec=spec,
+                            phase_name=pname,
                             phase_label=pname.replace("_", " ").title(),
                         )
 
@@ -4105,9 +4133,58 @@ class GamePhaseHandlersMixin:
                         "post_shoot_suppressed_owner",
                         "post_shoot_suppressed_turn",
                         "post_shoot_suppressed_source",
-                    ):
-                        sr.pop(key, None)
+                        ):
+                            sr.pop(key, None)
                     unit.special_rules = sr
+
+    def _on_phase_start_owner_command_phase_attack_hit_penalty_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear attack hit penalties that expire at the start of the source owner's Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Owner Command phase hit-penalty cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Owner Command phase hit-penalty cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("owner_command_phase_attack_hit_penalty_owner", "") or "") != owner_id:
+                    continue
+                if not bool(sr.get("owner_command_phase_attack_hit_penalty_active", False)):
+                    continue
+                try:
+                    applied_turn = int(sr.get("owner_command_phase_attack_hit_penalty_turn", 0) or 0)
+                except (TypeError, ValueError):
+                    applied_turn = 0
+                if current_turn <= applied_turn:
+                    continue
+                clear_fn = getattr(unit, "clear_owner_command_phase_attack_hit_penalty", None)
+                if callable(clear_fn):
+                    clear_fn()
+                    continue
+                for key in (
+                    "owner_command_phase_attack_hit_penalty_active",
+                    "owner_command_phase_attack_hit_penalty_owner",
+                    "owner_command_phase_attack_hit_penalty_turn",
+                    "owner_command_phase_attack_hit_penalty_source",
+                    "owner_command_phase_attack_hit_penalty_value",
+                    "owner_command_phase_attack_hit_penalty_model_id",
+                ):
+                    sr.pop(key, None)
+                unit.special_rules = sr
 
     def _on_phase_start_post_shoot_afflicted_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear post-shoot Afflicted markers at the start of the owner's Command phase."""
@@ -7173,6 +7250,7 @@ class GamePhaseHandlersMixin:
         enemy_roots = list(self._collect_enemy_unit_roots(player) or [])
         if not enemy_roots:
             return
+        game_map = getattr(self, "map", None)
 
         def _unit_sort_key(u):
             try:
@@ -7258,11 +7336,21 @@ class GamePhaseHandlersMixin:
                         if callable(used_fn) and current_turn > 0:
                             if bool(used_fn(ability_key, battle_round=int(current_turn))):
                                 continue
-                    candidates = self._enemy_candidates_within_range_of_model(
-                        model=model,
-                        enemy_roots=enemy_roots,
-                        range_value=float(range_value),
-                    )
+                    requires_visibility = bool(spec.get("requires_visibility", False))
+                    if requires_visibility:
+                        candidates = self._visible_enemy_candidates_for_model(
+                            source_unit=root,
+                            model=model,
+                            enemy_roots=enemy_roots,
+                            range_value=float(range_value),
+                            game_map=game_map,
+                        )
+                    else:
+                        candidates = self._enemy_candidates_within_range_of_model(
+                            model=model,
+                            enemy_roots=enemy_roots,
+                            range_value=float(range_value),
+                        )
                     if not candidates:
                         continue
                     source_unit = getattr(model, "parent_unit", None) or root

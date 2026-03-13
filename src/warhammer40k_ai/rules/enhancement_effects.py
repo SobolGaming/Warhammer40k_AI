@@ -570,6 +570,64 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
             )
         )
 
+    m = re.fullmatch(
+        r"once per battle round at the start of any phase you can select one friendly [a-z0-9 ]+ unit "
+        r"that is battle shocked and within (?P<range>\d+) of the bearer "
+        r"that unit suffers d3 mortal wounds and it is no longer battle shocked",
+        tokens,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        out.append(
+            EnhancementEffectSpec(
+                kind="start_any_phase_clear_battleshock_with_d3_mortals_once_per_battle_round",
+                value=int(m.group("range") or 0),
+                notes=(
+                    "Once per battle round at the start of any phase: select one friendly Battle-shocked unit "
+                    f'within {int(m.group("range") or 0)}"; it suffers D3 mortal wounds, then Battle-shock is cleared.'
+                ),
+            )
+        )
+
+    if re.fullmatch(
+        r"at the start of the battle roll one d3 and compare the result to the list below until the end of the battle "
+        r"models in the bearers unit have that bioniks ability "
+        r"bionik legs add 2 to the move characteristic of this model "
+        r"bionik arms add 1 to the strength characteristic of melee weapons equipped by this model "
+        r"bionik bonce improve the weapon skill characteristic of melee weapons equipped by this model by 1",
+        tokens,
+        flags=re.IGNORECASE,
+    ):
+        out.append(
+            EnhancementEffectSpec(
+                kind="start_of_battle_roll_persistent_bionik_branch",
+                value=3,
+                notes=(
+                    'Start of battle: roll D3 for the bearer\'s unit to gain Bionik Legs (+2" Move), '
+                    "Bionik Arms (+1 melee Strength), or Bionik Bonce (+1 melee Weapon Skill) until end of battle."
+                ),
+            )
+        )
+
+    if re.fullmatch(
+        r"in your command phase select one enemy unit within 18 of and visible to the bearer then roll one d6 "
+        r"on a 1 2 that enemy unit must take a battle shock test "
+        r"on a 3 4 that enemy unit suffers d3 mortal wounds "
+        r"on a 5 6 until the start of your next command phase each time a model in that enemy unit makes an attack subtract 1 from the hit roll",
+        tokens,
+        flags=re.IGNORECASE,
+    ):
+        out.append(
+            EnhancementEffectSpec(
+                kind="command_phase_visible_enemy_roll_table_battleshock_mortals_or_hit_penalty",
+                value=18,
+                notes=(
+                    "Command phase: select one visible enemy unit within 18\" and roll D6; "
+                    "1-2 forces Battle-shock, 3-4 deals D3 mortal wounds, 5-6 applies -1 to Hit until your next Command phase."
+                ),
+            )
+        )
+
     return out
 
 
@@ -628,6 +686,12 @@ def _enhancement_rules_fully_consumed(description: str) -> bool:
         # Start of Fight phase: select one enemy in Engagement Range to take a Battle-shock test.
         r"(?:at the )?start of the fight phase (?:you can )?select one enemy unit within engagement range of (?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) that(?: enemy)? unit must take a battle shock test",
         r"(?:at the )?start of the fight phase (?:you can )?select one enemy unit within engagement range of (?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) that(?: enemy)? unit must take a battle shock test subtracting \d+ from (?:that test|the result)(?: when it does so)?",
+        # Da Kaptin.
+        r"once per battle round at the start of any phase you can select one friendly [a-z0-9 ]+ unit that is battle shocked and within \d+ of the bearer that unit suffers d3 mortal wounds and it is no longer battle shocked",
+        # Bionik Workshop.
+        r"at the start of the battle roll one d3 and compare the result to the list below until the end of the battle models in the bearers unit have that bioniks ability bionik legs add 2 to the move characteristic of this model bionik arms add 1 to the strength characteristic of melee weapons equipped by this model bionik bonce improve the weapon skill characteristic of melee weapons equipped by this model by 1",
+        # Supa-glowy Fing.
+        r"in your command phase select one enemy unit within 18 of and visible to the bearer then roll one d6 on a 1 2 that enemy unit must take a battle shock test on a 3 4 that enemy unit suffers d3 mortal wounds on a 5 6 until the start of your next command phase each time a model in that enemy unit makes an attack subtract 1 from the hit roll",
     )
     return any(re.fullmatch(pat, tokens) for pat in fullmatch_patterns)
 

@@ -8951,6 +8951,14 @@ class WargearProfile:
                         _add_skill_mod(int(bonus), f"{source}: +{int(bonus)} WS")
         except Exception:
             pass
+        unit = getattr(attacker, "parent_unit", None)
+        sr = getattr(unit, "special_rules", None) if unit is not None else None
+        is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+        if is_melee and isinstance(sr, dict):
+            bonus = int(sr.get("enhancement_bionik_workshop_melee_ws_bonus", 0) or 0)
+            if bonus > 0:
+                source = str(sr.get("enhancement_bionik_workshop_source", "") or "Bionik Workshop").strip() or "Bionik Workshop"
+                _add_skill_mod(int(bonus), f"{source}: +{int(bonus)} WS")
         try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
@@ -10235,6 +10243,13 @@ class WargearProfile:
                     _add_hit_mod(-1, "-1 from Agonising Suppression (suppressed)")
                 if sr.get("post_shoot_suppressed_active"):
                     _add_hit_mod(-1, "-1 from Suppressed")
+                get_owner_penalty = getattr(attacker.parent_unit, "get_owner_command_phase_attack_hit_penalty", None)
+                if callable(get_owner_penalty):
+                    army = attacker.parent_unit.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    penalty, reason = get_owner_penalty(game=game)
+                    if penalty > 0:
+                        _add_hit_mod(-int(penalty), reason or f"-{int(penalty)} to hit")
                 if sr.get("atavistic_instigation_duck_active"):
                     try:
                         penalty = int(sr.get("atavistic_instigation_duck_hit_roll_penalty", 1) or 1)
@@ -14782,6 +14797,13 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Enhancement (melee)")
         except Exception:
             pass
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            unit_sr = getattr(attacker.parent_unit, "special_rules", {}) or {}
+            s_bonus = int(unit_sr.get("enhancement_bionik_workshop_melee_strength_bonus", 0) or 0)
+            if s_bonus and isinstance(strength, int):
+                strength = strength + s_bonus
+                source = str(unit_sr.get("enhancement_bionik_workshop_source", "") or "Bionik Workshop").strip() or "Bionik Workshop"
+                wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from {source}")
         if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
             sr = self._unit_special_rules(attacker)
             bearer_s_bonus = int(sr.get("enhancement_bearer_melee_strength_bonus", 0) or 0)

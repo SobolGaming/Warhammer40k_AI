@@ -6889,6 +6889,26 @@ _ORKS_DREAD_MOB_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
         duration="constant",
         effect="grant_stealth",
     ),
+    "000008877005": EnhancementToolDescriptor(
+        enhancement_id="000008877005",
+        name="Supa-glowy Fing",
+        timing="start_of_command_phase",
+        target="visible_enemy_unit_within_range_of_bearer",
+        duration="instant_or_until_start_of_next_owner_command_phase",
+        effect="command_phase_visible_enemy_roll_table_battleshock_mortals_or_hit_penalty",
+        range_in=18.0,
+        effect_params={
+            "requires_bearer_alive": True,
+            "requires_visibility": True,
+            "roll": "D6",
+            "battle_shock_on": ("1-2",),
+            "mortal_wounds_on": ("3-4",),
+            "mortal_wounds_roll": "D3",
+            "hit_penalty_on": ("5-6",),
+            "hit_penalty": 1,
+            "ability_key": "supa_glowy_fing",
+        },
+    ),
 }
 
 _ORKS_DREAD_MOB_BY_NAME = {
@@ -6896,6 +6916,23 @@ _ORKS_DREAD_MOB_BY_NAME = {
 }
 
 _ORKS_FREEBOOTER_KREW_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010712002": EnhancementToolDescriptor(
+        enhancement_id="000010712002",
+        name="Da Kaptin",
+        timing="start_of_any_phase_once_per_battle_round",
+        target="friendly_battle_shocked_orks_unit_within_range_of_bearer",
+        duration="instant",
+        effect="clear_battleshock_for_friendly_unit_in_range_with_mortal_wounds_once_per_battle_round",
+        range_in=12.0,
+        effect_params={
+            "required_target_faction_keyword": "ORKS",
+            "requires_bearer_alive": True,
+            "requires_target_battle_shocked": True,
+            "mortal_wounds_roll": "D3",
+            "once_per_battle_round": True,
+            "ability_key": "da_kaptin",
+        },
+    ),
     "000010712003": EnhancementToolDescriptor(
         enhancement_id="000010712003",
         name="Git-spotter Squig",
@@ -6917,6 +6954,24 @@ _ORKS_FREEBOOTER_KREW_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
             "allow_strategic_reserves": True,
             "redeploy_filters": ("ORKS", "INFANTRY"),
             "strategic_reserves_ignore_current_unit_count_limit": True,
+        },
+    ),
+    "000010712004": EnhancementToolDescriptor(
+        enhancement_id="000010712004",
+        name="Bionik Workshop",
+        timing="start_of_battle",
+        target="bearer_unit",
+        duration="until_end_of_battle",
+        effect="start_of_battle_roll_persistent_bionik_branch_for_bearer_unit",
+        effect_params={
+            "roll": "D3",
+            "ability_key": "bionik_workshop",
+            "requires_bearer_alive": True,
+            "roll_branches": {
+                "1": {"branch_key": "legs", "label": "Bionik Legs"},
+                "2": {"branch_key": "arms", "label": "Bionik Arms"},
+                "3": {"branch_key": "bonce", "label": "Bionik Bonce"},
+            },
         },
     ),
 }

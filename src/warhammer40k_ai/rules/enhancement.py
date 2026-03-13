@@ -532,6 +532,149 @@ def resolve_enhancement_command_phase_cp_gain_roll_specs(
     return outcomes
 
 
+def _register_enhancement_start_of_battle_roll_spec(
+    unit,
+    *,
+    source_name: str,
+    source_model_id: str,
+    ability_key: str,
+    roll_expr: str,
+    effect: str,
+    effect_params: dict | None = None,
+    requires_bearer_alive: bool,
+) -> None:
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    specs = list(sr.get("enhancement_start_of_battle_roll_specs", []) or [])
+    spec = {
+        "type": "enhancement_start_of_battle_roll",
+        "source": str(source_name or "Enhancement").strip() or "Enhancement",
+        "source_model_id": str(source_model_id or "").strip(),
+        "ability_key": str(ability_key or "").strip().lower(),
+        "roll_expr": str(roll_expr or "D3").strip().upper() or "D3",
+        "effect": str(effect or "").strip().lower(),
+        "effect_params": dict(effect_params or {}),
+        "requires_bearer_alive": bool(requires_bearer_alive),
+    }
+    dedupe_key = (
+        str(spec.get("source", "") or "").strip().lower(),
+        str(spec.get("source_model_id", "") or "").strip(),
+        str(spec.get("ability_key", "") or "").strip().lower(),
+        str(spec.get("roll_expr", "") or "").strip().upper(),
+        str(spec.get("effect", "") or "").strip().lower(),
+    )
+    seen: set[tuple[str, str, str, str, str]] = set()
+    deduped: list[dict] = []
+    for existing in specs:
+        if not isinstance(existing, dict):
+            continue
+        existing_key = (
+            str(existing.get("source", "") or "").strip().lower(),
+            str(existing.get("source_model_id", "") or "").strip(),
+            str(existing.get("ability_key", "") or "").strip().lower(),
+            str(existing.get("roll_expr", "") or "").strip().upper(),
+            str(existing.get("effect", "") or "").strip().lower(),
+        )
+        if existing_key in seen:
+            continue
+        seen.add(existing_key)
+        deduped.append(existing)
+    if dedupe_key not in seen:
+        deduped.append(spec)
+    deduped.sort(
+        key=lambda entry: (
+            str(entry.get("source_model_id", "") or ""),
+            str(entry.get("source", "") or "").strip().lower(),
+            str(entry.get("ability_key", "") or "").strip().lower(),
+            str(entry.get("effect", "") or "").strip().lower(),
+        )
+    )
+    sr["enhancement_start_of_battle_roll_specs"] = deduped
+    unit.special_rules = sr
+
+
+def resolve_enhancement_start_of_battle_roll_specs(
+    root_unit,
+    *,
+    player,
+    game=None,
+) -> list[dict]:
+    root = _enhancement_cp_gain_unit_root(root_unit)
+    if root is None:
+        return []
+
+    outcomes: list[dict] = []
+    for member in _enhancement_cp_gain_member_units(root):
+        sr = getattr(member, "special_rules", None)
+        if not isinstance(sr, dict):
+            continue
+        specs = [
+            dict(spec)
+            for spec in list(sr.get("enhancement_start_of_battle_roll_specs", []) or [])
+            if isinstance(spec, dict)
+        ]
+        specs.sort(
+            key=lambda spec: (
+                str(spec.get("source_model_id", "") or ""),
+                str(spec.get("source", "") or "").strip().lower(),
+                str(spec.get("ability_key", "") or "").strip().lower(),
+                str(spec.get("effect", "") or "").strip().lower(),
+            )
+        )
+        for spec in specs:
+            source_model_id = str(spec.get("source_model_id", "") or "").strip()
+            source_name = str(spec.get("source", "") or "Enhancement").strip() or "Enhancement"
+            ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+            effect = str(spec.get("effect", "") or "").strip().lower()
+            if not ability_key or not effect:
+                continue
+            source_model = _enhancement_cp_gain_find_source_model(member, source_model_id=source_model_id)
+            if source_model_id and source_model is None:
+                continue
+            if bool(spec.get("requires_bearer_alive", False)) and not _enhancement_cp_gain_model_is_alive(source_model):
+                continue
+
+            if effect == "bionik_workshop":
+                get_choice = getattr(root, "get_bionik_workshop_choice", None)
+                if callable(get_choice) and get_choice(ability_key=ability_key):
+                    continue
+                effect_params = dict(spec.get("effect_params", {}) or {})
+                roll_expr = str(spec.get("roll_expr", "") or "D3").strip().upper() or "D3"
+                roll = int(get_roll(roll_expr) or 0)
+                branch_map = dict(effect_params.get("roll_branches", {}) or {})
+                branch_data = branch_map.get(str(int(roll))) or {}
+                if not isinstance(branch_data, dict):
+                    branch_data = {}
+                branch_key = str(branch_data.get("branch_key", "") or "").strip().lower()
+                branch_label = str(branch_data.get("label", "") or branch_key.replace("_", " ").title()).strip()
+                apply_choice = getattr(root, "apply_bionik_workshop_choice", None)
+                applied = bool(
+                    callable(apply_choice)
+                    and branch_key
+                    and apply_choice(
+                        branch_key=branch_key,
+                        source=source_name,
+                        ability_key=ability_key,
+                        source_model_id=source_model_id,
+                    )
+                )
+                outcomes.append(
+                    {
+                        "triggered": True,
+                        "source": source_name,
+                        "ability_key": ability_key,
+                        "effect": effect,
+                        "roll_expr": roll_expr,
+                        "roll": int(roll),
+                        "branch_key": branch_key,
+                        "branch_label": branch_label,
+                        "applied": bool(applied),
+                    }
+                )
+    return outcomes
+
+
 def _normalize_enhancement_redeploy_keyword_list(values) -> list[str]:
     keywords: list[str] = []
     for value in list(values or ()):
@@ -11038,6 +11181,88 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_smoky_gubbinz_bearer_model_id"] = bearer_id
 
+        if name == "supa-glowy fing" or enh_id == "000008877005":
+            if not is_dread_mob:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Supa-glowy Fing").strip() or "Supa-glowy Fing"
+            range_value = _coerce_float(
+                params.get("range_in", getattr(desc, "range_in", 18.0)) or getattr(desc, "range_in", 18.0),
+                default=18.0,
+            )
+            if range_value <= 0:
+                range_value = 18.0
+            ability_key = str(params.get("ability_key", "supa_glowy_fing") or "supa_glowy_fing").strip().lower()
+            if not ability_key:
+                ability_key = "supa_glowy_fing"
+            unit.special_rules["enhancement_supa_glowy_fing"] = True
+            unit.special_rules["enhancement_supa_glowy_fing_source"] = source
+            unit.special_rules["enhancement_supa_glowy_fing_range"] = float(range_value)
+            unit.special_rules["enhancement_supa_glowy_fing_requires_visibility"] = bool(
+                params.get("requires_visibility", True)
+            )
+            unit.special_rules["enhancement_supa_glowy_fing_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_supa_glowy_fing_ability_key"] = ability_key
+            unit.special_rules["enhancement_supa_glowy_fing_selection_prompt"] = (
+                f"{source}: select one visible enemy unit within {int(range_value)}\" to resolve the roll table."
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_supa_glowy_fing_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "da kaptin" or enh_id == "000010712002":
+            if not is_freebooter_krew:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Da Kaptin").strip() or "Da Kaptin"
+            range_value = _coerce_float(
+                params.get("range_in", getattr(desc, "range_in", 12.0)) or getattr(desc, "range_in", 12.0),
+                default=12.0,
+            )
+            if range_value <= 0:
+                range_value = 12.0
+            keyword_phrase = str(
+                params.get("required_target_faction_keyword", params.get("keyword_phrase", "ORKS")) or "ORKS"
+            ).strip()
+            if not keyword_phrase:
+                keyword_phrase = "ORKS"
+            ability_key = str(params.get("ability_key", "da_kaptin") or "da_kaptin").strip().lower()
+            if not ability_key:
+                ability_key = "da_kaptin"
+            mortal_wounds_roll = str(params.get("mortal_wounds_roll", "D3") or "D3").strip().upper() or "D3"
+            unit.special_rules["enhancement_da_kaptin"] = True
+            unit.special_rules["enhancement_da_kaptin_source"] = source
+            unit.special_rules["enhancement_da_kaptin_range"] = float(range_value)
+            unit.special_rules["enhancement_da_kaptin_keyword_phrase"] = keyword_phrase
+            unit.special_rules["enhancement_da_kaptin_mortal_wounds_roll"] = mortal_wounds_roll
+            unit.special_rules["enhancement_da_kaptin_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_da_kaptin_requires_target_battle_shocked"] = bool(
+                params.get("requires_target_battle_shocked", True)
+            )
+            unit.special_rules["enhancement_da_kaptin_once_per_battle_round"] = bool(
+                params.get("once_per_battle_round", True)
+            )
+            unit.special_rules["enhancement_da_kaptin_ability_key"] = ability_key
+            unit.special_rules["enhancement_da_kaptin_selection_prompt"] = (
+                f"{source}: select one Battle-shocked friendly {keyword_phrase} unit within {int(range_value)}\" "
+                f"to suffer {mortal_wounds_roll} mortal wounds, then clear Battle-shock (or None)."
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_da_kaptin_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
         if name == "git-spotter squig" or enh_id == "000010712003":
             if not is_freebooter_krew:
                 return
@@ -11062,6 +11287,37 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_git_spotter_squig_bearer_model_id"] = bearer_id
+
+        if name == "bionik workshop" or enh_id == "000010712004":
+            if not is_freebooter_krew:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Bionik Workshop").strip() or "Bionik Workshop"
+            ability_key = str(params.get("ability_key", "bionik_workshop") or "bionik_workshop").strip().lower()
+            if not ability_key:
+                ability_key = "bionik_workshop"
+            roll_expr = str(params.get("roll", "D3") or "D3").strip().upper() or "D3"
+            roll_branches = dict(params.get("roll_branches", {}) or {})
+            unit.special_rules["enhancement_bionik_workshop"] = True
+            unit.special_rules["enhancement_bionik_workshop_source"] = source
+            unit.special_rules["enhancement_bionik_workshop_ability_key"] = ability_key
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_bionik_workshop_bearer_model_id"] = bearer_id
+            _register_enhancement_start_of_battle_roll_spec(
+                unit,
+                source_name=source,
+                source_model_id=bearer_id,
+                ability_key=ability_key,
+                roll_expr=roll_expr,
+                effect="bionik_workshop",
+                effect_params={"roll_branches": roll_branches},
+                requires_bearer_alive=bool(params.get("requires_bearer_alive", True)),
+            )
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
 
         if name == "razgit's magik map" or enh_id == "000010712005":
             if not is_freebooter_krew:

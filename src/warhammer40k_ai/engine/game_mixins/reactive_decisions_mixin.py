@@ -1491,6 +1491,7 @@ class GameReactiveDecisionsMixin:
             test_penalty = 0
         if test_penalty < 0:
             test_penalty = abs(int(test_penalty))
+        requires_visibility = bool(spec.get("requires_visibility", False))
         if not engagement_only and range_value <= 0:
             return None
         ctx = {
@@ -1510,19 +1511,28 @@ class GameReactiveDecisionsMixin:
             "candidate_unit_ids": list(candidate_ids),
             "optional": bool(optional),
             "once_per_turn": bool(once_per_turn),
+            "requires_visibility": bool(requires_visibility),
             "turn": int(current_turn or 0),
         }
         phase_label = phase_key.replace("_", " ").title()
-        target_label = "within Engagement Range" if engagement_only else f"within {int(range_value)}\""
+        if engagement_only:
+            target_label = "within Engagement Range"
+        elif requires_visibility:
+            target_label = f"within {int(range_value)}\" and visible to this model"
+        else:
+            target_label = f"within {int(range_value)}\""
         penalty_clause = ""
         if test_penalty > 0:
             penalty_clause = f", subtracting {int(test_penalty)} from the test"
-        request = DecisionRequest.create(
-            DECISION_CHOOSE_QUARRY,
-            (
+        prompt = str(spec.get("selection_prompt", "") or "").strip()
+        if not prompt:
+            prompt = (
                 f"{ability_name}: select one enemy unit {target_label} to take a Battle-shock test"
                 f"{penalty_clause} ({phase_label})."
-            ),
+            )
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            prompt,
             player_id=getattr(player, "id", None),
             options=options,
             context=ctx,
@@ -2090,6 +2100,7 @@ class GameReactiveDecisionsMixin:
         model,
         candidates: list,
         spec: dict,
+        phase_name: str,
         phase_label: str,
     ) -> DecisionRequest | None:
         if player is None or source_unit is None or model is None:
@@ -2121,6 +2132,18 @@ class GameReactiveDecisionsMixin:
                     continue
                 if str(ctx.get("ability_key", "") or "") != ability_key:
                     continue
+                if str(ctx.get("phase_name", "") or "").strip().upper() != str(phase_name or "").strip().upper():
+                    continue
+                try:
+                    queued_turn = int(ctx.get("turn", 0) or 0)
+                except (TypeError, ValueError):
+                    queued_turn = 0
+                try:
+                    current_turn = int(getattr(self, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    current_turn = 0
+                if queued_turn and current_turn and queued_turn != current_turn:
+                    continue
                 return None
 
         def _cand_sort_key(u):
@@ -2141,25 +2164,46 @@ class GameReactiveDecisionsMixin:
         )
         if len(options) <= 1:
             return None
+        candidate_ids = [
+            str(get_entity_id(cand) or "")
+            for cand in sorted(list(candidates), key=_cand_sort_key)
+            if str(get_entity_id(cand) or "")
+        ]
         try:
             range_value = int(spec.get("range", 0) or 0)
-        except Exception:
+        except (TypeError, ValueError):
             range_value = 0
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
         ctx = {
             "ability": "start_any_phase_clear_battleshock",
             "ability_name": ability_name,
             "ability_key": ability_key,
             "phase": str(phase_label or "").strip() or "Phase",
+            "phase_name": str(phase_name or "").strip().upper(),
             "unit": getattr(source_unit, "name", "") or "",
             "unit_id": unit_id,
             "source_unit_id": unit_id,
             "model": getattr(model, "name", "") or "",
             "model_id": model_id,
             "range": int(range_value),
+            "turn": int(current_turn or 0),
+            "candidate_unit_ids": list(candidate_ids),
+            "once_per_battle": bool(spec.get("once_per_battle", True)),
+            "once_per_battle_round": bool(spec.get("once_per_battle_round", False)),
+            "requires_bearer_alive": bool(spec.get("requires_bearer_alive", False)),
+            "requires_target_battle_shocked": bool(spec.get("requires_target_battle_shocked", True)),
+            "mortal_wounds_roll": str(spec.get("mortal_wounds_roll", "") or "").strip().upper(),
+            "source_model_id": str(spec.get("source_model_id", "") or "").strip(),
         }
+        prompt = str(spec.get("selection_prompt", "") or "").strip()
+        if not prompt:
+            prompt = f"{ability_name}: select a Battle-shocked unit to rally (or None)."
         request = DecisionRequest.create(
             DECISION_CHOOSE_BATTLESHOCK_CLEAR_TARGET,
-            f"{ability_name}: select a Battle-shocked unit to rally (or None).",
+            prompt,
             player_id=getattr(player, "id", None),
             options=options,
             context=ctx,

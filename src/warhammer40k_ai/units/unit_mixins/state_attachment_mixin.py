@@ -880,6 +880,192 @@ class StateAttachmentMixin:
         source = str(sr.get("movement_phase_visible_wound_bonus_source", "") or "Movement phase wound bonus").strip() or "Movement phase wound bonus"
         return int(bonus), f"+{int(bonus)} to wound from {source}"
 
+    def apply_owner_command_phase_attack_hit_penalty(
+        self,
+        *,
+        owner_id: str,
+        turn: int,
+        source: str,
+        penalty: int = 1,
+        source_model_id: Optional[str] = None,
+    ) -> None:
+        """Apply an attack hit-roll penalty until the start of the source owner's next Command phase."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["owner_command_phase_attack_hit_penalty_active"] = True
+        sr["owner_command_phase_attack_hit_penalty_owner"] = str(owner_id or "")
+        sr["owner_command_phase_attack_hit_penalty_turn"] = int(turn or 0)
+        sr["owner_command_phase_attack_hit_penalty_source"] = (
+            str(source or "Attack hit penalty").strip() or "Attack hit penalty"
+        )
+        sr["owner_command_phase_attack_hit_penalty_value"] = abs(int(penalty or 0))
+        if source_model_id:
+            sr["owner_command_phase_attack_hit_penalty_model_id"] = str(source_model_id)
+        self.special_rules = sr
+
+    def clear_owner_command_phase_attack_hit_penalty(self) -> None:
+        """Clear an attack hit-roll penalty that expires at the start of the owner's Command phase."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "owner_command_phase_attack_hit_penalty_active",
+            "owner_command_phase_attack_hit_penalty_owner",
+            "owner_command_phase_attack_hit_penalty_turn",
+            "owner_command_phase_attack_hit_penalty_source",
+            "owner_command_phase_attack_hit_penalty_value",
+            "owner_command_phase_attack_hit_penalty_model_id",
+        ):
+            sr.pop(key, None)
+        self.special_rules = sr
+
+    def get_owner_command_phase_attack_hit_penalty(self, *, game=None) -> tuple[int, str]:
+        """Return active hit penalty/label for attacks made by this unit."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0, ""
+        if not bool(sr.get("owner_command_phase_attack_hit_penalty_active", False)):
+            return 0, ""
+        owner_id = str(sr.get("owner_command_phase_attack_hit_penalty_owner", "") or "")
+        if game is not None and owner_id:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            current_player = game.get_current_player() if hasattr(game, "get_current_player") else None
+            current_owner_id = str(getattr(current_player, "id", "") or "")
+            try:
+                applied_turn = int(sr.get("owner_command_phase_attack_hit_penalty_turn", 0) or 0)
+            except (TypeError, ValueError):
+                applied_turn = 0
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if (
+                phase_name == "COMMAND_PHASE"
+                and current_owner_id == owner_id
+                and current_turn > applied_turn
+            ):
+                self.clear_owner_command_phase_attack_hit_penalty()
+                return 0, ""
+        try:
+            penalty = abs(int(sr.get("owner_command_phase_attack_hit_penalty_value", 0) or 0))
+        except (TypeError, ValueError):
+            penalty = 0
+        if penalty <= 0:
+            return 0, ""
+        source = str(
+            sr.get("owner_command_phase_attack_hit_penalty_source", "") or "Attack hit penalty"
+        ).strip() or "Attack hit penalty"
+        return int(penalty), f"-{int(penalty)} to hit from {source}"
+
+    def apply_bionik_workshop_choice(
+        self,
+        *,
+        branch_key: str,
+        source: str,
+        ability_key: Optional[str] = None,
+        source_model_id: Optional[str] = None,
+    ) -> bool:
+        """Persist and apply the selected Bionik Workshop branch to the bearer's attached unit."""
+        branch = str(branch_key or "").strip().lower()
+        if branch not in {"legs", "arms", "bonce"}:
+            return False
+        root = self.get_attached_unit_root()
+        members = list(root.get_attached_unit_members() or [])
+        if not members:
+            members = [root]
+
+        branch_labels = {
+            "legs": "Bionik Legs",
+            "arms": "Bionik Arms",
+            "bonce": "Bionik Bonce",
+        }
+        ability_key_value = str(ability_key or source or "bionik_workshop").strip().lower()
+        if not ability_key_value:
+            ability_key_value = "bionik_workshop"
+        source_label = str(source or "Bionik Workshop").strip() or "Bionik Workshop"
+        modifier_source = f"enhancement:bionik_workshop:{ability_key_value}"
+
+        from ...utility.modifiers import Modifier, ModifierOp
+
+        for unit in list(members or []):
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            previous_branch = str(sr.get("enhancement_bionik_workshop_branch_key", "") or "").strip().lower()
+            remove_modifiers = getattr(unit, "remove_characteristic_modifiers_by_source", None)
+            if callable(remove_modifiers):
+                remove_modifiers("enhancement:bionik_workshop")
+            for key in (
+                "enhancement_bionik_workshop_active",
+                "enhancement_bionik_workshop_source",
+                "enhancement_bionik_workshop_branch_key",
+                "enhancement_bionik_workshop_branch_label",
+                "enhancement_bionik_workshop_ability_key",
+                "enhancement_bionik_workshop_source_model_id",
+                "enhancement_bionik_workshop_move_bonus",
+                "enhancement_bionik_workshop_melee_strength_bonus",
+                "enhancement_bionik_workshop_melee_ws_bonus",
+            ):
+                sr.pop(key, None)
+            sr["enhancement_bionik_workshop_active"] = True
+            sr["enhancement_bionik_workshop_source"] = source_label
+            sr["enhancement_bionik_workshop_branch_key"] = branch
+            sr["enhancement_bionik_workshop_branch_label"] = branch_labels[branch]
+            sr["enhancement_bionik_workshop_ability_key"] = ability_key_value
+            if source_model_id:
+                sr["enhancement_bionik_workshop_source_model_id"] = str(source_model_id)
+            if branch == "legs":
+                add_modifier = getattr(unit, "add_characteristic_modifier", None)
+                if callable(add_modifier):
+                    add_modifier(
+                        "movement",
+                        Modifier(ModifierOp.ADD, 2, source=modifier_source),
+                    )
+                sr["enhancement_bionik_workshop_move_bonus"] = 2
+            elif branch == "arms":
+                sr["enhancement_bionik_workshop_melee_strength_bonus"] = 1
+            elif branch == "bonce":
+                sr["enhancement_bionik_workshop_melee_ws_bonus"] = 1
+            unit.special_rules = sr
+        return True
+
+    def get_bionik_workshop_choice(
+        self,
+        *,
+        ability_key: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Return the persisted Bionik Workshop branch for this attached unit, if any."""
+        root = self.get_attached_unit_root()
+        members = list(root.get_attached_unit_members() or [])
+        if not members:
+            members = [root]
+        wanted_key = str(ability_key or "").strip().lower()
+        for unit in list(members or []):
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_bionik_workshop_active", False)):
+                continue
+            stored_key = str(sr.get("enhancement_bionik_workshop_ability_key", "") or "").strip().lower()
+            if wanted_key and stored_key and stored_key != wanted_key:
+                continue
+            branch_key = str(sr.get("enhancement_bionik_workshop_branch_key", "") or "").strip().lower()
+            if not branch_key:
+                continue
+            return {
+                "branch_key": branch_key,
+                "branch_label": str(sr.get("enhancement_bionik_workshop_branch_label", "") or "").strip(),
+                "source": str(sr.get("enhancement_bionik_workshop_source", "") or "").strip(),
+                "ability_key": stored_key,
+                "move_bonus": int(sr.get("enhancement_bionik_workshop_move_bonus", 0) or 0),
+                "melee_strength_bonus": int(sr.get("enhancement_bionik_workshop_melee_strength_bonus", 0) or 0),
+                "melee_ws_bonus": int(sr.get("enhancement_bionik_workshop_melee_ws_bonus", 0) or 0),
+            }
+        return None
+
     def apply_fight_phase_target_attack_bonus(
         self,
         *,

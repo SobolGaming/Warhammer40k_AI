@@ -9397,6 +9397,58 @@ class Game(
                         )
                         self.request_decision(request)
 
+    def _on_battle_round_started_enhancement_start_of_battle_rolls(
+        self,
+        game=None,
+        battle_round: int = 0,
+        **_kwargs,
+    ) -> None:
+        br = int(battle_round or getattr(self, "turn", 0) or 0)
+        if br != 1:
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        from ..rules.enhancement import resolve_enhancement_start_of_battle_roll_specs
+        from ..utility.event_bus import append_action, append_dice
+
+        for player in list(getattr(self, "players", []) or []):
+            army = self._get_player_army(player)
+            if army is None:
+                continue
+            seen_roots: set[str] = set()
+            roots: list[Unit] = []
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                root_id = str(get_entity_id(root) or "")
+                if not root_id or root_id in seen_roots:
+                    continue
+                seen_roots.add(root_id)
+                roots.append(root)
+            roots.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+            for root in list(roots or []):
+                with game_context(self):
+                    outcomes = list(resolve_enhancement_start_of_battle_roll_specs(root, player=player, game=self) or [])
+                for outcome in list(outcomes or []):
+                    if not bool(outcome.get("triggered", False)):
+                        continue
+                    source_name = str(outcome.get("source", "") or "Enhancement").strip() or "Enhancement"
+                    roll_expr = str(outcome.get("roll_expr", "") or "").strip().upper()
+                    roll = int(outcome.get("roll", 0) or 0)
+                    branch_label = str(outcome.get("branch_label", "") or "").strip()
+                    append_dice(player, f"{source_name}: rolled {roll_expr} -> {int(roll)}.")
+                    if bool(outcome.get("applied", False)) and branch_label:
+                        append_action(
+                            player,
+                            f"{source_name}: {getattr(root, 'name', 'Unit')} gains {branch_label} until the end of the battle.",
+                        )
+                    elif branch_label:
+                        append_action(
+                            player,
+                            f"{source_name}: {getattr(root, 'name', 'Unit')} rolled {branch_label}, but the effect was not applied.",
+                        )
+
     def _on_unit_destroyed_emperors_children(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
         if unit is None or destroyed_by_unit is None:
             return

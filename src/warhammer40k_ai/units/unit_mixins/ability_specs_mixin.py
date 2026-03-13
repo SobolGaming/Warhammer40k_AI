@@ -2613,7 +2613,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, int, tuple[str, ...]]] = set()
+        seen: set[tuple] = set()
         phase_token_order = [
             ("command", "COMMAND_PHASE"),
             ("movement", "MOVEMENT_PHASE"),
@@ -2707,6 +2707,43 @@ class AbilitySpecsMixin:
                     "once_per_turn": False,
                     "context_ability": "command_phase_select_enemy_battleshock",
                 }
+            )
+
+        root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        root_special_rules = getattr(root, "special_rules", None)
+        self._append_prefixed_model_start_selected_phases_enemy_range_battleshock_spec(
+            model=model,
+            special_rules=root_special_rules if isinstance(root_special_rules, dict) else {},
+            prefix="enhancement_supa_glowy_fing",
+            default_source="Supa-glowy Fing",
+            default_range=18,
+            default_phase_names=["COMMAND_PHASE"],
+            default_context_ability="supa_glowy_fing",
+            default_optional=False,
+            default_once_per_turn=True,
+            default_requires_visibility=True,
+            seen=seen,
+            specs=specs,
+        )
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        for member in list(members or []):
+            if member is None or member is root:
+                continue
+            member_special_rules = getattr(member, "special_rules", None)
+            self._append_prefixed_model_start_selected_phases_enemy_range_battleshock_spec(
+                model=model,
+                special_rules=member_special_rules if isinstance(member_special_rules, dict) else {},
+                prefix="enhancement_supa_glowy_fing",
+                default_source="Supa-glowy Fing",
+                default_range=18,
+                default_phase_names=["COMMAND_PHASE"],
+                default_context_ability="supa_glowy_fing",
+                default_optional=False,
+                default_once_per_turn=True,
+                default_requires_visibility=True,
+                seen=seen,
+                specs=specs,
             )
 
         if not hasattr(self, "_ability_cache"):
@@ -4374,6 +4411,178 @@ class AbilitySpecsMixin:
             }
         )
 
+    def _append_prefixed_model_start_selected_phases_enemy_range_battleshock_spec(
+        self,
+        *,
+        model: Optional['Model'],
+        special_rules: dict,
+        prefix: str,
+        default_source: str,
+        default_range: int,
+        default_phase_names: list[str],
+        default_context_ability: str,
+        default_optional: bool,
+        default_once_per_turn: bool,
+        default_requires_visibility: bool,
+        seen: set[tuple],
+        specs: list[dict],
+    ) -> None:
+        if model is None or not isinstance(special_rules, dict) or not bool(special_rules.get(prefix, False)):
+            return
+        model_id = str(get_entity_id(model) or "")
+        bearer_id = str(
+            special_rules.get(f"{prefix}_bearer_model_id", "")
+            or special_rules.get("enhancement_bearer_model_id", "")
+            or ""
+        ).strip()
+        if bearer_id and model_id and bearer_id != model_id:
+            return
+        requires_bearer_alive = bool(special_rules.get(f"{prefix}_requires_bearer_alive", True))
+        model_is_alive_attr = getattr(model, "is_alive", True)
+        model_is_alive = bool(model_is_alive_attr() if callable(model_is_alive_attr) else model_is_alive_attr)
+        if requires_bearer_alive and not model_is_alive:
+            return
+
+        source = str(special_rules.get(f"{prefix}_source", "") or default_source).strip() or default_source
+        ability_seed = str(special_rules.get(f"{prefix}_ability_key", "") or "").strip().lower()
+        if not ability_seed:
+            ability_seed = self._normalize_keyword_phrase(source) or re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_")
+        if not ability_seed:
+            ability_seed = prefix
+        ability_key = f"command_phase_select_enemy_battleshock:{ability_seed}"
+        try:
+            range_value = int(float(special_rules.get(f"{prefix}_range", default_range) or default_range))
+        except (TypeError, ValueError):
+            range_value = int(default_range)
+        if range_value <= 0:
+            return
+
+        phase_names: list[str] = []
+        raw_phase_names = list(special_rules.get(f"{prefix}_phase_names", default_phase_names) or default_phase_names)
+        for raw_phase in raw_phase_names:
+            phase_name = str(raw_phase or "").strip().upper()
+            if phase_name and phase_name not in phase_names:
+                phase_names.append(phase_name)
+        if not phase_names:
+            return
+
+        try:
+            test_penalty = int(special_rules.get(f"{prefix}_test_penalty", 0) or 0)
+        except (TypeError, ValueError):
+            test_penalty = 0
+        if test_penalty < 0:
+            test_penalty = abs(int(test_penalty))
+        optional = bool(special_rules.get(f"{prefix}_optional", default_optional))
+        once_per_turn = bool(special_rules.get(f"{prefix}_once_per_turn", default_once_per_turn))
+        requires_visibility = bool(special_rules.get(f"{prefix}_requires_visibility", default_requires_visibility))
+        context_ability = str(
+            special_rules.get(f"{prefix}_context_ability", "") or default_context_ability
+        ).strip().lower() or default_context_ability
+        selection_prompt = str(special_rules.get(f"{prefix}_selection_prompt", "") or "").strip()
+        dedupe_key = (
+            source.lower(),
+            ability_key,
+            int(range_value),
+            int(test_penalty),
+            tuple(phase_names),
+            bool(optional),
+            bool(once_per_turn),
+            bool(requires_visibility),
+            context_ability,
+        )
+        if dedupe_key in seen:
+            return
+        seen.add(dedupe_key)
+        spec = {
+            "source": source,
+            "range": int(range_value),
+            "test_penalty": int(test_penalty),
+            "phase_names": list(phase_names),
+            "ability_key": ability_key,
+            "optional": bool(optional),
+            "once_per_turn": bool(once_per_turn),
+            "requires_visibility": bool(requires_visibility),
+            "context_ability": context_ability,
+        }
+        if selection_prompt:
+            spec["selection_prompt"] = selection_prompt
+        specs.append(spec)
+
+    def _append_prefixed_unit_start_any_phase_clear_battleshock_spec(
+        self,
+        *,
+        special_rules: dict,
+        prefix: str,
+        default_source: str,
+        default_range: int,
+        default_keyword: str,
+        default_once_per_battle: bool,
+        default_once_per_battle_round: bool,
+        seen: set[tuple],
+        specs: list[dict],
+    ) -> None:
+        if not isinstance(special_rules, dict) or not bool(special_rules.get(prefix, False)):
+            return
+        source = str(special_rules.get(f"{prefix}_source", "") or default_source).strip() or default_source
+        ability_seed = str(special_rules.get(f"{prefix}_ability_key", "") or "").strip().lower()
+        if not ability_seed:
+            ability_seed = self._normalize_keyword_phrase(source) or re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_")
+        if not ability_seed:
+            ability_seed = prefix
+        ability_key = f"start_any_phase_clear_battleshock:{ability_seed}"
+        try:
+            range_value = int(float(special_rules.get(f"{prefix}_range", default_range) or default_range))
+        except (TypeError, ValueError):
+            range_value = int(default_range)
+        if range_value <= 0:
+            return
+        keyword_raw = str(special_rules.get(f"{prefix}_keyword_phrase", "") or default_keyword).strip() or default_keyword
+        source_model_id = str(
+            special_rules.get(f"{prefix}_bearer_model_id", "")
+            or special_rules.get("enhancement_bearer_model_id", "")
+            or ""
+        ).strip()
+        model_name = ""
+        get_model_by_id = getattr(self, "get_attached_unit_model_by_id", None)
+        if source_model_id and callable(get_model_by_id):
+            bearer_model = get_model_by_id(source_model_id)
+            if bearer_model is not None:
+                model_name = str(getattr(bearer_model, "name", "") or "").strip()
+        dedupe_key = (
+            source.lower(),
+            int(range_value),
+            keyword_raw.lower(),
+            model_name.lower(),
+            source_model_id,
+            ability_key,
+        )
+        if dedupe_key in seen:
+            return
+        seen.add(dedupe_key)
+        selection_prompt = str(special_rules.get(f"{prefix}_selection_prompt", "") or "").strip()
+        spec = {
+            "source": source,
+            "range": int(range_value),
+            "keyword": keyword_raw,
+            "model_name": model_name,
+            "ability_key": ability_key,
+            "source_model_id": source_model_id,
+            "once_per_battle": bool(special_rules.get(f"{prefix}_once_per_battle", default_once_per_battle)),
+            "once_per_battle_round": bool(
+                special_rules.get(f"{prefix}_once_per_battle_round", default_once_per_battle_round)
+            ),
+            "requires_bearer_alive": bool(special_rules.get(f"{prefix}_requires_bearer_alive", True)),
+            "requires_target_battle_shocked": bool(
+                special_rules.get(f"{prefix}_requires_target_battle_shocked", True)
+            ),
+            "mortal_wounds_roll": str(
+                special_rules.get(f"{prefix}_mortal_wounds_roll", "") or ""
+            ).strip().upper(),
+        }
+        if selection_prompt:
+            spec["selection_prompt"] = selection_prompt
+        specs.append(spec)
+
     def model_start_fight_phase_select_engagement_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: at the start of the Fight phase, select one enemy unit
@@ -5634,7 +5843,7 @@ class AbilitySpecsMixin:
             return list(root._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, str, str]] = set()
+        seen: set[tuple] = set()
         try:
             members = list(root.get_attached_unit_members() or [])
         except Exception:
@@ -5761,6 +5970,34 @@ class AbilitySpecsMixin:
                     "model_name": model_name,
                     "ability_key": ability_key,
                 }
+            )
+
+        root_special_rules = getattr(root, "special_rules", None)
+        self._append_prefixed_unit_start_any_phase_clear_battleshock_spec(
+            special_rules=root_special_rules if isinstance(root_special_rules, dict) else {},
+            prefix="enhancement_da_kaptin",
+            default_source="Da Kaptin",
+            default_range=12,
+            default_keyword="ORKS",
+            default_once_per_battle=False,
+            default_once_per_battle_round=True,
+            seen=seen,
+            specs=specs,
+        )
+        for member in list(members or []):
+            if member is None or member is root:
+                continue
+            member_special_rules = getattr(member, "special_rules", None)
+            self._append_prefixed_unit_start_any_phase_clear_battleshock_spec(
+                special_rules=member_special_rules if isinstance(member_special_rules, dict) else {},
+                prefix="enhancement_da_kaptin",
+                default_source="Da Kaptin",
+                default_range=12,
+                default_keyword="ORKS",
+                default_once_per_battle=False,
+                default_once_per_battle_round=True,
+                seen=seen,
+                specs=specs,
             )
 
         if not hasattr(root, "_ability_cache"):
