@@ -921,6 +921,73 @@ def _append_enhancement_bearer_unit_fall_back_shoot_rule(
     )
 
 
+def _normalize_enhancement_sticky_objective_source_scope(scope: str) -> str:
+    value = str(scope or "unit").strip().lower()
+    if value in ("bearer", "model", "source_model"):
+        return "bearer"
+    return "unit"
+
+
+def _append_enhancement_sticky_objective_rule(
+    unit,
+    *,
+    source_scope: str,
+    source: str,
+    allow_embarked_transport: bool = False,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    entry = {
+        "source_scope": _normalize_enhancement_sticky_objective_source_scope(source_scope),
+        "source": str(source or "unit_sticky_objective").strip() or "unit_sticky_objective",
+        "allow_embarked_transport": bool(allow_embarked_transport),
+        "requires_bearer_leading": bool(requires_bearer_leading),
+    }
+    if source_model_id:
+        entry["source_model_id"] = str(source_model_id)
+    _append_enhancement_local_passive_rule(
+        unit,
+        storage_key="enhancement_sticky_objective_rules",
+        entry=entry,
+        dedupe_key=lambda value: (
+            str(value.get("source_scope", "unit") or "unit").strip().lower(),
+            str(value.get("source_model_id", "") or ""),
+            str(value.get("source", "unit_sticky_objective") or "unit_sticky_objective").strip().lower(),
+            bool(value.get("allow_embarked_transport", False)),
+            bool(value.get("requires_bearer_leading", False)),
+        ),
+        sort_key=lambda value: (
+            str(value.get("source_scope", "unit") or "unit").strip().lower(),
+            str(value.get("source_model_id", "") or ""),
+            str(value.get("source", "unit_sticky_objective") or "unit_sticky_objective").strip().lower(),
+            int(bool(value.get("allow_embarked_transport", False))),
+            int(bool(value.get("requires_bearer_leading", False))),
+        ),
+    )
+
+
+def _apply_enhancement_sticky_objective_control(
+    unit,
+    *,
+    source_scope: str,
+    source: str,
+    allow_embarked_transport: bool = False,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    unit.special_rules["sticky_objectives"] = True
+    if allow_embarked_transport:
+        unit.special_rules["sticky_objectives_allow_embarked_transport"] = True
+    _append_enhancement_sticky_objective_rule(
+        unit,
+        source_scope=source_scope,
+        source=source,
+        allow_embarked_transport=allow_embarked_transport,
+        requires_bearer_leading=requires_bearer_leading,
+        source_model_id=source_model_id,
+    )
+
+
 def _apply_selected_ranged_weapon_bonus_enhancement(
     unit,
     *,
@@ -3161,11 +3228,15 @@ class Enhancement:
             if not is_mechanised_assault:
                 return
             unit.special_rules["enhancement_bold_leadership"] = True
-            unit.special_rules["sticky_objectives"] = True
             desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
             params = _descriptor_params(desc)
-            unit.special_rules["sticky_objectives_allow_embarked_transport"] = bool(
-                params.get("allow_embarked_transport", True)
+            _apply_enhancement_sticky_objective_control(
+                unit,
+                source_scope=str(params.get("source_scope", "unit") or "unit"),
+                source=str(params.get("sticky_source", "unit_sticky_objective") or "unit_sticky_objective"),
+                allow_embarked_transport=bool(params.get("allow_embarked_transport", True)),
+                requires_bearer_leading=bool(params.get("requires_bearer_leading", False)),
+                source_model_id=bearer_id,
             )
             unit.special_rules["enhancement_bold_leadership_source"] = "Bold Leadership"
             if bearer_id:
@@ -10877,6 +10948,26 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_proper_killy_bearer_model_id"] = bearer_id
+
+        if name == "skrag every stash!" or enh_id == "000008868004":
+            if not is_da_big_hunt:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Skrag Every Stash!").strip() or "Skrag Every Stash!"
+            unit.special_rules["enhancement_skrag_every_stash"] = True
+            unit.special_rules["enhancement_skrag_every_stash_source"] = source
+            _apply_enhancement_sticky_objective_control(
+                unit,
+                source_scope=str(params.get("source_scope", "bearer") or "bearer"),
+                source=str(params.get("sticky_source", "unit_sticky_objective") or "unit_sticky_objective"),
+                allow_embarked_transport=bool(params.get("allow_embarked_transport", False)),
+                requires_bearer_leading=bool(params.get("requires_bearer_leading", False)),
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_skrag_every_stash_bearer_model_id"] = bearer_id
 
         if name == "surly as a squiggoth" or enh_id == "000008868005":
             if not is_da_big_hunt:

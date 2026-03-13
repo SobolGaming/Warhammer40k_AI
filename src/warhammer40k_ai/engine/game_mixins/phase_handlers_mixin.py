@@ -17471,25 +17471,17 @@ class GamePhaseHandlersMixin:
                     seen.add(uid)
                     if not root.attached_unit_has_command_phase_sticky_objective():
                         continue
-                    prereq_fn = getattr(root, "command_phase_sticky_objective_prerequisites_met", None)
-                    if callable(prereq_fn) and not bool(prereq_fn()):
-                        continue
                     for obj in objectives:
                         loc = getattr(obj, "location", None)
                         if loc is None or getattr(loc, "removed", False):
                             continue
                         if getattr(loc, "controlling_player", None) is not player:
                             continue
-                        if not root.is_within_objective_range(loc):
-                            sr = getattr(root, "special_rules", None)
-                            allow_transport = bool(isinstance(sr, dict) and sr.get("sticky_objectives_allow_embarked_transport"))
-                            if not allow_transport:
-                                continue
-                            transport = getattr(root, "embarked_in", None)
-                            if transport is None or not transport.is_within_objective_range(loc):
-                                continue
+                        claim_rule = root.command_phase_sticky_objective_claim_rule(loc)
+                        if claim_rule is None:
+                            continue
                         if hasattr(loc, "set_sticky_control"):
-                            sticky_source = "unit_sticky_objective"
+                            sticky_source = str(claim_rule.get("source", "unit_sticky_objective") or "unit_sticky_objective")
                             if (
                                 str(getattr(loc, "sticky_source", "") or "").strip().lower() == "traitoris_tyrants_shadow"
                                 and getattr(loc, "sticky_controller", None) is player

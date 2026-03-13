@@ -373,23 +373,19 @@ class RulesParsingMixin:
         self._apply_daemonic_allegiance_effects(kw)
         return True
 
-    def _scan_command_phase_sticky_objective(self) -> bool:
+    def _command_phase_sticky_objective_scan_result(self) -> dict[str, object]:
         found = False
         allow_transport = False
         requires_embarked_keyword = ""
         requires_vanguard_mode = ""
         requires_leading_unit = False
         for ab in self._iter_active_abilities():
-            try:
-                if isinstance(ab, str):
-                    name = ""
-                    desc = ab
-                else:
-                    name = str(getattr(ab, "name", "") or "")
-                    desc = getattr(ab, "description", "") or getattr(ab, "name", "")
-            except Exception:
+            if isinstance(ab, str):
                 name = ""
-                desc = ""
+                desc = ab
+            else:
+                name = str(getattr(ab, "name", "") or "")
+                desc = getattr(ab, "description", "") or getattr(ab, "name", "")
             text = self._normalize_rules_text(desc or "")
             if not text:
                 continue
@@ -418,6 +414,21 @@ class RulesParsingMixin:
                     requires_vanguard_mode = "masters_of_the_shadowed_sky"
             if "while this model is leading a unit" in low:
                 requires_leading_unit = True
+        return {
+            "found": bool(found),
+            "allow_embarked_transport": bool(allow_transport),
+            "requires_embarked_keyword": str(requires_embarked_keyword or ""),
+            "requires_vanguard_mode": str(requires_vanguard_mode or ""),
+            "requires_leading_unit": bool(requires_leading_unit),
+        }
+
+    def _scan_command_phase_sticky_objective(self) -> bool:
+        scan = self._command_phase_sticky_objective_scan_result()
+        found = bool(scan.get("found"))
+        allow_transport = bool(scan.get("allow_embarked_transport"))
+        requires_embarked_keyword = str(scan.get("requires_embarked_keyword", "") or "")
+        requires_vanguard_mode = str(scan.get("requires_vanguard_mode", "") or "")
+        requires_leading_unit = bool(scan.get("requires_leading_unit"))
 
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):

@@ -2,6 +2,8 @@
 
 from ._common import *
 import logging
+from shapely.errors import GEOSException
+from shapely.geometry import Point
 logger = logging.getLogger(__name__)
 
 _NAMED_UNIT_LIMIT_WORD_TO_INT = {
@@ -2304,57 +2306,89 @@ class StateAttachmentMixin:
                 return list(getattr(root, "models", []) or [])
         return self.get_attached_unit_models()
 
+    def get_attached_unit_model_by_id(self, model_id: str) -> Optional['Model']:
+        target_id = str(model_id or "").strip()
+        if not target_id:
+            return None
+        members = sorted(
+            list(self.get_attached_unit_members() or []),
+            key=lambda unit: str(get_entity_id(unit) or ""),
+        )
+        for member in members:
+            models = sorted(
+                list(getattr(member, "models", []) or []),
+                key=lambda model: str(get_entity_id(model) or ""),
+            )
+            for model in models:
+                if str(get_entity_id(model) or "") == target_id:
+                    return model
+        return None
+
+    def is_model_within_objective_range(self, model, objective_point) -> bool:
+        if model is None or objective_point is None:
+            return False
+        if not self.is_alive() or not bool(getattr(self, "deployed", False)):
+            return False
+        if bool(getattr(self, "is_embarked", False)) or self.is_in_reserves():
+            return False
+        if bool(getattr(model, "_pending_placement", False)):
+            return False
+
+        alive_attr = getattr(model, "is_alive", True)
+        if callable(alive_attr):
+            if not bool(alive_attr()):
+                return False
+        elif not bool(alive_attr):
+            return False
+
+        objective_x = float(getattr(objective_point, "x", 0.0) or 0.0)
+        objective_y = float(getattr(objective_point, "y", 0.0) or 0.0)
+        control_radius = float(getattr(objective_point, "control_radius", 0.0) or 0.0)
+        objective_area = Point(objective_x, objective_y).buffer(control_radius)
+
+        model_base = getattr(model, "model_base", None)
+        if model_base is not None:
+            try:
+                if bool(model_base.get_base_shape().intersects(objective_area)):
+                    return True
+            except (AttributeError, TypeError, ValueError, GEOSException):
+                pass
+
+        get_location = getattr(model, "get_location", None)
+        if not callable(get_location):
+            return False
+        pos = get_location()
+        if not pos:
+            return False
+
+        model_x = float(pos[0] or 0.0)
+        model_y = float(pos[1] or 0.0)
+        base_radius = 1.0
+        if model_base is not None:
+            try:
+                base_radius = float(model_base.get_radius() or 1.0)
+            except (AttributeError, TypeError, ValueError):
+                base_radius = 1.0
+        dx = model_x - objective_x
+        dy = model_y - objective_y
+        return math.hypot(dx, dy) <= (control_radius + base_radius)
+
     def is_within_objective_range(self, objective_point) -> bool:
         """Return True if any alive model in this unit is within objective control range."""
         if objective_point is None:
             return False
-        try:
-            if not self.is_alive() or not getattr(self, "deployed", False):
-                return False
-        except Exception:
+        if not self.is_alive() or not bool(getattr(self, "deployed", False)):
             return False
-        try:
-            if bool(getattr(self, "is_embarked", False)) or self.is_in_reserves():
-                return False
-        except Exception:
-            pass
-        try:
-            models = list(self.get_models_for_collision() or [])
-        except Exception:
+        if bool(getattr(self, "is_embarked", False)) or self.is_in_reserves():
+            return False
+        get_models = getattr(self, "get_models_for_collision", None)
+        if callable(get_models):
+            models = list(get_models() or [])
+        else:
             models = list(getattr(self, "models", []) or [])
-        models = [m for m in models if bool(getattr(m, "is_alive", True))]
-        if not models:
-            return False
-        try:
-            from shapely.geometry import Point as _ShPoint
-            area = _ShPoint(objective_point.x, objective_point.y).buffer(
-                float(getattr(objective_point, "control_radius", 0.0) or 0.0)
-            )
-        except Exception:
-            area = None
         for model in models:
-            try:
-                if area is not None:
-                    base = model.model_base.get_base_shape()
-                    if base.intersects(area):
-                        return True
-            except Exception:
-                pass
-            try:
-                pos = model.get_location()
-            except Exception:
-                pos = None
-            if not pos:
-                continue
-            try:
-                dx = float(pos[0]) - float(getattr(objective_point, "x", 0.0))
-                dy = float(pos[1]) - float(getattr(objective_point, "y", 0.0))
-                radius = float(getattr(objective_point, "control_radius", 0.0) or 0.0)
-                base_r = float(getattr(model.model_base, "get_radius", lambda: 1.0)())
-                if (dx * dx + dy * dy) ** 0.5 <= (radius + base_r):
-                    return True
-            except Exception:
-                continue
+            if self.is_model_within_objective_range(model, objective_point):
+                return True
         return False
 
     def get_models_for_wound_allocation(self) -> List['Model']:

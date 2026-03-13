@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from warhammer40k_ai.battlefield.map import ObjectivePoint
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
@@ -139,6 +140,7 @@ def test_ork_passive_enhancement_descriptors_registered():
         "000008885005": "Tellyporta",
         "000008868002": "Glory Hog",
         "000008868003": "Proper Killy",
+        "000008868004": "Skrag Every Stash!",
         "000008868005": "Surly as a Squiggoth",
         "000008877002": "Gitfinder Googlez",
         "000008877004": "Smoky Gubbinz",
@@ -192,6 +194,32 @@ def test_glory_hog_and_proper_killy_apply_scouts_and_bearer_melee_damage_bonus()
     assert has_scout is True
     assert float(distance) == 9.0
     assert int(snagga.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0) == 1
+
+
+def test_skrag_every_stash_registers_bearer_only_sticky_objective_claim_rule():
+    army = _make_ork_army("Da Big Hunt")
+    bearer = _make_unit(
+        "Beastboss",
+        "orks-skrag-bearer",
+        keywords=["CHARACTER", "INFANTRY", "BEAST SNAGGA"],
+        faction_keywords=["ORKS"],
+    )
+    army.add_unit(bearer)
+    bearer.deployed = True
+    bearer.reserve_status = "deployed"
+    bearer.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+
+    _apply_enhancement(bearer, "Skrag Every Stash!")
+
+    objective_point = ObjectivePoint(0.0, 0.0, 0.0, control_radius=3.0)
+    claim_rule = bearer.command_phase_sticky_objective_claim_rule(objective_point)
+
+    assert claim_rule is not None
+    assert str(claim_rule.get("source_scope", "") or "") == "bearer"
+    assert bool(claim_rule.get("allow_embarked_transport", False)) is False
+    assert str(claim_rule.get("source_model_id", "") or "") == str(
+        bearer.special_rules.get("enhancement_skrag_every_stash_bearer_model_id", "") or ""
+    )
 
 
 def test_surly_as_a_squiggoth_applies_defensive_wound_penalty_when_strength_exceeds_toughness():

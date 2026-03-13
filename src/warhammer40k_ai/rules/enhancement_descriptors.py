@@ -331,6 +331,7 @@ _MECHANISED_ASSAULT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
         effect="sticky_objective_control",
         effect_params={
             "allow_embarked_transport": True,
+            "source_scope": "unit",
             "sticky_source": "unit_sticky_objective",
         },
     ),
@@ -6823,6 +6824,19 @@ _ORKS_DA_BIG_HUNT_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
         duration="constant",
         effect="bearer_melee_damage_bonus",
         effect_params={"melee_damage_bonus": 1},
+    ),
+    "000008868004": EnhancementToolDescriptor(
+        enhancement_id="000008868004",
+        name="Skrag Every Stash!",
+        timing="end_of_command_phase",
+        target="controlled_objective_markers_within_bearer",
+        duration="until_opponent_controls_at_start_or_end_of_turn",
+        effect="sticky_objective_control",
+        effect_params={
+            "allow_embarked_transport": False,
+            "source_scope": "bearer",
+            "sticky_source": "unit_sticky_objective",
+        },
     ),
     "000008868005": EnhancementToolDescriptor(
         enhancement_id="000008868005",

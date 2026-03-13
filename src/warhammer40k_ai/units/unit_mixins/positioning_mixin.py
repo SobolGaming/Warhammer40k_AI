@@ -2171,6 +2171,111 @@ class PositioningMixin:
             return False
         return True
 
+    def _command_phase_sticky_objective_rule_is_active(self, root, member, rule: dict[str, object]) -> bool:
+        if not bool(rule.get("requires_bearer_leading", False)):
+            return True
+        return bool(getattr(member, "is_leader", False)) and getattr(member, "attached_to", None) is root
+
+    def _iter_command_phase_sticky_objective_rules(self) -> list[tuple["Unit", dict[str, object]]]:
+        root = self.get_attached_unit_root()
+        members = sorted(
+            list(root.get_attached_unit_members() or []),
+            key=lambda unit: str(get_entity_id(unit) or ""),
+        )
+        entries: list[tuple["Unit", dict[str, object]]] = []
+        seen: set[tuple[str, str, str, str, bool, bool]] = set()
+
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+
+            for raw_entry in list(sr.get("enhancement_sticky_objective_rules", []) or []):
+                if not isinstance(raw_entry, dict):
+                    continue
+                entry = {
+                    "source_scope": str(raw_entry.get("source_scope", "unit") or "unit").strip().lower(),
+                    "source": str(raw_entry.get("source", "unit_sticky_objective") or "unit_sticky_objective").strip()
+                    or "unit_sticky_objective",
+                    "allow_embarked_transport": bool(raw_entry.get("allow_embarked_transport", False)),
+                    "requires_bearer_leading": bool(raw_entry.get("requires_bearer_leading", False)),
+                    "source_model_id": str(raw_entry.get("source_model_id", "") or "").strip(),
+                }
+                if entry["source_scope"] not in ("unit", "bearer"):
+                    entry["source_scope"] = "unit"
+                if not self._command_phase_sticky_objective_rule_is_active(root, member, entry):
+                    continue
+                dedupe_key = (
+                    str(get_entity_id(member) or ""),
+                    str(entry["source_scope"]),
+                    str(entry["source_model_id"]),
+                    str(entry["source"]).lower(),
+                    bool(entry["allow_embarked_transport"]),
+                    bool(entry["requires_bearer_leading"]),
+                )
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                entries.append((member, entry))
+
+            scan = member._command_phase_sticky_objective_scan_result()
+            if not bool(scan.get("found", False)):
+                continue
+            entry = {
+                "source_scope": "unit",
+                "source": "unit_sticky_objective",
+                "allow_embarked_transport": bool(scan.get("allow_embarked_transport", False)),
+                "requires_bearer_leading": bool(scan.get("requires_leading_unit", False)),
+                "source_model_id": "",
+            }
+            if not self._command_phase_sticky_objective_rule_is_active(root, member, entry):
+                continue
+            dedupe_key = (
+                str(get_entity_id(member) or ""),
+                "unit",
+                "",
+                "unit_sticky_objective",
+                bool(entry["allow_embarked_transport"]),
+                bool(entry["requires_bearer_leading"]),
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            entries.append((member, entry))
+
+        return entries
+
+    def _command_phase_sticky_objective_rule_in_range(self, objective_point, *, member, rule: dict[str, object]) -> bool:
+        root = self.get_attached_unit_root()
+        if str(rule.get("source_scope", "unit") or "unit").strip().lower() == "bearer":
+            source_model_id = str(rule.get("source_model_id", "") or "").strip()
+            if not source_model_id:
+                return False
+            source_model = root.get_attached_unit_model_by_id(source_model_id)
+            if source_model is None:
+                return False
+            return bool(root.is_model_within_objective_range(source_model, objective_point))
+
+        if root.is_within_objective_range(objective_point):
+            return True
+        if not bool(rule.get("allow_embarked_transport", False)):
+            return False
+        transport = getattr(root, "embarked_in", None)
+        return bool(transport is not None and transport.is_within_objective_range(objective_point))
+
+    def command_phase_sticky_objective_claim_rule(self, objective_point) -> dict[str, object] | None:
+        root = self.get_attached_unit_root()
+        if root is not self:
+            return root.command_phase_sticky_objective_claim_rule(objective_point)
+        if objective_point is None:
+            return None
+        for member, rule in root._iter_command_phase_sticky_objective_rules():
+            if not member.command_phase_sticky_objective_prerequisites_met():
+                continue
+            if root._command_phase_sticky_objective_rule_in_range(objective_point, member=member, rule=rule):
+                return dict(rule)
+        return None
+
     def visions_of_butchery_attacks_bonus_for_weapon(self, weapon_name: str) -> int:
         if not self.vanguard_of_dark_city_mode_active("visions_of_butchery"):
             return 0
@@ -3260,26 +3365,7 @@ class PositioningMixin:
 
     def attached_unit_has_command_phase_sticky_objective(self) -> bool:
         """Attached unit eligibility: true if any attached member has sticky objective ability."""
-        try:
-            root = self.get_attached_unit_root()
-        except Exception:
-            root = self
-        for u in self.get_attached_unit_members():
-            try:
-                sr = getattr(u, "special_rules", None)
-                has_sticky = bool(isinstance(sr, dict) and sr.get("sticky_objectives"))
-                if not has_sticky:
-                    has_sticky = bool(u.has_command_phase_sticky_objective())
-                if not has_sticky:
-                    continue
-                requires_leading = bool(isinstance(sr, dict) and sr.get("sticky_objectives_requires_leading_unit"))
-                if not requires_leading:
-                    return True
-                if bool(getattr(u, "is_leader", False)) and getattr(u, "attached_to", None) is root:
-                    return True
-            except Exception:
-                continue
-        return False
+        return bool(self._iter_command_phase_sticky_objective_rules())
 
     def attached_unit_has_kill_team(self) -> bool:
         """Attached unit eligibility: true if any attached member has the Kill Team ability."""

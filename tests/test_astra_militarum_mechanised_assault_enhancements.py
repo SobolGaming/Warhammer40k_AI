@@ -208,6 +208,11 @@ class TestAstraMilitarumMechanisedAssaultEnhancements(unittest.TestCase):
         )
         game.map.objectives = [objective]
 
+        claim_rule = officer.command_phase_sticky_objective_claim_rule(objective_point)
+        self.assertIsNotNone(claim_rule)
+        self.assertEqual(str(claim_rule.get("source_scope", "") or ""), "unit")
+        self.assertTrue(bool(claim_rule.get("allow_embarked_transport", False)))
+
         game.event_system.publish("phase_end", player=am_player, phase=BattleRoundPhases.COMMAND_PHASE)
         self.assertIs(objective_point.sticky_controller, am_player)
 
