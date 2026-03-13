@@ -14,6 +14,8 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import WargearProfile
 
+from tests.orks_enhancement_test_utils import apply_enhancement
+
 
 class _MockDatasheet:
     def __init__(self, name: str, *, keywords=None, faction_keywords=None):
@@ -345,3 +347,88 @@ def test_attack_resolution_hazardous_request_uses_fail_on_two_for_dread_mob_mult
     assert queued is True
     fail_on = list((captured_spec.get("spec", {}) or {}).get("fail_on", []) or [])
     assert fail_on == [1, 2]
+
+
+def test_press_it_fasta_rolls_extra_die_and_applies_both_distinct_button_effects():
+    mek = _create_unit("Mek", keywords=["CHARACTER", "INFANTRY", "MEK"], faction_keywords=["ORKS"])
+    enemy = _create_unit("Enemy Unit", keywords=["INFANTRY"])
+    game, ork_player, ork_army = _build_game(ork_units=[mek], enemy_units=[enemy])
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    apply_enhancement(ork_army, mek, "Press It Fasta!")
+    game.rebuild_entity_registry()
+
+    game._on_shooting_targets_selected_orks_try_dat_button(attacking_unit=mek, target_units=[enemy])
+    request = _find_try_dat_button_request(game, trigger="shooting")
+    assert request is not None
+    roll_choice = _find_option(request, mode="roll")
+    assert roll_choice is not None
+
+    with patch("warhammer40k_ai.rules.orks_detachments.get_roll", side_effect=[1, 4]):
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=getattr(ork_player, "id", None),
+            option_id=roll_choice.option_id,
+            payload={},
+        )
+        apply_result = dispatch_decision(game, request, result)
+    assert bool(apply_result.ok)
+
+    assert list(mek.special_rules.get("dread_mob_try_dat_button_rolls", []) or []) == [1, 4]
+    assert list(mek.special_rules.get("dread_mob_try_dat_button_effects", []) or []) == [
+        "SUSTAINED_HITS_1",
+        "LETHAL_HITS",
+    ]
+
+    mgr = getattr(ork_army, "orks_detachments", None)
+    assert mgr is not None
+    attacker_model = mek.models[0]
+    assert mgr.dread_mob_try_dat_button_lethal_hits_applies(attacker_model, game=game) is True
+    assert int(mgr.dread_mob_try_dat_button_sustained_hits_value(attacker_model, game=game)) == 1
+
+    profile = _make_profile(is_ranged=True, description="")
+    attack_instance = {}
+    hit_result = profile._hit_target_with_tracking(
+        enemy,
+        attacker_model,
+        attack_instance,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(hit_result.get("hit"))
+    assert bool(attack_instance.get("lethal_hit", False))
+    assert int(attack_instance.get("sustained_hit", 0) or 0) == 1
+
+
+def test_press_it_fasta_duplicate_rolls_apply_only_one_button_effect():
+    mek = _create_unit("Mek", keywords=["CHARACTER", "INFANTRY", "MEK"], faction_keywords=["ORKS"])
+    enemy = _create_unit("Enemy Unit", keywords=["INFANTRY"])
+    game, ork_player, ork_army = _build_game(ork_units=[mek], enemy_units=[enemy])
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    apply_enhancement(ork_army, mek, "Press It Fasta!")
+    game.rebuild_entity_registry()
+
+    game._on_shooting_targets_selected_orks_try_dat_button(attacking_unit=mek, target_units=[enemy])
+    request = _find_try_dat_button_request(game, trigger="shooting")
+    assert request is not None
+    roll_choice = _find_option(request, mode="roll")
+    assert roll_choice is not None
+
+    with patch("warhammer40k_ai.rules.orks_detachments.get_roll", side_effect=[1, 2]):
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=getattr(ork_player, "id", None),
+            option_id=roll_choice.option_id,
+            payload={},
+        )
+        apply_result = dispatch_decision(game, request, result)
+    assert bool(apply_result.ok)
+
+    assert list(mek.special_rules.get("dread_mob_try_dat_button_rolls", []) or []) == [1, 2]
+    assert list(mek.special_rules.get("dread_mob_try_dat_button_effects", []) or []) == ["SUSTAINED_HITS_1"]
+
+    mgr = getattr(ork_army, "orks_detachments", None)
+    assert mgr is not None
+    attacker_model = mek.models[0]
+    assert int(mgr.dread_mob_try_dat_button_sustained_hits_value(attacker_model, game=game)) == 1
+    assert mgr.dread_mob_try_dat_button_lethal_hits_applies(attacker_model, game=game) is False

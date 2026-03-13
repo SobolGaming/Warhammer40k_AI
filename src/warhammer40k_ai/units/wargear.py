@@ -3202,6 +3202,13 @@ class WargearProfile:
             bearer_bonus = int(sr.get("enhancement_bearer_ranged_ap_bonus", 0) or 0)
             if bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
                 ap_val -= bearer_bonus
+            weapon_lookup_name = self._temporary_weapon_lookup_name()
+            if weapon_lookup_name:
+                temp_ap_bonus, _temp_ap_reasons = getattr(attacker, "get_temporary_weapon_ap_bonus", lambda _n: (0, []))(
+                    weapon_lookup_name
+                )
+                if temp_ap_bonus:
+                    ap_val -= int(temp_ap_bonus)
         attacker_unit = getattr(attacker, "parent_unit", None)
         get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
         army = get_parent_army() if callable(get_parent_army) else None

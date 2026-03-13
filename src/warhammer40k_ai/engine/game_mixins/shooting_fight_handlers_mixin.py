@@ -5553,6 +5553,126 @@ class GameShootingFightHandlersMixin:
             instance_key=f"{unit_id}:ammo_runt:{used}",
         )
 
+    def _on_shooting_targets_selected_orks_selected_to_shoot_utilities(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+
+        roll_specs_fn = getattr(root, "unit_selected_to_shoot_roll_table_specs", None)
+        if callable(roll_specs_fn):
+            roll_specs = sorted(
+                list(roll_specs_fn() or []),
+                key=lambda spec: (
+                    str(spec.get("ability_key", "") or ""),
+                    str(spec.get("source", "") or "").strip().lower(),
+                ),
+            )
+            for spec in list(roll_specs or []):
+                ability_name = str(spec.get("source", "") or "Selected to shoot").strip() or "Selected to shoot"
+                ability_key = (
+                    str(spec.get("ability_key", "") or root._normalize_keyword_phrase(ability_name) or "selected_to_shoot")
+                    .strip()
+                    .lower()
+                )
+                if not ability_key:
+                    continue
+                self._queue_optional_ability_confirmation(
+                    player=player,
+                    ability_key=ability_key,
+                    ability_name=ability_name,
+                    message=f"Use {ability_name} for {getattr(root, 'name', 'Unit')}?",
+                    context={
+                        "ability": ability_key,
+                        "ability_key": ability_key,
+                        "ability_name": ability_name,
+                        "phase": "Shooting phase",
+                        "unit": getattr(root, "name", "") or "",
+                        "unit_id": unit_id,
+                    },
+                    payload={
+                        "unit_id": unit_id,
+                        "ability_key": ability_key,
+                        "ability_name": ability_name,
+                    },
+                    instance_key=f"{unit_id}:{ability_key}:shooting",
+                )
+
+        model_bonus_specs_fn = getattr(root, "iter_selected_to_shoot_model_ranged_bonus_specs", None)
+        if not callable(model_bonus_specs_fn):
+            return
+        model_bonus_specs = sorted(
+            list(model_bonus_specs_fn() or []),
+            key=lambda spec: (
+                str(spec.get("model_id", "") or ""),
+                str(spec.get("ability_key", "") or ""),
+                str(spec.get("source", "") or "").strip().lower(),
+            ),
+        )
+        for spec in list(model_bonus_specs or []):
+            model = spec.get("model")
+            model_id = str(spec.get("model_id", "") or get_entity_id(model) or "")
+            if not model_id or model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            ability_name = str(spec.get("source", "") or "Selected to shoot").strip() or "Selected to shoot"
+            ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+            if not ability_key:
+                continue
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+                continue
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key=ability_key,
+                ability_name=ability_name,
+                message=f"Use {ability_name} for {getattr(root, 'name', 'Unit')}?",
+                context={
+                    "ability": ability_key,
+                    "ability_key": ability_key,
+                    "ability_name": ability_name,
+                    "phase": "Shooting phase",
+                    "unit": getattr(root, "name", "") or "",
+                    "unit_id": unit_id,
+                    "model": getattr(model, "name", "") or "",
+                    "model_id": model_id,
+                    "attacks_bonus": int(spec.get("attacks_bonus", 0) or 0),
+                    "strength_bonus": int(spec.get("strength_bonus", 0) or 0),
+                    "ap_bonus": int(spec.get("ap_bonus", 0) or 0),
+                },
+                payload={
+                    "unit_id": unit_id,
+                    "model_id": model_id,
+                    "ability_key": ability_key,
+                    "ability_name": ability_name,
+                    "attacks_bonus": int(spec.get("attacks_bonus", 0) or 0),
+                    "strength_bonus": int(spec.get("strength_bonus", 0) or 0),
+                    "ap_bonus": int(spec.get("ap_bonus", 0) or 0),
+                },
+                instance_key=f"{model_id}:{ability_key}:shooting",
+            )
+
     def _on_shooting_targets_selected_sacrificial_dagger(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None or not target_units:
             return

@@ -6117,6 +6117,8 @@ def _classify_ability_base(
     recount_the_deeds_support = _recount_the_deeds_of_the_saints_support(description)
     cat_unit_support = _cat_unit_support(description)
     ammo_runt_support = _ammo_runt_support(description)
+    shooty_power_trip_support = _shooty_power_trip_support(description)
+    pulsa_rokkit_support = _pulsa_rokkit_support(description)
     bomb_squigs_support = _bomb_squigs_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
@@ -6325,6 +6327,10 @@ def _classify_ability_base(
         return cat_unit_support
     if ammo_runt_support:
         return ammo_runt_support
+    if shooty_power_trip_support:
+        return shooty_power_trip_support
+    if pulsa_rokkit_support:
+        return pulsa_rokkit_support
     if bomb_squigs_support:
         return bomb_squigs_support
     if attached_character_fnp_support:
@@ -14609,6 +14615,47 @@ def _cat_unit_support(description: str) -> Optional[Tuple[str, str]]:
     )
 
 
+def _shooty_power_trip_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"each time this unit is selected to shoot you can roll one d6 "
+        r"on a 1 2 this unit suffers d3 mortal wounds "
+        r"on a 3 4 until the end of the phase add 1 to the strength characteristic of ranged weapons equipped by models in this unit "
+        r"on a 5 6 until the end of the phase add 1 to the attacks characteristic of ranged weapons equipped by models in this unit",
+        norm,
+    )
+    if not m:
+        return None
+    return (
+        "Supported",
+        "When selected to shoot: optional D6 branch resolves self D3 mortal wounds on 1-2, +1 Strength to the unit's ranged weapons on 3-4, or +1 Attacks on 5-6 until end of phase.",
+    )
+
+
+def _pulsa_rokkit_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"once per battle when the bearers unit is selected to shoot in your shooting phase "
+        r"the bearer can use its pulsa rokkit "
+        r"if it does until the end of the phase improve the strength and armour penetration characteristics of ranged weapons equipped by models in the bearers unit by 1",
+        norm,
+    )
+    if not m:
+        return None
+    return (
+        "Supported",
+        "Once per battle when the bearer's unit is selected to shoot: optional bearer activation grants +1 Strength and +1 AP to the unit's ranged weapons until end of phase.",
+    )
+
+
 def _bomb_squigs_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -15171,6 +15218,7 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000008868004": "Skrag Every Stash!: at the end of your Command phase, objective markers you control remain sticky when the bearer model is in range.",
         "000008868005": "Surly as a Squiggoth: while the bearer is leading a unit, attacks targeting that unit suffer -1 to Wound rolls when Strength exceeds that unit's Toughness.",
         "000008877002": "Gitfinder Googlez: ranged weapons equipped by models in the bearer's unit gain [IGNORES COVER].",
+        "000008877003": "Press It Fasta!: each time the bearer's unit is selected to shoot, Try Dat Button! rolls one additional D6 and the unit gains each distinct button effect rolled until end of phase.",
         "000008877004": "Smoky Gubbinz: models in the bearer's unit gain Stealth.",
         "000010712003": "Git-spotter Squig: ranged weapons equipped by models in the bearer's unit gain [IGNORES COVER].",
         "000010712005": "Razgit's Magik Map: after deployment, redeploy up to three friendly ORKS INFANTRY units; selected units may be placed into Strategic Reserves regardless of current reserve unit count.",

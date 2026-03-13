@@ -6881,6 +6881,20 @@ _ORKS_DREAD_MOB_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
         effect="grant_weapon_keywords",
         effect_params={"keywords": ("IGNORES COVER",), "attack_type": "ranged"},
     ),
+    "000008877003": EnhancementToolDescriptor(
+        enhancement_id="000008877003",
+        name="Press It Fasta!",
+        timing="when_selected_to_shoot_before_dread_mob_button_roll",
+        target="bearer_unit",
+        duration="until_end_of_phase",
+        effect="selected_to_shoot_detachment_roll_augmentation",
+        effect_params={
+            "detachment_ability": "try_dat_button",
+            "trigger": "shooting",
+            "extra_rolls": 1,
+            "requires_bearer_alive": True,
+        },
+    ),
     "000008877004": EnhancementToolDescriptor(
         enhancement_id="000008877004",
         name="Smoky Gubbinz",

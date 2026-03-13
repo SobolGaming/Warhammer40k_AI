@@ -4802,6 +4802,8 @@ class GameReactiveDecisionsMixin:
             "movement_phase_move_weapon_bonus",
             "hand_of_asuryan",
             "shieldbreaker",
+            "shooty_power_trip",
+            "pulsa_rokkit",
             "soulless_horror",
             "lord_of_the_storm",
             "cat_unit",
@@ -6992,6 +6994,73 @@ class GameReactiveDecisionsMixin:
                 ability_name=ability_name,
                 weapon_name=weapon_name,
                 wound_bonus=int(wound_bonus),
+            )
+            return
+
+        if ability_key == "shooty_power_trip":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            specs_fn = getattr(root, "unit_selected_to_shoot_roll_table_specs", None)
+            if not callable(specs_fn):
+                return
+            resolved_key = str(payload.get("ability_key") or ctx.get("ability_key") or ability_key).strip().lower()
+            spec = next(
+                (
+                    candidate
+                    for candidate in list(specs_fn() or [])
+                    if str(candidate.get("ability_key", "") or "").strip().lower() == resolved_key
+                ),
+                None,
+            )
+            if not isinstance(spec, dict):
+                return
+            resolve_fn = getattr(root, "resolve_selected_to_shoot_roll_table", None)
+            if not callable(resolve_fn):
+                return
+            resolve_fn(spec=spec, game=self)
+            return
+
+        if ability_key == "pulsa_rokkit":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not unit_id or not model_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            model = self._resolve_model_by_id(model_id)
+            if unit is None or model is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            model_alive = getattr(model, "is_alive", True)
+            if not bool(model_alive() if callable(model_alive) else model_alive):
+                return
+            activate_fn = getattr(root, "activate_selected_to_shoot_once_per_battle_ranged_bonus", None)
+            if not callable(activate_fn):
+                return
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Pulsa Rokkit").strip() or "Pulsa Rokkit"
+            ability_key_value = str(payload.get("ability_key") or ctx.get("ability_key") or "pulsa_rokkit").strip().lower() or "pulsa_rokkit"
+            activate_fn(
+                model=model,
+                ability_key=ability_key_value,
+                source=ability_name,
+                game=self,
+                attacks_bonus=int(payload.get("attacks_bonus") or ctx.get("attacks_bonus") or 0),
+                strength_bonus=int(payload.get("strength_bonus") or ctx.get("strength_bonus") or 0),
+                ap_bonus=int(payload.get("ap_bonus") or ctx.get("ap_bonus") or 0),
             )
             return
 

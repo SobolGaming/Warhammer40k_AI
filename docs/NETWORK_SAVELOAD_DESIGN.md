@@ -359,6 +359,8 @@ Shooting:
 - master_of_magicks_dialog: CHOOSE_MASTER_OF_MAGICKS {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
 - technosorcerous_augmentations_dialog: CHOOSE_TECHNOSORCEROUS_AUGMENTATION {choice} (context `unit_id`, `ability_name`, `phase_name`)
 - hand_of_asuryan_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="hand_of_asuryan"`, `unit_id`, `model_id`, `weapon_name`, `ability_name`)
+- shooty_power_trip_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="shooty_power_trip"`, `ability_key`, `unit_id`, `ability_name`; optional selected-to-shoot D6 branch resolves through shared ranged stat/self-mortal helper plumbing)
+- pulsa_rokkit_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="pulsa_rokkit"`, `unit_id`, `model_id`, `ability_key`, `ability_name`, `strength_bonus`, `ap_bonus`; bearer-scoped once-per-battle selected-to-shoot ranged bonus)
 - shieldbreaker_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="shieldbreaker"`, `unit_id`, `model_id`, `ability_key`, `weapon_name`, `wound_bonus`)
 - dark_blessings_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_invulnerable_save"`, `unit_id`, `model_id`, `buff_key`, `invuln`; triggered after enemy target selection in Shooting/Fight)
 - iron_resolve_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_fnp"`, `unit_id`, `ability_key`, `fnp_value`, `trigger_action`; triggered after bearer unit is selected as a target in Shooting/Fight)

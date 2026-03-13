@@ -40,6 +40,21 @@ def test_support_matrix_classifies_bionik_workshop_as_supported():
     assert "bionik" in notes_l
 
 
+def test_support_matrix_classifies_press_it_fasta_as_supported():
+    import scripts.generate_ability_support_matrix as gsm
+
+    status, notes = gsm._enhancement_support(
+        "Press It Fasta!",
+        "000008877003",
+        _enhancement_description("Press It Fasta!"),
+    )
+
+    assert status == "Supported"
+    notes_l = notes.lower()
+    assert "try dat button" in notes_l
+    assert "additional d6" in notes_l or "additional" in notes_l
+
+
 def test_support_matrix_classifies_supa_glowy_fing_as_supported():
     import scripts.generate_ability_support_matrix as gsm
 

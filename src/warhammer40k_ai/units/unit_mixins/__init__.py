@@ -9,6 +9,7 @@ from .shooting_mixin import ShootingMixin
 from .positioning_mixin import PositioningMixin
 from .keywords_detachments_mixin import KeywordsDetachmentsMixin
 from .ability_specs_mixin import AbilitySpecsMixin
+from .selected_to_shoot_mixin import SelectedToShootMixin
 from .late_gameplay_mixin import LateGameplayMixin
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     'PositioningMixin',
     'KeywordsDetachmentsMixin',
     'AbilitySpecsMixin',
+    'SelectedToShootMixin',
     'LateGameplayMixin',
 ]

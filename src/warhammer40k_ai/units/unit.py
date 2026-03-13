@@ -100,6 +100,7 @@ from .unit_mixins import (
     PositioningMixin,
     KeywordsDetachmentsMixin,
     AbilitySpecsMixin,
+    SelectedToShootMixin,
     LateGameplayMixin,
 )
 from .unit_mixins import (
@@ -112,6 +113,7 @@ from .unit_mixins import (
     positioning_mixin as _positioning_mixin,
     keywords_detachments_mixin as _keywords_detachments_mixin,
     ability_specs_mixin as _ability_specs_mixin,
+    selected_to_shoot_mixin as _selected_to_shoot_mixin,
     late_gameplay_mixin as _late_gameplay_mixin,
 )
 
@@ -125,6 +127,7 @@ _UNIT_MIXIN_MODULES = (
     _positioning_mixin,
     _keywords_detachments_mixin,
     _ability_specs_mixin,
+    _selected_to_shoot_mixin,
     _late_gameplay_mixin,
 )
 
@@ -143,6 +146,7 @@ class Unit(
     PositioningMixin,
     KeywordsDetachmentsMixin,
     AbilitySpecsMixin,
+    SelectedToShootMixin,
     LateGameplayMixin,
 ):
     def __init__(self, datasheet, quantity=None, enhancement=None):

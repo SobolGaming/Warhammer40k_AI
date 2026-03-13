@@ -2017,17 +2017,34 @@ class OrksDetachmentManager(DetachmentManagerBase):
             return None
         mode = str(dict(payload or {}).get("button_mode", "") or "").strip().lower()
         effect_key = ""
+        effect_keys: list[str] = []
         rolled = 0
+        rolled_values: list[int] = []
         hazardous = False
         if mode == "roll":
-            rolled = int(get_roll("D6") or 1)
-            if rolled < 1:
-                rolled = 1
-            if rolled > 6:
-                rolled = 6
-            effect_key = self._dread_mob_effect_from_roll(int(rolled))
+            roll_count = 1
+            roll_count_fn = getattr(root, "selected_to_shoot_try_dat_button_roll_count", None)
+            if callable(roll_count_fn):
+                try:
+                    roll_count = int(roll_count_fn(trigger=str(trigger or "").strip().lower()) or 1)
+                except (TypeError, ValueError):
+                    roll_count = 1
+            roll_count = max(1, int(roll_count))
+            for _roll_index in range(roll_count):
+                rolled_value = int(get_roll("D6") or 1)
+                if rolled_value < 1:
+                    rolled_value = 1
+                if rolled_value > 6:
+                    rolled_value = 6
+                rolled_values.append(int(rolled_value))
+                mapped_effect = self._dread_mob_effect_from_roll(int(rolled_value))
+                if mapped_effect and mapped_effect not in effect_keys:
+                    effect_keys.append(str(mapped_effect))
+            rolled = int(rolled_values[0] or 0) if rolled_values else 0
+            effect_key = str(effect_keys[0] or "") if effect_keys else ""
         else:
             effect_key = str(dict(payload or {}).get("button_effect", "") or "").strip().upper()
+            effect_keys = [effect_key] if effect_key else []
             hazardous = True
         if effect_key not in set(self._DREAD_MOB_BUTTON_EFFECTS):
             return None
@@ -2045,9 +2062,11 @@ class OrksDetachmentManager(DetachmentManagerBase):
 
         sr["dread_mob_try_dat_button_active"] = True
         sr["dread_mob_try_dat_button_effect"] = str(effect_key)
+        sr["dread_mob_try_dat_button_effects"] = list(effect_keys)
         sr["dread_mob_try_dat_button_hazardous"] = bool(hazardous)
         sr["dread_mob_try_dat_button_mode"] = str(mode)
         sr["dread_mob_try_dat_button_roll"] = int(rolled)
+        sr["dread_mob_try_dat_button_rolls"] = list(rolled_values)
         sr["dread_mob_try_dat_button_expires_phase"] = str(current_phase)
         sr["dread_mob_try_dat_button_turn"] = int(current_turn)
         sr["dread_mob_try_dat_button_trigger"] = str(trigger or "").strip().lower()
@@ -2058,9 +2077,12 @@ class OrksDetachmentManager(DetachmentManagerBase):
             "unit_name": str(getattr(root, "name", "Unit") or "Unit"),
             "mode": str(mode),
             "effect_key": str(effect_key),
+            "effect_keys": list(effect_keys),
             "effect_label": self._dread_mob_effect_label(effect_key),
+            "effect_labels": [self._dread_mob_effect_label(key) for key in list(effect_keys or [])],
             "hazardous": bool(hazardous),
             "roll": int(rolled),
+            "rolls": list(rolled_values),
             "source": "Try Dat Button!",
             "phase_name": str(current_phase),
         }
@@ -2079,8 +2101,16 @@ class OrksDetachmentManager(DetachmentManagerBase):
         sr = getattr(root, "special_rules", None)
         if not isinstance(sr, dict) or not bool(sr.get("dread_mob_try_dat_button_active")):
             return None
+        effect_keys = [
+            str(value or "").strip().upper()
+            for value in list(sr.get("dread_mob_try_dat_button_effects", []) or [])
+            if str(value or "").strip()
+        ]
+        effect_keys = [key for key in effect_keys if key in set(self._DREAD_MOB_BUTTON_EFFECTS)]
         effect_key = str(sr.get("dread_mob_try_dat_button_effect", "") or "").strip().upper()
-        if effect_key not in set(self._DREAD_MOB_BUTTON_EFFECTS):
+        if effect_key in set(self._DREAD_MOB_BUTTON_EFFECTS) and effect_key not in effect_keys:
+            effect_keys.insert(0, effect_key)
+        if not effect_keys:
             return None
         if game is None:
             army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
@@ -2102,23 +2132,34 @@ class OrksDetachmentManager(DetachmentManagerBase):
                 current_turn = 0
             if current_turn and current_turn != effect_turn:
                 return None
+        rolls = [int(value or 0) for value in list(sr.get("dread_mob_try_dat_button_rolls", []) or [])]
+        if not rolls:
+            first_roll = int(sr.get("dread_mob_try_dat_button_roll", 0) or 0)
+            if first_roll:
+                rolls = [int(first_roll)]
         return {
-            "effect_key": effect_key,
+            "effect_key": str(effect_keys[0] or ""),
+            "effect_keys": list(effect_keys),
             "hazardous": bool(sr.get("dread_mob_try_dat_button_hazardous")),
             "source": str(sr.get("dread_mob_try_dat_button_source", "") or "Try Dat Button!"),
+            "rolls": list(rolls),
         }
 
     def dread_mob_try_dat_button_lethal_hits_applies(self, attacker_model, *, game=None) -> bool:
         entry = self._dread_mob_try_dat_button_entry(attacker_model, game=game)
         if not isinstance(entry, dict):
             return False
-        return str(entry.get("effect_key", "") or "") == self._DREAD_MOB_BUTTON_LETHAL
+        return self._DREAD_MOB_BUTTON_LETHAL in {
+            str(value or "").strip().upper() for value in list(entry.get("effect_keys", []) or [])
+        }
 
     def dread_mob_try_dat_button_sustained_hits_value(self, attacker_model, *, game=None) -> int:
         entry = self._dread_mob_try_dat_button_entry(attacker_model, game=game)
         if not isinstance(entry, dict):
             return 0
-        if str(entry.get("effect_key", "") or "") != self._DREAD_MOB_BUTTON_SUSTAINED:
+        if self._DREAD_MOB_BUTTON_SUSTAINED not in {
+            str(value or "").strip().upper() for value in list(entry.get("effect_keys", []) or [])
+        }:
             return 0
         return 1
 
@@ -2130,7 +2171,9 @@ class OrksDetachmentManager(DetachmentManagerBase):
         entry = self._dread_mob_try_dat_button_entry(attacker_model, game=game)
         if not isinstance(entry, dict):
             return 0, ""
-        if str(entry.get("effect_key", "") or "") != self._DREAD_MOB_BUTTON_CRIT_AP:
+        if self._DREAD_MOB_BUTTON_CRIT_AP not in {
+            str(value or "").strip().upper() for value in list(entry.get("effect_keys", []) or [])
+        }:
             return 0, ""
         source = str(entry.get("source", "") or "Try Dat Button!").strip() or "Try Dat Button!"
         return 2, source

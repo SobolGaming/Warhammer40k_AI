@@ -1002,6 +1002,7 @@ class Model:
         weapon_name: str,
         attacks_bonus: int = 0,
         strength_bonus: int = 0,
+        ap_bonus: int = 0,
         source: str = "",
         expires_phase: str = "",
     ) -> None:
@@ -1019,7 +1020,11 @@ class Model:
             strength_bonus = int(strength_bonus or 0)
         except Exception:
             strength_bonus = 0
-        if attacks_bonus <= 0 and strength_bonus <= 0:
+        try:
+            ap_bonus = int(ap_bonus or 0)
+        except Exception:
+            ap_bonus = 0
+        if attacks_bonus <= 0 and strength_bonus <= 0 and ap_bonus <= 0:
             effects.pop(key_norm, None)
             return
         entry = {"expires_phase": str(expires_phase or "").strip().upper()}
@@ -1031,6 +1036,9 @@ class Model:
         if weapon_name and strength_bonus:
             entry["weapon_strength_bonus"] = {weapon_name: int(strength_bonus)}
             entry["weapon_strength_bonus_source"] = label
+        if weapon_name and ap_bonus:
+            entry["weapon_ap_bonus"] = {weapon_name: int(ap_bonus)}
+            entry["weapon_ap_bonus_source"] = label
         effects[key_norm] = entry
 
     def get_temporary_weapon_attacks_bonus(self, weapon_name: str) -> tuple[int, list[str]]:
@@ -1095,6 +1103,38 @@ class Model:
                     total += int(bonus_val)
                     label = source or str(key or weapon_name)
                     reasons.append(f"{label} +{bonus_val}S ({key_norm}) [temporary]")
+        return int(total), reasons
+
+    def get_temporary_weapon_ap_bonus(self, weapon_name: str) -> tuple[int, list[str]]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0, []
+        target = self._normalize_weapon_name(weapon_name)
+        if not target:
+            return 0, []
+        total = 0
+        reasons: list[str] = []
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            bonus_map = v.get("weapon_ap_bonus")
+            if not isinstance(bonus_map, dict):
+                continue
+            source = str(v.get("weapon_ap_bonus_source") or "").strip()
+            for key, bonus in bonus_map.items():
+                try:
+                    bonus_val = int(bonus or 0)
+                except Exception:
+                    bonus_val = 0
+                if bonus_val == 0:
+                    continue
+                key_norm = self._normalize_weapon_name(str(key or ""))
+                if not key_norm:
+                    continue
+                if key_norm == target or key_norm in target or target in key_norm:
+                    total += int(bonus_val)
+                    label = source or str(key or weapon_name)
+                    reasons.append(f"{label} +{bonus_val}AP ({key_norm}) [temporary]")
         return int(total), reasons
 
     def set_temporary_weapon_wound_crit_bonus(

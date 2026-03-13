@@ -11170,6 +11170,31 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_gitfinder_googlez_bearer_model_id"] = bearer_id
 
+        if name == "press it fasta" or enh_id == "000008877003":
+            if not is_dread_mob:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Press It Fasta!").strip() or "Press It Fasta!"
+            extra_rolls = _coerce_int(params.get("extra_rolls", 1), default=1)
+            if extra_rolls <= 0:
+                extra_rolls = 1
+            unit.special_rules["enhancement_press_it_fasta"] = True
+            unit.special_rules["enhancement_press_it_fasta_source"] = source
+            unit.special_rules["enhancement_press_it_fasta_extra_rolls"] = int(extra_rolls)
+            unit.special_rules["enhancement_press_it_fasta_trigger"] = str(
+                params.get("trigger", "shooting") or "shooting"
+            ).strip().lower()
+            unit.special_rules["enhancement_press_it_fasta_detachment_ability"] = str(
+                params.get("detachment_ability", "try_dat_button") or "try_dat_button"
+            ).strip().lower()
+            unit.special_rules["enhancement_press_it_fasta_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_press_it_fasta_bearer_model_id"] = bearer_id
+
         if name == "smoky gubbinz" or enh_id == "000008877004":
             if not is_dread_mob:
                 return

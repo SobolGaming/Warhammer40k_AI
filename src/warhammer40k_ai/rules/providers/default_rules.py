@@ -162,6 +162,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("shooting_targets_selected", "_on_shooting_targets_selected_frenzy"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_integrated_tactics"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_orks_try_dat_button"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_orks_selected_to_shoot_utilities"),
                 ("fight_targets_selected", "_on_fight_targets_selected_frenzy"),
                 ("fight_targets_selected", "_on_fight_targets_selected_cold_fervour"),
                 ("fight_targets_selected", "_on_fight_targets_selected_hysterical_frenzy"),
