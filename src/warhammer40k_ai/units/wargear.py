@@ -5746,6 +5746,24 @@ class WargearProfile:
         except Exception:
             half_range = float(getattr(self.range, "max", 0) or 0) / 2.0
 
+        ranged_keyword_bonus = {}
+        if (
+            self.parent_wargear is not None
+            and callable(getattr(self.parent_wargear, "is_ranged", None))
+            and self.parent_wargear.is_ranged()
+        ):
+            unit = getattr(attacker, "parent_unit", None)
+            get_bonus = getattr(unit, "get_attack_keyword_bonuses", None) if unit is not None else None
+            if callable(get_bonus):
+                ranged_keyword_bonus = get_bonus(
+                    target=target,
+                    attack_type="ranged",
+                    model=attacker,
+                    game_map=game_map,
+                )
+                if not isinstance(ranged_keyword_bonus, dict):
+                    ranged_keyword_bonus = {}
+
         applied_pain_rapid_fire = False
         try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
@@ -5774,6 +5792,20 @@ class WargearProfile:
             except Exception as exc:
                 logger.warning(f"WARN: Rapid Fire bonus parsing failed for {self.name}: {exc}")
 
+        parent_is_ranged = (
+            callable(getattr(self.parent_wargear, "is_ranged", None))
+            and self.parent_wargear.is_ranged()
+        ) if self.parent_wargear is not None else False
+
+        if parent_is_ranged and closest_dist <= half_range:
+            rapid_fire_bonus = int(ranged_keyword_bonus.get("rapid_fire_bonus", 0) or 0)
+            if rapid_fire_bonus > 0:
+                for source_entry in list(ranged_keyword_bonus.get("sources", ()) or ()):
+                    text = str(source_entry or "").strip()
+                    if text.startswith("Rapid Fire "):
+                        attack_result.attacks_special_modifiers.append(text)
+                atk_mods.append(Modifier(ModifierOp.ADD, rapid_fire_bonus, source="ability:rapid_fire_bonus"))
+
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged() and closest_dist <= half_range:
                 outcast_source = self._aeldari_outcast_ambush_source(attacker)
@@ -5800,22 +5832,14 @@ class WargearProfile:
             and callable(getattr(self.parent_wargear, "is_ranged", None))
             and self.parent_wargear.is_ranged()
         ):
-            unit = getattr(attacker, "parent_unit", None)
-            get_bonus = getattr(unit, "get_attack_keyword_bonuses", None) if unit is not None else None
-            if callable(get_bonus):
-                bonus = get_bonus(
-                    target=target,
-                    attack_type="ranged",
-                    model=attacker,
-                    game_map=game_map,
-                )
-                if isinstance(bonus, dict) and bool(bonus.get("blast")):
-                    has_blast = True
-                    for source_entry in list(bonus.get("sources", ()) or ()):
-                        text = str(source_entry or "").strip()
-                        if text.startswith("Blast (") and text.endswith(")"):
-                            blast_source = str(text[len("Blast ("):-1] or "").strip() or blast_source
-                            break
+            bonus = ranged_keyword_bonus
+            if isinstance(bonus, dict) and bool(bonus.get("blast")):
+                has_blast = True
+                for source_entry in list(bonus.get("sources", ()) or ()):
+                    text = str(source_entry or "").strip()
+                    if text.startswith("Blast (") and text.endswith(")"):
+                        blast_source = str(text[len("Blast ("):-1] or "").strip() or blast_source
+                        break
 
         if has_blast:
             try:

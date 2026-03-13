@@ -4886,6 +4886,55 @@ class ActionsMovementMixin:
         target_id = str(get_entity_id(target_root) or getattr(target_root, "_id", "") or "")
         return bool(target_id and target_id in destroyers)
 
+    def _enhancement_attack_roll_modifier_rules(self, *, attack_type: str, roll: str) -> list[dict]:
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("any", "melee", "ranged"):
+            atype = "any"
+        roll_name = str(roll or "hit").strip().lower() or "hit"
+        if roll_name not in ("hit", "wound"):
+            roll_name = "hit"
+        iterator = getattr(self, "_iter_active_attached_enhancement_local_passive_rules", None)
+        if not callable(iterator):
+            return []
+        entries: list[dict] = []
+        for _source_unit, rule in iterator("enhancement_attack_roll_modifier_rules"):
+            target_scope = str(rule.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower()
+            if target_scope != "bearer_unit":
+                continue
+            rule_attack_type = str(rule.get("attack_type", "any") or "any").strip().lower()
+            if rule_attack_type not in ("any", "melee", "ranged"):
+                rule_attack_type = "any"
+            if atype != "any" and rule_attack_type not in ("any", atype):
+                continue
+            if str(rule.get("roll", "hit") or "hit").strip().lower() != roll_name:
+                continue
+            entries.append(dict(rule))
+        return entries
+
+    def _enhancement_unit_can_shoot_after_fall_back(self, *, profile=None) -> bool:
+        attack_type = "any"
+        parent_wargear = getattr(profile, "parent_wargear", None)
+        is_ranged = getattr(parent_wargear, "is_ranged", None) if parent_wargear is not None else None
+        is_melee = getattr(parent_wargear, "is_melee", None) if parent_wargear is not None else None
+        if callable(is_ranged) and bool(is_ranged()):
+            attack_type = "ranged"
+        elif callable(is_melee) and bool(is_melee()):
+            attack_type = "melee"
+        iterator = getattr(self, "_iter_active_attached_enhancement_local_passive_rules", None)
+        if not callable(iterator):
+            return False
+        for _source_unit, rule in iterator("enhancement_fall_back_shoot_rules"):
+            target_scope = str(rule.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower()
+            if target_scope != "bearer_unit":
+                continue
+            rule_attack_type = str(rule.get("attack_type", "any") or "any").strip().lower()
+            if rule_attack_type not in ("any", "melee", "ranged"):
+                rule_attack_type = "any"
+            if attack_type != "any" and rule_attack_type not in ("any", attack_type):
+                continue
+            return True
+        return False
+
     def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
         """
         Return unit-level hit modifiers for this attached unit, parsed via attack_roll_parser.
@@ -4992,6 +5041,23 @@ class ActionsMovementMixin:
                 elif eff.kind == "crit" and eff.critical_threshold:
                     crit_hit_threshold = eff.critical_threshold if crit_hit_threshold is None else min(crit_hit_threshold, eff.critical_threshold)
                     crit_hit_reasons.append(f"{label}: critical hit on {eff.critical_threshold}+{_cond_suffix(eff.condition)}")
+
+        enhancement_hit_mod_fn = getattr(self, "_enhancement_attack_roll_modifier_rules", None)
+        enhancement_hit_mod_rules = (
+            enhancement_hit_mod_fn(attack_type=atype, roll="hit")
+            if callable(enhancement_hit_mod_fn)
+            else []
+        )
+        for rule in enhancement_hit_mod_rules:
+            modifier = int(rule.get("modifier", 0) or 0)
+            if modifier == 0:
+                continue
+            source = str(rule.get("source", "") or "Enhancement").strip() or "Enhancement"
+            reason = f"{modifier:+d} to hit from {source}"
+            if reason in hit_reasons:
+                continue
+            mods["hit"] += modifier
+            hit_reasons.append(reason)
 
         choice = ""
         try:
@@ -14710,6 +14776,9 @@ class ActionsMovementMixin:
                 return True
         except Exception:
             pass
+        enhancement_fall_back_fn = getattr(self, "_enhancement_unit_can_shoot_after_fall_back", None)
+        if callable(enhancement_fall_back_fn) and enhancement_fall_back_fn():
+            return True
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("feigned_retreat_active"):
@@ -15079,6 +15148,9 @@ class ActionsMovementMixin:
             bool: True if the unit can shoot this weapon after falling back
         """
         if _has_orks_temp_movement_effect_for_unit(self, "shoot_after_fall_back"):
+            return True
+        enhancement_fall_back_fn = getattr(self, "_enhancement_unit_can_shoot_after_fall_back", None)
+        if callable(enhancement_fall_back_fn) and enhancement_fall_back_fn(profile=profile):
             return True
         # Check for unit abilities that allow shooting after falling back
         if self.has_fell_back_and_shoot():

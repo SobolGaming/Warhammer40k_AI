@@ -6986,6 +6986,66 @@ _ORKS_KULT_OF_SPEED_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ORKS_KULT_OF_SPEED_DESCRIPTORS.values()
 }
 
+_ORKS_MORE_DAKKA_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009991002": EnhancementToolDescriptor(
+        enhancement_id="000009991002",
+        name="Da Gobshot Thunderbuss",
+        timing="passive",
+        target="bearer_ranged_weapons",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={
+            "keywords": ("DEVASTATING WOUNDS", "HAZARDOUS"),
+            "attack_type": "ranged",
+            "target_scope": "bearer",
+        },
+    ),
+    "000009991003": EnhancementToolDescriptor(
+        enhancement_id="000009991003",
+        name="Dead Shiny Shootas",
+        timing="passive",
+        target="bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={
+            "keywords": ("RAPID FIRE 1",),
+            "attack_type": "ranged",
+            "target_scope": "bearer_unit",
+        },
+    ),
+    "000009991004": EnhancementToolDescriptor(
+        enhancement_id="000009991004",
+        name="Targetin' Squigs",
+        timing="passive",
+        target="bearer_unit_ranged_attacks",
+        duration="constant",
+        effect="modify_attack_rolls",
+        effect_params={
+            "attack_type": "ranged",
+            "roll": "hit",
+            "modifier": 1,
+            "target_scope": "bearer_unit",
+        },
+    ),
+    "000009991005": EnhancementToolDescriptor(
+        enhancement_id="000009991005",
+        name="Zog Off and Eat Dakka!",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="shoot_after_fall_back",
+        effect_params={
+            "attack_type": "ranged",
+            "shoot_after_fall_back": True,
+            "target_scope": "bearer_unit",
+        },
+    ),
+}
+
+_ORKS_MORE_DAKKA_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ORKS_MORE_DAKKA_DESCRIPTORS.values()
+}
+
 _ORKS_TAKTIKAL_BRIGADE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009795002": EnhancementToolDescriptor(
         enhancement_id="000009795002",
@@ -7465,6 +7525,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _ORKS_KULT_OF_SPEED_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _ORKS_MORE_DAKKA_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _ORKS_TAKTIKAL_BRIGADE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -7612,5 +7675,6 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _ORKS_FREEBOOTER_KREW_BY_NAME.get(key)
         or _ORKS_GREEN_TIDE_BY_NAME.get(key)
         or _ORKS_KULT_OF_SPEED_BY_NAME.get(key)
+        or _ORKS_MORE_DAKKA_BY_NAME.get(key)
         or _ORKS_TAKTIKAL_BRIGADE_BY_NAME.get(key)
     )

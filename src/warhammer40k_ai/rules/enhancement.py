@@ -664,6 +664,115 @@ def _register_enhancement_redeploy_spec(
     unit.special_rules = sr
 
 
+def _normalize_enhancement_local_passive_attack_type(attack_type: str) -> str:
+    token = str(attack_type or "any").strip().lower() or "any"
+    return token if token in ("any", "ranged", "melee") else "any"
+
+
+def _normalize_enhancement_local_passive_target_scope(target_scope: str) -> str:
+    token = str(target_scope or "bearer_unit").strip().lower() or "bearer_unit"
+    return token if token in ("bearer", "bearer_unit") else "bearer_unit"
+
+
+def _append_enhancement_local_passive_rule(
+    unit,
+    *,
+    storage_key: str,
+    entry: dict,
+    dedupe_key,
+    sort_key,
+) -> None:
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    entries = [dict(existing) for existing in list(sr.get(storage_key, []) or []) if isinstance(existing, dict)]
+    if any(dedupe_key(existing) == dedupe_key(entry) for existing in entries):
+        return
+    entries.append(dict(entry))
+    entries.sort(key=sort_key)
+    sr[storage_key] = entries
+    unit.special_rules = sr
+    invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+    if callable(invalidate_cache):
+        invalidate_cache()
+
+
+def _append_enhancement_weapon_keyword_rule(
+    unit,
+    *,
+    target_scope: str,
+    attack_type: str,
+    keywords: tuple[str, ...] | list[str],
+    source: str,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    normalized_keywords = []
+    for keyword in list(keywords or []):
+        token = str(keyword or "").strip().upper()
+        if token and token not in normalized_keywords:
+            normalized_keywords.append(token)
+    if not normalized_keywords:
+        return
+    entry = {
+        "target_scope": _normalize_enhancement_local_passive_target_scope(target_scope),
+        "attack_type": _normalize_enhancement_local_passive_attack_type(attack_type),
+        "keywords": list(normalized_keywords),
+        "source": str(source or "Enhancement").strip() or "Enhancement",
+        "requires_bearer_leading": bool(requires_bearer_leading),
+    }
+    if source_model_id:
+        entry["source_model_id"] = str(source_model_id)
+    _append_enhancement_local_passive_rule(
+        unit,
+        storage_key="enhancement_weapon_keyword_rules",
+        entry=entry,
+        dedupe_key=lambda value: (
+            str(value.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower(),
+            str(value.get("attack_type", "any") or "any").strip().lower(),
+            tuple(
+                str(token or "").strip().upper()
+                for token in list(value.get("keywords", []) or [])
+                if str(token or "").strip()
+            ),
+            str(value.get("source", "") or "").strip().lower(),
+            bool(value.get("requires_bearer_leading", False)),
+            str(value.get("source_model_id", "") or ""),
+        ),
+        sort_key=lambda value: (
+            str(value.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower(),
+            str(value.get("attack_type", "any") or "any").strip().lower(),
+            str(value.get("source_model_id", "") or ""),
+            str(value.get("source", "") or "").strip().lower(),
+            tuple(
+                str(token or "").strip().upper()
+                for token in list(value.get("keywords", []) or [])
+                if str(token or "").strip()
+            ),
+        ),
+    )
+
+
+def _append_enhancement_bearer_weapon_keyword_rule(
+    unit,
+    *,
+    attack_type: str,
+    keywords: tuple[str, ...] | list[str],
+    source: str,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    _append_enhancement_weapon_keyword_rule(
+        unit,
+        target_scope="bearer",
+        attack_type=attack_type,
+        keywords=keywords,
+        source=source,
+        requires_bearer_leading=requires_bearer_leading,
+        source_model_id=source_model_id,
+    )
+
+
 def _append_enhancement_bearer_unit_weapon_keyword_rule(
     unit,
     *,
@@ -673,51 +782,143 @@ def _append_enhancement_bearer_unit_weapon_keyword_rule(
     requires_bearer_leading: bool = False,
     source_model_id: str = "",
 ) -> None:
-    sr = getattr(unit, "special_rules", None)
-    if not isinstance(sr, dict):
-        sr = {}
-    entries = list(sr.get("enhancement_bearer_unit_weapon_keyword_rules", []) or [])
-    normalized_keywords = []
-    for keyword in list(keywords or []):
-        token = str(keyword or "").strip().upper()
-        if token and token not in normalized_keywords:
-            normalized_keywords.append(token)
-    if not normalized_keywords:
+    _append_enhancement_weapon_keyword_rule(
+        unit,
+        target_scope="bearer_unit",
+        attack_type=attack_type,
+        keywords=keywords,
+        source=source,
+        requires_bearer_leading=requires_bearer_leading,
+        source_model_id=source_model_id,
+    )
+
+
+def _append_enhancement_attack_roll_modifier_rule(
+    unit,
+    *,
+    target_scope: str,
+    attack_type: str,
+    roll: str,
+    modifier: int,
+    source: str,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    modifier_value = int(modifier or 0)
+    if modifier_value == 0:
         return
+    roll_name = str(roll or "hit").strip().lower() or "hit"
+    if roll_name not in ("hit", "wound"):
+        roll_name = "hit"
     entry = {
-        "attack_type": str(attack_type or "any").strip().lower() or "any",
-        "keywords": list(normalized_keywords),
+        "target_scope": _normalize_enhancement_local_passive_target_scope(target_scope),
+        "attack_type": _normalize_enhancement_local_passive_attack_type(attack_type),
+        "roll": roll_name,
+        "modifier": modifier_value,
         "source": str(source or "Enhancement").strip() or "Enhancement",
         "requires_bearer_leading": bool(requires_bearer_leading),
     }
     if source_model_id:
         entry["source_model_id"] = str(source_model_id)
-    dedupe_key = (
-        entry["attack_type"],
-        tuple(entry["keywords"]),
-        str(entry["source"]).strip().lower(),
-        bool(entry["requires_bearer_leading"]),
-        str(entry.get("source_model_id", "") or ""),
+    _append_enhancement_local_passive_rule(
+        unit,
+        storage_key="enhancement_attack_roll_modifier_rules",
+        entry=entry,
+        dedupe_key=lambda value: (
+            str(value.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower(),
+            str(value.get("attack_type", "any") or "any").strip().lower(),
+            str(value.get("roll", "hit") or "hit").strip().lower(),
+            int(value.get("modifier", 0) or 0),
+            str(value.get("source", "") or "").strip().lower(),
+            bool(value.get("requires_bearer_leading", False)),
+            str(value.get("source_model_id", "") or ""),
+        ),
+        sort_key=lambda value: (
+            str(value.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower(),
+            str(value.get("attack_type", "any") or "any").strip().lower(),
+            str(value.get("roll", "hit") or "hit").strip().lower(),
+            str(value.get("source_model_id", "") or ""),
+            str(value.get("source", "") or "").strip().lower(),
+            int(value.get("modifier", 0) or 0),
+        ),
     )
-    for existing in entries:
-        if not isinstance(existing, dict):
-            continue
-        existing_key = (
-            str(existing.get("attack_type", "any") or "any").strip().lower(),
-            tuple(
-                str(v or "").strip().upper()
-                for v in list(existing.get("keywords", []) or [])
-                if str(v or "").strip()
-            ),
-            str(existing.get("source", "") or "").strip().lower(),
-            bool(existing.get("requires_bearer_leading", False)),
-            str(existing.get("source_model_id", "") or ""),
-        )
-        if existing_key == dedupe_key:
-            return
-    entries.append(entry)
-    sr["enhancement_bearer_unit_weapon_keyword_rules"] = entries
-    unit.special_rules = sr
+
+
+def _append_enhancement_bearer_unit_attack_roll_modifier_rule(
+    unit,
+    *,
+    attack_type: str,
+    roll: str,
+    modifier: int,
+    source: str,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    _append_enhancement_attack_roll_modifier_rule(
+        unit,
+        target_scope="bearer_unit",
+        attack_type=attack_type,
+        roll=roll,
+        modifier=modifier,
+        source=source,
+        requires_bearer_leading=requires_bearer_leading,
+        source_model_id=source_model_id,
+    )
+
+
+def _append_enhancement_fall_back_shoot_rule(
+    unit,
+    *,
+    target_scope: str,
+    attack_type: str,
+    source: str,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    entry = {
+        "target_scope": _normalize_enhancement_local_passive_target_scope(target_scope),
+        "attack_type": _normalize_enhancement_local_passive_attack_type(attack_type),
+        "source": str(source or "Enhancement").strip() or "Enhancement",
+        "requires_bearer_leading": bool(requires_bearer_leading),
+    }
+    if source_model_id:
+        entry["source_model_id"] = str(source_model_id)
+    _append_enhancement_local_passive_rule(
+        unit,
+        storage_key="enhancement_fall_back_shoot_rules",
+        entry=entry,
+        dedupe_key=lambda value: (
+            str(value.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower(),
+            str(value.get("attack_type", "any") or "any").strip().lower(),
+            str(value.get("source", "") or "").strip().lower(),
+            bool(value.get("requires_bearer_leading", False)),
+            str(value.get("source_model_id", "") or ""),
+        ),
+        sort_key=lambda value: (
+            str(value.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower(),
+            str(value.get("attack_type", "any") or "any").strip().lower(),
+            str(value.get("source_model_id", "") or ""),
+            str(value.get("source", "") or "").strip().lower(),
+        ),
+    )
+
+
+def _append_enhancement_bearer_unit_fall_back_shoot_rule(
+    unit,
+    *,
+    attack_type: str,
+    source: str,
+    requires_bearer_leading: bool = False,
+    source_model_id: str = "",
+) -> None:
+    _append_enhancement_fall_back_shoot_rule(
+        unit,
+        target_scope="bearer_unit",
+        attack_type=attack_type,
+        source=source,
+        requires_bearer_leading=requires_bearer_leading,
+        source_model_id=source_model_id,
+    )
 
 
 def _apply_selected_ranged_weapon_bonus_enhancement(
@@ -1173,6 +1374,9 @@ class Enhancement:
         )
         is_kult_of_speed = bool(
             orks_mgr and callable(getattr(orks_mgr, "is_kult_of_speed", None)) and orks_mgr.is_kult_of_speed()
+        )
+        is_more_dakka = bool(
+            orks_mgr and callable(getattr(orks_mgr, "is_more_dakka", None)) and orks_mgr.is_more_dakka()
         )
         is_taktikal_brigade = bool(
             orks_mgr and callable(getattr(orks_mgr, "is_taktikal_brigade", None)) and orks_mgr.is_taktikal_brigade()
@@ -10771,6 +10975,105 @@ class Enhancement:
             invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
             if callable(invalidate_cache):
                 invalidate_cache()
+
+        if name == "da gobshot thunderbuss" or enh_id == "000009991002":
+            if not is_more_dakka:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Da Gobshot Thunderbuss").strip() or "Da Gobshot Thunderbuss"
+            keywords = tuple(
+                str(value or "").strip().upper()
+                for value in list(params.get("keywords", ("DEVASTATING WOUNDS", "HAZARDOUS")) or ())
+                if str(value or "").strip()
+            )
+            attack_type = str(params.get("attack_type", "ranged") or "ranged").strip().lower() or "ranged"
+            unit.special_rules["enhancement_da_gobshot_thunderbuss"] = True
+            unit.special_rules["enhancement_da_gobshot_thunderbuss_source"] = source
+            _append_enhancement_bearer_weapon_keyword_rule(
+                unit,
+                attack_type=attack_type,
+                keywords=keywords,
+                source=source,
+                requires_bearer_leading=False,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_da_gobshot_thunderbuss_bearer_model_id"] = bearer_id
+
+        if name == "dead shiny shootas" or enh_id == "000009991003":
+            if not is_more_dakka:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Dead Shiny Shootas").strip() or "Dead Shiny Shootas"
+            keywords = tuple(
+                str(value or "").strip().upper()
+                for value in list(params.get("keywords", ("RAPID FIRE 1",)) or ())
+                if str(value or "").strip()
+            )
+            attack_type = str(params.get("attack_type", "ranged") or "ranged").strip().lower() or "ranged"
+            unit.special_rules["enhancement_dead_shiny_shootas"] = True
+            unit.special_rules["enhancement_dead_shiny_shootas_source"] = source
+            _append_enhancement_bearer_unit_weapon_keyword_rule(
+                unit,
+                attack_type=attack_type,
+                keywords=keywords,
+                source=source,
+                requires_bearer_leading=False,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_dead_shiny_shootas_bearer_model_id"] = bearer_id
+
+        if name == "targetin' squigs" or enh_id == "000009991004":
+            if not is_more_dakka:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Targetin' Squigs").strip() or "Targetin' Squigs"
+            attack_type = str(params.get("attack_type", "ranged") or "ranged").strip().lower() or "ranged"
+            hit_bonus = _coerce_int(
+                params.get("modifier", params.get("hit_roll_bonus", 1)) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_targetin_squigs"] = True
+            unit.special_rules["enhancement_targetin_squigs_source"] = source
+            _append_enhancement_bearer_unit_attack_roll_modifier_rule(
+                unit,
+                attack_type=attack_type,
+                roll="hit",
+                modifier=int(hit_bonus),
+                source=source,
+                requires_bearer_leading=False,
+                source_model_id=bearer_id,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_targetin_squigs_bearer_model_id"] = bearer_id
+
+        if name == "zog off and eat dakka!" or enh_id == "000009991005":
+            if not is_more_dakka:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Zog Off and Eat Dakka!").strip() or "Zog Off and Eat Dakka!"
+            attack_type = str(params.get("attack_type", "ranged") or "ranged").strip().lower() or "ranged"
+            if bool(params.get("shoot_after_fall_back", params.get("allow_shoot_after_fall_back", True))):
+                _append_enhancement_bearer_unit_fall_back_shoot_rule(
+                    unit,
+                    attack_type=attack_type,
+                    source=source,
+                    requires_bearer_leading=False,
+                    source_model_id=bearer_id,
+                )
+            unit.special_rules["enhancement_zog_off_and_eat_dakka"] = True
+            unit.special_rules["enhancement_zog_off_and_eat_dakka_source"] = source
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_zog_off_and_eat_dakka_bearer_model_id"] = bearer_id
 
         if name == "skwad leader" or enh_id == "000009795002":
             if not is_taktikal_brigade:

@@ -3418,72 +3418,126 @@ class PositioningMixin:
         root._ability_cache[cache_key] = int(total_bonus)
         return int(total_bonus)
 
-    def _enhancement_bearer_unit_weapon_keyword_rules(self, model: Optional['Model'] = None) -> list[dict]:
-        def _entity_id_or_empty(entity) -> str:
-            return str(getattr(entity, "id", getattr(entity, "_id", "")) or "")
-
+    def _enhancement_local_passive_entity_id(self, entity) -> str:
         try:
-            root = self.get_attached_unit_root()
-        except Exception:
-            root = self
-        if root is None:
-            root = self
+            resolved = get_entity_id(entity)
+        except ValueError:
+            resolved = getattr(entity, "id", getattr(entity, "_id", ""))
+        return str(resolved or "")
 
-        try:
-            members = list(root.get_attached_unit_members() or [])
-        except Exception:
-            members = [root]
+    def _enhancement_local_passive_root(self):
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        return root if root is not None else self
+
+    def _enhancement_local_passive_members(self) -> list['Unit']:
+        root = self._enhancement_local_passive_root()
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
         if not members:
             members = [root]
-        members.sort(key=lambda unit: _entity_id_or_empty(unit))
-        leader_ids = {_entity_id_or_empty(unit) for unit in list(getattr(root, "attached_leaders", []) or [])}
+        members.sort(key=self._enhancement_local_passive_entity_id)
+        return members
 
-        def _source_model_is_alive(source_unit, source_model_id: str) -> bool:
-            target_id = str(source_model_id or "").strip()
-            if not target_id:
-                return True
-            for source_model in list(getattr(source_unit, "models", []) or []):
-                model_id = _entity_id_or_empty(source_model)
-                if model_id != target_id:
-                    continue
-                alive_attr = getattr(source_model, "is_alive", True)
-                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+    def _enhancement_local_passive_source_model_id(self, source_unit, rule: dict) -> str:
+        sr = getattr(source_unit, "special_rules", None)
+        fallback_bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip() if isinstance(sr, dict) else ""
+        return str(rule.get("source_model_id", "") or fallback_bearer_id or "").strip()
+
+    def _enhancement_local_passive_source_model(self, source_unit, rule: dict):
+        source_model_id = self._enhancement_local_passive_source_model_id(source_unit, rule)
+        if not source_model_id:
+            return None
+        for source_model in list(getattr(source_unit, "models", []) or []):
+            model_id = self._enhancement_local_passive_entity_id(source_model)
+            if model_id == source_model_id:
+                return source_model
+        return None
+
+    def _enhancement_local_passive_source_model_is_alive(self, source_unit, rule: dict) -> bool:
+        source_model = self._enhancement_local_passive_source_model(source_unit, rule)
+        if source_model is None:
+            return not bool(self._enhancement_local_passive_source_model_id(source_unit, rule))
+        alive_attr = getattr(source_model, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def _enhancement_local_passive_model_matches_source(self, model, source_unit, rule: dict) -> bool:
+        if model is None:
             return False
+        source_model = self._enhancement_local_passive_source_model(source_unit, rule)
+        if source_model is None:
+            return False
+        return self._enhancement_local_passive_entity_id(model) == self._enhancement_local_passive_entity_id(source_model)
 
-        out: list[dict] = []
+    def _iter_active_attached_enhancement_local_passive_rules(self, storage_key: str) -> list[tuple['Unit', dict]]:
+        root = self._enhancement_local_passive_root()
+        members = self._enhancement_local_passive_members()
+        leader_ids = {
+            self._enhancement_local_passive_entity_id(unit)
+            for unit in list(getattr(root, "attached_leaders", []) or [])
+        }
+        entries: list[tuple['Unit', dict]] = []
         for member in members:
             sr = getattr(member, "special_rules", None)
             if not isinstance(sr, dict):
                 continue
-            rules = list(sr.get("enhancement_bearer_unit_weapon_keyword_rules", []) or [])
-            if not rules:
-                continue
+            rules = [dict(rule) for rule in list(sr.get(storage_key, []) or []) if isinstance(rule, dict)]
+            rules.sort(
+                key=lambda rule: (
+                    str(rule.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower(),
+                    str(rule.get("attack_type", "any") or "any").strip().lower(),
+                    str(rule.get("roll", "") or "").strip().lower(),
+                    str(rule.get("source_model_id", "") or ""),
+                    str(rule.get("source", "") or "").strip().lower(),
+                    tuple(
+                        str(token or "").strip().upper()
+                        for token in list(rule.get("keywords", []) or [])
+                        if str(token or "").strip()
+                    ),
+                    int(rule.get("modifier", 0) or 0),
+                )
+            )
+            member_id = self._enhancement_local_passive_entity_id(member)
             for rule in rules:
-                if not isinstance(rule, dict):
+                if bool(rule.get("requires_bearer_leading", False)) and member_id not in leader_ids:
                     continue
-                requires_leading = bool(rule.get("requires_bearer_leading", False))
-                if requires_leading:
-                    member_id = _entity_id_or_empty(member)
-                    if member_id not in leader_ids:
-                        continue
-                source_model_id = str(rule.get("source_model_id", "") or "")
-                if source_model_id and not _source_model_is_alive(member, source_model_id):
+                if not self._enhancement_local_passive_source_model_is_alive(member, rule):
                     continue
-                attack_type = str(rule.get("attack_type", "any") or "any").strip().lower()
-                if attack_type not in ("any", "ranged", "melee"):
-                    attack_type = "any"
-                source = str(rule.get("source", "") or "Enhancement").strip() or "Enhancement"
-                for keyword in list(rule.get("keywords", []) or []):
-                    token = str(keyword or "").strip().upper()
-                    if not token:
-                        continue
-                    out.append(
-                        {
-                            "attack_type": attack_type,
-                            "keyword": token,
-                            "source": source,
-                        }
-                    )
+                entries.append((member, rule))
+        return entries
+
+    def _enhancement_weapon_keyword_rules(self, model: Optional['Model'] = None) -> list[dict]:
+        out: list[dict] = []
+        seen: set[tuple] = set()
+        for source_unit, rule in self._iter_active_attached_enhancement_local_passive_rules(
+            "enhancement_weapon_keyword_rules"
+        ):
+            target_scope = str(rule.get("target_scope", "bearer_unit") or "bearer_unit").strip().lower()
+            if target_scope == "bearer":
+                if not self._enhancement_local_passive_model_matches_source(model, source_unit, rule):
+                    continue
+            elif target_scope != "bearer_unit":
+                continue
+            attack_type = str(rule.get("attack_type", "any") or "any").strip().lower()
+            if attack_type not in ("any", "ranged", "melee"):
+                attack_type = "any"
+            source = str(rule.get("source", "") or "Enhancement").strip() or "Enhancement"
+            source_model_id = str(rule.get("source_model_id", "") or "").strip()
+            for keyword in list(rule.get("keywords", []) or []):
+                token = str(keyword or "").strip().upper()
+                if not token:
+                    continue
+                key = (target_scope, attack_type, token, source.lower(), source_model_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(
+                    {
+                        "attack_type": attack_type,
+                        "keyword": token,
+                        "source": source,
+                    }
+                )
         return out
 
     def _get_attack_keyword_bonus_rules(self, model: Optional['Model'] = None) -> list[dict]:
@@ -3952,7 +4006,7 @@ class PositioningMixin:
         except Exception:
             pass
 
-        for entry in self._enhancement_bearer_unit_weapon_keyword_rules(model=model):
+        for entry in self._enhancement_weapon_keyword_rules(model=model):
             attack_type = str(entry.get("attack_type", "any") or "any").strip().lower()
             keyword = str(entry.get("keyword", "") or "").strip()
             source_name = str(entry.get("source", "") or "Enhancement").strip() or "Enhancement"
@@ -4334,6 +4388,7 @@ class PositioningMixin:
             "assault": False,
             "hazardous": False,
             "blast": False,
+            "rapid_fire_bonus": 0,
             "sustained_hits_value": 0,
             "sustained_hits_dice": "",
             "devastating_wounds": False,
@@ -4369,6 +4424,12 @@ class PositioningMixin:
             elif kw == "BLAST":
                 bonuses["blast"] = True
                 sources.append(f"Blast ({source})")
+            elif kw.startswith("RAPID FIRE"):
+                match = re.search(r"RAPID FIRE\s+(\d+)", kw)
+                if match:
+                    rapid_fire_bonus = int(match.group(1))
+                    bonuses["rapid_fire_bonus"] = max(int(bonuses["rapid_fire_bonus"] or 0), rapid_fire_bonus)
+                    sources.append(f"Rapid Fire {rapid_fire_bonus} ({source})")
             elif kw == "LETHAL HITS":
                 bonuses["lethal_hits"] = True
                 sources.append(f"Lethal Hits ({source})")
@@ -4418,6 +4479,7 @@ class PositioningMixin:
             or bonuses["assault"]
             or bonuses["hazardous"]
             or bonuses["blast"]
+            or int(bonuses["rapid_fire_bonus"] or 0) > 0
             or bonuses["devastating_wounds"]
             or bonuses["twin_linked"]
             or bonuses["heavy"]
