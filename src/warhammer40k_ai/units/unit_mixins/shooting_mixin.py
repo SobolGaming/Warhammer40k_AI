@@ -2056,6 +2056,22 @@ class ShootingMixin:
         logger.warning("WARN: Blood Surge requires UI/controlled movement; legacy auto-move removed.")
         return False
 
+    def force_battle_shock_test(self, current_turn: int = 1, *, modifier: int = 0, source: str = ""):
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        parsed_modifier = int(modifier or 0)
+        if parsed_modifier:
+            current = int(sr.get("battle_shock_test_modifier", 0) or 0)
+            sr["battle_shock_test_modifier"] = int(current + parsed_modifier)
+            source_name = str(source or "").strip()
+            if source_name:
+                reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+                reasons.append(f"{source_name}: {int(parsed_modifier):+d}")
+                sr["battle_shock_test_modifier_reasons"] = reasons
+        self.special_rules = sr
+        self.take_battle_shock_test(int(current_turn or 1))
+
     def take_battle_shock_test(self, current_turn: int = 1):
         """Takes a battle shock test.
         

@@ -857,6 +857,21 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         range_in=9.0,
         effect_params={"sustained_hits": 1, "sustained_hits_within_range": 2, "range_in": 9.0},
     ),
+    "000008873003": StratagemToolDescriptor(
+        stratagem_id="000008873003",
+        name="SQUIG FLINGIN'",
+        timing="movement_phase_after_friendly_unit_ends_normal_advance_or_fall_back_move",
+        target="speed_freeks_or_trukk_unit_just_completed_normal_advance_or_fall_back_move",
+        duration="immediate",
+        effect="forced_enemy_battleshock_after_move_end",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "range_inches": 9,
+            "battle_shock_test_modifier": -1,
+            "trigger_unit_actions": ["normal_move", "advance", "fall_back"],
+        },
+    ),
     "000009992005": StratagemToolDescriptor(
         stratagem_id="000009992005",
         name="LONG, UNCONTROLLED BURSTS",

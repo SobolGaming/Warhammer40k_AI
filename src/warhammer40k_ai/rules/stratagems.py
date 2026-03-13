@@ -275,6 +275,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLITZA FIRE",
     "CALL DAT DAKKA?",
     "DAKKASTORM",
+    "SQUIG FLINGIN'",
     "LONG, UNCONTROLLED BURSTS",
     "SUPERFUELLED BOILER",
     "BOARDIN' RUSH",
@@ -562,6 +563,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "ON TO DA NEXT",
     "MORE GITZ OVER 'ERE!",
     "MORE GITZ OVER ’ERE!",
+    "SQUIG FLINGIN'",
     "DED SNEAKY",
     "PROFANE SYMBIOSIS",
     "CORRUPTING TAINT",
@@ -1613,6 +1615,7 @@ class StratagemManager(
             "KRUMP AND RUN",
             "ON TO DA NEXT",
             "MORE GITZ OVER 'ERE!",
+            "SQUIG FLINGIN'",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES", "A DEADLY SNARE", "SHADE PATH"}:
@@ -5069,6 +5072,7 @@ class StratagemManager(
             "ON TO DA NEXT": "Target: ORKS unit that was in Engagement Range of the enemy that just Fell Back at phase start",
             "MORE GITZ OVER 'ERE!": "Target: SPEED FREEKS unit within 9\" of enemy that just ended a Normal/Advance/Fall Back move and not in Engagement Range",
             "MORE GITZ OVER ’ERE!": "Target: SPEED FREEKS unit within 9\" of enemy that just ended a Normal/Advance/Fall Back move and not in Engagement Range",
+            "SQUIG FLINGIN'": "Target: SPEED FREEKS or TRUKK unit that just ended a Normal/Advance/Fall Back move; select one enemy unit within 9\" to take a Battle-shock test at -1",
             "DED SNEAKY": "Target: KOMMANDOS or STORMBOYZ unit from your army that is not within Engagement Range at end of opponent's Fight phase; remove it and place it into Strategic Reserves",
             "KRUNCHIN' DESCENT": "Target: STORMBOYZ unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per engaged model (4+ deals 1 mortal, max 6)",
             "KRUNCHIN’ DESCENT": "Target: STORMBOYZ unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per engaged model (4+ deals 1 mortal, max 6)",

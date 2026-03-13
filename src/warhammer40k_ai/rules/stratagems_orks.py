@@ -2301,7 +2301,127 @@ class OrksStratagemMixin:
 
     def _queue_orks_move_end_reactions(self, *, unit: Any, action: str) -> None:
         self._queue_orks_charge_end_mortal_wound_reactions(unit=unit, action=action)
+        self._queue_orks_squig_flingin_move_end_reaction(unit=unit, action=action)
         self._queue_orks_taktikal_retreat_move_end_reaction(unit=unit, action=action)
+
+    def _orks_enemy_battleshock_candidates_within_distance(
+        self,
+        *,
+        source_unit: Any,
+        max_distance: float,
+    ) -> list[Any]:
+        source_root = self._orks_root(source_unit)
+        if source_root is None:
+            return []
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        get_enemy_units = getattr(game_map, "get_enemy_units", None) if game_map is not None else None
+        if not callable(get_enemy_units):
+            return []
+
+        seen: set[str] = set()
+        candidates: list[Any] = []
+        for enemy_unit in list(get_enemy_units(source_root) or []):
+            enemy_root = self._orks_root(enemy_unit)
+            if enemy_root is None:
+                continue
+            if self._orks_owned_by_player(enemy_root, self.player):
+                continue
+            if not self._orks_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            distance = self._orks_distance_between_units(source_root, enemy_root)
+            if distance is None or float(distance) > float(max_distance) + 1e-6:
+                continue
+            enemy_id = self._orks_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            candidates.append(enemy_root)
+        candidates.sort(key=self._orks_sort_key)
+        return candidates
+
+    def _queue_single_orks_move_end_enemy_battleshock_reaction(
+        self,
+        *,
+        unit: Any,
+        action: str,
+        stratagem_names: tuple[str, ...],
+        detachment_check,
+        source_matcher,
+        max_distance: float,
+    ) -> None:
+        if unit is None:
+            return
+        if not bool(detachment_check()):
+            return
+        if self._orks_phase_label(getattr(self, "_current_phase_name", "")) != "movement phase":
+            return
+        if not self._orks_is_players_turn():
+            return
+        action_key = self._orks_normalize_move_action(action)
+        if action_key not in {"move", "advance", "fall_back"}:
+            return
+
+        source_root = self._orks_root(unit)
+        if source_root is None:
+            return
+        if not self._orks_owned_by_player(source_root, self.player):
+            return
+        if not self._orks_on_battlefield(source_root, require_targetable=True):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(source_root)):
+            return
+        if not self._is_orks_unit(source_root):
+            return
+        if not bool(source_matcher(source_root)):
+            return
+
+        stratagem = self._orks_get_available_stratagem_by_names(*stratagem_names)
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(self._used_stratagems_this_phase):
+            return
+        if self._orks_unit_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=str(getattr(stratagem, "name", "") or stratagem_names[0]),
+            unit=source_root,
+        ):
+            return
+
+        enemy_candidates = self._orks_enemy_battleshock_candidates_within_distance(
+            source_unit=source_root,
+            max_distance=float(max_distance),
+        )
+        if not enemy_candidates:
+            return
+
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": str(getattr(stratagem, "name", "") or stratagem_names[0]),
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "unit": source_root,
+            "target_unit": source_root,
+            "source_unit": source_root,
+            "candidates": [source_root],
+            "enemy_candidates": list(enemy_candidates),
+            "action": action_key,
+        }
+        if len(enemy_candidates) == 1:
+            payload["enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_orks_squig_flingin_move_end_reaction(self, *, unit: Any, action: str) -> None:
+        self._queue_single_orks_move_end_enemy_battleshock_reaction(
+            unit=unit,
+            action=action,
+            stratagem_names=("SQUIG FLINGIN'",),
+            detachment_check=self._is_kult_of_speed_detachment,
+            source_matcher=self._orks_is_speed_freeks_or_trukk,
+            max_distance=9.0,
+        )
 
     def _queue_single_orks_charge_end_mortal_wound_reaction(
         self,
@@ -2478,6 +2598,48 @@ class OrksStratagemMixin:
                 target_unit = candidates[0]
             break
         return target_unit, candidates, action, phase_name, from_pending
+
+    def _orks_resolve_move_end_enemy_battleshock_context(
+        self,
+        stratagem_name: str,
+        **kwargs,
+    ) -> tuple[Any, list[Any], Any, list[Any], str, str, bool]:
+        source_unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("source_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+        action = str(kwargs.get("action") or kwargs.get("trigger") or "").strip()
+        phase_name = str(kwargs.get("phase_name") or "").strip()
+        from_pending = False
+
+        if source_unit is None and len(candidates) == 1:
+            source_unit = candidates[0]
+        if enemy_unit is None and len(enemy_candidates) == 1:
+            enemy_unit = enemy_candidates[0]
+
+        normalized_name = self._orks_normalize_name(stratagem_name)
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if self._orks_normalize_name(str(reaction.get("stratagem", "") or "")) != normalized_name:
+                continue
+            from_pending = True
+            if source_unit is None:
+                source_unit = reaction.get("target_unit") or reaction.get("unit") or reaction.get("source_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if enemy_unit is None:
+                enemy_unit = reaction.get("enemy_unit") or reaction.get("target_enemy_unit")
+            if not enemy_candidates:
+                enemy_candidates = list(reaction.get("enemy_candidates") or [])
+            if not action:
+                action = str(reaction.get("action") or "").strip()
+            if not phase_name:
+                phase_name = str(reaction.get("phase_name") or "").strip()
+            if source_unit is None and len(candidates) == 1:
+                source_unit = candidates[0]
+            if enemy_unit is None and len(enemy_candidates) == 1:
+                enemy_unit = enemy_candidates[0]
+            break
+        return source_unit, candidates, enemy_unit, enemy_candidates, action, phase_name, from_pending
 
     @staticmethod
     def _orks_normalize_move_action(action: Any) -> str:
@@ -3008,6 +3170,8 @@ class OrksStratagemMixin:
             return self._use_orks_dakkastorm(stratagem, **kwargs)
         if name_u == "CALL DAT DAKKA?" or name_norm == "call dat dakka":
             return self._use_orks_call_dat_dakka(stratagem, **kwargs)
+        if name_norm == "squig flingin":
+            return self._use_orks_squig_flingin(stratagem, **kwargs)
         if name_u == "LONG, UNCONTROLLED BURSTS":
             return self._use_orks_long_uncontrolled_bursts(stratagem, **kwargs)
         if name_u == "SUPERFUELLED BOILER":
@@ -4146,6 +4310,144 @@ class OrksStratagemMixin:
         self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info("INFO: DAT'S OURS: %s gains +1 Objective Control until the start of the next Command phase.", getattr(root, "name", "Unit"))
         return True
+
+    def _use_orks_move_end_enemy_battleshock_stratagem(
+        self,
+        stratagem: Any,
+        *,
+        stratagem_name: str,
+        detachment_check,
+        source_matcher,
+        source_error: str,
+        allowed_actions: tuple[str, ...],
+        enemy_range: float,
+        test_modifier: int,
+        **kwargs,
+    ) -> bool:
+        if not bool(detachment_check()):
+            return False
+        source_unit, candidates, enemy_unit, enemy_candidates, action, phase_name, from_pending = (
+            self._orks_resolve_move_end_enemy_battleshock_context(stratagem_name, **kwargs)
+        )
+        if source_unit is None:
+            logger.error("ERROR: %s: no target unit provided", stratagem_name)
+            return False
+
+        phase_label = self._orks_phase_label(phase_name or self._orks_current_phase_label())
+        if phase_label != "movement phase":
+            logger.error("ERROR: %s: wrong phase", stratagem_name)
+            return False
+        if not self._orks_is_players_turn():
+            logger.error("ERROR: %s: not your Movement phase", stratagem_name)
+            return False
+        action_key = self._orks_normalize_move_action(action)
+        if not from_pending and not action_key:
+            logger.error("ERROR: %s: missing movement trigger context", stratagem_name)
+            return False
+        if action_key not in set(allowed_actions or ()):
+            logger.error("ERROR: %s: invalid trigger action", stratagem_name)
+            return False
+
+        ok, source_root = self._orks_validate_offensive_target(
+            stratagem_name=stratagem_name,
+            target_unit=source_unit,
+            candidates=candidates,
+        )
+        if not ok:
+            return False
+        if not bool(source_matcher(source_root)):
+            logger.error("ERROR: %s: %s", stratagem_name, source_error)
+            return False
+        round_state = getattr(source_root, "round_state", None)
+        if action_key == "move" and not bool(getattr(round_state, "moved_this_round", False)):
+            logger.error("ERROR: %s: target must have ended a Normal move this phase", stratagem_name)
+            return False
+        if action_key == "advance" and not bool(getattr(round_state, "advanced_this_round", False)):
+            logger.error("ERROR: %s: target must have ended an Advance move this phase", stratagem_name)
+            return False
+        if action_key == "fall_back" and not bool(getattr(round_state, "fell_back_this_round", False)):
+            logger.error("ERROR: %s: target must have ended a Fall Back move this phase", stratagem_name)
+            return False
+
+        expected_sources = list(candidates or [source_root])
+        if expected_sources and not self._orks_unit_in_candidates(source_root, expected_sources):
+            logger.error("ERROR: %s: selected unit is not currently eligible", stratagem_name)
+            return False
+
+        enemy_roots = [self._orks_root(unit) for unit in list(enemy_candidates or [])]
+        enemy_roots = [unit for unit in enemy_roots if unit is not None]
+        if enemy_unit is None and len(enemy_roots) == 1:
+            enemy_unit = enemy_roots[0]
+        enemy_root = self._orks_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            enemy_roots = self._orks_enemy_battleshock_candidates_within_distance(
+                source_unit=source_root,
+                max_distance=float(enemy_range),
+            )
+            if len(enemy_roots) == 1:
+                enemy_root = enemy_roots[0]
+            else:
+                logger.error("ERROR: %s: no enemy unit within %.1f\" selected", stratagem_name, float(enemy_range))
+                return False
+        if self._orks_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: %s: selected enemy unit is not enemy", stratagem_name)
+            return False
+        if not self._orks_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: %s: selected enemy unit must be on battlefield", stratagem_name)
+            return False
+        if enemy_roots and not self._orks_unit_in_candidates(enemy_root, enemy_roots):
+            logger.error("ERROR: %s: selected enemy unit is not within %.1f\"", stratagem_name, float(enemy_range))
+            return False
+        distance = self._orks_distance_between_units(source_root, enemy_root)
+        if distance is None or float(distance) > float(enemy_range) + 1e-6:
+            logger.error("ERROR: %s: selected enemy unit is not within %.1f\"", stratagem_name, float(enemy_range))
+            return False
+
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            target_unit=source_root,
+            unit=source_root,
+            enemy_unit=enemy_root,
+            phase_name="Movement phase",
+        ):
+            logger.error("ERROR: %s: cannot be used in current state", stratagem_name)
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=source_root):
+            return False
+
+        force_test = getattr(enemy_root, "force_battle_shock_test", None)
+        if not callable(force_test):
+            logger.error("ERROR: %s: target unit cannot take a forced Battle-shock test", stratagem_name)
+            return False
+        force_test(
+            int(self._orks_current_turn() or 1),
+            modifier=int(test_modifier),
+            source=str(getattr(stratagem, "name", "") or stratagem_name),
+        )
+
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: %s: %s forces %s to take a Battle-shock test at %d.",
+            stratagem_name,
+            getattr(source_root, "name", "Unit"),
+            getattr(enemy_root, "name", "Enemy"),
+            int(test_modifier),
+        )
+        return True
+
+    def _use_orks_squig_flingin(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_move_end_enemy_battleshock_stratagem(
+            stratagem,
+            stratagem_name="SQUIG FLINGIN'",
+            detachment_check=self._is_kult_of_speed_detachment,
+            source_matcher=self._orks_is_speed_freeks_or_trukk,
+            source_error="target must be a Speed Freeks or Trukk unit",
+            allowed_actions=("move", "advance", "fall_back"),
+            enemy_range=9.0,
+            test_modifier=-1,
+            **kwargs,
+        )
 
     def _use_orks_taktikal_retreat(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_taktikal_brigade_detachment():

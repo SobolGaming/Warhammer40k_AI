@@ -4312,6 +4312,68 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def _append_prefixed_model_start_fight_phase_select_engagement_battleshock_spec(
+        self,
+        *,
+        model: Optional['Model'],
+        special_rules: dict,
+        prefix: str,
+        default_source: str,
+        seen: set[tuple[str, str, bool, bool, int]],
+        specs: list[dict],
+    ) -> None:
+        if model is None or not isinstance(special_rules, dict) or not bool(special_rules.get(prefix, False)):
+            return
+        model_id = str(get_entity_id(model) or "")
+        bearer_id = str(
+            special_rules.get(f"{prefix}_bearer_model_id", "")
+            or special_rules.get("enhancement_bearer_model_id", "")
+            or ""
+        ).strip()
+        if bearer_id and model_id and bearer_id != model_id:
+            return
+        requires_bearer_alive = bool(special_rules.get(f"{prefix}_requires_bearer_alive", True))
+        model_is_alive_attr = getattr(model, "is_alive", True)
+        model_is_alive = bool(model_is_alive_attr() if callable(model_is_alive_attr) else model_is_alive_attr)
+        if requires_bearer_alive and not model_is_alive:
+            return
+
+        source = str(special_rules.get(f"{prefix}_source", "") or default_source).strip() or default_source
+        ability_seed = str(special_rules.get(f"{prefix}_ability_key", "") or "").strip().lower()
+        if not ability_seed:
+            ability_seed = self._normalize_keyword_phrase(source) or re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_")
+        if not ability_seed:
+            ability_seed = prefix
+        ability_key = f"fight_phase_select_engagement_battleshock:{ability_seed}"
+        try:
+            test_penalty = int(special_rules.get(f"{prefix}_test_penalty", 0) or 0)
+        except (TypeError, ValueError):
+            test_penalty = 0
+        if test_penalty < 0:
+            test_penalty = abs(int(test_penalty))
+
+        dedupe_key = (
+            source.lower(),
+            ability_key,
+            False,
+            False,
+            int(test_penalty),
+        )
+        if dedupe_key in seen:
+            return
+        seen.add(dedupe_key)
+        specs.append(
+            {
+                "source": source,
+                "ability_key": ability_key,
+                "optional": False,
+                "once_per_turn": False,
+                "engagement_only": True,
+                "test_penalty": int(test_penalty),
+                "context_ability": "fight_phase_select_engagement_battleshock",
+            }
+        )
+
     def model_start_fight_phase_select_engagement_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: at the start of the Fight phase, select one enemy unit
@@ -4390,6 +4452,31 @@ class AbilitySpecsMixin:
                     "test_penalty": int(test_penalty),
                     "context_ability": "fight_phase_select_engagement_battleshock",
                 }
+            )
+
+        root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        root_special_rules = getattr(root, "special_rules", None)
+        self._append_prefixed_model_start_fight_phase_select_engagement_battleshock_spec(
+            model=model,
+            special_rules=root_special_rules if isinstance(root_special_rules, dict) else {},
+            prefix="enhancement_big_gob",
+            default_source="Big Gob",
+            seen=seen,
+            specs=specs,
+        )
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        for member in list(members or []):
+            if member is None or member is root:
+                continue
+            member_special_rules = getattr(member, "special_rules", None)
+            self._append_prefixed_model_start_fight_phase_select_engagement_battleshock_spec(
+                model=model,
+                special_rules=member_special_rules if isinstance(member_special_rules, dict) else {},
+                prefix="enhancement_big_gob",
+                default_source="Big Gob",
+                seen=seen,
+                specs=specs,
             )
 
         if not hasattr(self, "_ability_cache"):

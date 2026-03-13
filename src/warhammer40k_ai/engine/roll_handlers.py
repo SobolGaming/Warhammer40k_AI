@@ -877,6 +877,15 @@ def handle_battle_shock_roll(game: object, state: DiceRollState):
     roll_total = int(getattr(state, "total", 0) or 0)
     mod_roll = roll_total + total_mod
     passed = mod_roll <= leadership_value
+    root = unit
+    get_root = getattr(unit, "get_attached_unit_root", None)
+    if callable(get_root):
+        resolved_root = get_root()
+        if resolved_root is not None:
+            root = resolved_root
+    setattr(root, "_last_leadership_test_roll", int(roll_total))
+    setattr(root, "_last_leadership_test_modified_roll", int(mod_roll))
+    setattr(root, "_last_leadership_test_passed", bool(passed))
     try:
         current_turn = int(spec.get("current_turn", getattr(game, "turn", 1)) or 1)
     except Exception:

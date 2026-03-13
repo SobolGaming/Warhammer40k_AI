@@ -186,6 +186,7 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
     rules = _strip_eligibility_prefix(description)
     r = _normalize(rules)
     low = r.lower()
+    tokens = _normalize_rules_tokens(rules)
     out: List[EnhancementEffectSpec] = []
 
     # Add X" to Move characteristic.
@@ -546,6 +547,29 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
             )
         )
 
+    m = re.fullmatch(
+        r"(?:at the )?start of the fight phase "
+        r"(?:you can )?select one enemy unit within engagement range of "
+        r"(?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) "
+        r"that(?: enemy)? unit must take a battle shock test"
+        r"(?: subtracting (\d+) from (?:that test|the result)(?: when it does so)?)?",
+        tokens,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        penalty = int(m.group(1) or 0)
+        if penalty > 0:
+            notes = f"Start of Fight phase: select one enemy unit in Engagement Range to take a Battle-shock test at -{penalty}."
+        else:
+            notes = "Start of Fight phase: select one enemy unit in Engagement Range to take a Battle-shock test."
+        out.append(
+            EnhancementEffectSpec(
+                kind="fight_phase_select_engagement_battleshock",
+                value=int(penalty),
+                notes=notes,
+            )
+        )
+
     return out
 
 
@@ -601,6 +625,9 @@ def _enhancement_rules_fully_consumed(description: str) -> bool:
         r"each time the bearer makes an attack while within range of an objective marker add 1 to the wound roll",
         # Warp Tracer.
         r"in your shooting phase after the bearer has shot select one enemy unit hit by one or more of those attacks until the end of the phase that enemy unit cannot have the benefit of cover",
+        # Start of Fight phase: select one enemy in Engagement Range to take a Battle-shock test.
+        r"(?:at the )?start of the fight phase (?:you can )?select one enemy unit within engagement range of (?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) that(?: enemy)? unit must take a battle shock test",
+        r"(?:at the )?start of the fight phase (?:you can )?select one enemy unit within engagement range of (?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) that(?: enemy)? unit must take a battle shock test subtracting \d+ from (?:that test|the result)(?: when it does so)?",
     )
     return any(re.fullmatch(pat, tokens) for pat in fullmatch_patterns)
 

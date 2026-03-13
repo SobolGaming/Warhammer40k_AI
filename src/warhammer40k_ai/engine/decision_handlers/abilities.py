@@ -17015,16 +17015,6 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if test_penalty < 0:
             test_penalty = abs(int(test_penalty))
         modifier = -abs(int(test_penalty)) if test_penalty > 0 else 0
-        if modifier:
-            sr = getattr(target_root, "special_rules", None)
-            if not isinstance(sr, dict):
-                sr = {}
-            current_modifier = int(sr.get("battle_shock_test_modifier", 0) or 0)
-            sr["battle_shock_test_modifier"] = int(current_modifier + modifier)
-            reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
-            reasons.append(f"{ability_name}: {int(modifier)}")
-            sr["battle_shock_test_modifier_reasons"] = reasons
-            target_root.special_rules = sr
         mark_used = getattr(model, "mark_used_once_per_battle_round", None)
         if once_per_turn and callable(mark_used) and ability_key and current_turn > 0:
             mark_used(
@@ -17033,9 +17023,27 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 ability_name=ability_name,
                 source="datasheet",
             )
-        take_test = getattr(target_root, "take_battle_shock_test", None)
-        if callable(take_test):
-            take_test(int(current_turn or 1))
+        force_test = getattr(target_root, "force_battle_shock_test", None)
+        if callable(force_test):
+            force_test(
+                int(current_turn or 1),
+                modifier=int(modifier),
+                source=ability_name,
+            )
+        else:
+            if modifier:
+                sr = getattr(target_root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                current_modifier = int(sr.get("battle_shock_test_modifier", 0) or 0)
+                sr["battle_shock_test_modifier"] = int(current_modifier + modifier)
+                reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+                reasons.append(f"{ability_name}: {int(modifier):+d}")
+                sr["battle_shock_test_modifier_reasons"] = reasons
+                target_root.special_rules = sr
+            take_test = getattr(target_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(int(current_turn or 1))
         if modifier:
             message = f"{ability_name}: {getattr(target_root, 'name', 'Unit')} takes a Battle-shock test at {int(modifier)}."
         else:

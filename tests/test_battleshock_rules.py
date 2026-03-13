@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 class TestBattleShockRules(unittest.TestCase):
@@ -117,6 +118,45 @@ class TestBattleShockRules(unittest.TestCase):
         g.start_command_phase()
         self.assertFalse(u.is_battle_shocked())
         self.assertFalse(u.special_rules.get("cannot_use_stratagems", True))
+
+    def test_force_battle_shock_test_modifier_applies_only_to_forced_test(self):
+        u = self._mk_unit()
+        u.models = [SimpleNamespace(is_alive=True, leadership=7)]
+
+        with patch("warhammer40k_ai.units.unit.get_roll", side_effect=[4, 4, 4, 4]):
+            u.force_battle_shock_test(current_turn=1, modifier=-1, source="Test Pressure")
+            self.assertFalse(u.is_battle_shocked())
+            self.assertNotIn("battle_shock_test_modifier", u.special_rules)
+            self.assertNotIn("battle_shock_test_modifier_reasons", u.special_rules)
+
+        u.pass_leadership_check = lambda: False
+        u.take_battle_shock_test(current_turn=1)
+
+        self.assertTrue(u.is_battle_shocked())
+
+    def test_authoritative_battle_shock_roll_records_last_roll_fields(self):
+        from warhammer40k_ai.engine.roll_handlers import handle_battle_shock_roll
+
+        u = self._mk_unit()
+        game = SimpleNamespace(map=SimpleNamespace(units=[u]), event_system=None, turn=1)
+        state = SimpleNamespace(
+            spec={
+                "unit_id": "U",
+                "leadership": 7,
+                "sum_modifier": -1,
+                "current_turn": 1,
+                "was_battle_shocked": False,
+            },
+            total=8,
+        )
+
+        result = handle_battle_shock_roll(game, state)
+
+        self.assertEqual(result["modified_roll"], 7)
+        self.assertEqual(int(getattr(u, "_last_leadership_test_roll", -1)), 8)
+        self.assertEqual(int(getattr(u, "_last_leadership_test_modified_roll", -1)), 7)
+        self.assertTrue(bool(getattr(u, "_last_leadership_test_passed", False)))
+        self.assertFalse(u.is_battle_shocked())
 
 
 if __name__ == "__main__":

@@ -24,6 +24,18 @@ class TestEnhancementEffects(unittest.TestCase):
         self.assertEqual(status, "Supported")
         self.assertIn("Improve melee weapons' A/S/D by 1", notes)
 
+    def test_classify_big_gob_as_supported(self):
+        from warhammer40k_ai.rules.enhancement_effects import classify_enhancement_support
+
+        status, notes = classify_enhancement_support(
+            "Infantry Warboss model only. At the start of the Fight phase, select one enemy unit within Engagement Range of the bearer. "
+            "That enemy unit must take a Battle-shock test, subtracting 1 from that test."
+        )
+
+        self.assertEqual(status, "Supported")
+        self.assertIn("Battle-shock test", notes)
+        self.assertIn("Engagement Range", notes)
+
     def test_classify_daemonic_incursion_enhancements_supported(self):
         from warhammer40k_ai.rules.enhancement_effects import classify_enhancement_support
 

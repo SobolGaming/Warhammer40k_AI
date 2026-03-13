@@ -10902,6 +10902,28 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_kult_of_speed_speed_makes_right_bearer_model_id"] = bearer_id
 
+        if name == "big gob" or enh_id == "000008885002":
+            if not is_bully_boyz:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Big Gob").strip() or "Big Gob"
+            test_modifier = _coerce_int(params.get("battle_shock_test_modifier", -1), default=-1)
+            if test_modifier == 0:
+                test_modifier = -1
+            unit.special_rules["enhancement_big_gob"] = True
+            unit.special_rules["enhancement_big_gob_source"] = source
+            unit.special_rules["enhancement_big_gob_test_penalty"] = int(abs(int(test_modifier)))
+            unit.special_rules["enhancement_big_gob_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_big_gob_ability_key"] = str(
+                params.get("ability_key", "big_gob") or "big_gob"
+            ).strip().lower() or "big_gob"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_big_gob_bearer_model_id"] = bearer_id
+
         if name == "tellyporta" or enh_id == "000008885005":
             if not is_bully_boyz:
                 return

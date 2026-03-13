@@ -6791,6 +6791,19 @@ _TYRANIDS_ASSIMILATION_SWARM_BY_NAME = {
 }
 
 _ORKS_BULLY_BOYZ_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008885002": EnhancementToolDescriptor(
+        enhancement_id="000008885002",
+        name="Big Gob",
+        timing="fight_phase_start",
+        target="enemy_unit_within_engagement_range_of_bearer",
+        duration="immediate",
+        effect="fight_phase_select_engagement_battleshock",
+        effect_params={
+            "battle_shock_test_modifier": -1,
+            "requires_bearer_alive": True,
+            "ability_key": "big_gob",
+        },
+    ),
     "000008885005": EnhancementToolDescriptor(
         enhancement_id="000008885005",
         name="Tellyporta",
