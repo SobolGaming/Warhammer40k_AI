@@ -5944,6 +5944,7 @@ def _classify_ability_base(
     advance_no_roll_support = _advance_no_roll_fixed_distance_support(description)
     movement_ignore_vertical_support = _movement_ignore_vertical_distance_support(description)
     move_advance_charge_modifier_ignore_support = _move_advance_charge_modifier_ignore_support(description)
+    unit_phase_move_auto_pass_support = _unit_phase_move_auto_pass_desperate_escape_support(description)
     charge_move_devastating_support = _charge_move_devastating_wounds_support(description)
     charge_move_profile_attacks_support = _charge_move_model_weapon_profile_attacks_bonus_support(description)
     defensive_charge_roll_penalty_support = _defensive_charge_roll_penalty_support(description)
@@ -6153,6 +6154,7 @@ def _classify_ability_base(
     overwatch_hit_threshold_support = _overwatch_hit_threshold_support(description)
     brutal_example_overwatch_support = _brutal_example_overwatch_support(description)
     datasheet_no_fire_overwatch_support = _datasheet_no_fire_overwatch_support(description)
+    attack_count_reroll_support = _model_attack_count_reroll_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
     start_fight_phase_self_destruction_support = _start_fight_phase_self_destruction_support(description)
     shooting_target_arcing_mortals_support = _shooting_target_arcing_mortals_support(description)
@@ -6303,6 +6305,8 @@ def _classify_ability_base(
         return movement_ignore_vertical_support
     if move_advance_charge_modifier_ignore_support:
         return move_advance_charge_modifier_ignore_support
+    if unit_phase_move_auto_pass_support:
+        return unit_phase_move_auto_pass_support
     if charge_move_devastating_support:
         return charge_move_devastating_support
     if charge_move_profile_attacks_support:
@@ -6684,6 +6688,8 @@ def _classify_ability_base(
         return brutal_example_overwatch_support
     if datasheet_no_fire_overwatch_support:
         return datasheet_no_fire_overwatch_support
+    if attack_count_reroll_support:
+        return attack_count_reroll_support
     if shooting_target_arcing_mortals_support:
         return shooting_target_arcing_mortals_support
     if charge_end_mortal_support:
@@ -7111,6 +7117,22 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
                 f"({vs_val}+ vs Psychic attacks and attacks made by DAEMON models)."
             )
 
+    m_ranged = re.search(
+        r"(?:models?\s+in\s+)?(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+"
+        r"(?:have|has)\s+(?:a\s+|the\s+)?(?P<base>[1-6])\+?\s+invulnerable\s+save\s+against\s+ranged\s+attacks",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m_ranged:
+        has_conditional_invuln = True
+        base_val = str(m_ranged.group("base") or "").strip()
+        if leading_prefix:
+            notes.append(f"{leading_prefix}Invulnerable save {base_val}+ against ranged attacks.")
+        elif "bearer" in str(m_ranged.group(0) or "").lower():
+            notes.append(f"Bearer's unit gains a {base_val}+ invulnerable save against ranged attacks.")
+        else:
+            notes.append(f"Unit gains a {base_val}+ invulnerable save against ranged attacks.")
+
     m = re.search(
         r"(?:models?\s+in\s+)?(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+"
         r"(?:have|has)\s+(?:a\s+|the\s+)?([1-6])\+?\s+invulnerable\s+save",
@@ -7312,6 +7334,8 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}(?:you can )?reroll advance rolls? made for {unit_ref} and you can reroll any rolls made for {unit_ref} while it is performing an agile (?:manoeuvre|maneuver)",
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? [1-6] invulnerable save and (?:a|the)? [1-6] invulnerable save against psychic attacks and attacks made by daemon models",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? [1-6] invulnerable save and (?:a|the)? [1-6] invulnerable save against psychic attacks and attacks made by daemon models",
+        rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? [1-6] invulnerable save against ranged attacks",
+        rf"{lead_prefix}{unit_ref} has (?:a|the)? [1-6] invulnerable save against ranged attacks",
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? [1-6] invulnerable save",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? [1-6] invulnerable save",
         rf"{lead_prefix}models? in {unit_ref} have the deep strike ability",
@@ -8927,6 +8951,25 @@ def _move_advance_charge_modifier_ignore_support(description: str) -> Optional[T
     )
 
 
+def _unit_phase_move_auto_pass_desperate_escape_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"you can reroll advance rolls made for this models unit in addition each time this models unit makes a normal advance or fall back move "
+        r"models in that unit can move through models and terrain features when doing so they can move within engagement range of such models "
+        r"but cannot end that move within engagement range of them and any desperate escape test is automatically passed"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Re-roll Advance rolls; on Normal/Advance/Fall Back, the unit moves through models and terrain, can move within Engagement Range but cannot end there, and auto-passes Desperate Escape tests.",
+    )
+
+
 def _successful_hit_critical_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -10074,6 +10117,23 @@ def _datasheet_no_fire_overwatch_support(description: str) -> Optional[Tuple[str
     )
 
 
+def _model_attack_count_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"once per battle after rolling to determine how many attacks the bearer(?: s|s) (?P<weapon>[a-z0-9 ]+?) makes you can reroll that dice"
+        r"(?: designers note .+)?",
+        norm,
+    )
+    if not m:
+        return None
+    weapon = str(m.group("weapon") or "weapon").strip()
+    return ("Supported", f"Once per battle, re-roll the attack-count die for the bearer's {weapon}.")
+
+
 def _brutal_example_overwatch_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -10179,6 +10239,11 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         low,
         flags=re.IGNORECASE,
     )
+    invuln_ranged_match = re.search(
+        r"models in that unit have (?:a|the)?\s*(\d)\+\s*invulnerable save against ranged attacks",
+        low,
+        flags=re.IGNORECASE,
+    )
     invuln_match = re.search(
         r"models in that unit have (?:a|the)?\s*(\d)\+\s*invulnerable save",
         low,
@@ -10190,6 +10255,8 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             f"{invuln_psychic_daemon_match.group(1)}+ invulnerable save "
             f"({invuln_psychic_daemon_match.group(2)}+ vs Psychic attacks and attacks made by DAEMON models)."
         )
+    elif invuln_ranged_match:
+        notes.append(f"Leading: unit models gain {invuln_ranged_match.group(1)}+ invulnerable save against ranged attacks.")
     elif invuln_match:
         notes.append(f"Leading: unit models gain {invuln_match.group(1)}+ invulnerable save.")
 
@@ -10276,6 +10343,7 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}add \d+ to the wound roll(?: as well)? if the target is battle shocked",
         rf"{lead_prefix}if the target is battle shocked add \d+ to the wound roll(?: as well)?",
         rf"{lead_prefix}models in that unit have (?:a|the)?\s*\d+ invulnerable save,?\s*and\s*(?:a|the)?\s*\d+ invulnerable save against psychic attacks and attacks made by daemon models",
+        rf"{lead_prefix}models in that unit have (?:a|the)?\s*\d+ invulnerable save against ranged attacks",
         rf"{lead_prefix}models in that unit have (?:a|the)?\s*\d+ invulnerable save",
         rf"{lead_prefix}(?:in addition )?each time a model in that unit makes an attack a critical hit is scored on an unmodified hit roll of \d\+?(?: instead of only a 6)?",
         rf"{lead_prefix}.*reroll .*hit roll.* of 1.*",
@@ -10607,7 +10675,7 @@ def _enemy_aura_attack_hit_wound_penalty_support(description: str) -> Optional[T
     if not norm:
         return None
     m_psychological = re.fullmatch(
-        r"while an enemy unit is within (?P<range>\d+) of this model if that unit is battle shocked "
+        r"while an enemy unit(?: excluding [a-z0-9 ]+)? is within (?P<range>\d+) of this model if that unit is battle shocked "
         r"each time a model in that unit makes an attack subtract (?P<hit>\d+) from the hit roll "
         r"each time a friendly (?P<friendly>[a-z0-9 ]+) model makes an attack that targets that unit add (?P<wound>\d+) to the wound roll",
         norm,
@@ -10623,7 +10691,7 @@ def _enemy_aura_attack_hit_wound_penalty_support(description: str) -> Optional[T
         )
 
     m = re.fullmatch(
-        r"while an enemy unit is within (?P<range>\d+) of this model each time a model in that unit makes an attack "
+        r"while an enemy unit(?: excluding [a-z0-9 ]+)? is within (?P<range>\d+) of this model each time a model in that unit makes an attack "
         r"subtract (?P<hit>\d+) from the hit roll"
         r"(?: and if that enemy unit is below half strength subtract (?P<wound>\d+) from the wound roll as well)?",
         norm,
@@ -14239,8 +14307,20 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    threshold_simple = re.fullmatch(
+        r"each time this model ends a normal move you can select one enemy unit it moved over during that move "
+        r"and roll one d6 on a (?P<threshold>\d) that unit suffers (?P<mw>d3|d6|\d+) mortal wounds",
+        norm,
+    )
+    if threshold_simple:
+        threshold = str(threshold_simple.group("threshold") or "4").strip()
+        mortal_text = str(threshold_simple.group("mw") or "D6").strip().upper()
+        return (
+            "Supported",
+            f"Normal: select a moved-over enemy; roll D6, on {threshold}+ inflict {mortal_text} mortal wounds.",
+        )
     pattern = (
-        r"(?:once per battle(?:,)?\s+)?(?:(?:in|during) your movement phase(?:,)?\s+)?(?:each time|after) (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
+        r"(?:once per battle(?:,)?\s+)?(?:(?:in|during) your movement phase(?:,)?\s+)?(?:each time|after) (?:this model|the bearer) ends a (?P<moves>[a-z ]+?) move "
         r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles?(?: units)?)? "
         r"(?:that )?(?:it )?moved (?:over|across) during that move "
         r"(?:if you do )?(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
@@ -14248,6 +14328,16 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
         r"for each (?P<threshold>\d)\+? that (?:enemy )?unit suffers (?P<mw>d3|d6|\d+) mortal wounds?"
     )
     m = re.fullmatch(pattern, norm)
+    threshold_style = False
+    if not m:
+        threshold_pattern = (
+            r"(?:(?:in|during) your movement phase(?:,)?\s+)?(?:each time|after) (?:this model|the bearer) ends a (?P<moves>[a-z ]+?) move "
+            r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles?(?: units)?)? "
+            r"(?:that )?(?:it )?moved (?:over|across) during that move "
+            r"(?:if you do )?(?:and |then )?roll one d6 on a (?P<threshold>\d)\+ that unit suffers (?P<mw>d3|d6|\d+) mortal wounds?"
+        )
+        m = re.fullmatch(threshold_pattern, norm)
+        threshold_style = bool(m)
     if not m:
         unit_pattern = (
             r"(?:once per battle(?:,)?\s+)?(?:(?:in|during) your movement phase(?:,)?\s+)?(?:each time|after) this unit ends a (?P<moves>[a-z ]+) move "
@@ -14298,22 +14388,25 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
     move_types = ["Normal"]
     if "advance" in tokens:
         move_types.append("Advance")
-    dice_raw = (m.group("dice") or "").strip().lower()
-    dice_map = {
-        "one": 1,
-        "two": 2,
-        "three": 3,
-        "four": 4,
-        "five": 5,
-        "six": 6,
-        "seven": 7,
-        "eight": 8,
-        "nine": 9,
-        "ten": 10,
-    }
-    dice_count = int(dice_raw) if dice_raw.isdigit() else dice_map.get(dice_raw, 0)
-    if dice_count <= 0:
-        return None
+    if threshold_style:
+        dice_count = 1
+    else:
+        dice_raw = (m.group("dice") or "").strip().lower()
+        dice_map = {
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+            "seven": 7,
+            "eight": 8,
+            "nine": 9,
+            "ten": 10,
+        }
+        dice_count = int(dice_raw) if dice_raw.isdigit() else dice_map.get(dice_raw, 0)
+        if dice_count <= 0:
+            return None
     threshold = int(m.group("threshold") or 0)
     mw_token = str(m.group("mw") or "").strip().lower()
     if not mw_token:
@@ -14328,8 +14421,13 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
         except Exception:
             return None
     type_label = "/".join(move_types)
-    fly_bonus = int(m.group("fly_bonus") or 0) if m.group("fly_bonus") else 0
+    fly_bonus = 0 if threshold_style else (int(m.group("fly_bonus") or 0) if m.group("fly_bonus") else 0)
     fly_note = " (+{0} vs FLY)".format(fly_bonus) if fly_bonus else ""
+    if threshold_style:
+        return (
+            "Supported",
+            f"{type_label}: select a moved-over enemy; roll D6, on {threshold}+ inflict {mortal_text} mortal wounds.",
+        )
     return (
         "Supported",
         f"{type_label}: select a moved-over enemy; roll {dice_count}D6{fly_note}, each {threshold}+ inflicts {mortal_text} mortal wounds.",

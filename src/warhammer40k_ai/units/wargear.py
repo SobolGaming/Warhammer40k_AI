@@ -4608,6 +4608,82 @@ class WargearProfile:
             except Exception:
                 pass
 
+            # Datasheet abilities: once-per-battle attack-count rerolls for named bearer weapons.
+            try:
+                already_rerolled = any(
+                    "re-rolled attacks" in str(reason or "").lower()
+                    for reason in list(attack_result.attacks_special_modifiers or [])
+                )
+                if (
+                    not already_rerolled
+                    and roll_value is None
+                    and isinstance(self.attacks, Count)
+                    and self.attacks.ctype.name == "DICE"
+                ):
+                    unit = getattr(attacker, "parent_unit", None)
+                    if unit is not None and hasattr(unit, "model_attack_count_reroll_specs"):
+                        weapon_name = ""
+                        if getattr(self, "parent_wargear", None) is not None:
+                            weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
+                        if not weapon_name:
+                            weapon_name = str(getattr(self, "name", "") or "")
+                        for spec in list(unit.model_attack_count_reroll_specs(attacker) or []):
+                            weapon_names = [
+                                str(n or "").strip()
+                                for n in list(spec.get("weapon_names", []) or [])
+                                if str(n or "").strip()
+                            ]
+                            if weapon_names and hasattr(unit, "_weapon_name_matches"):
+                                if not unit._weapon_name_matches(weapon_names, weapon_name):
+                                    continue
+                            ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+                            if ability_key and getattr(attacker, "has_used_once_per_battle", lambda _k: False)(ability_key):
+                                continue
+                            do_reroll = False
+                            game = None
+                            player = None
+                            try:
+                                army = unit.get_parent_army()
+                                player = getattr(army, "player", None) if army is not None else None
+                                game = getattr(player, "game", None) if player is not None else None
+                            except Exception:
+                                game = None
+                                player = None
+                            reason = str(spec.get("source", "") or "Attack-count re-roll").strip() or "Attack-count re-roll"
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                            if provider is not None:
+                                do_reroll = bool(
+                                    provider(
+                                        player=player,
+                                        unit=unit,
+                                        roll_type="attacks",
+                                        value=num_attacks,
+                                        dice=dice_rolls,
+                                        reason=reason,
+                                    )
+                                )
+                            else:
+                                try:
+                                    avg = float(self.attacks.stat_average())
+                                    do_reroll = float(num_attacks) < avg
+                                except Exception:
+                                    do_reroll = False
+                            if not do_reroll:
+                                continue
+                            new_num, new_rolls = _reroll_attacks()
+                            num_attacks = new_num
+                            dice_rolls = list(new_rolls or [])
+                            attack_result.attacks_special_modifiers.append(f"{reason}: re-rolled attacks")
+                            if ability_key:
+                                getattr(attacker, "mark_used_once_per_battle", lambda *_a, **_k: None)(
+                                    ability_key,
+                                    ability_name=reason,
+                                    source="datasheet",
+                                )
+                            break
+            except Exception:
+                pass
+
             # Virulent Vectorium: Overwhelming Generosity attack-count rerolls vs marked target this phase.
             try:
                 already_rerolled = any(
@@ -20039,7 +20115,11 @@ class WargearProfile:
         try:
             t_unit = getattr(target_model, "parent_unit", None)
             if t_unit is not None and hasattr(t_unit, "get_model_invulnerable_save_override"):
-                inv_value, inv_reason = t_unit.get_model_invulnerable_save_override(target_model)
+                attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+                inv_value, inv_reason = t_unit.get_model_invulnerable_save_override(
+                    target_model,
+                    attack_type=attack_type,
+                )
                 if inv_value:
                     current = attack_instance.get("inv_save_override", None)
                     if current is None or int(current) > int(inv_value):

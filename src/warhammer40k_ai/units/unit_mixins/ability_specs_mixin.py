@@ -10161,6 +10161,10 @@ class AbilitySpecsMixin:
                 continue
 
             m = self._MOVE_OVER_MORTAL_WOUNDS_RE.fullmatch(normalized)
+            threshold_style = False
+            if not m:
+                m = self._MOVE_OVER_MORTAL_THRESHOLD_RE.fullmatch(normalized)
+                threshold_style = bool(m)
             if not m:
                 continue
 
@@ -10171,14 +10175,17 @@ class AbilitySpecsMixin:
             if not move_types.issubset({"move", "advance"}):
                 continue
 
-            dice_raw = (m.group("dice") or "").strip().lower()
-            dice_count = None
-            if dice_raw.isdigit():
-                dice_count = int(dice_raw)
+            if threshold_style:
+                dice_count = 1
             else:
-                dice_count = self._NUMBER_WORDS.get(dice_raw)
-            if not dice_count or dice_count <= 0:
-                continue
+                dice_raw = (m.group("dice") or "").strip().lower()
+                dice_count = None
+                if dice_raw.isdigit():
+                    dice_count = int(dice_raw)
+                else:
+                    dice_count = self._NUMBER_WORDS.get(dice_raw)
+                if not dice_count or dice_count <= 0:
+                    continue
             try:
                 threshold = int(m.group("threshold") or 0)
             except Exception:
@@ -10198,10 +10205,11 @@ class AbilitySpecsMixin:
 
             exclude_mv = "excluding monsters and vehicles" in normalized or "excluding monster and vehicle" in normalized
             fly_bonus = 0
-            try:
-                fly_bonus = int(m.group("fly_bonus") or 0)
-            except Exception:
-                fly_bonus = 0
+            if not threshold_style:
+                try:
+                    fly_bonus = int(m.group("fly_bonus") or 0)
+                except Exception:
+                    fly_bonus = 0
             source = str(name or "Move-over mortals").strip() or "Move-over mortals"
             key = (
                 source.lower(),
@@ -10226,6 +10234,68 @@ class AbilitySpecsMixin:
                     "move_types": sorted(move_types),
                     "exclude_monster_vehicle": bool(exclude_mv),
                     "fly_bonus": int(fly_bonus or 0),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_attack_count_reroll_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after rolling a weapon's random attack count, optionally re-roll that die once per battle.
+
+        Returns specs with keys:
+            - source: ability name
+            - weapon_names: list[str]
+            - once_per_battle: bool
+            - ability_key: str
+        """
+        if model is None:
+            return []
+        cache_key = f"model_attack_count_reroll_specs:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            if not normalized:
+                continue
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9+]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = re.fullmatch(
+                r"once per battle after rolling to determine how many attacks the bearer s (?P<weapon>[a-z0-9 ]+?) makes "
+                r"you can re ?roll that dice",
+                normalized,
+            )
+            if not m:
+                continue
+
+            weapon_name = str(m.group("weapon") or "").strip()
+            if not weapon_name:
+                continue
+            source = str(name or "Attack-count re-roll").strip() or "Attack-count re-roll"
+            ability_key = re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_") or "attack_count_reroll"
+            dedupe_key = (source.lower(), weapon_name.lower())
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "weapon_names": [weapon_name],
+                    "once_per_battle": True,
+                    "ability_key": ability_key,
                 }
             )
 

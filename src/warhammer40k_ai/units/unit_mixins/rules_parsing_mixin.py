@@ -3540,7 +3540,15 @@ class RulesParsingMixin:
                                 val = None
                             if val:
                                 source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
-                                invuln_entries.append({"value": int(val), "source": source})
+                                attack_type = ""
+                                try:
+                                    attack_type = str(m.group("attack_type") or "").strip().lower()
+                                except Exception:
+                                    attack_type = ""
+                                entry = {"value": int(val), "source": source}
+                                if attack_type in ("melee", "ranged"):
+                                    entry["attack_type"] = attack_type
+                                invuln_entries.append(entry)
                     m = re.search(
                         r"(?:models\s+in\s+)?(?:the\s+bearer(?:'|\s)?s|that|this)\s+unit\s+have\s+(?:a\s+)?save\s+characteristic\s+of\s+([1-6])\+?",
                         sentence,
@@ -3982,11 +3990,15 @@ class RulesParsingMixin:
                 except Exception:
                     continue
                 source = str(entry.get("source", "") or "")
-                key = (val, source)
+                attack_type = str(entry.get("attack_type", "") or "").strip().lower()
+                key = (val, source, attack_type)
                 if key in seen_invuln:
                     continue
                 seen_invuln.add(key)
-                deduped.append({"value": val, "source": source})
+                deduped_entry = {"value": val, "source": source}
+                if attack_type in ("melee", "ranged"):
+                    deduped_entry["attack_type"] = attack_type
+                deduped.append(deduped_entry)
             for u in members:
                 sr = getattr(u, "special_rules", None)
                 if not isinstance(sr, dict):

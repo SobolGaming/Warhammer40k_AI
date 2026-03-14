@@ -2988,7 +2988,8 @@ class Unit(
         re.IGNORECASE,
     )
     _BEARER_UNIT_INVULNERABLE_SAVE_RE = re.compile(
-        r"(?:models\s+in\s+)?(?:the\s+bearer'?s|that|this)\s+unit\s+(?:have|has)\s+(?:a|the)?\s*([1-6])\+?\s*invulnerable\s+save",
+        r"(?:models\s+in\s+)?(?:the\s+bearer'?s|that|this)\s+unit\s+(?:have|has)\s+(?:a|the)?\s*([1-6])\+?\s*"
+        r"invulnerable\s+save(?:\s+against\s+(?P<attack_type>ranged|melee)\s+attacks)?",
         re.IGNORECASE,
     )
     _UNIT_CONTAINS_INVULNERABLE_SAVE_RE = re.compile(
@@ -3065,7 +3066,9 @@ class Unit(
         re.IGNORECASE,
     )
     _BEARER_UNIT_PHASE_MOVE_RE = re.compile(
-        r"each\s+time\s+a\s+model\s+in\s+(?:the\s+bearer'?s|that|this|this\s+model'?s|this\s+models)\s+unit\s+makes\s+a\s+.*?\bmove\b.*?move\s+horizontally\s+through\s+models\s+and\s+terrain\s+features",
+        r"each\s+time\s+(?:a\s+model\s+in\s+)?(?:the\s+bearer'?s|that|this|this\s+model'?s|this\s+models)\s+unit\s+"
+        r"makes\s+a\s+.*?\bmove\b.*?(?:it|models\s+in\s+that\s+unit|models\s+in\s+this\s+unit|that\s+unit)\s+"
+        r"can\s+move(?:\s+horizontally)?\s+through\s+models\s+and\s+terrain\s+features",
         re.IGNORECASE,
     )
     _BEARER_UNIT_PHASE_TERRAIN_ONLY_RE = re.compile(
@@ -3073,7 +3076,8 @@ class Unit(
         re.IGNORECASE,
     )
     _BEARER_UNIT_PHASE_ENGAGEMENT_RE = re.compile(
-        r"models\s+in\s+(?:the\s+bearer'?s|that|this|this\s+model'?s|this\s+models)\s+unit\s+can\s+move\s+within\s+engagement\s+range\s+of\s+enemy\s+models.*?"
+        r"(?:models\s+in\s+(?:the\s+bearer'?s|that|this|this\s+model'?s|this\s+models)\s+unit|they)\s+can\s+move\s+"
+        r"within\s+engagement\s+range\s+of\s+(?:enemy|such)\s+models.*?"
         r"cannot\s+end\s+that\s+move\s+within\s+engagement\s+range\s+of\s+them",
         re.IGNORECASE,
     )
@@ -4313,6 +4317,13 @@ class Unit(
         r"(?:if you do )?(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
         r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
         r"for each (?P<threshold>\d)\+ that (?:enemy )?unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
+        re.IGNORECASE,
+    )
+    _MOVE_OVER_MORTAL_THRESHOLD_RE = re.compile(
+        r"(?:(?:in|during) your movement phase(?:,)?\s+)?(?:each time|after) (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
+        r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters? and vehicles?(?: units)?)? "
+        r"(?:that )?(?:it )?moved (?:over|across) during that move "
+        r"(?:if you do )?(?:and |then )?roll one d6 on a (?P<threshold>\d)\+ that unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
         re.IGNORECASE,
     )
     _UNIT_MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(

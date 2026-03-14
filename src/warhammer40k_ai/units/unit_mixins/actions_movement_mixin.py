@@ -1705,12 +1705,20 @@ class ActionsMovementMixin:
         self._ability_cache[cache_key] = (best_value, best_source)
         return best_value, best_source
 
-    def get_model_invulnerable_save_override(self, model: Optional['Model'] = None) -> tuple[Optional[int], Optional[str]]:
+    def get_model_invulnerable_save_override(
+        self,
+        model: Optional['Model'] = None,
+        *,
+        attack_type: Optional[str] = None,
+    ) -> tuple[Optional[int], Optional[str]]:
         """
         Return (invulnerable_save_value, source_name) for bearer-only invuln wargear abilities.
         """
         if model is None:
             return None, None
+        attack_type_key = str(attack_type or "").strip().lower()
+        if attack_type_key not in ("melee", "ranged"):
+            attack_type_key = ""
         sr = getattr(self, "special_rules", None)
         aegis_active = bool(isinstance(sr, dict) and sr.get("aegis_eternal_active"))
         archons_dynamic = bool(isinstance(sr, dict) and str(sr.get("archons_will_objective_id", "") or "").strip())
@@ -1810,7 +1818,7 @@ class ActionsMovementMixin:
                 return int(temp_val), temp_source or "Temporary invulnerable save"
         except Exception:
             pass
-        cache_key = f"model_invulnerable_save:{get_entity_id(model)}"
+        cache_key = f"model_invulnerable_save:{get_entity_id(model)}:{attack_type_key or 'any'}"
         if (
             not aegis_active
             and not archons_dynamic
@@ -1921,15 +1929,17 @@ class ActionsMovementMixin:
                         if not bearer_alive:
                             continue
                     entry_sets.append(member_entries)
-            seen_entries: set[tuple[int, str]] = set()
+            seen_entries: set[tuple[int, str, str]] = set()
             for entries in entry_sets:
                 for entry in entries:
                     if isinstance(entry, dict):
                         val = entry.get("value")
                         source = entry.get("source")
+                        entry_attack_type = str(entry.get("attack_type", "") or "").strip().lower()
                     elif isinstance(entry, (list, tuple)):
                         val = entry[0] if entry else None
                         source = entry[1] if len(entry) > 1 else None
+                        entry_attack_type = ""
                     else:
                         continue
                     try:
@@ -1940,7 +1950,9 @@ class ActionsMovementMixin:
                     source_norm = source_text.lower().replace("\u2019", "'")
                     if ("archon's will" in source_norm or "archons will" in source_norm) and not archons_active:
                         continue
-                    dedupe_key = (int(val), source_norm)
+                    if entry_attack_type and attack_type_key != entry_attack_type:
+                        continue
+                    dedupe_key = (int(val), source_norm, entry_attack_type)
                     if dedupe_key in seen_entries:
                         continue
                     seen_entries.add(dedupe_key)
