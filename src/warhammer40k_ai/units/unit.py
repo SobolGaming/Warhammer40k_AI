@@ -2745,7 +2745,7 @@ class Unit(
                 pattern = (
                     r"(?:while (?:(?:a|an|the) (?P<lemma>[a-z0-9 ]+)|this)(?: model)? is leading (?:this|a) unit )?"
                     r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
-                    r"(?:targets|target) "
+                    r"(?:targets|target|is allocated to|is made against) "
                     r"(?:this model|this unit|this model s unit|that unit|the bearer|the bearer s unit) "
                     r"worsen the armou?r penetration characteristic of that attack by (?P<val>\d+)"
                 )

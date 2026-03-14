@@ -5830,6 +5830,16 @@ class ActionsMovementMixin:
                 source = str(effect.get("source", "") or "Orks temporary effect").strip() or "Orks temporary effect"
                 crit_hit_reasons.append(f"{source}: critical hit on {threshold}+")
 
+        if atype in ("any", "ranged"):
+            spec_fn = getattr(root, "unit_ranged_successful_hit_critical_specs", None)
+            if callable(spec_fn):
+                for spec in list(spec_fn() or []):
+                    if not isinstance(spec, dict):
+                        continue
+                    source = str(spec.get("source", "") or "Ranged successful hit critical").strip() or "Ranged successful hit critical"
+                    crit_hit_on_successful_hit = True
+                    crit_hit_reasons.append(f"{source}: critical hit on successful hit")
+
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
         mods["crit_hit_threshold"] = crit_hit_threshold

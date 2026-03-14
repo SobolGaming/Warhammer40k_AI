@@ -6603,6 +6603,48 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_ranged_successful_hit_critical_specs(self) -> List[dict]:
+        """
+        Unit-level rule: ranged attacks treat each successful Hit roll as a Critical Hit.
+
+        This intentionally only accepts simple unconditional wording so it does
+        not overlap with more specific temporary/conditional critical-hit rules.
+        """
+        cache_key = "unit_ranged_successful_hit_critical_specs"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if normalized not in (
+                "each time this model makes a ranged attack every successful hit roll scores a critical hit",
+                "each time a model in this unit makes a ranged attack every successful hit roll scores a critical hit",
+            ):
+                continue
+
+            source = str(name or "Ranged successful hit critical").strip() or "Ranged successful hit critical"
+            key = source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_end_of_fight_embark_specs(self) -> List[dict]:
         """
         Unit-specific rule: end of Fight phase, select a friendly Infantry unit within 6"

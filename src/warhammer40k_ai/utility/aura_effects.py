@@ -812,7 +812,9 @@ def _parse_leadership_only_aura(ability) -> Optional[dict]:
         return None
     m = re.search(
         rf'While a friendly (?P<faction_kw>.+?) (?:unit|model) is (?:(?:wholly )?within) (?P<rng>\d+)" '
-        rf"of {_AURA_SOURCE_PATTERN}, improve that .*? Leadership characteristic by (?P<amt>\d+)",
+        rf"of {_AURA_SOURCE_PATTERN}, improve "
+        rf"(?:that .*? Leadership characteristic|the Leadership characteristic of models in that unit|the Leadership characteristic of that model) "
+        rf"by (?P<amt>\d+)",
         desc,
         flags=re.IGNORECASE,
     )

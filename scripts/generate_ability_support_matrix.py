@@ -5923,7 +5923,9 @@ def _classify_ability_base(
     unit_contains_oc_support = _unit_contains_oc_support(description)
     unit_contains_action_support = _unit_contains_model_action_support(description)
     aura_oc_support = _aura_objective_control_support(description)
+    aura_leadership_bonus_support = _aura_leadership_bonus_support(description)
     aura_benefit_of_cover_support = _aura_benefit_of_cover_support(description)
+    fortification_cover_support = _fortification_cover_support(description)
     foul_spores_support = _foul_spores_aura_support(description)
     friendly_tyranids_invuln_aura_support = _friendly_tyranids_invulnerable_aura_support(description)
     enemy_aura_oc_penalty_support = _enemy_aura_objective_control_penalty_support(description)
@@ -5941,6 +5943,7 @@ def _classify_ability_base(
     advance_no_roll_phase_move_support = _advance_no_roll_with_phase_move_support(description)
     advance_no_roll_support = _advance_no_roll_fixed_distance_support(description)
     movement_ignore_vertical_support = _movement_ignore_vertical_distance_support(description)
+    move_advance_charge_modifier_ignore_support = _move_advance_charge_modifier_ignore_support(description)
     charge_move_devastating_support = _charge_move_devastating_wounds_support(description)
     charge_move_profile_attacks_support = _charge_move_model_weapon_profile_attacks_bonus_support(description)
     defensive_charge_roll_penalty_support = _defensive_charge_roll_penalty_support(description)
@@ -5975,6 +5978,7 @@ def _classify_ability_base(
     defensive_ap_worsen_support = _defensive_ap_worsen_support(description)
     defensive_wound_penalty_support = _defensive_wound_penalty_support(description)
     strength_gt_toughness_wound_penalty_support = _defensive_strength_gt_toughness_wound_penalty_support(description)
+    successful_hit_critical_support = _successful_hit_critical_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
     melee_charge_strength_damage_support = _melee_charge_strength_damage_support(description)
     two_melee_weapons_support = _two_melee_weapons_bonus_support(description)
@@ -6257,8 +6261,12 @@ def _classify_ability_base(
         return unit_contains_action_support
     if aura_oc_support:
         return aura_oc_support
+    if aura_leadership_bonus_support:
+        return aura_leadership_bonus_support
     if aura_benefit_of_cover_support:
         return aura_benefit_of_cover_support
+    if fortification_cover_support:
+        return fortification_cover_support
     if foul_spores_support:
         return foul_spores_support
     if friendly_tyranids_invuln_aura_support:
@@ -6293,6 +6301,8 @@ def _classify_ability_base(
         return advance_no_roll_support
     if movement_ignore_vertical_support:
         return movement_ignore_vertical_support
+    if move_advance_charge_modifier_ignore_support:
+        return move_advance_charge_modifier_ignore_support
     if charge_move_devastating_support:
         return charge_move_devastating_support
     if charge_move_profile_attacks_support:
@@ -6366,6 +6376,8 @@ def _classify_ability_base(
         return defensive_wound_penalty_support
     if strength_gt_toughness_wound_penalty_support:
         return strength_gt_toughness_wound_penalty_support
+    if successful_hit_critical_support:
+        return successful_hit_critical_support
     if melee_damage_support:
         return melee_damage_support
     if melee_charge_strength_damage_support:
@@ -6916,6 +6928,12 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             notes.append("Leading: re-roll Charge rolls for the unit.")
         else:
             notes.append("Re-roll Charge rolls.")
+    elif re.search(
+        r"each time this unit declares a charge\s*,?\s*you can re-?roll the charge roll",
+        low,
+        flags=re.IGNORECASE,
+    ):
+        notes.append("Re-roll Charge rolls.")
 
     eligible_shoot = (
         "eligible to shoot in a turn in which" in low
@@ -6952,6 +6970,13 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
                 notes.append("Charge-after-Advance eligibility.")
             elif has_fall_back:
                 notes.append("Charge-after-Fall-Back eligibility.")
+
+    if re.search(
+        r"you can ignore any or all modifiers to this unit'?s move characteristic and to advance and charge rolls made for this unit",
+        low,
+        flags=re.IGNORECASE,
+    ):
+        notes.append("Ignore any or all modifiers to Move characteristic and Advance/Charge rolls.")
 
     m = re.search(
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",
@@ -7265,8 +7290,10 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}add \d+ to advance rolls made for {unit_ref}",
         rf"{lead_prefix}(?:you can |can )?reroll advance and charge rolls made for (?:this model|{unit_ref})",
         rf"{lead_prefix}(?:you can |can )?reroll charge rolls made for (?:this model|{unit_ref})",
+        r"each time this unit declares a charge you can reroll the charge roll",
         rf"{lead_prefix}bearers unit declares a charge .* objective marker .* reroll the charge roll",
         rf"{lead_prefix}reroll charge rolls .* set up on the battlefield",
+        r"you can ignore any or all modifiers to this units move characteristic and to advance and charge rolls made for this unit",
         rf"{lead_prefix}models in {unit_ref} have a leadership characteristic of \d+",
         rf"{lead_prefix}improve the leadership characteristic of models in {unit_ref} by \d+",
         rf"{lead_prefix}models in {unit_ref} have a move characteristic of \d+",
@@ -8827,7 +8854,7 @@ def _defensive_ap_worsen_support(description: str) -> Optional[Tuple[str, str]]:
     pattern = (
         r"(?:while (?:(?:a|an|the) [a-z0-9 ]+|this)(?: model)? is leading (?:this|a) unit )?"
         r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
-        r"(?:targets|target) "
+        r"(?:targets|target|is allocated to|is made against) "
         r"(?P<scope>this model|this unit|this model s unit|that unit|the bearer|the bearer s unit) "
         r"worsen the armou?r penetration characteristic of that attack by (?P<val>\d+)"
     )
@@ -8843,6 +8870,79 @@ def _defensive_ap_worsen_support(description: str) -> Optional[Tuple[str, str]]:
     else:
         attack_scope = "all"
     return ("Supported", f"Attacks targeting this unit/model have AP worsened by {val} vs {attack_scope} attacks.")
+
+
+def _fortification_cover_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time a ranged attack is allocated to a model if that model is not fully visible to every model "
+        r"in the attacking unit because of this fortification that model has the benefit of cover against that attack"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Fortification cover support: ranged attacks allocated to models not fully visible because of this FORTIFICATION grant Benefit of Cover.",
+    )
+
+
+def _aura_leadership_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+) of this (?:model|unit|fortification) "
+        r"improve the leadership characteristic of models in that unit by (?P<amt>\d+)",
+        norm,
+    )
+    if not m:
+        return None
+    faction_kw = str(m.group("faction_kw") or "").strip().upper()
+    rng = int(m.group("rng") or 0)
+    amt = int(m.group("amt") or 0)
+    return ("Supported", f"Aura: friendly {faction_kw} units within {rng}\" improve Leadership by {amt}.")
+
+
+def _move_advance_charge_modifier_ignore_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"you can ignore any or all modifiers to this units move characteristic "
+        r"and to advance and charge rolls made for this unit"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "This unit can ignore any or all modifiers to its Move characteristic and to Advance and Charge rolls.",
+    )
+
+
+def _successful_hit_critical_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"each time (?:this model|a model in this unit) makes a (?P<atype>melee|ranged) attack "
+        r"every successful hit roll scores a critical hit",
+        norm,
+    )
+    if not m:
+        return None
+    atype = str(m.group("atype") or "").strip().lower()
+    attack_label = "Ranged" if atype == "ranged" else "Melee"
+    return ("Supported", f"{attack_label} attacks: every successful Hit roll scores a Critical Hit.")
 
 
 def _defensive_strength_gt_toughness_wound_penalty_support(description: str) -> Optional[Tuple[str, str]]:
