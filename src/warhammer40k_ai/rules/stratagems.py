@@ -275,6 +275,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLITZA FIRE",
     "CALL DAT DAKKA?",
     "DAKKASTORM",
+    "FULL THROTTLE!",
     "SQUIG FLINGIN'",
     "LONG, UNCONTROLLED BURSTS",
     "SUPERFUELLED BOILER",
@@ -1612,6 +1613,7 @@ class StratagemManager(
             "UNSTOPPABLE MOMENTUM",
             "KRUNCHIN' DESCENT",
             "KRUNCHIN\u2019 DESCENT",
+            "FULL THROTTLE!",
             "FOOLS' FLIGHT",
             "WHERE D'YA FINK YOU'RE GOING?",
             "KRUMP AND RUN",
@@ -4410,6 +4412,18 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Charge phase trigger after a STORMBOYZ unit ends a Charge move and an enemy unit in Engagement Range"
             return result
+        if name_u == "FULL THROTTLE!":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_charge_end_mortal_wound_source_candidates(
+                    target_matcher=self._orks_is_speed_freeks_unit,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Charge phase trigger after a SPEED FREEKS unit ends a Charge move"
+            return result
         if name_u == "INSTINCTIVE HUNTERS":
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -5066,6 +5080,7 @@ class StratagemManager(
             "STALKIN' TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
             "STALKIN\u2019 TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
             "UNSTOPPABLE MOMENTUM": "Target: BEAST SNAGGA MOUNTED unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per model in your unit (plus 3D6 if target is your Prey), 4+ deals 1 mortal (max 6)",
+            "FULL THROTTLE!": "Target: SPEED FREEKS unit that just ended a Charge move; melee attacks gain +1 to wound until end of turn",
             "SPEEDIEST FREEKS": "Target: SPEED FREEKS or TRUKK unit selected by the attacking enemy's targets",
             "EXTRA GUBBINZ": "Target: ORKS WALKER/GROTS VEHICLE unit selected by the attacking enemy's targets (excluding TITANIC)",
             "WHERE D'YA FINK YOU'RE GOING?": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit that was in Engagement Range of the enemy that just Fell Back at phase start and is not currently in Engagement Range",

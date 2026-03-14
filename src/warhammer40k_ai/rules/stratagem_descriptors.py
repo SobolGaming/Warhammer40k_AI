@@ -857,6 +857,16 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         range_in=9.0,
         effect_params={"sustained_hits": 1, "sustained_hits_within_range": 2, "range_in": 9.0},
     ),
+    "000008873006": StratagemToolDescriptor(
+        stratagem_id="000008873006",
+        name="FULL THROTTLE!",
+        timing="charge_phase_after_charge_move_end",
+        target="speed_freeks_unit_just_completed_charge",
+        duration="until_end_of_turn",
+        effect="melee_wound_bonus",
+        cp_cost=1,
+        effect_params={"melee_wound_roll_modifier": 1},
+    ),
     "000008873003": StratagemToolDescriptor(
         stratagem_id="000008873003",
         name="SQUIG FLINGIN'",

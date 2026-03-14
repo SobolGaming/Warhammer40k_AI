@@ -2380,6 +2380,7 @@ class OrksStratagemMixin:
 
     def _queue_orks_move_end_reactions(self, *, unit: Any, action: str) -> None:
         self._queue_orks_charge_end_mortal_wound_reactions(unit=unit, action=action)
+        self._queue_orks_full_throttle_charge_end_reaction(unit=unit, action=action)
         self._queue_orks_squig_flingin_move_end_reaction(unit=unit, action=action)
         self._queue_orks_taktikal_retreat_move_end_reaction(unit=unit, action=action)
 
@@ -2592,6 +2593,59 @@ class OrksStratagemMixin:
             detachment_check=self._is_taktikal_brigade_detachment,
             source_matcher=self._orks_is_stormboyz_unit,
         )
+
+    def _queue_orks_full_throttle_charge_end_reaction(self, *, unit: Any, action: str) -> None:
+        if unit is None:
+            return
+        if not self._is_kult_of_speed_detachment():
+            return
+        if self._orks_phase_label(getattr(self, "_current_phase_name", "")) != "charge phase":
+            return
+        if not self._orks_is_players_turn():
+            return
+        if self._orks_normalize_move_action(action) != "charge":
+            return
+
+        source_root = self._orks_root(unit)
+        if source_root is None:
+            return
+        if not self._orks_owned_by_player(source_root, self.player):
+            return
+        if not self._orks_on_battlefield(source_root, require_targetable=True):
+            return
+        if bool(self._unit_cannot_be_target_of_stratagem(source_root)):
+            return
+        if not self._orks_is_speed_freeks_unit(source_root):
+            return
+        if not self._orks_charge_end_mortal_wound_enemy_candidates(source_root):
+            return
+
+        stratagem = self._orks_get_available_stratagem_by_names("FULL THROTTLE!")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(self._used_stratagems_this_phase):
+            return
+        if self._orks_unit_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=str(getattr(stratagem, "name", "") or "FULL THROTTLE!"),
+            unit=source_root,
+        ):
+            return
+
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Charge phase",
+            "stratagem": str(getattr(stratagem, "name", "") or "FULL THROTTLE!"),
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "unit": source_root,
+            "target_unit": source_root,
+            "source_unit": source_root,
+            "candidates": [source_root],
+            "action": "charge",
+        }
+        self._queue_reaction(payload, use_timer=False)
 
     def _queue_orks_taktikal_retreat_move_end_reaction(self, *, unit: Any, action: str) -> None:
         if unit is None:
@@ -3264,6 +3318,8 @@ class OrksStratagemMixin:
             return self._use_orks_crushing_impact(stratagem, **kwargs)
         if name_u == "UNSTOPPABLE MOMENTUM":
             return self._use_orks_unstoppable_momentum(stratagem, **kwargs)
+        if name_u == "FULL THROTTLE!":
+            return self._use_orks_full_throttle(stratagem, **kwargs)
         if name_norm == "krunchin descent":
             return self._use_orks_krunchin_descent(stratagem, **kwargs)
         if name_u == "DRAG IT DOWN":
@@ -3552,6 +3608,88 @@ class OrksStratagemMixin:
             extra_dice_if_prey=0,
             **kwargs,
         )
+
+    def _use_orks_full_throttle(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_kult_of_speed_detachment():
+            return False
+        source_unit, candidates, _enemy_unit, _enemy_candidates, action, phase_name, from_pending = (
+            self._orks_resolve_charge_end_mortal_context("FULL THROTTLE!", **kwargs)
+        )
+        if source_unit is None:
+            logger.error("ERROR: FULL THROTTLE!: no target unit provided")
+            return False
+
+        phase_label = self._orks_phase_label(phase_name or self._orks_current_phase_label())
+        if phase_label != "charge phase":
+            logger.error("ERROR: FULL THROTTLE!: wrong phase")
+            return False
+        if not self._orks_is_players_turn():
+            logger.error("ERROR: FULL THROTTLE!: not your Charge phase")
+            return False
+        action_key = self._orks_normalize_move_action(action)
+        if not from_pending and not action_key:
+            logger.error("ERROR: FULL THROTTLE!: missing movement trigger context")
+            return False
+        if action_key and action_key != "charge":
+            logger.error("ERROR: FULL THROTTLE!: invalid trigger action")
+            return False
+
+        source_root = self._orks_root(source_unit)
+        if source_root is None:
+            return False
+        if not self._orks_owned_by_player(source_root, self.player):
+            logger.error("ERROR: FULL THROTTLE!: target unit is not yours")
+            return False
+        if not self._orks_on_battlefield(source_root, require_targetable=True):
+            logger.error("ERROR: FULL THROTTLE!: target must be on battlefield and targetable")
+            return False
+        if not self._is_orks_unit(source_root):
+            logger.error("ERROR: FULL THROTTLE!: target must be an ORKS unit")
+            return False
+        if not self._orks_is_speed_freeks_unit(source_root):
+            logger.error("ERROR: FULL THROTTLE!: target must be a Speed Freeks unit")
+            return False
+        charged_this_round = bool(getattr(getattr(source_root, "round_state", None), "charged_this_round", False))
+        if action_key != "charge" and not charged_this_round:
+            logger.error("ERROR: FULL THROTTLE!: target must have ended a Charge move this phase")
+            return False
+
+        expected_sources = list(candidates or [])
+        if not expected_sources:
+            expected_sources = self._orks_charge_end_mortal_wound_source_candidates(
+                target_matcher=self._orks_is_speed_freeks_unit,
+            )
+        if expected_sources and not self._orks_unit_in_candidates(source_root, expected_sources):
+            logger.error("ERROR: FULL THROTTLE!: selected unit is not currently eligible")
+            return False
+
+        if not stratagem.can_use(self.player, self.game, target_unit=source_root, unit=source_root, phase_name="Charge phase"):
+            logger.error("ERROR: FULL THROTTLE!: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=source_root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "FULL THROTTLE!").strip() or "FULL THROTTLE!"
+        self._orks_apply_temp_effects(
+            source_root,
+            detachment="kult_of_speed",
+            effects=[
+                {
+                    "id": "full_throttle:melee:wound_bonus",
+                    "source": source_name,
+                    "effect": "wound_bonus",
+                    "attack_type": "melee",
+                    "value": 1,
+                    "expires_mode": "turn",
+                }
+            ],
+        )
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FULL THROTTLE!: %s gains +1 to wound for melee attacks until end of turn.",
+            getattr(source_root, "name", "Unit"),
+        )
+        return True
 
     def _use_orks_end_of_opponent_fight_phase_reserves_stratagem(
         self,

@@ -4105,6 +4105,26 @@ class ShootingMixin:
                     overrides["allow_charge_after_normal_move"] = True
             except Exception:
                 pass
+        fasta_sources = self._attached_unit_active_enhancement_sources(
+            "enhancement_kult_of_speed_fasta_than_yooz",
+            source_keys=("enhancement_kult_of_speed_fasta_than_yooz_source",),
+        )
+        if fasta_sources and transport_unit is not None:
+            transport_round_state = getattr(transport_unit, "round_state", None)
+            moved_normally = bool(getattr(transport_round_state, "moved_this_round", False))
+            moved_normally = moved_normally and not bool(getattr(transport_round_state, "advanced_this_round", False))
+            moved_normally = moved_normally and not bool(getattr(transport_round_state, "fell_back_this_round", False))
+            if moved_normally:
+                for source_entry in fasta_sources:
+                    source_rules = dict(source_entry.get("special_rules") or {})
+                    if bool(
+                        source_rules.get(
+                            "enhancement_kult_of_speed_fasta_than_yooz_allow_charge_after_normal_move_disembark",
+                            False,
+                        )
+                    ):
+                        overrides["allow_charge_after_normal_move"] = True
+                        break
         try:
             tsr = getattr(transport_unit, "special_rules", None)
         except Exception:

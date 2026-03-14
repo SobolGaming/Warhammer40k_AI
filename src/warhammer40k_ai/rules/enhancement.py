@@ -11007,6 +11007,30 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
+        if name == "fasta than yooz" or enh_id == "000008872002":
+            if not is_kult_of_speed:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword) or not bool(has_any_keyword("INFANTRY")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Fasta Than Yooz").strip() or "Fasta Than Yooz"
+            unit.special_rules["enhancement_kult_of_speed_fasta_than_yooz"] = True
+            unit.special_rules["enhancement_kult_of_speed_fasta_than_yooz_source"] = source
+            unit.special_rules["enhancement_kult_of_speed_fasta_than_yooz_allow_charge_after_normal_move_disembark"] = bool(
+                params.get("allow_charge_after_normal_move", True)
+            )
+            unit.special_rules["enhancement_kult_of_speed_fasta_than_yooz_requires_disembarked_from_moved_transport"] = bool(
+                params.get("requires_disembarked_from_moved_transport", True)
+            )
+            unit.special_rules["enhancement_kult_of_speed_fasta_than_yooz_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_kult_of_speed_fasta_than_yooz_bearer_model_id"] = bearer_id
+
         if name == "speed makes right" or enh_id == "000008872003":
             if not is_kult_of_speed:
                 return
@@ -11044,6 +11068,51 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_kult_of_speed_speed_makes_right_bearer_model_id"] = bearer_id
+
+        if name == "squig-hide tyres" or enh_id == "000008872004":
+            if not is_kult_of_speed:
+                return
+            unit_name = normalize_enhancement_token(getattr(unit, "name", "") or "")
+            if unit_name != "deffkilla wartrike":
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Squig-hide Tyres").strip() or "Squig-hide Tyres"
+            distance = _coerce_int(params.get("consolidate_distance_override", 6) or 6, default=6)
+            unit.special_rules["enhancement_kult_of_speed_squig_hide_tyres"] = True
+            unit.special_rules["enhancement_kult_of_speed_squig_hide_tyres_source"] = source
+            unit.special_rules["enhancement_kult_of_speed_squig_hide_tyres_consolidate_distance_override"] = int(
+                max(3, distance)
+            )
+            unit.special_rules["enhancement_kult_of_speed_squig_hide_tyres_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_kult_of_speed_squig_hide_tyres_bearer_model_id"] = bearer_id
+
+        if name == "wazblasta" or enh_id == "000008872005":
+            if not is_kult_of_speed:
+                return
+            unit_name = normalize_enhancement_token(getattr(unit, "name", "") or "")
+            if unit_name != "deffkilla wartrike":
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "Wazblasta").strip() or "Wazblasta"
+            move_range = _coerce_int(params.get("move_range", 6) or 6, default=6)
+            unit.special_rules["enhancement_kult_of_speed_wazblasta"] = True
+            unit.special_rules["enhancement_kult_of_speed_wazblasta_source"] = source
+            unit.special_rules["enhancement_kult_of_speed_wazblasta_post_shoot_move_range"] = int(max(1, move_range))
+            unit.special_rules["enhancement_kult_of_speed_wazblasta_requires_not_engagement_range"] = bool(
+                params.get("requires_not_engagement_range", True)
+            )
+            unit.special_rules["enhancement_kult_of_speed_wazblasta_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_kult_of_speed_wazblasta_bearer_model_id"] = bearer_id
 
         if name == "big gob" or enh_id == "000008885002":
             if not is_bully_boyz:

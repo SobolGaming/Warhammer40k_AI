@@ -9243,7 +9243,7 @@ class KeywordsDetachmentsMixin:
             return False
 
         expires_mode = str(entry.get("expires_mode", "") or "").strip().lower()
-        if expires_mode != "phase":
+        if expires_mode not in {"phase", "turn"}:
             if game is None:
                 game = self._orks_temp_effect_game()
             if not self._orks_temp_effect_within_distance_condition_matches(entry, game=game, game_map=game_map):
@@ -9277,6 +9277,10 @@ class KeywordsDetachmentsMixin:
             current_turn = 0
         if effect_turn and current_turn and effect_turn != current_turn:
             return False
+        if expires_mode == "turn":
+            if not self._orks_temp_effect_within_distance_condition_matches(entry, game=game, game_map=game_map):
+                return False
+            return True
         if not self._orks_temp_effect_within_distance_condition_matches(entry, game=game, game_map=game_map):
             return False
         return True

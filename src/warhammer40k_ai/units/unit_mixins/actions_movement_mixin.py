@@ -3657,6 +3657,35 @@ class ActionsMovementMixin:
                     }
                 )
 
+        enhancement_sources = self._attached_unit_active_enhancement_sources(
+            "enhancement_kult_of_speed_wazblasta",
+            source_keys=("enhancement_kult_of_speed_wazblasta_source",),
+        )
+        for source_entry in enhancement_sources:
+            sr = dict(source_entry.get("special_rules") or {})
+            try:
+                rng = int(sr.get("enhancement_kult_of_speed_wazblasta_post_shoot_move_range", 0) or 0)
+            except (TypeError, ValueError):
+                rng = 0
+            if rng <= 0:
+                continue
+            source = str(source_entry.get("source", "") or "Wazblasta").strip() or "Wazblasta"
+            requires_not_engaged = bool(
+                sr.get("enhancement_kult_of_speed_wazblasta_requires_not_engagement_range", True)
+            )
+            key = (source.lower(), int(rng), "", bool(requires_not_engaged))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(rng),
+                    "range_roll": "",
+                    "requires_not_engaged": bool(requires_not_engaged),
+                }
+            )
+
         if not isinstance(cache, dict):
             cache = {}
         cache[cache_key] = list(specs)

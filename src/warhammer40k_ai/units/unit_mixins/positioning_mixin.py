@@ -642,6 +642,113 @@ class PositioningMixin:
 
         return False
 
+    @staticmethod
+    def _attached_unit_sort_key(entity) -> tuple[int, str, str]:
+        entity_id = str(get_entity_id(entity) or "").strip()
+        name = str(getattr(entity, "name", "") or "").strip().lower()
+        if entity_id:
+            return (0, entity_id, name)
+        return (1, name, "")
+
+    @staticmethod
+    def _enhancement_bearer_is_alive_for_unit(unit, special_rules: Optional[dict] = None) -> bool:
+        sr = special_rules if isinstance(special_rules, dict) else getattr(unit, "special_rules", None)
+        models = list(getattr(unit, "models", []) or [])
+
+        bearer_id = ""
+        if isinstance(sr, dict):
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in models:
+                model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                if model_id != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            return False
+
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if bearer is None:
+                return False
+            alive_attr = getattr(bearer, "is_alive", True)
+            return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+        for model in models:
+            alive_attr = getattr(model, "is_alive", True)
+            if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                return True
+        return False
+
+    def _attached_unit_active_enhancement_sources(
+        self,
+        flag_key: str,
+        *,
+        enhancement_id: str = "",
+        enhancement_name: str = "",
+        require_bearer_alive: bool = True,
+        source_keys: tuple[str, ...] = (),
+    ) -> list[dict]:
+        """
+        Return matching attached-unit enhancement sources sorted by canonical entity id.
+        """
+        if not flag_key and not enhancement_id and not enhancement_name:
+            return []
+
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+
+        norm_name = str(enhancement_name or "").strip().lower()
+        ordered_members = [member for member in members if member is not None]
+        ordered_members.sort(key=self._attached_unit_sort_key)
+
+        results: list[dict] = []
+        for member in ordered_members:
+            sr = getattr(member, "special_rules", None)
+            enh = getattr(member, "enhancement", None)
+            matched = False
+            if isinstance(sr, dict) and flag_key and bool(sr.get(flag_key)):
+                matched = True
+            if not matched and enh is not None:
+                enh_unit_id = str(getattr(enh, "id", "") or "").strip()
+                if enhancement_id and enh_unit_id == enhancement_id:
+                    matched = True
+                elif norm_name and str(getattr(enh, "name", "") or "").strip().lower() == norm_name:
+                    matched = True
+            if not matched:
+                continue
+            if require_bearer_alive and not self._enhancement_bearer_is_alive_for_unit(
+                member,
+                sr if isinstance(sr, dict) else None,
+            ):
+                continue
+
+            source = ""
+            if isinstance(sr, dict):
+                for source_key in source_keys:
+                    source = str(sr.get(source_key, "") or "").strip()
+                    if source:
+                        break
+            if not source and enh is not None:
+                source = str(getattr(enh, "name", "") or enhancement_name or "Enhancement").strip()
+            if not source and enhancement_name:
+                source = str(enhancement_name or "").strip()
+
+            results.append(
+                {
+                    "unit": member,
+                    "special_rules": sr if isinstance(sr, dict) else {},
+                    "enhancement": enh,
+                    "source": source or "Enhancement",
+                }
+            )
+        return results
+
     def _attached_unit_has_active_leading_enhancement(
         self,
         flag_key: str,

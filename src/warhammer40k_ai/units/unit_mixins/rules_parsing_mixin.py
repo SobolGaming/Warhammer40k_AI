@@ -4096,6 +4096,19 @@ class RulesParsingMixin:
         except Exception:
             pass
 
+        enhancement_sources = self._attached_unit_active_enhancement_sources(
+            "enhancement_kult_of_speed_squig_hide_tyres",
+            source_keys=("enhancement_kult_of_speed_squig_hide_tyres_source",),
+        )
+        for source_entry in enhancement_sources:
+            sr = dict(source_entry.get("special_rules") or {})
+            try:
+                distance = int(sr.get("enhancement_kult_of_speed_squig_hide_tyres_consolidate_distance_override", 0) or 0)
+            except (TypeError, ValueError):
+                distance = 0
+            if distance > 0:
+                consolidate_distance_override = max(consolidate_distance_override, int(distance))
+
         if benefit_of_cover_entries:
             for u in members:
                 sr = getattr(u, "special_rules", None)

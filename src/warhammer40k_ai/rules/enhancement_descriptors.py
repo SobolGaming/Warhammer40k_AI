@@ -7060,6 +7060,19 @@ _ORKS_GREEN_TIDE_BY_NAME = {
 }
 
 _ORKS_KULT_OF_SPEED_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008872002": EnhancementToolDescriptor(
+        enhancement_id="000008872002",
+        name="Fasta Than Yooz",
+        timing="on_disembark_after_transport_normal_move",
+        target="bearer_unit",
+        duration="that_turn",
+        effect="allow_charge_after_disembark_from_transport_normal_move",
+        effect_params={
+            "allow_charge_after_normal_move": True,
+            "requires_disembarked_from_moved_transport": True,
+            "requires_bearer_alive": True,
+        },
+    ),
     "000008872003": EnhancementToolDescriptor(
         enhancement_id="000008872003",
         name="Speed Makes Right",
@@ -7074,6 +7087,31 @@ _ORKS_KULT_OF_SPEED_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
             "enemy_range_max": 9.0,
             "enemy_range_reference": "bearer_or_transport",
             "requires_bearer_on_battlefield_or_embarked_transport": True,
+        },
+    ),
+    "000008872004": EnhancementToolDescriptor(
+        enhancement_id="000008872004",
+        name="Squig-hide Tyres",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_consolidate_distance_override",
+        effect_params={
+            "consolidate_distance_override": 6,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000008872005": EnhancementToolDescriptor(
+        enhancement_id="000008872005",
+        name="Wazblasta",
+        timing="your_shooting_phase_after_bearer_unit_shoots",
+        target="bearer_unit",
+        duration="instant_optional_with_no_charge_until_end_of_turn",
+        effect="post_shoot_reactive_normal_move_no_charge",
+        effect_params={
+            "move_range": 6,
+            "requires_not_engagement_range": True,
+            "requires_bearer_alive": True,
         },
     ),
 }

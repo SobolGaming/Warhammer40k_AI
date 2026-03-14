@@ -1948,6 +1948,7 @@ def test_orks_temp_buff_stratagem_descriptors_are_registered():
         "000010713006": "ROLLING LOOT-HEAP",
         "000008873005": "BLITZA FIRE",
         "000008873004": "DAKKASTORM",
+        "000008873006": "FULL THROTTLE!",
         "000009992005": "LONG, UNCONTROLLED BURSTS",
         "000008878003": "SUPERFUELLED BOILER",
         "000009992002": "ORKS IS STILL ORKS",
