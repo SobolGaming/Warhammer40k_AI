@@ -2198,7 +2198,10 @@ class OrksStratagemMixin:
         phase_label = self._orks_phase_label(phase_name)
         if phase_label not in {"shooting phase", "fight phase"}:
             return
-        if self._orks_is_players_turn():
+        attacker_root = self._orks_root(attacking_unit)
+        if attacker_root is None or self._orks_owned_by_player(attacker_root, self.player):
+            return
+        if phase_label == "shooting phase" and self._orks_is_players_turn():
             return
 
         if phase_label == "shooting phase":
@@ -2226,6 +2229,14 @@ class OrksStratagemMixin:
             stratagem_names=("SPEEDIEST FREEKS",),
             detachment_check=self._is_kult_of_speed_detachment,
             target_matcher=self._orks_is_speed_freeks_or_trukk,
+        )
+        self._queue_single_orks_target_selected_defensive_reaction(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+            phase_name=phase_name,
+            stratagem_names=("TOO ARROGANT TO DIE",),
+            detachment_check=self._is_bully_boyz_detachment,
+            target_matcher=self._orks_is_nobz_or_meganobz_unit,
         )
 
     def _orks_unit_reaction_already_queued(
@@ -2315,7 +2326,255 @@ class OrksStratagemMixin:
             target_matcher=self._orks_is_kommandos_or_stormboyz_unit,
         )
 
+    def _orks_too_arrogant_to_die_candidates(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any] | None,
+    ) -> list[Any]:
+        if not self._is_bully_boyz_detachment():
+            return []
+        phase_label = self._orks_current_phase_label()
+        if phase_label not in {"shooting phase", "fight phase"}:
+            return []
+        attacker_root = self._orks_root(attacking_unit)
+        if attacker_root is None or self._orks_owned_by_player(attacker_root, self.player):
+            return []
+        if phase_label == "shooting phase" and self._orks_is_players_turn():
+            return []
+        return self._orks_target_selected_reaction_candidates(
+            list(target_units or []),
+            matcher=self._orks_is_nobz_or_meganobz_unit,
+        )
+
+    def _orks_always_lookin_fer_a_fight_candidates(self, *, destroyed_by_unit: Any) -> list[Any]:
+        if not self._is_bully_boyz_detachment():
+            return []
+        if self._orks_current_phase_label() != "fight phase":
+            return []
+        attacker_root = self._orks_root(destroyed_by_unit)
+        if attacker_root is None:
+            return []
+        if not self._orks_owned_by_player(attacker_root, self.player):
+            return []
+        if not self._orks_on_battlefield(attacker_root, require_targetable=True):
+            return []
+        if bool(self._unit_cannot_be_target_of_stratagem(attacker_root)):
+            return []
+        if not self._is_orks_unit(attacker_root):
+            return []
+        if not self._orks_is_nobz_or_meganobz_unit(attacker_root):
+            return []
+        return [attacker_root]
+
+    def _orks_cut_em_down_candidates(self, *, enemy_unit: Any) -> list[Any]:
+        if not self._is_bully_boyz_detachment():
+            return []
+        if self._orks_current_phase_label() != "movement phase":
+            return []
+        if self._orks_is_players_turn():
+            return []
+        enemy_root = self._orks_root(enemy_unit)
+        if enemy_root is None or self._orks_owned_by_player(enemy_root, self.player):
+            return []
+        if not self._orks_on_battlefield(enemy_root, require_targetable=False):
+            return []
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        within_engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+        if not callable(within_engagement):
+            return []
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._orks_root(unit)
+            if root is None:
+                continue
+            uid = self._orks_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._orks_on_battlefield(root, require_targetable=True):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_orks_unit(root):
+                continue
+            if not self._orks_is_nobz_or_meganobz_unit(root):
+                continue
+            if not bool(within_engagement(root, enemy_root)):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._orks_sort_key)
+        return candidates
+
+    def _queue_orks_bully_boyz_unit_destroyed_reactions(
+        self,
+        *,
+        unit: Any,
+        destroyed_by_unit: Any,
+    ) -> None:
+        if unit is None or destroyed_by_unit is None:
+            return
+        if not self._is_bully_boyz_detachment():
+            return
+        if self._orks_current_phase_label() != "fight phase":
+            return
+
+        destroyed_root = self._orks_root(unit)
+        attacker_root = self._orks_root(destroyed_by_unit)
+        if destroyed_root is None or attacker_root is None:
+            return
+        if self._orks_owned_by_player(destroyed_root, self.player):
+            return
+
+        candidates = self._orks_always_lookin_fer_a_fight_candidates(destroyed_by_unit=attacker_root)
+        if not candidates:
+            return
+        stratagem = self._orks_get_available_stratagem_by_names(
+            "ALWAYS LOOKIN' FER A FIGHT",
+            "ALWAYS LOOKIN’ FER A FIGHT",
+        )
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(self._used_stratagems_this_phase):
+            return
+        if self._orks_unit_reaction_already_queued(
+            event_name="unit_destroyed",
+            stratagem_name=str(getattr(stratagem, "name", "") or "ALWAYS LOOKIN’ FER A FIGHT"),
+            unit=attacker_root,
+        ):
+            return
+
+        payload = {
+            "event": "unit_destroyed",
+            "phase_name": "Fight phase",
+            "stratagem": str(getattr(stratagem, "name", "") or "ALWAYS LOOKIN’ FER A FIGHT"),
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "destroyed_unit": destroyed_root,
+            "destroyed_by_unit": attacker_root,
+            "unit": attacker_root,
+            "target_unit": attacker_root,
+            "candidates": list(candidates),
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_orks_cut_em_down_move_started_reaction(self, *, unit: Any, action: str) -> None:
+        if self._orks_normalize_move_action(action) != "fall_back":
+            return
+        enemy_root = self._orks_root(unit)
+        if enemy_root is None:
+            return
+
+        candidates = self._orks_cut_em_down_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        stratagem = self._orks_get_available_stratagem_by_names("CUT'EM DOWN", "CUT’EM DOWN")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(self._used_stratagems_this_phase):
+            return
+        if self._orks_reaction_already_queued(
+            event_name="unit_move_started",
+            stratagem_name=str(getattr(stratagem, "name", "") or "CUT’EM DOWN"),
+            attacking_unit=enemy_root,
+        ):
+            return
+
+        payload = {
+            "event": "unit_move_started",
+            "phase_name": "Movement phase",
+            "stratagem": str(getattr(stratagem, "name", "") or "CUT’EM DOWN"),
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "unit": candidates[0] if len(candidates) == 1 else None,
+            "target_unit": candidates[0] if len(candidates) == 1 else None,
+            "moving_unit": enemy_root,
+            "enemy_unit": enemy_root,
+            "attacking_unit": enemy_root,
+            "candidates": list(candidates),
+            "action": "fall_back",
+        }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_orks_phase_end_effects(self, *, phase: Any) -> None:
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"MOVEMENT_PHASE", "SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._orks_root(unit)
+            if root is None:
+                continue
+            uid = self._orks_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+
+            changed = False
+            if phase_key == "MOVEMENT_PHASE":
+                source_name = self._orks_normalize_name(str(sr.get("enemy_fallback_desperate_escape_source", "") or ""))
+                expires_phase = str(sr.get("enemy_fallback_desperate_escape_expires_phase", "") or "").strip().upper()
+                if (
+                    bool(sr.get("enemy_fallback_desperate_escape"))
+                    and source_name == "cut em down"
+                    and (not expires_phase or expires_phase == "MOVEMENT_PHASE")
+                ):
+                    for key in (
+                        "enemy_fallback_desperate_escape",
+                        "enemy_fallback_desperate_escape_exclude_monster_vehicle",
+                        "enemy_fallback_desperate_escape_bs_penalty",
+                        "enemy_fallback_desperate_escape_penalty",
+                        "enemy_fallback_desperate_escape_target_enemy_id",
+                        "enemy_fallback_desperate_escape_expires_phase",
+                        "enemy_fallback_desperate_escape_turn_owner",
+                        "enemy_fallback_desperate_escape_turn",
+                        "enemy_fallback_desperate_escape_source",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
+
+            if phase_key in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+                expires_phase = str(sr.get("orks_too_arrogant_to_die_expires_phase", "") or "").strip().upper()
+                if bool(sr.get("orks_too_arrogant_to_die_active")) and (not expires_phase or expires_phase == phase_key):
+                    for key in (
+                        "orks_too_arrogant_to_die_active",
+                        "orks_too_arrogant_to_die_threshold",
+                        "orks_too_arrogant_to_die_expires_phase",
+                        "orks_too_arrogant_to_die_turn_owner",
+                        "orks_too_arrogant_to_die_turn",
+                        "orks_too_arrogant_to_die_source",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
+                    setattr(root, "_shoot_on_death_pending_models", [])
+
+            if changed:
+                root.special_rules = sr
+
     def _queue_orks_move_started_reactions(self, *, unit: Any, action: str) -> None:
+        self._queue_orks_cut_em_down_move_started_reaction(unit=unit, action=action)
         self._queue_orks_superfuelled_boiler_move_started_reaction(unit=unit, action=action)
 
     def _queue_orks_superfuelled_boiler_move_started_reaction(self, *, unit: Any, action: str) -> None:
@@ -2731,6 +2990,71 @@ class OrksStratagemMixin:
                 target_unit = candidates[0]
             break
         return target_unit, candidates, action, phase_name, from_pending
+
+    def _orks_resolve_target_selected_context(
+        self,
+        stratagem_name: str,
+        **kwargs,
+    ) -> tuple[Any, Any, list[Any], str, bool]:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        phase_name = str(kwargs.get("phase_name") or "").strip()
+        from_pending = False
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+
+        normalized_name = self._orks_normalize_name(stratagem_name)
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if self._orks_normalize_name(str(reaction.get("stratagem", "") or "")) != normalized_name:
+                continue
+            from_pending = True
+            if target_unit is None:
+                target_unit = reaction.get("target_unit") or reaction.get("unit")
+            if attacking_unit is None:
+                attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if not phase_name:
+                phase_name = str(reaction.get("phase_name") or "").strip()
+            if target_unit is None and len(candidates) == 1:
+                target_unit = candidates[0]
+            break
+        return target_unit, attacking_unit, candidates, phase_name, from_pending
+
+    def _orks_resolve_unit_destroyed_context(
+        self,
+        stratagem_name: str,
+        **kwargs,
+    ) -> tuple[Any, Any, Any, list[Any], str, bool]:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        destroyed_unit = kwargs.get("destroyed_unit")
+        destroyed_by_unit = kwargs.get("destroyed_by_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        phase_name = str(kwargs.get("phase_name") or "").strip()
+        from_pending = False
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+
+        normalized_name = self._orks_normalize_name(stratagem_name)
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if self._orks_normalize_name(str(reaction.get("stratagem", "") or "")) != normalized_name:
+                continue
+            from_pending = True
+            if target_unit is None:
+                target_unit = reaction.get("target_unit") or reaction.get("unit")
+            if destroyed_unit is None:
+                destroyed_unit = reaction.get("destroyed_unit")
+            if destroyed_by_unit is None:
+                destroyed_by_unit = reaction.get("destroyed_by_unit")
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if not phase_name:
+                phase_name = str(reaction.get("phase_name") or "").strip()
+            if target_unit is None and len(candidates) == 1:
+                target_unit = candidates[0]
+            break
+        return target_unit, destroyed_unit, destroyed_by_unit, candidates, phase_name, from_pending
 
     def _orks_resolve_move_end_enemy_battleshock_context(
         self,
@@ -3300,6 +3624,10 @@ class OrksStratagemMixin:
         name_norm = self._orks_normalize_name(getattr(stratagem, "name", "") or "")
         if name_u == "ARMED TO DATEEF":
             return self._use_orks_armed_to_dateef(stratagem, **kwargs)
+        if name_u == "TOO ARROGANT TO DIE":
+            return self._use_orks_too_arrogant_to_die(stratagem, **kwargs)
+        if name_norm == "always lookin fer a fight":
+            return self._use_orks_always_lookin_fer_a_fight(stratagem, **kwargs)
         if name_u == "GET STUCK IN, LADZ!" or name_norm == "get stuck in ladz":
             return self._use_orks_get_stuck_in_ladz(stratagem, **kwargs)
         if name_u == "GRAB AND BASH" or name_norm == "grab and bash":
@@ -3310,6 +3638,8 @@ class OrksStratagemMixin:
             return self._use_orks_competitive_streak(stratagem, **kwargs)
         if name_u == "TIDE OF MUSCLE":
             return self._use_orks_tide_of_muscle(stratagem, **kwargs)
+        if name_norm == "cut em down":
+            return self._use_orks_cut_em_down(stratagem, **kwargs)
         if name_u == "INSTINCTIVE HUNTERS":
             return self._use_orks_instinctive_hunters(stratagem, **kwargs)
         if name_u == "DED SNEAKY":
@@ -3907,6 +4237,227 @@ class OrksStratagemMixin:
             "INFO: ARMED TO DATEEF: %s gains %s hit re-rolls this phase.",
             getattr(root, "name", "Unit"),
             "full" if waaagh_active else "re-roll 1s",
+        )
+        return True
+
+    def _use_orks_too_arrogant_to_die(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_bully_boyz_detachment():
+            return False
+        target_unit, attacking_unit, candidates, phase_name, from_pending = self._orks_resolve_target_selected_context(
+            "TOO ARROGANT TO DIE",
+            **kwargs,
+        )
+        if target_unit is None:
+            logger.error("ERROR: TOO ARROGANT TO DIE: no target unit provided")
+            return False
+        if not from_pending and not candidates and not list(kwargs.get("target_units") or kwargs.get("targets") or []):
+            logger.error("ERROR: TOO ARROGANT TO DIE: missing target selection context")
+            return False
+
+        phase_label = self._orks_phase_label(phase_name or self._orks_current_phase_label())
+        if phase_label not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: TOO ARROGANT TO DIE: wrong phase")
+            return False
+        if phase_label == "shooting phase" and self._orks_is_players_turn():
+            logger.error("ERROR: TOO ARROGANT TO DIE: not opponent's Shooting phase")
+            return False
+
+        attacker_root = self._orks_root(attacking_unit)
+        if attacker_root is None:
+            logger.error("ERROR: TOO ARROGANT TO DIE: missing attacking unit context")
+            return False
+        if self._orks_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: TOO ARROGANT TO DIE: attacking unit must be enemy")
+            return False
+        if not self._orks_on_battlefield(attacker_root, require_targetable=False):
+            logger.error("ERROR: TOO ARROGANT TO DIE: attacking unit must be on battlefield")
+            return False
+
+        if not candidates:
+            candidates = self._orks_too_arrogant_to_die_candidates(
+                attacking_unit=attacker_root,
+                target_units=kwargs.get("target_units") or kwargs.get("targets"),
+            )
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="TOO ARROGANT TO DIE",
+            target_unit=target_unit,
+            candidates=candidates,
+            keyword_any=("NOBZ", "MEGANOBZ"),
+        )
+        if not ok:
+            return False
+
+        phase_title = "Shooting phase" if phase_label == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name=phase_title):
+            logger.error("ERROR: TOO ARROGANT TO DIE: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        threshold = 3 if self._orks_unit_has_active_waaagh(root) else 5
+        source_name = str(getattr(stratagem, "name", "") or "TOO ARROGANT TO DIE").strip() or "TOO ARROGANT TO DIE"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["orks_too_arrogant_to_die_active"] = True
+        sr["orks_too_arrogant_to_die_threshold"] = int(max(2, min(6, threshold)))
+        sr["orks_too_arrogant_to_die_expires_phase"] = "SHOOTING_PHASE" if phase_label == "shooting phase" else "FIGHT_PHASE"
+        sr["orks_too_arrogant_to_die_turn_owner"] = self._orks_turn_owner_id()
+        sr["orks_too_arrogant_to_die_turn"] = self._orks_current_turn()
+        sr["orks_too_arrogant_to_die_source"] = source_name
+        root.special_rules = sr
+
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TOO ARROGANT TO DIE: %s gains shoot/fight-on-death on %d+ until end of phase.",
+            getattr(root, "name", "Unit"),
+            int(threshold),
+        )
+        return True
+
+    def _use_orks_always_lookin_fer_a_fight(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_bully_boyz_detachment():
+            return False
+        target_unit, destroyed_unit, destroyed_by_unit, candidates, phase_name, from_pending = (
+            self._orks_resolve_unit_destroyed_context("ALWAYS LOOKIN’ FER A FIGHT", **kwargs)
+        )
+        if target_unit is None:
+            logger.error("ERROR: ALWAYS LOOKIN' FER A FIGHT: no target unit provided")
+            return False
+        if not from_pending and (destroyed_unit is None or destroyed_by_unit is None):
+            logger.error("ERROR: ALWAYS LOOKIN' FER A FIGHT: missing destroyed-unit trigger context")
+            return False
+
+        phase_label = self._orks_phase_label(phase_name or self._orks_current_phase_label())
+        if phase_label != "fight phase":
+            logger.error("ERROR: ALWAYS LOOKIN' FER A FIGHT: wrong phase")
+            return False
+
+        destroyed_root = self._orks_root(destroyed_unit)
+        if destroyed_root is not None and self._orks_owned_by_player(destroyed_root, self.player):
+            logger.error("ERROR: ALWAYS LOOKIN' FER A FIGHT: destroyed unit must be enemy")
+            return False
+
+        if not candidates:
+            candidates = self._orks_always_lookin_fer_a_fight_candidates(destroyed_by_unit=destroyed_by_unit)
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="ALWAYS LOOKIN' FER A FIGHT",
+            target_unit=target_unit,
+            candidates=candidates,
+            keyword_any=("NOBZ", "MEGANOBZ"),
+        )
+        if not ok:
+            return False
+
+        attacker_root = self._orks_root(destroyed_by_unit)
+        if attacker_root is not None and attacker_root is not root:
+            if self._orks_sort_key(attacker_root) != self._orks_sort_key(root):
+                logger.error("ERROR: ALWAYS LOOKIN' FER A FIGHT: target did not destroy the enemy unit")
+                return False
+
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: ALWAYS LOOKIN' FER A FIGHT: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        max_distance = 6 if self._orks_unit_has_active_waaagh(root) else 3 + int(dice_module.get_roll("D3"))
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current = float(sr.get("stratagem_consolidate_distance_override", 0) or 0)
+        sr["stratagem_consolidate_distance_override"] = max(float(max_distance), current)
+        sr["stratagem_consolidate_expires_phase"] = "FIGHT_PHASE"
+        sr["stratagem_consolidate_source"] = str(getattr(stratagem, "name", "") or "ALWAYS LOOKIN’ FER A FIGHT")
+        root.special_rules = sr
+
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ALWAYS LOOKIN' FER A FIGHT: %s can Consolidate up to %d\" this phase.",
+            getattr(root, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
+
+    def _use_orks_cut_em_down(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_bully_boyz_detachment():
+            return False
+        target_unit, moving_unit, candidates, action, phase_name, from_pending = self._orks_resolve_reactive_reposition_context(
+            "CUT’EM DOWN",
+            **kwargs,
+        )
+        if target_unit is None:
+            logger.error("ERROR: CUT'EM DOWN: no target unit provided")
+            return False
+
+        phase_label = self._orks_phase_label(phase_name or self._orks_current_phase_label())
+        if phase_label != "movement phase":
+            logger.error("ERROR: CUT'EM DOWN: wrong phase")
+            return False
+        if self._orks_is_players_turn():
+            logger.error("ERROR: CUT'EM DOWN: not opponent's Movement phase")
+            return False
+        action_key = self._orks_normalize_move_action(action)
+        if not from_pending and not action_key:
+            logger.error("ERROR: CUT'EM DOWN: missing movement trigger context")
+            return False
+        if action_key and action_key != "fall_back":
+            logger.error("ERROR: CUT'EM DOWN: invalid trigger action")
+            return False
+
+        enemy_root = self._orks_root(moving_unit)
+        if enemy_root is None:
+            logger.error("ERROR: CUT'EM DOWN: missing enemy unit context")
+            return False
+        if self._orks_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: CUT'EM DOWN: enemy context is invalid")
+            return False
+        if not self._orks_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: CUT'EM DOWN: enemy unit must be on battlefield")
+            return False
+
+        if not candidates:
+            candidates = self._orks_cut_em_down_candidates(enemy_unit=enemy_root)
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="CUT'EM DOWN",
+            target_unit=target_unit,
+            candidates=candidates,
+            keyword_any=("NOBZ", "MEGANOBZ"),
+        )
+        if not ok:
+            return False
+
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        within_engagement = getattr(game_map, "is_within_engagement_range", None) if game_map is not None else None
+        if not callable(within_engagement) or not bool(within_engagement(root, enemy_root)):
+            logger.error("ERROR: CUT'EM DOWN: target must be in Engagement Range of the falling-back unit")
+            return False
+
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: CUT'EM DOWN: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "CUT’EM DOWN").strip() or "CUT’EM DOWN"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["enemy_fallback_desperate_escape"] = True
+        sr["enemy_fallback_desperate_escape_exclude_monster_vehicle"] = False
+        sr["enemy_fallback_desperate_escape_penalty"] = 1 if self._orks_unit_has_active_waaagh(root) else 0
+        sr["enemy_fallback_desperate_escape_target_enemy_id"] = get_entity_id(enemy_root)
+        sr["enemy_fallback_desperate_escape_expires_phase"] = "MOVEMENT_PHASE"
+        sr["enemy_fallback_desperate_escape_turn_owner"] = self._orks_turn_owner_id()
+        sr["enemy_fallback_desperate_escape_turn"] = self._orks_current_turn()
+        sr["enemy_fallback_desperate_escape_source"] = source_name
+        root.special_rules = sr
+
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CUT'EM DOWN: %s will force Desperate Escape tests on %s.",
+            getattr(root, "name", "Unit"),
+            getattr(enemy_root, "name", "Enemy"),
         )
         return True
 

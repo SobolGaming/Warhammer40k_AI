@@ -264,7 +264,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "TIDE OF MUSCLE",
     "GET STUCK IN, LADZ!",
     "ARMED TO DATEEF",
+    "TOO ARROGANT TO DIE",
+    "ALWAYS LOOKIN' FER A FIGHT",
+    "ALWAYS LOOKIN’ FER A FIGHT",
     "CRUSHING IMPACT",
+    "CUT'EM DOWN",
+    "CUT’EM DOWN",
     "DRAG IT DOWN",
     "BASH AND GRAB",
     "GRAB AND BASH",
@@ -1572,6 +1577,8 @@ class StratagemManager(
             "FIRE OVERWATCH",
             "APOPLECTIC FRENZY",
             "PUNISH THE CRAVEN",
+            "CUT'EM DOWN",
+            "CUT’EM DOWN",
             "KHAINE'S VENGEANCE",
             "KHAINE’S VENGEANCE",
             "CARRY FORTH THE FAITHFUL",
@@ -1632,6 +1639,8 @@ class StratagemManager(
             "BLOOD OFFERING",
             "BLOODY VENGEANCE",
             "DRAWN TO THE SLAUGHTER",
+            "ALWAYS LOOKIN' FER A FIGHT",
+            "ALWAYS LOOKIN’ FER A FIGHT",
             "PALL OF DREAD",
             "SPITEFUL DEMISE",
             "VAUL'S VENGEANCE",
@@ -1732,6 +1741,7 @@ class StratagemManager(
             "STALKIN’ TAKTIKS",
             "SPEEDIEST FREEKS",
             "EXTRA GUBBINZ",
+            "TOO ARROGANT TO DIE",
             "COUNTERFIRE DEFENCE SYSTEMS",
             "REACTIVE IMPACT DAMPENERS",
             "CAPRICIOUS REACTIONS",
@@ -1778,6 +1788,7 @@ class StratagemManager(
             "DEFIANT TO THE LAST",
             "DEATHLESS DUTY",
             "DEATH ECSTASY",
+            "TOO ARROGANT TO DIE",
             "EMISSARIES OF YNNEAD",
             "HEROES' FALL",
             "HEROES\u2019 FALL",
@@ -1944,6 +1955,11 @@ class StratagemManager(
             "TUNNEL CRAWLERS",
             "OVERSHADOWED BY NONE",
             "PUNISH THE CRAVEN",
+            "TOO ARROGANT TO DIE",
+            "ALWAYS LOOKIN' FER A FIGHT",
+            "ALWAYS LOOKIN’ FER A FIGHT",
+            "CUT'EM DOWN",
+            "CUT’EM DOWN",
             "WARP STALKERS",
             "AEGIS ETERNAL",
             "FIRES OF COVENANT",
@@ -4424,6 +4440,49 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Charge phase trigger after a SPEED FREEKS unit ends a Charge move"
             return result
+        if name_u == "TOO ARROGANT TO DIE":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            target_units = context.get("target_units") or context.get("targets")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_too_arrogant_to_die_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your opponent's Shooting phase or the Fight phase after enemy targets are selected, and a targeted NOBZ or MEGANOBZ unit"
+            return result
+        if name_u in {"ALWAYS LOOKIN' FER A FIGHT", "ALWAYS LOOKIN’ FER A FIGHT"}:
+            destroyed_by_unit = context.get("destroyed_by_unit") or context.get("unit") or context.get("target_unit")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_always_lookin_fer_a_fight_candidates(
+                    destroyed_by_unit=destroyed_by_unit,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the Fight phase, just after an enemy unit is destroyed by a friendly NOBZ or MEGANOBZ unit"
+            return result
+        if name_u in {"CUT'EM DOWN", "CUT’EM DOWN"}:
+            moving_unit = context.get("moving_unit") or context.get("enemy_unit") or context.get("unit")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_cut_em_down_candidates(enemy_unit=moving_unit)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your opponent's Movement phase, just after an enemy unit is selected to Fall Back, and a friendly NOBZ or MEGANOBZ unit within Engagement Range of it"
+            return result
         if name_u == "INSTINCTIVE HUNTERS":
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -5076,6 +5135,11 @@ class StratagemManager(
             "\u2019ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
             "GRAB AND BASH": "Target: non-GRETCHIN ORKS unit within range of the active loot objective; that unit counts as Waaagh-active until your next Command phase",
             "CRUSHING IMPACT": "Target: NOBZ or MEGANOBZ unit that just ended a Charge move; select one enemy unit within Engagement Range and roll one D6 per engaged model (5+, or 4+ if Waaagh-active, max 6 mortals)",
+            "TOO ARROGANT TO DIE": "Target: NOBZ or MEGANOBZ unit selected by the attacking enemy's targets; destroyed models can shoot or fight after the attacker finishes its attacks on a 5+ (or effective 3+ while Waaagh-active) until end of phase",
+            "ALWAYS LOOKIN' FER A FIGHT": "Target: NOBZ or MEGANOBZ unit that just destroyed an enemy in the Fight phase; Consolidates D3+3\" this phase, or 6\" while Waaagh-active",
+            "ALWAYS LOOKIN’ FER A FIGHT": "Target: NOBZ or MEGANOBZ unit that just destroyed an enemy in the Fight phase; Consolidates D3+3\" this phase, or 6\" while Waaagh-active",
+            "CUT'EM DOWN": "Target: NOBZ or MEGANOBZ unit within Engagement Range of an enemy selected to Fall Back; that enemy must take Desperate Escape tests when it Falls Back, with -1 on each test while Waaagh-active",
+            "CUT’EM DOWN": "Target: NOBZ or MEGANOBZ unit within Engagement Range of an enemy selected to Fall Back; that enemy must take Desperate Escape tests when it Falls Back, with -1 on each test while Waaagh-active",
             "INSTINCTIVE HUNTERS": "Target: BEAST SNAGGA unit from your army that is not within Engagement Range at end of opponent's Fight phase; remove it and place it into Strategic Reserves",
             "STALKIN' TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
             "STALKIN\u2019 TAKTIKS": "Target: BEAST SNAGGA INFANTRY/MOUNTED unit selected by the attacking enemy's targets",
@@ -6776,6 +6840,10 @@ class StratagemManager(
             raise
         try:
             self._queue_orks_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_orks_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -12866,6 +12934,13 @@ class StratagemManager(
             self._queue_aeldari_devoted_unit_destroyed_reactions(
                 unit=unit,
                 last_model=last_model,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_orks_bully_boyz_unit_destroyed_reactions(
+                unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )
         except Exception:
             raise

@@ -11136,6 +11136,31 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_big_gob_bearer_model_id"] = bearer_id
 
+        if name == "eadstompa" or enh_id == "000008885004":
+            if not is_bully_boyz:
+                return
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if not callable(has_any_keyword):
+                return
+            if not bool(has_any_keyword("INFANTRY")) or not bool(has_any_keyword("WARBOSS")):
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source = str(getattr(desc, "name", "") or "’Eadstompa").strip() or "’Eadstompa"
+            reroll_values = tuple(int(value) for value in tuple(params.get("reroll_values_vs_below_starting_strength", (1,))) if int(value) > 0)
+            unit.special_rules["enhancement_eadstompa"] = True
+            unit.special_rules["enhancement_eadstompa_source"] = source
+            unit.special_rules["enhancement_eadstompa_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            unit.special_rules["enhancement_eadstompa_reroll_values_vs_below_starting_strength"] = reroll_values or (1,)
+            unit.special_rules["enhancement_eadstompa_reroll_full_vs_below_half_strength"] = bool(
+                params.get("reroll_full_vs_below_half_strength", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eadstompa_bearer_model_id"] = bearer_id
+
         if name == "tellyporta" or enh_id == "000008885005":
             if not is_bully_boyz:
                 return

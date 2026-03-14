@@ -1014,6 +1014,40 @@ class DamageDeathMixin:
                         root._melee_fight_on_death_pending_models = pending
                         return
 
+        shoot_rule = self.get_shoot_on_death_after_attacks_rule(model=model)
+        if shoot_rule is not None:
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            if root is not None:
+                wp = getattr(self, "_last_destroyed_by_weapon_profile", None)
+                is_ranged = False
+                try:
+                    parent = getattr(wp, "parent_wargear", None)
+                    is_ranged = bool(parent is not None and parent.is_ranged())
+                except Exception:
+                    is_ranged = False
+                if is_ranged:
+                    roll = int(get_roll("D6"))
+                    total = int(roll)
+                    from ...utility.event_bus import append_dice
+                    army = self.get_parent_army()
+                    player = getattr(army, "player", None) if army is not None else None
+                    if player is not None:
+                        append_dice(
+                            player,
+                            f"{shoot_rule.get('source', 'Shoot on death')} roll: {roll} for {self.name}",
+                        )
+                    if total >= int(shoot_rule.get("threshold", 0) or 0):
+                        pending = getattr(root, "_shoot_on_death_pending_models", None)
+                        if not isinstance(pending, list):
+                            pending = []
+                        if model not in pending:
+                            pending.append(model)
+                        root._shoot_on_death_pending_models = pending
+                        return
+
         # Temporarily treat the model as "alive" so existing targeting/engagement checks work.
         original_wounds = getattr(model, "_wounds", None)
         try:

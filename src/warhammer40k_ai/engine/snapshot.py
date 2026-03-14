@@ -67,6 +67,7 @@ _UNIT_STATE_EXCLUDE = {
     "_berserk_fugue_pending_models",
     "_deathless_duty_pending_models",
     "_blood_legion_wrath_undeniable_pending_models",
+    "_shoot_on_death_pending_models",
     "_melee_fight_on_death_pending_models",
 }
 

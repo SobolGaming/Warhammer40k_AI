@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.battlefield.map import Map
 from warhammer40k_ai.units.status_effects import BattleShockEffect
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 class _MockDatasheet:
@@ -126,6 +127,22 @@ class TestFallBackDesperateEscapeAbility(unittest.TestCase):
         self.assertTrue(result)
         self.assertEqual(called["count"], 1)
         self.assertEqual(int(called["modifier"] or 0), -1)
+
+    def test_targeted_desperate_escape_ignores_non_matching_enemy_id(self):
+        runner, trapper, game_map = self._setup_units(battleshocked=False)
+        trapper.special_rules["enemy_fallback_desperate_escape_target_enemy_id"] = "non-matching-enemy-id"
+        self.assertNotEqual(str(get_entity_id(runner) or ""), "non-matching-enemy-id")
+
+        called = {"count": 0}
+
+        def _fake(self, game_map=None, *, roll_modifier=0, reason=None):
+            called["count"] += 1
+            return 0
+
+        runner.take_desperate_escape_test = types.MethodType(_fake, runner)
+        result = runner.fall_back((14.0, 10.0, 0.0), [], game_map)
+        self.assertTrue(result)
+        self.assertEqual(called["count"], 0)
 
     def test_battleshocked_fall_back_exempt_when_only_fortification(self):
         runner = _make_unit("Runner", model_count=1)

@@ -6804,6 +6804,19 @@ _ORKS_BULLY_BOYZ_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
             "ability_key": "big_gob",
         },
     ),
+    "000008885004": EnhancementToolDescriptor(
+        enhancement_id="000008885004",
+        name="’Eadstompa",
+        timing="when_bearer_attacks_below_strength_target",
+        target="bearer",
+        duration="constant",
+        effect="bearer_wound_reroll_vs_damaged_or_below_half_target",
+        effect_params={
+            "requires_bearer_alive": True,
+            "reroll_values_vs_below_starting_strength": (1,),
+            "reroll_full_vs_below_half_strength": True,
+        },
+    ),
     "000008885005": EnhancementToolDescriptor(
         enhancement_id="000008885005",
         name="Tellyporta",

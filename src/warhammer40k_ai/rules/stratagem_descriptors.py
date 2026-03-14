@@ -712,6 +712,33 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         cp_cost=1,
         effect_params={"attack_type": "any", "reroll_mode": "ones", "reroll_mode_if_waaagh": "full"},
     ),
+    "000008886003": StratagemToolDescriptor(
+        stratagem_id="000008886003",
+        name="TOO ARROGANT TO DIE",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="orks_nobz_or_meganobz_unit_selected_by_attacker",
+        duration="until_end_of_phase",
+        effect="shoot_or_fight_on_death_after_attacker_finishes_attacks",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "any",
+            "base_threshold": 5,
+            "waaagh_roll_bonus": 2,
+        },
+    ),
+    "000008886004": StratagemToolDescriptor(
+        stratagem_id="000008886004",
+        name="ALWAYS LOOKIN’ FER A FIGHT",
+        timing="fight_phase_on_unit_destroyed",
+        target="orks_nobz_or_meganobz_unit_that_destroyed_enemy",
+        duration="until_end_of_phase",
+        effect="consolidate_distance_override",
+        cp_cost=1,
+        effect_params={
+            "distance_roll": "D3+3",
+            "distance_if_waaagh": 6,
+        },
+    ),
     "000008886005": StratagemToolDescriptor(
         stratagem_id="000008886005",
         name="CRUSHING IMPACT",
@@ -727,6 +754,19 @@ _ORKS_TEMP_BUFF_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "success_on_if_waaagh": 4,
             "mortal_wounds_per_success": 1,
             "max_mortal_wounds": 6,
+        },
+    ),
+    "000008886006": StratagemToolDescriptor(
+        stratagem_id="000008886006",
+        name="CUT’EM DOWN",
+        timing="opponent_movement_phase_after_enemy_selected_to_fall_back",
+        target="orks_nobz_or_meganobz_unit_within_engagement_range_of_enemy",
+        duration="until_end_of_phase",
+        effect="force_enemy_desperate_escape_on_fall_back",
+        cp_cost=1,
+        effect_params={
+            "exclude_monster_vehicle": False,
+            "desperate_escape_penalty_if_waaagh": 1,
         },
     ),
     "000008869002": StratagemToolDescriptor(

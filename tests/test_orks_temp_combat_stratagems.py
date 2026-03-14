@@ -1936,7 +1936,10 @@ def test_orks_temp_buff_stratagem_descriptors_are_registered():
     expected = {
         "000009992003": "GET STUCK IN, LADZ!",
         "000008886002": "ARMED TO DATEEF",
+        "000008886003": "TOO ARROGANT TO DIE",
+        "000008886004": "ALWAYS LOOKIN’ FER A FIGHT",
         "000008886005": "CRUSHING IMPACT",
+        "000008886006": "CUT’EM DOWN",
         "000008869002": "DRAG IT DOWN",
         "000008869003": "UNSTOPPABLE MOMENTUM",
         "000008869004": "DAT ONE'S EVEN BIGGA!",

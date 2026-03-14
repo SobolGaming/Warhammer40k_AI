@@ -177,6 +177,10 @@ class PositioningMixin:
             except Exception:
                 pass
             try:
+                root._resolve_shoot_on_death_after_attacks_queue(game_map=game_map)
+            except Exception:
+                pass
+            try:
                 root._resolve_melee_fight_on_death_queue(game_map=game_map)
             except Exception:
                 pass
@@ -241,6 +245,30 @@ class PositioningMixin:
     def _resolve_defiant_to_last_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Defiant to the Last fights after an attacker finishes its attacks."""
         self._resolve_deferred_fight_on_death_queue("_defiant_to_last_pending_models", game_map=game_map)
+
+    def _resolve_deferred_shoot_on_death_queue(self, attr_name: str, game_map: Optional['Map'] = None) -> None:
+        pending = getattr(self, attr_name, None)
+        if not pending:
+            return
+        if not isinstance(pending, list):
+            setattr(self, attr_name, [])
+            return
+        setattr(self, attr_name, [])
+        for model in list(pending):
+            if model is None:
+                continue
+            original_wounds = getattr(model, "_wounds", None)
+            try:
+                if original_wounds is not None and original_wounds <= 0:
+                    model._wounds = 1
+                self._try_shoot_on_death(model=model, game_map=game_map)
+            finally:
+                if original_wounds is not None:
+                    model._wounds = original_wounds
+
+    def _resolve_shoot_on_death_after_attacks_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred shoot-on-death attacks after an attacker finishes its attacks."""
+        self._resolve_deferred_shoot_on_death_queue("_shoot_on_death_pending_models", game_map=game_map)
 
     def _resolve_melee_fight_on_death_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred melee fight-on-death fights after an attacker finishes its attacks."""

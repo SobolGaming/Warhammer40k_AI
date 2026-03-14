@@ -989,6 +989,76 @@ class KeywordsDetachmentsMixin:
             return ""
         return str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
 
+    @staticmethod
+    def _model_matches_identifier(model: Optional['Model'], identifier: str) -> bool:
+        if model is None:
+            return False
+        expected = str(identifier or "").strip()
+        if not expected:
+            return False
+        entity_id = str(get_entity_id(model) or "").strip()
+        if entity_id and entity_id == expected:
+            return True
+        local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+        return bool(local_id and local_id == expected)
+
+    def _iter_attached_units_for_special_rules(self) -> list:
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            root = self
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        ordered: list = []
+        seen: set[str] = set()
+        for member in sorted(list(members or []), key=lambda unit: str(get_entity_id(unit) or "")):
+            if member is None:
+                continue
+            key = str(get_entity_id(member) or "")
+            if key and key in seen:
+                continue
+            if key:
+                seen.add(key)
+            ordered.append(member)
+        return ordered
+
+    def _temporary_orks_too_arrogant_to_die_rule(self, *, expected_phase: str) -> Optional[dict]:
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("orks_too_arrogant_to_die_active")):
+            return None
+
+        get_army = getattr(root, "get_parent_army", None)
+        army = get_army() if callable(get_army) else getattr(root, "parent_army", None)
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected = str(expected_phase or "").strip().upper()
+        if phase_name != expected:
+            return None
+        expires_phase = str(sr.get("orks_too_arrogant_to_die_expires_phase", "") or "").strip().upper()
+        if expires_phase and expires_phase != expected:
+            return None
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        marked_turn = int(sr.get("orks_too_arrogant_to_die_turn", 0) or 0)
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return None
+
+        source = (
+            str(sr.get("orks_too_arrogant_to_die_source", "") or "TOO ARROGANT TO DIE").strip()
+            or "TOO ARROGANT TO DIE"
+        )
+        threshold = int(sr.get("orks_too_arrogant_to_die_threshold", 5) or 5)
+        return {
+            "threshold": max(2, min(6, threshold)),
+            "source": source,
+        }
+
     def can_use_enhancement_fight_first(self) -> bool:
         if not self.has_enhancement_fight_first_once_per_battle():
             return False
@@ -1314,6 +1384,10 @@ class KeywordsDetachmentsMixin:
         """
         cache_key = f"melee_fight_on_death_after_attacks:{get_entity_id(model) if model is not None else 'unit'}"
 
+        too_arrogant_rule = self._temporary_orks_too_arrogant_to_die_rule(expected_phase="FIGHT_PHASE")
+        if too_arrogant_rule is not None:
+            return too_arrogant_rule
+
         # Temporary effect hook: Boon of Death (Mortarion).
         try:
             sr = getattr(self, "special_rules", None)
@@ -1599,6 +1673,14 @@ class KeywordsDetachmentsMixin:
             rule,
             model=model,
         )
+
+    def get_shoot_on_death_after_attacks_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for effects that defer a destroyed model's shooting until the attacking unit
+        has finished making its attacks.
+        """
+        del model
+        return self._temporary_orks_too_arrogant_to_die_rule(expected_phase="SHOOTING_PHASE")
 
     def _vindication_warden_of_honour_vengeful_exhortation_roll_bonus(self, *, model: Optional['Model'] = None) -> int:
         try:
@@ -12045,6 +12127,59 @@ class KeywordsDetachmentsMixin:
                         reroll_full_reasons.append(f"{source}: re-roll Wound roll")
         except Exception:
             pass
+        if model is not None and target is not None:
+            target_root = (
+                target.get_attached_unit_root()
+                if hasattr(target, "get_attached_unit_root")
+                else target
+            )
+            if target_root is not None:
+                below_starting_strength = bool(
+                    getattr(target_root, "is_below_starting_strength", lambda: False)()
+                )
+                below_half_strength = bool(
+                    getattr(target_root, "is_below_half_strength", lambda: False)()
+                )
+                if below_starting_strength:
+                    for member in self._iter_attached_units_for_special_rules():
+                        sr = getattr(member, "special_rules", None)
+                        if not isinstance(sr, dict) or not bool(sr.get("enhancement_eadstompa")):
+                            continue
+                        bearer_id = str(
+                            sr.get("enhancement_eadstompa_bearer_model_id", "")
+                            or sr.get("enhancement_bearer_model_id", "")
+                            or ""
+                        ).strip()
+                        if bearer_id and not self._model_matches_identifier(model, bearer_id):
+                            continue
+                        if not bearer_id:
+                            get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                            bearer_model = get_bearer() if callable(get_bearer) else None
+                            if bearer_model is not model:
+                                continue
+                        source = (
+                            str(sr.get("enhancement_eadstompa_source", "") or "’Eadstompa").strip()
+                            or "’Eadstompa"
+                        )
+                        if below_half_strength and bool(
+                            sr.get("enhancement_eadstompa_reroll_full_vs_below_half_strength", True)
+                        ):
+                            reroll_full = True
+                            reroll_full_reasons.append(
+                                f"{source}: re-roll Wound roll vs Below Half-strength target"
+                            )
+                            continue
+                        for value in tuple(
+                            sr.get(
+                                "enhancement_eadstompa_reroll_values_vs_below_starting_strength",
+                                (1,),
+                            )
+                            or ()
+                        ):
+                            reroll_values.add(int(value))
+                        reroll_reasons.append(
+                            f"{source}: re-roll Wound rolls of 1 vs targets below Starting Strength"
+                        )
         seen = set()
         deduped_reasons: list[str] = []
         for reason in reroll_reasons:

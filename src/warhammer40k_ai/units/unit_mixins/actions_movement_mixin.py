@@ -13721,6 +13721,12 @@ class ActionsMovementMixin:
                 logger.info(f"{self.name} cannot Fall Back (Stasis Bomb)")
             return False
         logger.info(f"{self.name} falls back from combat")
+        root_getter = getattr(self, "get_attached_unit_root", None)
+        self_root = root_getter() if callable(root_getter) else self
+        if self_root is None:
+            self_root = self
+        self_root_id = str(getattr(self_root, "id", "") or getattr(self_root, "_id", "") or "")
+        self_unit_id = str(getattr(self, "id", "") or getattr(self, "_id", "") or "")
 
         sources = []
         source_labels = []
@@ -14082,7 +14088,7 @@ class ActionsMovementMixin:
                             source_exclude_mv = True
                             source_bs_penalty = max(source_bs_penalty, 1)
 
-                if source_target_enemy_id and str(source_target_enemy_id) != str(enemy_root_id):
+                if source_target_enemy_id and source_target_enemy_id not in {self_root_id, self_unit_id}:
                     continue
 
                 repulsed_active = False
