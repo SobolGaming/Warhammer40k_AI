@@ -748,6 +748,16 @@ class OrksStratagemMixin:
     def _orks_green_tide_competitive_streak_candidates(self) -> list[Any]:
         return self._orks_green_tide_boyz_candidates(require_not_selected_phase="Fight phase")
 
+    def _orks_green_tide_bulldozer_brutality_candidates(self) -> list[Any]:
+        candidates = self._orks_green_tide_boyz_candidates(require_not_selected_phase="Fight phase")
+        kept: list[Any] = []
+        for root in list(candidates or []):
+            if not self._orks_is_unit_engaged(root):
+                continue
+            kept.append(root)
+        kept.sort(key=self._orks_sort_key)
+        return kept
+
     def _orks_green_tide_tide_of_muscle_candidates(self) -> list[Any]:
         candidates = self._orks_green_tide_boyz_candidates()
         kept: list[Any] = []
@@ -2209,6 +2219,14 @@ class OrksStratagemMixin:
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
                 phase_name=phase_name,
+                stratagem_names=("GO GET 'EM!", "GO GET ’EM!"),
+                detachment_check=self._is_green_tide_detachment,
+                target_matcher=self._orks_unit_is_boyz,
+            )
+            self._queue_single_orks_target_selected_defensive_reaction(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+                phase_name=phase_name,
                 stratagem_names=("STALKIN' TAKTIKS", "STALKIN’ TAKTIKS"),
                 detachment_check=self._is_da_big_hunt_detachment,
                 target_matcher=self._orks_is_beast_snagga_infantry_or_mounted,
@@ -2569,9 +2587,110 @@ class OrksStratagemMixin:
                             sr.pop(key, None)
                             changed = True
                     setattr(root, "_shoot_on_death_pending_models", [])
+                if phase_key == "FIGHT_PHASE":
+                    expires_phase = str(sr.get("orks_bulldozer_brutality_expires_phase", "") or "").strip().upper()
+                    if bool(sr.get("orks_bulldozer_brutality_active")) and (not expires_phase or expires_phase == "FIGHT_PHASE"):
+                        if bool(sr.get("orks_bulldozer_brutality_added_fight_within_3")) and "fight_within_3" in sr:
+                            sr.pop("fight_within_3", None)
+                            changed = True
+                        if str(sr.get("fight_within_3_active_source", "") or "").strip() == "BULLDOZER BRUTALITY":
+                            for key in ("fight_within_3_active", "fight_within_3_active_source"):
+                                if key in sr:
+                                    sr.pop(key, None)
+                                    changed = True
+                        for key in (
+                            "orks_bulldozer_brutality_active",
+                            "orks_bulldozer_brutality_expires_phase",
+                            "orks_bulldozer_brutality_turn_owner",
+                            "orks_bulldozer_brutality_turn",
+                            "orks_bulldozer_brutality_source",
+                            "orks_bulldozer_brutality_added_fight_within_3",
+                        ):
+                            if key in sr:
+                                sr.pop(key, None)
+                                changed = True
+                if phase_key == "SHOOTING_PHASE":
+                    expires_phase = str(sr.get("orks_go_get_em_expires_phase", "") or "").strip().upper()
+                    if bool(sr.get("orks_go_get_em_active")) and (not expires_phase or expires_phase == "SHOOTING_PHASE"):
+                        for key in (
+                            "orks_go_get_em_active",
+                            "orks_go_get_em_expires_phase",
+                            "orks_go_get_em_turn_owner",
+                            "orks_go_get_em_turn",
+                            "orks_go_get_em_source",
+                        ):
+                            if key in sr:
+                                sr.pop(key, None)
+                                changed = True
+                        for key in (
+                            "orks_go_get_em_phase_key",
+                            "orks_go_get_em_attacker_unit_id",
+                            "orks_go_get_em_reroll_distance",
+                        ):
+                            if key in sr:
+                                sr.pop(key, None)
+                                changed = True
 
             if changed:
                 root.special_rules = sr
+
+    def _on_unit_shooting_resolved_orks_green_tide(self, attacker_unit=None, **_kwargs) -> None:
+        if not self._is_green_tide_detachment():
+            return
+        if self._orks_phase_label(self._orks_current_phase_label()) != "shooting phase":
+            return
+        if self._orks_is_players_turn():
+            return
+        attacker_root = self._orks_root(attacker_unit)
+        if attacker_root is None or self._orks_owned_by_player(attacker_root, self.player):
+            return
+        army_getter = getattr(self.player, "get_army", None)
+        army = army_getter() if callable(army_getter) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        queued_units: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._orks_root(unit)
+            if root is None:
+                continue
+            unit_id = self._orks_sort_key(root)
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            matches_attacker = getattr(root, "go_get_em_horde_move_attacker_matches", None)
+            if not callable(matches_attacker) or not bool(matches_attacker(attacker_root, game=self.game)):
+                continue
+            can_horde_move = getattr(root, "can_horde_move", None)
+            if not callable(can_horde_move):
+                continue
+            if not bool(can_horde_move(game=self.game, game_map=getattr(self.game, "map", None))):
+                continue
+            queued_units.append(root)
+        queued_units.sort(key=self._orks_sort_key)
+        for root in list(queued_units or []):
+            player = getattr(root.get_parent_army(), "player", None)
+            rule_fn = getattr(root, "get_go_get_em_horde_move_rule", None)
+            rule = rule_fn(game=self.game) if callable(rule_fn) else None
+            if not isinstance(rule, dict):
+                rule = {}
+            source = str(rule.get("source", "") or "GO GET 'EM!").strip() or "GO GET 'EM!"
+            message = (
+                f"{source}: After the attacker finishes shooting, roll one D6 and make a Normal move up to that distance.\n"
+                "This unit must end that move as close as possible to the closest enemy unit and can move within Engagement Range of that unit."
+            )
+            if bool(rule.get("distance_reroll")):
+                message += "\nThis unit can re-roll that D6 because it effectively counts as containing 10 or more models for stratagem checks."
+            self.game._queue_reactive_move_confirmation(
+                player=player,
+                unit=root,
+                kind="horde_move",
+                movement_type="horde_move",
+                source=source,
+                message=message,
+                attacker_unit=attacker_root,
+            )
 
     def _queue_orks_move_started_reactions(self, *, unit: Any, action: str) -> None:
         self._queue_orks_cut_em_down_move_started_reaction(unit=unit, action=action)
@@ -3622,6 +3741,8 @@ class OrksStratagemMixin:
             return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         name_norm = self._orks_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_u == "BULLDOZER BRUTALITY":
+            return self._use_orks_bulldozer_brutality(stratagem, **kwargs)
         if name_u == "ARMED TO DATEEF":
             return self._use_orks_armed_to_dateef(stratagem, **kwargs)
         if name_u == "TOO ARROGANT TO DIE":
@@ -3636,6 +3757,8 @@ class OrksStratagemMixin:
             return self._use_orks_braggin_rights(stratagem, **kwargs)
         if name_u == "COMPETITIVE STREAK":
             return self._use_orks_competitive_streak(stratagem, **kwargs)
+        if name_norm == "go get em":
+            return self._use_orks_go_get_em(stratagem, **kwargs)
         if name_u == "TIDE OF MUSCLE":
             return self._use_orks_tide_of_muscle(stratagem, **kwargs)
         if name_norm == "cut em down":
@@ -5800,6 +5923,73 @@ class OrksStratagemMixin:
         )
         return True
 
+    def _use_orks_bulldozer_brutality(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_green_tide_detachment():
+            return False
+        if not self._orks_validate_phase(
+            expected_phases=("Fight phase",),
+            require_your_turn=False,
+            error_prefix="BULLDOZER BRUTALITY",
+        ):
+            return False
+        target_unit = self._orks_resolve_target_unit("BULLDOZER BRUTALITY", **kwargs)
+        if target_unit is None:
+            logger.error("ERROR: BULLDOZER BRUTALITY: no target unit provided")
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        if not candidates:
+            candidates = self._orks_green_tide_bulldozer_brutality_candidates()
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="BULLDOZER BRUTALITY",
+            target_unit=target_unit,
+            candidates=candidates,
+            require_not_selected_phase="Fight phase",
+        )
+        if not ok:
+            return False
+        if not self._orks_unit_is_boyz(root):
+            logger.error("ERROR: BULLDOZER BRUTALITY: target must be a BOYZ unit")
+            return False
+        if not self._orks_is_unit_engaged(root):
+            logger.error("ERROR: BULLDOZER BRUTALITY: target must be within Engagement Range of an enemy unit")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: BULLDOZER BRUTALITY: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "BULLDOZER BRUTALITY").strip() or "BULLDOZER BRUTALITY"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if not sr.get("fight_within_3"):
+            sr["fight_within_3"] = [{"name": source_name}]
+            sr["orks_bulldozer_brutality_added_fight_within_3"] = True
+        set_active = getattr(root, "set_fight_within_3_active", None)
+        if callable(set_active):
+            root.special_rules = sr
+            set_active(True, source=source_name)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+        else:
+            sr["fight_within_3_active"] = True
+            sr["fight_within_3_active_source"] = source_name
+        sr["orks_bulldozer_brutality_active"] = True
+        sr["orks_bulldozer_brutality_expires_phase"] = "FIGHT_PHASE"
+        sr["orks_bulldozer_brutality_turn_owner"] = self._orks_turn_owner_id()
+        sr["orks_bulldozer_brutality_turn"] = self._orks_current_turn()
+        sr["orks_bulldozer_brutality_source"] = source_name
+        root.special_rules = sr
+
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BULLDOZER BRUTALITY: %s can fight with models within 3\" until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_orks_competitive_streak(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_green_tide_detachment():
             return False
@@ -5854,6 +6044,89 @@ class OrksStratagemMixin:
             "INFO: COMPETITIVE STREAK: %s gains melee wound re-roll mode '%s' until end of phase.",
             getattr(root, "name", "Unit"),
             reroll_mode,
+        )
+        return True
+
+    def _use_orks_go_get_em(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_green_tide_detachment():
+            return False
+        target_unit, attacking_unit, candidates, phase_name, from_pending = self._orks_resolve_target_selected_context(
+            "GO GET 'EM!",
+            **kwargs,
+        )
+        if target_unit is None:
+            logger.error("ERROR: GO GET 'EM!: no target unit provided")
+            return False
+        if not from_pending and not candidates and not list(kwargs.get("target_units") or kwargs.get("targets") or []):
+            logger.error("ERROR: GO GET 'EM!: missing target selection context")
+            return False
+
+        phase_label = self._orks_phase_label(phase_name or self._orks_current_phase_label())
+        if phase_label != "shooting phase":
+            logger.error("ERROR: GO GET 'EM!: wrong phase")
+            return False
+        if self._orks_is_players_turn():
+            logger.error("ERROR: GO GET 'EM!: not opponent's Shooting phase")
+            return False
+
+        attacker_root = self._orks_root(attacking_unit)
+        if attacker_root is None:
+            logger.error("ERROR: GO GET 'EM!: missing attacking unit context")
+            return False
+        if self._orks_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: GO GET 'EM!: attacking unit must be enemy")
+            return False
+        if not self._orks_on_battlefield(attacker_root, require_targetable=False):
+            logger.error("ERROR: GO GET 'EM!: attacking unit must be on battlefield")
+            return False
+
+        if not candidates:
+            candidates = self._orks_target_selected_reaction_candidates(
+                list(kwargs.get("target_units") or kwargs.get("targets") or []),
+                matcher=self._orks_unit_is_boyz,
+            )
+        ok, root = self._orks_validate_offensive_target(
+            stratagem_name="GO GET 'EM!",
+            target_unit=target_unit,
+            candidates=candidates,
+        )
+        if not ok:
+            return False
+        if not self._orks_unit_is_boyz(root):
+            logger.error("ERROR: GO GET 'EM!: target must be a BOYZ unit")
+            return False
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: GO GET 'EM!: cannot be used in current state")
+            return False
+        if not self._orks_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "GO GET 'EM!").strip() or "GO GET 'EM!"
+        can_reroll = self._orks_green_tide_effectively_counts_as_ten(root, scope="stratagem")
+        activate_horde_move = getattr(root, "activate_go_get_em_horde_move", None)
+        if callable(activate_horde_move):
+            activate_horde_move(
+                game=self.game,
+                attacker_unit=attacker_root,
+                can_reroll_distance=can_reroll,
+                source=source_name,
+            )
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["orks_go_get_em_active"] = True
+        sr["orks_go_get_em_expires_phase"] = "SHOOTING_PHASE"
+        sr["orks_go_get_em_turn_owner"] = self._orks_turn_owner_id()
+        sr["orks_go_get_em_turn"] = self._orks_current_turn()
+        sr["orks_go_get_em_source"] = source_name
+        root.special_rules = sr
+
+        self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: GO GET 'EM!: %s will make a post-shooting Horde move%s after %s finishes shooting.",
+            getattr(root, "name", "Unit"),
+            " with a D6 reroll" if can_reroll else "",
+            getattr(attacker_root, "name", "the attacker"),
         )
         return True
 

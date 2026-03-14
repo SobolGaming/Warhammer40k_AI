@@ -621,6 +621,19 @@ _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME = {
 }
 
 _GREEN_TIDE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008882003": StratagemToolDescriptor(
+        stratagem_id="000008882003",
+        name="BULLDOZER BRUTALITY",
+        timing="fight_phase",
+        target="orks_boyz_unit_eligible_to_fight_and_engaged",
+        duration="until_end_of_phase",
+        effect="fight_within_3_activation",
+        cp_cost=1,
+        effect_params={
+            "eligibility_range": 3,
+            "requires_target_unit_in_engagement_range": True,
+        },
+    ),
     "000008882004": StratagemToolDescriptor(
         stratagem_id="000008882004",
         name="BRAGGIN' RIGHTS",
@@ -678,6 +691,22 @@ _GREEN_TIDE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         effect_params={
             "charge_roll_bonus": 1,
             "grant_charge_reroll_if_effective_10_models": True,
+            "effective_model_count_scope": "stratagem",
+        },
+    ),
+    "000008882007": StratagemToolDescriptor(
+        stratagem_id="000008882007",
+        name="GO GET 'EM!",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="orks_boyz_unit_targeted_by_attacker",
+        duration="after_attacker_shoots_once",
+        effect="reactive_normal_move",
+        cp_cost=1,
+        effect_params={
+            "distance_roll": "D6",
+            "must_end_as_close_as_possible_to_closest_enemy_unit": True,
+            "allow_move_within_engagement_range": True,
+            "grant_distance_reroll_if_effective_10_models": True,
             "effective_model_count_scope": "stratagem",
         },
     ),

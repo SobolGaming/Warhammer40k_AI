@@ -3212,20 +3212,131 @@ class KeywordsDetachmentsMixin:
         self._ability_cache["righteous_zeal"] = bool(found)
         return bool(found)
 
+    def activate_go_get_em_horde_move(
+        self,
+        *,
+        game=None,
+        attacker_unit=None,
+        can_reroll_distance: bool = False,
+        source: str = "GO GET 'EM!",
+    ) -> None:
+        root_fn = getattr(self, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        attacker_id = str(get_entity_id(attacker_unit) or "") if attacker_unit is not None else ""
+        sr["orks_go_get_em_active"] = True
+        sr["orks_go_get_em_phase_key"] = root._horde_move_phase_key(game)
+        sr["orks_go_get_em_attacker_unit_id"] = attacker_id
+        sr["orks_go_get_em_reroll_distance"] = bool(can_reroll_distance)
+        sr["orks_go_get_em_source"] = str(source or "GO GET 'EM!").strip() or "GO GET 'EM!"
+        root.special_rules = sr
+
+    def clear_go_get_em_horde_move(self) -> None:
+        root_fn = getattr(self, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        changed = False
+        for key in (
+            "orks_go_get_em_active",
+            "orks_go_get_em_expires_phase",
+            "orks_go_get_em_turn_owner",
+            "orks_go_get_em_turn",
+            "orks_go_get_em_phase_key",
+            "orks_go_get_em_attacker_unit_id",
+            "orks_go_get_em_reroll_distance",
+            "orks_go_get_em_source",
+        ):
+            if key in sr:
+                sr.pop(key, None)
+                changed = True
+        if changed:
+            root.special_rules = sr
+
+    def get_go_get_em_horde_move_rule(self, game=None) -> Optional[dict]:
+        root_fn = getattr(self, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("orks_go_get_em_active")):
+            return None
+        phase_key = str(sr.get("orks_go_get_em_phase_key", "") or "")
+        if game is not None and phase_key:
+            current_key = str(root._horde_move_phase_key(game) or "")
+            if current_key != phase_key:
+                return None
+        return {
+            "source": str(sr.get("orks_go_get_em_source", "") or "GO GET 'EM!").strip() or "GO GET 'EM!",
+            "distance_bonus": 0,
+            "distance_reroll": bool(sr.get("orks_go_get_em_reroll_distance")),
+            "requires_not_engaged": False,
+            "use_once_per_phase": False,
+            "closest_enemy_unit_exclude_keywords": (),
+            "attacker_unit_id": str(sr.get("orks_go_get_em_attacker_unit_id", "") or ""),
+        }
+
+    def go_get_em_horde_move_attacker_matches(self, attacker_unit=None, *, game=None) -> bool:
+        rule = self.get_go_get_em_horde_move_rule(game=game)
+        if not isinstance(rule, dict):
+            return False
+        expected_id = str(rule.get("attacker_unit_id", "") or "")
+        attacker_id = str(get_entity_id(attacker_unit) or "") if attacker_unit is not None else ""
+        return bool(expected_id and attacker_id and expected_id == attacker_id)
+
+    def _get_static_horde_move_rule(self) -> Optional[dict]:
+        cache_key = "static_horde_move_rule"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            cached = self._ability_cache[cache_key]
+            if cached is None:
+                return None
+            return dict(cached)
+
+        rule = None
+        if self.has_insurmountable_odds():
+            rule = {
+                "source": "Insurmountable Odds",
+                "distance_bonus": 0,
+                "distance_reroll": False,
+                "requires_not_engaged": False,
+                "use_once_per_phase": False,
+                "closest_enemy_unit_exclude_keywords": ("AIRCRAFT",),
+            }
+        else:
+            found, _ = self._find_ability_with_patterns(["horde move"])
+            if found:
+                rule = {
+                    "source": "Horde Move",
+                    "distance_bonus": 0,
+                    "distance_reroll": False,
+                    "requires_not_engaged": False,
+                    "use_once_per_phase": False,
+                    "closest_enemy_unit_exclude_keywords": ("AIRCRAFT",),
+                }
+            elif self.has_righteous_zeal():
+                rule = {
+                    "source": "Righteous Zeal",
+                    "distance_bonus": 2,
+                    "distance_reroll": False,
+                    "requires_not_engaged": True,
+                    "use_once_per_phase": True,
+                    "closest_enemy_unit_exclude_keywords": ("AIRCRAFT",),
+                }
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = dict(rule) if rule is not None else None
+        return dict(rule) if rule is not None else None
+
+    def get_horde_move_rule(self, game=None) -> Optional[dict]:
+        go_get_em_rule = self.get_go_get_em_horde_move_rule(game=game)
+        if go_get_em_rule is not None:
+            return dict(go_get_em_rule)
+        return self._get_static_horde_move_rule()
+
     def has_horde_move(self) -> bool:
         """Check if the unit has a Horde Move ability."""
-        if 'horde_move' in getattr(self, '_ability_cache', {}):
-            return self._ability_cache['horde_move']
-
-        found = bool(self.has_insurmountable_odds())
-        if not found:
-            found, _ = self._find_ability_with_patterns(["horde move"])
-        if not found:
-            found = bool(self.has_righteous_zeal())
-        if not hasattr(self, '_ability_cache'):
-            self._ability_cache = {}
-        self._ability_cache['horde_move'] = found
-        return found
+        return self.get_horde_move_rule() is not None
 
     def get_victim_selection_rule(self) -> Optional[dict]:
         """
@@ -11174,13 +11285,14 @@ class KeywordsDetachmentsMixin:
         return True
 
     def can_horde_move(self, game=None, game_map=None) -> bool:
-        if not self.has_horde_move():
+        rule = self.get_horde_move_rule(game=game)
+        if rule is None:
             return False
         if not self.is_alive() or not getattr(self, "deployed", False):
             return False
         if self.is_battle_shocked():
             return False
-        if self.has_righteous_zeal() and self.horde_move_used_this_phase(game):
+        if bool(rule.get("use_once_per_phase")) and self.horde_move_used_this_phase(game):
             return False
         try:
             if self.is_in_reserves():
@@ -11192,7 +11304,7 @@ class KeywordsDetachmentsMixin:
                 return False
         except Exception:
             pass
-        if self.has_righteous_zeal():
+        if bool(rule.get("requires_not_engaged")):
             if game_map is None:
                 try:
                     game_map = getattr(game, "map", None)

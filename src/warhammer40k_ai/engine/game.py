@@ -12013,24 +12013,42 @@ class Game(
             return 0
         from ..utility.dice import get_roll
         base_roll = int(get_roll("D6") or 0)
-        has_righteous_zeal = False
-        check_righteous_zeal = getattr(unit, "has_righteous_zeal", None)
-        if callable(check_righteous_zeal):
-            try:
-                has_righteous_zeal = bool(check_righteous_zeal())
-            except Exception:
-                has_righteous_zeal = False
-        max_distance = int(base_roll + 2) if has_righteous_zeal else int(base_roll)
+        rule_fn = getattr(unit, "get_horde_move_rule", None)
+        rule = rule_fn(game=self) if callable(rule_fn) else None
+        if not isinstance(rule, dict):
+            rule = {}
+        distance_bonus = int(rule.get("distance_bonus", 0) or 0)
+        can_reroll = bool(rule.get("distance_reroll"))
+        source = str(rule.get("source", "") or "Horde Move").strip() or "Horde Move"
+        reroll_used = False
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
-        if player is not None:
-            if has_righteous_zeal:
-                append_dice(
-                    player,
-                    f"Righteous Zeal roll: {int(base_roll or 0)} (move {int(max_distance or 0)}\") for {unit.name}",
+        is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+        if is_human and can_reroll:
+            provider = getattr(getattr(self, "map", None), "roll_reroll_provider", None)
+            if callable(provider):
+                want = bool(
+                    provider(
+                        player=player,
+                        unit=unit,
+                        roll_type="horde_move",
+                        value=int(base_roll or 0),
+                        dice=[int(base_roll or 0)],
+                        allow_reroll=True,
+                        source=source,
+                    )
                 )
+                if want:
+                    base_roll = int(get_roll("D6") or 0)
+                    reroll_used = True
+        max_distance = int(base_roll + distance_bonus)
+        if player is not None:
+            if distance_bonus:
+                tag = f"{source} reroll" if reroll_used else f"{source} roll"
+                append_dice(player, f"{tag}: {int(base_roll or 0)} (move {int(max_distance or 0)}\") for {unit.name}")
             else:
-                append_dice(player, f"Horde Move roll: {int(base_roll or 0)}\" for {unit.name}")
+                tag = f"{source} reroll" if reroll_used else f"{source} roll"
+                append_dice(player, f"{tag}: {int(base_roll or 0)}\" for {unit.name}")
         return int(max_distance or 0)
 
     def roll_loping_speed_distance(self, unit: 'Unit') -> int:

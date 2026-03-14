@@ -2060,6 +2060,9 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             member.mark_brazen_fury_used(game)
         if movement_type == "horde_move":
             member.mark_horde_move_used(game)
+            clear_go_get_em = getattr(member, "clear_go_get_em_horde_move", None)
+            if callable(clear_go_get_em):
+                clear_go_get_em()
         if movement_type == "unhinged_vengeance":
             member.mark_unhinged_vengeance_used(game)
         if movement_type == "blistering_assault":

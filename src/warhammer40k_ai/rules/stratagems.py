@@ -257,10 +257,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ORKS IS NEVER BEATEN",
     "ERE WE GO",
     "MOB RULE",
+    "BULLDOZER BRUTALITY",
     "COME ON LADZ!",
     "BRAGGIN' RIGHTS",
     "BRAGGIN’ RIGHTS",
     "COMPETITIVE STREAK",
+    "GO GET 'EM!",
+    "GO GET ’EM!",
     "TIDE OF MUSCLE",
     "GET STUCK IN, LADZ!",
     "ARMED TO DATEEF",
@@ -556,6 +559,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "REACTIVE REPOSITION",
     "RED WRATH",
     "ORKS IS NEVER BEATEN",
+    "GO GET 'EM!",
+    "GO GET ’EM!",
     "CAREEN!",
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
@@ -1687,6 +1692,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_praise_the_fallen)
         if "CALL DAT DAKKA?" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_call_dat_dakka)
+        if names & {"GO GET 'EM!", "GO GET ’EM!"}:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_orks_green_tide)
         if "CATALYTIC STIMULUS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_catalytic_stimulus)
         if "VENGEFUL SURGE" in names:
@@ -4342,6 +4349,16 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Command phase and a friendly BOYZ unit with destroyed non-CHARACTER models"
             return result
+        if name_u == "BULLDOZER BRUTALITY":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._orks_green_tide_bulldozer_brutality_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires the Fight phase and a friendly BOYZ unit that has not been selected to fight this phase and is within Engagement Range of an enemy unit"
+            return result
         if name_u in {"BRAGGIN' RIGHTS", "BRAGGIN’ RIGHTS"}:
             pairs = list(context.get("pair_candidates") or context.get("pairs") or context.get("candidates") or [])
             if not pairs:
@@ -4361,6 +4378,14 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires the Fight phase and a friendly BOYZ unit that has not been selected to fight this phase"
+            return result
+        if name_u in {"GO GET 'EM!", "GO GET ’EM!"}:
+            candidates = list(context.get("candidates") or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your opponent's Shooting phase, after an enemy unit has selected its targets, and a friendly BOYZ unit selected as one of that attacker's targets"
             return result
         if name_u == "TIDE OF MUSCLE":
             candidates = list(context.get("candidates") or [])
@@ -5124,10 +5149,13 @@ class StratagemManager(
             "ORKS IS NEVER BEATEN": "Target: ORKS unit (fight on death)",
             "ERE WE GO": "Target: ORKS INFANTRY unit",
             "MOB RULE": "Target: ORKS MOB unit (10+ models) at end of your Command phase",
+            "BULLDOZER BRUTALITY": "Target: BOYZ unit not yet selected to fight that is within Engagement Range; models within 3\" can fight eligible engaged enemy units until end of phase",
             "COME ON LADZ!": "Target: BOYZ unit with destroyed non-CHARACTER models; return up to D3+2",
             "BRAGGIN' RIGHTS": "Target: two BOYZ units within 6\"; while they remain within 6\", both count as 10+ models for detachment/enhancement/stratagem checks until your next Command phase",
             "BRAGGIN’ RIGHTS": "Target: two BOYZ units within 6\"; while they remain within 6\", both count as 10+ models for detachment/enhancement/stratagem checks until your next Command phase",
             "COMPETITIVE STREAK": "Target: BOYZ unit not yet selected to fight; gains melee Wound re-roll 1s (or full Wound re-rolls while effectively 10+ for stratagem checks) until end of phase",
+            "GO GET 'EM!": "Target: BOYZ unit selected by the enemy shooter's targets; after that enemy finishes shooting, make a D6 reactive move toward the closest enemy unit and you may re-roll the D6 while effectively 10+ for stratagem checks",
+            "GO GET ’EM!": "Target: BOYZ unit selected by the enemy shooter's targets; after that enemy finishes shooting, make a D6 reactive move toward the closest enemy unit and you may re-roll the D6 while effectively 10+ for stratagem checks",
             "TIDE OF MUSCLE": "Target: BOYZ unit that has not declared a charge this phase; gains +1 to Charge rolls and (while effectively 10+ for stratagem checks) Charge re-rolls until end of phase",
             "GET STUCK IN, LADZ!": "Target: non-GRETCHIN ORKS unit; that unit counts as Waaagh-active until your next Command phase",
             "CAREEN!": "Target: destroyed ORKS VEHICLE (Deadly Demise 6)",

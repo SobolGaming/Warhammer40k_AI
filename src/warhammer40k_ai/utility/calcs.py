@@ -999,6 +999,12 @@ def get_validation_rules(
         MovementType.HORDE_MOVE,
         MovementType.BLISTERING_ASSAULT,
     ):
+        horde_move_rule = None
+        if movement_type == MovementType.HORDE_MOVE and moving_unit is not None:
+            rule_fn = getattr(moving_unit, "get_horde_move_rule", None)
+            horde_move_rule = rule_fn() if callable(rule_fn) else None
+            if not isinstance(horde_move_rule, dict):
+                horde_move_rule = None
         if movement_type == MovementType.BLOOD_SURGE:
             reason = "Blood Surge"
         elif movement_type == MovementType.BRAZEN_FURY:
@@ -1006,16 +1012,7 @@ def get_validation_rules(
         elif movement_type == MovementType.BLISTERING_ASSAULT:
             reason = "Blistering Assault"
         else:
-            reason = "Horde Move"
-            has_righteous_zeal = False
-            has_righteous_zeal_fn = getattr(moving_unit, "has_righteous_zeal", None) if moving_unit is not None else None
-            if callable(has_righteous_zeal_fn):
-                try:
-                    has_righteous_zeal = bool(has_righteous_zeal_fn())
-                except Exception:
-                    has_righteous_zeal = False
-            if has_righteous_zeal:
-                reason = "Righteous Zeal"
+            reason = str((horde_move_rule or {}).get("source", "") or "Horde Move").strip() or "Horde Move"
         base_rules.update({
             'allow_engagement_range_movement': True,
             'must_end_as_close_as_possible_to_closest_enemy_unit': True,
@@ -1023,9 +1020,16 @@ def get_validation_rules(
             # Pathfinding discretization can drift a touch; allow a tiny epsilon.
             'distance_tolerance': 0.05,
         })
-        if movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY, MovementType.HORDE_MOVE):
+        if movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY):
             base_rules['closest_enemy_unit_exclude_keywords'] = {"AIRCRAFT"}
         if movement_type == MovementType.HORDE_MOVE and moving_unit is not None:
+            exclude_keywords = {"AIRCRAFT"}
+            if horde_move_rule is not None and "closest_enemy_unit_exclude_keywords" in horde_move_rule:
+                exclude_keywords = set(horde_move_rule.get("closest_enemy_unit_exclude_keywords", ()) or ())
+            if exclude_keywords:
+                base_rules["closest_enemy_unit_exclude_keywords"] = exclude_keywords
+            elif "closest_enemy_unit_exclude_keywords" in base_rules:
+                base_rules.pop("closest_enemy_unit_exclude_keywords", None)
             sm_mgr = None
             try:
                 army = moving_unit.get_parent_army()
