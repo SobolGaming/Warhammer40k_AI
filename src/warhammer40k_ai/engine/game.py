@@ -5332,6 +5332,12 @@ class Game(
             except Exception:
                 models = list(getattr(root, "models", []) or [])
             dice_count = len([m for m in list(models or []) if getattr(m, "is_alive", True)])
+        if bool(spec.get("dice_per_target_model", False)):
+            try:
+                target_models = list(target_unit.get_attached_unit_models() or [])
+            except Exception:
+                target_models = list(getattr(target_unit, "models", []) or [])
+            dice_count = len([m for m in list(target_models or []) if getattr(m, "is_alive", True)])
         threshold = int(spec.get("threshold", 0) or 0)
         mortal_per = int(spec.get("mortal_per_success", 1) or 0)
         mortal_die = str(spec.get("mortal_per_success_die", "") or "").strip().upper()
@@ -5447,6 +5453,24 @@ class Game(
             player = None
         if player is None:
             return
+        if bool(spec.get("apply_no_cover_until_end_of_turn", False)):
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(self, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            sr["move_over_no_cover_active"] = True
+            sr["move_over_no_cover_owner"] = owner_id
+            sr["move_over_no_cover_turn"] = int(turn or 0)
+            sr["move_over_no_cover_source"] = ability_name
+            target_root.special_rules = sr
         try:
             self.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
         except Exception:
@@ -10322,7 +10346,7 @@ class Game(
             else:
                 # Placement-style move decisions are resolved via explicit model_positions payloads.
                 # Skip generic move candidate generation for these to avoid expensive unused solver work.
-                if placement_kind != "advance_redeploy_9h":
+                if placement_kind not in ("advance_redeploy_9h", "normal_move_redeploy_9h"):
                     if getattr(self, "path_witness_store", None) is None:
                         self.path_witness_store = PathWitnessStore()
                     intent = MovementIntent.from_context(ctx)

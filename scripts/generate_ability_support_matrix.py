@@ -5961,6 +5961,7 @@ def _classify_ability_base(
     parasitic_infection_support = _parasitic_infection_support(description)
     hazardous_test_modifier_support = _hazardous_test_modifier_support(description)
     orks_waaagh_conditional_support = _orks_waaagh_conditional_model_and_unit_support(description)
+    orks_named_datasheet_support = _orks_named_datasheet_support(name, description, faction_id=faction_id)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
@@ -6329,6 +6330,8 @@ def _classify_ability_base(
         return leading_unit_contains_invuln_support
     if orks_waaagh_conditional_support:
         return orks_waaagh_conditional_support
+    if orks_named_datasheet_support:
+        return orks_named_datasheet_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -7418,6 +7421,36 @@ def _orks_waaagh_conditional_model_and_unit_support(description: str) -> Optiona
             f"Waaagh-active: models in this model's unit gain +{m.group('value')}\" Move.",
         )
 
+    return None
+
+
+def _orks_named_datasheet_support(name: str, description: str, *, faction_id: str = "") -> Optional[Tuple[str, str]]:
+    fid = str(faction_id or "").strip().upper()
+    if fid and fid != "ORK":
+        return None
+    name_norm = _norm(name)
+    norm = _norm_rules_text(description)
+    if not name_norm or not norm:
+        return None
+
+    if name_norm == "pyromaniaks":
+        if (
+            "with a burna" in norm
+            and "targets an enemy unit within 6" in norm
+            and "reroll a wound roll of 1" in norm
+            and "within range of an objective marker" in norm
+            and "reroll the wound roll instead" in norm
+        ):
+            return (
+                "Supported",
+                "Burna ranged attacks vs targets within 6\" re-roll Wound rolls of 1; if the target is also within objective range, those attacks can re-roll the Wound roll instead.",
+            )
+    if name_norm == "gun crazy show offs":
+        if "closest eligible target" in norm and "snazzgun" in norm and "attacks characteristic of 4" in norm:
+            return (
+                "Supported",
+                "Snazzgun attacks that target the closest eligible target have Attacks 4.",
+            )
     return None
 
 
@@ -9441,8 +9474,8 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         r"(?:then |and (?:then )?)?roll one d6 on a 2 3 that enemy unit suffers 1 mortal wounds? on a 4 5 that enemy unit suffers d3 mortal wounds? on a 6 that enemy unit suffers d3 3 mortal wounds?"
     )
     table_2_5 = (
-        r"each time this model ends a charge move select one enemy unit within engagement range of this model "
-        r"(?:then |and (?:then )?)?roll one d6 on a 2 5 that unit suffers d3 mortal wounds? on a 6 that unit suffers d3 3 mortal wounds?"
+        r"each time this model ends a charge move select one enemy unit within engagement range of (?:this model|it) "
+        r"(?:then |and (?:then )?)?roll one d6 on a 2 5 that (?:enemy )?unit suffers d3 mortal wounds? on a 6 that (?:enemy )?unit suffers d3 3 mortal wounds?"
     )
     remaining_wounds = (
         r"each time this model ends a charge move select one enemy unit within engagement range of it "
@@ -10259,6 +10292,12 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         notes.append(f"Leading: unit models gain {invuln_ranged_match.group(1)}+ invulnerable save against ranged attacks.")
     elif invuln_match:
         notes.append(f"Leading: unit models gain {invuln_match.group(1)}+ invulnerable save.")
+    if re.search(
+        r"(?:models in that unit|models in this unit|that unit|this unit) (?:has|have) the benefit of cover",
+        low,
+        flags=re.IGNORECASE,
+    ):
+        notes.append("Leading: unit gains Benefit of Cover against ranged attacks.")
 
     if "melee attack" in low:
         attack_scope = "melee"
@@ -10345,6 +10384,8 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}models in that unit have (?:a|the)?\s*\d+ invulnerable save,?\s*and\s*(?:a|the)?\s*\d+ invulnerable save against psychic attacks and attacks made by daemon models",
         rf"{lead_prefix}models in that unit have (?:a|the)?\s*\d+ invulnerable save against ranged attacks",
         rf"{lead_prefix}models in that unit have (?:a|the)?\s*\d+ invulnerable save",
+        rf"{lead_prefix}(?:models in that unit|that unit) have the benefit of cover",
+        rf"{lead_prefix}(?:models in that unit|that unit) has the benefit of cover",
         rf"{lead_prefix}(?:in addition )?each time a model in that unit makes an attack a critical hit is scored on an unmodified hit roll of \d\+?(?: instead of only a 6)?",
         rf"{lead_prefix}.*reroll .*hit roll.* of 1.*",
         rf"{lead_prefix}.*reroll .*wound roll.* of 1.*",
@@ -13878,14 +13919,34 @@ def _advance_selected_redeploy_support(description: str) -> Optional[Tuple[str, 
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    pattern = (
+    advance_pattern = (
         r"(?:[a-z0-9 ]+ model only )?"
         r"each time this model is selected to advance "
         r"you can remove it from the battlefield and set it up again anywhere on the battlefield "
         r"that is more than (?P<min_dist>\d+) horizontally away from all enemy (?:units|models)"
         r"(?: instead of making an advance move(?: this model is still considered to have advanced this turn)?)?"
     )
-    match = re.fullmatch(pattern, norm)
+    match = re.fullmatch(advance_pattern, norm)
+    if match:
+        try:
+            min_dist = int(match.group("min_dist") or 0)
+        except Exception:
+            min_dist = 0
+        if min_dist <= 0:
+            return None
+        return (
+            "Supported",
+            f"When selected to Advance, the model can be set up again anywhere more than {min_dist}\" horizontally from enemy models (counts as Advanced).",
+        )
+
+    normal_pattern = (
+        r"once per battle(?:,)? in your movement phase instead of making a normal move with "
+        r"(?:this model s unit|this models unit|this unit|that unit) you can remove "
+        r"(?:it|that unit|this unit|this model s unit|this models unit) from the battlefield and set "
+        r"(?:it|that unit|this unit|this model s unit|this models unit) up again anywhere on the battlefield "
+        r"that is more than (?P<min_dist>\d+) horizontally away from all enemy (?:units|models)"
+    )
+    match = re.fullmatch(normal_pattern, norm)
     if not match:
         return None
     try:
@@ -13896,7 +13957,7 @@ def _advance_selected_redeploy_support(description: str) -> Optional[Tuple[str, 
         return None
     return (
         "Supported",
-        f"When selected to Advance, the model can be set up again anywhere more than {min_dist}\" horizontally from enemy models (counts as Advanced).",
+        f"Once per battle in the Movement phase, instead of making a Normal move, the unit can be set up again anywhere more than {min_dist}\" horizontally from enemy models.",
     )
 
 
@@ -14307,6 +14368,20 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    no_cover_per_target_model = re.fullmatch(
+        r"each time this model ends a normal move(?: you can )?(?:select|choose) one enemy unit it moved over during that move "
+        r"until the end of the turn models in that unit cannot have the benefit of cover "
+        r"in addition roll one d6 for each model in that unit for each (?P<threshold>\d)\+? "
+        r"that unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
+        norm,
+    )
+    if no_cover_per_target_model:
+        threshold = str(no_cover_per_target_model.group("threshold") or "6").strip()
+        mortal_text = str(no_cover_per_target_model.group("mw") or "1").strip().upper()
+        return (
+            "Supported",
+            f"Normal: select a moved-over enemy; it loses Benefit of Cover for the turn, then roll D6 per model in that unit, each {threshold}+ inflicts {mortal_text} mortal wounds.",
+        )
     threshold_simple = re.fullmatch(
         r"each time this model ends a normal move you can select one enemy unit it moved over during that move "
         r"and roll one d6 on a (?P<threshold>\d) that unit suffers (?P<mw>d3|d6|\d+) mortal wounds",

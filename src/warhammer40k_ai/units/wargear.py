@@ -881,6 +881,73 @@ class WargearProfile:
         root._ability_cache = cache
         return dict(rules)
 
+    def _orks_datasheet_weapon_rules(self, attacker: 'Model') -> dict:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return {}
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return {}
+        cache_key = "orks_datasheet_weapon_rules"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            stored = cache.get(cache_key)
+            return dict(stored) if isinstance(stored, dict) else {}
+
+        rules = {
+            "wound_reroll_range_rules": [],
+            "closest_target_attack_overrides": [],
+        }
+        seen_wound: set[tuple[str, str, int, int, bool]] = set()
+        seen_attacks: set[tuple[str, str, int]] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for member in members:
+            if member is None:
+                continue
+            for name, _desc in member._iter_ability_entries_for_rules(model=None):
+                source = str(name or "Unit ability").strip() or "Unit ability"
+                low_name = re.sub(r"[^a-z0-9]+", " ", str(name or "").strip().lower()).strip()
+                if low_name == "pyromaniaks":
+                    key = (source.lower(), "burna", 6, 1, True)
+                    if key not in seen_wound:
+                        seen_wound.add(key)
+                        rules["wound_reroll_range_rules"].append(
+                            {
+                                "source": source,
+                                "weapon_name": "burna",
+                                "max_distance": 6,
+                                "value": 1,
+                                "full_if_target_objective_range": True,
+                            }
+                        )
+                elif low_name == "gun crazy show offs":
+                    key = (source.lower(), "snazzgun", 4)
+                    if key not in seen_attacks:
+                        seen_attacks.add(key)
+                        rules["closest_target_attack_overrides"].append(
+                            {
+                                "source": source,
+                                "weapon_name": "snazzgun",
+                                "attacks": 4,
+                            }
+                        )
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = dict(rules)
+        root._ability_cache = cache
+        return dict(rules)
+
     def _imperial_knights_thunderstomp_bonus(self, attacker: 'Model') -> tuple[int, int, str]:
         """
         Return (attacks_set, ap_bonus, source) for THUNDERSTOMP when active.
@@ -4426,6 +4493,41 @@ class WargearProfile:
                                 attacks_override_note = f"{label} (Attacks set to {int(override_val)})"
                             else:
                                 attacks_override_note = f"Attacks set to {int(override_val)}"
+            except Exception:
+                pass
+        if attacks_override is None:
+            try:
+                is_ranged = bool(getattr(getattr(self, "parent_wargear", None), "is_ranged", lambda: False)())
+                unit = getattr(attacker, "parent_unit", None)
+                if is_ranged and unit is not None:
+                    ork_rules = self._orks_datasheet_weapon_rules(attacker)
+                    for rule in list(ork_rules.get("closest_target_attack_overrides", []) or []):
+                        if not isinstance(rule, dict):
+                            continue
+                        weapon_name = str(rule.get("weapon_name", "") or "").strip()
+                        if weapon_name and not self._weapon_name_matches_for_attacker(attacker, weapon_name):
+                            continue
+                        try:
+                            attack_count = int(rule.get("attacks", 0) or 0)
+                        except Exception:
+                            attack_count = 0
+                        if attack_count <= 0:
+                            continue
+                        gm = game_map
+                        if gm is None:
+                            try:
+                                gm = unit.get_parent_army().player.game.map
+                            except Exception:
+                                gm = None
+                        if gm is None or not callable(getattr(unit, "is_target_closest_eligible", None)):
+                            continue
+                        if not bool(unit.is_target_closest_eligible(attacker, self, target, gm)):
+                            continue
+                        attacks_override = int(attack_count)
+                        if not attacks_override_note:
+                            source = str(rule.get("source", "") or "Closest eligible target").strip() or "Closest eligible target"
+                            attacks_override_note = f"{source} (Attacks set to {int(attack_count)})"
+                        break
             except Exception:
                 pass
         if attacks_override is not None:
@@ -15359,6 +15461,25 @@ class WargearProfile:
             pass
 
         wound_result['target_toughness'] = target_toughness
+        closest_dist = 0.0
+        get_closest = getattr(attacker, "return_closest_model_in_unit", None)
+        if callable(get_closest) and hasattr(target, "get_attached_unit_models"):
+            closest_info = get_closest(target)
+            if isinstance(closest_info, tuple) and len(closest_info) >= 2:
+                try:
+                    closest_dist = float(closest_info[1] or 0.0)
+                except (TypeError, ValueError):
+                    closest_dist = 0.0
+        elif hasattr(attacker, "model_base"):
+            from ..utility.aura_utils import distance_between_models_bases_3d
+
+            target_models = [
+                model
+                for model in list(getattr(target, "models", []) or [])
+                if model is not None and hasattr(model, "model_base") and bool(getattr(model, "is_alive", True))
+            ]
+            if target_models:
+                closest_dist = min(float(distance_between_models_bases_3d(attacker, model)) for model in target_models)
         # Provide reroll callback for wound
         def _reroll_wound():
             new_roll = get_roll("D6")
@@ -16846,6 +16967,51 @@ class WargearProfile:
                 if battleline_ok:
                     reroll_full_reasons.append(
                         f"{source_name}: re-roll Wound roll ({weapon_name} vs targets within objective range while within {int(battleline_range)}\" of friendly ADEPTUS MECHANICUS BATTLELINE)"
+                    )
+        except Exception:
+            pass
+        try:
+            ork_rules = self._orks_datasheet_weapon_rules(attacker)
+            for rule in list(ork_rules.get("wound_reroll_range_rules", []) or []):
+                if not isinstance(rule, dict):
+                    continue
+                weapon_name = str(rule.get("weapon_name", "") or "").strip()
+                if weapon_name and not self._weapon_name_matches_for_attacker(attacker, weapon_name):
+                    continue
+                try:
+                    max_distance = float(rule.get("max_distance", 0) or 0)
+                except Exception:
+                    max_distance = 0.0
+                if max_distance > 0 and float(closest_dist or 0.0) > max_distance + 1e-6:
+                    continue
+                try:
+                    value = int(rule.get("value", 0) or 0)
+                except Exception:
+                    value = 0
+                if value > 0:
+                    reroll_wound_values.add(int(value))
+                source_name = str(rule.get("source", "") or "Unit ability").strip() or "Unit ability"
+                if value > 0:
+                    reroll_value_reasons.append(
+                        f"{source_name}: re-roll Wound roll of {int(value)} ({weapon_name} vs targets within {int(max_distance)}\")"
+                    )
+                if not bool(rule.get("full_if_target_objective_range", False)):
+                    continue
+                try:
+                    unit = getattr(attacker, "parent_unit", None)
+                    root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+                except Exception:
+                    root = getattr(attacker, "parent_unit", None)
+                if root is None or not hasattr(root, "_target_within_objective_range"):
+                    continue
+                try:
+                    game_map_local = self._get_game_map_from_model(attacker)
+                    objective_ok = bool(root._target_within_objective_range(target, game_map_local))
+                except Exception:
+                    objective_ok = False
+                if objective_ok:
+                    reroll_full_reasons.append(
+                        f"{source_name}: re-roll Wound roll ({weapon_name} vs targets within {int(max_distance)}\" and objective range)"
                     )
         except Exception:
             pass

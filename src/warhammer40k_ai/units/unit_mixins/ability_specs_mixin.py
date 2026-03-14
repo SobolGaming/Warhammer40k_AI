@@ -6342,6 +6342,77 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_movement_phase_normal_move_redeploy_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: once per battle in the Movement phase, instead of a Normal move,
+        optionally set the unit up again >X" from enemies.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - min_enemy_distance_horiz: int
+            - once_per_battle: bool
+            - ability_key: str
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_movement_phase_normal_move_redeploy_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for member in members:
+            if member is None:
+                continue
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = member._strip_eligibility_prefix(text_src)
+                normalized = member._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                match = member._MOVEMENT_PHASE_NORMAL_MOVE_REDEPLOY_RE.fullmatch(normalized)
+                if not match:
+                    continue
+                try:
+                    min_enemy = int(match.group("min_dist") or 0)
+                except Exception:
+                    min_enemy = 0
+                if min_enemy <= 0:
+                    continue
+                source = str(name or "Normal move redeploy").strip() or "Normal move redeploy"
+                dedupe_key = (source.lower(), int(min_enemy))
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                key_seed = member._normalize_keyword_phrase(source) or "normal_move_redeploy"
+                specs.append(
+                    {
+                        "source": source,
+                        "min_enemy_distance_horiz": int(min_enemy),
+                        "once_per_battle": True,
+                        "ability_key": f"normal_move_redeploy:{key_seed}",
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_movement_phase_end_visible_wound_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: end of Movement phase, select a visible enemy within range;
@@ -10156,6 +10227,49 @@ class AbilitySpecsMixin:
             if ("moved over" not in normalized and "moved across" not in normalized) or "mortal wound" not in normalized:
                 continue
             if "for each model" in normalized:
+                special_match = self._MOVE_OVER_NO_COVER_TARGET_MODEL_MORTALS_RE.fullmatch(normalized)
+                if not special_match:
+                    continue
+                try:
+                    threshold = int(special_match.group("threshold") or 0)
+                except Exception:
+                    threshold = 0
+                mw_token = str(special_match.group("mw") or "").strip().lower()
+                mortal_per = 0
+                mortal_die = ""
+                if mw_token.startswith("d"):
+                    mortal_die = mw_token.upper()
+                else:
+                    try:
+                        mortal_per = int(mw_token or 0)
+                    except Exception:
+                        mortal_per = 0
+                if threshold <= 0 or (mortal_per <= 0 and not mortal_die):
+                    continue
+                source = str(name or "Move-over mortals").strip() or "Move-over mortals"
+                key = (
+                    source.lower(),
+                    "target_model_count",
+                    int(threshold),
+                    str(mortal_die or ""),
+                    int(mortal_per),
+                    "move",
+                    True,
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "threshold": int(threshold),
+                        "mortal_per_success": int(mortal_per),
+                        "mortal_per_success_die": str(mortal_die),
+                        "move_types": ["move"],
+                        "dice_per_target_model": True,
+                        "apply_no_cover_until_end_of_turn": True,
+                    }
+                )
                 continue
             if "one of the following" in normalized:
                 continue

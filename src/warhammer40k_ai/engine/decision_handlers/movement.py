@@ -536,6 +536,12 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
             if callable(queue_fn):
                 queue_fn(unit=unit, action="move")
             try:
+                queue_fn = getattr(game, "_queue_movement_phase_normal_move_redeploy", None)
+                if callable(queue_fn):
+                    queue_fn(player=player, unit=unit)
+            except Exception:
+                pass
+            try:
                 queue_fn = getattr(game, "_queue_movement_phase_normal_move_weapon_attacks_bonus", None)
                 if callable(queue_fn):
                     queue_fn(player=player, unit=unit)
@@ -1081,12 +1087,13 @@ def _validate_placement_positions(
         reserves_errors = _validate_reserves_arrival_positions(game, unit, model_positions, ctx=ctx)
         if reserves_errors:
             return reserves_errors
-    if str(placement_kind or "") in ("aeldari_unshrouded_truth", "advance_redeploy_9h"):
+    if str(placement_kind or "") in ("aeldari_unshrouded_truth", "advance_redeploy_9h", "normal_move_redeploy_9h"):
         unshrouded_errors = _validate_aeldari_unshrouded_truth_positions(
             game,
             unit,
             candidate_bases,
             placement_kind=str(placement_kind or ""),
+            ctx=ctx,
         )
         if unshrouded_errors:
             return unshrouded_errors
@@ -1100,6 +1107,7 @@ def _validate_aeldari_unshrouded_truth_positions(
     candidate_bases: dict[str, object],
     *,
     placement_kind: str = "",
+    ctx: dict | None = None,
 ) -> Sequence[str]:
     if not candidate_bases:
         return ()
@@ -1114,6 +1122,15 @@ def _validate_aeldari_unshrouded_truth_positions(
 
     own_army_getter = getattr(unit, "get_parent_army", None)
     own_army = own_army_getter() if callable(own_army_getter) else getattr(unit, "parent_army", None)
+
+    min_enemy_distance = 9.0
+    context = dict(ctx or {})
+    try:
+        requested_distance = float(context.get("min_enemy_distance_horiz", 9.0) or 9.0)
+    except Exception:
+        requested_distance = 9.0
+    if requested_distance > 0:
+        min_enemy_distance = float(requested_distance)
 
     for enemy in list(getattr(game_map, "units", []) or []):
         if enemy is unit:
@@ -1148,10 +1165,17 @@ def _validate_aeldari_unshrouded_truth_positions(
                     horizontal = float(horizontal_distance_between_bases_2d(base, enemy_base))
                 except Exception:
                     continue
-                if horizontal <= 9.0 + 1e-6:
+                if horizontal <= float(min_enemy_distance) + 1e-6:
+                    distance_text = (
+                        str(int(min_enemy_distance))
+                        if abs(float(min_enemy_distance) - round(float(min_enemy_distance))) <= 1e-6
+                        else str(min_enemy_distance)
+                    )
                     if placement_kind == "aeldari_unshrouded_truth":
-                        return ("Move unit: Unshrouded Truth placement must be more than 9\" horizontally from enemy models.",)
-                    return ("Move unit: placement must be more than 9\" horizontally from enemy models.",)
+                        return (
+                            f"Move unit: Unshrouded Truth placement must be more than {distance_text}\" horizontally from enemy models.",
+                        )
+                    return (f"Move unit: placement must be more than {distance_text}\" horizontally from enemy models.",)
 
     return ()
 

@@ -3554,7 +3554,7 @@ class GameView:
         if decision_type == DECISION_MOVE_UNIT:
             ctx = dict(getattr(request, "context", {}) or {})
             placement_kind = str(ctx.get("placement_kind", "") or "")
-            if placement_kind not in ("reserves_arrival", "advance_redeploy_9h"):
+            if placement_kind not in ("reserves_arrival", "advance_redeploy_9h", "normal_move_redeploy_9h"):
                 return
             player = self._resolve_player_by_id(getattr(request, "player_id", None))
             if player is None:

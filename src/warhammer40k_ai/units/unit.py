@@ -3054,6 +3054,11 @@ class Unit(
         r"(?:it|that\s+unit|this\s+unit|the\s+bearer'?s\s+unit)\s+(?:have|gain)\s+the\s+benefit\s+of\s+cover",
         re.IGNORECASE,
     )
+    _LEADING_UNIT_BENEFIT_OF_COVER_RE = re.compile(
+        r"while\s+this\s+model\s+is\s+leading\s+a\s+unit,?\s*models\s+in\s+"
+        r"(?:it|that\s+unit|this\s+unit|the\s+bearer'?s\s+unit)\s+(?:have|gain)\s+the\s+benefit\s+of\s+cover",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_DEEP_STRIKE_RE = re.compile(
         r"models\s+in\s+(?:the\s+bearer'?s|that|this)\s+unit\s+have\s+the\s+deep\s+strike\s+ability",
         re.IGNORECASE,
@@ -4230,6 +4235,14 @@ class Unit(
         r"(?: instead of making an advance move(?: this model is still considered to have advanced this turn)?)?",
         re.IGNORECASE,
     )
+    _MOVEMENT_PHASE_NORMAL_MOVE_REDEPLOY_RE = re.compile(
+        r"once per battle(?:,)?\s+(?:in|during)\s+your\s+movement\s+phase\s+"
+        r"instead of making a normal move with (?:this model s unit|this models unit|this unit|that unit) "
+        r"you can remove (?:it|that unit|this unit|this model s unit|this models unit) from the battlefield "
+        r"and set (?:it|that unit|this unit|this model s unit|this models unit) up again anywhere on the battlefield "
+        r"that is more than (?P<min_dist>\d+) horizontally away from all enemy (?:units|models)",
+        re.IGNORECASE,
+    )
     _MOVEMENT_PHASE_END_VISIBLE_WOUND_BONUS_RE = re.compile(
         r"at the end of your movement phase select one enemy unit within (?P<range>\d+) of and visible to this model "
         r"until the start of your next command phase each time a friendly (?P<keyword>[a-z0-9 ]+) models? make(?:s)? an attack that targets that enemy unit "
@@ -4338,6 +4351,13 @@ class Unit(
     _MOVE_OVER_NO_COVER_RE = re.compile(
         r"each time this model ends a normal move select one enemy unit it moved over during that move "
         r"until the end of the turn models in that unit cannot have the benefit of cover",
+        re.IGNORECASE,
+    )
+    _MOVE_OVER_NO_COVER_TARGET_MODEL_MORTALS_RE = re.compile(
+        r"each time this model ends a normal move(?: you can )?(?:select|choose) one enemy unit it moved over during that move "
+        r"until the end of the turn models in that unit cannot have the benefit of cover "
+        r"in addition roll one d6 for each model in that unit for each (?P<threshold>\d)\+? "
+        r"that unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
         re.IGNORECASE,
     )
     _GRENADE_PACK_FLYOVER_RE = re.compile(
