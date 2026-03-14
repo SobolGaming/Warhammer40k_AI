@@ -607,6 +607,10 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         if placement_errors:
             return placement_errors
     movement_type = str(payload.get("movement_type", "") or ctx.get("movement_type", "") or "move").strip().lower()
+    reactive_movement_type = str(ctx.get("reactive_move_movement_type", "") or "").strip().lower()
+    validate_normal_move_sweep = movement_type == "move" or (
+        movement_type == "reactive" and reactive_movement_type == "move"
+    )
     if movement_type == "advance":
         advance_denial_errors = _validate_advance_start_end_denial(game, unit, model_positions)
         if advance_denial_errors:
@@ -622,7 +626,7 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         witness_errors = validate_witness_contiguity(witness, list(model_positions or []))
         if witness_errors:
             return tuple(witness_errors)
-    if movement_type == "move":
+    if validate_normal_move_sweep:
         start_positions = current_model_positions(unit)
         end_positions: list[dict] = []
         for entry in list(model_positions or []):

@@ -5,6 +5,7 @@ import re
 from typing import Any, Optional
 
 from ..utility import dice as dice_module
+from ..utility.event_bus import append_action, append_dice
 from ..utility.entity_ids import get_entity_id
 from ..utility.modifiers import Modifier, ModifierOp
 
@@ -1385,6 +1386,84 @@ class OrksStratagemMixin:
             if self._orks_normalize_name(getattr(stratagem, "name", "")) in normalized:
                 return stratagem
         return None
+
+    @staticmethod
+    def _orks_roll_value(notation: Any) -> int:
+        token = str(notation or "").strip().upper()
+        if not token:
+            return 0
+        match = re.fullmatch(r"(D[36])(?:\+(\d+))?", token)
+        if match is not None:
+            roll_value = max(0, int(dice_module.get_roll(match.group(1)) or 0))
+            return int(roll_value) + int(match.group(2) or 0)
+        if token.isdigit():
+            return int(token)
+        return 0
+
+    def _orks_resolve_reactive_move_pre_move_rider(
+        self,
+        *,
+        unit: Any,
+        enemy_unit: Any,
+        source_name: str,
+        rider_spec: dict | None,
+    ) -> dict[str, Any]:
+        source_root = self._orks_root(unit)
+        enemy_root = self._orks_root(enemy_unit)
+        rider = dict(rider_spec or {})
+        rider_kind = str(rider.get("effect", "") or rider.get("kind", "") or "").strip().lower()
+        if source_root is None or enemy_root is None or rider_kind != "single_roll_mortal_wounds":
+            return {}
+
+        trigger_roll_notation = str(rider.get("trigger_roll", "") or "D6").strip().upper() or "D6"
+        success_on = int(rider.get("success_on", 4) or 4)
+        mortal_wounds_notation = str(rider.get("mortal_wounds", "") or "0").strip().upper() or "0"
+        trigger_roll = int(self._orks_roll_value(trigger_roll_notation))
+        success = int(trigger_roll) >= int(success_on)
+        mortal_wounds = int(self._orks_roll_value(mortal_wounds_notation)) if success else 0
+
+        if int(mortal_wounds) > 0:
+            apply_mortal_wounds = getattr(source_root, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortal_wounds):
+                apply_mortal_wounds(
+                    enemy_root,
+                    int(mortal_wounds),
+                    game_map=getattr(getattr(self, "game", None), "map", None),
+                )
+
+        player = self.player
+        source = str(source_name or "Reactive move rider").strip() or "Reactive move rider"
+        append_dice(
+            player,
+            f"{source}: {trigger_roll_notation} roll = {int(trigger_roll)} "
+            f"({'success' if success else 'fail'} on {int(success_on)}+).",
+        )
+        if success:
+            append_dice(player, f"{source}: {mortal_wounds_notation} mortal wounds = {int(mortal_wounds)}.")
+            append_action(
+                player,
+                f"{source}: {getattr(enemy_root, 'name', 'Enemy unit')} suffers "
+                f"{int(mortal_wounds)} mortal wounds before {getattr(source_root, 'name', 'Unit')} moves.",
+            )
+        else:
+            append_action(
+                player,
+                f"{source}: {getattr(enemy_root, 'name', 'Enemy unit')} avoids the mortal-wound rider; "
+                f"{getattr(source_root, 'name', 'Unit')} can still make its Normal move.",
+            )
+
+        return {
+            "effect": rider_kind,
+            "trigger_roll": int(trigger_roll),
+            "trigger_roll_notation": trigger_roll_notation,
+            "success_on": int(success_on),
+            "success": bool(success),
+            "mortal_wounds": int(mortal_wounds),
+            "mortal_wounds_notation": mortal_wounds_notation,
+            "unit_id": self._orks_sort_key(source_root),
+            "enemy_unit_id": self._orks_sort_key(enemy_root),
+            "source": source,
+        }
 
     def _orks_reaction_already_queued(self, *, event_name: str, stratagem_name: str, attacking_unit: Any) -> bool:
         target_name = str(stratagem_name or "").strip().upper()
@@ -2782,6 +2861,12 @@ class OrksStratagemMixin:
             return False
         return self._orks_unit_contains_keyword(root, "SPEED FREEKS")
 
+    def _orks_is_gretchin_unit(self, unit: Any) -> bool:
+        root = self._orks_root(unit)
+        if root is None:
+            return False
+        return bool(self._orks_unit_contains_any_keyword(root, ("GROT", "GROTS", "GRETCHIN")))
+
     def _orks_reactive_reposition_candidates(
         self,
         *,
@@ -2964,6 +3049,17 @@ class OrksStratagemMixin:
             require_not_engaged_now=True,
             max_distance_to_enemy=9.0,
         )
+        self._queue_single_orks_reactive_reposition_reaction(
+            enemy_unit=enemy_root,
+            action_key=action_key,
+            stratagem_names=("CONNIVING RUNTS",),
+            detachment_check=self._is_dread_mob_detachment,
+            target_matcher=self._orks_is_gretchin_unit,
+            allowed_actions=("move", "advance", "fall_back"),
+            require_start_phase_engaged=False,
+            require_not_engaged_now=True,
+            max_distance_to_enemy=9.0,
+        )
 
     def _orks_resolve_reactive_reposition_context(
         self,
@@ -3013,6 +3109,7 @@ class OrksStratagemMixin:
         require_not_engaged_now: bool,
         max_distance_to_enemy: Optional[float],
         reactive_move_kind: str,
+        pre_move_rider: dict | None = None,
         **kwargs,
     ) -> bool:
         if not bool(detachment_check()):
@@ -3107,15 +3204,28 @@ class OrksStratagemMixin:
         if not self._orks_spend_cp(stratagem, target_unit=root):
             return False
 
+        extra_context = None
+        if isinstance(pre_move_rider, dict) and pre_move_rider:
+            rider_result = self._orks_resolve_reactive_move_pre_move_rider(
+                unit=root,
+                enemy_unit=moving_root,
+                source_name=str(getattr(stratagem, "name", "") or stratagem_name),
+                rider_spec=pre_move_rider,
+            )
+            if rider_result:
+                extra_context = {"pre_move_rider_result": rider_result}
+
         request = queue_move(
             player=self.player,
             unit=root,
             max_distance=6,
             kind=str(reactive_move_kind or "reactive_reposition"),
             movement_type="reactive",
+            reactive_movement_type="move",
             source=str(getattr(stratagem, "name", "") or stratagem_name),
             moving_unit=moving_root,
             range_value=int(max_distance_to_enemy) if max_distance_to_enemy is not None else None,
+            extra_context=extra_context,
         )
         if request is None:
             logger.error("ERROR: %s: failed to queue reactive move", stratagem_name)
@@ -3212,6 +3322,8 @@ class OrksStratagemMixin:
             return self._use_orks_krump_and_run(stratagem, **kwargs)
         if name_u == "ON TO DA NEXT":
             return self._use_orks_on_to_da_next(stratagem, **kwargs)
+        if name_u == "CONNIVING RUNTS":
+            return self._use_orks_conniving_runts(stratagem, **kwargs)
         if name_norm == "more gitz over ere":
             return self._use_orks_more_gitz_over_ere(stratagem, **kwargs)
         return None
@@ -4853,6 +4965,27 @@ class OrksStratagemMixin:
             require_not_engaged_now=True,
             max_distance_to_enemy=9.0,
             reactive_move_kind="more_gitz_over_ere",
+            **kwargs,
+        )
+
+    def _use_orks_conniving_runts(self, stratagem: Any, **kwargs) -> bool:
+        return self._use_orks_reactive_reposition_stratagem(
+            stratagem,
+            stratagem_name="CONNIVING RUNTS",
+            detachment_check=self._is_dread_mob_detachment,
+            target_matcher=self._orks_is_gretchin_unit,
+            target_error="target must be a Gretchin unit",
+            allowed_actions=("move", "advance", "fall_back"),
+            require_start_phase_engaged=False,
+            require_not_engaged_now=True,
+            max_distance_to_enemy=9.0,
+            reactive_move_kind="conniving_runts",
+            pre_move_rider={
+                "effect": "single_roll_mortal_wounds",
+                "trigger_roll": "D6",
+                "success_on": 4,
+                "mortal_wounds": "D3+1",
+            },
             **kwargs,
         )
 

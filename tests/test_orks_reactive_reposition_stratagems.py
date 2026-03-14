@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
 from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
+from warhammer40k_ai.engine.decisions import DecisionResult
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -152,6 +154,29 @@ def _first_move_request(game: Game):
     return None
 
 
+def _confirm_move_result(request, unit: Unit, *, x: float, y: float) -> DecisionResult:
+    confirm = next(
+        opt
+        for opt in list(getattr(request, "options", []) or [])
+        if str((getattr(opt, "payload", {}) or {}).get("action", "") or "") == "confirm"
+    )
+    model = unit.models[0]
+    return DecisionResult(
+        decision_id=request.decision_id,
+        player_id=request.player_id,
+        option_id=confirm.option_id,
+        payload={
+            "model_positions": [
+                {
+                    "model_id": get_entity_id(model),
+                    "position": [float(x), float(y), 0.0],
+                    "facing": 0.0,
+                }
+            ]
+        },
+    )
+
+
 def test_orks_reactive_reposition_helper_tracks_start_phase_engagement_and_sorts():
     target_a = _make_unit("Alpha Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
     target_b = _make_unit("Beta Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
@@ -273,6 +298,275 @@ def test_more_gitz_over_ere_queues_and_uses_reactive_move():
     assert int(context.get("reactive_move_range", 0) or 0) == 9
 
 
+def test_orks_reactive_move_pre_move_rider_helper_applies_d3_plus_1_mortals():
+    target = _make_unit("Gretchin", keywords=["ORKS", "INFANTRY", "GRETCHIN"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player = _build_game(
+        detachment="Dread Mob",
+        ork_units=[target],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, enemy, 17.0, 10.0)
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=1, active_player=enemy_player)
+
+    applied: list[tuple[Unit, int]] = []
+    target._apply_mortal_wounds_to_unit = lambda unit, amount, game_map=None: applied.append((unit, int(amount or 0)))
+
+    with patch(
+        "warhammer40k_ai.rules.stratagems_orks.dice_module.get_roll",
+        side_effect=lambda die: 4 if str(die).strip().upper() == "D6" else 2,
+    ):
+        result = ork_player.stratagems._orks_resolve_reactive_move_pre_move_rider(
+            unit=target,
+            enemy_unit=enemy,
+            source_name="CONNIVING RUNTS",
+            rider_spec={
+                "effect": "single_roll_mortal_wounds",
+                "trigger_roll": "D6",
+                "success_on": 4,
+                "mortal_wounds": "D3+1",
+            },
+        )
+
+    assert bool(result.get("success", False)) is True
+    assert int(result.get("mortal_wounds", 0) or 0) == 3
+    assert applied == [(enemy, 3)]
+
+
+def test_conniving_runts_queues_mortal_rider_then_move_request():
+    target = _make_unit("Gretchin", keywords=["ORKS", "INFANTRY", "GRETCHIN"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player = _build_game(
+        detachment="Dread Mob",
+        ork_units=[target],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, enemy, 17.0, 10.0)
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=1, active_player=enemy_player)
+
+    game.event_system.publish("unit_move_ended", unit=enemy, action="advance")
+    assert _pending_by_name(ork_player, "CONNIVING RUNTS") is not None
+
+    applied: list[tuple[Unit, int]] = []
+    queued_snapshot: dict[str, object] = {}
+    target._apply_mortal_wounds_to_unit = lambda unit, amount, game_map=None: applied.append((unit, int(amount or 0)))
+    original_queue = game._queue_reactive_move_movement_decision
+
+    def _capture_queue(**kwargs):
+        queued_snapshot["applied"] = list(applied)
+        return original_queue(**kwargs)
+
+    game._queue_reactive_move_movement_decision = _capture_queue
+
+    with patch(
+        "warhammer40k_ai.rules.stratagems_orks.dice_module.get_roll",
+        side_effect=lambda die: 4 if str(die).strip().upper() == "D6" else 2,
+    ):
+        ok = ork_player.stratagems.use(
+            _resolve_available_stratagem_name(ork_player, "CONNIVING RUNTS"),
+            unit=target,
+            moving_unit=enemy,
+            action="advance",
+            phase_name="Movement phase",
+            dequeue=True,
+        )
+
+    assert ok is True
+    assert queued_snapshot.get("applied") == [(enemy, 3)]
+    assert applied == [(enemy, 3)]
+
+    move_request = _first_move_request(game)
+    assert move_request is not None
+    context = dict(getattr(move_request, "context", {}) or {})
+    assert int(context.get("max_distance", 0) or 0) == 6
+    assert str(context.get("reactive_move_kind", "") or "") == "conniving_runts"
+    assert str(context.get("reactive_move_movement_type", "") or "") == "move"
+    assert int(context.get("reactive_move_range", 0) or 0) == 9
+    rider_result = dict(context.get("pre_move_rider_result", {}) or {})
+    assert bool(rider_result.get("success", False)) is True
+    assert int(rider_result.get("mortal_wounds", 0) or 0) == 3
+
+
+def test_conniving_runts_failed_roll_still_queues_normal_move():
+    target = _make_unit("Gretchin", keywords=["ORKS", "INFANTRY", "GRETCHIN"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player = _build_game(
+        detachment="Dread Mob",
+        ork_units=[target],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, enemy, 17.0, 10.0)
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=1, active_player=enemy_player)
+
+    game.event_system.publish("unit_move_ended", unit=enemy, action="move")
+    assert _pending_by_name(ork_player, "CONNIVING RUNTS") is not None
+
+    applied: list[tuple[Unit, int]] = []
+    target._apply_mortal_wounds_to_unit = lambda unit, amount, game_map=None: applied.append((unit, int(amount or 0)))
+
+    with patch("warhammer40k_ai.rules.stratagems_orks.dice_module.get_roll", return_value=3):
+        ok = ork_player.stratagems.use(
+            _resolve_available_stratagem_name(ork_player, "CONNIVING RUNTS"),
+            unit=target,
+            moving_unit=enemy,
+            action="move",
+            phase_name="Movement phase",
+            dequeue=True,
+        )
+
+    assert ok is True
+    assert applied == []
+
+    move_request = _first_move_request(game)
+    assert move_request is not None
+    rider_result = dict((move_request.context or {}).get("pre_move_rider_result", {}) or {})
+    assert bool(rider_result.get("success", True)) is False
+    assert int(rider_result.get("mortal_wounds", 0) or 0) == 0
+
+
+def test_conniving_runts_negative_wrong_phase():
+    target = _make_unit("Gretchin", keywords=["ORKS", "INFANTRY", "GRETCHIN"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player = _build_game(
+        detachment="Dread Mob",
+        ork_units=[target],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, enemy, 17.0, 10.0)
+    _set_phase(game, phase_name="SHOOTING_PHASE", current_player_index=1, active_player=enemy_player)
+
+    game.event_system.publish("unit_move_ended", unit=enemy, action="move")
+    assert _pending_by_name(ork_player, "CONNIVING RUNTS") is None
+
+    ok = ork_player.stratagems.use(
+        _resolve_available_stratagem_name(ork_player, "CONNIVING RUNTS"),
+        unit=target,
+        moving_unit=enemy,
+        action="move",
+        phase_name="Shooting phase",
+    )
+    assert ok is False
+
+
+def test_conniving_runts_negative_wrong_unit_type():
+    target = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player = _build_game(
+        detachment="Dread Mob",
+        ork_units=[target],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, enemy, 17.0, 10.0)
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=1, active_player=enemy_player)
+
+    game.event_system.publish("unit_move_ended", unit=enemy, action="move")
+    assert _pending_by_name(ork_player, "CONNIVING RUNTS") is None
+
+    ok = ork_player.stratagems.use(
+        _resolve_available_stratagem_name(ork_player, "CONNIVING RUNTS"),
+        unit=target,
+        moving_unit=enemy,
+        action="move",
+        phase_name="Movement phase",
+    )
+    assert ok is False
+
+
+def test_conniving_runts_negative_reacting_unit_must_be_within_nine():
+    target = _make_unit("Gretchin", keywords=["ORKS", "INFANTRY", "GRETCHIN"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player = _build_game(
+        detachment="Dread Mob",
+        ork_units=[target],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, enemy, 25.0, 10.0)
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=1, active_player=enemy_player)
+
+    game.event_system.publish("unit_move_ended", unit=enemy, action="move")
+    assert _pending_by_name(ork_player, "CONNIVING RUNTS") is None
+
+
+def test_conniving_runts_negative_requires_not_currently_engaged():
+    target = _make_unit("Gretchin", keywords=["ORKS", "INFANTRY", "GRETCHIN"], faction_keywords=["ORKS"])
+    enemy_trigger = _make_unit("Enemy Trigger", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    enemy_sticky = _make_unit("Enemy Sticky", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player = _build_game(
+        detachment="Dread Mob",
+        ork_units=[target],
+        enemy_units=[enemy_trigger, enemy_sticky],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, enemy_trigger, 17.0, 10.0)
+    _deploy_unit(game, enemy_sticky, 10.0, 12.0)
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=1, active_player=enemy_player)
+
+    game.event_system.publish("unit_move_ended", unit=enemy_trigger, action="move")
+    assert _pending_by_name(ork_player, "CONNIVING RUNTS") is None
+
+
+def test_conniving_runts_negative_wrong_enemy_move_type():
+    target = _make_unit("Gretchin", keywords=["ORKS", "INFANTRY", "GRETCHIN"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player = _build_game(
+        detachment="Dread Mob",
+        ork_units=[target],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, enemy, 17.0, 10.0)
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=1, active_player=enemy_player)
+
+    game.event_system.publish("unit_move_ended", unit=enemy, action="charge")
+    assert _pending_by_name(ork_player, "CONNIVING RUNTS") is None
+
+    ok = ork_player.stratagems.use(
+        _resolve_available_stratagem_name(ork_player, "CONNIVING RUNTS"),
+        unit=target,
+        moving_unit=enemy,
+        action="charge",
+        phase_name="Movement phase",
+    )
+    assert ok is False
+
+
+def test_conniving_runts_move_request_uses_existing_movement_validation():
+    target = _make_unit("Gretchin", keywords=["ORKS", "INFANTRY", "GRETCHIN"], faction_keywords=["ORKS"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    game, ork_player, enemy_player = _build_game(
+        detachment="Dread Mob",
+        ork_units=[target],
+        enemy_units=[enemy],
+    )
+    _deploy_unit(game, target, 10.0, 10.0)
+    _deploy_unit(game, enemy, 14.0, 10.0)
+    _set_phase(game, phase_name="MOVEMENT_PHASE", current_player_index=1, active_player=enemy_player)
+
+    game.event_system.publish("unit_move_ended", unit=enemy, action="move")
+    with patch("warhammer40k_ai.rules.stratagems_orks.dice_module.get_roll", return_value=3):
+        ok = ork_player.stratagems.use(
+            _resolve_available_stratagem_name(ork_player, "CONNIVING RUNTS"),
+            unit=target,
+            moving_unit=enemy,
+            action="move",
+            phase_name="Movement phase",
+            dequeue=True,
+        )
+    assert ok is True
+
+    move_request = _first_move_request(game)
+    assert move_request is not None
+    apply_result = game.resolve_decision(_confirm_move_result(move_request, target, x=18.0, y=10.0))
+    assert bool(getattr(apply_result, "ok", False)) is False
+    assert list(getattr(apply_result, "errors", []) or [])
+
+
 def test_orks_reactive_reposition_negative_wrong_trigger_action():
     target = _make_unit("Boyz", keywords=["ORKS", "INFANTRY"], faction_keywords=["ORKS"])
     enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
@@ -380,6 +674,7 @@ def test_orks_reactive_reposition_stratagem_descriptors_present():
     where_dya = get_stratagem_tool_descriptor(stratagem_id="000008869005", name="WHERE D'YA FINK YOU'RE GOING?")
     krump = get_stratagem_tool_descriptor(stratagem_id="000010713007", name="KRUMP AND RUN")
     on_to_da_next = get_stratagem_tool_descriptor(stratagem_id="000009796006", name="ON TO DA NEXT")
+    conniving = get_stratagem_tool_descriptor(stratagem_id="000008878006", name="CONNIVING RUNTS")
     more_gitz = get_stratagem_tool_descriptor(stratagem_id="000008873007", name="MORE GITZ OVER 'ERE!")
 
     assert where_dya is not None
@@ -393,6 +688,12 @@ def test_orks_reactive_reposition_stratagem_descriptors_present():
     assert on_to_da_next is not None
     assert str(on_to_da_next.effect) == "reactive_normal_move"
     assert str(on_to_da_next.timing) == "opponent_movement_phase_after_enemy_fall_back"
+
+    assert conniving is not None
+    assert str(conniving.effect) == "reactive_normal_move_with_pre_move_single_roll_mortal_wound_rider"
+    assert str(conniving.timing) == "opponent_movement_phase_after_enemy_unit_ends_normal_advance_or_fall_back_move"
+    assert int(conniving.effect_params.get("pre_move_success_on", 0) or 0) == 4
+    assert str(conniving.effect_params.get("pre_move_mortal_wounds", "") or "").upper() == "D3+1"
 
     assert more_gitz is not None
     assert str(more_gitz.effect) == "reactive_normal_move"

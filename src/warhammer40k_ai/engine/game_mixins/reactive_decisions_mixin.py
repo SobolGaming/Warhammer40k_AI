@@ -4031,6 +4031,7 @@ class GameReactiveDecisionsMixin:
         max_distance: int,
         kind: str,
         movement_type: str,
+        reactive_movement_type: str | None = None,
         source: str | None,
         moving_unit=None,
         attacker_unit=None,
@@ -4058,10 +4059,11 @@ class GameReactiveDecisionsMixin:
                 payload={"unit_id": unit_id, "movement_type": movement_type, "action": "skip"},
             ),
         ]
+        effective_reactive_movement_type = str(reactive_movement_type or movement_type or "").strip()
         ctx = self._reactive_move_context(
             kind=str(kind or "").strip() or "reactive",
             unit_id=unit_id,
-            movement_type=movement_type,
+            movement_type=effective_reactive_movement_type,
             source=source,
             moving_unit_id=moving_unit_id,
             attacker_unit_id=attacker_unit_id,

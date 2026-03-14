@@ -5987,6 +5987,7 @@ def _classify_ability_base(
     embarking_firing_deck_weight_support = _embarking_firing_deck_weight_support(description)
     end_of_fight_embark_support = _end_of_fight_embark_support(description)
     enemy_move_reactive_d6_support = _enemy_move_reactive_d6_support(description)
+    conniving_runts_support = _conniving_runts_support(description)
     horde_move_support = _horde_move_support(description)
     blistering_assault_support = _blistering_assault_support(description)
     setup_reactive_shoot_charge_support = _setup_reactive_shoot_or_charge_support(description)
@@ -6325,6 +6326,8 @@ def _classify_ability_base(
         return leading_support
     if cat_unit_support:
         return cat_unit_support
+    if conniving_runts_support:
+        return conniving_runts_support
     if ammo_runt_support:
         return ammo_runt_support
     if shooty_power_trip_support:
@@ -14656,6 +14659,29 @@ def _pulsa_rokkit_support(description: str) -> Optional[Tuple[str, str]]:
     )
 
 
+def _conniving_runts_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"when your opponent(?:s| s) movement phase just after an enemy unit ends a normal advance or fall back move "
+        r"target one gretchin unit from your army that is within (?P<range>\d+) of that enemy unit and not within engagement range of any enemy units "
+        r"effect roll one d6 on a (?P<threshold>\d) that enemy unit suffers d3 1 mortal wounds "
+        r"your unit can then make a normal move",
+        norm,
+    )
+    if not m:
+        return None
+    rng = int(m.group("range") or 9)
+    threshold = int(m.group("threshold") or 4)
+    return (
+        "Supported",
+        f"Opponent Movement phase reaction after an enemy ends a Normal/Advance/Fall Back move: selected GRETCHIN unit within {rng}\" and not in Engagement Range rolls one D6, inflicts D3+1 mortal wounds on {threshold}+, then can make a reactive Normal move up to 6\" even if the rider fails.",
+    )
+
+
 def _bomb_squigs_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -15642,6 +15668,7 @@ def _stratagem_support(
         "WHERE D'YA FINK YOU'RE GOING?": "Opponent Movement phase reaction after an enemy unit Falls Back: selected BEAST SNAGGA INFANTRY/MOUNTED unit that was in Engagement Range of that enemy at phase start and is no longer in Engagement Range can make a reactive Normal move up to 6\".",
         "KRUMP AND RUN": "Opponent Movement phase reaction after an enemy unit Falls Back: selected ORKS unit that was in Engagement Range of that enemy at phase start and is no longer in Engagement Range can make a reactive Normal move up to 6\".",
         "ON TO DA NEXT": "Opponent Movement phase reaction after an enemy unit Falls Back: selected ORKS unit that was in Engagement Range of that enemy at phase start can make a reactive Normal move up to 6\".",
+        "CONNIVING RUNTS": "Opponent Movement phase reaction after an enemy unit ends a Normal/Advance/Fall Back move: selected GRETCHIN unit within 9\" and not in Engagement Range rolls one D6, inflicts D3+1 mortal wounds on a 4+, then can make a reactive Normal move up to 6\" regardless of the rider result.",
         "MORE GITZ OVER 'ERE!": "Opponent Movement phase reaction after an enemy unit ends a Normal/Advance/Fall Back move: selected SPEED FREEKS unit within 9\" and not in Engagement Range can make a reactive Normal move up to 6\".",
         "DED SNEAKY": "End of opponent Fight phase: selected KOMMANDOS or STORMBOYZ unit not within Engagement Range is removed from the battlefield and placed into Strategic Reserves.",
         "KRUNCHIN' DESCENT": "Your Charge phase reaction after a STORMBOYZ unit ends a Charge move: select one enemy within Engagement Range, roll one D6 for each model in your unit that is within Engagement Range of that enemy, and inflict 1 mortal wound on each 4+, capped at 6.",

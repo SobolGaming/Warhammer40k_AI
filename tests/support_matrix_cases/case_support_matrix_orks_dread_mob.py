@@ -53,3 +53,25 @@ def test_dread_mob_keywords_detachment_ability_is_supported():
 
     assert status == "Supported"
     assert "battleline" in str(notes or "").lower()
+
+
+def test_dread_mob_conniving_runts_stratagem_is_supported():
+    gsm, _detachment_abilities = _seed_support_maps()
+    stratagems = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Stratagems.json"))
+    row = next(
+        item
+        for item in stratagems
+        if str(item.get("id", "") or "").strip() == "000008878006"
+    )
+
+    status, notes = gsm._classify_ability(
+        row.get("name", ""),
+        row.get("description", ""),
+        ability_id=row.get("id", ""),
+        faction_id=row.get("faction_id", ""),
+    )
+
+    assert status == "Supported"
+    notes_l = str(notes or "").lower()
+    assert "d3+1" in notes_l
+    assert "normal move" in notes_l
