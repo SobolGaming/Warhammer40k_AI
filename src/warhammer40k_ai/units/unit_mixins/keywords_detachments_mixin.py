@@ -2380,6 +2380,10 @@ class KeywordsDetachmentsMixin:
                     (has_next_command_phase_duration or has_next_movement_phase_duration)
                     and "hit roll" in norm
                 )
+                has_hit_reroll_ones_clause = bool(
+                    has_next_command_phase_duration
+                    and "re roll a hit roll of 1" in norm
+                )
                 has_fnp_clause = bool(has_next_command_phase_duration and "feel no pain" in norm)
                 is_technomancer_rule = bool(
                     "technomancer" in source_name_norm
@@ -2389,6 +2393,7 @@ class KeywordsDetachmentsMixin:
                 if not any(
                     (
                         has_hit_bonus_clause,
+                        has_hit_reroll_ones_clause,
                         has_fnp_clause,
                         is_technomancer_rule,
                         is_grot_oiler_rule,
@@ -2458,7 +2463,13 @@ class KeywordsDetachmentsMixin:
                 if target_in_source_unit:
                     allow_self_target = True
                 selection_kind = "unit"
-                if is_technomancer_rule or is_grot_oiler_rule or is_mekaniak_rule or is_sawbonez_rule:
+                if (
+                    is_technomancer_rule
+                    or is_grot_oiler_rule
+                    or is_mekaniak_rule
+                    or is_sawbonez_rule
+                    or ("friendly astra militarum vehicle model within" in norm and "regains up to d3 lost wounds" in norm)
+                ):
                     selection_kind = "model"
                 limit_once_per_turn = (
                     "only be selected for this ability once per turn" in norm
@@ -2484,6 +2495,11 @@ class KeywordsDetachmentsMixin:
                 if once_per_battle:
                     once_per_battle_key = "grot_oiler"
                 requires_damaged_target = bool(is_grot_oiler_rule or is_mekaniak_rule or is_sawbonez_rule)
+                hit_reroll_ones = bool(has_hit_reroll_ones_clause)
+                if "astra militarum" in norm and "friendly astra militarum vehicle model" in norm:
+                    target_requires_vehicle = True
+                    if "ASTRA MILITARUM" not in target_keywords:
+                        target_keywords.append("ASTRA MILITARUM")
                 rule = {
                     "source": source_name,
                     "phase": str(phase_name or "COMMAND_PHASE"),
@@ -2491,6 +2507,7 @@ class KeywordsDetachmentsMixin:
                     "heal_roll": str(heal_roll or ""),
                     "heal_flat": int(heal_flat or 0),
                     "hit_bonus": int(hit_bonus or 0),
+                    "hit_reroll_ones": bool(hit_reroll_ones),
                     "fnp_value": int(fnp_value or 0),
                     "fnp_requires_vehicle": bool(fnp_requires_vehicle),
                     "target_requires_vehicle": bool(target_requires_vehicle),
@@ -4309,6 +4326,65 @@ class KeywordsDetachmentsMixin:
                     "range": int(rng),
                     "source": source,
                     "requires_visibility": True,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def get_deep_strike_setup_model_shoot_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities that allow a specific model to make a limited shooting attack
+        immediately after this unit arrives via Deep Strike.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "deep_strike_setup_model_shoot_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(unit._strip_eligibility_prefix(text_src))
+                key = (str(name or "").strip().lower(), normalized.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                norm = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                norm = re.sub(r"'s\b", "s", norm)
+                norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                norm = re.sub(r"\s+", " ", norm).strip()
+                if (
+                    "when this unit is set up on the battlefield using the deep strike ability" not in norm
+                    or "tempestor aquilon can shoot with its sentry weapon" not in norm
+                ):
+                    continue
+                rule = {
+                    "source": str(name or "Servo-sentry").strip() or "Servo-sentry",
+                    "required_model_name": "Tempestor Aquilon",
+                    "allowed_weapon_names": (
+                        "sentry flamer",
+                        "sentry grenade launcher",
+                        "sentry hot-shot volley gun",
+                    ),
                 }
                 break
             if rule is not None:
@@ -12919,6 +12995,55 @@ class KeywordsDetachmentsMixin:
             reroll_values.add(1)
             reroll_reasons.extend(extra_reasons)
         if model is not None:
+            transport_id = str(getattr(getattr(self, "round_state", None), "disembarked_from_transport_id", "") or "")
+            if transport_id and target is not None:
+                transport = None
+                game = None
+                army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+                if army is not None:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                if game is not None and hasattr(game, "_resolve_unit_by_id"):
+                    transport = game._resolve_unit_by_id(transport_id)
+                if transport is None and army is not None:
+                    for cand in list(getattr(army, "units", []) or []):
+                        cand_id = str(getattr(cand, "_id", getattr(cand, "id", "")) or "")
+                        if cand_id and cand_id == transport_id:
+                            transport = cand
+                            break
+                if transport is not None:
+                    tsr = getattr(transport, "special_rules", None)
+                    if isinstance(tsr, dict) and tsr.get("post_shoot_disembark_hit_reroll_active"):
+                        apply_bonus = True
+                        exp_phase = str(tsr.get("post_shoot_disembark_hit_reroll_expires_phase", "") or "").strip().upper()
+                        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                        if exp_phase and current_phase and exp_phase != current_phase:
+                            apply_bonus = False
+                        if apply_bonus:
+                            try:
+                                marked_turn = int(tsr.get("post_shoot_disembark_hit_reroll_turn", 0) or 0)
+                            except Exception:
+                                marked_turn = 0
+                            try:
+                                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                            except Exception:
+                                current_turn = 0
+                            if marked_turn and current_turn and marked_turn != current_turn:
+                                apply_bonus = False
+                        if apply_bonus:
+                            owner_id = str(tsr.get("post_shoot_disembark_hit_reroll_owner", "") or "")
+                            attacker_id = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                            if owner_id and attacker_id and owner_id != attacker_id:
+                                apply_bonus = False
+                        if apply_bonus:
+                            target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                            target_id = str(get_entity_id(target_root) or "")
+                            if target_id and str(tsr.get("post_shoot_disembark_hit_reroll_target_id", "") or "") != target_id:
+                                apply_bonus = False
+                        if apply_bonus:
+                            reroll_full = True
+                            source = str(tsr.get("post_shoot_disembark_hit_reroll_source", "") or "Transport Support").strip() or "Transport Support"
+                            reroll_full_reasons.append(f"{source}: re-roll Hit roll")
+        if model is not None:
             army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
             mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
             reroll_fn = getattr(mgr, "callous_competition_hit_reroll_ones", None) if mgr is not None else None
@@ -13051,6 +13176,17 @@ class KeywordsDetachmentsMixin:
                     reroll_full = True
                     source_name = str(source or "Mek Kaptin").strip() or "Mek Kaptin"
                     reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("master_of_mechanisms_hit_reroll_ones_active")):
+            apply_bonus = True
+            model_id = str(sr.get("master_of_mechanisms_hit_reroll_ones_model_id", "") or "")
+            current_model_id = str(get_entity_id(model) or "") if model is not None else ""
+            if model_id and current_model_id and model_id != current_model_id:
+                apply_bonus = False
+            if apply_bonus:
+                reroll_values.add(1)
+                source_name = str(sr.get("master_of_mechanisms_source", "") or "Master of Mechanisms").strip() or "Master of Mechanisms"
+                reroll_reasons.append(f"{source_name}: re-roll Hit rolls of 1")
         seen = set()
         deduped_reasons: list[str] = []
         for reason in reroll_reasons:

@@ -99,6 +99,22 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
     declarations = result.payload.get("declarations")
     if not isinstance(declarations, list) or not declarations:
         return ("Shooting declaration requires declarations list.",)
+    allowed_model_ids = {
+        str(value or "").strip()
+        for value in list(request.context.get("allowed_model_ids", []) or [])
+        if str(value or "").strip()
+    }
+    allowed_wargear_ids = {
+        str(value or "").strip()
+        for value in list(request.context.get("allowed_wargear_ids", []) or [])
+        if str(value or "").strip()
+    }
+    try:
+        max_declarations = int(request.context.get("max_declarations", 0) or 0)
+    except Exception:
+        max_declarations = 0
+    if max_declarations > 0 and len(declarations) > max_declarations:
+        return (f"Shooting declaration allows at most {int(max_declarations)} declaration(s).",)
     ctan_profiles = []
     force_target_id = str(request.context.get("force_target_unit_id", "") or "")
     if not force_target_id:
@@ -135,6 +151,8 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
         model_ids = decl.get("model_ids")
         if not wargear_id or not profile_name:
             return ("Declaration missing wargear_id/profile_name.",)
+        if allowed_wargear_ids and wargear_id not in allowed_wargear_ids:
+            return ("Declaration uses a weapon that is not allowed for this shooting decision.",)
         wargear = get_wargear(game, wargear_id)
         if wargear is None:
             return ("Declaration wargear not found.",)
@@ -173,6 +191,9 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
             return ("Declaration requires model_ids list.",)
         models = []
         for model_id in model_ids:
+            model_id = str(model_id or "")
+            if allowed_model_ids and model_id not in allowed_model_ids:
+                return ("Declaration uses a model that is not allowed for this shooting decision.",)
             model = get_model(game, str(model_id or ""))
             if model is None:
                 return ("Declaration model not found.",)

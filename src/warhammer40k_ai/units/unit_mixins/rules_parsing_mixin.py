@@ -1301,40 +1301,54 @@ class RulesParsingMixin:
             }
         return None
 
-    def _scan_transport_reactive_disembark_ability(self):
-        pattern = self._TRANSPORT_REACTIVE_DISEMBARK_RE
-        for ab in self._iter_active_abilities():
+    def _parse_transport_reactive_disembark_ability(self, ability) -> Optional[dict]:
+        try:
+            if isinstance(ability, str):
+                name = ability
+                desc = ability
+            else:
+                name = str(getattr(ability, "name", "") or "")
+                desc = str(getattr(ability, "description", "") or "") or name
+        except (AttributeError, TypeError, ValueError):
+            return None
+
+        text = self._normalize_rules_text(desc or "")
+        if not text:
+            return None
+
+        norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+        norm = re.sub(r"'s\b", "s", norm)
+        norm = re.sub(r"[^a-z0-9]+", " ", norm)
+        norm = re.sub(r"\s+", " ", norm).strip()
+
+        match = self._TRANSPORT_REACTIVE_DISEMBARK_RE.fullmatch(norm)
+        if match:
             try:
-                if isinstance(ab, str):
-                    name = ab
-                    desc = ab
-                else:
-                    name = str(getattr(ab, "name", "") or "")
-                    desc = str(getattr(ab, "description", "") or "") or name
-            except Exception:
-                name = ""
-                desc = ""
-            text = self._normalize_rules_text(desc or "")
-            if not text:
-                continue
-            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
-            norm = re.sub(r"'s\b", "s", norm)
-            norm = re.sub(r"[^a-z0-9]+", " ", norm)
-            norm = re.sub(r"\s+", " ", norm).strip()
-            m = pattern.fullmatch(norm)
-            if not m:
-                continue
-            try:
-                rng = int(m.group(1))
-            except Exception:
+                rng = int(match.group(1))
+            except (TypeError, ValueError):
                 rng = 0
             if rng <= 0:
-                continue
+                return None
             return {
                 "name": name or "Reactive Disembark",
                 "description": desc or "",
                 "range": rng,
+                "trigger": "enemy_setup_or_move_within_range",
             }
+
+        if self._TRANSPORT_PHASE_END_DISEMBARK_RE.fullmatch(norm):
+            return {
+                "name": name or "Reactive Disembark",
+                "description": desc or "",
+                "trigger": "phase_end_opponent_movement",
+            }
+        return None
+
+    def _scan_transport_reactive_disembark_ability(self):
+        for ab in self._iter_active_abilities():
+            parsed = self._parse_transport_reactive_disembark_ability(ab)
+            if parsed is not None:
+                return parsed
         return None
 
     def _parse_command_phase_regain_wound_amount(self, text: str) -> int:

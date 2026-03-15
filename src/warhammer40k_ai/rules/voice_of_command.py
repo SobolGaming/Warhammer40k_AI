@@ -655,7 +655,7 @@ class VoiceOfCommandManager:
                     continue
                 norm = self._normalize_order_text(str(text or ""))
                 if re.fullmatch(
-                    r"while the bearer is leading a unit that unit can be affected by up to two different orders at the same time",
+                    r"while (?:the bearer|this model) is leading a unit that unit can be affected by up to two different orders at the same time",
                     norm,
                 ):
                     return 2

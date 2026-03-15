@@ -11540,17 +11540,20 @@ class GamePhaseHandlersMixin:
             if not isinstance(sr, dict):
                 continue
             has_hit_bonus = bool(sr.get("master_of_mechanisms_hit_bonus_active"))
+            has_hit_reroll_ones = bool(sr.get("master_of_mechanisms_hit_reroll_ones_active"))
             has_fnp_bonus = bool(sr.get("master_of_mechanisms_fnp_active"))
             has_selection_marker = (
                 "master_of_mechanisms_selected_turn_owner" in sr
                 or "master_of_mechanisms_selected_turn" in sr
             )
-            if not has_hit_bonus and not has_fnp_bonus and not has_selection_marker:
+            if not has_hit_bonus and not has_hit_reroll_ones and not has_fnp_bonus and not has_selection_marker:
                 continue
             expires_phase = str(sr.get("master_of_mechanisms_expires_phase", "COMMAND_PHASE") or "COMMAND_PHASE").strip().upper()
             if expires_phase != pname:
                 continue
             effect_owner = str(sr.get("master_of_mechanisms_hit_bonus_owner", "") or "")
+            if not effect_owner:
+                effect_owner = str(sr.get("master_of_mechanisms_hit_reroll_ones_owner", "") or "")
             if not effect_owner:
                 effect_owner = str(sr.get("master_of_mechanisms_fnp_owner", "") or "")
             if effect_owner != owner_id:
@@ -11584,6 +11587,9 @@ class GamePhaseHandlersMixin:
                 "master_of_mechanisms_hit_bonus_active",
                 "master_of_mechanisms_hit_bonus",
                 "master_of_mechanisms_hit_bonus_owner",
+                "master_of_mechanisms_hit_reroll_ones_active",
+                "master_of_mechanisms_hit_reroll_ones_owner",
+                "master_of_mechanisms_hit_reroll_ones_model_id",
                 "master_of_mechanisms_fnp_active",
                 "master_of_mechanisms_fnp_value",
                 "master_of_mechanisms_fnp_owner",
@@ -11696,6 +11702,7 @@ class GamePhaseHandlersMixin:
                 hit_bonus = int(rule.get("hit_bonus", 0) or 0)
             except Exception:
                 hit_bonus = 0
+            hit_reroll_ones = bool(rule.get("hit_reroll_ones", False))
             try:
                 fnp_value = int(rule.get("fnp_value", 0) or 0)
             except Exception:
@@ -11734,7 +11741,7 @@ class GamePhaseHandlersMixin:
                 heal_flat = 0
             if not heal_roll and heal_flat <= 0:
                 heal_roll = "D3"
-            if hit_bonus <= 0 and fnp_value <= 0 and not heal_roll and heal_flat <= 0:
+            if hit_bonus <= 0 and not hit_reroll_ones and fnp_value <= 0 and not heal_roll and heal_flat <= 0:
                 continue
             if once_per_battle and once_per_battle_key:
                 if once_per_battle_scope == "unit":
@@ -11944,6 +11951,7 @@ class GamePhaseHandlersMixin:
                     "model_id": str(get_entity_id(bearer) or ""),
                     "range": int(selection_range),
                     "hit_bonus": int(hit_bonus),
+                    "hit_reroll_ones": bool(hit_reroll_ones),
                     "fnp_value": int(fnp_value),
                     "fnp_requires_vehicle": bool(fnp_requires_vehicle),
                     "target_requires_vehicle": bool(target_requires_vehicle),
@@ -18296,6 +18304,17 @@ class GamePhaseHandlersMixin:
                         "post_shoot_disembark_wound_reroll_turn",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("post_shoot_disembark_hit_reroll_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "post_shoot_disembark_hit_reroll_active",
+                        "post_shoot_disembark_hit_reroll_expires_phase",
+                        "post_shoot_disembark_hit_reroll_source",
+                        "post_shoot_disembark_hit_reroll_target_id",
+                        "post_shoot_disembark_hit_reroll_owner",
+                        "post_shoot_disembark_hit_reroll_turn",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("post_shoot_disembark_psychic_hit_wound_bonus_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (
@@ -20221,6 +20240,71 @@ class GamePhaseHandlersMixin:
                         transport=transport,
                         candidates=candidates,
                         spec=spec,
+                    )
+
+    def _on_phase_end_transport_reactive_disembark(self, player=None, phase=None, **_kwargs) -> None:
+        """End of opponent's Movement phase: AIRBORNE INSERTION-style embarked units can disembark."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        turn_ending_player = player
+        if turn_ending_player is None:
+            return
+        for opp in list(self.players or []):
+            if opp is None or opp is turn_ending_player:
+                continue
+            army = self._get_player_army(opp)
+            if army is None:
+                continue
+            seen_transports: set[str] = set()
+            for transport in list(getattr(army, "units", []) or []):
+                if transport is None:
+                    continue
+                try:
+                    transport = transport.get_attached_unit_root()
+                except Exception:
+                    pass
+                transport_id = str(get_entity_id(transport) or "")
+                if transport is None or not transport_id or transport_id in seen_transports:
+                    continue
+                seen_transports.add(transport_id)
+                if not getattr(transport, "is_transport", False):
+                    continue
+                if not transport.is_alive() or not getattr(transport, "deployed", True):
+                    continue
+                try:
+                    if transport.is_in_reserves() or transport.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                if not list(getattr(transport, "transport_passengers", []) or []):
+                    continue
+                get_ability = getattr(transport, "get_transport_reactive_disembark_ability", None)
+                ability = get_ability() if callable(get_ability) else None
+                if not isinstance(ability, dict):
+                    continue
+                if str(ability.get("trigger", "") or "").strip().lower() != "phase_end_opponent_movement":
+                    continue
+                if bool(getattr(opp, "has_control", lambda: False)()):
+                    es = getattr(self, "event_system", None)
+                    if es is not None and hasattr(es, "publish"):
+                        es.publish(
+                            "transport_reactive_disembark_prompt",
+                            player=opp,
+                            transport=transport,
+                            enemy_unit=None,
+                            ability=ability,
+                            game=self,
+                        )
+                else:
+                    self._queue_transport_reactive_disembark_decisions(
+                        player=opp,
+                        transport=transport,
+                        enemy_unit=None,
+                        ability=ability,
+                        trigger="phase_end_opponent_movement",
                     )
 
     def _on_phase_end_resurrection_orb(self, player=None, phase=None, **_kwargs) -> None:

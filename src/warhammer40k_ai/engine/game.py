@@ -7449,6 +7449,74 @@ class Game(
             set_up_as_reinforcements=bool(set_up_as_reinforcements),
         )
 
+    def _on_unit_set_up_deep_strike_setup_model_shoot(
+        self,
+        unit=None,
+        set_up_as_reinforcements: bool = False,
+        used_deep_strike: bool = False,
+        **_kwargs,
+    ) -> None:
+        if unit is None or not bool(set_up_as_reinforcements) or not bool(used_deep_strike):
+            return
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not self._unit_is_active_for_reactive_trigger(root):
+            return
+        get_rule = getattr(root, "get_deep_strike_setup_model_shoot_rule", None)
+        rule = get_rule() if callable(get_rule) else None
+        if not isinstance(rule, dict):
+            return
+        source = str(rule.get("source", "") or "Servo-sentry").strip() or "Servo-sentry"
+        required_model_name = str(rule.get("required_model_name", "") or "").strip().lower()
+        allowed_weapon_names = {
+            str(value or "").strip().lower()
+            for value in list(rule.get("allowed_weapon_names", ()) or ())
+            if str(value or "").strip()
+        }
+        allowed_model_ids: list[str] = []
+        allowed_wargear_ids: list[str] = []
+        for model in list(getattr(root, "models", []) or []):
+            alive_attr = getattr(model, "is_alive", False)
+            alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not alive:
+                continue
+            model_name = str(getattr(model, "name", "") or "").strip().lower()
+            if required_model_name and model_name != required_model_name:
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id:
+                allowed_model_ids.append(model_id)
+            for wargear in list(getattr(model, "wargear", []) or []):
+                wargear_name = str(getattr(wargear, "name", "") or "").strip().lower()
+                if allowed_weapon_names and wargear_name not in allowed_weapon_names:
+                    continue
+                wargear_id = str(get_entity_id(wargear) or "")
+                if wargear_id and wargear_id not in allowed_wargear_ids:
+                    allowed_wargear_ids.append(wargear_id)
+        if not allowed_model_ids or not allowed_wargear_ids:
+            return
+        player = getattr(getattr(root, "get_parent_army", lambda: None)(), "player", None)
+        if player is None:
+            return
+        request = self._queue_setup_reactive_shooting_decision(
+            player=player,
+            unit=root,
+            target_unit=None,
+            source=source,
+            allowed_model_ids=sorted(allowed_model_ids),
+            allowed_wargear_ids=sorted(allowed_wargear_ids),
+            max_declarations=1,
+        )
+        if request is None:
+            return
+        request.context["deep_strike_setup_model_shoot"] = True
+        request.context["ability_name"] = source
+
     def _on_unit_disembarked_setup_reactive_shoot_or_charge(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return

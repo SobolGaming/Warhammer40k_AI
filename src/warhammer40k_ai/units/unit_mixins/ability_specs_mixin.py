@@ -765,6 +765,48 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_post_shoot_disembark_hit_reroll_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after this model has shot, select a hit enemy unit; disembarked models can re-roll Hit rolls.
+
+        Returns a list of specs with keys:
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_post_shoot_disembark_hit_reroll:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._POST_SHOOT_DISEMBARK_HIT_REROLL_RE.fullmatch(normalized)
+            if not m:
+                if str(name or "").strip().lower() != "transport support":
+                    continue
+            source = str(name or "Transport Support").strip() or "Transport Support"
+            key = source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_hand_of_asuryan_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: once per battle, when selected to shoot, weapon gains Damage/keywords (Hand of Asuryan).

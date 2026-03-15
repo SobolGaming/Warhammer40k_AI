@@ -71,6 +71,9 @@ class ShootingDeclarationDialog(BaseDialog):
         self.allow_actions = True
         self.last_execution_success = None
         self.decision_request = None
+        self.allowed_model_ids = set()
+        self.allowed_wargear_ids = set()
+        self.max_declarations = 0
 
         # Cache rasterized text used in hot draw loops.
         self._text_surface_cache: OrderedDict[tuple[int, str, tuple[int, int, int]], pygame.Surface] = OrderedDict()
@@ -86,6 +89,21 @@ class ShootingDeclarationDialog(BaseDialog):
         self.game_view = game_view
         self.out_of_phase = bool(out_of_phase)
         self.decision_request = decision_request
+        ctx = dict(getattr(decision_request, "context", {}) or {}) if decision_request is not None else {}
+        self.allowed_model_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("allowed_model_ids", []) or [])
+            if str(value or "").strip()
+        }
+        self.allowed_wargear_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("allowed_wargear_ids", []) or [])
+            if str(value or "").strip()
+        }
+        try:
+            self.max_declarations = int(ctx.get("max_declarations", 0) or 0)
+        except Exception:
+            self.max_declarations = 0
         if allow_actions is None:
             self.allow_actions = not self.out_of_phase
         else:
@@ -238,6 +256,9 @@ class ShootingDeclarationDialog(BaseDialog):
         self.allow_actions = True
         self.last_execution_success = None
         self.decision_request = None
+        self.allowed_model_ids = set()
+        self.allowed_wargear_ids = set()
+        self.max_declarations = 0
         try:
             self.force_single_target_unit = None
         except Exception:
@@ -259,14 +280,20 @@ class ShootingDeclarationDialog(BaseDialog):
     
     def _get_available_weapons(self):
         """Get all available weapon profiles for the unit, grouped by type."""
+        if self._declaration_limit_reached():
+            return []
         # First, collect all individual weapons
         individual_weapons = []
         
         for model in self.unit.models:
             if not model.is_alive:
                 continue
+            if not self._model_is_allowed(model):
+                continue
             
             for wargear in model.wargear:
+                if not self._wargear_is_allowed(wargear):
+                    continue
                 if wargear.is_ranged():
                     if wargear.is_bubblechukka():
                         profile = None
@@ -402,6 +429,31 @@ class ShootingDeclarationDialog(BaseDialog):
             pass
 
         return enemy_units
+
+    def _declaration_limit_reached(self) -> bool:
+        return bool(self.max_declarations > 0 and len(self.weapon_declarations) >= self.max_declarations)
+
+    def _model_is_allowed(self, model) -> bool:
+        if not self.allowed_model_ids:
+            return True
+        try:
+            from ...utility.entity_ids import get_entity_id
+
+            model_id = str(get_entity_id(model) or "")
+        except Exception:
+            model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+        return bool(model_id and model_id in self.allowed_model_ids)
+
+    def _wargear_is_allowed(self, wargear) -> bool:
+        if not self.allowed_wargear_ids:
+            return True
+        try:
+            from ...utility.entity_ids import get_entity_id
+
+            wargear_id = str(get_entity_id(wargear) or "")
+        except Exception:
+            wargear_id = str(getattr(wargear, "id", getattr(wargear, "_id", "")) or "")
+        return bool(wargear_id and wargear_id in self.allowed_wargear_ids)
     
     def _can_use_weapon(self, weapon_profile):
         """Check if a weapon can be used."""
@@ -903,6 +955,8 @@ class ShootingDeclarationDialog(BaseDialog):
         models = []
         for model in self.unit.models:
             if model.is_alive:
+                if not self._model_is_allowed(model):
+                    continue
                 # ONE SHOT: exclude models that already used this weapon.
                 if weapon_profile.is_one_shot():
                     key = weapon_profile.one_shot_key()
@@ -913,6 +967,8 @@ class ShootingDeclarationDialog(BaseDialog):
                     if not self.unit.can_shoot_after_fall_back(weapon_profile, model=model):
                         continue
                 for wargear in model.wargear:
+                    if not self._wargear_is_allowed(wargear):
+                        continue
                     for profile_name, profile in wargear.profiles.items():
                         if profile == weapon_profile:
                             models.append(model)

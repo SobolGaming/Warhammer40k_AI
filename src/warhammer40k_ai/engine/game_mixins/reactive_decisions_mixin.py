@@ -8862,14 +8862,17 @@ class GameReactiveDecisionsMixin:
         *,
         player,
         unit,
-        target_unit,
+        target_unit=None,
         source: str | None,
+        allowed_model_ids: list[str] | None = None,
+        allowed_wargear_ids: list[str] | None = None,
+        max_declarations: int | None = None,
     ) -> DecisionRequest | None:
-        if player is None or unit is None or target_unit is None:
+        if player is None or unit is None:
             return None
         unit_id = maybe_entity_id(unit)
-        target_id = maybe_entity_id(target_unit)
-        if not unit_id or not target_id:
+        target_id = maybe_entity_id(target_unit) if target_unit is not None else None
+        if not unit_id:
             return None
         options = [
             DecisionOption.create("Confirm", payload={"action": "confirm", "unit_id": unit_id}),
@@ -8879,9 +8882,18 @@ class GameReactiveDecisionsMixin:
         ctx = {
             "unit_id": unit_id,
             "out_of_phase": True,
-            "force_target_unit_id": target_id,
             "setup_reactive_source": source,
         }
+        if target_id:
+            ctx["force_target_unit_id"] = target_id
+        model_ids = [str(value or "").strip() for value in list(allowed_model_ids or []) if str(value or "").strip()]
+        if model_ids:
+            ctx["allowed_model_ids"] = model_ids
+        wargear_ids = [str(value or "").strip() for value in list(allowed_wargear_ids or []) if str(value or "").strip()]
+        if wargear_ids:
+            ctx["allowed_wargear_ids"] = wargear_ids
+        if max_declarations is not None:
+            ctx["max_declarations"] = int(max_declarations)
         request = DecisionRequest.create(
             DECISION_DECLARE_SHOTS,
             f"{source}: Declare shots for {getattr(unit, 'name', 'Unit')}",

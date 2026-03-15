@@ -19151,6 +19151,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             hit_bonus = int(ctx.get("hit_bonus", 0) or 0)
         except Exception:
             hit_bonus = 0
+        hit_reroll_ones = bool(ctx.get("hit_reroll_ones", False))
         try:
             fnp_value = int(ctx.get("fnp_value", 0) or 0)
         except Exception:
@@ -19249,6 +19250,17 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             tsr.pop("master_of_mechanisms_hit_bonus", None)
             tsr.pop("master_of_mechanisms_hit_bonus_owner", None)
             tsr.pop("master_of_mechanisms_hit_bonus_model_id", None)
+        if hit_reroll_ones:
+            tsr["master_of_mechanisms_hit_reroll_ones_active"] = True
+            tsr["master_of_mechanisms_hit_reroll_ones_owner"] = owner_id
+            if target_model is not None:
+                tsr["master_of_mechanisms_hit_reroll_ones_model_id"] = str(get_entity_id(target_model) or "")
+            else:
+                tsr.pop("master_of_mechanisms_hit_reroll_ones_model_id", None)
+        else:
+            tsr.pop("master_of_mechanisms_hit_reroll_ones_active", None)
+            tsr.pop("master_of_mechanisms_hit_reroll_ones_owner", None)
+            tsr.pop("master_of_mechanisms_hit_reroll_ones_model_id", None)
         has_vehicle_keyword = False
         try:
             has_vehicle_keyword = bool(target_root.has_any_keyword("VEHICLE"))
@@ -19300,6 +19312,8 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             duration_label = "Movement phase"
         if hit_bonus > 0:
             summary_parts.append(f"gets +{int(hit_bonus)} to hit until next {duration_label}")
+        if hit_reroll_ones:
+            summary_parts.append(f"re-rolls Hit rolls of 1 until next {duration_label}")
         if fnp_applies:
             summary_parts.append(f"gains Feel No Pain {int(fnp_value)}+ until next {duration_label}")
         _log_action_for_players(
@@ -21859,6 +21873,44 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             try:
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
                 _log_action_for_players(game, player, f"{ability_name}: {tname} marked (disembarked units re-roll Wound rolls).")
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "post_shoot_disembark_hit_reroll":
+        if chosen is not None:
+            try:
+                attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id") or ctx.get("source_unit_id"))
+            except Exception:
+                attacker_unit = None
+            if attacker_unit is None:
+                return None
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None)
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Transport Support").strip() or "Transport Support"
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            target_id = str(get_entity_id(target_root) or "")
+            sr = getattr(attacker_unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["post_shoot_disembark_hit_reroll_active"] = True
+            sr["post_shoot_disembark_hit_reroll_expires_phase"] = "SHOOTING_PHASE"
+            sr["post_shoot_disembark_hit_reroll_source"] = ability_name
+            sr["post_shoot_disembark_hit_reroll_target_id"] = target_id
+            sr["post_shoot_disembark_hit_reroll_owner"] = owner_id
+            sr["post_shoot_disembark_hit_reroll_turn"] = int(turn or 0)
+            attacker_unit.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {tname} marked (disembarked units re-roll Hit rolls).")
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "post_shoot_disembark_ap_bonus":

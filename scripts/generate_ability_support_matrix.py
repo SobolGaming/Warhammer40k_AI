@@ -4129,6 +4129,26 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "While the bearer is leading a unit, that attached unit can be affected by up to two different Orders at the same time.",
         ),
+        ("AM", "Lord Castellan"): (
+            "Supported",
+            "While Ursula Creed is leading a unit, that attached unit can be affected by up to two different Orders at the same time.",
+        ),
+        ("AM", "Omnissiah's Blessing"): (
+            "Supported",
+            "Command phase: select one friendly ASTRA MILITARUM VEHICLE model within 3\" to regain D3 wounds; until next Command phase that model re-rolls Hit rolls of 1.",
+        ),
+        ("AM", "Transport Support"): (
+            "Supported",
+            "After shooting: select a hit enemy unit; friendly models that disembarked from this TRANSPORT this turn re-roll Hit rolls against it until phase end.",
+        ),
+        ("AM", "Airborne Insertion"): (
+            "Supported",
+            "At the end of your opponent's Movement phase, any embarked units can disembark from this TRANSPORT.",
+        ),
+        ("AM", "Servo-sentry"): (
+            "Supported",
+            "When set up using Deep Strike, the Tempestor Aquilon can make one out-of-phase shooting attack with a sentry weapon.",
+        ),
         ("AM", "Holy Piety"): (
             "Supported",
             "Passive melee support: while the Priest's unit is not Battle-shocked, this model can re-roll the Hit roll.",
@@ -11732,10 +11752,15 @@ def _transport_reactive_disembark_support(description: str) -> Optional[Tuple[st
         r"any units embarked within it can disembark"
     )
     m = re.fullmatch(pattern, norm)
-    if not m:
-        return None
-    rng = m.group("range")
-    return ("Supported", f"Enemy unit set up/move within {rng}\": disembark embarked units.")
+    if m:
+        rng = m.group("range")
+        return ("Supported", f"Enemy unit set up/move within {rng}\": disembark embarked units.")
+    phase_end_pattern = (
+        r"at the end of your opponent s movement phase one or more units embarked within this transport can disembark from it"
+    )
+    if re.fullmatch(phase_end_pattern, norm):
+        return ("Supported", "At the end of your opponent's Movement phase, embarked units can disembark.")
+    return None
 
 
 def _embarking_firing_deck_weight_support(description: str) -> Optional[Tuple[str, str]]:

@@ -3471,17 +3471,19 @@ class PositioningMixin:
         Return ability info dict for reactive transport disembark triggers, or None if not available.
         """
         cache_key = "transport_reactive_disembark_ability"
-        if cache_key in getattr(self, "_ability_cache", {}):
-            return self._ability_cache[cache_key]
+        cache = getattr(self, "_ability_cache", {})
+        if cache_key in cache:
+            cached = cache.get(cache_key)
+            if cached is not None or not bool(getattr(self, "is_transport", False)):
+                return cached
 
         ability = None
-        try:
-            if not bool(getattr(self, "is_transport", False)):
-                ability = None
-            else:
-                ability = self._scan_transport_reactive_disembark_ability()
-        except Exception:
-            ability = None
+        if bool(getattr(self, "is_transport", False)):
+            for ab in self._iter_active_abilities():
+                parsed = self._parse_transport_reactive_disembark_ability(ab)
+                if parsed is not None:
+                    ability = parsed
+                    break
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

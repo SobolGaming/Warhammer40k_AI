@@ -3192,6 +3192,10 @@ class Unit(
         r"advance or fall back move within (\d+) of this (?:model|unit) any units embarked within it can disembark",
         re.IGNORECASE,
     )
+    _TRANSPORT_PHASE_END_DISEMBARK_RE = re.compile(
+        r"at the end of your opponent(?:s|\s+s) movement phase one or more units embarked within this transport can disembark from it",
+        re.IGNORECASE,
+    )
     _ENEMY_MOVE_REACTIVE_D6_RE = re.compile(
         r"once\s+per\s+(?:turn|battle|battle\s+round),?\s+when\s+an\s+enemy\s+unit\s+ends\s+a\s+normal(?:,)?\s+advance\s+or\s+fall\s+back\s+move\s+"
         r"within\s+(?P<range>\d+)\s*\"?\s+of\s+(?:this\s+(?:model(?: s)? unit|unit|model)|the\s+bearer'?s\s+unit|that\s+unit)"
@@ -3428,6 +3432,12 @@ class Unit(
         r"(?:(?:that was )?hit by one or more of those attacks|it scored one or more hits against this phase) "
         r"until the end of the phase each time a friendly model that disembarked from this transport this turn makes an attack "
         r"that targets that enemy unit you can re ?roll the wound roll",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_DISEMBARK_HIT_REROLL_RE = re.compile(
+        r"in your shooting phase after this model has shot select one enemy unit hit by one or more of those attacks "
+        r"until the end of the phase each time a model that disembarked from this transport this turn makes an attack "
+        r"that targets that enemy unit you can re ?roll the hit roll",
         re.IGNORECASE,
     )
     _POST_SHOOT_DISEMBARK_AP_BONUS_RE = re.compile(

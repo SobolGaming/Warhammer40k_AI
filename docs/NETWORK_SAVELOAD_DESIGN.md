@@ -260,7 +260,7 @@ Command phase:
 - aeldari_rune_of_mists_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="aeldari_rune_of_mists_target"`, `source_unit_id`, `model_id`, `range`, `min_attacker_distance_for_cover`)
 - space_marines_wolf_master_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="space_marines_wolf_master_target"`, `ability_name="Wolf Master"`, `source_unit_id`, `model_id`, `range=9`, `weapon_names[]`)
 - tears_of_isha_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="tears_of_isha_target"`, `source_unit_id`, `model_id`, `range`, `keyword`)
-- master_of_mechanisms_dialog: CHOOSE_QUARRY {target_unit_id | target_model_id | skip} (context `ability="master_of_mechanisms"`, `source_unit_id`, `model_id`, `range`, `hit_bonus`, `fnp_value`, `fnp_requires_vehicle`, `target_requires_vehicle`, optional `target_keyword`, optional `selection_kind`, optional `limit_once_per_turn`, optional `limit_scope`, `turn_owner`, `turn`, `optional=true`)
+- master_of_mechanisms_dialog: CHOOSE_QUARRY {target_unit_id | target_model_id | skip} (context `ability="master_of_mechanisms"`, `source_unit_id`, `model_id`, `range`, `hit_bonus`, optional `hit_reroll_ones`, `fnp_value`, `fnp_requires_vehicle`, `target_requires_vehicle`, optional `target_keyword`, optional `selection_kind`, optional `limit_once_per_turn`, optional `limit_scope`, `turn_owner`, `turn`, `optional=true`)
 - squig_mine_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="squig_mine"`, `ability_name="Squig Mine"`, `source_unit_id`, `model_id`, `ability_key`, `range=3`, `roll_threshold=4`, `mortal_wounds_roll="D6"`, `candidate_unit_ids[]`, `optional=true`)
 - warrior_elite_order_dialog: CHOOSE_QUARRY {order_key | skip} (context `ability="warrior_elite_order"`, `ability_name="Warrior Elite"`, `source_unit_id`, `battle_round`, `allowed_order_keys[]`, `optional=true`)
 - surrogate_hosts_dialog: CHOOSE_QUARRY {target_model_id | skip} (context `ability="surrogate_hosts"`, `ability_name="Surrogate Hosts"`, `source_unit_id`, `source_model_id`, `candidate_model_ids[]`, `required_keywords_all[]`, `excluded_unit_names[]`, `exclude_epic_hero`, `attach_if_target_was_leading`, `turn_owner`, `turn`, `optional=true`)
@@ -349,7 +349,7 @@ Setup reactive shoot/charge uses `DECLARE_SHOTS` with `out_of_phase=true` and `f
 
 Shooting:
 - weapon_choice_dialog: SELECT_WEAPON {unit_id, weapon_id}
-- shooting_declaration_dialog: DECLARE_SHOTS {unit_id, declarations[]}
+- shooting_declaration_dialog: DECLARE_SHOTS {unit_id, declarations[]} (context may include optional `allowed_model_ids[]`, `allowed_wargear_ids[]`, `max_declarations`, `force_target_unit_id`, `out_of_phase=true`)
 - linked_fire_origin_dialog: DECLARE_SHOTS {unit_id, declarations[].linked_fire_origin_unit_id | None, declarations[].linked_fire_mode}
 - deathstrike_action_dialog: DEATHSTRIKE_ACTION {unit_id, action, position?}
 - repair_barge_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="repair_barge"`, `source_unit_id`, `model_id`, `range=3`, `allowed_target_unit_ids`, `turn_owner`, `turn`, `optional=true`)
