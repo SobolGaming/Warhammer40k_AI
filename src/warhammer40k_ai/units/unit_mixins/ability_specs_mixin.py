@@ -8497,6 +8497,96 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_post_shoot_staggered_oc_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: after this unit has shot, select a hit enemy non-MONSTER/non-VEHICLE
+        unit hit by a specific weapon; that unit suffers an Objective Control penalty until the
+        start of the owner's next Shooting phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - weapon_key: str
+            - weapon_name: str
+            - exclude_monster_vehicle: bool
+            - oc_penalty: int
+            - oc_minimum: int
+            - state_name: str
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_post_shoot_staggered_oc_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int, bool, str]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._POST_SHOOT_STAGGERED_OC_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                source = str(name or "Staggered").strip() or "Staggered"
+                weapon_name = str(m.group("weapon") or "").strip()
+                weapon_key = unit._normalize_keyword_phrase(weapon_name) if weapon_name else ""
+                if not weapon_key:
+                    continue
+                try:
+                    oc_penalty = int(m.group("oc") or 0)
+                except Exception:
+                    oc_penalty = 0
+                try:
+                    oc_minimum = int(m.group("minimum") or 1)
+                except Exception:
+                    oc_minimum = 1
+                state_name = str(m.group("state") or "staggered").strip().lower() or "staggered"
+                key = (
+                    source.lower(),
+                    str(weapon_key or ""),
+                    int(max(0, oc_penalty)),
+                    int(max(1, oc_minimum)),
+                    True,
+                    state_name,
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "weapon_key": str(weapon_key or ""),
+                        "weapon_name": weapon_name,
+                        "exclude_monster_vehicle": True,
+                        "oc_penalty": int(max(0, oc_penalty)),
+                        "oc_minimum": int(max(1, oc_minimum)),
+                        "state_name": state_name,
+                        "expires_timing": "OWNER_NEXT_SHOOTING_START",
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_tremor_quake_specs(self) -> List[dict]:
         """Unit-specific rule: selecting a target for a specific weapon forces Battle-shock tests on the target and nearby INFANTRY."""
         try:

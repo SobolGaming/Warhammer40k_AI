@@ -4726,6 +4726,24 @@ class GamePhaseHandlersMixin:
                     if callable(clear_fn):
                         clear_fn()
                         continue
+                if (
+                    pname == "SHOOTING_PHASE"
+                    and str(sr.get("post_shoot_staggered_oc_owner", "") or "") == owner_id
+                    and bool(sr.get("post_shoot_staggered_oc_active"))
+                ):
+                    try:
+                        marked_turn = int(sr.get("post_shoot_staggered_oc_turn", 0) or 0)
+                    except Exception:
+                        marked_turn = 0
+                    try:
+                        current_turn = int(getattr(self, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    if current_turn > marked_turn:
+                        clear_fn = getattr(unit, "clear_post_shoot_staggered_oc", None)
+                        if callable(clear_fn):
+                            clear_fn()
+                            continue
                 unit.special_rules = sr
 
     def _on_phase_start_wracked_with_agonies_cleanup(self, player=None, phase=None, **_kwargs) -> None:

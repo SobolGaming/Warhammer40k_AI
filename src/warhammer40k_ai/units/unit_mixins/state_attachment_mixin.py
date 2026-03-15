@@ -339,6 +339,51 @@ class StateAttachmentMixin:
             sr.pop(key, None)
         self.special_rules = sr
 
+    def apply_post_shoot_staggered_oc(
+        self,
+        *,
+        owner_id: str,
+        turn: int,
+        source: str,
+        penalty: int,
+        minimum: int = 1,
+    ) -> None:
+        """Apply a temporary Objective Control penalty until the start of the owner's next Shooting phase."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["post_shoot_staggered_oc_active"] = True
+        sr["post_shoot_staggered_oc_owner"] = str(owner_id or "")
+        sr["post_shoot_staggered_oc_turn"] = int(turn or 0)
+        sr["post_shoot_staggered_oc_source"] = str(source or "Staggered").strip() or "Staggered"
+        sr["post_shoot_staggered_oc_penalty"] = int(max(0, int(penalty or 0)))
+        sr["post_shoot_staggered_oc_minimum"] = int(max(1, int(minimum or 1)))
+        root.special_rules = sr
+
+    def clear_post_shoot_staggered_oc(self) -> None:
+        """Clear temporary post-shoot Objective Control penalties from this unit."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "post_shoot_staggered_oc_active",
+            "post_shoot_staggered_oc_owner",
+            "post_shoot_staggered_oc_turn",
+            "post_shoot_staggered_oc_source",
+            "post_shoot_staggered_oc_penalty",
+            "post_shoot_staggered_oc_minimum",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
     def apply_wracked_with_agonies(
         self,
         *,

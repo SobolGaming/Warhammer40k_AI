@@ -4117,9 +4117,17 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Executioner plasma cannon attacks gain +1 to hit against Below Half-strength targets.",
         ),
+        ("AM", "Furious Barrage"): (
+            "Supported",
+            "After shooting: select a non-MONSTER/non-VEHICLE unit hit by storm eagle rockets; until your next Shooting phase it is staggered and suffers Objective Control -1 (minimum 1).",
+        ),
         ("AM", "Mow Down the Enemy"): (
             "Supported",
             "Punisher gatling cannon attacks gain [DEVASTATING WOUNDS] against non-MONSTER/non-VEHICLE targets.",
+        ),
+        ("AM", "Command Rod"): (
+            "Supported",
+            "While the bearer is leading a unit, that attached unit can be affected by up to two different Orders at the same time.",
         ),
         ("GC", "Deathstrike Missile"): (
             "Supported",

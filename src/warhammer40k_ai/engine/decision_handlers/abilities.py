@@ -7108,6 +7108,41 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if candidate_ids and target_id not in candidate_ids:
             return ("Post-shoot shocked selection contains an ineligible target.",)
         return ()
+    if ability == "post_shoot_staggered_oc":
+        if is_skip_choice(request, result):
+            return ("Post-shoot Objective Control target selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("attacker_unit_id")
+            or ctx.get("attacker_unit_id"),
+        )
+        if source_unit is None:
+            return ("Post-shoot Objective Control source unit was not found.",)
+        source_root = _resolve_unit_root(source_unit)
+        if source_root is None or not _unit_is_on_battlefield(source_root):
+            return ("Post-shoot Objective Control source unit must be on the battlefield.",)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Post-shoot Objective Control target unit was not found.",)
+        target_root = _resolve_unit_root(target_unit)
+        if target_root is None or not _unit_is_on_battlefield(target_root):
+            return ("Post-shoot Objective Control target unit must be on the battlefield.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is target_army:
+            return ("Post-shoot Objective Control target must be an enemy unit.",)
+        candidate_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Post-shoot Objective Control selection contains an ineligible target.",)
+        return ()
     if ability == "squig_mine":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(
@@ -20980,6 +21015,63 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                         player,
                         f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover this phase.",
                     )
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "post_shoot_staggered_oc":
+        if chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Staggered").strip() or "Staggered"
+            try:
+                oc_penalty = int(ctx.get("oc_penalty", 0) or 0)
+            except Exception:
+                oc_penalty = 0
+            try:
+                oc_minimum = int(ctx.get("oc_minimum", 1) or 1)
+            except Exception:
+                oc_minimum = 1
+            apply_fn = getattr(target_root, "apply_post_shoot_staggered_oc", None)
+            if callable(apply_fn):
+                apply_fn(
+                    owner_id=owner_id,
+                    turn=int(turn or 0),
+                    source=ability_name,
+                    penalty=int(max(0, oc_penalty)),
+                    minimum=int(max(1, oc_minimum)),
+                )
+            else:
+                sr = getattr(target_root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["post_shoot_staggered_oc_active"] = True
+                sr["post_shoot_staggered_oc_owner"] = owner_id
+                sr["post_shoot_staggered_oc_turn"] = int(turn or 0)
+                sr["post_shoot_staggered_oc_source"] = ability_name
+                sr["post_shoot_staggered_oc_penalty"] = int(max(0, oc_penalty))
+                sr["post_shoot_staggered_oc_minimum"] = int(max(1, oc_minimum))
+                target_root.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    player,
+                    (
+                        f"{ability_name}: {tname} is staggered until the start of your next Shooting phase "
+                        f"(-{int(max(0, oc_penalty))} Objective Control, minimum {int(max(1, oc_minimum))})."
+                    ),
+                )
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "post_shoot_no_overwatch":

@@ -2818,6 +2818,136 @@ class GameShootingFightHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_unit_shooting_resolved_post_shoot_staggered_oc(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target_weapon=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot Objective Control debuff requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _is_monster_or_vehicle(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_keyword("MONSTER") or unit.has_keyword("VEHICLE"))
+            except Exception:
+                pass
+            try:
+                return bool(unit.has_any_keyword("MONSTER") or unit.has_any_keyword("VEHICLE"))
+            except Exception:
+                return False
+
+        def _target_hit_with_weapon(target, weapon_key: str) -> bool:
+            if not weapon_key or not isinstance(hit_models_by_target_weapon, dict):
+                return False
+            target_map = hit_models_by_target_weapon.get(target)
+            if target_map is None:
+                try:
+                    target_root = target.get_attached_unit_root()
+                except Exception:
+                    target_root = target
+                target_map = hit_models_by_target_weapon.get(target_root)
+            if not isinstance(target_map, dict):
+                return False
+            models = target_map.get(weapon_key)
+            if models:
+                return True
+            if weapon_key.endswith("s"):
+                return bool(target_map.get(weapon_key[:-1]))
+            return bool(target_map.get(f"{weapon_key}s"))
+
+        specs = attacker_unit.unit_post_shoot_staggered_oc_specs() or []
+        if not specs:
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for spec in specs:
+            weapon_key = str(spec.get("weapon_key", "") or "")
+            if not weapon_key:
+                continue
+            candidates: list[Any] = []
+            seen_ids: set[str] = set()
+            for target_unit, hits in (hits_by_target or {}).items():
+                if target_unit is None:
+                    continue
+                if int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(target_unit):
+                    continue
+                try:
+                    target_root = target_unit.get_attached_unit_root()
+                except Exception:
+                    target_root = target_unit
+                if target_root is None:
+                    continue
+                target_id = str(get_entity_id(target_root) or "").strip()
+                if target_id and target_id in seen_ids:
+                    continue
+                if bool(spec.get("exclude_monster_vehicle", False)) and _is_monster_or_vehicle(target_root):
+                    continue
+                if not _target_hit_with_weapon(target_root, weapon_key):
+                    continue
+                if target_id:
+                    seen_ids.add(target_id)
+                candidates.append(target_root)
+            if not candidates:
+                continue
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = [
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(cand)},
+                )
+                for cand in list(candidates)
+            ]
+            if not options:
+                continue
+            ability_name = str(spec.get("source", "") or "Staggered").strip() or "Staggered"
+            candidate_ids = [str(get_entity_id(cand) or "") for cand in list(candidates) if str(get_entity_id(cand) or "").strip()]
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a unit to become {str(spec.get('state_name', '') or 'staggered')}.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "source_unit_id": get_entity_id(attacker_unit),
+                    "ability": "post_shoot_staggered_oc",
+                    "ability_name": ability_name,
+                    "weapon_key": weapon_key,
+                    "weapon_name": str(spec.get("weapon_name", "") or ""),
+                    "oc_penalty": int(spec.get("oc_penalty", 0) or 0),
+                    "oc_minimum": int(spec.get("oc_minimum", 1) or 1),
+                    "state_name": str(spec.get("state_name", "") or "staggered"),
+                    "expires_timing": str(spec.get("expires_timing", "") or "OWNER_NEXT_SHOOTING_START"),
+                    "candidate_unit_ids": list(candidate_ids),
+                },
+            )
+            self.request_decision(request)
+
     def _on_shooting_targets_selected_tremor_quake(
         self,
         attacking_unit=None,

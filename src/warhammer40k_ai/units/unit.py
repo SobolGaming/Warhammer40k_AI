@@ -1198,6 +1198,54 @@ class Unit(
                     objective_control_floor = max(objective_control_floor, int(aura_oc_floor))
             except Exception:
                 pass
+            try:
+                root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+            except Exception:
+                root = self
+            sr_root = getattr(root, "special_rules", None)
+            if isinstance(sr_root, dict) and bool(sr_root.get("post_shoot_staggered_oc_active")):
+                clear_staggered = False
+                owner_id = str(sr_root.get("post_shoot_staggered_oc_owner", "") or "")
+                try:
+                    marked_turn = int(sr_root.get("post_shoot_staggered_oc_turn", 0) or 0)
+                except Exception:
+                    marked_turn = 0
+                try:
+                    army = root.get_parent_army() if root is not None else self.get_parent_army()
+                except Exception:
+                    army = None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if game is not None:
+                    current_player = getattr(game, "get_current_player", lambda: None)()
+                    current_owner = str(getattr(current_player, "id", "") or "")
+                    current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    if (
+                        owner_id
+                        and current_owner == owner_id
+                        and current_phase == "SHOOTING_PHASE"
+                        and int(current_turn or 0) > int(marked_turn or 0)
+                    ):
+                        clear_staggered = True
+                if clear_staggered:
+                    clear_fn = getattr(root, "clear_post_shoot_staggered_oc", None)
+                    if callable(clear_fn):
+                        clear_fn()
+                else:
+                    try:
+                        oc_penalty = int(sr_root.get("post_shoot_staggered_oc_penalty", 0) or 0)
+                    except Exception:
+                        oc_penalty = 0
+                    if oc_penalty > 0:
+                        mods.append(Modifier(ModifierOp.ADD, -int(oc_penalty), source="ability:post_shoot_staggered_oc"))
+                    try:
+                        oc_minimum = int(sr_root.get("post_shoot_staggered_oc_minimum", 1) or 1)
+                    except Exception:
+                        oc_minimum = 1
+                    objective_control_floor = max(objective_control_floor, int(max(1, oc_minimum)))
             # Conditional self OC set while near friendly keyword models
             # (e.g. Chittering swarm: near friendly CRYPTEK models, OC becomes 1).
             try:
@@ -3830,6 +3878,14 @@ class Unit(
         r"(?:(?P<infantry>infantry) )?unit until the (?P<duration>start of your next shooting phase|end of your opponent(?: s|s) next turn) "
         r"that (?:enemy )?(?:(?P<target_infantry>infantry) )?unit is (?P<state>shaken) while a unit is (?P=state) subtract (?P<move>\d+) "
         r"from its move characteristic and subtract (?:(?P<advance>\d+) from advance and )?(?P<charge>\d+) from charge rolls made for it",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_STAGGERED_OC_RE = re.compile(
+        r"in your shooting phase after this (?P<source_scope>model|unit) has shot select one enemy unit "
+        r"(?P<exclude>excluding monsters and vehicles) that was hit by one or more of those attacks made with "
+        r"this (?P=source_scope) s (?P<weapon>[a-z0-9 ' -]+?) until the start of your next shooting phase that enemy unit is "
+        r"(?P<state>staggered) while a unit is (?P=state) subtract (?P<oc>\d+) from the objective control characteristic "
+        r"of models in that unit to a minimum of (?P<minimum>\d+)",
         re.IGNORECASE,
     )
     _POST_SHOOT_NO_COVER_WEAPON_RE = re.compile(

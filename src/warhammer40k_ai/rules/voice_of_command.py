@@ -609,6 +609,74 @@ class VoiceOfCommandManager:
             members = [root]
         return members
 
+    def _attached_unit_order_keys(self, unit) -> list[str]:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return []
+        members = self._attached_unit_members(root)
+        keys: list[str] = []
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            active_key = str(sr.get("voice_of_command_order_key", "") or "").strip().upper()
+            if active_key in ORDER_BY_KEY and active_key not in keys:
+                keys.append(active_key)
+            for extra_key in self._normalise_order_key_list(sr.get("voice_of_command_additional_order_keys", [])):
+                if extra_key not in keys:
+                    keys.append(extra_key)
+        return keys
+
+    def _attached_unit_command_rod_order_capacity(self, unit) -> int:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return 1
+        members = self._attached_unit_members(root)
+        seen_ids: set[str] = set()
+        for member in members:
+            if member is None or member is root:
+                continue
+            member_id = str(get_entity_id(member) or "").strip()
+            if member_id and member_id in seen_ids:
+                continue
+            if member_id:
+                seen_ids.add(member_id)
+            attached_root = self._attached_unit_root(getattr(member, "attached_to", None))
+            if attached_root is not root:
+                continue
+            for ability in self._iter_unit_abilities(member):
+                try:
+                    text = ability if isinstance(ability, str) else getattr(ability, "description", "")
+                    if not text:
+                        text = ability if isinstance(ability, str) else getattr(ability, "name", "")
+                except Exception:
+                    continue
+                norm = self._normalize_order_text(str(text or ""))
+                if re.fullmatch(
+                    r"while the bearer is leading a unit that unit can be affected by up to two different orders at the same time",
+                    norm,
+                ):
+                    return 2
+        return 1
+
+    def _set_orders_on_unit_and_attached(self, unit, order_keys: list[str], owner_id: str, source_id: str) -> None:
+        if unit is None:
+            return
+        keys = self._normalise_order_key_list(order_keys)
+        self.clear_order(unit)
+        try:
+            for leader in list(getattr(unit, "attached_leaders", []) or []):
+                self.clear_order(leader)
+        except Exception:
+            pass
+        if not keys:
+            return
+        self._apply_order_to_unit_and_attached(unit, keys[0], owner_id, source_id)
+        for extra_key in keys[1:]:
+            self._apply_additional_order_to_unit_and_attached(unit, extra_key)
+
     @staticmethod
     def _enhancement_bearer_alive(unit, sr, *, bearer_key: str = "") -> bool:
         if unit is None or not isinstance(sr, dict):
@@ -1556,14 +1624,6 @@ class VoiceOfCommandManager:
                     if callable(mark_extra):
                         mark_extra()
 
-        # Replace any existing orders
-        self.clear_order(target_unit)
-        try:
-            for l in list(getattr(target_unit, "attached_leaders", []) or []):
-                self.clear_order(l)
-        except Exception:
-            pass
-
         try:
             owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
         except Exception:
@@ -1573,11 +1633,23 @@ class VoiceOfCommandManager:
         except Exception:
             source_id = ""
 
-        self._apply_order_to_unit_and_attached(target_unit, order_key, owner_id, source_id)
+        max_orders = max(1, int(self._attached_unit_command_rod_order_capacity(target_unit)))
+        current_order_keys = self._attached_unit_order_keys(target_unit)
+        target_order_keys = [order_key]
+        if max_orders > 1 and current_order_keys:
+            if order_key in current_order_keys:
+                target_order_keys = list(current_order_keys)
+            elif len(current_order_keys) < max_orders:
+                target_order_keys = list(current_order_keys) + [order_key]
+            else:
+                retained_keys = [key for key in list(current_order_keys) if key != order_key]
+                target_order_keys = retained_keys[-(max_orders - 1) :] + [order_key]
+
+        self._set_orders_on_unit_and_attached(target_unit, target_order_keys, owner_id, source_id)
         if order_anchor is not None:
             self._mark_mobile_command_vehicle_selected_officer(order_anchor, battle_round, officer_unit)
         additional_order_key = self._stalwarts_honours_additional_order_key(target_unit)
-        if additional_order_key and additional_order_key != order_key:
+        if additional_order_key and additional_order_key not in target_order_keys:
             self._apply_additional_order_to_unit_and_attached(target_unit, additional_order_key)
         if continuation_kind == "bombast":
             self._consume_bombast_pending_target(officer_unit, battle_round, target_unit_id)
