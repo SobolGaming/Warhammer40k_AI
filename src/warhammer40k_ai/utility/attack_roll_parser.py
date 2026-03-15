@@ -10,6 +10,7 @@ class AttackRollCondition:
     attacker_below_starting_strength: bool = False
     attacker_below_half_strength: bool = False
     attacker_charged_this_turn: bool = False
+    attacker_waaagh_active: bool = False
     attacker_contains_model_keywords_any: Tuple[str, ...] = ()
     attacker_within_objective_controlled: bool = False
     target_below_starting_strength: bool = False
@@ -44,6 +45,9 @@ class AttackRollCondition:
             ),
             attacker_charged_this_turn=bool(
                 self.attacker_charged_this_turn or other.attacker_charged_this_turn
+            ),
+            attacker_waaagh_active=bool(
+                self.attacker_waaagh_active or other.attacker_waaagh_active
             ),
             attacker_contains_model_keywords_any=tuple(
                 {*(self.attacker_contains_model_keywords_any or ()), *(other.attacker_contains_model_keywords_any or ())}
@@ -207,6 +211,8 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
 
     if re.fullmatch(r"(?:this model|this unit|it|that unit) made a charge move this turn", t):
         return AttackRollCondition(attacker_charged_this_turn=True)
+    if re.fullmatch(r"the waaagh!? is active for your army", t):
+        return AttackRollCondition(attacker_waaagh_active=True)
 
     m = re.fullmatch(
         r"(?:this unit|that unit|it) contains (?:an?|one or more)?\s*(?P<model>[a-z0-9 \\-]+?)(?: models?)?",

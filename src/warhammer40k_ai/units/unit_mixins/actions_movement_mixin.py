@@ -4183,6 +4183,18 @@ class ActionsMovementMixin:
                     return False
             except Exception:
                 return False
+        if condition.attacker_waaagh_active:
+            try:
+                army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+            except Exception:
+                army = None
+            mgr = getattr(army, "waaagh", None) if army is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            try:
+                if mgr is None or not bool(mgr.unit_is_affected(unit, game=game)):
+                    return False
+            except Exception:
+                return False
         if condition.attacker_contains_model_keywords_any:
             matched = False
             for kw in condition.attacker_contains_model_keywords_any:
@@ -4472,6 +4484,8 @@ class ActionsMovementMixin:
                 parts.append("while below Half-strength")
             if cond.attacker_charged_this_turn:
                 parts.append("after making a Charge move this turn")
+            if cond.attacker_waaagh_active:
+                parts.append("while Waaagh! is active")
             if cond.attacker_contains_model_keywords_any:
                 kw = "/".join(k.upper() for k in cond.attacker_contains_model_keywords_any)
                 parts.append(f"while containing {kw} model")
@@ -4547,6 +4561,53 @@ class ActionsMovementMixin:
                     elif eff.roll == "wound":
                         crit_wound_threshold = eff.critical_threshold if crit_wound_threshold is None else min(crit_wound_threshold, eff.critical_threshold)
                         crit_wound_reasons.append(f"Leading: critical wound on {eff.critical_threshold}+ from {label}{_cond_suffix(eff.condition)}")
+
+        # Ghazghkull Thraka: Prophet of Da Great Waaagh! combines leading hit/wound bonuses
+        # with a Waaagh-gated critical-hit threshold in one sentence that the generic parser
+        # does not currently decompose.
+        if atype in ("any", "melee"):
+            game = None
+            try:
+                army = root.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            except Exception:
+                army = None
+                game = None
+            waaagh_active = False
+            if army is not None:
+                try:
+                    mgr = getattr(army, "waaagh", None)
+                    if mgr is not None:
+                        waaagh_active = bool(mgr.unit_is_affected(root, game=game))
+                except Exception:
+                    waaagh_active = False
+
+            for ab, _leader in root._iter_attached_leader_leading_abilities():
+                try:
+                    label = str(getattr(ab, "name", "") or "Leading ability").replace("\u2019", "'")
+                    desc = str(getattr(ab, "description", "") or "")
+                except Exception:
+                    continue
+                if label.strip().lower() != "prophet of da great waaagh!":
+                    continue
+                text = self._normalize_rules_text(desc)
+                if not text:
+                    continue
+                normalized = text.lower()
+                if (
+                    "each time a model in that unit makes a melee attack" not in normalized
+                    or "add 1 to the hit roll" not in normalized
+                    or "add 1 to the wound roll" not in normalized
+                ):
+                    continue
+                mods["hit"] += 1
+                mods["wound"] += 1
+                hit_reasons.append(f"+1 to hit from {label}")
+                wound_reasons.append(f"+1 to wound from {label}")
+                if waaagh_active and "critical hit" in normalized and "5+" in normalized:
+                    crit_hit_threshold = 5 if crit_hit_threshold is None else min(crit_hit_threshold, 5)
+                    crit_hit_reasons.append(f"Leading: critical hit on 5+ from {label} (while Waaagh! is active)")
+                break
 
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))

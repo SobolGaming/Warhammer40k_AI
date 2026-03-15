@@ -7451,6 +7451,104 @@ def _orks_named_datasheet_support(name: str, description: str, *, faction_id: st
                 "Supported",
                 "Snazzgun attacks that target the closest eligible target have Attacks 4.",
             )
+    if name_norm == "big an stompy":
+        if (
+            "each time this model makes a melee attack" in norm
+            and "waaagh is active for your army" in norm
+            and "add 1 to the hit roll" in norm
+        ):
+            return (
+                "Supported",
+                "Melee attacks gain +1 to Hit while the Waaagh! is active for the army.",
+            )
+    if name_norm == "clankin forward":
+        if (
+            "normal advance or fall back move" in norm
+            and "move over enemy models" in norm
+            and "excluding monster and vehicle models" in norm
+            and "terrain features that are 4 or less in height" in norm
+        ):
+            return (
+                "Supported",
+                "Normal/Advance/Fall Back: move through enemy models except MONSTER/VEHICLE models, and through terrain features up to 4\" high.",
+            )
+    if name_norm == "prophet of da great waaagh":
+        if (
+            "while this unit is leading a unit" in norm
+            and "each time a model in that unit makes a melee attack" in norm
+            and "add 1 to the hit roll" in norm
+            and "add 1 to the wound roll" in norm
+            and "critical hit" in norm
+            and "hit roll of 5" in norm
+            and "waaagh is active for your army" in norm
+        ):
+            return (
+                "Supported",
+                "Leading: melee attacks gain +1 to Hit and +1 to Wound; while the Waaagh! is active, successful unmodified Hit rolls of 5+ score Critical Hits.",
+            )
+    if name_norm == "ghazghkull s waaagh banner aura":
+        if (
+            ("friendly orks unit" in norm or "friendly orks units" in norm)
+            and "within 12 of makari" in norm
+            and "waaagh is active for your army" in norm
+            and (
+                "melee weapons equipped by models in that unit have the lethal hits ability" in norm
+                or "melee weapons equipped by models in friendly orks units have the lethal hits ability" in norm
+            )
+        ):
+            return (
+                "Supported",
+                "Aura: friendly ORKS units within 12\" of Makari gain Lethal Hits on melee weapons while the Waaagh! is active.",
+            )
+    if name_norm == "runtherd":
+        if (
+            "while this unit contains one or more gretchin models" in norm
+            and "each time an attack targets this unit" in norm
+            and "runtherd models in this unit have a toughness characteristic of 2" in norm
+        ):
+            return (
+                "Supported",
+                "While any Gretchin models remain, the unit Toughness resolves as 2 for Runtherd/Gretchin mixed-model attacks; once the Gretchin are gone, the Runtherd returns to base Toughness.",
+            )
+    if name_norm == "thievin scavengers":
+        if (
+            "at the start of your movement phase" in norm
+            and "roll one d6 for each objective marker you control" in norm
+            and "battle shocked units" in norm
+            and "if one or more of those rolls is a 4 you gain 1cp" in norm
+        ):
+            return (
+                "Supported",
+                "Movement phase start: roll once per controlled objective with an eligible non-Battle-shocked Thievin' Scavengers unit in range; any 4+ grants 1CP.",
+            )
+    if name_norm == "on da hunt":
+        if (
+            (
+                "add 1 to the attacks characteristic of this models butcha boyz weapon for every model embarked within this transport" in norm
+                or "add 1 to the attacks characteristic of this model s butcha boyz weapon for every model embarked within this transport" in norm
+                or "for each model embarked within this transport add 1 to the attacks characteristic of this models butcha boyz weapon" in norm
+                or "for each model embarked within this transport add 1 to the attacks characteristic of this model s butcha boyz weapon" in norm
+            )
+            and ("maximum of 6" in norm or "maximum of 6 the attacks characteristic" in norm)
+        ):
+            return (
+                "Supported",
+                "Butcha boyz gain +1 Attacks per embarked model in the transport, to a maximum of +6.",
+            )
+    if name_norm == "spirit of gork psychic":
+        if (
+            "at the start of the fight phase" in norm
+            and "select one friendly orks unit within 12" in norm
+            and "roll one d6" in norm
+            and "on a 1 this model suffers d3 mortal wounds" in norm
+            and "on a 2 5" in norm
+            and "add 1 to the strength characteristic of melee weapons" in norm
+            and "those weapons have the lethal hits ability" in norm
+        ):
+            return (
+                "Supported",
+                "Fight phase start: optional friendly ORKS unit within 12\" selection; roll 1 = self D3 mortal wounds, 2-5 = +1 Strength on melee weapons, 6 = +1 Strength and Lethal Hits on melee weapons until phase end.",
+            )
     return None
 
 

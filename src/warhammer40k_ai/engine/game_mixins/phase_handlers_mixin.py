@@ -8406,6 +8406,179 @@ class GamePhaseHandlersMixin:
                     if model_id:
                         pending_models.add(model_id)
 
+    def _on_phase_start_spirit_of_gork(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase start: optional Spirit of Gork target selection for Kill Rig."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        try:
+            from ...utility.aura_utils import model_within_range_of_unit
+        except ImportError:
+            return
+
+        pending_models = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "spirit_of_gork":
+                        continue
+                    mid = str(ctx.get("model_id", "") or "")
+                    if mid:
+                        pending_models.add(mid)
+        except Exception:
+            pending_models = set()
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _first_alive_model(unit):
+            models = list(getattr(unit, "models", []) or [])
+            models = sorted(models, key=lambda m: str(get_entity_id(m) or ""))
+            for model in models:
+                alive_attr = getattr(model, "is_alive", True)
+                if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    return model
+            return None
+
+        def _unit_active(unit) -> bool:
+            if unit is None:
+                return False
+            if not bool(getattr(unit, "is_alive", lambda: False)()):
+                return False
+            if not bool(getattr(unit, "deployed", True)):
+                return False
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    return False
+            except Exception:
+                pass
+            return True
+
+        def _unit_has_ability_named(unit, ability_name: str) -> bool:
+            target = str(ability_name or "").replace("\u2019", "'").strip().lower()
+            if not target or unit is None:
+                return False
+            try:
+                for ab in list(getattr(unit, "possible_abilities", []) or []):
+                    name = str(getattr(ab, "name", "") or "").replace("\u2019", "'").strip().lower()
+                    if name == target:
+                        return True
+            except Exception:
+                return False
+            return False
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+
+            friendly_roots = []
+            seen_friendly = set()
+            for candidate in list(army.units or []):
+                if candidate is None:
+                    continue
+                try:
+                    croot = candidate.get_attached_unit_root()
+                except Exception:
+                    croot = candidate
+                if croot is None or not _unit_active(croot):
+                    continue
+                cid = str(get_entity_id(croot) or "")
+                if cid and cid in seen_friendly:
+                    continue
+                if cid:
+                    seen_friendly.add(cid)
+                friendly_roots.append(croot)
+            if not friendly_roots:
+                continue
+            try:
+                friendly_roots = sorted(friendly_roots, key=_unit_sort_key)
+            except Exception:
+                pass
+
+            for unit in sorted(list(army.units or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not _unit_active(root):
+                    continue
+                if not _unit_has_ability_named(root, "Spirit of Gork (Psychic)"):
+                    continue
+                source_model = _first_alive_model(root)
+                if source_model is None:
+                    continue
+                model_id = str(get_entity_id(source_model) or "")
+                if model_id and model_id in pending_models:
+                    continue
+
+                candidates = []
+                candidate_ids: list[str] = []
+                for candidate_root in list(friendly_roots):
+                    if candidate_root is None:
+                        continue
+                    try:
+                        if not bool(candidate_root.has_any_keyword("ORKS")):
+                            continue
+                    except Exception:
+                        continue
+                    if not bool(model_within_range_of_unit(source_model, candidate_root, 12.0)):
+                        continue
+                    candidates.append(candidate_root)
+                    cid = str(get_entity_id(candidate_root) or "")
+                    if cid:
+                        candidate_ids.append(cid)
+                if not candidates:
+                    continue
+
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                for cand in sorted(list(candidates), key=_unit_sort_key):
+                    options.append(
+                        DecisionOption.create(
+                            str(getattr(cand, "name", "Unit") or "Unit"),
+                            payload={"target_unit_id": get_entity_id(cand)},
+                        )
+                    )
+
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Spirit of Gork (Psychic): select one friendly ORKS unit within 12\" (or None).",
+                    player_id=getattr(p, "id", None),
+                    options=options,
+                    context={
+                        "ability": "spirit_of_gork",
+                        "ability_name": "Spirit of Gork (Psychic)",
+                        "source_unit_id": get_entity_id(root),
+                        "unit_id": get_entity_id(root),
+                        "model_id": model_id,
+                        "range": 12,
+                        "strength_bonus": 1,
+                        "self_mortal_wounds": "D3",
+                        "candidate_unit_ids": list(candidate_ids),
+                        "optional": True,
+                    },
+                )
+                self.request_decision(request)
+                if model_id:
+                    pending_models.add(model_id)
+
     def _on_phase_start_fight_phase_target_attack_bonus(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase start: select an enemy unit to mark for attack bonuses (e.g., Blood Throne, The Eternal Dance)."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -13205,6 +13378,132 @@ class GamePhaseHandlersMixin:
                     range_inches=3,
                     allow_skip=True,
                 )
+
+    def _on_phase_start_orks_thievin_scavengers(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase start: roll once per controlled objective for eligible Thievin' Scavengers units."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        game_map = getattr(self, "map", None)
+        if army is None or game_map is None:
+            return
+
+        from ...utility.event_bus import append_action, append_dice
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _objective_sort_key(obj):
+            location = getattr(obj, "location", None)
+            try:
+                oid = str(get_entity_id(location) or "")
+            except Exception:
+                oid = ""
+            if oid:
+                return oid
+            return str(getattr(location, "id", "") or getattr(obj, "name", "") or "")
+
+        def _unit_active(unit) -> bool:
+            if unit is None:
+                return False
+            if not bool(getattr(unit, "is_alive", lambda: False)()):
+                return False
+            if not bool(getattr(unit, "deployed", True)):
+                return False
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    return False
+            except Exception:
+                pass
+            return True
+
+        def _unit_has_ability_named(unit, ability_name: str) -> bool:
+            target = str(ability_name or "").replace("\u2019", "'").strip().lower()
+            if not target or unit is None:
+                return False
+            try:
+                for ab in list(getattr(unit, "possible_abilities", []) or []):
+                    name = str(getattr(ab, "name", "") or "").replace("\u2019", "'").strip().lower()
+                    if name == target:
+                        return True
+            except Exception:
+                return False
+            return False
+
+        objectives = sorted(list(getattr(game_map, "objectives", []) or []), key=_objective_sort_key)
+        if not objectives:
+            return
+
+        eligible_roots = []
+        processed: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not _unit_active(root):
+                continue
+            rid = str(get_entity_id(root) or "")
+            if rid and rid in processed:
+                continue
+            if rid:
+                processed.add(rid)
+            if bool(getattr(root, "is_battle_shocked", lambda: False)()):
+                continue
+            members = list(getattr(root, "get_attached_unit_members", lambda: [])() or [])
+            if not members:
+                members = [root]
+            has_ability = any(_unit_has_ability_named(member, "Thievin' Scavengers") for member in members if member is not None)
+            if has_ability:
+                eligible_roots.append(root)
+
+        if not eligible_roots:
+            return
+
+        any_success = False
+        for objective in objectives:
+            location = getattr(objective, "location", None)
+            if location is None or getattr(location, "removed", False):
+                continue
+            if getattr(location, "controlling_player", None) is not player:
+                continue
+            in_range = False
+            for root in list(eligible_roots):
+                if root is None:
+                    continue
+                try:
+                    if root.is_within_objective_range(location):
+                        in_range = True
+                        break
+                except Exception:
+                    continue
+            if not in_range:
+                continue
+            roll = int(get_roll("D6") or 0)
+            label = str(getattr(location, "id", "") or getattr(objective, "name", "") or "Objective").strip() or "Objective"
+            append_dice(player, f"Thievin' Scavengers ({label}) roll: {int(roll)}")
+            if int(roll) >= 4:
+                any_success = True
+
+        if not any_success:
+            append_action(player, "Thievin' Scavengers: no CP gained.")
+            return
+
+        gained = int(player.gain_command_points(1, reason="Thievin' Scavengers") or 0)
+        if gained:
+            append_action(player, "Thievin' Scavengers: gained 1 CP.")
+        else:
+            append_action(player, "Thievin' Scavengers: CP gain prevented by the battle-round guardrail.")
 
     def _apply_aeldari_light_of_clarity_effect(
         self,

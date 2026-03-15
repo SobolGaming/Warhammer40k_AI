@@ -4925,8 +4925,10 @@ class RulesParsingMixin:
             "move_over_friendly_monster_vehicle_types",
             "move_over_low_terrain_height_types",
             "move_over_low_terrain_height_value",
+            "bearer_unit_phase_move_enemy_models_only_types",
             "bearer_unit_phase_move_models_only_types",
             "bearer_unit_phase_move_models_only_block_titanic_types",
+            "bearer_unit_phase_move_block_monster_vehicle_types",
         ):
             if key in sr:
                 del sr[key]
@@ -4943,12 +4945,20 @@ class RulesParsingMixin:
             r"(?:sections of )?terrain features that are (?P<height>\d+) or less in height"
             r"(?: as if they were not there)?"
         )
+        enemy_monster_vehicle_exclusion_pattern = (
+            r"each time (?:this model|this unit) makes a (?P<moves>.+?) move "
+            r"it can move (?:over|through) enemy models? excluding monster and vehicle models? and "
+            r"(?:sections of )?terrain features that are (?P<height>\d+) or less in height"
+            r"(?: as if they were not there)?"
+        )
         terrain_only_pattern = (
             r"each time (?:this model|this unit) makes a (?P<moves>.+?) move "
             r"it can move (?:over|through) (?:sections of )?terrain features that are (?P<height>\d+) or less in height"
             r"(?: as if they were not there)?"
         )
         friendly_move_types: set[str] = set()
+        enemy_models_only_move_types: set[str] = set()
+        enemy_block_monster_vehicle_types: set[str] = set()
         low_terrain_move_types: set[str] = set()
         height_value: Optional[int] = None
         seen: set[str] = set()
@@ -5015,6 +5025,23 @@ class RulesParsingMixin:
                     if height_value is None or height > height_value:
                         height_value = height
                 continue
+            m = re.fullmatch(enemy_monster_vehicle_exclusion_pattern, norm)
+            if m:
+                moves_text = (m.group("moves") or "").strip()
+                move_types = _parse_move_types(moves_text or "")
+                if move_types is None:
+                    continue
+                enemy_models_only_move_types.update(move_types)
+                enemy_block_monster_vehicle_types.update(move_types)
+                low_terrain_move_types.update(move_types)
+                try:
+                    height = int(m.group("height"))
+                except Exception:
+                    height = None
+                if height is not None:
+                    if height_value is None or height > height_value:
+                        height_value = height
+                continue
             m = re.fullmatch(terrain_only_pattern, norm)
             if not m:
                 continue
@@ -5033,10 +5060,14 @@ class RulesParsingMixin:
 
         if friendly_move_types:
             sr["move_over_friendly_monster_vehicle_types"] = sorted(friendly_move_types)
+        if enemy_models_only_move_types:
+            sr["bearer_unit_phase_move_enemy_models_only_types"] = sorted(enemy_models_only_move_types)
         if model_move_types:
             sr["bearer_unit_phase_move_models_only_types"] = sorted(model_move_types)
         if model_block_titanic_move_types:
             sr["bearer_unit_phase_move_models_only_block_titanic_types"] = sorted(model_block_titanic_move_types)
+        if enemy_block_monster_vehicle_types:
+            sr["bearer_unit_phase_move_block_monster_vehicle_types"] = sorted(enemy_block_monster_vehicle_types)
         if height_value is not None:
             sr["move_over_low_terrain_height_value"] = float(height_value)
             sr["move_over_low_terrain_height_types"] = sorted(low_terrain_move_types or {"move", "advance"})

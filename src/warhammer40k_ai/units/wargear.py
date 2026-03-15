@@ -5453,6 +5453,40 @@ class WargearProfile:
             pass
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+                has_on_da_hunt = False
+                if root is not None and hasattr(root, "_unit_has_active_ability_named"):
+                    has_on_da_hunt = bool(root._unit_has_active_ability_named(root, "On Da Hunt"))
+                weapon_name = str(getattr(self.parent_wargear, "name", "") or "").strip()
+                if has_on_da_hunt and self._weapon_name_matches_for_attacker(attacker, "butcha boyz"):
+                    embarked_model_count = 0
+                    for passenger in list(getattr(root, "transport_passengers", []) or []):
+                        if passenger is None:
+                            continue
+                        try:
+                            passenger_root = passenger.get_attached_unit_root()
+                        except Exception:
+                            passenger_root = passenger
+                        if passenger_root is None:
+                            continue
+                        passenger_models = list(getattr(passenger_root, "get_attached_unit_models", lambda: [])() or [])
+                        if not passenger_models:
+                            passenger_models = list(getattr(passenger_root, "models", []) or [])
+                        for passenger_model in passenger_models:
+                            if passenger_model is None:
+                                continue
+                            alive_attr = getattr(passenger_model, "is_alive", False)
+                            if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                                embarked_model_count += 1
+                    bonus = min(6, int(embarked_model_count))
+                    if bonus > 0:
+                        atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:on_da_hunt_attacks_add"))
+                        attack_result.attacks_special_modifiers.append(f"On Da Hunt +{int(bonus)}A ({weapon_name})")
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
                 thunderstomp_set_attacks, _thunderstomp_ap_bonus, thunderstomp_source = self._imperial_knights_thunderstomp_bonus(attacker)
                 if thunderstomp_set_attacks:
                     atk_mods.append(

@@ -3525,6 +3525,68 @@ class StateAttachmentMixin:
             all_models = unit_models
         return len(all_models) > unit_alive
 
+    def _conditional_unit_toughness_override(self) -> Optional[int]:
+        """Return a unit-level Toughness override when a datasheet rule collapses mixed models to one value."""
+        abilities = list(getattr(self, "possible_abilities", []) or [])
+        if not abilities:
+            return None
+
+        alive_entries: list[tuple[str, int]] = []
+        for model in list(getattr(self, "models", []) or []):
+            if not bool(getattr(model, "is_alive", True)):
+                continue
+            if bool(getattr(model, "_pending_placement", False)):
+                continue
+            name_key = _normalize_unit_name_for_rules(getattr(model, "name", "") or "")
+            if not name_key:
+                continue
+            try:
+                toughness = int(getattr(model, "toughness", getattr(model, "_toughness", 0)) or 0)
+            except Exception:
+                continue
+            if toughness <= 0:
+                continue
+            alive_entries.append((name_key, toughness))
+        if not alive_entries:
+            return None
+
+        pattern = re.compile(
+            r"while this unit contains one or more (?P<required>.+?) models each time an attack targets this unit "
+            r"(?P<affected>.+?) models in this unit have a toughness characteristic of (?P<value>\d+)"
+        )
+        for ability in list(abilities):
+            description = str(getattr(ability, "description", "") or "")
+            normalized = _normalize_unit_name_for_rules(description)
+            if not normalized:
+                continue
+            match = pattern.fullmatch(normalized)
+            if not match:
+                continue
+            required_name = _normalize_unit_name_for_rules(str(match.group("required") or ""))
+            affected_name = _normalize_unit_name_for_rules(str(match.group("affected") or ""))
+            try:
+                override_value = int(match.group("value") or 0)
+            except (TypeError, ValueError):
+                continue
+            if not required_name or not affected_name or override_value <= 0:
+                continue
+
+            names = {entry_name for entry_name, _entry_toughness in alive_entries}
+            if required_name not in names or affected_name not in names:
+                continue
+            if any(entry_name not in (required_name, affected_name) for entry_name, _entry_toughness in alive_entries):
+                continue
+
+            required_toughnesses = {
+                entry_toughness
+                for entry_name, entry_toughness in alive_entries
+                if entry_name == required_name
+            }
+            if required_toughnesses != {override_value}:
+                continue
+            return int(override_value)
+        return None
+
     def is_guardian_defenders_unit(self) -> bool:
         try:
             return str(getattr(self, "name", "") or "").strip().lower() == "guardian defenders"
@@ -4494,13 +4556,27 @@ class StateAttachmentMixin:
         except Exception:
             pass
 
+        conditional_toughness = self._conditional_unit_toughness_override()
+        if conditional_toughness is not None:
+            return int(conditional_toughness)
+
         # Support Weapon: if this model's unit contains other models, use T3 for this model.
         try:
             if self._support_weapon_has_other_models():
                 return 3
         except Exception:
             pass
-        base_toughness = int(self.models[0].toughness)
+        first_alive_model = None
+        for model in list(getattr(self, "models", []) or []):
+            if not bool(getattr(model, "is_alive", True)):
+                continue
+            if bool(getattr(model, "_pending_placement", False)):
+                continue
+            first_alive_model = model
+            break
+        if first_alive_model is None:
+            first_alive_model = self.models[0]
+        base_toughness = int(first_alive_model.toughness)
         bonus_fn = getattr(self, "_single_model_bearer_toughness_bonus", None)
         if callable(bonus_fn):
             try:

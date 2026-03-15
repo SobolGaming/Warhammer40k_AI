@@ -7005,6 +7005,74 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if not visible:
                 return ("Paroxysm target must be visible to the source model.",)
         return ()
+    if ability == "spirit_of_gork":
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Spirit of Gork source unit was not found.",)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Spirit of Gork target unit was not found.",)
+
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if source_root is None or target_root is None:
+            return ("Spirit of Gork source/target unit root was not found.",)
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is not target_army:
+            return ("Spirit of Gork target must be a friendly ORKS unit within range.",)
+        try:
+            if not bool(target_root.has_any_keyword("ORKS")):
+                return ("Spirit of Gork target must have the ORKS keyword.",)
+        except Exception:
+            return ("Spirit of Gork target must have the ORKS keyword.",)
+
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        target_unit_id = str(payload.get("target_unit_id") or ctx.get("target_unit_id") or "").strip()
+        if candidate_ids and target_unit_id not in candidate_ids:
+            return ("Spirit of Gork selection contains an ineligible target.",)
+
+        if not bool(getattr(target_root, "is_alive", lambda: False)()):
+            return ("Spirit of Gork target must be alive.",)
+        if not bool(getattr(target_root, "deployed", True)):
+            return ("Spirit of Gork target must be on the battlefield.",)
+        try:
+            if target_root.is_in_reserves() or target_root.is_embarked:
+                return ("Spirit of Gork target must be on the battlefield.",)
+        except Exception:
+            pass
+
+        model = resolve_model(game, ctx.get("model_id"))
+        if model is None:
+            source_models = list(getattr(source_root, "models", []) or [])
+            source_models = sorted(source_models, key=lambda m: str(get_entity_id(m) or ""))
+            for src_model in source_models:
+                alive_attr = getattr(src_model, "is_alive", False)
+                if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    model = src_model
+                    break
+        if model is None:
+            return ("Spirit of Gork source model was not found.",)
+
+        try:
+            range_inches = float(ctx.get("range", 12) or 12)
+        except (TypeError, ValueError):
+            range_inches = 12.0
+        try:
+            from ...utility.aura_utils import model_within_range_of_unit
+        except ImportError:
+            return ("Spirit of Gork range helper is unavailable.",)
+        if not bool(model_within_range_of_unit(model, target_root, float(range_inches))):
+            return ("Spirit of Gork target must be within range of the source model.",)
+        return ()
     if ability == "master_of_mechanisms":
         if is_skip_choice(request, result):
             return ()
@@ -21617,6 +21685,127 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     f"{ability_name}: {getattr(target_root, 'name', 'Unit')} has -{int(attacks_penalty)} Attacks for melee weapons until end of phase.",
                 )
             return target_root
+    if str(ctx.get("ability", "") or "") == "spirit_of_gork":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_root.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Spirit of Gork (Psychic)").strip() or "Spirit of Gork (Psychic)"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return None
+        if chosen is None:
+            return None
+        target_root = chosen.get_attached_unit_root() if hasattr(chosen, "get_attached_unit_root") else chosen
+        if target_root is None:
+            return None
+        try:
+            strength_bonus = int(ctx.get("strength_bonus", 1) or 1)
+        except Exception:
+            strength_bonus = 1
+        strength_bonus = max(0, int(strength_bonus))
+        self_mw_spec = str(ctx.get("self_mortal_wounds", "D3") or "D3").strip().upper() or "D3"
+
+        try:
+            from ...utility.dice import get_roll
+            from ...utility.event_bus import append_action, append_dice
+        except Exception:
+            get_roll = None
+            append_action = None
+            append_dice = None
+
+        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+        if callable(append_dice) and player is not None:
+            append_dice(player, f"{ability_name} roll: {int(roll)}")
+
+        if int(roll) == 1:
+            self_mw = 0
+            if self_mw_spec == "D3":
+                self_mw = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            elif self_mw_spec == "D6":
+                self_mw = int(get_roll("D6") or 0) if callable(get_roll) else 0
+            else:
+                try:
+                    self_mw = int(self_mw_spec or 0)
+                except Exception:
+                    self_mw = 0
+            if int(self_mw) > 0:
+                source_root._apply_mortal_wounds_to_unit(
+                    source_root,
+                    int(self_mw),
+                    game_map=getattr(game, "map", None),
+                )
+            if callable(append_action) and player is not None:
+                append_action(
+                    player,
+                    f"{ability_name}: roll 1, {getattr(source_root, 'name', 'Unit')} suffers {int(self_mw)} mortal wounds.",
+                )
+            return source_root
+
+        target_models = list(getattr(target_root, "get_attached_unit_models", lambda: [])() or [])
+        if not target_models:
+            target_models = list(getattr(target_root, "models", []) or [])
+        target_models = sorted(target_models, key=lambda m: str(get_entity_id(m) or ""))
+        source_root_id = str(get_entity_id(source_root) or "")
+        target_root_id = str(get_entity_id(target_root) or "")
+        for model_index, target_model in enumerate(target_models):
+            if target_model is None:
+                continue
+            alive_attr = getattr(target_model, "is_alive", False)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            melee_weapon_names: list[str] = []
+            for wargear in list(getattr(target_model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                try:
+                    if not bool(getattr(wargear, "is_melee", lambda: False)()):
+                        continue
+                except Exception:
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if weapon_name and weapon_name not in melee_weapon_names:
+                    melee_weapon_names.append(weapon_name)
+            for weapon_index, weapon_name in enumerate(sorted(melee_weapon_names, key=str.lower)):
+                key_base = f"spirit_of_gork:{source_root_id}:{target_root_id}:{model_index}:{weapon_index}"
+                target_model.set_temporary_weapon_bonus(
+                    key=f"{key_base}:strength",
+                    weapon_name=weapon_name,
+                    strength_bonus=int(strength_bonus),
+                    source=ability_name,
+                    expires_phase="FIGHT_PHASE",
+                )
+                if int(roll) >= 6:
+                    target_model.set_temporary_weapon_keyword_bonuses(
+                        key=f"{key_base}:keywords",
+                        weapon_name=weapon_name,
+                        keywords=["LETHAL HITS"],
+                        source=ability_name,
+                        expires_phase="FIGHT_PHASE",
+                        attack_type="melee",
+                    )
+
+        if callable(append_action) and player is not None:
+            if int(roll) >= 6:
+                append_action(
+                    player,
+                    f"{ability_name}: {getattr(target_root, 'name', 'Unit')} gains +{int(strength_bonus)} Strength and Lethal Hits on melee weapons until end of phase.",
+                )
+            else:
+                append_action(
+                    player,
+                    f"{ability_name}: {getattr(target_root, 'name', 'Unit')} gains +{int(strength_bonus)} Strength on melee weapons until end of phase.",
+                )
+        return target_root
     if str(ctx.get("ability", "") or "") == "boon_of_death":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is not None and chosen is not None:
