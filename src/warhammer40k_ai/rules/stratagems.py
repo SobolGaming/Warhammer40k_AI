@@ -1636,7 +1636,7 @@ class StratagemManager(
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES", "A DEADLY SNARE", "SHADE PATH"}:
             add("charge_declared", self._on_charge_declared)
-        if names & {"FIRES OF COVENANT", "A CHALLENGE MET", "MIRAGE OF ECHOES"}:
+        if names & {"OVERWATCH", "FIRE OVERWATCH", "FIRES OF COVENANT", "A CHALLENGE MET", "MIRAGE OF ECHOES"}:
             add("unit_set_up", self._on_unit_set_up)
 
         if names & {
@@ -8718,6 +8718,7 @@ class StratagemManager(
         )
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="set_up")
         self._queue_augurium_unit_set_up_reactions(unit=unit, **kwargs)
+        self._maybe_queue_overwatch(unit, action="set_up", when="end")
 
     def _on_unit_shooting_resolved_fire_and_fade(self, attacker_unit=None, **kwargs):
         """
@@ -21880,6 +21881,8 @@ class StratagemManager(
                     when = str(r.get("when", "") or "").strip().lower()
                     if action == "charge":
                         trigger_label = "Trigger: enemy charge"
+                    elif action == "set_up":
+                        trigger_label = "Trigger: enemy set up"
                     elif when == "start":
                         trigger_label = "Trigger: enemy move start"
                     elif when == "end":

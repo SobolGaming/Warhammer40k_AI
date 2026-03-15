@@ -6102,13 +6102,12 @@ class OrksStratagemMixin:
             return False
 
         source_name = str(getattr(stratagem, "name", "") or "GO GET 'EM!").strip() or "GO GET 'EM!"
-        can_reroll = self._orks_green_tide_effectively_counts_as_ten(root, scope="stratagem")
         activate_horde_move = getattr(root, "activate_go_get_em_horde_move", None)
         if callable(activate_horde_move):
             activate_horde_move(
                 game=self.game,
                 attacker_unit=attacker_root,
-                can_reroll_distance=can_reroll,
+                can_reroll_distance=False,
                 source=source_name,
             )
         sr = getattr(root, "special_rules", None)
@@ -6123,9 +6122,8 @@ class OrksStratagemMixin:
 
         self._orks_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
-            "INFO: GO GET 'EM!: %s will make a post-shooting Horde move%s after %s finishes shooting.",
+            "INFO: GO GET 'EM!: %s will make a post-shooting Horde move after %s finishes shooting; any D6 re-roll is checked after that shooting resolves.",
             getattr(root, "name", "Unit"),
-            " with a D6 reroll" if can_reroll else "",
             getattr(attacker_root, "name", "the attacker"),
         )
         return True

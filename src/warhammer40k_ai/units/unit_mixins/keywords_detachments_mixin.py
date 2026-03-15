@@ -3267,10 +3267,21 @@ class KeywordsDetachmentsMixin:
             current_key = str(root._horde_move_phase_key(game) or "")
             if current_key != phase_key:
                 return None
+        distance_reroll = bool(sr.get("orks_go_get_em_reroll_distance"))
+        if game is not None:
+            reroll_fn = getattr(root, "orks_effectively_counts_as_ten_models", None)
+            if callable(reroll_fn):
+                distance_reroll = bool(
+                    reroll_fn(
+                        "stratagem",
+                        game=game,
+                        game_map=getattr(game, "map", None),
+                    )
+                )
         return {
             "source": str(sr.get("orks_go_get_em_source", "") or "GO GET 'EM!").strip() or "GO GET 'EM!",
             "distance_bonus": 0,
-            "distance_reroll": bool(sr.get("orks_go_get_em_reroll_distance")),
+            "distance_reroll": bool(distance_reroll),
             "requires_not_engaged": False,
             "use_once_per_phase": False,
             "closest_enemy_unit_exclude_keywords": (),

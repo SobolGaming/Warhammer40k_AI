@@ -405,6 +405,51 @@ def test_go_get_em_waits_until_attacker_finishes_shooting_and_uses_reroll_branch
     assert bool(valid_horde.get("valid", False))
 
 
+def test_go_get_em_checks_ten_model_reroll_after_attacker_finishes_shooting() -> None:
+    game, ork_player, enemy_player, ork_army, enemy_army = _build_game()
+    boyz = _make_unit(
+        "Boyz Mob",
+        keywords=["INFANTRY", "BOYZ"],
+        faction_keywords=["ORKS"],
+        model_count=10,
+    )
+    attacker = _make_unit("Enemy Shooter", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    ork_army.add_unit(boyz)
+    enemy_army.add_unit(attacker)
+    _deploy_unit(game, boyz, 10.0, 10.0)
+    _deploy_unit(game, attacker, 16.0, 10.0)
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+
+    provider_calls: list[dict] = []
+    game.map.roll_reroll_provider = lambda **kwargs: provider_calls.append(dict(kwargs)) or True
+
+    game.event_system.publish(
+        "shooting_targets_selected",
+        attacking_unit=attacker,
+        target_units=[boyz],
+    )
+    strat_name = _resolve_available_stratagem_name(ork_player, "GO GET 'EM!'")
+    assert ork_player.stratagems.use(strat_name, unit=boyz, attacking_unit=attacker, phase_name="Shooting phase")
+
+    boyz.models = list(boyz.models[:9])
+
+    with patch("warhammer40k_ai.utility.dice.get_roll", return_value=2):
+        game.event_system.publish(
+            "unit_shooting_resolved",
+            attacker_unit=attacker,
+            hits_by_target={boyz: 1},
+        )
+        confirm_request = _find_decision(game, DECISION_CONFIRM_YES_NO)
+        assert confirm_request is not None
+        _resolve_yes_option(game, confirm_request, player_id=ork_player.id)
+
+    move_request = _find_decision(game, DECISION_MOVE_UNIT)
+    assert move_request is not None
+    move_ctx = move_request.context or {}
+    assert int(move_ctx.get("max_distance") or 0) == 2
+    assert provider_calls == []
+
+
 def test_go_get_em_rejects_wrong_phase_and_wrong_target_unit() -> None:
     game, ork_player, enemy_player, ork_army, enemy_army = _build_game()
     nobz = _make_unit(

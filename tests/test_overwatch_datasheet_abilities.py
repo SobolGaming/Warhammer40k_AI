@@ -358,6 +358,130 @@ class TestOverwatchDatasheetAbilities(unittest.TestCase):
             )
         )
 
+    def test_overwatch_queue_triggers_when_enemy_unit_is_set_up(self):
+        from warhammer40k_ai.rules.stratagems import Stratagem, StratagemManager
+
+        moving_army = Army("Orks", detachment_type="Other")
+        moving_army.faction_id = "ORK"
+        defending_army = Army("Enemy", detachment_type="Other")
+        defending_army.faction_id = "EN"
+
+        moving_player = SimpleNamespace(name="Mover", id="p-move")
+        defending_player = SimpleNamespace(
+            name="Defender",
+            id="p-defend",
+            command_points=1,
+            get_army=lambda: defending_army,
+        )
+        moving_army.player = moving_player
+        defending_army.player = defending_player
+
+        moving_unit = self._make_unit("Boss Snikrot", moving_army)
+        shooter = self._make_unit("Overwatch Unit", defending_army)
+        defending_army.units = [shooter]
+
+        game = SimpleNamespace(
+            get_current_player=lambda: moving_player,
+            turn=1,
+            map=SimpleNamespace(get_distance_between_units=lambda _a, _b: 12.0),
+        )
+
+        manager = StratagemManager.__new__(StratagemManager)
+        manager.player = defending_player
+        manager.game = game
+        manager.available = [
+            Stratagem(
+                id="core_overwatch",
+                name="FIRE OVERWATCH",
+                type="Stratagem",
+                description="",
+                cp_cost=1,
+                turn="Opponent's turn",
+                phase="Movement phase",
+                detachment="",
+                faction_id="",
+            )
+        ]
+        manager._used_this_turn = {"OVERWATCH": False}
+        manager._used_stratagems_this_phase = set()
+        manager._current_phase_name = "Movement phase"
+        manager._pending_reactions = []
+        manager._queue_reaction = lambda payload: manager._pending_reactions.append(payload)
+        manager._track_a_challenge_met_set_up = lambda _unit: None
+        manager._queue_drukhari_reapers_wager_scintillating_tempo_reactions = lambda **_kwargs: None
+        manager._process_warpbane_fires_of_covenant_trigger = lambda **_kwargs: None
+        manager._queue_augurium_unit_set_up_reactions = lambda **_kwargs: None
+
+        manager._on_unit_set_up(moving_unit, set_up_as_reinforcements=False)
+
+        self.assertEqual(len(manager._pending_reactions), 1)
+        reaction = manager._pending_reactions[0]
+        self.assertEqual(reaction.get("event"), "enemy_move")
+        self.assertEqual(reaction.get("action"), "set_up")
+        self.assertEqual(reaction.get("when"), "end")
+        self.assertIs(reaction.get("enemy_unit"), moving_unit)
+
+    def test_overwatch_queue_skips_enemy_setup_when_unit_has_static_no_fire_overwatch_rule(self):
+        from warhammer40k_ai.rules.stratagems import Stratagem, StratagemManager
+
+        ability_desc = "Enemy units cannot use the Fire Overwatch Stratagem to shoot at this unit."
+        ability = Ability("Sneaky Surprise", "ORK", ability_desc, "Datasheet", "")
+
+        moving_army = Army("Orks", detachment_type="Other")
+        moving_army.faction_id = "ORK"
+        defending_army = Army("Enemy", detachment_type="Other")
+        defending_army.faction_id = "EN"
+
+        moving_player = SimpleNamespace(name="Mover", id="p-move")
+        defending_player = SimpleNamespace(
+            name="Defender",
+            id="p-defend",
+            command_points=1,
+            get_army=lambda: defending_army,
+        )
+        moving_army.player = moving_player
+        defending_army.player = defending_player
+
+        moving_unit = self._make_unit("Kommandos", moving_army, abilities=[ability])
+        shooter = self._make_unit("Overwatch Unit", defending_army)
+        defending_army.units = [shooter]
+
+        game = SimpleNamespace(
+            get_current_player=lambda: moving_player,
+            turn=1,
+            map=SimpleNamespace(get_distance_between_units=lambda _a, _b: 12.0),
+        )
+
+        manager = StratagemManager.__new__(StratagemManager)
+        manager.player = defending_player
+        manager.game = game
+        manager.available = [
+            Stratagem(
+                id="core_overwatch",
+                name="FIRE OVERWATCH",
+                type="Stratagem",
+                description="",
+                cp_cost=1,
+                turn="Opponent's turn",
+                phase="Movement phase",
+                detachment="",
+                faction_id="",
+            )
+        ]
+        manager._used_this_turn = {"OVERWATCH": False}
+        manager._used_stratagems_this_phase = set()
+        manager._current_phase_name = "Movement phase"
+        manager._pending_reactions = []
+        manager._queue_reaction = lambda payload: manager._pending_reactions.append(payload)
+        manager._track_a_challenge_met_set_up = lambda _unit: None
+        manager._queue_drukhari_reapers_wager_scintillating_tempo_reactions = lambda **_kwargs: None
+        manager._process_warpbane_fires_of_covenant_trigger = lambda **_kwargs: None
+        manager._queue_augurium_unit_set_up_reactions = lambda **_kwargs: None
+
+        manager._on_unit_set_up(moving_unit, set_up_as_reinforcements=False)
+
+        self.assertEqual(manager._pending_reactions, [])
+
 
 if __name__ == "__main__":
     unittest.main()

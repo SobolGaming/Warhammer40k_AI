@@ -299,6 +299,70 @@ def test_kunnin_infiltrator_queues_multimodel_redeploy_and_marks_once_per_battle
     assert bool(unit.has_used_unit_once_per_battle(str(spec.get("ability_key", "") or "")))
 
 
+def test_kunnin_infiltrator_publishes_unit_set_up_only_when_redeployed_unit_is_placed():
+    game, ork_army, enemy_army = _build_game()
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    game.current_player_index = 0
+
+    unit = _make_unit(
+        "Boss Snikrot",
+        ability_name="Kunnin' Infiltrator",
+        ability_desc=KUNNIN_INFILTRATOR_TEXT,
+        keywords=["ORKS", "INFANTRY", "CHARACTER"],
+        faction_keywords=["ORKS"],
+        model_count=3,
+    )
+    enemy = _make_unit("Enemy Unit", faction_name="Enemy", faction_keywords=["EN"], model_count=1)
+    ork_army.add_unit(unit)
+    enemy_army.add_unit(enemy)
+
+    _deploy_unit(game, unit, 0.0, 0.0)
+    _deploy_unit(game, enemy, 40.0, 0.0)
+    game.map.is_within_boundary = lambda *_args, **_kwargs: True
+    game.map.check_collision_with_obstacles = lambda *_args, **_kwargs: False
+    game.rebuild_entity_registry()
+
+    published: list[tuple[str, dict]] = []
+    original_publish = game.event_system.publish
+
+    def _capture_publish(event_name: str, **kwargs):
+        published.append((str(event_name), dict(kwargs)))
+        return original_publish(event_name, **kwargs)
+
+    game.event_system.publish = _capture_publish
+
+    game._queue_movement_phase_normal_move_redeploy(player=ork_army.player, unit=unit)
+    request = list(game.decision_queue.list() or [])[0]
+    yes_option = next(opt for opt in list(request.options or []) if bool((opt.payload or {}).get("choice", False)))
+    resolve_decision_command(game, request, yes_option.option_id, player_id=ork_army.player.id)
+
+    assert [event for event, _kwargs in published if event == "unit_set_up"] == []
+
+    move_request = list(game.decision_queue.list() or [])[0]
+    model_positions = []
+    for idx, model in enumerate(list(unit.models or [])):
+        model_positions.append(
+            {
+                "model_id": get_entity_id(model),
+                "position": [15.0 + (2.1 * idx), 0.0, 0.0],
+                "facing": 0.0,
+            }
+        )
+    result = resolve_decision_command(
+        game,
+        move_request,
+        move_request.options[0].option_id,
+        player_id=ork_army.player.id,
+        result_payload={"model_positions": model_positions},
+    )
+
+    assert bool(getattr(result, "ok", False))
+    set_up_events = [kwargs for event, kwargs in published if event == "unit_set_up"]
+    assert len(set_up_events) == 1
+    assert set_up_events[0].get("unit") is unit
+    assert bool(set_up_events[0].get("set_up_as_reinforcements", True)) is False
+
+
 def test_burna_bomb_uses_target_model_count_and_applies_no_cover():
     game, ork_army, enemy_army = _build_game()
     game.auto_resolve_dice_rolls = False

@@ -5824,6 +5824,12 @@ class Game(
         sr = getattr(root, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
+        phase_key = ""
+        phase_key_fn = getattr(self, "_current_turn_phase_key", None)
+        if callable(phase_key_fn):
+            phase_key = str(phase_key_fn() or "")
+        if phase_key and str(sr.get("bomb_squig_last_use_phase_key", "") or "") == phase_key:
+            return
         try:
             used = int(sr.get("bomb_squig_uses", 0) or 0)
         except Exception:
@@ -5893,6 +5899,8 @@ class Game(
 
             spec["max_uses"] = int(max_uses)
             spec["remaining_uses"] = int(max(0, max_uses - used))
+            if phase_key:
+                spec["phase_key"] = phase_key
             self._queue_mortal_wounds_target_decision(
                 player=player,
                 unit=root,

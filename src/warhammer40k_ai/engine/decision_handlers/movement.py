@@ -2041,6 +2041,14 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
         _finalize_deployment_move(game, unit, model_positions)
     if placement_kind == "reserves_arrival":
         _finalize_reserves_arrival_move(game, unit, model_positions, ctx=ctx)
+    if placement_kind in ("advance_redeploy_9h", "normal_move_redeploy_9h"):
+        event_system = getattr(game, "event_system", None)
+        if event_system is not None:
+            event_system.publish(
+                "unit_set_up",
+                unit=unit,
+                set_up_as_reinforcements=False,
+            )
     if bool(ctx.get("redeploy_followup", False)):
         try:
             unit_id = str(ctx.get("redeploy_unit_id", "") or unit_id)

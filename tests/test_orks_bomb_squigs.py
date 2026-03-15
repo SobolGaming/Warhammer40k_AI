@@ -193,7 +193,7 @@ class TestOrksBombSquigs(unittest.TestCase):
         game._on_unit_move_ended_bomb_squigs(unit=attacker, action="move")
         self.assertEqual(len(list(game.decision_queue.list() or [])), 0)
 
-    def test_bomb_squigs_per_bomb_squig_uses_optional_wargear_count(self):
+    def test_bomb_squigs_per_bomb_squig_uses_optional_wargear_count_across_phases(self):
         game, attacker, enemy, ork_player = self._build_units_for_bomb_squigs_test(self._BOMB_SQUIGS_PER_SQUIG)
         second = self._make_model("Ork Model 2", attacker, x=0.5, y=0.0, z=0.0)
         attacker.models.append(second)
@@ -214,6 +214,10 @@ class TestOrksBombSquigs(unittest.TestCase):
         self.assertFalse(attacker.has_used_unit_once_per_battle("bomb_squigs"))
 
         game._on_unit_move_ended_bomb_squigs(unit=attacker, action="move")
+        self.assertEqual(len(list(game.decision_queue.list() or [])), 0)
+
+        game.turn = 2
+        game._on_unit_move_ended_bomb_squigs(unit=attacker, action="move")
         req2 = list(game.decision_queue.list() or [])[0]
         self.assertEqual(int((req2.context or {}).get("spec", {}).get("remaining_uses", 0) or 0), 1)
         self._resolve_quarry_choice(game, req2, ork_player, target=enemy)
@@ -228,7 +232,7 @@ class TestOrksBombSquigs(unittest.TestCase):
         game._on_unit_move_ended_bomb_squigs(unit=attacker, action="move")
         self.assertEqual(len(list(game.decision_queue.list() or [])), 0)
 
-    def test_bomb_squigs_two_token_variant_grants_two_uses_without_wargear_count(self):
+    def test_bomb_squigs_two_token_variant_grants_two_uses_without_wargear_count_across_phases(self):
         game, attacker, enemy, ork_player = self._build_units_for_bomb_squigs_test(self._BOMB_SQUIGS_TWO_TOKENS)
 
         game._on_unit_move_ended_bomb_squigs(unit=attacker, action="move")
@@ -244,6 +248,10 @@ class TestOrksBombSquigs(unittest.TestCase):
         self.assertFalse(attacker.has_used_unit_once_per_battle("bomb_squigs"))
 
         game._on_unit_move_ended_bomb_squigs(unit=attacker, action="move")
+        self.assertEqual(len(list(game.decision_queue.list() or [])), 0)
+
+        game.turn = 2
+        game._on_unit_move_ended_bomb_squigs(unit=attacker, action="move")
         req2 = list(game.decision_queue.list() or [])[0]
         self._resolve_quarry_choice(game, req2, ork_player, target=enemy)
         with patch(
@@ -253,6 +261,22 @@ class TestOrksBombSquigs(unittest.TestCase):
             self._resolve_pending_roll(game, ork_player, fixed_dice=[3])
         self.assertEqual(int(attacker.special_rules.get("bomb_squig_uses", 0) or 0), 2)
         self.assertTrue(attacker.has_used_unit_once_per_battle("bomb_squigs"))
+
+    def test_bomb_squigs_cannot_be_used_twice_in_same_phase_even_with_remaining_tokens(self):
+        game, attacker, enemy, ork_player = self._build_units_for_bomb_squigs_test(self._BOMB_SQUIGS_TWO_TOKENS)
+
+        game._on_unit_move_ended_bomb_squigs(unit=attacker, action="move")
+        req = list(game.decision_queue.list() or [])[0]
+        self._resolve_quarry_choice(game, req, ork_player, target=enemy)
+        with patch(
+            "warhammer40k_ai.utility.dice.get_roll",
+            side_effect=lambda die: 1 if str(die).upper() == "D3" else 1,
+        ):
+            self._resolve_pending_roll(game, ork_player, fixed_dice=[3])
+
+        game._on_unit_move_ended_bomb_squigs(unit=attacker, action="move")
+        self.assertEqual(len(list(game.decision_queue.list() or [])), 0)
+        self.assertEqual(int(attacker.special_rules.get("bomb_squig_uses", 0) or 0), 1)
 
     def test_bomb_squigs_skip_does_not_consume_use(self):
         game, attacker, _enemy, ork_player = self._build_units_for_bomb_squigs_test(self._BOMB_SQUIGS_SINGLE)

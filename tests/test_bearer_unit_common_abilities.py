@@ -200,6 +200,100 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertIn((5, None), unit.has_feel_no_pain(target_model=unit.models[0]))
 
+    def test_waaagh_conditional_unit_fnp_applies_during_bully_boyz_second_waaagh(self):
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.rules.orks_detachments import OrksDetachmentManager
+        from warhammer40k_ai.rules.waaagh import WaaaghManager
+
+        meganobz = _make_unit(
+            "Meganobz",
+            abilities=[
+                {"name": "Waaagh!", "description": "", "type": "Datasheet", "parameter": ""},
+                {
+                    "name": "Krumpin' Time",
+                    "description": "While the Waaagh! is active for your army, models in this unit have the Feel No Pain 5+ ability.",
+                    "type": "Datasheet",
+                    "parameter": "",
+                },
+            ],
+            faction_name="Orks",
+        )
+        meganobz.keywords = ["MEGANOBZ"]
+        meganobz.deployed = True
+        meganobz.reserve_status = "deployed"
+        meganobz._refresh_bearer_unit_common_modifiers()
+
+        warboss = _make_unit(
+            "Warboss",
+            abilities=[{"name": "Waaagh!", "description": "", "type": "Datasheet", "parameter": ""}],
+            faction_name="Orks",
+        )
+        warboss.keywords = ["WARBOSS"]
+        warboss.deployed = True
+        warboss.reserve_status = "deployed"
+
+        army = Army("Orks", "Bully Boyz")
+        army.faction_id = "ORK"
+        player = Player("Orks", control=PlayerControl.REMOTE, army=army)
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
+        game.current_player_index = 0
+        game.phase = SimpleNamespace(name="COMMAND_PHASE")
+
+        army.add_unit(warboss)
+        army.add_unit(meganobz)
+        army.orks_detachments = OrksDetachmentManager(army)
+        army.waaagh = WaaaghManager(army)
+
+        self.assertTrue(army.waaagh.call_waaagh(game=game, player=player))
+        game.turn = 2
+        army.waaagh.on_command_phase_start(game=game, player=player)
+        self.assertTrue(army.waaagh.call_waaagh(game=game, player=player))
+
+        self.assertIn((5, None), meganobz.has_feel_no_pain(target_model=meganobz.models[0]))
+
+    def test_krumpin_time_attached_character_loses_fnp_when_no_longer_attached(self):
+        from warhammer40k_ai.roster.army import Army
+
+        meganobz = _make_unit(
+            "Meganobz",
+            abilities=[
+                {"name": "Waaagh!", "description": "", "type": "Datasheet", "parameter": ""},
+                {
+                    "name": "Krumpin' Time",
+                    "description": "While the Waaagh! is active for your army, models in this unit have the Feel No Pain 5+ ability.",
+                    "type": "Datasheet",
+                    "parameter": "",
+                },
+            ],
+            faction_name="Orks",
+        )
+        leader = _make_unit("Big Mek", faction_name="Orks")
+        meganobz.attached_leaders = [leader]
+        leader.attached_to = meganobz
+        leader.can_be_attached_to = [meganobz.name]
+
+        army = Army("Orks", "Waaagh!")
+        army.faction_id = "ORK"
+        army.add_unit(meganobz)
+        army.add_unit(leader)
+        army.waaagh.active = True
+        army.waaagh.used_this_battle = True
+        army.waaagh.calls_this_battle = 1
+
+        meganobz._refresh_bearer_unit_common_modifiers()
+        leader._refresh_bearer_unit_common_modifiers()
+        self.assertIn((5, None), meganobz.has_feel_no_pain(target_model=leader.models[0]))
+
+        meganobz.attached_leaders = []
+        leader.attached_to = None
+        leader.can_be_attached_to = []
+        meganobz._refresh_bearer_unit_common_modifiers()
+        leader._refresh_bearer_unit_common_modifiers()
+
+        self.assertNotIn((5, None), leader.has_feel_no_pain(target_model=leader.models[0]))
+
     def test_waaagh_conditional_unit_move_bonus_applies_only_while_active(self):
         from warhammer40k_ai.roster.army import Army
 
@@ -274,6 +368,53 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
             attack_result = profile.attack(target, attacker.models[0], game_map=None)
 
         self.assertEqual(int(attack_result.attacks_rolled), 6)
+
+    def test_waaagh_conditional_model_melee_attacks_bonus_does_not_apply_while_embarked(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        attacker = _make_unit(
+            "Warboss",
+            abilities=[
+                {"name": "Waaagh!", "description": "", "type": "Datasheet", "parameter": ""},
+                {
+                    "name": "Da Biggest and da Best",
+                    "description": "While the Waaagh! is active for your army, add 4 to the Attacks characteristic of this model's melee weapons.",
+                    "type": "Datasheet",
+                    "parameter": "",
+                },
+            ],
+            faction_name="Orks",
+        )
+        attacker.embarked_in = object()
+        target = _make_unit("Target", faction_name="Orks")
+
+        army = Army("Orks", "Waaagh!")
+        army.faction_id = "ORK"
+        army.add_unit(attacker)
+        army.add_unit(target)
+        army.waaagh.active = True
+        army.waaagh.used_this_battle = True
+        army.waaagh.calls_this_battle = 1
+
+        melee_parent = SimpleNamespace(name="Power Klaw", is_melee=lambda: True, is_ranged=lambda: False)
+        profile = WargearProfile(
+            profile_name="Melee",
+            wargear_data={
+                "range": "Melee",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=melee_parent,
+        )
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
+            attack_result = profile.attack(target, attacker.models[0], game_map=None)
+
+        self.assertEqual(int(attack_result.attacks_rolled), 1)
 
     def test_waaagh_conditional_uge_choppa_damage_set_applies(self):
         from warhammer40k_ai.roster.army import Army

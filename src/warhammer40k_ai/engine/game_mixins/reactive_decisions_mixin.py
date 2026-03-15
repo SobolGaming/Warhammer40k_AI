@@ -4,6 +4,19 @@ from ._shared import *  # noqa: F401,F403
 
 
 class GameReactiveDecisionsMixin:
+    def _current_turn_phase_key(self) -> str:
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        phase_obj = getattr(self, "phase", None)
+        phase_name = str(getattr(phase_obj, "name", "") or getattr(self, "_current_phase_name", "") or "").strip().upper()
+        current_player = getattr(self, "get_current_player", lambda: None)()
+        owner_id = str(getattr(current_player, "id", "") or "")
+        if not phase_name:
+            return ""
+        return f"{turn}:{phase_name}:{owner_id}"
+
     def queue_phoenix_gem_return(
         self,
         *,
@@ -9071,6 +9084,14 @@ class GameReactiveDecisionsMixin:
                 return
             next_use = int(used + 1)
             sr["bomb_squig_uses"] = int(next_use)
+            phase_key = str(
+                spec.get("phase_key")
+                or ctx.get("phase_key")
+                or self._current_turn_phase_key()
+                or ""
+            )
+            if phase_key:
+                sr["bomb_squig_last_use_phase_key"] = phase_key
             try:
                 prev_max = int(sr.get("bomb_squig_max_uses", 0) or 0)
             except Exception:
