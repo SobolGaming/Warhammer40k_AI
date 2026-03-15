@@ -10324,6 +10324,64 @@ class KeywordsDetachmentsMixin:
         self._ability_cache[cache_key] = rule
         return rule
 
+    def get_ranged_target_within_range_ap_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return ranged AP bonus rule for patterns like:
+        "Each time a model in this unit makes a ranged attack that targets a unit within 9",
+         improve the Armour Penetration characteristic of that attack by 1."
+        """
+        if model is None:
+            return None
+        cache_key = f"ranged_target_within_range_ap_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            entries = list(self._iter_model_specific_ability_entries(model) or [])
+            entries.extend(list(self._iter_ability_entries_for_rules(model=None) or []))
+            pattern = re.compile(
+                r"each time (?:(?:a model in this unit)|(?:this model)|(?:this unit)) makes a ranged attack "
+                r"that targets a unit within (?P<range>\d+) improve the armou?r penetration characteristic of that attack by (?P<bonus>\d+)",
+                re.IGNORECASE,
+            )
+            for name, desc in entries:
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                low = re.sub(r"'s\b", "s", low)
+                low = re.sub(r"[^a-z0-9]+", " ", low)
+                low = re.sub(r"\s+", " ", low).strip()
+                match = pattern.fullmatch(low)
+                if not match:
+                    continue
+                try:
+                    range_in = float(match.group("range") or 0)
+                except Exception:
+                    range_in = 0.0
+                try:
+                    ap_bonus = int(match.group("bonus") or 0)
+                except Exception:
+                    ap_bonus = 0
+                if range_in <= 0.0 or ap_bonus <= 0:
+                    continue
+                source = str(name or "Ranged target within range AP bonus").strip() or "Ranged target within range AP bonus"
+                rule = {
+                    "attack_type": "ranged",
+                    "target_within_range": float(range_in),
+                    "ap_bonus": int(ap_bonus),
+                    "source": source,
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def get_d_cannon_damage_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return rule info for abilities like:

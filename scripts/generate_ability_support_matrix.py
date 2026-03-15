@@ -4968,7 +4968,6 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Bearer invulnerable save is parsed and applied, and Grenades keyword removal is applied through removed-keyword handling.",
         ),
-        ("ORK", "Super Runts"): ("Partial", "Scouts 9\" applied without leading restriction; hit/wound bonus not implemented."),
         ("ORK", "Tellyporta Tech"): ("Partial", "Deep Strike granted without leading restriction."),
         ("ORK", "Drill Boss"): ("Supported", "Leading: +1 to hit for melee attacks in the unit."),
         ("ORK", "Dead Choppy"): (
@@ -5964,6 +5963,7 @@ def _classify_ability_base(
     orks_named_datasheet_support = _orks_named_datasheet_support(name, description, faction_id=faction_id)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
+    leading_scaled_weapon_bonus_support = _leading_scaled_weapon_bonus_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
     bearer_wounds_support = _bearer_wounds_characteristic_support(description)
     bearer_move_and_save_support = _bearer_move_and_save_characteristics_support(description)
@@ -6048,6 +6048,7 @@ def _classify_ability_base(
     post_shoot_snare_support = _post_shoot_snare_support(description)
     post_shoot_leadership_debuff_support = _post_shoot_leadership_debuff_support(description)
     post_shoot_keyword_hit_reroll_ones_support = _post_shoot_keyword_hit_reroll_ones_support(description)
+    ranged_target_within_range_ap_bonus_support = _ranged_target_within_range_ap_bonus_support(description)
     aura_battleshock_leadership_penalty_support = _aura_battleshock_leadership_penalty_support(description)
     failed_battleshock_aura_mortal_heal_support = _failed_battleshock_aura_mortal_heal_support(description)
     fight_phase_select_engagement_battleshock_support = _fight_phase_select_engagement_battleshock_support(description)
@@ -6061,6 +6062,7 @@ def _classify_ability_base(
     charge_end_engagement_battleshock_support = _charge_end_engagement_battleshock_support(description)
     start_any_phase_tome_skull_support = _start_any_phase_tome_skull_support(description)
     start_any_phase_battleshock_clear_support = _start_any_phase_battleshock_clear_support(description)
+    start_any_phase_enemy_range_mortal_threshold_support = _start_any_phase_enemy_range_mortal_threshold_support(description)
     fight_phase_below_starting_strength_fight_first_support = _fight_phase_below_starting_strength_fight_first_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
     fight_phase_melee_ap_boost_support = _fight_phase_once_melee_attacks_ap_support(description)
@@ -6341,6 +6343,8 @@ def _classify_ability_base(
         return common_support
     if leading_support:
         return leading_support
+    if leading_scaled_weapon_bonus_support:
+        return leading_scaled_weapon_bonus_support
     if cat_unit_support:
         return cat_unit_support
     if conniving_runts_support:
@@ -6511,6 +6515,8 @@ def _classify_ability_base(
         return post_shoot_leadership_debuff_support
     if post_shoot_keyword_hit_reroll_ones_support:
         return post_shoot_keyword_hit_reroll_ones_support
+    if ranged_target_within_range_ap_bonus_support:
+        return ranged_target_within_range_ap_bonus_support
     if aura_battleshock_leadership_penalty_support:
         return aura_battleshock_leadership_penalty_support
     if failed_battleshock_aura_mortal_heal_support:
@@ -6533,6 +6539,8 @@ def _classify_ability_base(
         return start_any_phase_tome_skull_support
     if start_any_phase_battleshock_clear_support:
         return start_any_phase_battleshock_clear_support
+    if start_any_phase_enemy_range_mortal_threshold_support:
+        return start_any_phase_enemy_range_mortal_threshold_support
     if fight_phase_end_mortal_support:
         return fight_phase_end_mortal_support
     if fight_phase_melee_ap_boost_support:
@@ -10420,6 +10428,13 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     )
     if fight_first_match:
         notes.append("Leading: unit gains Fights First.")
+    scout_match = re.search(
+        r"(?:models in that unit|that unit)\s+(?:has|have)\s+(?:the\s+)?scouts?\s+(?P<rng>\d+)\s*\"?\s+ability",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if scout_match:
+        notes.append(f"Leading: unit gains Scouts {scout_match.group('rng')}\".")
 
     invuln_psychic_daemon_match = re.search(
         r"models in that unit have (?:a|the)?\s*(\d)\+\s*invulnerable save,?\s*and\s*(?:a|the)?\s*(\d)\+\s*invulnerable save against psychic attacks and attacks made by daemon models",
@@ -10492,6 +10507,16 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if m:
         wound_conditional = True
         notes.append(f"Leading: +{m.group(1)} to wound for {attack_scope} attacks vs Battle-shocked targets.")
+    m = re.search(
+        r"each time a model in that unit makes (?:a|an)\s+(?:melee|ranged)?\s*attack, add\s+(\d+)\s+to\s+the\s+hit\s+roll\s+and\s+add\s+(\d+)\s+to\s+the\s+wound\s+roll",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        hit_conditional = True
+        wound_conditional = True
+        notes.append(f"Leading: +{m.group(1)} to hit for {attack_scope} attacks.")
+        notes.append(f"Leading: +{m.group(2)} to wound for {attack_scope} attacks.")
 
     if not hit_conditional:
         m = re.search(
@@ -10510,6 +10535,13 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         )
         if m:
             notes.append(f"Leading: +{m.group(1)} to wound for {attack_scope} attacks.")
+    defensive_wound_match = re.search(
+        r"each time an attack targets that unit subtract (\d+) from the wound roll",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if defensive_wound_match:
+        notes.append(f"Leading: attackers suffer -{defensive_wound_match.group(1)} to wound against the unit.")
 
     hit_re = re.search(r"re-?roll (?:a|any)?\s*hit roll(?:s)? of 1", low, flags=re.IGNORECASE)
     wound_re = re.search(r"re-?roll (?:a|any)?\s*wound roll(?:s)? of 1", low, flags=re.IGNORECASE)
@@ -10528,9 +10560,12 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}ranged weapons equipped by models in that unit have the lethal hits ability",
         rf"{lead_prefix}weapons equipped by models in that unit have the lethal hits ability",
         rf"{lead_prefix}(?:models in that unit|that unit) (?:has|have) (?:the )?fights? first ability",
+        rf"{lead_prefix}(?:models in that unit|that unit) (?:has|have) (?:the )?scouts? \d+ ability",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack(?:s)? add \d+ to the hit roll if that unit is below (?:its )?starting strength and add \d+ to the wound roll(?: as well)? if that unit is below (?:its )?half strength",
+        rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the hit roll and add \d+ to the wound roll",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the hit roll",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the wound roll",
+        rf"{lead_prefix}each time an attack targets that unit subtract \d+ from the wound roll",
         rf"{lead_prefix}add \d+ to the hit roll if that unit is below (?:its )?starting strength",
         rf"{lead_prefix}add \d+ to the wound roll(?: as well)? if that unit is below half strength",
         rf"{lead_prefix}add \d+ to the wound roll(?: as well)? if the target is battle shocked",
@@ -10554,6 +10589,59 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         status = "Supported" if not unsupported else "Partial"
         return (status, " ".join(notes))
     return None
+
+
+def _leading_scaled_weapon_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    attacks_match = re.fullmatch(
+        r"while this model is leading a unit add (?P<bonus>\d+) to the attacks characteristic of (?:this model s|this models) "
+        r"(?P<weapon>[a-z0-9 ' -]+?) weapon for every (?P<step>\d+) models in that unit(?: rounding down)? "
+        r"but while that unit contains (?P<hazard>\d+) or more models that weapon has the hazardous ability",
+        norm,
+    )
+    if attacks_match:
+        weapon = " ".join(str(attacks_match.group("weapon") or "").strip().split())
+        return (
+            "Supported",
+            f"Leading: this model's {weapon} gains +{attacks_match.group('bonus')}A per {attacks_match.group('step')} models in the unit, and gains [HAZARDOUS] at {attacks_match.group('hazard')}+ models.",
+        )
+    strength_damage_match = re.fullmatch(
+        r"while this model is leading a unit add (?P<bonus>\d+) to the (?:(?:strength and damage)|(?:damage and strength)) "
+        r"characteristics of (?:this model s|this models) (?P<weapon>[a-z0-9 ' -]+?) weapon for every (?P<step>\d+) models in that unit"
+        r"(?: rounding down)? but while that unit contains (?P<hazard>\d+) or more models that weapon has the hazardous ability",
+        norm,
+    )
+    if not strength_damage_match:
+        return None
+    weapon = " ".join(str(strength_damage_match.group("weapon") or "").strip().split())
+    return (
+        "Supported",
+        f"Leading: this model's {weapon} gains +{strength_damage_match.group('bonus')}S/+{strength_damage_match.group('bonus')}D per {strength_damage_match.group('step')} models in the unit, and gains [HAZARDOUS] at {strength_damage_match.group('hazard')}+ models.",
+    )
+
+
+def _start_any_phase_enemy_range_mortal_threshold_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"once per battle at the start of any phase select one enemy unit within (?P<range>\d+) of this model "
+        r"and roll (?:one|1) d6 on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d\d+(?:\+\d+)?|\d+) mortal wounds?"
+        r"(?: designer(?:s| s)? note .*)?",
+        norm,
+    )
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"Start of any phase optional selection: choose one enemy unit within {m.group('range')}\"; on {m.group('threshold')}+ it suffers {str(m.group('mw') or '').upper()} mortal wounds. Once per battle.",
+    )
 
 
 def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]:
@@ -12693,9 +12781,11 @@ def _post_shoot_shocked_support(description: str) -> Optional[Tuple[str, str]]:
     if not norm:
         return None
     pattern = (
-        r"in your shooting phase after this unit has shot select one enemy (?:(?P<infantry>infantry) )?unit "
+        r"in your shooting phase after this (?P<source_scope>model|unit) has shot select one enemy (?:(?P<infantry>infantry) )?unit "
         r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
-        r"until the end of your opponent(?: s|s) next turn that enemy unit is (?P<state>shocked|disrupted) "
+        r"(?:made with (?:(?:a|an|the|its|this model s|this unit s) )?(?P<weapon>[a-z0-9 ' -]+?) )?"
+        r"(?:(?:and )?roll (?:one|1) d6 on a (?P<threshold>\d)\+? )?"
+        r"until the end of your opponent(?: s|s) next turn that enemy unit is (?P<state>shocked|disrupted|hindered) "
         r"while a unit is (?P=state) subtract (?P<move>\d+) from (?:its|that unit s) move characteristic "
         r"and subtract (?P<advance>\d+) from advance and charge rolls made for it"
     )
@@ -12707,19 +12797,38 @@ def _post_shoot_shocked_support(description: str) -> Optional[Tuple[str, str]]:
     state = str(m.group("state") or "shocked").strip().lower()
     move_pen = str(m.group("move") or "2")
     adv_pen = str(m.group("advance") or "2")
+    scope = "enemy unit"
     if infantry_only:
-        return (
-            "Supported",
-            f"After shooting: select a hit enemy INFANTRY unit; it is {state} until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls.",
-        )
-    if excluded_mv:
-        return (
-            "Supported",
-            f"After shooting: select a hit enemy non-MONSTER/non-VEHICLE unit; it is {state} until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls.",
-        )
+        scope = "enemy INFANTRY unit"
+    elif excluded_mv:
+        scope = "enemy non-MONSTER/non-VEHICLE unit"
+    weapon = " ".join(str(m.group("weapon") or "").strip().split())
+    threshold = str(m.group("threshold") or "").strip()
+    note = f"After shooting: select a hit {scope}"
+    if weapon:
+        note += f" hit by {weapon}"
+    if threshold:
+        note += f"; on {threshold}+"
+    note += f" it is {state} until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls."
+    return ("Supported", note)
+
+
+def _ranged_target_within_range_ap_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"each time (?:a model in this unit|this model) makes a ranged attack that targets a unit within (?P<range>\d+) "
+        r"improve the armour penetration characteristic of that attack by (?P<val>\d+)",
+        norm,
+    )
+    if not m:
+        return None
     return (
         "Supported",
-        f"After shooting: select a hit enemy unit; it is {state} until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls.",
+        f"Ranged attacks improve AP by {m.group('val')} against targets within {m.group('range')}\".",
     )
 
 
@@ -12885,6 +12994,17 @@ def _aura_battleshock_leadership_penalty_support(description: str) -> Optional[T
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    friendly_match = re.fullmatch(
+        r"while a friendly (?P<keyword>[a-z0-9 ]+?) unit is within (?P<range>\d+) of this model "
+        r"each time you take a battle shock test for that unit add (?P<val>\d+) to that test",
+        norm,
+    )
+    if friendly_match:
+        keyword = str(friendly_match.group("keyword") or "").strip().upper() or "FRIENDLY"
+        return (
+            "Supported",
+            f"Aura: friendly {keyword} units within {friendly_match.group('range')}\" gain +{friendly_match.group('val')} to Battle-shock tests.",
+        )
     if "enemy unit" not in norm or "battle shock" not in norm or "test" not in norm:
         return None
     m_range = re.search(r"within (?P<range>\d+)", norm)

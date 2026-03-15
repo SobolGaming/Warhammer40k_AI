@@ -3986,6 +3986,10 @@ class StateAttachmentMixin:
         except Exception:
             pass
         try:
+            self._apply_leading_bodyguard_scouts(bodyguard)
+        except Exception:
+            pass
+        try:
             self._apply_attached_unit_bodyguard_leader_deep_strike(bodyguard)
         except Exception:
             pass
@@ -4036,6 +4040,10 @@ class StateAttachmentMixin:
             pass
         try:
             bodyguard._refresh_bearer_keyword_flags()
+        except Exception:
+            pass
+        try:
+            self._apply_leading_bodyguard_scouts(bodyguard)
         except Exception:
             pass
         try:
@@ -4112,6 +4120,10 @@ class StateAttachmentMixin:
         self.attached_to = None
         try:
             self._clear_attached_unit_bodyguard_leader_scouts()
+        except Exception:
+            pass
+        try:
+            self._clear_leading_bodyguard_scouts(bodyguard)
         except Exception:
             pass
         try:

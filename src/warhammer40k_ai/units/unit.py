@@ -2639,7 +2639,7 @@ class Unit(
                     r"while this unit contains one or more (?P<lemma_contains>[a-z0-9 ]+) models )?"
                     r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
                     r"(?:targets|target|is allocated to|is made against) "
-                    r"(?:this model|this unit|this model s unit|a model in this unit|the bearer) "
+                    r"(?:this model|this unit|this model s unit|that unit|a model in this unit|the bearer) "
                     r"subtract (?P<val>\d+) from (?:the|that|that attacks) wound roll(?:s)?"
                 )
                 m = re.fullmatch(pattern, norm)
@@ -3794,9 +3794,11 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_SHOCKED_RE = re.compile(
-        r"in your shooting phase after this unit has shot select one enemy (?:(?P<infantry>infantry) )?unit "
+        r"in your shooting phase after this (?P<source_scope>model|unit) has shot select one enemy (?:(?P<infantry>infantry) )?unit "
         r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
-        r"until the end of your opponent(?: s|s) next turn that enemy unit is (?P<state>shocked|disrupted) "
+        r"(?:made with (?:(?:a|an|the|its|this model s|this unit s) )?(?P<weapon>[a-z0-9 ' -]+?) )?"
+        r"(?:(?:and )?roll (?:one|1) d6 on a (?P<threshold>\d)\+? )?"
+        r"until the end of your opponent(?: s|s) next turn that enemy unit is (?P<state>shocked|disrupted|hindered) "
         r"while a unit is (?P=state) subtract (?P<move>\d+) from (?:its|that unit s) move characteristic and subtract "
         r"(?P<advance>\d+) from advance and charge rolls made for it",
         re.IGNORECASE,

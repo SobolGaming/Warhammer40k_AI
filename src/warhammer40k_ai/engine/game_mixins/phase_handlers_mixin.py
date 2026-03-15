@@ -590,6 +590,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_astra_militarum_enhancements(player=player, phase=phase)
         self._on_phase_start_tripwires_stunned_cleanup(player=player, phase=phase)
         self._on_phase_start_adaptive_instincts(player=player, phase=phase)
+        self._on_phase_start_orks_squig_mine(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
                 if p is None:
@@ -2978,6 +2979,170 @@ class GamePhaseHandlersMixin:
                 allowed_model_ids=list(allowed_ids) if allowed_ids is not None else None,
                 allow_skip=True,
             )
+
+    def _on_phase_start_orks_squig_mine(self, player=None, phase=None, **_kwargs) -> None:
+        """Any phase start: queue optional Squig Mine activations for nearby enemy units."""
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            from ...utility.aura_utils import model_within_range_of_unit
+        except ImportError:
+            return
+
+        pending_models: set[str] = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "squig_mine":
+                        continue
+                    model_id = str(ctx.get("model_id", "") or "")
+                    if model_id:
+                        pending_models.add(model_id)
+        except Exception:
+            pending_models = set()
+
+        def _unit_sort_key(unit):
+            try:
+                return str(get_entity_id(unit) or "")
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        def _model_sort_key(model):
+            try:
+                return str(get_entity_id(model) or "")
+            except Exception:
+                return str(getattr(model, "name", "") or "")
+
+        def _unit_active(unit) -> bool:
+            if unit is None:
+                return False
+            alive_attr = getattr(unit, "is_alive", None)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                return False
+            if not bool(getattr(unit, "deployed", True)):
+                return False
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    return False
+            except Exception:
+                pass
+            return True
+
+        for owner in list(getattr(self, "players", []) or []):
+            if owner is None:
+                continue
+            army = owner.get_army()
+            if army is None:
+                continue
+            for unit in sorted(list(army.units or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                if root is None or root is not unit or not _unit_active(root):
+                    continue
+
+                get_models = getattr(root, "get_attached_unit_models", None)
+                models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+                if not models:
+                    continue
+
+                for model in sorted(list(models or []), key=_model_sort_key):
+                    alive_attr = getattr(model, "is_alive", False)
+                    if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                        continue
+                    model_id = str(get_entity_id(model) or "")
+                    if model_id and model_id in pending_models:
+                        continue
+                    get_specs = getattr(root, "model_start_any_phase_enemy_range_mortal_threshold_specs", None)
+                    specs = list(get_specs(model) or []) if callable(get_specs) else []
+                    if not specs:
+                        continue
+
+                    for spec in list(specs or []):
+                        ability_key = str(spec.get("ability_key") or "squig_mine").strip().lower() or "squig_mine"
+                        if getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+                            continue
+                        try:
+                            range_value = int(spec.get("range", 0) or 0)
+                        except Exception:
+                            range_value = 0
+                        try:
+                            roll_threshold = int(spec.get("threshold", 0) or 0)
+                        except Exception:
+                            roll_threshold = 0
+                        mortal_wounds_roll = str(spec.get("mortal_wounds", "") or "").strip().upper()
+                        if range_value <= 0 or roll_threshold <= 0 or not mortal_wounds_roll:
+                            continue
+                        ability_name = str(spec.get("source", "") or "Squig Mine").strip() or "Squig Mine"
+
+                        candidates = []
+                        candidate_ids: list[str] = []
+                        seen_enemy_ids: set[str] = set()
+                        for enemy in list(game_map.get_enemy_units(root) or []):
+                            if enemy is None:
+                                continue
+                            enemy_root = enemy.get_attached_unit_root() if hasattr(enemy, "get_attached_unit_root") else enemy
+                            if enemy_root is None or not _unit_active(enemy_root):
+                                continue
+                            enemy_id = str(get_entity_id(enemy_root) or "")
+                            if enemy_id and enemy_id in seen_enemy_ids:
+                                continue
+                            if enemy_id:
+                                seen_enemy_ids.add(enemy_id)
+                            if not bool(
+                                model_within_range_of_unit(
+                                    model,
+                                    enemy_root,
+                                    float(range_value),
+                                    use_attached_aggregate=True,
+                                )
+                            ):
+                                continue
+                            candidates.append(enemy_root)
+                            if enemy_id:
+                                candidate_ids.append(enemy_id)
+                        if not candidates:
+                            continue
+
+                        options = [DecisionOption.create("None", payload={"action": "skip"})]
+                        for candidate in sorted(list(candidates), key=_unit_sort_key):
+                            options.append(
+                                DecisionOption.create(
+                                    str(getattr(candidate, "name", "Unit") or "Unit"),
+                                    payload={"target_unit_id": get_entity_id(candidate)},
+                                )
+                            )
+                        request = DecisionRequest.create(
+                            DECISION_CHOOSE_QUARRY,
+                            f"{ability_name}: select one enemy unit within {int(range_value)}\" (or None).",
+                            player_id=getattr(owner, "id", None),
+                            options=options,
+                            context={
+                                "ability": "squig_mine",
+                                "ability_name": ability_name,
+                                "source_unit_id": get_entity_id(root),
+                                "unit_id": get_entity_id(root),
+                                "model_id": model_id,
+                                "ability_key": ability_key,
+                                "range": int(range_value),
+                                "roll_threshold": int(roll_threshold),
+                                "mortal_wounds_roll": mortal_wounds_roll,
+                                "candidate_unit_ids": list(candidate_ids),
+                                "optional": True,
+                            },
+                        )
+                        self.request_decision(request)
+                        if model_id:
+                            pending_models.add(model_id)
+                        break
 
     def _on_phase_start_dance_of_death(self, player=None, phase=None, **_kwargs) -> None:
         pname = str(getattr(phase, "name", "") or "").strip().upper()

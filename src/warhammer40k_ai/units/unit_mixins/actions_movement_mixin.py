@@ -1091,6 +1091,73 @@ class ActionsMovementMixin:
         if removed:
             self.special_rules = sr
 
+    def _ability_leading_bodyguard_scouts(self, ability) -> int:
+        """Return Scouts distance for leading abilities that grant Scouts to the attached unit."""
+        desc = ""
+        try:
+            if isinstance(ability, str):
+                desc = ability
+            else:
+                desc = str(getattr(ability, "description", "") or "")
+        except Exception:
+            desc = ""
+        text = self._normalize_rules_text(desc)
+        if not text:
+            return 0
+        low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+        low = re.sub(r"'s\b", "s", low)
+        low = re.sub(r"[^a-z0-9]+", " ", low)
+        low = re.sub(r"\s+", " ", low).strip()
+        match = re.search(
+            r"while this model is leading a unit .*?models in that unit have (?:the )?scouts?\s*(?P<distance>\d+)\s+ability",
+            low,
+        )
+        if not match:
+            return 0
+        try:
+            distance = int(match.group("distance") or 0)
+        except Exception:
+            distance = 0
+        return max(0, int(distance))
+
+    def _clear_leading_bodyguard_scouts(self, bodyguard: Optional['Unit'] = None) -> None:
+        units_to_clear = [self]
+        attached_bodyguard = bodyguard if bodyguard is not None else getattr(self, "attached_to", None)
+        if attached_bodyguard is not None and attached_bodyguard not in units_to_clear:
+            units_to_clear.append(attached_bodyguard)
+        for unit in units_to_clear:
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            removed = False
+            for key in (
+                "leading_bodyguard_scouts",
+                "leading_bodyguard_scout_distance",
+            ):
+                if key in sr:
+                    del sr[key]
+                    removed = True
+            if removed:
+                unit.special_rules = sr
+
+    def _apply_leading_bodyguard_scouts(self, bodyguard: 'Unit') -> None:
+        """Apply leading abilities that grant Scouts to the attached unit while joined."""
+        self._clear_leading_bodyguard_scouts(bodyguard)
+        if bodyguard is None:
+            return
+        max_distance = 0
+        for ab in list(getattr(self, "possible_abilities", []) or []):
+            max_distance = max(int(max_distance), int(self._ability_leading_bodyguard_scouts(ab) or 0))
+        if max_distance <= 0:
+            return
+        for unit in (self, bodyguard):
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["leading_bodyguard_scouts"] = True
+            sr["leading_bodyguard_scout_distance"] = int(max_distance)
+            unit.special_rules = sr
+
     def _clear_attached_unit_bodyguard_leader_deep_strike(self) -> None:
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
@@ -3424,6 +3491,223 @@ class ActionsMovementMixin:
             source = str(spec.get("source", "") or "Leading weapon attacks bonus").strip() or "Leading weapon attacks bonus"
             reasons.append(f"{source} +{int(bonus)}A ({weapon_phrase})")
         return int(total), reasons
+
+    def leading_scaled_weapon_bonus_specs(self) -> list[dict]:
+        """
+        Leading ability: this model's named weapon scales with the number of models in the led unit,
+        and can gain [HAZARDOUS] above a size threshold.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "leading_scaled_weapon_bonus_specs"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        attacks_pattern = re.compile(
+            r"while this model is leading a unit add (?P<bonus>\d+) to the attacks characteristic of this model s "
+            r"(?P<weapon>[a-z0-9 ' -]+?) weapon for every (?P<step>\d+) models in that unit(?: rounding down)? "
+            r"but while that unit contains (?P<hazard>\d+) or more models that weapon has the hazardous ability",
+            re.IGNORECASE,
+        )
+        strength_damage_pattern = re.compile(
+            r"while this model is leading a unit add (?P<bonus>\d+) to the (?:(?:strength and damage)|(?:damage and strength)) "
+            r"characteristics of this model s (?P<weapon>[a-z0-9 ' -]+?) weapon for every (?P<step>\d+) models in that unit"
+            r"(?: rounding down)? but while that unit contains (?P<hazard>\d+) or more models that weapon has the hazardous ability",
+            re.IGNORECASE,
+        )
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int, int, int, int]] = set()
+        for ab, leader in root._iter_attached_leader_leading_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = str(ab or "")
+                    desc = str(ab or "")
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                continue
+            text_src = leader._strip_eligibility_prefix(desc or "")
+            normalized = leader._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"'s\b", " s", normalized)
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+
+            m = attacks_pattern.fullmatch(normalized)
+            attacks_bonus = 0
+            strength_bonus = 0
+            damage_bonus = 0
+            if m:
+                try:
+                    attacks_bonus = int(m.group("bonus") or 0)
+                except Exception:
+                    attacks_bonus = 0
+            else:
+                m = strength_damage_pattern.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    strength_bonus = int(m.group("bonus") or 0)
+                except Exception:
+                    strength_bonus = 0
+                try:
+                    damage_bonus = int(m.group("bonus") or 0)
+                except Exception:
+                    damage_bonus = 0
+
+            weapon_name = str(m.group("weapon") or "").strip()
+            if not weapon_name:
+                continue
+            try:
+                step_models = int(m.group("step") or 0)
+            except Exception:
+                step_models = 0
+            try:
+                hazardous_min_models = int(m.group("hazard") or 0)
+            except Exception:
+                hazardous_min_models = 0
+            if step_models <= 0 or hazardous_min_models <= 0:
+                continue
+            if attacks_bonus <= 0 and strength_bonus <= 0 and damage_bonus <= 0:
+                continue
+            source = str(name or "Leading scaled weapon bonus").strip() or "Leading scaled weapon bonus"
+            key = (
+                source.lower(),
+                weapon_name.lower(),
+                int(step_models),
+                int(attacks_bonus),
+                int(strength_bonus),
+                int(damage_bonus),
+                int(hazardous_min_models),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "leader": leader,
+                    "source": source,
+                    "weapon_name": weapon_name,
+                    "models_per_step": int(step_models),
+                    "attacks_bonus_per_step": int(attacks_bonus),
+                    "strength_bonus_per_step": int(strength_bonus),
+                    "damage_bonus_per_step": int(damage_bonus),
+                    "hazardous_min_models": int(hazardous_min_models),
+                }
+            )
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = list(specs)
+        root._ability_cache = cache
+        return list(specs)
+
+    def leading_scaled_weapon_bonus_for_weapon(self, weapon_name: str, attacker_model=None) -> dict:
+        """Return leading size-scaling bonuses for this model's named weapon."""
+        result = {
+            "attacks_bonus": 0,
+            "strength_bonus": 0,
+            "damage_bonus": 0,
+            "hazardous": False,
+            "reasons": [],
+        }
+        if not weapon_name:
+            return result
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return result
+        if attacker_model is not None:
+            try:
+                model_unit = getattr(attacker_model, "parent_unit", None)
+                model_root = model_unit.get_attached_unit_root() if model_unit is not None else None
+                if model_root is not None and model_root is not root:
+                    return result
+            except Exception:
+                return result
+        specs = root.leading_scaled_weapon_bonus_specs() if hasattr(root, "leading_scaled_weapon_bonus_specs") else []
+        if not specs:
+            return result
+
+        get_models = getattr(root, "get_attached_unit_models", None)
+        if callable(get_models):
+            models = list(get_models() or [])
+        else:
+            models = list(getattr(root, "models", []) or [])
+        current_models = 0
+        for model in list(models or []):
+            alive_attr = getattr(model, "is_alive", False)
+            if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                current_models += 1
+        if current_models <= 0:
+            return result
+
+        normalize_name = getattr(attacker_model, "_normalize_weapon_name", None) if attacker_model is not None else None
+        if not callable(normalize_name):
+            normalize_name = lambda value: re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+        target_weapon = normalize_name(weapon_name)
+        if not target_weapon:
+            return result
+
+        reasons: list[str] = []
+        for spec in list(specs or []):
+            leader = spec.get("leader")
+            if leader is None:
+                continue
+            try:
+                if not bool(getattr(leader, "is_attached_leader", False)):
+                    continue
+                alive_fn = getattr(leader, "is_alive", None)
+                if callable(alive_fn) and not alive_fn():
+                    continue
+            except Exception:
+                continue
+            if attacker_model is not None and getattr(attacker_model, "parent_unit", None) is not leader:
+                continue
+            weapon_phrase = str(spec.get("weapon_name", "") or "").strip()
+            if not weapon_phrase:
+                continue
+            if normalize_name(weapon_phrase) != target_weapon:
+                continue
+            try:
+                step_models = int(spec.get("models_per_step", 0) or 0)
+            except Exception:
+                step_models = 0
+            if step_models <= 0:
+                continue
+            steps = int(current_models // step_models)
+            if steps <= 0:
+                continue
+            source = str(spec.get("source", "") or "Leading scaled weapon bonus").strip() or "Leading scaled weapon bonus"
+            attacks_bonus = int(spec.get("attacks_bonus_per_step", 0) or 0) * steps
+            strength_bonus = int(spec.get("strength_bonus_per_step", 0) or 0) * steps
+            damage_bonus = int(spec.get("damage_bonus_per_step", 0) or 0) * steps
+            if attacks_bonus:
+                result["attacks_bonus"] = int(result["attacks_bonus"]) + int(attacks_bonus)
+                reasons.append(f"{source} +{int(attacks_bonus)}A ({weapon_phrase})")
+            if strength_bonus:
+                result["strength_bonus"] = int(result["strength_bonus"]) + int(strength_bonus)
+                reasons.append(f"{source} +{int(strength_bonus)}S ({weapon_phrase})")
+            if damage_bonus:
+                result["damage_bonus"] = int(result["damage_bonus"]) + int(damage_bonus)
+                reasons.append(f"{source} +{int(damage_bonus)}D ({weapon_phrase})")
+            try:
+                hazardous_min_models = int(spec.get("hazardous_min_models", 0) or 0)
+            except Exception:
+                hazardous_min_models = 0
+            if hazardous_min_models > 0 and current_models >= hazardous_min_models:
+                result["hazardous"] = True
+                reasons.append(f"{source}: [HAZARDOUS] ({weapon_phrase})")
+        result["reasons"] = reasons
+        return result
 
     def unit_weapon_range_bonus_specs(self) -> list[dict]:
         """

@@ -7073,6 +7073,94 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(model_within_range_of_unit(model, target_root, float(range_inches))):
             return ("Spirit of Gork target must be within range of the source model.",)
         return ()
+    if ability == "post_shoot_shocked":
+        if is_skip_choice(request, result):
+            return ("Post-shoot shocked target selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("attacker_unit_id")
+            or ctx.get("attacker_unit_id"),
+        )
+        if source_unit is None:
+            return ("Post-shoot shocked source unit was not found.",)
+        source_root = _resolve_unit_root(source_unit)
+        if source_root is None or not _unit_is_on_battlefield(source_root):
+            return ("Post-shoot shocked source unit must be on the battlefield.",)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Post-shoot shocked target unit was not found.",)
+        target_root = _resolve_unit_root(target_unit)
+        if target_root is None or not _unit_is_on_battlefield(target_root):
+            return ("Post-shoot shocked target unit must be on the battlefield.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is target_army:
+            return ("Post-shoot shocked target must be an enemy unit.",)
+        candidate_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Post-shoot shocked selection contains an ineligible target.",)
+        return ()
+    if ability == "squig_mine":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Squig Mine source unit was not found.",)
+        source_root = _resolve_unit_root(source_unit)
+        if source_root is None or not _unit_is_on_battlefield(source_root):
+            return ("Squig Mine source unit must be on the battlefield.",)
+        source_model = _resolve_source_model(game, source_root, ctx=ctx, payload=payload)
+        if not _model_is_alive(source_model):
+            return ("Squig Mine source model was not found.",)
+        ability_key = str(ctx.get("ability_key") or "squig_mine").strip().lower() or "squig_mine"
+        if bool(getattr(source_model, "has_used_once_per_battle", lambda _k: False)(ability_key)):
+            return ("Squig Mine has already been used this battle.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Squig Mine target unit was not found.",)
+        target_root = _resolve_unit_root(target_unit)
+        if target_root is None or not _unit_is_on_battlefield(target_root):
+            return ("Squig Mine target unit must be on the battlefield.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is target_army:
+            return ("Squig Mine target must be an enemy unit.",)
+        candidate_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Squig Mine selection contains an ineligible target.",)
+        try:
+            range_inches = float(ctx.get("range", 0) or 0)
+        except (TypeError, ValueError):
+            range_inches = 0.0
+        if range_inches <= 0:
+            return ("Squig Mine range is invalid.",)
+        try:
+            from ...utility.aura_utils import model_within_range_of_unit
+        except ImportError:
+            return ("Squig Mine range helper is unavailable.",)
+        if not bool(model_within_range_of_unit(source_model, target_root, float(range_inches), use_attached_aggregate=True)):
+            return ("Squig Mine target must be within range of the source model.",)
+        return ()
     if ability == "master_of_mechanisms":
         if is_skip_choice(request, result):
             return ()
@@ -17325,6 +17413,85 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "tested_unit_ids": list(tested_unit_ids),
             "tested_count": int(len(tested_unit_ids)),
         }
+    if str(ctx.get("ability", "") or "") == "squig_mine":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        source_root = _resolve_unit_root(source_unit)
+        source_model = _resolve_source_model(game, source_root, ctx=ctx, payload=payload) if source_root is not None else None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_root is not None:
+            try:
+                player = source_root.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Squig Mine").strip() or "Squig Mine"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {"action": "skip", "triggered": False, "mortal_wounds": 0}
+        if source_root is None or source_model is None:
+            return None
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        target_root = _resolve_unit_root(target_unit)
+        if target_root is None:
+            return None
+        ability_key = str(ctx.get("ability_key") or "squig_mine").strip().lower() or "squig_mine"
+        mark_used = getattr(source_model, "mark_used_once_per_battle", None)
+        if callable(mark_used):
+            if not bool(mark_used(ability_key, ability_name=ability_name, source="datasheet")):
+                return None
+        try:
+            roll_threshold = int(ctx.get("roll_threshold", 4) or 4)
+        except (TypeError, ValueError):
+            roll_threshold = 4
+        roll_threshold = max(2, min(6, int(roll_threshold)))
+        from ...utility.dice import get_roll
+        from ...utility.event_bus import append_dice
+
+        roll = int(get_roll("D6") or 0)
+        if player is not None:
+            append_dice(player, f"{ability_name} roll: {int(roll)}")
+        target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+        if int(roll) < int(roll_threshold):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {target_name} selected; roll {int(roll)} fails to trigger.",
+            )
+            return {
+                "action": "use",
+                "triggered": False,
+                "roll": int(roll),
+                "mortal_wounds": 0,
+                "target_unit_id": str(get_entity_id(target_root) or ""),
+            }
+        mortal_roll = str(ctx.get("mortal_wounds_roll", "") or ctx.get("mortal_wounds", "") or "D6").strip().upper() or "D6"
+        mortal_wounds = _apply_mortal_wounds_roll_to_unit(
+            game,
+            source_root=source_root,
+            source_model=source_model,
+            target_root=target_root,
+            roll_expr=mortal_roll,
+            ability_name=ability_name,
+            player=player,
+        )
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {target_name} suffers {int(mortal_wounds)} mortal wounds.",
+        )
+        return {
+            "action": "use",
+            "triggered": True,
+            "roll": int(roll),
+            "mortal_wounds": int(mortal_wounds),
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+        }
     if is_skip_choice(request, result):
         return None
     payload = _option_payload(request, result)
@@ -22530,6 +22697,29 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 charge_penalty = int(ctx.get("charge_penalty", advance_penalty) or advance_penalty)
             except Exception:
                 charge_penalty = int(advance_penalty)
+            state_name = str(ctx.get("state_name", "") or "shocked").strip().lower() or "shocked"
+            try:
+                roll_threshold = int(ctx.get("roll_threshold", 0) or 0)
+            except (TypeError, ValueError):
+                roll_threshold = 0
+            if roll_threshold > 0:
+                from ...utility.dice import get_roll
+                from ...utility.event_bus import append_dice
+
+                roll = int(get_roll("D6") or 0)
+                if player is not None:
+                    append_dice(player, f"{source} roll: {int(roll)}")
+                if int(roll) < int(roll_threshold):
+                    try:
+                        tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                        _log_action_for_players(
+                            game,
+                            player,
+                            f"{source}: {tname} selected; roll {int(roll)} fails to {state_name}.",
+                        )
+                    except Exception:
+                        pass
+                    return chosen
             apply_fn = getattr(target_root, "apply_shocked", None)
             if callable(apply_fn):
                 apply_fn(
@@ -22557,7 +22747,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(
                     game,
                     player,
-                    f"{source}: {tname} is shocked until end of your opponent's next turn.",
+                    f"{source}: {tname} is {state_name} until end of your opponent's next turn.",
                 )
             except Exception:
                 pass

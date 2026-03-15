@@ -1189,9 +1189,10 @@ def _parse_toughness_aura(ability) -> Optional[dict]:
 def _parse_battleshock_leadership_test_aura(ability) -> Optional[dict]:
     _count_regex_hotspot("_parse_battleshock_leadership_test_aura")
     """
-    Strict parser for enemy-test auras like:
+    Strict parser for Battle-shock/Leadership test auras like:
       "While an enemy unit is within N\" of this model, subtract X from Battle-shock tests taken for that unit."
       "While an enemy unit is within N\" of this model, subtract X from Battle-shock and Leadership tests taken for that unit."
+      "While a friendly ORKS unit is within N\" of this model, each time you take a Battle-shock test for that unit, add X to that test."
     """
     if not _is_aura_ability(ability):
         return None
@@ -1199,29 +1200,54 @@ def _parse_battleshock_leadership_test_aura(ability) -> Optional[dict]:
     if not text:
         return None
     text = re.sub(r"[^a-zA-Z0-9]+", " ", text).strip().lower()
-    if "enemy unit" not in text:
-        return None
     if "battle shock" not in text:
         return None
     if "test" not in text:
         return None
     m_range = re.search(r"within\s+(?P<rng>\d+)", text)
-    m_val = re.search(r"subtract\s+(?P<val>\d+)\s+from", text)
-    if not m_range or not m_val:
+    if not m_range:
         return None
     try:
         rng = float(m_range.group("rng"))
     except Exception:
         return None
+    if rng <= 0:
+        return None
+    if text.startswith("while an enemy unit ") or text.startswith("while enemy unit "):
+        m_val = re.search(r"subtract\s+(?P<val>\d+)\s+from", text)
+        if not m_val:
+            return None
+        try:
+            val = int(m_val.group("val"))
+        except Exception:
+            return None
+        if val <= 0:
+            return None
+        return {
+            "side": "enemy",
+            "range": float(rng),
+            "amount": -abs(int(val)),
+        }
+    if not text.startswith("while a friendly ") and not text.startswith("while friendly "):
+        return None
+    m_friendly = re.search(r"friendly\s+(?P<keyword>[a-z0-9 ]+?)\s+unit", text)
+    m_add = re.search(r"add\s+(?P<val>\d+)\s+to\s+(?:that|the)\s+test", text)
+    if not m_friendly or not m_add:
+        return None
     try:
-        val = int(m_val.group("val"))
+        val = int(m_add.group("val"))
     except Exception:
         return None
-    if rng <= 0 or val <= 0:
+    if val <= 0:
+        return None
+    keyword = str(m_friendly.group("keyword") or "").strip().upper()
+    if not keyword:
         return None
     return {
+        "side": "friendly",
+        "target_keyword": keyword,
         "range": float(rng),
-        "amount": -abs(int(val)),
+        "amount": int(val),
     }
 
 
@@ -2453,8 +2479,8 @@ def get_aura_fnp_entries(unit, *, game_map=None) -> list[tuple[int, Optional[str
 def get_aura_battleshock_test_modifiers(unit, *, game_map=None) -> list[tuple[int, str]]:
     _count_regex_hotspot("get_aura_battleshock_test_modifiers")
     """
-    Return roll modifiers from enemy auras that affect Battle-shock and Leadership tests.
-    Dedupe by Aura name (same aura never double-applies).
+    Return roll modifiers from auras that affect Battle-shock and Leadership tests.
+    Dedupe by Aura name per source side (same aura never double-applies).
     """
     if unit is None:
         return []
@@ -2465,22 +2491,47 @@ def get_aura_battleshock_test_modifiers(unit, *, game_map=None) -> list[tuple[in
 
     modifiers: list[tuple[int, str]] = []
     applied_aura_names: set[str] = set()
-    for source in list(game_map.get_enemy_units(unit)):
-        for ab in _iter_possible_abilities(source):
-            spec = _cached_parse_aura_spec("_parse_battleshock_leadership_test_aura", ab, _parse_battleshock_leadership_test_aura)
-            if not spec:
-                continue
-            ab_name = str(getattr(ab, "name", "") or "")
-            aura_key = _norm_name(ab_name)
-            if aura_key:
+
+    def _target_has_keyword(target, keyword: str) -> bool:
+        if target is None or not keyword:
+            return False
+        try:
+            if bool(target.has_keyword(keyword)):
+                return True
+        except Exception:
+            pass
+        try:
+            return bool(target.has_any_keyword(keyword))
+        except Exception:
+            return False
+
+    get_enemy_units = getattr(game_map, "get_enemy_units", None)
+    get_friendly_units = getattr(game_map, "get_friendly_units", None)
+    enemy_sources = list(get_enemy_units(unit) or []) if callable(get_enemy_units) else []
+    friendly_sources = list(get_friendly_units(unit) or []) if callable(get_friendly_units) else []
+    aura_sources = [
+        ("enemy", enemy_sources),
+        ("friendly", friendly_sources),
+    ]
+    for relation, sources in aura_sources:
+        for source in sources:
+            for ab in _iter_possible_abilities(source):
+                spec = _cached_parse_aura_spec("_parse_battleshock_leadership_test_aura", ab, _parse_battleshock_leadership_test_aura)
+                if not spec or str(spec.get("side", "") or "") != relation:
+                    continue
+                target_keyword = str(spec.get("target_keyword", "") or "").strip().upper()
+                if relation == "friendly" and target_keyword and not _target_has_keyword(unit, target_keyword):
+                    continue
+                ab_name = str(getattr(ab, "name", "") or "")
+                aura_key = f"{relation}:{_norm_name(ab_name)}"
                 if aura_key in applied_aura_names:
                     continue
+                if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
+                    continue
                 applied_aura_names.add(aura_key)
-            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
-                continue
-            amt = int(spec["amount"])
-            if amt:
-                modifiers.append((amt, f"Aura: {ab_name}"))
+                amt = int(spec["amount"])
+                if amt:
+                    modifiers.append((amt, f"Aura: {ab_name}"))
     return modifiers
 
 

@@ -9515,6 +9515,10 @@ class PositioningMixin:
                 val = max(val, float(sr.get("iconoclast_pave_the_way_scout_distance", 0) or 0))
             except Exception:
                 pass
+            try:
+                val = max(val, float(sr.get("leading_bodyguard_scout_distance", 0) or 0))
+            except Exception:
+                pass
             if val > max_dist:
                 max_dist = val
         return float(max_dist)

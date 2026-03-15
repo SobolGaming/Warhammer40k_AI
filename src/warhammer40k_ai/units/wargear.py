@@ -3829,6 +3829,38 @@ class WargearProfile:
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged() and target is not None:
                 unit = getattr(attacker, "parent_unit", None)
+                get_rule = getattr(unit, "get_ranged_target_within_range_ap_bonus_rule", None) if unit is not None else None
+                if callable(get_rule):
+                    rule = get_rule(attacker)
+                else:
+                    rule = None
+                if isinstance(rule, dict):
+                    try:
+                        bonus = int(rule.get("ap_bonus", 0) or 0)
+                    except Exception:
+                        bonus = 0
+                    try:
+                        range_value = float(
+                            rule.get("range", rule.get("target_within_range", 0)) or 0
+                        )
+                    except (TypeError, ValueError):
+                        range_value = 0.0
+                    if bonus > 0 and range_value > 0:
+                        from ..utility.aura_utils import model_within_range_of_unit
+
+                        target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                        if target_root is not None and model_within_range_of_unit(
+                            attacker,
+                            target_root,
+                            float(range_value),
+                            use_attached_aggregate=True,
+                        ):
+                            ap_val -= int(bonus)
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged() and target is not None:
+                unit = getattr(attacker, "parent_unit", None)
                 get_rule = getattr(unit, "get_closest_eligible_ap_bonus_rule", None) if unit is not None else None
                 if callable(get_rule):
                     rule = get_rule(attacker)
@@ -5581,6 +5613,40 @@ class WargearProfile:
                             )
         except Exception:
             pass
+        try:
+            if self.parent_wargear:
+                unit = getattr(attacker, "parent_unit", None)
+                bonus_fn = getattr(unit, "leading_scaled_weapon_bonus_for_weapon", None) if unit is not None else None
+                if callable(bonus_fn):
+                    scaled_bonus = bonus_fn(
+                        getattr(self.parent_wargear, "name", ""),
+                        attacker_model=attacker,
+                    )
+                else:
+                    scaled_bonus = None
+                if isinstance(scaled_bonus, dict):
+                    attacks_bonus = int(scaled_bonus.get("attacks_bonus", 0) or 0)
+                    reasons = [
+                        str(reason)
+                        for reason in list(scaled_bonus.get("reasons", []) or [])
+                        if "A (" in str(reason)
+                    ]
+                    if attacks_bonus:
+                        atk_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(attacks_bonus),
+                                source="ability:leading_scaled_weapon_attacks_add",
+                            )
+                        )
+                        if reasons:
+                            attack_result.attacks_special_modifiers.extend(list(reasons))
+                        else:
+                            attack_result.attacks_special_modifiers.append(
+                                f"Leading ability +{int(attacks_bonus)}A ({getattr(self.parent_wargear, 'name', 'weapon')})"
+                            )
+        except Exception:
+            pass
 
         try:
             if self.parent_wargear:
@@ -7053,6 +7119,33 @@ class WargearProfile:
                 bonus_melee_hazardous = True
             if is_ranged_weapon:
                 bonus_ranged_hazardous = True
+        try:
+            if self.parent_wargear:
+                unit = getattr(attacker, "parent_unit", None)
+                bonus_fn = getattr(unit, "leading_scaled_weapon_bonus_for_weapon", None) if unit is not None else None
+                if callable(bonus_fn):
+                    scaled_bonus = bonus_fn(
+                        getattr(self.parent_wargear, "name", ""),
+                        attacker_model=attacker,
+                    )
+                else:
+                    scaled_bonus = None
+                if isinstance(scaled_bonus, dict) and bool(scaled_bonus.get("hazardous", False)):
+                    hazardous_active = True
+                    hazardous_source_count += 1
+                    if is_melee_weapon:
+                        bonus_melee_hazardous = True
+                    if is_ranged_weapon:
+                        bonus_ranged_hazardous = True
+                    for note in [
+                        str(reason)
+                        for reason in list(scaled_bonus.get("reasons", []) or [])
+                        if "[HAZARDOUS]" in str(reason)
+                    ]:
+                        if note not in attack_result.attacks_special_modifiers:
+                            attack_result.attacks_special_modifiers.append(note)
+        except Exception:
+            pass
         possessed_blade_hazardous = False
         if is_melee_weapon:
             possessed_blade = self._get_possessed_blade_state(attacker)
@@ -14662,6 +14755,34 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                bonus_fn = getattr(unit, "leading_scaled_weapon_bonus_for_weapon", None) if unit is not None else None
+                if callable(bonus_fn):
+                    scaled_bonus = bonus_fn(
+                        getattr(self.parent_wargear, "name", ""),
+                        attacker_model=attacker,
+                    )
+                else:
+                    scaled_bonus = None
+                if isinstance(scaled_bonus, dict):
+                    strength_bonus = int(scaled_bonus.get("strength_bonus", 0) or 0)
+                    reasons = [
+                        str(reason)
+                        for reason in list(scaled_bonus.get("reasons", []) or [])
+                        if "S (" in str(reason)
+                    ]
+                    if strength_bonus:
+                        strength = strength + int(strength_bonus)
+                        if reasons:
+                            wound_result.setdefault("modifiers", []).extend(list(reasons))
+                        else:
+                            wound_result.setdefault("modifiers", []).append(
+                                f"Leading ability +{int(strength_bonus)}S ({getattr(self.parent_wargear, 'name', 'weapon')})"
+                            )
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
                 bonus, reasons = getattr(attacker, "get_temporary_melee_strength_bonus", lambda: (0, []))()
                 if bonus:
@@ -22036,6 +22157,40 @@ class WargearProfile:
                 if d_bonus:
                     damage_mods.append(Modifier(ModifierOp.ADD, int(d_bonus), source="enhancement:melee_damage_add"))
                     damage_result['special_effects'].append(f"Enhancement +{d_bonus}D (melee)")
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear:
+                unit = getattr(attacker, "parent_unit", None)
+                bonus_fn = getattr(unit, "leading_scaled_weapon_bonus_for_weapon", None) if unit is not None else None
+                if callable(bonus_fn):
+                    scaled_bonus = bonus_fn(
+                        getattr(self.parent_wargear, "name", ""),
+                        attacker_model=attacker,
+                    )
+                else:
+                    scaled_bonus = None
+                if isinstance(scaled_bonus, dict):
+                    damage_bonus = int(scaled_bonus.get("damage_bonus", 0) or 0)
+                    reasons = [
+                        str(reason)
+                        for reason in list(scaled_bonus.get("reasons", []) or [])
+                        if "D (" in str(reason)
+                    ]
+                    if damage_bonus:
+                        damage_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(damage_bonus),
+                                source="ability:leading_scaled_weapon_damage_add",
+                            )
+                        )
+                        if reasons:
+                            damage_result['special_effects'].extend(list(reasons))
+                        else:
+                            damage_result['special_effects'].append(
+                                f"Leading ability +{int(damage_bonus)}D ({getattr(self.parent_wargear, 'name', 'weapon')})"
+                            )
         except Exception:
             pass
         if self.parent_wargear and self.parent_wargear.is_melee():

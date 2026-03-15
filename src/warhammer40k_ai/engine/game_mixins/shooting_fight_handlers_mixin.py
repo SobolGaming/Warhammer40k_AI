@@ -2593,6 +2593,7 @@ class GameShootingFightHandlersMixin:
         self,
         attacker_unit=None,
         hits_by_target=None,
+        hit_models_by_target_weapon=None,
         **_kwargs,
     ) -> None:
         if attacker_unit is None or not hits_by_target:
@@ -2649,6 +2650,36 @@ class GameShootingFightHandlersMixin:
                     pass
             return False
 
+        def _target_weapon_hit_models(target, weapon_key: str):
+            if not weapon_key or not isinstance(hit_models_by_target_weapon, dict):
+                return None
+            target_map = hit_models_by_target_weapon.get(target)
+            if target_map is None:
+                try:
+                    target_root = target.get_attached_unit_root()
+                except Exception:
+                    target_root = target
+                target_map = hit_models_by_target_weapon.get(target_root)
+            if not isinstance(target_map, dict):
+                return None
+            models = target_map.get(weapon_key)
+            if not models and weapon_key.endswith("s"):
+                models = target_map.get(weapon_key[:-1])
+            if not models and not weapon_key.endswith("s"):
+                models = target_map.get(f"{weapon_key}s")
+            if models:
+                return models
+            for key, key_models in list(target_map.items()):
+                normalized_key = attacker_unit._normalize_keyword_phrase(key) if hasattr(attacker_unit, "_normalize_keyword_phrase") else ""
+                if normalized_key == weapon_key:
+                    return key_models
+            return None
+
+        def _target_hit_with_weapon(target, weapon_key: str) -> bool:
+            if not weapon_key:
+                return True
+            return bool(_target_weapon_hit_models(target, weapon_key))
+
         specs = attacker_unit.unit_post_shoot_shocked_specs() or []
         if not specs:
             return
@@ -2674,6 +2705,12 @@ class GameShootingFightHandlersMixin:
                 for kw in list(spec.get("include_keywords_any", []) or [])
                 if str(kw or "").strip()
             ]
+            weapon_key = str(spec.get("weapon_key", "") or "").strip()
+            state_name = str(spec.get("state_name", "shocked") or "shocked").strip().lower() or "shocked"
+            try:
+                roll_threshold = int(spec.get("roll_threshold", 0) or 0)
+            except Exception:
+                roll_threshold = 0
 
             candidates: list[Any] = []
             for target_unit, hits in (hits_by_target or {}).items():
@@ -2686,6 +2723,8 @@ class GameShootingFightHandlersMixin:
                 if exclude_mv and _is_monster_or_vehicle(target_unit):
                     continue
                 if include_keywords_any and not _matches_any_keyword(target_unit, include_keywords_any):
+                    continue
+                if weapon_key and not _target_hit_with_weapon(target_unit, weapon_key):
                     continue
                 candidates.append(target_unit)
             if not candidates:
@@ -2705,9 +2744,10 @@ class GameShootingFightHandlersMixin:
             if not options:
                 continue
             ability_name = str(spec.get("source", "") or "Shocked").strip() or "Shocked"
+            candidate_ids = [str(get_entity_id(cand) or "") for cand in list(candidates) if str(get_entity_id(cand) or "").strip()]
             request = DecisionRequest.create(
                 DECISION_CHOOSE_QUARRY,
-                f"{ability_name}: select a unit to shock.",
+                f"{ability_name}: select a unit to {state_name}.",
                 player_id=getattr(attacker_player, "id", None),
                 options=options,
                 context={
@@ -2718,6 +2758,10 @@ class GameShootingFightHandlersMixin:
                     "move_penalty": int(move_penalty),
                     "advance_penalty": int(advance_penalty),
                     "charge_penalty": int(charge_penalty),
+                    "roll_threshold": int(roll_threshold) if int(roll_threshold) > 0 else 0,
+                    "state_name": state_name,
+                    "weapon_key": weapon_key,
+                    "candidate_unit_ids": list(candidate_ids),
                 },
             )
             self.request_decision(request)

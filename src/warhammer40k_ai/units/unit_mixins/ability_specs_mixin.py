@@ -75,7 +75,13 @@ class AbilitySpecsMixin:
         specs: list[dict] = []
         seen: set[tuple] = set()
 
-        for name, desc in self._iter_model_specific_ability_entries(model):
+        entries = list(self._iter_model_specific_ability_entries(model) or [])
+        try:
+            entries.extend(list(self._iter_ability_entries_for_rules(model=model) or []))
+        except Exception:
+            pass
+
+        for name, desc in entries:
             text_src = desc or name or ""
             if not text_src:
                 continue
@@ -8231,6 +8237,10 @@ class AbilitySpecsMixin:
             - advance_penalty: int
             - charge_penalty: int
             - exclude_monster_vehicle: bool
+            - weapon_key: Optional[str]
+            - weapon_name: str
+            - roll_threshold: Optional[int]
+            - state_name: str
         """
         try:
             root = self.get_attached_unit_root()
@@ -8248,7 +8258,7 @@ class AbilitySpecsMixin:
             members = [root]
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, int, int, bool]] = set()
+        seen: set[tuple[str, int, int, int, bool, tuple[str, ...], str, int, str]] = set()
         for unit in members:
             if unit is None:
                 continue
@@ -8278,6 +8288,13 @@ class AbilitySpecsMixin:
                 include_keywords_any: list[str] = []
                 if str(m.group("infantry") or "").strip():
                     include_keywords_any = ["INFANTRY"]
+                weapon_name = str(m.group("weapon") or "").strip()
+                weapon_key = self._normalize_keyword_phrase(weapon_name) if weapon_name else ""
+                try:
+                    roll_threshold = int(m.group("threshold") or 0)
+                except Exception:
+                    roll_threshold = 0
+                state_name = str(m.group("state") or "shocked").strip().lower() or "shocked"
                 key = (
                     source.lower(),
                     int(move_penalty),
@@ -8285,6 +8302,9 @@ class AbilitySpecsMixin:
                     int(charge_penalty),
                     bool(exclude_mv),
                     tuple(include_keywords_any),
+                    str(weapon_key or ""),
+                    int(roll_threshold),
+                    state_name,
                 )
                 if key in seen:
                     continue
@@ -8297,12 +8317,119 @@ class AbilitySpecsMixin:
                         "charge_penalty": int(charge_penalty),
                         "exclude_monster_vehicle": bool(exclude_mv),
                         "include_keywords_any": list(include_keywords_any),
+                        "weapon_key": str(weapon_key or ""),
+                        "weapon_name": weapon_name,
+                        "roll_threshold": int(roll_threshold) if int(roll_threshold) > 0 else None,
+                        "state_name": state_name,
                     }
                 )
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_any_phase_enemy_range_mortal_threshold_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, at the start of any phase, select one enemy unit within range
+        and roll a D6; on a threshold that unit suffers mortal wounds.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - ability_key: once-per-battle tracking key
+            - range: int
+            - threshold: int
+            - mortal_wounds: str | int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_any_phase_enemy_range_mortal_threshold:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int, str]] = set()
+        pattern = re.compile(
+            r"once per battle at the start of any phase select one enemy unit within (?P<range>\d+) of this model "
+            r"and roll (?:one|1) d6 on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d\d+(?:\+\d+)?|\d+) mortal wounds?"
+            r"(?: designer s note .*)?",
+            re.IGNORECASE,
+        )
+
+        ability_entries: list[tuple[str, str]] = []
+        seen_entries: set[tuple[str, str]] = set()
+        for iterator in (
+            self._iter_model_specific_ability_entries(model),
+            self._iter_ability_entries_for_rules(model=model),
+        ):
+            for name, desc in iterator:
+                entry_key = (str(name or ""), str(desc or ""))
+                if entry_key in seen_entries:
+                    continue
+                seen_entries.add(entry_key)
+                ability_entries.append((name, desc))
+
+        for name, desc in ability_entries:
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = pattern.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            try:
+                threshold = int(m.group("threshold") or 0)
+            except Exception:
+                threshold = 0
+            if range_value <= 0 or threshold <= 0:
+                continue
+            mortal_raw = str(m.group("mw") or "").strip().lower()
+            if not mortal_raw:
+                continue
+            if mortal_raw in ("d3", "d6"):
+                mortal_wounds: str | int = mortal_raw
+            else:
+                try:
+                    mortal_wounds = int(mortal_raw)
+                except Exception:
+                    continue
+                if mortal_wounds <= 0:
+                    continue
+            source = str(name or "Start of phase mortals").strip() or "Start of phase mortals"
+            key_seed = self._normalize_keyword_phrase(source) or "start_any_phase_enemy_range_mortal_threshold"
+            ability_key = f"start_any_phase_enemy_range_mortal_threshold:{key_seed}"
+            dedupe_key = (
+                source.lower(),
+                ability_key,
+                int(range_value),
+                int(threshold),
+                str(mortal_wounds),
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "ability_key": ability_key,
+                    "range": int(range_value),
+                    "threshold": int(threshold),
+                    "mortal_wounds": mortal_wounds,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def unit_post_shoot_no_overwatch_specs(self) -> List[dict]:
