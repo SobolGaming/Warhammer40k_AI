@@ -7161,6 +7161,43 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(model_within_range_of_unit(source_model, target_root, float(range_inches), use_attached_aggregate=True)):
             return ("Squig Mine target must be within range of the source model.",)
         return ()
+    if ability == "da_jump":
+        payload = _option_payload(request, result)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            return ("Da Jump player was not found.",)
+        usage_key = str(ctx.get("army_usage_key", "") or "ORK_DA_JUMP").strip().upper() or "ORK_DA_JUMP"
+        ability_used = getattr(player, "_ability_used_this_turn", None)
+        if callable(ability_used) and bool(ability_used(usage_key)):
+            return ("Da Jump has already been used this turn.",)
+        if is_skip_choice(request, result):
+            return ()
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or ctx.get("source_unit_id"),
+        )
+        if source_unit is None:
+            return ("Da Jump source unit was not found.",)
+        source_root = _resolve_unit_root(source_unit)
+        if source_root is None or not _unit_is_on_battlefield(source_root):
+            return ("Da Jump source unit must be on the battlefield.",)
+        player_army = player.get_army() if hasattr(player, "get_army") else getattr(player, "army", None)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if player_army is None or source_army is None or player_army is not source_army:
+            return ("Da Jump source unit must belong to the acting player.",)
+        source_unit_id = str(get_entity_id(source_unit) or "")
+        candidate_source_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_source_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if candidate_source_ids and source_unit_id not in candidate_source_ids:
+            return ("Da Jump selection contains an ineligible source unit.",)
+        selected_unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "").strip()
+        source_root_id = str(get_entity_id(source_root) or "")
+        if selected_unit_id and source_root_id and selected_unit_id != source_root_id:
+            return ("Da Jump selection must use the source unit's attached root.",)
+        return ()
     if ability == "master_of_mechanisms":
         if is_skip_choice(request, result):
             return ()
@@ -17491,6 +17528,137 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "roll": int(roll),
             "mortal_wounds": int(mortal_wounds),
             "target_unit_id": str(get_entity_id(target_root) or ""),
+        }
+    if ability == "da_jump":
+        payload = _option_payload(request, result)
+        player = _resolve_player(game, request, payload)
+        ability_name = str(ctx.get("ability_name", "") or "Da Jump (Psychic)").strip() or "Da Jump (Psychic)"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {"action": "skip", "roll": None, "mortal_wounds": 0, "queued_move": False}
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or ctx.get("source_unit_id"),
+        )
+        source_root = _resolve_unit_root(source_unit)
+        if source_root is None:
+            return None
+        if player is None:
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        usage_key = str(ctx.get("army_usage_key", "") or "ORK_DA_JUMP").strip().upper() or "ORK_DA_JUMP"
+        mark_used = getattr(player, "_mark_ability_used_turn", None)
+        if callable(mark_used):
+            mark_used(usage_key)
+
+        source_model = None
+        source_models = sorted(
+            list(getattr(source_unit, "models", []) or []),
+            key=lambda model: str(get_entity_id(model) or ""),
+        )
+        for model in source_models:
+            if _model_is_alive(model):
+                source_model = model
+                break
+
+        from ...utility.dice import get_roll
+        from ...utility.event_bus import append_dice
+        from ..decisions import DecisionOption as _DecisionOption, DecisionRequest as _DecisionRequest
+
+        roll = int(get_roll("D6") or 0)
+        if player is not None:
+            append_dice(player, f"{ability_name} roll: {int(roll)}")
+        try:
+            fail_on = int(ctx.get("fail_on", 1) or 1)
+        except (TypeError, ValueError):
+            fail_on = 1
+        if int(roll) <= int(fail_on):
+            mortal_roll = str(ctx.get("self_mortal_wounds_roll", "") or "D6").strip().upper() or "D6"
+            mortal_wounds = _apply_mortal_wounds_roll_to_unit(
+                game,
+                source_root=source_root,
+                source_model=source_model,
+                target_root=source_root,
+                roll_expr=mortal_roll,
+                ability_name=ability_name,
+                player=player,
+            )
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: roll {int(roll)}; {getattr(source_root, 'name', 'Unit')} suffers {int(mortal_wounds)} mortal wounds.",
+            )
+            return {
+                "action": "use",
+                "roll": int(roll),
+                "mortal_wounds": int(mortal_wounds),
+                "queued_move": False,
+                "source_unit_id": str(get_entity_id(source_unit) or ""),
+                "unit_id": str(get_entity_id(source_root) or ""),
+            }
+
+        try:
+            min_enemy_distance_horiz = int(ctx.get("min_enemy_distance_horiz", 9) or 9)
+        except (TypeError, ValueError):
+            min_enemy_distance_horiz = 9
+        get_models = getattr(source_root, "get_attached_unit_models", None)
+        if callable(get_models):
+            attached_models = [model for model in list(get_models() or []) if _model_is_alive(model)]
+        else:
+            attached_models = [model for model in list(getattr(source_root, "models", []) or []) if _model_is_alive(model)]
+        allowed_model_ids = [str(get_entity_id(model) or "") for model in list(attached_models or [])]
+        allowed_model_ids = [model_id for model_id in allowed_model_ids if model_id]
+        root_id = str(get_entity_id(source_root) or "")
+        if not allowed_model_ids or not root_id:
+            return None
+
+        queue = getattr(game, "decision_queue", None)
+        duplicate_move = False
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != str(DECISION_MOVE_UNIT):
+                    continue
+                req_ctx = dict(getattr(req, "context", {}) or {})
+                if str(req_ctx.get("placement_kind", "") or "") != "normal_move_redeploy_9h":
+                    continue
+                if str(req_ctx.get("unit_id", "") or "") != root_id:
+                    continue
+                duplicate_move = True
+                break
+        if not duplicate_move:
+            request_move = _DecisionRequest.create(
+                DECISION_MOVE_UNIT,
+                f"{ability_name}: set up {getattr(source_root, 'name', 'Unit')}",
+                player_id=getattr(request, "player_id", None),
+                options=[
+                    _DecisionOption.create(
+                        "Confirm",
+                        payload={"unit_id": root_id, "movement_type": "move", "action": "confirm"},
+                    )
+                ],
+                context={
+                    "unit_id": root_id,
+                    "movement_type": "move",
+                    "placement_kind": "normal_move_redeploy_9h",
+                    "allowed_model_ids": list(allowed_model_ids),
+                    "allow_skip": False,
+                    "ability_name": ability_name,
+                    "min_enemy_distance_horiz": int(min_enemy_distance_horiz),
+                },
+            )
+            game.request_decision(request_move)
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: roll {int(roll)}; {getattr(source_root, 'name', 'Unit')} will be set up again more than {int(min_enemy_distance_horiz)}\" horizontally from enemy models.",
+        )
+        return {
+            "action": "use",
+            "roll": int(roll),
+            "mortal_wounds": 0,
+            "queued_move": True,
+            "source_unit_id": str(get_entity_id(source_unit) or ""),
+            "unit_id": root_id,
         }
     if is_skip_choice(request, result):
         return None

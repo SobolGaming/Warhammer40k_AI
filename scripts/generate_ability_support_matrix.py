@@ -14227,6 +14227,24 @@ def _advance_selected_redeploy_support(description: str) -> Optional[Tuple[str, 
         r"(?:it|that unit|this unit|this model s unit|this models unit) up again anywhere on the battlefield "
         r"that is more than (?P<min_dist>\d+) horizontally away from all enemy (?:units|models)"
     )
+    da_jump_pattern = (
+        r"once per turn at the end of your movement phase one weirdboy from your army can use this ability "
+        r"if it does roll one d6 on a 1 that weirdboy(?: s|s) unit suffers d6 mortal wounds "
+        r"on a 2 remove this weirdboy(?: s|s) unit from the battlefield and set it up again anywhere on the battlefield "
+        r"that is more than (?P<min_dist>\d+) horizontally away from all enemy models"
+    )
+    match = re.fullmatch(da_jump_pattern, norm)
+    if match:
+        try:
+            min_dist = int(match.group("min_dist") or 0)
+        except Exception:
+            min_dist = 0
+        if min_dist <= 0:
+            return None
+        return (
+            "Supported",
+            f"Movement phase end: one WEIRDBOY from your army can roll D6; on 1 its unit suffers D6 mortal wounds, on 2+ its unit is set up again more than {min_dist}\" horizontally from enemy models.",
+        )
     match = re.fullmatch(normal_pattern, norm)
     if not match:
         return None

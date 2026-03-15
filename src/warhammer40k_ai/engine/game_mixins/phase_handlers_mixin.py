@@ -3144,6 +3144,146 @@ class GamePhaseHandlersMixin:
                             pending_models.add(model_id)
                         break
 
+    def _on_phase_end_orks_da_jump(self, player=None, phase=None, **_kwargs) -> None:
+        """End of Movement phase: one Weirdboy from the active Orks army can use Da Jump."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        ability_key = "ORK_DA_JUMP"
+        ability_used = getattr(player, "_ability_used_this_turn", None)
+        if callable(ability_used) and bool(ability_used(ability_key)):
+            return
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "da_jump":
+                    continue
+                if str(ctx.get("player_id", "") or "") != str(getattr(player, "id", "") or ""):
+                    continue
+                try:
+                    queued_turn = int(ctx.get("turn", 0) or 0)
+                except (TypeError, ValueError):
+                    queued_turn = 0
+                if queued_turn > 0 and current_turn > 0 and queued_turn != current_turn:
+                    continue
+                return
+
+        def _unit_sort_key(unit):
+            try:
+                return str(get_entity_id(unit) or "")
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        def _unit_active(unit) -> bool:
+            if unit is None:
+                return False
+            is_alive_fn = getattr(unit, "is_alive", None)
+            if not bool(is_alive_fn() if callable(is_alive_fn) else is_alive_fn):
+                return False
+            if not bool(getattr(unit, "deployed", True)):
+                return False
+            is_in_reserves_fn = getattr(unit, "is_in_reserves", None)
+            in_reserves = bool(is_in_reserves_fn()) if callable(is_in_reserves_fn) else False
+            is_embarked = bool(getattr(unit, "is_embarked", False)) or bool(getattr(unit, "embarked_in", None))
+            return not in_reserves and not is_embarked
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        candidate_source_unit_ids: list[str] = []
+        seen_root_ids: set[str] = set()
+        seen_source_ids: set[str] = set()
+        army_units = sorted(list(army.units or []), key=_unit_sort_key)
+        for unit in army_units:
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not _unit_active(root):
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id in seen_root_ids:
+                continue
+            if root_id:
+                seen_root_ids.add(root_id)
+            spec_fn = getattr(root, "unit_movement_phase_end_da_jump_specs", None)
+            specs = list(spec_fn() or []) if callable(spec_fn) else []
+            if not specs:
+                continue
+            specs.sort(key=lambda spec: str(spec.get("source_unit_id", "") or ""))
+            for spec in specs:
+                source_unit_id = str(spec.get("source_unit_id", "") or "")
+                if not source_unit_id or source_unit_id in seen_source_ids:
+                    continue
+                seen_source_ids.add(source_unit_id)
+                candidate_source_unit_ids.append(source_unit_id)
+                source_label = str(getattr(unit, "name", "") or "").strip()
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [root]
+                source_unit = next(
+                    (
+                        member
+                        for member in list(members or [])
+                        if str(get_entity_id(member) or "") == source_unit_id
+                    ),
+                    None,
+                )
+                if source_unit is not None:
+                    source_label = str(getattr(source_unit, "name", "") or source_label).strip() or source_label
+                option_label = source_label or str(getattr(root, "name", "Weirdboy") or "Weirdboy")
+                root_name = str(getattr(root, "name", "") or "").strip()
+                if root_name and root_name != option_label:
+                    option_label = f"{option_label} ({root_name})"
+                options.append(
+                    DecisionOption.create(
+                        option_label,
+                        payload={
+                            "source_unit_id": source_unit_id,
+                            "unit_id": root_id,
+                        },
+                    )
+                )
+        if len(options) <= 1:
+            return
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Da Jump (Psychic): choose one WEIRDBOY to use this ability (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "da_jump",
+                "ability_name": "Da Jump (Psychic)",
+                "phase": "Movement phase",
+                "phase_name": "MOVEMENT_PHASE",
+                "player_id": str(getattr(player, "id", "") or ""),
+                "army_id": str(get_entity_id(army) or ""),
+                "turn": int(current_turn or 0),
+                "army_usage_key": ability_key,
+                "candidate_source_unit_ids": list(candidate_source_unit_ids),
+                "optional": True,
+            },
+        )
+        self.request_decision(request)
+
     def _on_phase_start_dance_of_death(self, player=None, phase=None, **_kwargs) -> None:
         pname = str(getattr(phase, "name", "") or "").strip().upper()
         if pname != "FIGHT_PHASE":
