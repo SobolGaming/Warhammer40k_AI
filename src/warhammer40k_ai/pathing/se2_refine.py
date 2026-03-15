@@ -255,6 +255,12 @@ def _corridor_geometry(mesh: SurfaceCdtMesh, triangle_path: tuple[int, ...]) -> 
     corridor_triangles = tuple(mesh.triangles[index] for index in triangle_path if 0 <= int(index) < len(mesh.triangles))
     if not corridor_triangles:
         return mesh.free_space
+    if len(corridor_triangles) == 1:
+        # A single-triangle segment has no portal constraints to preserve. Using
+        # only that triangle over-constrains the exact refiner and can reject
+        # legal in-surface rotations on otherwise open ground or open connector
+        # approach segments.
+        return mesh.free_space
     return mesh.free_space.intersection(unary_union(corridor_triangles))
 
 
