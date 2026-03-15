@@ -11761,6 +11761,65 @@ class WargearProfile:
                         reroll_value_reasons.append(f"{source}: re-roll Hit rolls of 1")
         except Exception:
             pass
+        # Target buffs: start-of-shooting keyword hit reroll ones (e.g., Daring Recon).
+        try:
+            if target is not None:
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                tsr = getattr(target_root, "special_rules", None)
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                if isinstance(tsr, dict) and attacker_unit is not None and tsr.get("start_shooting_phase_keyword_hit_reroll_ones_active"):
+                    apply_bonus = True
+                    exp_phase = str(tsr.get("start_shooting_phase_keyword_hit_reroll_ones_expires_phase", "") or "").strip().upper()
+                    if exp_phase:
+                        phase_name = self._resolve_phase_key(attacker_unit=attacker_unit, target_unit=target_root)
+                        if phase_name and phase_name != exp_phase:
+                            apply_bonus = False
+                    if apply_bonus:
+                        owner_id = str(tsr.get("start_shooting_phase_keyword_hit_reroll_ones_owner", "") or "")
+                        if owner_id:
+                            attacker_id = ""
+                            try:
+                                attacker_id = str(get_entity_id(attacker_unit.get_parent_army().player) or "")
+                            except Exception:
+                                attacker_id = ""
+                            if attacker_id and attacker_id != owner_id:
+                                apply_bonus = False
+                    if apply_bonus:
+                        try:
+                            marked_turn = int(tsr.get("start_shooting_phase_keyword_hit_reroll_ones_turn", 0) or 0)
+                        except Exception:
+                            marked_turn = 0
+                        if marked_turn:
+                            game = None
+                            try:
+                                game = attacker_unit.get_parent_army().player.game
+                            except Exception:
+                                game = None
+                            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                            if current_turn and current_turn != marked_turn:
+                                apply_bonus = False
+                    keyword_phrase = str(tsr.get("start_shooting_phase_keyword_hit_reroll_ones_phrase", "") or "").strip()
+                    if apply_bonus and keyword_phrase:
+                        try:
+                            if not attacker_unit._unit_matches_keyword_phrase(attacker_unit, keyword_phrase, use_effective=True):
+                                apply_bonus = False
+                        except Exception:
+                            apply_bonus = False
+                    if apply_bonus:
+                        reroll_hit_values.add(1)
+                        source = (
+                            str(
+                                tsr.get(
+                                    "start_shooting_phase_keyword_hit_reroll_ones_source",
+                                    "Start of Shooting phase Hit reroll",
+                                )
+                                or "Start of Shooting phase Hit reroll"
+                            ).strip()
+                            or "Start of Shooting phase Hit reroll"
+                        )
+                        reroll_value_reasons.append(f"{source}: re-roll Hit rolls of 1")
+        except Exception:
+            pass
         attacker_unit = getattr(attacker, "parent_unit", None)
         get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
         attacker_army = get_parent_army() if callable(get_parent_army) else None

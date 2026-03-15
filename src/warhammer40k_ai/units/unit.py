@@ -3535,6 +3535,12 @@ class Unit(
         r"add (?P<val>\d+) to the hit roll",
         re.IGNORECASE,
     )
+    _START_SHOOTING_PHASE_VISIBLE_KEYWORD_HIT_REROLL_ONES_RE = re.compile(
+        r"at the start of your shooting phase select one enemy unit within (?P<range>\d+) of and visible to this unit "
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) model makes an attack that targets that unit "
+        r"re ?roll a hit roll of 1",
+        re.IGNORECASE,
+    )
     _START_SHOOTING_PHASE_BLIGHT_BOMBARDMENT_RE = re.compile(
         r"at the start of your shooting phase select one enemy unit within (?P<range>\d+) of and visible to this model "
         r"until the end of the phase each time a friendly death guard model makes a ranged attack that targets that unit "
@@ -4210,6 +4216,13 @@ class Unit(
         r"of this model s attacks against the target unit each unit struck by arcing energies suffers (?P<mw>d3|d6|\d+) mortal wounds?",
         re.IGNORECASE,
     )
+    _CONCUSSIVE_WAVE_RE = re.compile(
+        r"in your shooting phase just after selecting a target for this model s (?P<weapon>[a-z0-9 ]+) "
+        r"roll one d6 for the target unit and every other unit within (?P<range>\d+) of that unit on a (?P<threshold>\d)\+? "
+        r"the unit being rolled for is struck by a concussive wave after this model has finished making its attacks against that target unit this phase "
+        r"each unit struck by a concussive wave suffers (?P<mw>d3|d6|\d+) mortal wounds?",
+        re.IGNORECASE,
+    )
     _FIGHT_PHASE_TARGET_MELEE_WOUND_BONUS_RE = re.compile(
         r"at the start of the fight phase select one enemy unit within (?P<range>\d+)\s*\"?\s*of this model "
         r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) model makes a melee attack that targets that enemy unit "
@@ -4489,6 +4502,13 @@ class Unit(
         r"(?:(?:that )?has (?P<max>\d+) or fewer models (?:and )?)?"
         r"(?:that is )?wholly within (?P<range>\d+) of this transport "
         r"(?:you cannot select a unit that can fly )?"
+        r"unless that unit is within engagement range of one or more enemy units it can embark within this transport",
+        re.IGNORECASE,
+    )
+    _END_OPPONENT_MOVEMENT_PHASE_EMBARK_RE = re.compile(
+        r"at the end of your opponent s movement phase if there are no models currently embarked within this transport "
+        r"you can select one friendly (?P<keyword>[a-z0-9 ]+) infantry unit "
+        r"excluding (?P<exclude>[a-z0-9 ]+) units that is wholly within (?P<range>\d+) of this transport "
         r"unless that unit is within engagement range of one or more enemy units it can embark within this transport",
         re.IGNORECASE,
     )

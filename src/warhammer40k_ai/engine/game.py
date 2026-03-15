@@ -5565,6 +5565,13 @@ class Game(
         keyword = str(spec.get("keyword", "") or "").strip()
         if keyword and not passenger.has_any_keyword(keyword):
             return False
+        exclude_keywords_any = [
+            str(value or "").strip().upper()
+            for value in list(spec.get("exclude_keywords_any", []) or [])
+            if str(value or "").strip()
+        ]
+        if exclude_keywords_any and any(bool(passenger.has_any_keyword(keyword_value)) for keyword_value in exclude_keywords_any):
+            return False
         try:
             max_models = int(spec.get("max_models", 0) or 0)
         except Exception:

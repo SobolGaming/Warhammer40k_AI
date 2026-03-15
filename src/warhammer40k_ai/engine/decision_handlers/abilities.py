@@ -20454,6 +20454,26 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {tname} embarked in {sname}.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "opponent_movement_embark":
+        transport = resolve_unit(game, ctx.get("transport_id") or ctx.get("unit_id") or ctx.get("source_unit_id"))
+        if transport is not None and chosen is not None:
+            spec = dict(ctx.get("spec", {}) or {})
+            if "source" not in spec:
+                spec["source"] = str(ctx.get("ability_name", "") or "Mount Up!").strip()
+            resolve_fn = getattr(game, "resolve_end_of_fight_embark", None)
+            if callable(resolve_fn):
+                resolve_fn(transport, chosen, spec)
+            try:
+                player = getattr(getattr(transport, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            try:
+                sname = str(getattr(transport, "name", "Transport") or "Transport")
+                tname = str(getattr(chosen, "name", "Unit") or "Unit")
+                ability_name = str(ctx.get("ability_name", "") or "Mount Up!").strip()
+                _log_action_for_players(game, player, f"{ability_name}: {tname} embarked in {sname}.")
+            except Exception:
+                pass
     if str(ctx.get("ability", "") or "") == "aeldari_guiding_presence":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is not None and chosen is not None:
@@ -21177,6 +21197,40 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 sname = str(getattr(source_root, "name", "Unit") or "Unit")
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
                 _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname} (+{int(bonus)} to hit this phase).")
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "start_shooting_phase_keyword_hit_reroll_ones":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            try:
+                player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Daring Recon").strip() or "Daring Recon"
+            phrase = str(ctx.get("keyword_phrase", "") or "").strip()
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["start_shooting_phase_keyword_hit_reroll_ones_active"] = True
+            sr["start_shooting_phase_keyword_hit_reroll_ones_owner"] = owner_id
+            sr["start_shooting_phase_keyword_hit_reroll_ones_turn"] = int(turn or 0)
+            sr["start_shooting_phase_keyword_hit_reroll_ones_source"] = ability_name
+            sr["start_shooting_phase_keyword_hit_reroll_ones_phrase"] = phrase
+            sr["start_shooting_phase_keyword_hit_reroll_ones_expires_phase"] = "SHOOTING_PHASE"
+            target_root.special_rules = sr
+            try:
+                sname = str(getattr(source_unit, "name", "Unit") or "Unit")
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {sname} marked {tname} for Hit re-rolls of 1 this phase.")
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "blight_bombardment":

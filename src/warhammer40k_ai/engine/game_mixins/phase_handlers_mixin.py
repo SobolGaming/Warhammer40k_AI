@@ -10453,6 +10453,102 @@ class GamePhaseHandlersMixin:
                         spec=spec,
                     )
 
+    def _on_phase_start_shooting_phase_keyword_hit_reroll_ones(self, player=None, phase=None, **_kwargs) -> None:
+        """Start of Shooting phase: select a visible enemy target for friendly keyword Hit re-rolls of 1 this phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ...utility.entity_ids import get_entity_id
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        enemy_roots.sort(key=_unit_sort_key)
+        seen_roots: set[str] = set()
+
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            root_id = str(get_entity_id(root) or "")
+            if root is None or not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if not getattr(root, "is_alive", lambda: False)():
+                continue
+            if not getattr(root, "deployed", True):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            spec_fn = getattr(root, "unit_start_shooting_phase_visible_keyword_hit_reroll_ones_specs", None)
+            if not callable(spec_fn):
+                continue
+            specs = list(spec_fn() or [])
+            if not specs:
+                continue
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            models = [m for m in list(models or []) if getattr(m, "is_alive", True)]
+            if not models:
+                continue
+            for spec in specs:
+                try:
+                    range_value = int(spec.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                candidates_by_id: dict[str, Any] = {}
+                for model in list(models):
+                    visible = self._visible_enemy_candidates_for_model(
+                        source_unit=root,
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                        game_map=game_map,
+                    )
+                    for cand in list(visible or []):
+                        if cand is None:
+                            continue
+                        cand_id = str(get_entity_id(cand) or "")
+                        if cand_id and cand_id not in candidates_by_id:
+                            candidates_by_id[cand_id] = cand
+                candidates = [candidates_by_id[key] for key in sorted(candidates_by_id)]
+                if not candidates:
+                    continue
+                self._queue_start_shooting_phase_keyword_hit_reroll_ones(
+                    player=player,
+                    source_unit=root,
+                    candidates=candidates,
+                    spec=spec,
+                )
+
     def _on_phase_start_death_hex(self, player=None, phase=None, **_kwargs) -> None:
         """Start of Shooting phase: Death Hex selection and roll."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -18145,6 +18241,17 @@ class GamePhaseHandlersMixin:
                         "post_shoot_keyword_hit_reroll_ones_expires_phase",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("start_shooting_phase_keyword_hit_reroll_ones_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "start_shooting_phase_keyword_hit_reroll_ones_active",
+                        "start_shooting_phase_keyword_hit_reroll_ones_owner",
+                        "start_shooting_phase_keyword_hit_reroll_ones_turn",
+                        "start_shooting_phase_keyword_hit_reroll_ones_source",
+                        "start_shooting_phase_keyword_hit_reroll_ones_phrase",
+                        "start_shooting_phase_keyword_hit_reroll_ones_expires_phase",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("start_shooting_phase_visible_hit_bonus_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (
@@ -19986,6 +20093,131 @@ class GamePhaseHandlersMixin:
                         continue
                     self._queue_end_of_fight_embark_decision(
                         player=p,
+                        transport=transport,
+                        candidates=candidates,
+                        spec=spec,
+                    )
+
+    def _on_phase_end_transport_opponent_movement_embark(self, player=None, phase=None, **_kwargs) -> None:
+        """End of opponent's Movement phase: optional embark for empty transports with Mount Up!-style abilities."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        turn_ending_player = player
+        if turn_ending_player is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        try:
+            from ...utility.aura_utils import unit_wholly_within_range_of_unit
+        except Exception:
+            return
+
+        for opp in list(self.players or []):
+            if opp is None or opp is turn_ending_player:
+                continue
+            army = self._get_player_army(opp)
+            if army is None:
+                continue
+            seen_transports: set[str] = set()
+            for transport in list(army.units or []):
+                if transport is None:
+                    continue
+                try:
+                    transport = transport.get_attached_unit_root()
+                except Exception:
+                    pass
+                transport_id = str(get_entity_id(transport) or "")
+                if transport is None or not transport_id or transport_id in seen_transports:
+                    continue
+                seen_transports.add(transport_id)
+                if not transport.is_alive() or not getattr(transport, "deployed", True):
+                    continue
+                try:
+                    if transport.is_in_reserves() or transport.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                if list(getattr(transport, "transport_passengers", []) or []):
+                    continue
+                try:
+                    specs = list(transport.unit_end_of_opponent_movement_embark_specs() or [])
+                except Exception:
+                    specs = []
+                if not specs:
+                    continue
+                for spec in specs:
+                    try:
+                        range_value = float(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0.0
+                    if range_value <= 0:
+                        continue
+                    keyword = str(spec.get("keyword", "") or "").strip()
+                    exclude_keywords = [
+                        str(value or "").strip().upper()
+                        for value in list(spec.get("exclude_keywords_any", []) or [])
+                        if str(value or "").strip()
+                    ]
+                    candidates = []
+                    seen_candidates: set[str] = set()
+                    for unit in list(army.units or []):
+                        if unit is None or unit is transport:
+                            continue
+                        try:
+                            unit = unit.get_attached_unit_root()
+                        except Exception:
+                            pass
+                        unit_id = str(get_entity_id(unit) or "")
+                        if unit is None or not unit_id or unit_id in seen_candidates:
+                            continue
+                        seen_candidates.add(unit_id)
+                        if not unit.is_alive() or not getattr(unit, "deployed", True):
+                            continue
+                        try:
+                            if unit.is_in_reserves():
+                                continue
+                        except Exception:
+                            pass
+                        if not getattr(unit, "is_infantry", False):
+                            continue
+                        if keyword and not unit.has_any_keyword(keyword):
+                            continue
+                        if exclude_keywords and any(bool(unit.has_any_keyword(value)) for value in exclude_keywords):
+                            continue
+                        if getattr(unit.round_state, "disembarked_this_round", False):
+                            continue
+                        sr = getattr(unit, "special_rules", None)
+                        if isinstance(sr, dict) and sr.get("fire_and_fade_no_embark_turn_owner"):
+                            owner = str(sr.get("fire_and_fade_no_embark_turn_owner") or "")
+                            turn = int(sr.get("fire_and_fade_no_embark_turn", 0) or 0)
+                            if owner and owner == str(getattr(opp, "id", "") or "") and int(getattr(self, "turn", 0) or 0) == turn:
+                                continue
+                        try:
+                            if not transport.can_transport(unit):
+                                continue
+                        except Exception:
+                            continue
+                        if not unit_wholly_within_range_of_unit(transport, unit, range_value):
+                            continue
+                        enemies = list(game_map.get_enemy_units(unit) or [])
+                        engaged = False
+                        for enemy in enemies:
+                            if enemy is None or not enemy.is_alive():
+                                continue
+                            if game_map.is_within_engagement_range(unit, enemy):
+                                engaged = True
+                                break
+                        if engaged:
+                            continue
+                        candidates.append(unit)
+                    if not candidates:
+                        continue
+                    self._queue_opponent_movement_embark_decision(
+                        player=opp,
                         transport=transport,
                         candidates=candidates,
                         spec=spec,

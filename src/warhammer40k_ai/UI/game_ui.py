@@ -7093,6 +7093,8 @@ class GameView:
                 "canticles_machine_vengeance_target",
                 "post_shoot_shocked",
                 "void_mine",
+                "start_shooting_phase_keyword_hit_reroll_ones",
+                "opponent_movement_embark",
             ):
                 return
             unit = self._resolve_unit_by_id(ctx.get("source_unit_id"))
@@ -15387,6 +15389,14 @@ class GameView:
             title = ability_name or "Void Mine"
             subtitle = "Select one enemy model moved over this move, or None."
             header = f"{getattr(source_unit, 'name', 'Model')} selects a void mine target."
+        elif str(ability_key) == "start_shooting_phase_keyword_hit_reroll_ones":
+            title = ability_name or "Daring Recon"
+            subtitle = "Select one visible enemy unit to be marked for friendly Hit re-rolls of 1 this phase."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a recon target."
+        elif str(ability_key) == "opponent_movement_embark":
+            title = ability_name or "Mount Up!"
+            subtitle = "Select one nearby friendly Infantry unit to embark, or None."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a unit to embark."
         else:
             title = ability_name or "Select Quarry"
             subtitle = ""

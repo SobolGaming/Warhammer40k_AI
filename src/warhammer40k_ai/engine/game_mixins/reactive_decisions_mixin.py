@@ -2118,6 +2118,86 @@ class GameReactiveDecisionsMixin:
         self.request_decision(request)
         return request
 
+    def _queue_start_shooting_phase_keyword_hit_reroll_ones(
+        self,
+        *,
+        player,
+        source_unit,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
+
+        unit_id = get_entity_id(source_unit)
+        if not unit_id:
+            return None
+
+        ability_name = str(spec.get("source", "") or "Daring Recon").strip() or "Daring Recon"
+        ability_key = str(ability_name).strip().lower() or "start_shooting_phase_keyword_hit_reroll_ones"
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "start_shooting_phase_keyword_hit_reroll_ones":
+                    continue
+                if str(ctx.get("source_unit_id", "")) != str(unit_id):
+                    continue
+                if str(ctx.get("ability_key", "") or "") != ability_key:
+                    continue
+                return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = [
+            DecisionOption.create(
+                str(getattr(cand, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(cand)},
+            )
+            for cand in sorted(list(candidates or []), key=_cand_sort_key)
+            if cand is not None and get_entity_id(cand)
+        ]
+        if not options:
+            return None
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        keyword_phrase = str(spec.get("keyword_phrase", "") or "").strip()
+        ctx = {
+            "ability": "start_shooting_phase_keyword_hit_reroll_ones",
+            "ability_name": ability_name,
+            "ability_key": ability_key,
+            "phase": "Shooting phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "range": int(range_value),
+            "keyword_phrase": keyword_phrase,
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a visible enemy unit.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_maggot_maws(
         self,
         *,
@@ -3795,6 +3875,87 @@ class GameReactiveDecisionsMixin:
             "range": int(range_value),
             "max_models": int(max_models),
             "keyword": keyword,
+            "spec": dict(spec or {}),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a unit to embark.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_opponent_movement_embark_decision(
+        self,
+        *,
+        player,
+        transport,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or transport is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        transport_id = maybe_entity_id(transport)
+        if not transport_id:
+            return None
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "opponent_movement_embark":
+                    continue
+                if str(ctx.get("transport_id", "")) == str(transport_id):
+                    return None
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        sorted_candidates = [c for c in candidates if c is not None]
+        sorted_candidates.sort(key=lambda c: str(maybe_entity_id(c) or ""))
+        for unit in sorted_candidates:
+            unit_id = maybe_entity_id(unit)
+            if not unit_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(unit, "name", "") or "Unit"),
+                    payload={"target_unit_id": unit_id},
+                )
+            )
+        if len(options) <= 1:
+            return None
+
+        ability_name = str(spec.get("source", "") or "Mount Up!").strip() or "Mount Up!"
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        keyword = str(spec.get("keyword", "") or "").strip()
+        exclude_keywords = [
+            str(value or "").strip().upper()
+            for value in list(spec.get("exclude_keywords_any", []) or [])
+            if str(value or "").strip()
+        ]
+        ctx = {
+            "ability": "opponent_movement_embark",
+            "ability_name": ability_name,
+            "phase": "End of opponent's Movement phase",
+            "unit": getattr(transport, "name", "") or "",
+            "unit_id": transport_id,
+            "source_unit_id": transport_id,
+            "transport_id": transport_id,
+            "range": int(range_value),
+            "keyword": keyword,
+            "exclude_keywords_any": list(exclude_keywords),
             "spec": dict(spec or {}),
         }
         request = DecisionRequest.create(

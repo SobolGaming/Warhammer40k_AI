@@ -7184,6 +7184,76 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_end_of_opponent_movement_embark_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: end of opponent's Movement phase, select a nearby friendly Infantry unit to embark if the transport is empty.
+
+        Returns specs with keys:
+            - source: ability name
+            - keyword: str
+            - range: int
+            - exclude_keywords_any: list[str]
+        """
+        cache_key = "unit_end_of_opponent_movement_embark_specs"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, tuple[str, ...]]] = set()
+
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._END_OPPONENT_MOVEMENT_PHASE_EMBARK_RE.fullmatch(normalized)
+            if not m:
+                continue
+            keyword = str(m.group("keyword") or "").strip()
+            if not keyword:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            exclude_raw = str(m.group("exclude") or "").strip()
+            exclude_values: list[str] = []
+            for token in re.split(r"\s*(?:,|and|or)\s*", exclude_raw):
+                token = str(token or "").strip()
+                if not token:
+                    continue
+                normalized_keyword = self._normalize_keyword_phrase(token) or token.strip().upper()
+                normalized_keyword = str(normalized_keyword or "").strip().upper()
+                if normalized_keyword.endswith("S") and len(normalized_keyword) > 1:
+                    normalized_keyword = normalized_keyword[:-1]
+                if normalized_keyword and normalized_keyword not in exclude_values:
+                    exclude_values.append(normalized_keyword)
+            source = str(name or "End of opponent Movement embark").strip() or "End of opponent Movement embark"
+            key = (source.lower(), keyword.lower(), int(range_value), tuple(exclude_values))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "keyword": keyword,
+                    "range": int(range_value),
+                    "exclude_keywords_any": list(exclude_values),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_end_of_fight_sweeping_advance_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: once per battle, end of Fight phase, after the unit has fought,
@@ -7852,6 +7922,75 @@ class AbilitySpecsMixin:
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_start_shooting_phase_visible_keyword_hit_reroll_ones_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: start of Shooting phase, select a visible enemy; friendly keyworded models re-roll Hit rolls of 1 against it.
+
+        Returns specs with keys:
+            - source: ability name
+            - range: int
+            - keyword_phrase: str
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_start_shooting_phase_visible_keyword_hit_reroll_ones_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, str]] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._START_SHOOTING_PHASE_VISIBLE_KEYWORD_HIT_REROLL_ONES_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                keyword_phrase = str(m.group("keyword") or "").strip()
+                if not keyword_phrase:
+                    continue
+                source = str(name or "Start of Shooting phase Hit re-rolls").strip() or "Start of Shooting phase Hit re-rolls"
+                key = (source.lower(), int(range_value), keyword_phrase.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "keyword_phrase": keyword_phrase,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def model_start_shooting_phase_blight_bombardment_specs(self, model: Optional['Model'] = None) -> List[dict]:
@@ -10426,6 +10565,98 @@ class AbilitySpecsMixin:
                     int(threshold),
                     str(mw_value),
                 )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "weapon_key": weapon_key,
+                        "range": int(range_value),
+                        "threshold": int(threshold),
+                        "mortal_wounds": mw_value,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_concussive_wave_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: when selecting a target for a specific ranged weapon, roll for target
+        and nearby units; struck units suffer mortal wounds after attacks are resolved.
+
+        Returns specs with keys:
+            - source: ability name
+            - weapon_key: str
+            - range: int
+            - threshold: int
+            - mortal_wounds: str | int
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_concussive_wave_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int, str]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._CONCUSSIVE_WAVE_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                weapon_raw = str(m.group("weapon") or "").strip()
+                weapon_key = unit._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+                if not weapon_key:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                try:
+                    threshold = int(m.group("threshold") or 0)
+                except Exception:
+                    threshold = 0
+                if threshold <= 0:
+                    continue
+                mw_raw = str(m.group("mw") or "").strip().lower()
+                if not mw_raw:
+                    continue
+                if mw_raw in ("d3", "d6"):
+                    mw_value: str | int = mw_raw
+                else:
+                    try:
+                        mw_value = int(mw_raw)
+                    except Exception:
+                        continue
+                    if int(mw_value) <= 0:
+                        continue
+                source = str(name or "Concussive Wave").strip() or "Concussive Wave"
+                key = (source.lower(), weapon_key, int(range_value), int(threshold), str(mw_value))
                 if key in seen:
                     continue
                 seen.add(key)

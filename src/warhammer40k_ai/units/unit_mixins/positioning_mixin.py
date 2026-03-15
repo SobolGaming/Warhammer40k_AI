@@ -6104,6 +6104,71 @@ class PositioningMixin:
         self._ability_cache[cache_key] = rule
         return rule
 
+    def get_weapon_target_keywords_keyword_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return weapon-scoped attack keyword bonus rules for patterns like:
+        "Each time this model makes an attack with its volcano cannon that targets a MONSTER or VEHICLE unit,
+         that attack has the [DEVASTATING WOUNDS] ability."
+        """
+        if model is None:
+            return None
+        cache_key = f"weapon_target_keywords_keyword_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            entries = list(self._iter_model_specific_ability_entries(model) or [])
+            entries.extend(list(self._iter_ability_entries_for_rules(model=None) or []))
+            for name, desc in entries:
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                normalized = text.lower().replace("\u2019", "'")
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                match = re.fullmatch(
+                    r"each time this model makes an? (?:melee |ranged )?attack with its (?P<weapon>[a-z0-9 ]+?) "
+                    r"that targets (?:an? )?(?:enemy )?(?P<targets>[a-z0-9 ]+?) unit that attack has "
+                    r"(?:the )?(?P<keyword>[a-z0-9 ]+) ability",
+                    normalized,
+                )
+                if not match:
+                    continue
+                weapon_name = str(match.group("weapon") or "").strip()
+                keyword = str(match.group("keyword") or "").strip().upper()
+                raw_targets = str(match.group("targets") or "").strip().lower()
+                if not weapon_name or not keyword or not raw_targets:
+                    continue
+                target_keywords: list[str] = []
+                for token in re.split(r"\s*(?:,|\band\b|\bor\b)\s*", raw_targets):
+                    token = str(token or "").strip()
+                    if not token:
+                        continue
+                    normalized_keyword = self._normalize_keyword_phrase(token) or token.strip().upper()
+                    normalized_keyword = str(normalized_keyword or "").strip().upper()
+                    if normalized_keyword.endswith("S") and len(normalized_keyword) > 1:
+                        normalized_keyword = normalized_keyword[:-1]
+                    if normalized_keyword and normalized_keyword not in target_keywords:
+                        target_keywords.append(normalized_keyword)
+                if not target_keywords:
+                    continue
+                rule = {
+                    "attack_type": "ranged",
+                    "weapon_names": [weapon_name],
+                    "keyword": keyword,
+                    "target_keywords_any": tuple(target_keywords),
+                    "source": str(name or "Weapon keyword bonus").strip() or "Weapon keyword bonus",
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def get_attack_keyword_bonuses(
         self,
         *,
@@ -6119,6 +6184,9 @@ class PositioningMixin:
         Supported keywords: Ignores Cover, Lethal Hits, Sustained Hits X, Devastating Wounds, Twin-linked.
         """
         rules = list(self._get_attack_keyword_bonus_rules(model=model) or [])
+        target_keyword_rule = self.get_weapon_target_keywords_keyword_bonus_rule(model)
+        if isinstance(target_keyword_rule, dict):
+            rules.append(target_keyword_rule)
         extra_rule = self.get_weapon_target_excluding_keywords_keyword_bonus_rule(model)
         if isinstance(extra_rule, dict):
             rules.append(extra_rule)

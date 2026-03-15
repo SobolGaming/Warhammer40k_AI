@@ -6092,6 +6092,7 @@ def _classify_ability_base(
     transport_reactive_disembark_support = _transport_reactive_disembark_support(description)
     embarking_firing_deck_weight_support = _embarking_firing_deck_weight_support(description)
     end_of_fight_embark_support = _end_of_fight_embark_support(description)
+    opponent_movement_embark_support = _opponent_movement_embark_support(description)
     enemy_move_reactive_d6_support = _enemy_move_reactive_d6_support(description)
     conniving_runts_support = _conniving_runts_support(description)
     horde_move_support = _horde_move_support(description)
@@ -6122,6 +6123,7 @@ def _classify_ability_base(
     repulsor_grid_support = _repulsor_grid_support(description)
     battle_protocols_support = _battle_protocols_support(description)
     start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
+    start_shooting_phase_visible_keyword_hit_reroll_ones_support = _start_shooting_phase_visible_keyword_hit_reroll_ones_support(description)
     opponent_command_phase_below_starting_battleshock_support = _opponent_command_phase_below_starting_battleshock_support(description)
     start_any_command_phase_enemy_range_battleshock_support = _start_any_command_phase_enemy_range_battleshock_support(description)
     start_any_command_phase_objective_battleshock_support = _start_any_command_phase_objective_battleshock_support(description)
@@ -6227,8 +6229,10 @@ def _classify_ability_base(
     half_range_attack_keyword_support = _half_range_attack_keyword_support(description)
     target_counts_as_half_range_support = _target_counts_as_half_range_support(description)
     target_keyword_attack_keyword_support = _target_keyword_attack_keyword_support(description)
+    weapon_target_keyword_attack_keyword_support = _weapon_target_keyword_attack_keyword_support(description)
     weapon_keyword_grant_support = _weapon_keyword_grant_support(description)
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
+    reactive_targeted_shooting_support = _reactive_targeted_shooting_support(description)
     order_range_extension_support = _order_range_extension_support(description)
     mobile_command_vehicle_support = _mobile_command_vehicle_support(description)
     datasheet_command_reroll_cherub_support = _datasheet_command_reroll_cherub_support(description)
@@ -6458,6 +6462,8 @@ def _classify_ability_base(
         return target_counts_as_half_range_support
     if target_keyword_attack_keyword_support:
         return target_keyword_attack_keyword_support
+    if weapon_target_keyword_attack_keyword_support:
+        return weapon_target_keyword_attack_keyword_support
     if unit_contains_character_fnp_support:
         return unit_contains_character_fnp_support
     if leading_unit_contains_invuln_support:
@@ -6533,6 +6539,8 @@ def _classify_ability_base(
         return attached_battleline_infiltrators_support
     if end_of_fight_embark_support:
         return end_of_fight_embark_support
+    if opponent_movement_embark_support:
+        return opponent_movement_embark_support
     if leading_bodyguard_embark_support:
         return leading_bodyguard_embark_support
     if model_embark_within_transports_support:
@@ -6595,6 +6603,8 @@ def _classify_ability_base(
         return repulsor_grid_support
     if start_shooting_phase_visible_battleshock_support:
         return start_shooting_phase_visible_battleshock_support
+    if start_shooting_phase_visible_keyword_hit_reroll_ones_support:
+        return start_shooting_phase_visible_keyword_hit_reroll_ones_support
     if opponent_command_phase_below_starting_battleshock_support:
         return opponent_command_phase_below_starting_battleshock_support
     if start_any_command_phase_enemy_range_battleshock_support:
@@ -6781,6 +6791,8 @@ def _classify_ability_base(
         return unit_contains_model_weapon_keyword_grant_support
     if objective_attack_keyword_support:
         return objective_attack_keyword_support
+    if reactive_targeted_shooting_support:
+        return reactive_targeted_shooting_support
     if closest_enemy_hit_charge_support:
         return closest_enemy_hit_charge_support
     if order_range_extension_support:
@@ -9005,7 +9017,7 @@ def _target_keyword_attack_keyword_support(description: str) -> Optional[Tuple[s
         target_raw = target_raw[:-5].strip()
     if not target_raw:
         target_raw = "unit"
-    parts = [p.strip() for p in re.split(r"\s+(?:or|and)\s+", target_raw) if p.strip()]
+    parts = [p.strip() for p in re.split(r"\s+(?:\band\b|\bor\b)\s+", target_raw) if p.strip()]
     if parts:
         target_label = "/".join(p.upper() for p in parts)
     else:
@@ -9024,6 +9036,53 @@ def _target_keyword_attack_keyword_support(description: str) -> Optional[Tuple[s
         label_text = ", ".join(labels[:-1]) + f", and {labels[-1]}"
     note = f"{scope_text} vs {target_label} targets gain {label_text}."
     return ("Supported", note)
+
+
+def _weapon_target_keyword_attack_keyword_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time this model makes a (?P<scope>melee|ranged) attack with its (?P<weapon>[a-z0-9 ]+) "
+        r"that targets (?P<target_clause>.+?) that attack has (?:the )?(?P<keyword>[a-z0-9 ]+) ability"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    labels = _attack_keyword_labels_from_text(m.group("keyword") or "")
+    if not labels:
+        return None
+    target_raw = str(m.group("target_clause") or "").strip()
+    if not target_raw:
+        return None
+    target_raw = re.sub(r"^(?:an?|the)\s+", "", target_raw)
+    target_raw = re.sub(r"^enemy\s+", "", target_raw)
+    if target_raw.endswith(" unit"):
+        target_raw = target_raw[:-5].strip()
+    parts = [p.strip() for p in re.split(r"\s+(?:\band\b|\bor\b)\s+", target_raw) if p.strip()]
+    if parts:
+        target_label = "/".join(p.upper() for p in parts)
+    else:
+        target_label = target_raw.upper()
+    if not target_label:
+        return None
+    scope_text = "Attacks"
+    if str(m.group("scope") or "").strip().lower() == "melee":
+        scope_text = "Melee attacks"
+    elif str(m.group("scope") or "").strip().lower() == "ranged":
+        scope_text = "Ranged attacks"
+    weapon = str(m.group("weapon") or "").strip()
+    if not weapon:
+        return None
+    if len(labels) == 1:
+        label_text = labels[0]
+    elif len(labels) == 2:
+        label_text = f"{labels[0]} and {labels[1]}"
+    else:
+        label_text = ", ".join(labels[:-1]) + f", and {labels[-1]}"
+    return ("Supported", f"{scope_text} with {weapon} vs {target_label} targets gain {label_text}.")
 
 
 def _attack_keyword_label_from_text(raw: str) -> Optional[str]:
@@ -10107,10 +10166,11 @@ def _shooting_target_arcing_mortals_support(description: str) -> Optional[Tuple[
     if not norm:
         return None
     pattern = (
-        r"in your shooting phase each time you select a target for this models (?P<weapon>[a-z0-9 ]+) roll one d6 for the target unit "
-        r"and one d6 for (?:each|every) other enemy unit within (?P<range>\d+) of the target unit on a (?P<threshold>\d)\+? "
-        r"the unit being rolled for is struck by arcing energies after resolving all of this models attacks against the target unit "
-        r"each unit struck by arcing energies suffers (?P<mw>d3|d6|\d+) mortal wounds?"
+        r"in your shooting phase (?:(?:each time you select|just after selecting) a target for this models )(?P<weapon>[a-z0-9 ]+) "
+        r"roll one d6 for the target unit and (?:one d6 for )?(?:each|every) other (?P<other_scope>enemy )?unit within (?P<range>\d+) of (?:the target unit|that unit) "
+        r"on a (?P<threshold>\d)\+? the unit being rolled for is struck by (?P<effect>arcing energies|a concussive wave) "
+        r"after (?P<timing>resolving all of this models attacks against the target unit|this model has finished making its attacks against that target unit this phase) "
+        r"each unit struck by (?P<effect_repeat>arcing energies|a concussive wave) suffers (?P<mw>d3|d6|\d+) mortal wounds?"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
@@ -10119,9 +10179,11 @@ def _shooting_target_arcing_mortals_support(description: str) -> Optional[Tuple[
     range_val = m.group("range") or "3"
     threshold = m.group("threshold") or "5"
     mw = str(m.group("mw") or "D3").upper()
+    other_scope = str(m.group("other_scope") or "").strip().lower()
+    splash_text = f"target and nearby {'enemy ' if other_scope else ''}units within {range_val}\""
     return (
         "Supported",
-        f"Shooting target selection ({weapon}): roll D6 for target and nearby enemies within {range_val}\"; on {threshold}+ mark struck units, then each struck unit suffers {mw} mortal wounds after attacks resolve.",
+        f"Shooting target selection ({weapon}): roll D6 for {splash_text}; on {threshold}+ mark struck units, then each struck unit suffers {mw} mortal wounds after attacks resolve.",
     )
 
 
@@ -11564,6 +11626,31 @@ def _end_of_fight_embark_support(description: str) -> Optional[Tuple[str, str]]:
     return ("Supported", " ".join(notes))
 
 
+def _opponent_movement_embark_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the end of your opponents movement phase if there are no models currently embarked within this transport you can select one friendly "
+        r"(?P<keyword>[a-z0-9 ]+) infantry unit excluding (?P<exclude>[a-z0-9 ]+) units that is wholly within (?P<range>\d+) of this transport "
+        r"unless that unit is within engagement range of one or more enemy units it can embark within this transport"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "friendly").strip().upper()
+    exclude = str(m.group("exclude") or "").strip().upper()
+    range_val = str(m.group("range") or "").strip()
+    note = (
+        f"End of opponent Movement phase: empty transport can embark one friendly {keyword} INFANTRY unit wholly within {range_val}\" if it is not within Engagement Range."
+    )
+    if exclude:
+        note = f"{note} Excludes {exclude} units."
+    return ("Supported", note)
+
+
 def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -11797,6 +11884,33 @@ def _setup_reactive_shoot_or_charge_support(description: str) -> Optional[Tuple[
     return (
         "Supported",
         f"End of opponent Movement phase: select enemy set up within {rng}\" to shoot (if eligible) or charge without charge bonus.",
+    )
+
+
+def _reactive_targeted_shooting_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per turn in your opponents shooting phase when an enemy unit makes a ranged attack that targets a friendly "
+        r"(?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of (?:a model with this ability|this model) "
+        r"after that enemy unit has shot (?:one model with this ability that is within (?P<range_repeat>\d+) of that target|this model) "
+        r"can shoot as if it were your shooting phase but (?:it|this model) must target only that enemy unit when doing so "
+        r"and can only do so if that enemy unit is an eligible target"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper() or "FRIENDLY"
+    range_value = str(m.group("range") or "").strip()
+    range_repeat = str(m.group("range_repeat") or "").strip()
+    if range_repeat and range_repeat != range_value:
+        return None
+    return (
+        "Supported",
+        f"Once per turn in your opponent's Shooting phase, when a friendly {keyword} unit within {range_value}\" is targeted, this model can make a reactive shooting attack against that enemy unit only (if eligible).",
     )
 
 
@@ -12679,6 +12793,28 @@ def _start_shooting_phase_visible_battleshock_support(description: str) -> Optio
     )
 
 
+def _start_shooting_phase_visible_keyword_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of your shooting phase select one enemy unit within (?P<range>\d+) of and visible to this unit "
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) model makes an attack that targets that unit "
+        r"re ?roll a hit roll of 1"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper() or "FRIENDLY"
+    range_value = str(m.group("range") or "").strip()
+    return (
+        "Supported",
+        f"Start of Shooting phase: select one visible enemy unit within {range_value}\"; friendly {keyword} models re-roll Hit rolls of 1 against it until phase end.",
+    )
+
+
 def _opponent_command_phase_below_starting_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -13137,14 +13273,14 @@ def _post_shoot_reactive_move_no_charge_support(description: str) -> Optional[Tu
     if not norm:
         return None
     alt_pattern = (
-        r"in your shooting phase after this (?:model s unit|models unit|unit) has shot "
+        r"in your shooting phase after this (?:model|model s unit|models unit|unit) has shot "
         r"if it is not within engagement range of (?:one or more|any) enemy units "
-        r"(?:it|that unit|this unit) can do one of the following "
+        r"(?:it|that unit|this unit|this model) can do one of the following "
         r"make a normal move of up to (?P<base_move>\d+) "
         r"make a normal move of up to (?P<battleline_move>\d+) "
         r"provided every model in this unit ends that move wholly within (?P<battleline_range>\d+) "
         r"of one or more friendly adeptus mechanicus battleline units "
-        r"in either case if it does until the end of the turn (?:that unit|this unit) is not eligible to declare a charge"
+        r"in either case if it does until the end of the turn (?:that unit|this unit|this model|it) is not eligible to declare a charge"
     )
     alt_match = re.fullmatch(alt_pattern, norm)
     if alt_match:
@@ -13167,11 +13303,11 @@ def _post_shoot_reactive_move_no_charge_support(description: str) -> Optional[Tu
             )
 
     pattern = (
-        r"in your shooting phase after this (?:model s unit|models unit|unit) has shot"
+        r"in your shooting phase after this (?:model|model s unit|models unit|unit) has shot"
         r"(?: if it is not within engagement range of (?:one or more|any) enemy units)? "
-        r"(?:it|that unit|this unit) can make a normal move(?: of up to (?P<move>d6|\d+))?"
+        r"(?:it|that unit|this unit|this model) can make a normal move(?: of up to (?P<move>d6|\d+))?"
         r"(?: as if it were your movement phase)? "
-        r"if it does until the end of the turn (?:that unit|this unit) is not eligible to declare a charge"
+        r"if it does until the end of the turn (?:that unit|this unit|this model|it) is not eligible to declare a charge"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
