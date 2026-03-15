@@ -10613,6 +10613,114 @@ class KeywordsDetachmentsMixin:
         self._ability_cache[cache_key] = rule
         return rule
 
+    def get_target_counts_as_half_range_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time this model's magma cannon targets a MONSTER or VEHICLE unit,
+        that target is always considered to be within half range of that weapon."
+        """
+        if model is None:
+            return None
+        cache_key = f"target_counts_as_half_range_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+            if not text:
+                continue
+            normalized = text.lower().replace("\u2019", "'")
+            normalized = re.sub(r"'s\b", " s", normalized)
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            match = re.fullmatch(
+                r"each time this model s (?P<weapon>[a-z0-9 ]+?) targets (?:an? )?(?:enemy )?(?P<keywords>[a-z0-9 ]+?) unit "
+                r"that target is always considered to be within half range of that weapon",
+                normalized,
+            )
+            if not match:
+                continue
+            weapon_raw = str(match.group("weapon") or "").strip()
+            keyword_tokens = [
+                str(token or "").strip().upper()
+                for token in re.split(r"\s+(?:or|and)\s+", str(match.group("keywords") or "").strip())
+                if str(token or "").strip()
+            ]
+            if not weapon_raw or not keyword_tokens:
+                continue
+            rule = {
+                "source": str(name or "Half-range target override").strip() or "Half-range target override",
+                "weapon_names": [self._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()],
+                "target_keywords_any": keyword_tokens,
+            }
+            break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
+    def weapon_target_counts_as_half_range(
+        self,
+        *,
+        model: Optional['Model'] = None,
+        target: Optional['Unit'] = None,
+        weapon_profile=None,
+        weapon_name: str = "",
+    ) -> bool:
+        if model is None or target is None:
+            return False
+        rule = self.get_target_counts_as_half_range_rule(model)
+        if not isinstance(rule, dict):
+            return False
+
+        current_weapon_name = str(weapon_name or "").strip()
+        if not current_weapon_name and weapon_profile is not None:
+            current_weapon_name = str(getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or "").strip()
+            if not current_weapon_name:
+                current_weapon_name = str(getattr(weapon_profile, "name", "") or "").strip()
+        if not current_weapon_name:
+            return False
+
+        weapon_names = list(rule.get("weapon_names", []) or [])
+        if weapon_names:
+            if hasattr(self, "_weapon_name_matches"):
+                if not self._weapon_name_matches(weapon_names, current_weapon_name):
+                    return False
+            else:
+                current_key = self._normalize_keyword_phrase(current_weapon_name) or current_weapon_name.lower()
+                if current_key not in weapon_names:
+                    return False
+
+        try:
+            target_root = target.get_attached_unit_root()
+        except Exception:
+            target_root = target
+        target_keywords_any = tuple(
+            str(value or "").strip().upper()
+            for value in list(rule.get("target_keywords_any", ()) or ())
+            if str(value or "").strip()
+        )
+        if not target_keywords_any:
+            return False
+
+        has_any_keyword = getattr(target_root, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            return any(bool(has_any_keyword(keyword)) for keyword in target_keywords_any)
+
+        keywords = {
+            str(keyword or "").strip().upper()
+            for keyword in list(getattr(target_root, "keywords", []) or [])
+            if str(keyword or "").strip()
+        }
+        keywords.update(
+            str(keyword or "").strip().upper()
+            for keyword in list(getattr(target_root, "faction_keywords", []) or [])
+            if str(keyword or "").strip()
+        )
+        return any(keyword in keywords for keyword in target_keywords_any)
+
     def get_sonic_destruction_bonus(
         self,
         model: Optional['Model'] = None,

@@ -2472,6 +2472,70 @@ class GamePhaseHandlersMixin:
                 return bool(contains_local(required_model_name))
             return False
 
+        def _alive_models_equipped_with_wargear_count(source_unit, wargear_name: str) -> int:
+            if source_unit is None:
+                return 0
+            wargear = str(wargear_name or "").strip()
+            if not wargear:
+                return 0
+            want_key = re.sub(r"[^a-z0-9]+", "", wargear.lower())
+            model_has_wargear = getattr(source_unit, "_model_has_wargear_named", None)
+            get_models = getattr(source_unit, "get_attached_unit_models", None)
+            if callable(get_models):
+                models = list(get_models() or [])
+            else:
+                models = list(getattr(source_unit, "models", []) or [])
+            count = 0
+            for model in list(models or []):
+                if model is None:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    continue
+                has_match = bool(callable(model_has_wargear) and model_has_wargear(model, wargear))
+                if not has_match and want_key:
+                    for wg in list(getattr(model, "wargear", []) or []):
+                        current_key = re.sub(r"[^a-z0-9]+", "", str(getattr(wg, "name", "") or "").lower())
+                        if current_key and current_key == want_key:
+                            has_match = True
+                            break
+                if not has_match and want_key:
+                    for optional_name in list(getattr(model, "optional_wargear", []) or []):
+                        current_key = re.sub(r"[^a-z0-9]+", "", str(optional_name or "").lower())
+                        if current_key and current_key == want_key:
+                            has_match = True
+                            break
+                if has_match:
+                    count += 1
+            return int(count)
+
+        def _resolve_command_phase_return_amount(source_unit, ability_spec: dict) -> tuple[dict, int, str]:
+            if not isinstance(ability_spec, dict):
+                return {}, 0, ""
+            ability = dict(ability_spec or {})
+            amount = int(ability.get("amount", 0) or 0)
+            amount_roll = str(ability.get("amount_roll", "") or "").strip().upper()
+            alternate_wargear = str(ability.get("alternate_if_wargear_name", "") or "").strip()
+            try:
+                alternate_required_models = int(ability.get("alternate_if_wargear_model_count", 0) or 0)
+            except (TypeError, ValueError):
+                alternate_required_models = 0
+            try:
+                alternate_amount = int(ability.get("alternate_amount", 0) or 0)
+            except (TypeError, ValueError):
+                alternate_amount = 0
+            alternate_amount_roll = str(ability.get("alternate_amount_roll", "") or "").strip().upper()
+            if (
+                alternate_wargear
+                and alternate_required_models > 0
+                and (alternate_amount > 0 or alternate_amount_roll)
+                and _alive_models_equipped_with_wargear_count(source_unit, alternate_wargear) >= alternate_required_models
+            ):
+                amount = int(alternate_amount or amount)
+                amount_roll = str(alternate_amount_roll or amount_roll).strip().upper()
+                ability["alternate_amount_applied"] = True
+            return ability, amount, amount_roll
+
         def _queue_command_phase_return_mode_choice(*, player_obj, source_unit, bodyguard_unit, ability_spec: dict) -> bool:
             if source_unit is None or bodyguard_unit is None:
                 return False
@@ -2632,8 +2696,7 @@ class GamePhaseHandlersMixin:
 
             if not list(bodyguard.models_lost or []):
                 continue
-            amount_roll = str(ability.get("amount_roll", "") or "").strip().upper()
-            amount = int(ability.get("amount", 0) or 0)
+            ability, amount, amount_roll = _resolve_command_phase_return_amount(unit, ability)
             try:
                 optional_discard_count = int(ability.get("optional_miracle_discard_count", 0) or 0)
             except Exception:
@@ -2874,8 +2937,7 @@ class GamePhaseHandlersMixin:
             if not list(root.models_lost or []):
                 continue
 
-            amount = int(ability.get("amount", 0) or 0)
-            amount_roll = str(ability.get("amount_roll", "") or "").strip().upper()
+            ability, amount, amount_roll = _resolve_command_phase_return_amount(root, ability)
             try:
                 optional_discard_count = int(ability.get("optional_miracle_discard_count", 0) or 0)
             except Exception:

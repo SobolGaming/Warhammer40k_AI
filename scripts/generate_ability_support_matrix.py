@@ -6169,6 +6169,7 @@ def _classify_ability_base(
     unit_contains_model_weapon_keyword_grant_support = _unit_contains_model_weapon_keyword_grant_support(description)
     objective_attack_keyword_support = _objective_attack_keyword_support(description)
     half_range_attack_keyword_support = _half_range_attack_keyword_support(description)
+    target_counts_as_half_range_support = _target_counts_as_half_range_support(description)
     target_keyword_attack_keyword_support = _target_keyword_attack_keyword_support(description)
     weapon_keyword_grant_support = _weapon_keyword_grant_support(description)
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
@@ -6393,6 +6394,8 @@ def _classify_ability_base(
         return generic_phase_terrain_support
     if half_range_attack_keyword_support:
         return half_range_attack_keyword_support
+    if target_counts_as_half_range_support:
+        return target_counts_as_half_range_support
     if target_keyword_attack_keyword_support:
         return target_keyword_attack_keyword_support
     if unit_contains_character_fnp_support:
@@ -9055,6 +9058,31 @@ def _half_range_attack_keyword_support(description: str) -> Optional[Tuple[str, 
     if not notes:
         return None
     return ("Supported", " ".join(notes))
+
+
+def _target_counts_as_half_range_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    match = re.fullmatch(
+        r"each time this model(?: s|s) (?P<weapon>[a-z0-9 ]+?) targets (?:an? )?(?:enemy )?(?P<keywords>[a-z0-9 ]+?) unit "
+        r"that target is always considered to be within half range of that weapon",
+        norm,
+    )
+    if not match:
+        return None
+    weapon = str(match.group("weapon") or "").strip().upper()
+    target_keywords = [
+        str(token or "").strip().upper()
+        for token in re.split(r"\s+(?:or|and)\s+", str(match.group("keywords") or "").strip())
+        if str(token or "").strip()
+    ]
+    if not weapon or not target_keywords:
+        return None
+    target_label = "/".join(target_keywords)
+    return ("Supported", f"This model's {weapon} counts {target_label} targets as being within half range.")
 
 
 def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple[str, str]]:
@@ -12160,6 +12188,18 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
         return None
     if "objective marker" in norm and "instead" in norm:
         return None
+    alt_clause_match = re.search(
+        r" if (?P<unit>this unit|the bearer s unit|the bearers unit) contains "
+        r"(?P<count>one|a|an|two|three|four|five|six|\d+) models equipped with (?:a|an) (?P<wargear>[a-z0-9 ]+?) "
+        r"return(?: (?P<alt_up_to>up to))? (?P<alt_amt>"
+        + amount_token
+        + r") destroyed (?P<alt_returned>.+?) to "
+        r"(?:this unit|the bearer s unit|the bearers unit|that unit) instead$",
+        norm,
+    )
+    base_norm = norm
+    if alt_clause_match:
+        base_norm = str(norm[:alt_clause_match.start()] or "").strip()
     target_unit_re = r"(?:this unit|the bearer s unit|the bearers unit|that unit)"
     pattern = (
         r"(?:in your command phase|(?:at the )?(?:start|end) of your command phase)"
@@ -12170,13 +12210,13 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
         r"to "
         + target_unit_re
     )
-    m = re.fullmatch(pattern, norm)
+    m = re.fullmatch(pattern, base_norm)
     if not m:
         return None
     timing_label = "Command phase"
-    if "start of your command phase" in norm:
+    if "start of your command phase" in base_norm:
         timing_label = "Start of Command phase"
-    elif "end of your command phase" in norm:
+    elif "end of your command phase" in base_norm:
         timing_label = "End of Command phase"
     amount_label = _amount_label(str(m.group("amt") or ""))
     up_to_prefix = "up to " if m.group("up_to") else ""
@@ -12195,6 +12235,26 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
         "bearer s unit" in condition or "bearers unit" in condition or "this unit" in condition
     ):
         note = f"{note} Requires the bearer/unit to be below Starting Strength."
+    if alt_clause_match:
+        count_map = {
+            "a": 1,
+            "an": 1,
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+        }
+        count_token = str(alt_clause_match.group("count") or "").strip().lower()
+        count_label = str(count_map.get(count_token, count_token.upper() if count_token else ""))
+        alt_wargear = str(alt_clause_match.group("wargear") or "").strip().upper()
+        alt_amount_label = _amount_label(str(alt_clause_match.group("alt_amt") or ""))
+        alt_up_to = "up to " if alt_clause_match.group("alt_up_to") else ""
+        note = (
+            f"{note} If the source unit has {count_label}+ model(s) equipped with {alt_wargear}, "
+            f"return {alt_up_to}{alt_amount_label} instead."
+        )
     return ("Supported", note)
 
 

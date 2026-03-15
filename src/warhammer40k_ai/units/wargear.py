@@ -629,6 +629,18 @@ class WargearProfile:
             return bool(unit._weapon_name_matches([target_name], candidate))
         return self._normalize_weapon_name_key(candidate) == self._normalize_weapon_name_key(target_name)
 
+    def _target_counts_as_half_range_for_attacker(self, attacker: 'Model', target: 'Unit') -> bool:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return False
+        resolver = getattr(unit, "weapon_target_counts_as_half_range", None)
+        if not callable(resolver):
+            return False
+        try:
+            return bool(resolver(model=attacker, target=target, weapon_profile=self))
+        except Exception:
+            return False
+
     def _iter_model_specific_ability_entries_for_attacker(self, attacker: 'Model'):
         unit = getattr(attacker, "parent_unit", None)
         if unit is None:
@@ -4670,6 +4682,8 @@ class WargearProfile:
                                     within_half_range = float(closest_dist or 0.0) <= (float(effective_range_max) / 2.0)
                                 else:
                                     within_half_range = False
+                                if (not within_half_range) and self._target_counts_as_half_range_for_attacker(attacker, target):
+                                    within_half_range = True
                                 if within_half_range:
                                     do_reroll = False
                                     game = None
@@ -6064,6 +6078,9 @@ class WargearProfile:
             half_range = float(effective_range_max) / 2.0
         except Exception:
             half_range = float(getattr(self.range, "max", 0) or 0) / 2.0
+        within_half_range = bool(closest_dist <= half_range)
+        if (not within_half_range) and self._target_counts_as_half_range_for_attacker(attacker, target):
+            within_half_range = True
 
         ranged_keyword_bonus = {}
         if (
@@ -6087,7 +6104,7 @@ class WargearProfile:
         try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
             bonuses = dict(sr.get("pain_rapid_fire_weapon_bonus", {}) or {}) if isinstance(sr, dict) else {}
-            if bonuses and self.parent_wargear and self.parent_wargear.is_ranged() and closest_dist <= half_range:
+            if bonuses and self.parent_wargear and self.parent_wargear.is_ranged() and within_half_range:
                 parent_name = str(getattr(self.parent_wargear, "name", "") or "").strip().lower()
                 matched = None
                 for key, val in bonuses.items():
@@ -6102,7 +6119,7 @@ class WargearProfile:
         except Exception:
             applied_pain_rapid_fire = False
 
-        if (not applied_pain_rapid_fire) and closest_dist <= half_range and self.is_rapid_fire():
+        if (not applied_pain_rapid_fire) and within_half_range and self.is_rapid_fire():
             try:
                 rf = self.get_rapid_fire_bonus()
                 rf_bonus = int(rf.resolve())
@@ -6116,7 +6133,7 @@ class WargearProfile:
             and self.parent_wargear.is_ranged()
         ) if self.parent_wargear is not None else False
 
-        if parent_is_ranged and closest_dist <= half_range:
+        if parent_is_ranged and within_half_range:
             rapid_fire_bonus = int(ranged_keyword_bonus.get("rapid_fire_bonus", 0) or 0)
             if rapid_fire_bonus > 0:
                 for source_entry in list(ranged_keyword_bonus.get("sources", ()) or ()):
@@ -6126,7 +6143,7 @@ class WargearProfile:
                 atk_mods.append(Modifier(ModifierOp.ADD, rapid_fire_bonus, source="ability:rapid_fire_bonus"))
 
         try:
-            if self.parent_wargear and self.parent_wargear.is_ranged() and closest_dist <= half_range:
+            if self.parent_wargear and self.parent_wargear.is_ranged() and within_half_range:
                 outcast_source = self._aeldari_outcast_ambush_source(attacker)
                 if outcast_source:
                     attack_result.attacks_special_modifiers.append(f"{outcast_source}: [RAPID FIRE 1]")
@@ -6702,6 +6719,9 @@ class WargearProfile:
             half_range = float(effective_range_max) / 2.0
         except Exception:
             half_range = float(getattr(self.range, "max", 0) or 0) / 2.0
+        within_half_range = bool(closest_dist <= half_range)
+        if (not within_half_range) and self._target_counts_as_half_range_for_attacker(attacker, target):
+            within_half_range = True
 
         # Imperial Agents Kill Team: majority Toughness (tie -> highest) for the attack sequence.
         kill_team_toughness = None
@@ -6727,7 +6747,7 @@ class WargearProfile:
                 'crit_hit': False,
                 'crit_wound': False,
                 'mortal_wound': False,
-                'below_half_distance': closest_dist <= half_range,
+                'below_half_distance': within_half_range,
                 'damage': 0,
                 'target_toughness_override': kill_team_toughness,
                 'conversion_active': conversion_active,

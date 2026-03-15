@@ -404,12 +404,23 @@ class AttackResolutionManager:
             models_killed=0,
         )
 
-    def _build_attack_instance(self, ctx: dict, model) -> dict:
+    def _build_attack_instance(self, ctx: dict, model, *, weapon_profile=None, target_unit=None) -> dict:
+        within_half_range = bool(ctx.get("closest_dist", 0.0) <= (ctx.get("half_range", 0.0) or 0.0))
+        unit = getattr(model, "parent_unit", None)
+        if (not within_half_range) and unit is not None and weapon_profile is not None and target_unit is not None:
+            resolver = getattr(unit, "weapon_target_counts_as_half_range", None)
+            if callable(resolver):
+                try:
+                    within_half_range = bool(
+                        resolver(model=model, target=target_unit, weapon_profile=weapon_profile)
+                    )
+                except (AttributeError, TypeError, ValueError):
+                    within_half_range = False
         attack_instance = {
             "crit_hit": False,
             "crit_wound": False,
             "mortal_wound": False,
-            "below_half_distance": bool(ctx.get("closest_dist", 0.0) <= (ctx.get("half_range", 0.0) or 0.0)),
+            "below_half_distance": bool(within_half_range),
             "damage": 0,
             "target_toughness_override": ctx.get("kill_team_toughness"),
             "conversion_active": bool(ctx.get("conversion_active", False)),
@@ -465,7 +476,9 @@ class AttackResolutionManager:
             if num_attacks <= 0:
                 continue
             for _ in range(int(num_attacks)):
-                instances.append(self._build_attack_instance(ctx, model))
+                instances.append(
+                    self._build_attack_instance(ctx, model, weapon_profile=weapon_profile, target_unit=target_unit)
+                )
         return instances
 
     def _ensure_hit_modifier_choices(self, game: object, seq: AttackSequence) -> bool:
@@ -1098,7 +1111,14 @@ class AttackResolutionManager:
             if num_attacks <= 0:
                 continue
             for _ in range(int(num_attacks)):
-                instances.append(self._build_attack_instance(seq.context, model))
+                instances.append(
+                    self._build_attack_instance(
+                        seq.context,
+                        model,
+                        weapon_profile=weapon_profile,
+                        target_unit=target_unit,
+                    )
+                )
         seq.attack_instances = instances
         seq.step = "hits"
         self._begin_hits(game, seq)

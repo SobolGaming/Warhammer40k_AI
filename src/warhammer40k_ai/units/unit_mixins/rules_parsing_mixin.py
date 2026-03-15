@@ -539,8 +539,18 @@ class RulesParsingMixin:
         token_text = str(token or "").strip().lower()
         if not token_text:
             return 0, ""
-        if token_text in ("one", "a"):
-            return 1, ""
+        word_amounts = {
+            "a": 1,
+            "an": 1,
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+        }
+        if token_text in word_amounts:
+            return int(word_amounts[token_text]), ""
         if token_text.isdigit():
             try:
                 value = int(token_text)
@@ -641,9 +651,35 @@ class RulesParsingMixin:
                         },
                     ],
                 }
+            alternate_wargear_name = ""
+            alternate_wargear_model_count = 0
+            alternate_amount = 0
+            alternate_amount_roll = ""
+            alternate_match = re.search(
+                r"if\s+(?:the\s+bearer(?:\s+s|s)?\s+unit|this\s+unit)\s+contains\s+"
+                r"(?P<count>one|a|an|two|three|four|five|six|\d+)\s+models?\s+equipped\s+with\s+(?:an?\s+)?"
+                r"(?P<wargear>[a-z0-9' -]+?)\s+return(?:\s+up\s+to)?\s+"
+                r"(?P<alt_amount>"
+                + amount_token_re
+                + r")\s+destroyed(?:\s+(?P<alt_name>[a-z0-9' -]+?))?\s+to\s+"
+                + target_unit_re
+                + r"\s+instead",
+                plain,
+            )
+            primary_plain = str(plain[:alternate_match.start()] or "").strip() if alternate_match else plain
+            if alternate_match:
+                count_token = str(alternate_match.group("count") or "").strip()
+                alternate_wargear_name = str(alternate_match.group("wargear") or "").strip()
+                alt_amount_token = str(alternate_match.group("alt_amount") or "").strip()
+                alternate_wargear_model_count, _unused_roll = self._parse_command_phase_return_amount_token(
+                    count_token
+                )
+                alternate_amount, alternate_amount_roll = self._parse_command_phase_return_amount_token(
+                    alt_amount_token
+                )
             amount_match = re.search(
                 r"return(?:\s+up\s+to)?\s+" + amount_token_re + r"\s+destroyed\b",
-                plain,
+                primary_plain,
             )
             if not amount_match:
                 continue
@@ -657,7 +693,7 @@ class RulesParsingMixin:
                 r"return(?:\s+up\s+to)?\s+"
                 + amount_token_re
                 + r"\s+destroyed\s+(?P<name>(?!models?\b)[a-z0-9' -]+?)\s+models?\b",
-                plain,
+                primary_plain,
             )
             named_to_unit_match = re.search(
                 r"return(?:\s+up\s+to)?\s+"
@@ -665,7 +701,7 @@ class RulesParsingMixin:
                 + r"\s+destroyed\s+(?P<name>[a-z0-9' -]+?)\s+to\s+"
                 + target_unit_re
                 + r"\b",
-                plain,
+                primary_plain,
             )
             named_phrase = ""
             if named_models_match is not None:
@@ -752,6 +788,15 @@ class RulesParsingMixin:
                 parsed["required_keyword"] = required_keyword
             if required_model_name:
                 parsed["required_model_name"] = required_model_name
+            if (
+                alternate_wargear_name
+                and alternate_wargear_model_count > 0
+                and (alternate_amount > 0 or alternate_amount_roll)
+            ):
+                parsed["alternate_if_wargear_name"] = alternate_wargear_name
+                parsed["alternate_if_wargear_model_count"] = int(alternate_wargear_model_count)
+                parsed["alternate_amount"] = int(alternate_amount)
+                parsed["alternate_amount_roll"] = str(alternate_amount_roll or "")
             if objective_amount > 0:
                 parsed["controlled_objective_amount"] = int(objective_amount)
                 parsed["controlled_objective_amount_roll"] = str(objective_amount_roll or "")
