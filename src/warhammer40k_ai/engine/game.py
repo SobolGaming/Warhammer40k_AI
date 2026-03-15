@@ -1225,6 +1225,56 @@ class Game(
                 continue
             on_resolved(unit, passed=bool(passed), game=self)
 
+    def _on_battle_shock_test_resolved_voice_of_command(self, unit=None, passed: bool = False, **_kwargs) -> None:
+        if unit is None or passed:
+            return
+        root_fn = getattr(unit, "get_attached_unit_root", None)
+        root = root_fn() if callable(root_fn) else unit
+        if root is None:
+            return
+        persist_fn = getattr(root, "orders_persist_while_battle_shocked", None)
+        if callable(persist_fn):
+            try:
+                if bool(persist_fn()):
+                    return
+            except Exception:
+                pass
+
+        army_fn = getattr(root, "get_parent_army", None)
+        army = army_fn() if callable(army_fn) else getattr(root, "parent_army", None)
+        if army is None:
+            return
+        mgr = getattr(army, "voice_of_command", None)
+        if mgr is None:
+            try:
+                from ..rules.voice_of_command import VoiceOfCommandManager
+
+                mgr = VoiceOfCommandManager(army)
+                army.voice_of_command = mgr
+            except Exception:
+                return
+        clear_order = getattr(mgr, "clear_order", None)
+        if not callable(clear_order):
+            return
+        clear_order(root)
+        members = []
+        get_members = getattr(root, "get_attached_unit_members", None)
+        if callable(get_members):
+            try:
+                members = list(get_members() or [])
+            except Exception:
+                members = []
+        if not members:
+            members = [root]
+        for member in list(members or []):
+            if member is None or member is root:
+                continue
+            clear_order(member)
+        for leader in list(getattr(root, "attached_leaders", []) or []):
+            if leader is None:
+                continue
+            clear_order(leader)
+
     def _apply_reanimation_protocols_end_command_phase(self, current_player) -> None:
         if current_player is None:
             raise RuntimeError("Reanimation protocols require a current player.")

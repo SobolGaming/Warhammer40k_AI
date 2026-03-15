@@ -732,11 +732,18 @@ def _unit_cannot_be_target_of_stratagem(unit: Any) -> bool:
         return True
     if getattr(unit, "embarked_in", None) is not None:
         return True
+    allow_while_battle_shocked = False
+    allow_fn = getattr(unit, "can_be_targeted_with_stratagems_while_battle_shocked", None)
+    if callable(allow_fn):
+        try:
+            allow_while_battle_shocked = bool(allow_fn())
+        except Exception:
+            allow_while_battle_shocked = False
     is_bs = getattr(unit, "is_battle_shocked", None)
-    if callable(is_bs) and bool(is_bs()):
+    if callable(is_bs) and bool(is_bs()) and not allow_while_battle_shocked:
         return True
     sr = getattr(unit, "special_rules", None)
-    if isinstance(sr, dict) and sr.get("cannot_use_stratagems") is True:
+    if isinstance(sr, dict) and sr.get("cannot_use_stratagems") is True and not allow_while_battle_shocked:
         return True
     if _unit_blocked_by_voice_eater(unit):
         return True

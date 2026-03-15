@@ -6085,6 +6085,7 @@ def _classify_ability_base(
     command_phase_psychic_veil_support = _command_phase_psychic_veil_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
     start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
+    start_shooting_phase_enemy_range_mortal_threshold_support = _start_shooting_phase_enemy_range_mortal_threshold_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
     post_shoot_afflicted_support = _post_shoot_afflicted_support(description)
     post_shoot_shocked_support = _post_shoot_shocked_support(description)
@@ -6147,8 +6148,11 @@ def _classify_ability_base(
     movement_phase_visible_hit_bonus_support = _movement_phase_end_visible_hit_bonus_support(description)
     movement_phase_end_select_enemy_battleshock_support = _movement_phase_end_select_enemy_battleshock_support(description)
     grenade_pack_flyover_support = _grenade_pack_flyover_support(description)
+    grenadiers_grenade_support = _grenadiers_grenade_support(description)
     primed_and_ready_grenade_support = _primed_and_ready_grenade_support(description)
     gheistskull_grenade_support = _gheistskull_grenade_support(description)
+    grim_determination_support = _grim_determination_support(description)
+    servo_scribes_support = _servo_scribes_support(description)
     battle_focus_token_refund_support = _battle_focus_agile_maneuver_token_refund_support(description)
     leading_leadership_reroll_support = _leading_leadership_reroll_support(description)
     unit_contains_other_model_battleshock_reroll_support = _unit_contains_other_model_battleshock_reroll_support(
@@ -6158,6 +6162,7 @@ def _classify_ability_base(
     start_of_battle_keyword_reroll_support = _start_of_battle_keyword_reroll_ones_support(description)
     daemonic_patrons_support = _daemonic_patrons_support(description)
     plasmacyte_support = _plasmacyte_support(description)
+    shoot_on_death_after_attacks_support = _shoot_on_death_after_attacks_support(description)
     return_on_death_support = _return_on_death_support(description)
     crewed_platform_support = _crewed_platform_support(description)
     melee_fight_on_death_support = _melee_fight_on_death_after_attacks_support(description)
@@ -6564,6 +6569,8 @@ def _classify_ability_base(
         return shooting_phase_dice_pool_mortal_support
     if start_shooting_phase_vehicle_mortal_heal_support:
         return start_shooting_phase_vehicle_mortal_heal_support
+    if start_shooting_phase_enemy_range_mortal_threshold_support:
+        return start_shooting_phase_enemy_range_mortal_threshold_support
     if post_shoot_battleshock_support:
         return post_shoot_battleshock_support
     if post_shoot_afflicted_support:
@@ -6676,10 +6683,16 @@ def _classify_ability_base(
         return movement_phase_end_select_enemy_battleshock_support
     if grenade_pack_flyover_support:
         return grenade_pack_flyover_support
+    if grenadiers_grenade_support:
+        return grenadiers_grenade_support
     if primed_and_ready_grenade_support:
         return primed_and_ready_grenade_support
     if gheistskull_grenade_support:
         return gheistskull_grenade_support
+    if grim_determination_support:
+        return grim_determination_support
+    if servo_scribes_support:
+        return servo_scribes_support
     if movement_phase_visible_wound_bonus_support:
         return movement_phase_visible_wound_bonus_support
     if movement_phase_visible_hit_bonus_support:
@@ -6698,6 +6711,8 @@ def _classify_ability_base(
         return daemonic_patrons_support
     if plasmacyte_support:
         return plasmacyte_support
+    if shoot_on_death_after_attacks_support:
+        return shoot_on_death_after_attacks_support
     if melee_fight_on_death_support:
         return melee_fight_on_death_support
     if return_on_death_support:
@@ -10423,6 +10438,23 @@ def _primed_and_ready_grenade_support(description: str) -> Optional[Tuple[str, s
     )
 
 
+def _grenadiers_grenade_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if not re.fullmatch(
+        r"once per turn you can target this unit with the grenade stratagem for 0cp(?: designer(?:s| s)? note .+)?",
+        norm,
+    ):
+        return None
+    return (
+        "Supported",
+        "Once per turn, this unit can be targeted with Grenade for 0CP.",
+    )
+
+
 def _gheistskull_grenade_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -10980,6 +11012,74 @@ def _start_any_phase_additional_self_order_support(description: str) -> Optional
     return (
         "Supported",
         "Once per battle round at the start of any phase: select one standard Order to affect this unit until your next Command phase as an additional Order.",
+    )
+
+
+def _start_shooting_phase_enemy_range_mortal_threshold_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"once per battle at the start of your shooting phase(?: you can)? select one enemy unit within (?P<range>\d+) of and visible to "
+        r"(?:this model|the bearer) and roll one d6 on a (?P<threshold>\d)\+? that enemy unit suffers "
+        r"(?P<mw>\d*d\d+(?:\+\d+)?|\d+) mortal wounds?"
+        r"(?: or (?P<alt_mw>\d*d\d+(?:\+\d+)?|\d+) mortal wounds? instead if it is a (?P<alt_keywords>[a-z0-9 ]+?) unit)?"
+        r"(?: designer(?:s| s)? note .+)?",
+        norm,
+    )
+    if not m:
+        return None
+    note = (
+        f"Start of Shooting phase optional selection: choose one visible enemy unit within {m.group('range')}\"; "
+        f"on {m.group('threshold')}+ it suffers {str(m.group('mw') or '').upper()} mortal wounds. Once per battle."
+    )
+    alt_mw = str(m.group("alt_mw") or "").strip().upper()
+    alt_keywords_raw = str(m.group("alt_keywords") or "").strip()
+    if alt_mw and alt_keywords_raw:
+        alt_keywords = [
+            str(token or "").strip().upper()
+            for token in re.split(r"\s+(?:or|and)\s+", alt_keywords_raw)
+            if str(token or "").strip()
+        ]
+        if alt_keywords:
+            note += f" {('/'.join(alt_keywords))} targets instead suffer {alt_mw} mortal wounds."
+    return ("Supported", note)
+
+
+def _grim_determination_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if not re.fullmatch(
+        r"while this unit contains an officer you can target this unit with stratagems even while it is battle shocked "
+        r"and orders issued to this unit do not cease to affect this unit if it becomes battle shocked",
+        norm,
+    ):
+        return None
+    return (
+        "Supported",
+        "While this unit contains an OFFICER, it can be targeted with Stratagems while Battle-shocked and its Orders do not cease when it becomes Battle-shocked.",
+    )
+
+
+def _servo_scribes_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if not re.fullmatch(
+        r"once per battle when issuing an order the lord commissar can issue one additional order(?: designer(?:s| s)? note .+)?",
+        norm,
+    ):
+        return None
+    return (
+        "Supported",
+        "Once per battle, when issuing an Order, the Lord Commissar can issue one additional Order.",
     )
 
 
@@ -14367,6 +14467,39 @@ def _return_on_death_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         f"First time destroyed: roll D6 at end of phase; on {roll}+ return with {wounds_desc} (not within Engagement Range).",
+    )
+
+
+def _shoot_on_death_after_attacks_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"when this model is destroyed roll one d6 on a (?P<threshold>\d)\+? do not remove it from play "
+        r"(?:it|this model) can after the attacking (?:unit|model'?s unit|model s unit|models unit) has finished making its attacks "
+        r"shoot as if it were your shooting phase(?: and as if it had its full wounds remaining)? this model is then removed from play",
+        norm,
+    )
+    if m:
+        note = (
+            f"Shoot-on-death: roll D6 on destruction; on {m.group('threshold')}+ this model shoots after the attacker finishes its attacks."
+        )
+        if "full wounds remaining" in norm:
+            note += " Shooting is resolved as if the model had full wounds remaining."
+        return ("Supported", note)
+    m = re.fullmatch(
+        r"while the (?P<required>[a-z0-9 '\-]+?) model is on the battlefield each time a (?P<destroyed>[a-z0-9 '\-]+?) model "
+        r"is destroyed roll one d6 on a (?P<threshold>\d)\+? do not remove it from play the destroyed model can shoot after the "
+        r"attacking (?:unit|model'?s unit|model s unit|models unit) has finished making its attacks and is then removed from play",
+        norm,
+    )
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"Shoot-on-death: while the {str(m.group('required') or '').upper()} model is on the battlefield, destroyed {str(m.group('destroyed') or '').upper()} models roll D6 and shoot after attacks on {m.group('threshold')}+.",
     )
 
 

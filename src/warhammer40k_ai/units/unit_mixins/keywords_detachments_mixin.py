@@ -1679,8 +1679,146 @@ class KeywordsDetachmentsMixin:
         Return rule info for effects that defer a destroyed model's shooting until the attacking unit
         has finished making its attacks.
         """
-        del model
-        return self._temporary_orks_too_arrogant_to_die_rule(expected_phase="SHOOTING_PHASE")
+        cache_key = f"shoot_on_death_after_attacks:{get_entity_id(model) if model is not None else 'unit'}"
+
+        too_arrogant_rule = self._temporary_orks_too_arrogant_to_die_rule(expected_phase="SHOOTING_PHASE")
+        if too_arrogant_rule is not None:
+            return too_arrogant_rule
+
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        def _model_matches_phrase(target_model, phrase: str) -> bool:
+            if target_model is None:
+                return False
+            normalized_phrase = self._normalize_attached_unit_name(phrase)
+            normalized_name = self._normalize_attached_unit_name(getattr(target_model, "name", ""))
+            if not normalized_phrase or not normalized_name:
+                return False
+            if normalized_phrase in normalized_name:
+                return True
+            phrase_tokens = set(normalized_phrase.split())
+            name_tokens = set(normalized_name.split())
+            return bool(phrase_tokens and phrase_tokens.issubset(name_tokens))
+
+        def _parse_shoot_on_death_rule(name: str, desc: str) -> Optional[dict]:
+            text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+            if not text:
+                return None
+            low = text.lower().replace("\u2019", "'")
+            low = re.sub(r"[^a-z0-9']+", " ", low)
+            low = re.sub(r"\s+", " ", low).strip()
+            if "do not remove" not in low:
+                return None
+            if "finished making its attacks" not in low:
+                return None
+            if "shoot as if it were your shooting phase" not in low and "can shoot after the attacking" not in low:
+                return None
+
+            model_rule = re.fullmatch(
+                r"when this model is destroyed roll one d6 on a (?P<threshold>\d)\+? do not remove it from play "
+                r"(?:it|this model) can after the attacking (?:unit|model'?s unit|model s unit|models unit) has finished making its attacks "
+                r"shoot as if it were your shooting phase(?: and as if it had its full wounds remaining)? this model is then removed from play",
+                low,
+            )
+            if model_rule:
+                threshold = int(model_rule.group("threshold") or 0)
+                if threshold < 2 or threshold > 6:
+                    return None
+                return {
+                    "threshold": threshold,
+                    "source": str(name or "Shoot on death").strip() or "Shoot on death",
+                    "attack_type": "any",
+                    "full_wounds_remaining": bool("full wounds remaining" in low),
+                }
+
+            unit_rule = re.fullmatch(
+                r"while the (?P<required>[a-z0-9 '\-]+?) model is on the battlefield each time a (?P<destroyed>[a-z0-9 '\-]+?) model "
+                r"is destroyed roll one d6 on a (?P<threshold>\d)\+? do not remove it from play the destroyed model can shoot after the "
+                r"attacking (?:unit|model'?s unit|model s unit|models unit) has finished making its attacks and is then removed from play",
+                low,
+            )
+            if not unit_rule:
+                return None
+            threshold = int(unit_rule.group("threshold") or 0)
+            if threshold < 2 or threshold > 6:
+                return None
+            required_model_name = str(unit_rule.group("required") or "").strip()
+            destroyed_model_name = str(unit_rule.group("destroyed") or "").strip()
+            if not required_model_name or not destroyed_model_name:
+                return None
+            contains_named = getattr(self, "_unit_contains_model_named", None)
+            if callable(contains_named):
+                try:
+                    if not bool(contains_named(required_model_name)):
+                        return None
+                except Exception:
+                    return None
+            if model is not None and not _model_matches_phrase(model, destroyed_model_name):
+                return None
+            return {
+                "threshold": threshold,
+                "source": str(name or "Shoot on death").strip() or "Shoot on death",
+                "attack_type": "any",
+                "required_model_name": required_model_name,
+                "destroyed_model_name": destroyed_model_name,
+            }
+
+        rule = None
+        try:
+            for name, desc in self._iter_ability_entries_for_rules(model=model):
+                parsed = _parse_shoot_on_death_rule(name, desc)
+                if parsed is None:
+                    continue
+                rule = parsed
+                break
+        except Exception:
+            rule = None
+
+        if rule is None:
+            try:
+                for name, desc in self._iter_ability_entries_for_rules(model=None):
+                    parsed = _parse_shoot_on_death_rule(name, desc)
+                    if parsed is None:
+                        continue
+                    rule = parsed
+                    break
+            except Exception:
+                rule = None
+
+        if rule is None:
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            if root is not None:
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = []
+                if not members:
+                    members = [root]
+                members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+                for member in members:
+                    if member is None or member is self:
+                        continue
+                    try:
+                        entries = list(member._iter_ability_entries_for_rules(model=None))
+                    except Exception:
+                        entries = []
+                    for name, desc in entries:
+                        parsed = _parse_shoot_on_death_rule(name, desc)
+                        if parsed is None:
+                            continue
+                        rule = parsed
+                        break
+                    if rule is not None:
+                        break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
 
     def _vindication_warden_of_honour_vengeful_exhortation_roll_bonus(self, *, model: Optional['Model'] = None) -> int:
         try:
@@ -6795,6 +6933,355 @@ class KeywordsDetachmentsMixin:
             if root.primed_and_ready_grenade_targeted_this_phase(game):
                 return False
         return True
+
+    def get_grenadiers_grenade_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Once per turn, you can target this unit with the Grenade Stratagem for 0CP."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "grenadiers_grenade_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not normalized:
+                    continue
+                if "once per turn" not in normalized:
+                    continue
+                if "grenade stratagem" not in normalized or "0cp" not in normalized:
+                    continue
+                if "target this unit" not in normalized:
+                    continue
+                source = str(name or "Grenadiers").strip() or "Grenadiers"
+                rule = {
+                    "source": source,
+                    "ability_key": "grenadiers_grenade",
+                    "usage_key": "GRENADIERS_GRENADE",
+                    "stratagems": ("GRENADE",),
+                    "phase": "SHOOTING_PHASE",
+                    "limit": "turn",
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _grenadiers_turn_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            return str(int(getattr(game, "turn", 0) or 0))
+        except Exception:
+            return ""
+
+    def grenadiers_grenade_used_this_turn(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        turn_key = root._grenadiers_turn_key(game)
+        if not turn_key:
+            return False
+        return str(sr.get("grenadiers_grenade_used_turn", "") or "") == turn_key
+
+    def mark_grenadiers_grenade_used(self, game=None, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        turn_key = root._grenadiers_turn_key(game)
+        if turn_key:
+            sr["grenadiers_grenade_used_turn"] = str(turn_key)
+        if source:
+            sr["grenadiers_grenade_used_source"] = str(source or "").strip()
+        if stratagem_name:
+            sr["grenadiers_grenade_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+    def can_use_grenadiers_grenade(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive():
+                return False
+        except Exception:
+            return False
+        try:
+            if not bool(getattr(root, "deployed", True)):
+                return False
+        except Exception:
+            pass
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_grenadiers_grenade_rule()
+        if not rule:
+            return False
+        if root.grenadiers_grenade_used_this_turn(game):
+            return False
+        if game is None:
+            try:
+                game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is not None:
+            phase_obj = getattr(game, "phase", None)
+            phase_name = str(getattr(phase_obj, "name", "") or phase_obj or "").strip().upper()
+            if phase_name and phase_name != "SHOOTING_PHASE":
+                return False
+            try:
+                owner = getattr(root.get_parent_army(), "player", None)
+            except Exception:
+                owner = None
+            get_current_player = getattr(game, "get_current_player", None)
+            if owner is not None and callable(get_current_player):
+                if get_current_player() is not owner:
+                    return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        return True
+
+    def get_grim_determination_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "While this unit contains an OFFICER, you can target this unit with Stratagems even while it is
+        Battle-shocked and Orders issued to this unit do not cease to affect this unit if it becomes
+        Battle-shocked."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "grim_determination_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not normalized:
+                    continue
+                if (
+                    "while this unit contains an officer" not in normalized
+                    or "target this unit with stratagems even while it is battle shocked" not in normalized
+                    or "orders issued to this unit do not cease to affect this unit if it becomes battle shocked" not in normalized
+                ):
+                    continue
+                source = str(name or "Grim Determination").strip() or "Grim Determination"
+                rule = {
+                    "source": source,
+                    "required_model_keyword": "OFFICER",
+                    "battle_shock_stratagem_targeting": True,
+                    "battle_shock_order_persistence": True,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _grim_determination_active(self) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_grim_determination_rule() if hasattr(root, "get_grim_determination_rule") else None
+        if not isinstance(rule, dict):
+            return False
+        required_keyword = str(rule.get("required_model_keyword", "OFFICER") or "OFFICER").strip()
+        contains_keyword = getattr(root, "_unit_contains_model_with_keyword", None)
+        if callable(contains_keyword):
+            try:
+                if bool(contains_keyword(required_keyword)):
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def can_be_targeted_with_stratagems_while_battle_shocked(self) -> bool:
+        return bool(self._grim_determination_active())
+
+    def orders_persist_while_battle_shocked(self) -> bool:
+        return bool(self._grim_determination_active())
+
+    def get_servo_scribes_additional_order_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Once per battle, when issuing an Order, the Lord Commissar can issue one additional Order."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "servo_scribes_additional_order_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not normalized:
+                    continue
+                if (
+                    "once per battle" not in normalized
+                    or "when issuing an order" not in normalized
+                    or "lord commissar can issue one additional order" not in normalized
+                ):
+                    continue
+                source = str(name or "Servo-scribes").strip() or "Servo-scribes"
+                rule = {
+                    "source": source,
+                    "ability_key": "servo_scribes_additional_order",
+                    "required_model_name": "Lord Commissar",
+                    "additional_orders": 1,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def servo_scribes_additional_orders_available(self) -> int:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_servo_scribes_additional_order_rule() if hasattr(root, "get_servo_scribes_additional_order_rule") else None
+        if not isinstance(rule, dict):
+            return 0
+        ability_key = str(rule.get("ability_key", "") or "servo_scribes_additional_order").strip().lower()
+        if ability_key and bool(getattr(root, "has_used_unit_once_per_battle", lambda _k: False)(ability_key)):
+            return 0
+        required_model_name = str(rule.get("required_model_name", "") or "Lord Commissar").strip()
+        contains_named = getattr(root, "_unit_contains_model_named", None)
+        if callable(contains_named):
+            try:
+                if not bool(contains_named(required_model_name)):
+                    return 0
+            except Exception:
+                return 0
+        try:
+            return max(0, int(rule.get("additional_orders", 1) or 1))
+        except Exception:
+            return 0
+
+    def mark_servo_scribes_additional_order_used(self) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_servo_scribes_additional_order_rule() if hasattr(root, "get_servo_scribes_additional_order_rule") else None
+        ability_key = "servo_scribes_additional_order"
+        source_name = "Servo-scribes"
+        if isinstance(rule, dict):
+            ability_key = str(rule.get("ability_key", "") or ability_key).strip().lower() or ability_key
+            source_name = str(rule.get("source", "") or source_name).strip() or source_name
+        if ability_key:
+            getattr(root, "mark_unit_once_per_battle_used", lambda *_a, **_k: None)(ability_key, ability_name=source_name)
 
     def get_destroyer_of_futures_overwatch_rule(self) -> Optional[dict]:
         """

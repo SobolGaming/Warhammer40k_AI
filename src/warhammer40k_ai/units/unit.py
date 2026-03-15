@@ -3595,6 +3595,13 @@ class Unit(
         r"on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d3|d6|\d+) mortal wounds? and this model regains up to that many lost wounds?",
         re.IGNORECASE,
     )
+    _START_SHOOTING_PHASE_ENEMY_RANGE_MORTAL_THRESHOLD_RE = re.compile(
+        r"once per battle at the start of your shooting phase (?:you can )?select one enemy unit within (?P<range>\d+) of and visible to "
+        r"(?:this model|the bearer) and roll (?:one|1) d6 on a (?P<threshold>\d)\+? that enemy unit suffers "
+        r"(?P<mw>\d*d\d+(?:\+\d+)?|\d+) mortal wounds?"
+        r"(?: or (?P<alt_mw>\d*d\d+(?:\+\d+)?|\d+) mortal wounds? instead if it is a (?P<alt_keywords>[a-z0-9 ]+?) unit)?",
+        re.IGNORECASE,
+    )
     _START_OPP_SHOOTING_PHASE_MISCHIEF_CONFUSION_RE = re.compile(
         r"at the start of your opponent s shooting phase select one enemy unit within (?P<range>\d+) of and visible to this model "
         r"and roll (?:one|1) d6 on a 2 5 until the end of the phase each time a model in that enemy unit makes an attack "

@@ -9026,6 +9026,130 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_shooting_phase_enemy_range_mortal_threshold_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, at the start of your Shooting phase, select a visible enemy
+        unit within range and roll a D6; on a threshold that unit suffers mortal wounds.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - ability_key: once-per-battle tracking key
+            - range: int
+            - threshold: int
+            - mortal_wounds: str | int
+            - alternate_mortal_wounds: Optional[str | int]
+            - alternate_target_keywords_any: Optional[list[str]]
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_shooting_phase_enemy_range_mortal_threshold:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int, str]] = set()
+
+        ability_entries: list[tuple[str, str]] = []
+        seen_entries: set[tuple[str, str]] = set()
+        for iterator in (
+            self._iter_model_specific_ability_entries(model),
+            self._iter_ability_entries_for_rules(model=model),
+        ):
+            for name, desc in iterator:
+                entry_key = (str(name or ""), str(desc or ""))
+                if entry_key in seen_entries:
+                    continue
+                seen_entries.add(entry_key)
+                ability_entries.append((name, desc))
+
+        for name, desc in ability_entries:
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._START_SHOOTING_PHASE_ENEMY_RANGE_MORTAL_THRESHOLD_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            try:
+                threshold = int(m.group("threshold") or 0)
+            except Exception:
+                threshold = 0
+            if range_value <= 0 or threshold <= 0:
+                continue
+            mortal_raw = str(m.group("mw") or "").strip().lower()
+            if not mortal_raw:
+                continue
+            if re.fullmatch(r"\d*d\d+(?:\+\d+)?", mortal_raw):
+                mortal_wounds: str | int = mortal_raw
+            else:
+                try:
+                    mortal_wounds = int(mortal_raw)
+                except Exception:
+                    continue
+                if mortal_wounds <= 0:
+                    continue
+            alternate_mortal_wounds: str | int | None = None
+            alternate_target_keywords_any: list[str] = []
+            alternate_mortal_raw = str(m.group("alt_mw") or "").strip().lower()
+            if alternate_mortal_raw:
+                if re.fullmatch(r"\d*d\d+(?:\+\d+)?", alternate_mortal_raw):
+                    alternate_mortal_wounds = alternate_mortal_raw
+                else:
+                    try:
+                        alternate_mortal_wounds = int(alternate_mortal_raw)
+                    except Exception:
+                        continue
+                alt_keywords_raw = str(m.group("alt_keywords") or "").strip()
+                if not alt_keywords_raw:
+                    continue
+                alternate_target_keywords_any = [
+                    str(token or "").strip().upper()
+                    for token in re.split(r"\s+(?:or|and)\s+", alt_keywords_raw)
+                    if str(token or "").strip()
+                ]
+                if not alternate_target_keywords_any:
+                    continue
+            source = str(name or "Start of shooting mortals").strip() or "Start of shooting mortals"
+            key_seed = self._normalize_keyword_phrase(source) or "start_shooting_phase_enemy_range_mortal_threshold"
+            ability_key = f"start_shooting_phase_enemy_range_mortal_threshold:{key_seed}"
+            dedupe_key = (
+                source.lower(),
+                ability_key,
+                int(range_value),
+                int(threshold),
+                str(mortal_wounds),
+                str(alternate_mortal_wounds),
+                tuple(alternate_target_keywords_any),
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            spec = {
+                "source": source,
+                "ability_key": ability_key,
+                "range": int(range_value),
+                "threshold": int(threshold),
+                "mortal_wounds": mortal_wounds,
+            }
+            if alternate_mortal_wounds is not None:
+                spec["alternate_mortal_wounds"] = alternate_mortal_wounds
+                spec["alternate_target_keywords_any"] = list(alternate_target_keywords_any)
+            specs.append(spec)
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_opponent_shooting_phase_disrupt_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: start of opponent's Shooting phase, select a visible enemy; roll D6 for hit penalty or no-shoot.

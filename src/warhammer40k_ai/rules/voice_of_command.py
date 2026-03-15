@@ -1052,7 +1052,7 @@ class VoiceOfCommandManager:
     def get_order_range(self, officer_unit, *, order_key: str = "") -> float:
         return float(self._officer_order_range(officer_unit, order_key=order_key))
 
-    def orders_remaining(self, unit, battle_round: int) -> int:
+    def _orders_recurring_capacity(self, unit) -> int:
         count, _, _ = self._parse_orders_profile(unit)
         bonus = 0
         army = self.army
@@ -1067,8 +1067,24 @@ class VoiceOfCommandManager:
         grand_bonus_fn = getattr(mgr, "combined_arms_grand_strategist_orders_bonus", None) if mgr is not None else None
         if callable(grand_bonus_fn):
             bonus += int(grand_bonus_fn(unit) or 0)
+        return max(0, int(count) + int(bonus))
+
+    def _officer_once_per_battle_additional_orders_available(self, unit) -> int:
+        if unit is None:
+            return 0
+        fn = getattr(unit, "servo_scribes_additional_orders_available", None)
+        if callable(fn):
+            try:
+                return max(0, int(fn() or 0))
+            except Exception:
+                return 0
+        return 0
+
+    def orders_remaining(self, unit, battle_round: int) -> int:
+        capacity = self._orders_recurring_capacity(unit)
+        capacity += self._officer_once_per_battle_additional_orders_available(unit)
         issued = self._order_issued_state(unit, battle_round)
-        return max(0, int(count) + int(bonus) - int(issued))
+        return max(0, int(capacity) - int(issued))
 
     def orders_remaining_for_trigger(self, unit, battle_round: int, *, trigger: str = "") -> int:
         trigger_key = str(trigger or "").strip().lower()
@@ -1532,7 +1548,13 @@ class VoiceOfCommandManager:
                 self._consume_reactive_command_pending_order(officer_unit, battle_round)
             else:
                 issued = self._order_issued_state(officer_unit, battle_round)
-                self._set_orders_issued(officer_unit, battle_round, issued + 1)
+                issued_after = int(issued) + 1
+                self._set_orders_issued(officer_unit, battle_round, issued_after)
+                recurring_capacity = self._orders_recurring_capacity(officer_unit)
+                if issued_after > int(recurring_capacity):
+                    mark_extra = getattr(officer_unit, "mark_servo_scribes_additional_order_used", None)
+                    if callable(mark_extra):
+                        mark_extra()
 
         # Replace any existing orders
         self.clear_order(target_unit)

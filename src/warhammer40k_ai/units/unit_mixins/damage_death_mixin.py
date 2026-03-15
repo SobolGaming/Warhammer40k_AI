@@ -1022,13 +1022,24 @@ class DamageDeathMixin:
                 root = self
             if root is not None:
                 wp = getattr(self, "_last_destroyed_by_weapon_profile", None)
+                trigger_attack_type = str(shoot_rule.get("attack_type", "ranged") or "ranged").strip().lower()
                 is_ranged = False
+                is_melee = False
                 try:
                     parent = getattr(wp, "parent_wargear", None)
                     is_ranged = bool(parent is not None and parent.is_ranged())
+                    is_melee = bool(parent is not None and parent.is_melee())
                 except Exception:
                     is_ranged = False
-                if is_ranged:
+                    is_melee = False
+                should_trigger = bool(is_ranged)
+                if trigger_attack_type == "any":
+                    should_trigger = True
+                elif trigger_attack_type == "melee":
+                    should_trigger = bool(is_melee)
+                elif trigger_attack_type == "ranged":
+                    should_trigger = bool(is_ranged)
+                if should_trigger:
                     roll = int(get_roll("D6"))
                     total = int(roll)
                     from ...utility.event_bus import append_dice
@@ -1178,6 +1189,9 @@ class DamageDeathMixin:
         if getattr(model, "_shoot_on_death_used", False):
             return False
 
+        shoot_rule = self.get_shoot_on_death_after_attacks_rule(model=model)
+        full_wounds_remaining = bool((shoot_rule or {}).get("full_wounds_remaining", False))
+
         # Collect one profile per ranged weapon (choose 'default' or the first profile).
         ranged_profiles = []
         for wargear in getattr(model, "wargear", []) or []:
@@ -1239,17 +1253,40 @@ class DamageDeathMixin:
             "hit_models_by_target_weapon": hit_models_by_target_weapon,
             "hit_models_by_target_psychic": hit_models_by_target_psychic,
         }
-        for profile in ranged_profiles:
-            try:
-                shots_executed += self._execute_weapon_attacks(
-                    profile,
-                    best_target,
-                    [model],
-                    game_map,
-                    attack_context=attack_context,
-                )
-            except Exception as e:
-                logger.exception(f"Shoot on Death attack error: {e}")
+        original_wounds = None
+        try:
+            original_wounds = int(getattr(model, "wounds", 0) or 0)
+        except Exception:
+            original_wounds = None
+        try:
+            if full_wounds_remaining:
+                try:
+                    base_wounds = int(getattr(model, "_base_wounds", getattr(model, "base_wounds", 0)) or 0)
+                except Exception:
+                    base_wounds = 0
+                if base_wounds > 0:
+                    model.wounds = int(base_wounds)
+                    if hasattr(model, "_check_damaged_profile"):
+                        model._check_damaged_profile()
+            for profile in ranged_profiles:
+                try:
+                    shots_executed += self._execute_weapon_attacks(
+                        profile,
+                        best_target,
+                        [model],
+                        game_map,
+                        attack_context=attack_context,
+                    )
+                except Exception as e:
+                    logger.exception(f"Shoot on Death attack error: {e}")
+        finally:
+            if full_wounds_remaining and original_wounds is not None:
+                try:
+                    model.wounds = int(original_wounds)
+                    if hasattr(model, "_check_damaged_profile"):
+                        model._check_damaged_profile()
+                except Exception:
+                    pass
 
         self._resolve_pending_attack_mortal_wounds(attack_context, best_target, game_map=game_map)
         return shots_executed > 0
