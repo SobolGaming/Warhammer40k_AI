@@ -4330,6 +4330,16 @@ class GamePhaseHandlersMixin:
                         "atavistic_instigation_duck_expires_timing",
                     ):
                         sr.pop(key, None)
+                if (
+                    pname == "SHOOTING_PHASE"
+                    and str(sr.get("shocked_owner", "") or "") == owner_id
+                    and str(sr.get("shocked_expires_timing", "") or "").strip().upper() == "OWNER_NEXT_SHOOTING_START"
+                    and bool(sr.get("shocked_active"))
+                ):
+                    clear_fn = getattr(unit, "clear_shocked", None)
+                    if callable(clear_fn):
+                        clear_fn()
+                        continue
                 unit.special_rules = sr
 
     def _on_phase_start_wracked_with_agonies_cleanup(self, player=None, phase=None, **_kwargs) -> None:
@@ -4833,6 +4843,8 @@ class GamePhaseHandlersMixin:
                     continue
                 if not sr.get("shocked_active"):
                     continue
+                if str(sr.get("shocked_expires_timing", "") or "").strip().upper() == "OWNER_NEXT_SHOOTING_START":
+                    continue
                 owner_id = str(sr.get("shocked_owner", "") or "")
                 if not owner_id or owner_id == current_owner:
                     continue
@@ -4878,6 +4890,7 @@ class GamePhaseHandlersMixin:
                     "shocked_move_penalty",
                     "shocked_advance_penalty",
                     "shocked_charge_penalty",
+                    "shocked_expires_timing",
                 ):
                     sr.pop(key, None)
                 unit.special_rules = sr

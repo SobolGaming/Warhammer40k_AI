@@ -1413,6 +1413,48 @@ class DamageDeathMixin:
         except Exception:
             pass
 
+        # Astra Militarum (Banesword): Armour Obliteration.
+        # Deadly Demise triggers on 3+ instead of 6 when the destroyed model was killed by this source's quake cannon.
+        try:
+            last_weapon_profile = getattr(self, "_last_destroyed_by_weapon_profile", None)
+            last_attacker_unit = getattr(self, "_last_destroyed_by_unit", None)
+            if last_weapon_profile is not None and last_attacker_unit is not None:
+                weapon_name = ""
+                try:
+                    parent_wargear = getattr(last_weapon_profile, "parent_wargear", None)
+                    if parent_wargear is not None:
+                        weapon_name = str(getattr(parent_wargear, "name", "") or "")
+                except Exception:
+                    weapon_name = ""
+                if not weapon_name:
+                    weapon_name = str(getattr(last_weapon_profile, "name", "") or "")
+                weapon_key = re.sub(r"[^a-z0-9]+", " ", str(weapon_name or "").lower()).strip()
+                if weapon_key == "quake cannon":
+                    try:
+                        attacker_root = last_attacker_unit.get_attached_unit_root()
+                    except Exception:
+                        attacker_root = last_attacker_unit
+                    has_armour_obliteration = False
+                    for ability in list(getattr(attacker_root, "possible_abilities", []) or []):
+                        ability_name = ""
+                        try:
+                            if isinstance(ability, str):
+                                ability_name = str(ability or "")
+                            elif isinstance(ability, dict):
+                                ability_name = str(ability.get("name", "") or "")
+                            else:
+                                ability_name = str(getattr(ability, "name", "") or "")
+                        except Exception:
+                            ability_name = ""
+                        norm_name = re.sub(r"[^a-z0-9]+", " ", str(ability_name or "").lower()).strip()
+                        if norm_name == "armour obliteration":
+                            has_armour_obliteration = True
+                            break
+                    if has_armour_obliteration:
+                        trigger_threshold = int(min(int(trigger_threshold), 3))
+        except Exception:
+            pass
+
         auto_trigger = False
         putrid_auto_trigger = False
         sanctified_auto_trigger = False

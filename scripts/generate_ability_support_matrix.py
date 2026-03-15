@@ -5972,6 +5972,8 @@ def _classify_ability_base(
     aura_oc_support = _aura_objective_control_support(description)
     aura_leadership_bonus_support = _aura_leadership_bonus_support(description)
     aura_benefit_of_cover_support = _aura_benefit_of_cover_support(description)
+    contains_keyword_objective_cover_support = _contains_keyword_objective_cover_support(description)
+    obscuring_model_cover_support = _obscuring_model_cover_support(description)
     fortification_cover_support = _fortification_cover_support(description)
     foul_spores_support = _foul_spores_aura_support(description)
     friendly_tyranids_invuln_aura_support = _friendly_tyranids_invulnerable_aura_support(description)
@@ -6208,7 +6210,9 @@ def _classify_ability_base(
     attack_count_reroll_support = _model_attack_count_reroll_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
     start_fight_phase_self_destruction_support = _start_fight_phase_self_destruction_support(description)
+    shooting_target_battleshock_splash_support = _shooting_target_battleshock_splash_support(description)
     shooting_target_arcing_mortals_support = _shooting_target_arcing_mortals_support(description)
+    deadly_demise_trigger_threshold_on_destroy_support = _deadly_demise_trigger_threshold_on_destroy_support(description)
     fight_within_3_support = _fight_within_3_support(description)
     allocated_damage_reduction_support = _allocated_damage_reduction_support(description)
     allocated_damage_zero_support = _allocated_damage_set_zero_support(description)
@@ -6326,6 +6330,10 @@ def _classify_ability_base(
         return aura_leadership_bonus_support
     if aura_benefit_of_cover_support:
         return aura_benefit_of_cover_support
+    if contains_keyword_objective_cover_support:
+        return contains_keyword_objective_cover_support
+    if obscuring_model_cover_support:
+        return obscuring_model_cover_support
     if fortification_cover_support:
         return fortification_cover_support
     if foul_spores_support:
@@ -6757,8 +6765,12 @@ def _classify_ability_base(
         return datasheet_no_fire_overwatch_support
     if attack_count_reroll_support:
         return attack_count_reroll_support
+    if shooting_target_battleshock_splash_support:
+        return shooting_target_battleshock_splash_support
     if shooting_target_arcing_mortals_support:
         return shooting_target_arcing_mortals_support
+    if deadly_demise_trigger_threshold_on_destroy_support:
+        return deadly_demise_trigger_threshold_on_destroy_support
     if charge_end_mortal_support:
         return charge_end_mortal_support
     if start_fight_phase_self_destruction_support:
@@ -7794,6 +7806,29 @@ def _aura_benefit_of_cover_support(description: str) -> Optional[Tuple[str, str]
     target = str(match.group("target") or "").strip()
     rng = str(match.group("rng") or "").strip()
     return ("Supported", f"Aura: friendly {target} within {rng}\" gain Benefit of Cover against ranged attacks.")
+
+
+def _contains_keyword_objective_cover_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this unit contains an? (?P<keyword>[a-z0-9 ]+) each time a (?P<attack>melee|ranged) attack targets this unit "
+        r"if this unit is within range of an objective marker(?P<controlled> you control)? "
+        r"models in this unit have the benefit of cover(?: against that attack)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper()
+    attack = str(m.group("attack") or "ranged").strip().lower()
+    objective_text = "a controlled objective marker" if str(m.group("controlled") or "").strip() else "an objective marker"
+    return (
+        "Supported",
+        f"While this unit contains {keyword} and is within range of {objective_text}, it gains Benefit of Cover against {attack} attacks.",
+    )
 
 
 def _foul_spores_aura_support(description: str) -> Optional[Tuple[str, str]]:
@@ -9156,6 +9191,30 @@ def _fortification_cover_support(description: str) -> Optional[Tuple[str, str]]:
     )
 
 
+def _obscuring_model_cover_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time a ranged attack is allocated to (?:an? )?(?:(?P<target>[a-z0-9 ]+?) )?model from your army "
+        r"if that model is not fully visible to every model in the attacking unit because of this (?P<source>[a-z0-9 ]+) model "
+        r"that model has the benefit of cover(?: and a (?P<inv>\d+) invulnerable save)? against that attack"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    target = str(m.group("target") or "").strip().upper()
+    source = str(m.group("source") or "Model").strip().upper()
+    inv = str(m.group("inv") or "").strip()
+    target_text = f"{target} model" if target else "friendly model"
+    note = f"Model-obscuring cover: {target_text}s obscured by this {source} model gain Benefit of Cover against ranged attacks."
+    if inv:
+        note = note[:-1] + f" and a {inv}+ invulnerable save."
+    return ("Supported", note)
+
+
 def _aura_leadership_bonus_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -9832,6 +9891,27 @@ def _shooting_target_arcing_mortals_support(description: str) -> Optional[Tuple[
     return (
         "Supported",
         f"Shooting target selection ({weapon}): roll D6 for target and nearby enemies within {range_val}\"; on {threshold}+ mark struck units, then each struck unit suffers {mw} mortal wounds after attacks resolve.",
+    )
+
+
+def _shooting_target_battleshock_splash_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase just after selecting a target for this models (?P<weapon>[a-z0-9 ]+) "
+        r"the target unit and every other enemy infantry unit within (?P<range>\d+) of that unit must take a battle shock test"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    weapon = str(m.group("weapon") or "weapon").strip()
+    range_val = str(m.group("range") or "3").strip()
+    return (
+        "Supported",
+        f"Shooting target selection ({weapon}): the target unit and every other enemy INFANTRY unit within {range_val}\" must take Battle-shock tests.",
     )
 
 
@@ -12846,27 +12926,72 @@ def _post_shoot_shocked_support(description: str) -> Optional[Tuple[str, str]]:
         r"and subtract (?P<advance>\d+) from advance and charge rolls made for it"
     )
     m = re.fullmatch(pattern, norm)
+    if m:
+        infantry_only = bool(str(m.group("infantry") or "").strip())
+        excluded_mv = bool(str(m.group("exclude") or "").strip()) or ("excluding monsters and vehicles" in norm)
+        state = str(m.group("state") or "shocked").strip().lower()
+        move_pen = str(m.group("move") or "2")
+        adv_pen = str(m.group("advance") or "2")
+        scope = "enemy unit"
+        if infantry_only:
+            scope = "enemy INFANTRY unit"
+        elif excluded_mv:
+            scope = "enemy non-MONSTER/non-VEHICLE unit"
+        weapon = " ".join(str(m.group("weapon") or "").strip().split())
+        threshold = str(m.group("threshold") or "").strip()
+        note = f"After shooting: select a hit {scope}"
+        if weapon:
+            note += f" hit by {weapon}"
+        if threshold:
+            note += f"; on {threshold}+"
+        note += f" it is {state} until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls."
+        return ("Supported", note)
+    auto_pattern = (
+        r"in your shooting phase after this (?P<scope>model|unit) has shot if one or more of those attacks made with "
+        r"(?:(?:a|an|the|its|this model s|this unit s) )?(?P<weapon>[a-z0-9 ' -]+?) scored a hit against an(?: enemy)? "
+        r"(?:(?P<infantry>infantry) )?unit until the (?P<duration>start of your next shooting phase|end of your opponent(?: s|s) next turn) "
+        r"that (?:enemy )?(?:(?P<target_infantry>infantry) )?unit is (?P<state>shaken) while a unit is (?P=state) subtract (?P<move>\d+) from its move characteristic "
+        r"and subtract (?:(?P<advance>\d+) from advance and )?(?P<charge>\d+) from charge rolls made for it"
+    )
+    m = re.fullmatch(auto_pattern, norm)
     if not m:
         return None
-    infantry_only = bool(str(m.group("infantry") or "").strip())
-    excluded_mv = bool(str(m.group("exclude") or "").strip()) or ("excluding monsters and vehicles" in norm)
-    state = str(m.group("state") or "shocked").strip().lower()
-    move_pen = str(m.group("move") or "2")
-    adv_pen = str(m.group("advance") or "2")
-    scope = "enemy unit"
-    if infantry_only:
-        scope = "enemy INFANTRY unit"
-    elif excluded_mv:
-        scope = "enemy non-MONSTER/non-VEHICLE unit"
     weapon = " ".join(str(m.group("weapon") or "").strip().split())
-    threshold = str(m.group("threshold") or "").strip()
-    note = f"After shooting: select a hit {scope}"
-    if weapon:
-        note += f" hit by {weapon}"
-    if threshold:
-        note += f"; on {threshold}+"
-    note += f" it is {state} until end of opponent's next turn and suffers -{move_pen}\" Move and -{adv_pen} to Advance/Charge rolls."
-    return ("Supported", note)
+    infantry_only = bool(str(m.group("infantry") or m.group("target_infantry") or "").strip())
+    scope = "enemy INFANTRY unit" if infantry_only else "enemy unit"
+    duration_raw = str(m.group("duration") or "").strip().lower()
+    duration_text = "until the start of your next Shooting phase" if "start of your next shooting phase" in duration_raw else "until end of your opponent's next turn"
+    move_pen = str(m.group("move") or "2")
+    advance_pen = str(m.group("advance") or "").strip()
+    charge_pen = str(m.group("charge") or "2")
+    penalties = f"-{move_pen}\" Move and -{charge_pen} to Charge rolls"
+    if advance_pen:
+        penalties = f"-{move_pen}\" Move and -{advance_pen} to Advance rolls and -{charge_pen} to Charge rolls"
+    return (
+        "Supported",
+        f"After shooting: a hit {scope} hit by {weapon} is shaken {duration_text} and suffers {penalties}.",
+    )
+
+
+def _deadly_demise_trigger_threshold_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time an attack made with this models (?P<weapon>[a-z0-9 ]+) destroys an enemy model that has the deadly demise ability "
+        r"that models deadly demise ability inflicts mortal wounds on a d6 roll of (?P<threshold>\d)\+? instead of on a 6"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    weapon = str(m.group("weapon") or "weapon").strip()
+    threshold = str(m.group("threshold") or "3").strip()
+    return (
+        "Supported",
+        f"When {weapon} destroys a model with Deadly Demise, its explosion triggers on {threshold}+ instead of 6.",
+    )
 
 
 def _ranged_target_within_range_ap_bonus_support(description: str) -> Optional[Tuple[str, str]]:

@@ -619,8 +619,9 @@ class StateAttachmentMixin:
         move_penalty: int,
         advance_penalty: int,
         charge_penalty: int,
+        expires_timing: str = "OPPONENT_NEXT_TURN_END",
     ) -> None:
-        """Apply shocked penalties (Move -X, Advance -Y, Charge -Z) until end of opponent's next turn."""
+        """Apply shocked penalties (Move -X, Advance -Y, Charge -Z) until the configured expiry timing."""
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
@@ -637,32 +638,36 @@ class StateAttachmentMixin:
         sr["shocked_move_penalty"] = int(move_penalty or 0)
         sr["shocked_advance_penalty"] = int(advance_penalty or 0)
         sr["shocked_charge_penalty"] = int(charge_penalty or 0)
+        sr["shocked_expires_timing"] = str(expires_timing or "OPPONENT_NEXT_TURN_END").strip().upper() or "OPPONENT_NEXT_TURN_END"
 
         from ...utility.modifiers import Modifier, ModifierOp
-        self.add_characteristic_modifier(
-            "movement",
-            Modifier(ModifierOp.ADD, int(move_penalty or 0), source="ability:electro_shock"),
-        )
+        if int(move_penalty or 0):
+            self.add_characteristic_modifier(
+                "movement",
+                Modifier(ModifierOp.ADD, int(move_penalty or 0), source="ability:electro_shock"),
+            )
 
-        adv_mods = list(sr.get("advance_roll_modifiers", []) or [])
-        adv_mods.append(
-            {
-                "value": int(advance_penalty or 0),
-                "source": sr["shocked_source"],
-                "tag": "ability:electro_shock",
-            }
-        )
-        sr["advance_roll_modifiers"] = adv_mods
+        if int(advance_penalty or 0):
+            adv_mods = list(sr.get("advance_roll_modifiers", []) or [])
+            adv_mods.append(
+                {
+                    "value": int(advance_penalty or 0),
+                    "source": sr["shocked_source"],
+                    "tag": "ability:electro_shock",
+                }
+            )
+            sr["advance_roll_modifiers"] = adv_mods
 
-        charge_mods = list(sr.get("charge_roll_modifiers", []) or [])
-        charge_mods.append(
-            {
-                "value": int(charge_penalty or 0),
-                "source": sr["shocked_source"],
-                "tag": "ability:electro_shock",
-            }
-        )
-        sr["charge_roll_modifiers"] = charge_mods
+        if int(charge_penalty or 0):
+            charge_mods = list(sr.get("charge_roll_modifiers", []) or [])
+            charge_mods.append(
+                {
+                    "value": int(charge_penalty or 0),
+                    "source": sr["shocked_source"],
+                    "tag": "ability:electro_shock",
+                }
+            )
+            sr["charge_roll_modifiers"] = charge_mods
         self.special_rules = sr
 
     def clear_shocked(self) -> None:
@@ -702,6 +707,7 @@ class StateAttachmentMixin:
             "shocked_move_penalty",
             "shocked_advance_penalty",
             "shocked_charge_penalty",
+            "shocked_expires_timing",
         ):
             sr.pop(key, None)
         self.special_rules = sr

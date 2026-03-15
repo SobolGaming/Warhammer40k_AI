@@ -19949,11 +19949,13 @@ class WargearProfile:
                     for entry in entries:
                         requires_objective = False
                         requires_controlled = False
+                        requires_contains_keyword = ""
                         if isinstance(entry, dict):
                             atype = str(entry.get("attack_type") or "any").strip().lower()
                             src = str(entry.get("source") or "Bearer unit ability").strip() or "Bearer unit ability"
                             requires_objective = bool(entry.get("requires_objective"))
                             requires_controlled = bool(entry.get("requires_objective_controlled"))
+                            requires_contains_keyword = str(entry.get("requires_contains_keyword") or "").strip().upper()
                         elif isinstance(entry, (tuple, list)):
                             atype = str(entry[0] if entry else "any").strip().lower()
                             src = str(entry[1]) if len(entry) > 1 else "Bearer unit ability"
@@ -19961,6 +19963,12 @@ class WargearProfile:
                             continue
                         if atype not in ("any", "ranged"):
                             continue
+                        if requires_contains_keyword:
+                            try:
+                                if not bool(t_unit.has_any_keyword(requires_contains_keyword)):
+                                    continue
+                            except Exception:
+                                continue
                         if requires_objective or requires_controlled:
                             game_map = None
                             try:

@@ -22854,18 +22854,22 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 turn = 0
             source = str(ctx.get("ability_name", "") or "Shocked").strip() or "Shocked"
             try:
-                move_penalty = int(ctx.get("move_penalty", -2) or -2)
+                raw_move_penalty = ctx.get("move_penalty", -2)
+                move_penalty = int(-2 if raw_move_penalty is None else raw_move_penalty)
             except Exception:
                 move_penalty = -2
             try:
-                advance_penalty = int(ctx.get("advance_penalty", -2) or -2)
+                raw_advance_penalty = ctx.get("advance_penalty", -2)
+                advance_penalty = int(-2 if raw_advance_penalty is None else raw_advance_penalty)
             except Exception:
                 advance_penalty = -2
             try:
-                charge_penalty = int(ctx.get("charge_penalty", advance_penalty) or advance_penalty)
+                raw_charge_penalty = ctx.get("charge_penalty", advance_penalty)
+                charge_penalty = int(advance_penalty if raw_charge_penalty is None else raw_charge_penalty)
             except Exception:
                 charge_penalty = int(advance_penalty)
             state_name = str(ctx.get("state_name", "") or "shocked").strip().lower() or "shocked"
+            expires_timing = str(ctx.get("expires_timing", "OPPONENT_NEXT_TURN_END") or "OPPONENT_NEXT_TURN_END").strip().upper()
             try:
                 roll_threshold = int(ctx.get("roll_threshold", 0) or 0)
             except (TypeError, ValueError):
@@ -22897,6 +22901,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     move_penalty=int(move_penalty),
                     advance_penalty=int(advance_penalty),
                     charge_penalty=int(charge_penalty),
+                    expires_timing=expires_timing,
                 )
             else:
                 sr = getattr(target_root, "special_rules", None)
@@ -22909,13 +22914,19 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 sr["shocked_move_penalty"] = int(move_penalty)
                 sr["shocked_advance_penalty"] = int(advance_penalty)
                 sr["shocked_charge_penalty"] = int(charge_penalty)
+                sr["shocked_expires_timing"] = expires_timing
                 target_root.special_rules = sr
             try:
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                duration_text = (
+                    "until the start of your next Shooting phase"
+                    if expires_timing == "OWNER_NEXT_SHOOTING_START"
+                    else "until end of your opponent's next turn"
+                )
                 _log_action_for_players(
                     game,
                     player,
-                    f"{source}: {tname} is {state_name} until end of your opponent's next turn.",
+                    f"{source}: {tname} is {state_name} {duration_text}.",
                 )
             except Exception:
                 pass

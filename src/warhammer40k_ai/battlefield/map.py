@@ -929,16 +929,6 @@ class Map:
         target_root = self._unit_root(getattr(target_model, "parent_unit", None))
         if target_root is None:
             return result
-        target_has_ik_keyword = False
-        has_any = getattr(target_root, "has_any_keyword", None)
-        if callable(has_any):
-            target_has_ik_keyword = bool(has_any("IMPERIAL KNIGHTS"))
-        if not target_has_ik_keyword:
-            has_kw = getattr(target_root, "has_keyword", None)
-            if callable(has_kw):
-                target_has_ik_keyword = bool(has_kw("IMPERIAL KNIGHTS"))
-        if not target_has_ik_keyword:
-            return result
 
         ignores_cover = False
         if weapon_profile is not None:
@@ -968,6 +958,24 @@ class Map:
             rule = get_rule() if callable(get_rule) else None
             if not isinstance(rule, dict):
                 continue
+            target_keyword = str(rule.get("target_keyword", "") or "").strip().upper()
+            if target_keyword:
+                target_matches = False
+                model_has_any = getattr(target_model, "has_any_keyword", None)
+                if callable(model_has_any):
+                    try:
+                        target_matches = bool(model_has_any(target_keyword))
+                    except Exception:
+                        target_matches = False
+                if not target_matches:
+                    model_has_kw = getattr(target_model, "has_keyword", None)
+                    if callable(model_has_kw):
+                        try:
+                            target_matches = bool(model_has_kw(target_keyword))
+                        except Exception:
+                            target_matches = False
+                if not target_matches and not self._unit_has_keyword(target_root, target_keyword):
+                    continue
 
             get_models = getattr(protector_root, "get_attached_unit_models", None)
             if callable(get_models):
@@ -1012,7 +1020,11 @@ class Map:
                 result["applies"] = True
                 result["source_unit"] = protector_root
                 result["source_model"] = source_model
-                result["invulnerable_save"] = int(rule.get("invulnerable_save", 4) or 4)
+                try:
+                    invulnerable_save = int(rule.get("invulnerable_save", 0) or 0)
+                except (TypeError, ValueError):
+                    invulnerable_save = 0
+                result["invulnerable_save"] = int(invulnerable_save) if invulnerable_save > 0 else None
                 if not ignores_cover:
                     result["grants_benefit_of_cover"] = True
                 source_name = str(rule.get("source", "") or getattr(protector_root, "name", "Selfless Protector") or "Selfless Protector")

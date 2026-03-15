@@ -3609,12 +3609,19 @@ class RulesParsingMixin:
                         assault_ranged = True
 
                     objective_cover_matched = False
-                    m = self._OBJECTIVE_RANGE_BENEFIT_OF_COVER_RE.search(sentence)
+                    m = self._CONTAINS_KEYWORD_OBJECTIVE_RANGE_BENEFIT_OF_COVER_RE.search(sentence)
                     if m:
                         atype = (m.group("atype") or "any").strip().lower()
                         controlled = bool(m.group("controlled"))
+                        required_keyword = str(m.group("keyword") or "").strip().upper()
                         source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
-                        key = (atype, source.lower(), "objective", "controlled" if controlled else "any")
+                        key = (
+                            atype,
+                            source.lower(),
+                            "objective",
+                            "controlled" if controlled else "any",
+                            required_keyword,
+                        )
                         if key not in benefit_of_cover_seen:
                             benefit_of_cover_seen.add(key)
                             benefit_of_cover_entries.append(
@@ -3623,9 +3630,28 @@ class RulesParsingMixin:
                                     "source": source,
                                     "requires_objective": True,
                                     "requires_objective_controlled": bool(controlled),
+                                    "requires_contains_keyword": required_keyword or None,
                                 }
                             )
                         objective_cover_matched = True
+                    if not objective_cover_matched:
+                        m = self._OBJECTIVE_RANGE_BENEFIT_OF_COVER_RE.search(sentence)
+                        if m:
+                            atype = (m.group("atype") or "any").strip().lower()
+                            controlled = bool(m.group("controlled"))
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            key = (atype, source.lower(), "objective", "controlled" if controlled else "any")
+                            if key not in benefit_of_cover_seen:
+                                benefit_of_cover_seen.add(key)
+                                benefit_of_cover_entries.append(
+                                    {
+                                        "attack_type": atype,
+                                        "source": source,
+                                        "requires_objective": True,
+                                        "requires_objective_controlled": bool(controlled),
+                                    }
+                                )
+                            objective_cover_matched = True
                     if not objective_cover_matched:
                         m = self._BEARER_UNIT_BENEFIT_OF_COVER_RE.search(sentence)
                         if m:

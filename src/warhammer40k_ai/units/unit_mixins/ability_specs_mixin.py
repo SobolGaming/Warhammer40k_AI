@@ -8349,7 +8349,7 @@ class AbilitySpecsMixin:
             members = [root]
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, int, int, bool, tuple[str, ...], str, int, str]] = set()
+        seen: set[tuple[str, int, int, int, bool, tuple[str, ...], str, int, str, str, bool]] = set()
         for unit in members:
             if unit is None:
                 continue
@@ -8362,6 +8362,61 @@ class AbilitySpecsMixin:
                 normalized = normalized.lower()
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
+                m_shaken = unit._POST_SHOOT_SHAKEN_RE.fullmatch(normalized)
+                if m_shaken:
+                    source = str(name or "Shaken").strip() or "Shaken"
+                    try:
+                        move_penalty = -int(m_shaken.group("move") or 0)
+                    except Exception:
+                        move_penalty = -2
+                    try:
+                        advance_penalty = -int(m_shaken.group("advance") or 0)
+                    except Exception:
+                        advance_penalty = 0
+                    try:
+                        charge_penalty = -int(m_shaken.group("charge") or 0)
+                    except Exception:
+                        charge_penalty = -2
+                    include_keywords_any: list[str] = []
+                    if str(m_shaken.group("infantry") or m_shaken.group("target_infantry") or "").strip():
+                        include_keywords_any = ["INFANTRY"]
+                    weapon_name = str(m_shaken.group("weapon") or "").strip()
+                    weapon_key = self._normalize_keyword_phrase(weapon_name) if weapon_name else ""
+                    state_name = str(m_shaken.group("state") or "shaken").strip().lower() or "shaken"
+                    duration = str(m_shaken.group("duration") or "").strip().lower()
+                    expires_timing = "OWNER_NEXT_SHOOTING_START" if "start of your next shooting phase" in duration else "OPPONENT_NEXT_TURN_END"
+                    key = (
+                        source.lower(),
+                        int(move_penalty),
+                        int(advance_penalty),
+                        int(charge_penalty),
+                        False,
+                        tuple(include_keywords_any),
+                        str(weapon_key or ""),
+                        0,
+                        state_name,
+                        expires_timing,
+                        True,
+                    )
+                    if key not in seen:
+                        seen.add(key)
+                        specs.append(
+                            {
+                                "source": source,
+                                "move_penalty": int(move_penalty),
+                                "advance_penalty": int(advance_penalty),
+                                "charge_penalty": int(charge_penalty),
+                                "exclude_monster_vehicle": False,
+                                "include_keywords_any": list(include_keywords_any),
+                                "weapon_key": str(weapon_key or ""),
+                                "weapon_name": weapon_name,
+                                "roll_threshold": None,
+                                "state_name": state_name,
+                                "expires_timing": expires_timing,
+                                "auto_each_target": True,
+                            }
+                        )
+                    continue
                 m = unit._POST_SHOOT_SHOCKED_RE.fullmatch(normalized)
                 if not m:
                     continue
@@ -8396,6 +8451,8 @@ class AbilitySpecsMixin:
                     str(weapon_key or ""),
                     int(roll_threshold),
                     state_name,
+                    "OPPONENT_NEXT_TURN_END",
+                    False,
                 )
                 if key in seen:
                     continue
@@ -8412,6 +8469,71 @@ class AbilitySpecsMixin:
                         "weapon_name": weapon_name,
                         "roll_threshold": int(roll_threshold) if int(roll_threshold) > 0 else None,
                         "state_name": state_name,
+                        "expires_timing": "OPPONENT_NEXT_TURN_END",
+                        "auto_each_target": False,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_tremor_quake_specs(self) -> List[dict]:
+        """Unit-specific rule: selecting a target for a specific weapon forces Battle-shock tests on the target and nearby INFANTRY."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_tremor_quake_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._TREMOR_QUAKE_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                weapon_raw = str(m.group("weapon") or "").strip()
+                weapon_key = unit._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+                if not weapon_key:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                source = str(name or "Tremor Quake").strip() or "Tremor Quake"
+                key = (source.lower(), weapon_key, int(range_value))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "weapon_key": weapon_key,
+                        "weapon_name": weapon_raw,
+                        "range": int(range_value),
                     }
                 )
 

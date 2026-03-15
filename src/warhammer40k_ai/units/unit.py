@@ -3048,6 +3048,14 @@ class Unit(
         r"(?:it|that\s+unit|this\s+unit|the\s+bearer'?s\s+unit)\s+(?:have|gain)\s+the\s+benefit\s+of\s+cover",
         re.IGNORECASE,
     )
+    _CONTAINS_KEYWORD_OBJECTIVE_RANGE_BENEFIT_OF_COVER_RE = re.compile(
+        r"while\s+this\s+unit\s+contains\s+an?\s+(?P<keyword>[a-z0-9 ]+)\s*,?\s*"
+        r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+targets\s+this\s+unit\s*,?\s*"
+        r"if\s+this\s+unit\s+is\s+within\s+range\s+of\s+(?:an|one\s+or\s+more)\s+objective\s+marker(?:s)?"
+        r"(?P<controlled>\s+you\s+control)?\s*,?\s*models\s+in\s+this\s+unit\s+(?:have|gain)\s+the\s+benefit\s+of\s+cover"
+        r"(?:\s+against\s+that\s+attack)?",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_BENEFIT_OF_COVER_RE = re.compile(
         r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+targets\s+"
         r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit),?\s*models\s+in\s+"
@@ -3803,6 +3811,14 @@ class Unit(
         r"(?P<advance>\d+) from advance and charge rolls made for it",
         re.IGNORECASE,
     )
+    _POST_SHOOT_SHAKEN_RE = re.compile(
+        r"in your shooting phase after this (?P<source_scope>model|unit) has shot if one or more of those attacks made with "
+        r"(?:(?:a|an|the|its|this model s|this unit s) )?(?P<weapon>[a-z0-9 ' -]+?) scored a hit against an(?: enemy)? "
+        r"(?:(?P<infantry>infantry) )?unit until the (?P<duration>start of your next shooting phase|end of your opponent(?: s|s) next turn) "
+        r"that (?:enemy )?(?:(?P<target_infantry>infantry) )?unit is (?P<state>shaken) while a unit is (?P=state) subtract (?P<move>\d+) "
+        r"from its move characteristic and subtract (?:(?P<advance>\d+) from advance and )?(?P<charge>\d+) from charge rolls made for it",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_NO_COVER_WEAPON_RE = re.compile(
         r"(?:(?:in your shooting phase (?:(?:each time )?this (?:model|unit) is selected to shoot )?)?"
         r"(?:after this (?:model|unit) has shot|each time this (?:model|unit) has shot)) "
@@ -4095,6 +4111,11 @@ class Unit(
         r"enemy unit within (?P<range>\d+) of the target unit adding (?P<bonus>\d+) to that roll if the unit being rolled for is afflicted on a "
         r"(?P<threshold>\d)\+? the unit being rolled for is struck by spores after resolving all of this model s attacks against the target unit each unit "
         r"struck by spores suffers (?P<mw>d3|d6|\d+) mortal wounds?",
+        re.IGNORECASE,
+    )
+    _TREMOR_QUAKE_RE = re.compile(
+        r"in your shooting phase just after selecting a target for this model s (?P<weapon>[a-z0-9 ]+) "
+        r"the target unit and every other enemy infantry unit within (?P<range>\d+) of that unit must take a battle shock test",
         re.IGNORECASE,
     )
     _THUNDERSHOCK_RE = re.compile(
@@ -4697,8 +4718,9 @@ class Unit(
         re.IGNORECASE,
     )
     _SELFLESS_PROTECTOR_RE = re.compile(
-        r"^each time a ranged attack is allocated to an imperial knights model from your army if that model is not fully visible to "
-        r"(?:every model in )?the attacking unit because of this knight defender model that model has the benefit of cover and a 4 invulnerable save against that attack\.?$",
+        r"^each time a ranged attack is allocated to (?:an? )?(?:(?P<target_keyword>[a-z0-9 ]+?) )?model from your army if that model is not fully visible to "
+        r"(?:every model in )?the attacking unit because of this (?P<source_model>[a-z0-9 ]+) model that model has the benefit of cover"
+        r"(?: and a (?P<inv>\d+) invulnerable save)? against that attack\.?$",
         re.IGNORECASE,
     )
     _TARGET_HIT_ROLL_PENALTY_UNIT_RE = re.compile(

@@ -2689,15 +2689,18 @@ class GameShootingFightHandlersMixin:
         for spec in specs:
             exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
             try:
-                move_penalty = int(spec.get("move_penalty", -2) or -2)
+                raw_move_penalty = spec.get("move_penalty", -2)
+                move_penalty = int(-2 if raw_move_penalty is None else raw_move_penalty)
             except Exception:
                 move_penalty = -2
             try:
-                advance_penalty = int(spec.get("advance_penalty", -2) or -2)
+                raw_advance_penalty = spec.get("advance_penalty", -2)
+                advance_penalty = int(-2 if raw_advance_penalty is None else raw_advance_penalty)
             except Exception:
                 advance_penalty = -2
             try:
-                charge_penalty = int(spec.get("charge_penalty", advance_penalty) or advance_penalty)
+                raw_charge_penalty = spec.get("charge_penalty", advance_penalty)
+                charge_penalty = int(advance_penalty if raw_charge_penalty is None else raw_charge_penalty)
             except Exception:
                 charge_penalty = int(advance_penalty)
             include_keywords_any = [
@@ -2707,6 +2710,8 @@ class GameShootingFightHandlersMixin:
             ]
             weapon_key = str(spec.get("weapon_key", "") or "").strip()
             state_name = str(spec.get("state_name", "shocked") or "shocked").strip().lower() or "shocked"
+            expires_timing = str(spec.get("expires_timing", "OPPONENT_NEXT_TURN_END") or "OPPONENT_NEXT_TURN_END").strip().upper()
+            auto_each_target = bool(spec.get("auto_each_target", False))
             try:
                 roll_threshold = int(spec.get("roll_threshold", 0) or 0)
             except Exception:
@@ -2733,6 +2738,53 @@ class GameShootingFightHandlersMixin:
                 candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
             except Exception:
                 candidates = list(candidates)
+            ability_name = str(spec.get("source", "") or "Shocked").strip() or "Shocked"
+            if auto_each_target:
+                for cand in list(candidates):
+                    try:
+                        target_root = cand.get_attached_unit_root()
+                    except Exception:
+                        target_root = cand
+                    if target_root is None or not getattr(target_root, "is_alive", lambda: False)():
+                        continue
+                    apply_fn = getattr(target_root, "apply_shocked", None)
+                    if callable(apply_fn):
+                        apply_fn(
+                            owner_id=str(getattr(attacker_player, "id", "") or ""),
+                            turn=int(getattr(self, "turn", 0) or 0),
+                            source=ability_name,
+                            move_penalty=int(move_penalty),
+                            advance_penalty=int(advance_penalty),
+                            charge_penalty=int(charge_penalty),
+                            expires_timing=expires_timing,
+                        )
+                    else:
+                        sr = getattr(target_root, "special_rules", None)
+                        if not isinstance(sr, dict):
+                            sr = {}
+                        sr["shocked_active"] = True
+                        sr["shocked_owner"] = str(getattr(attacker_player, "id", "") or "")
+                        sr["shocked_turn"] = int(getattr(self, "turn", 0) or 0)
+                        sr["shocked_source"] = ability_name
+                        sr["shocked_move_penalty"] = int(move_penalty)
+                        sr["shocked_advance_penalty"] = int(advance_penalty)
+                        sr["shocked_charge_penalty"] = int(charge_penalty)
+                        sr["shocked_expires_timing"] = expires_timing
+                        target_root.special_rules = sr
+                    try:
+                        duration_text = (
+                            "until the start of your next Shooting phase"
+                            if expires_timing == "OWNER_NEXT_SHOOTING_START"
+                            else "until end of your opponent's next turn"
+                        )
+                        _log_action_for_players(
+                            self,
+                            attacker_player,
+                            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} is {state_name} {duration_text}.",
+                        )
+                    except Exception:
+                        pass
+                continue
             options = []
             for cand in list(candidates):
                 options.append(
@@ -2743,7 +2795,6 @@ class GameShootingFightHandlersMixin:
                 )
             if not options:
                 continue
-            ability_name = str(spec.get("source", "") or "Shocked").strip() or "Shocked"
             candidate_ids = [str(get_entity_id(cand) or "") for cand in list(candidates) if str(get_entity_id(cand) or "").strip()]
             request = DecisionRequest.create(
                 DECISION_CHOOSE_QUARRY,
@@ -2760,11 +2811,168 @@ class GameShootingFightHandlersMixin:
                     "charge_penalty": int(charge_penalty),
                     "roll_threshold": int(roll_threshold) if int(roll_threshold) > 0 else 0,
                     "state_name": state_name,
+                    "expires_timing": expires_timing,
                     "weapon_key": weapon_key,
                     "candidate_unit_ids": list(candidate_ids),
                 },
             )
             self.request_decision(request)
+
+    def _on_shooting_targets_selected_tremor_quake(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        weapon_declarations=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+        specs = root.unit_tremor_quake_specs() or []
+        if not specs or not isinstance(weapon_declarations, list) or not weapon_declarations:
+            return
+
+        from ...utility.aura_utils import unit_within_range_of_unit
+
+        def _normalize_weapon_key(profile) -> str:
+            weapon_name = ""
+            try:
+                parent = getattr(profile, "parent_wargear", None)
+                if parent is not None:
+                    weapon_name = str(getattr(parent, "name", "") or "")
+            except Exception:
+                weapon_name = ""
+            if not weapon_name:
+                weapon_name = str(getattr(profile, "name", "") or "")
+            if hasattr(root, "_normalize_keyword_phrase"):
+                try:
+                    return str(root._normalize_keyword_phrase(weapon_name) or "")
+                except Exception:
+                    return ""
+            return str(weapon_name or "").strip().lower()
+
+        def _resolve_enemy_roots() -> list[Any]:
+            out: list[Any] = []
+            seen: set[str] = set()
+            for enemy in list(self.get_enemy_units(player) or []):
+                if enemy is None:
+                    continue
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None or not enemy_root.is_alive():
+                    continue
+                try:
+                    if not getattr(enemy_root, "deployed", True):
+                        continue
+                    if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                eid = str(get_entity_id(enemy_root) or "")
+                if not eid or eid in seen:
+                    continue
+                seen.add(eid)
+                out.append(enemy_root)
+            try:
+                out.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+            except Exception:
+                pass
+            return out
+
+        enemy_roots = _resolve_enemy_roots()
+        if not enemy_roots:
+            return
+        specs_by_weapon: dict[str, list[dict]] = {}
+        for spec in list(specs or []):
+            weapon_key = str(spec.get("weapon_key", "") or "")
+            if not weapon_key:
+                continue
+            specs_by_weapon.setdefault(weapon_key, []).append(spec)
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+
+        for declaration in list(weapon_declarations or []):
+            if not isinstance(declaration, dict):
+                continue
+            profile = declaration.get("weapon_profile")
+            target_unit = declaration.get("target_unit")
+            if profile is None or target_unit is None:
+                continue
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            if target_root is None or not target_root.is_alive():
+                continue
+            weapon_key = _normalize_weapon_key(profile)
+            if not weapon_key:
+                continue
+            matched_specs = list(specs_by_weapon.get(weapon_key, []) or [])
+            if not matched_specs:
+                continue
+            for spec in matched_specs:
+                try:
+                    range_value = float(spec.get("range", 0) or 0.0)
+                except Exception:
+                    range_value = 0.0
+                if range_value <= 0:
+                    continue
+                affected: list[Any] = []
+                seen_ids: set[str] = set()
+                target_id = str(get_entity_id(target_root) or "")
+                if target_id:
+                    seen_ids.add(target_id)
+                affected.append(target_root)
+                for enemy_root in list(enemy_roots):
+                    if enemy_root is None or enemy_root is target_root:
+                        continue
+                    try:
+                        if not enemy_root.has_any_keyword("INFANTRY"):
+                            continue
+                    except Exception:
+                        continue
+                    if not bool(unit_within_range_of_unit(enemy_root, target_root, range_value, use_attached_aggregate=True)):
+                        continue
+                    enemy_id = str(get_entity_id(enemy_root) or "")
+                    if enemy_id and enemy_id in seen_ids:
+                        continue
+                    if enemy_id:
+                        seen_ids.add(enemy_id)
+                    affected.append(enemy_root)
+                tested_names: list[str] = []
+                for enemy_root in list(affected):
+                    try:
+                        enemy_root.take_battle_shock_test(current_turn)
+                    except Exception:
+                        pass
+                    tested_names.append(str(getattr(enemy_root, "name", "Unit") or "Unit"))
+                if tested_names:
+                    try:
+                        _log_action_for_players(
+                            self,
+                            player,
+                            f"{str(spec.get('source', '') or 'Tremor Quake').strip() or 'Tremor Quake'}: {'; '.join(tested_names)} take Battle-shock tests.",
+                        )
+                    except Exception:
+                        pass
 
     def _on_unit_shooting_resolved_harvester_of_souls(
         self,

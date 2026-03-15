@@ -7533,10 +7533,7 @@ class KeywordsDetachmentsMixin:
 
     def get_selfless_protector_rule(self) -> Optional[dict]:
         """
-        Return rule info for Selfless Protector-like abilities:
-        "Each time a ranged attack is allocated to an Imperial Knights model from your army,
-        if that model is not fully visible to every model in the attacking unit because of this Knight Defender model,
-        that model has the Benefit of Cover and a 4+ invulnerable save against that attack."
+        Return rule info for model-obscuring cover abilities such as Selfless Protector and Rolling Fortress.
         """
         try:
             root = self.get_attached_unit_root()
@@ -7563,6 +7560,19 @@ class KeywordsDetachmentsMixin:
             normalized = re.sub(r"\s+", " ", normalized).strip()
             return normalized
 
+        def _build_rule(source: str, match: re.Match[str], *, model_id: str) -> dict:
+            target_keyword = str(match.group("target_keyword") or "").strip().upper()
+            try:
+                invulnerable_save = int(match.group("inv") or 0)
+            except (TypeError, ValueError):
+                invulnerable_save = 0
+            return {
+                "source": source,
+                "model_id": str(model_id or ""),
+                "target_keyword": target_keyword or None,
+                "invulnerable_save": int(invulnerable_save) if invulnerable_save > 0 else None,
+            }
+
         iter_model_entries = getattr(root, "_iter_model_specific_ability_entries", None)
         if callable(iter_model_entries):
             for model in models:
@@ -7573,14 +7583,11 @@ class KeywordsDetachmentsMixin:
                     if not text_src:
                         continue
                     normalized = _normalize_selfless_text(text_src)
-                    if not root._SELFLESS_PROTECTOR_RE.fullmatch(normalized):
+                    match = root._SELFLESS_PROTECTOR_RE.fullmatch(normalized)
+                    if not match:
                         continue
                     source = str(name or "Selfless Protector").strip() or "Selfless Protector"
-                    rule = {
-                        "source": source,
-                        "model_id": str(get_entity_id(model) or ""),
-                        "invulnerable_save": 4,
-                    }
+                    rule = _build_rule(source, match, model_id=str(get_entity_id(model) or ""))
                     break
                 if rule is not None:
                     break
@@ -7591,7 +7598,8 @@ class KeywordsDetachmentsMixin:
                 if not text_src:
                     continue
                 normalized = _normalize_selfless_text(text_src)
-                if not root._SELFLESS_PROTECTOR_RE.fullmatch(normalized):
+                match = root._SELFLESS_PROTECTOR_RE.fullmatch(normalized)
+                if not match:
                     continue
                 source = str(name or "Selfless Protector").strip() or "Selfless Protector"
                 source_model_id = ""
@@ -7601,11 +7609,7 @@ class KeywordsDetachmentsMixin:
                     source_model_id = str(get_entity_id(model) or "")
                     if source_model_id:
                         break
-                rule = {
-                    "source": source,
-                    "model_id": source_model_id,
-                    "invulnerable_save": 4,
-                }
+                rule = _build_rule(source, match, model_id=source_model_id)
                 break
 
         if not hasattr(root, "_ability_cache"):
