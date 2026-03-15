@@ -19884,6 +19884,46 @@ class WargearProfile:
                         if current_val is None or current_val > inv_value:
                             attack_instance["inv_save_override"] = int(inv_value)
                             attack_instance["inv_save_override_reason"] = f"{source_name} (Selfless Protector)"
+        # Astra Militarum: Defence Line (4++ while gaining cover from the Aegis Defence Line fortification).
+        t_unit = getattr(target_model, "parent_unit", None)
+        attacker_unit = attack_instance.get("attacker_unit") if isinstance(attack_instance, dict) else None
+        if attacker_unit is None and isinstance(attack_instance, dict):
+            attacker_model = attack_instance.get("attacker_model")
+            attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        if t_unit is not None and attacker_unit is not None and is_ranged_attack:
+            get_army = getattr(t_unit, "get_parent_army", None)
+            t_army = get_army() if callable(get_army) else None
+            t_player = getattr(t_army, "player", None) if t_army is not None else None
+            game = getattr(t_player, "game", None) if t_player is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+            fortification_units = list(getattr(t_army, "units", []) or []) if t_army is not None else []
+            get_bonus = getattr(game_map, "get_defence_line_bonus_for_ranged_attack", None) if game_map is not None else None
+            if callable(get_bonus):
+                bonus = get_bonus(
+                    attacking_unit=attacker_unit,
+                    target_model=target_model,
+                    fortification_units=fortification_units,
+                    weapon_profile=self,
+                )
+                if bool(bonus.get("applies")):
+                    source_name = str(
+                        bonus.get("reason", "")
+                        or getattr(bonus.get("source_unit", None), "name", "")
+                        or "Defence Line"
+                    ).strip() or "Defence Line"
+                    try:
+                        inv_value = int(bonus.get("invulnerable_save", 0) or 0)
+                    except (TypeError, ValueError):
+                        inv_value = 0
+                    if inv_value > 0:
+                        current = attack_instance.get("inv_save_override", None)
+                        try:
+                            current_val = int(current) if current is not None else None
+                        except (TypeError, ValueError):
+                            current_val = None
+                        if current_val is None or current_val > inv_value:
+                            attack_instance["inv_save_override"] = int(inv_value)
+                            attack_instance["inv_save_override_reason"] = f"{source_name} (Defence Line)"
         # Bearer/leading-unit abilities: Benefit of Cover against ranged attacks that target the unit.
         try:
             t_unit = getattr(target_model, "parent_unit", None)

@@ -17,7 +17,7 @@ from shapely.ops import unary_union
 from shapely.affinity import scale, translate
 
 from typing import TYPE_CHECKING, List, Tuple, Union
-from ..utility.entity_ids import get_entity_id
+from ..utility.entity_ids import maybe_entity_id
 import logging
 logger = logging.getLogger(__name__)
 
@@ -517,6 +517,282 @@ class Map:
         return unit
 
     @staticmethod
+    def _unit_has_keyword(unit: Optional[Unit], keyword: str) -> bool:
+        if unit is None:
+            return False
+        checker = getattr(unit, "has_any_keyword", None)
+        if callable(checker):
+            try:
+                return bool(checker(keyword))
+            except Exception:
+                return False
+        return False
+
+    @staticmethod
+    def _iter_root_models(root: Optional[Unit]) -> list[Model]:
+        if root is None:
+            return []
+        getter = getattr(root, "get_attached_unit_models", None)
+        if callable(getter):
+            return list(getter() or [])
+        return list(getattr(root, "models", []) or [])
+
+    @staticmethod
+    def _shape_covers(container: Any, target: Any) -> bool:
+        if container is None or target is None:
+            return False
+        if hasattr(container, "covers"):
+            return bool(container.covers(target))
+        return bool(container.contains(target))
+
+    @staticmethod
+    def _candidate_base_for_pose(model: Optional[Model], x: float, y: float, z: float) -> Optional[Any]:
+        if model is None:
+            return None
+        unit = getattr(model, "parent_unit", None)
+        create_potential_base = getattr(unit, "_create_potential_base", None)
+        facing = float(getattr(getattr(model, "model_base", None), "facing", 0.0) or 0.0)
+        if callable(create_potential_base):
+            try:
+                candidate = create_potential_base(float(x), float(y), float(z), facing, model=model)
+            except Exception:
+                candidate = None
+            if candidate is not None:
+                return candidate
+        base = getattr(model, "model_base", None)
+        if base is None:
+            return None
+        try:
+            from ..utility.model_base import clone_base
+            candidate = clone_base(base)
+            candidate.set_position(float(x), float(y), float(z))
+            candidate.set_facing(float(facing))
+            return candidate
+        except Exception:
+            return None
+
+    @staticmethod
+    def _compound_part_surface_entry(
+        source_model: Optional[Model],
+        *,
+        part_id: str,
+    ) -> Optional[dict[str, Any]]:
+        if source_model is None:
+            return None
+        base = getattr(source_model, "model_base", None)
+        if base is None:
+            return None
+        get_parts = getattr(base, "get_compound_parts", None)
+        parts = list(get_parts() or []) if callable(get_parts) else []
+        if not parts:
+            return None
+        wanted = str(part_id or "").strip().lower()
+        selected_part = None
+        for part in parts:
+            if str(part.get("part_id", "")).strip().lower() == wanted:
+                selected_part = part
+                break
+        if selected_part is None:
+            return None
+        part_shape_fn = getattr(base, "_compound_part_shape_at", None)
+        if not callable(part_shape_fn):
+            return None
+        try:
+            shape = part_shape_fn(
+                selected_part,
+                float(getattr(base, "x", 0.0) or 0.0),
+                float(getattr(base, "y", 0.0) or 0.0),
+                float(getattr(base, "facing", 0.0) or 0.0),
+            )
+        except (TypeError, ValueError, GEOSException):
+            return None
+        if shape is None:
+            return None
+        try:
+            _bottom_z, top_z = base.volume_z_bounds()
+        except (AttributeError, TypeError, ValueError):
+            top_z = float(getattr(base, "z", 0.0) or 0.0) + float(getattr(base, "model_height", 0.0) or 0.0)
+        return {
+            "polygon": shape,
+            "surface_z": float(top_z),
+            "part_id": wanted,
+        }
+
+    def _iter_emplacement_platform_surface_entries(
+        self,
+        *,
+        moving_model: Optional[Model] = None,
+        require_eligibility: bool = True,
+    ) -> tuple[dict[str, Any], ...]:
+        moving_unit = getattr(moving_model, "parent_unit", None) if moving_model is not None else None
+        moving_army = None
+        if moving_unit is not None:
+            get_army = getattr(moving_unit, "get_parent_army", None)
+            moving_army = get_army() if callable(get_army) else None
+        if require_eligibility and moving_unit is not None:
+            if not self._unit_has_keyword(moving_unit, "INFANTRY"):
+                return tuple()
+        entries: list[dict[str, Any]] = []
+        seen_roots: set[str] = set()
+        for unit in list(getattr(self, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            root_id = str(maybe_entity_id(root) or f"object:{id(root)}")
+            if root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if moving_army is not None:
+                get_army = getattr(root, "get_parent_army", None)
+                root_army = get_army() if callable(get_army) else None
+                if root_army is not moving_army:
+                    continue
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive) and not is_alive():
+                continue
+            if not bool(getattr(root, "deployed", True)):
+                continue
+            in_reserves = getattr(root, "is_in_reserves", None)
+            if callable(in_reserves) and in_reserves():
+                continue
+            if bool(getattr(root, "is_embarked", False)):
+                continue
+            get_rule = getattr(root, "get_emplacement_platform_rule", None)
+            rule = get_rule() if callable(get_rule) else None
+            if not isinstance(rule, dict):
+                continue
+            if moving_unit is not None:
+                faction_keyword = str(rule.get("faction_keyword", "") or "").strip().upper()
+                unit_keyword = str(rule.get("unit_keyword", "") or "").strip().upper()
+                if faction_keyword and not self._unit_has_keyword(moving_unit, faction_keyword):
+                    continue
+                if require_eligibility and unit_keyword and not self._unit_has_keyword(moving_unit, unit_keyword):
+                    continue
+            models = self._iter_root_models(root)
+            if not models:
+                continue
+            surface = self._compound_part_surface_entry(models[0], part_id=str(rule.get("part_id", "") or "platform"))
+            if surface is None:
+                continue
+            entries.append(
+                {
+                    "source_unit": root,
+                    "source_name": str(rule.get("source", "") or getattr(root, "name", "Emplacement Platform") or "Emplacement Platform"),
+                    "polygon": surface["polygon"],
+                    "surface_z": float(surface["surface_z"]),
+                    "part_id": str(surface["part_id"]),
+                    "surface_id": f"emplacement_platform:{root_id or getattr(root, 'name', 'unit')}",
+                }
+            )
+        return tuple(entries)
+
+    def get_emplacement_platform_surface_entries(
+        self,
+        *,
+        moving_model: Optional[Model] = None,
+        require_eligibility: bool = True,
+    ) -> tuple[dict[str, Any], ...]:
+        return self._iter_emplacement_platform_surface_entries(
+            moving_model=moving_model,
+            require_eligibility=require_eligibility,
+        )
+
+    def get_emplacement_platform_placement(
+        self,
+        moving_model: Optional[Model],
+        *,
+        x: float,
+        y: float,
+        z: Optional[float] = None,
+        require_eligibility: bool = True,
+    ) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
+            "applies": False,
+            "source_unit": None,
+            "source_name": None,
+            "surface_z": None,
+            "reason": None,
+        }
+        candidate_base = self._candidate_base_for_pose(moving_model, x=float(x), y=float(y), z=float(z or 0.0))
+        if candidate_base is None:
+            return result
+        candidate_shape = candidate_base.get_base_shape()
+        z_value = float(z) if z is not None else None
+        for entry in self._iter_emplacement_platform_surface_entries(
+            moving_model=moving_model,
+            require_eligibility=require_eligibility,
+        ):
+            polygon = entry.get("polygon")
+            if not self._shape_covers(polygon, candidate_shape):
+                continue
+            surface_z = float(entry.get("surface_z", 0.0) or 0.0)
+            if z_value is not None and abs(surface_z - z_value) > 0.05:
+                continue
+            result["applies"] = True
+            result["source_unit"] = entry.get("source_unit")
+            result["source_name"] = entry.get("source_name")
+            result["surface_z"] = surface_z
+            result["reason"] = f"Supported by {entry.get('source_name') or 'Emplacement Platform'}"
+            return result
+        return result
+
+    def validate_model_surface_placement(
+        self,
+        model: Optional[Model],
+        position: tuple[float, float, float],
+    ) -> Dict[str, Any]:
+        result: Dict[str, Any] = {"valid": True, "reason": "Valid special-surface placement"}
+        if model is None:
+            return result
+        x, y, z = float(position[0]), float(position[1]), float(position[2])
+        eligible = self.get_emplacement_platform_placement(
+            model,
+            x=x,
+            y=y,
+            z=z,
+            require_eligibility=True,
+        )
+        if eligible.get("applies", False):
+            return result
+        ineligible = self.get_emplacement_platform_placement(
+            model,
+            x=x,
+            y=y,
+            z=z,
+            require_eligibility=False,
+        )
+        if ineligible.get("applies", False):
+            source_name = str(ineligible.get("source_name", "") or "Emplacement Platform").strip() or "Emplacement Platform"
+            return {
+                "valid": False,
+                "reason": f"{source_name}: only friendly ASTRA MILITARUM INFANTRY models can be set up or end moves on the platform section.",
+            }
+        return result
+
+    def get_surface_options_for_model(self, model: Optional[Model], x: float, y: float) -> list[float]:
+        options = [float(self.get_height_at_point(x, y))]
+        special = self.get_emplacement_platform_placement(
+            model,
+            x=float(x),
+            y=float(y),
+            require_eligibility=True,
+        )
+        if special.get("applies", False):
+            options.append(float(special.get("surface_z", 0.0) or 0.0))
+        unique: list[float] = []
+        for value in options:
+            if all(abs(value - existing) > 1e-4 for existing in unique):
+                unique.append(float(value))
+        unique.sort()
+        return unique
+
+    def get_surface_height_for_model(self, model: Optional[Model], x: float, y: float) -> float:
+        options = self.get_surface_options_for_model(model, x, y)
+        if not options:
+            return 0.0
+        return float(max(options))
+
+    @staticmethod
     def _footprint_and_bounding_box_for_models(models: list[Model]) -> tuple[Any, Optional[dict]]:
         shapes = []
         max_z = 0.0
@@ -707,7 +983,7 @@ class Map:
                 for model in protector_models:
                     if model is None:
                         continue
-                    if str(get_entity_id(model) or "") != source_model_id:
+                    if str(maybe_entity_id(model) or "") != source_model_id:
                         continue
                     source_model = model
                     break
@@ -740,6 +1016,93 @@ class Map:
                 if not ignores_cover:
                     result["grants_benefit_of_cover"] = True
                 source_name = str(rule.get("source", "") or getattr(protector_root, "name", "Selfless Protector") or "Selfless Protector")
+                result["reason"] = f"Not fully visible due to {source_name}"
+                return result
+
+        return result
+
+    def get_defence_line_bonus_for_ranged_attack(
+        self,
+        attacking_unit: Unit,
+        target_model: Model,
+        fortification_units: list,
+        weapon_profile: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Evaluate Defence Line invulnerable-save bonuses from fortifications."""
+        result: Dict[str, Any] = {
+            "applies": False,
+            "source_unit": None,
+            "invulnerable_save": None,
+            "reason": None,
+        }
+        if target_model is None or attacking_unit is None:
+            return result
+
+        target_unit = getattr(target_model, "parent_unit", None)
+        if target_unit is None:
+            return result
+
+        ignores_cover = False
+        if weapon_profile is not None:
+            parent_wg = getattr(weapon_profile, "parent_wargear", None)
+            ignores_cover_fn = getattr(parent_wg, "is_ignores_cover", None)
+            if callable(ignores_cover_fn):
+                ignores_cover = bool(ignores_cover_fn())
+        if ignores_cover:
+            return result
+
+        target_root = self._unit_root(target_unit)
+        for fort in list(fortification_units or []):
+            root = self._unit_root(fort)
+            if root is None:
+                continue
+            if target_root is not None and root is target_root:
+                continue
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive) and not is_alive():
+                continue
+            if not bool(getattr(root, "deployed", True)):
+                continue
+            in_reserves = getattr(root, "is_in_reserves", None)
+            if callable(in_reserves) and in_reserves():
+                continue
+            if bool(getattr(root, "is_embarked", False)):
+                continue
+
+            get_rule = getattr(root, "get_defence_line_rule", None)
+            rule = get_rule() if callable(get_rule) else None
+            if not isinstance(rule, dict):
+                continue
+            faction_keyword = str(rule.get("faction_keyword", "") or "").strip().upper()
+            unit_keyword = str(rule.get("unit_keyword", "") or "").strip().upper()
+            if faction_keyword and not self._unit_has_keyword(target_unit, faction_keyword):
+                continue
+            if unit_keyword and not self._unit_has_keyword(target_unit, unit_keyword):
+                continue
+            get_cover_rule = getattr(root, "get_fortification_cover_rule", None)
+            cover_rule = get_cover_rule() if callable(get_cover_rule) else None
+            if not isinstance(cover_rule, dict):
+                continue
+
+            get_models = getattr(root, "get_attached_unit_models", None)
+            root_models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+            footprint, bbox = self._footprint_and_bounding_box_for_models(root_models)
+            if footprint is None or bbox is None:
+                continue
+            proxy = type("DefenceLineProxy", (), {})()
+            proxy.footprint = footprint
+            proxy.bounding_box = bbox
+
+            for attacker_model in list(getattr(attacking_unit, "models", []) or []):
+                if attacker_model is None or not bool(getattr(attacker_model, "is_alive", False)):
+                    continue
+                fully_visible = self._is_fully_visible_due_to_terrain(attacker_model, target_model, proxy)
+                if fully_visible:
+                    continue
+                result["applies"] = True
+                result["source_unit"] = root
+                result["invulnerable_save"] = int(rule.get("invulnerable_save", 0) or 0)
+                source_name = str(rule.get("source", "") or getattr(root, "name", "Defence Line") or "Defence Line")
                 result["reason"] = f"Not fully visible due to {source_name}"
                 return result
 

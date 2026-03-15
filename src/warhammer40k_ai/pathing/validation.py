@@ -39,6 +39,7 @@ def build_collision_trees(
     moving_model: object = None,
     moved_models_in_unit: Optional[set[object]] = None,
     max_distance: Optional[float] = None,
+    target_position: Optional[tuple[float, float, float]] = None,
     movement_profile: object = None,
 ) -> dict[str, object]:
     from ..utility.calcs import build_collision_trees as _build_collision_trees
@@ -50,6 +51,7 @@ def build_collision_trees(
         moving_model=moving_model,
         moved_models_in_unit=moved_models_in_unit,
         max_distance=max_distance,
+        target_position=target_position,
         movement_profile=movement_profile,
     )
 

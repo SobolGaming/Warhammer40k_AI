@@ -49,6 +49,8 @@ Compound models are stored as multiple local parts and treated as one model foot
 
 Important: connectivity metadata is descriptive only.  
 For Aegis Defence Line (`DEPLOYMENT` ability), section composition and connectivity are enforced during deployment validation.
+The Aegis `platform` section is also used as an elevated support surface for `Emplacement Platform`
+placement/movement legality.
 
 ## Current seeded entries
 

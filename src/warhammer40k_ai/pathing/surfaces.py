@@ -88,7 +88,11 @@ def _iter_sorted_ruins_floors(terrain_feature: object) -> tuple[tuple[int, dict]
     return tuple((item[0], item[1]) for item in indexed_floors)
 
 
-def extract_support_surfaces(game_map: object) -> tuple[SupportSurface, ...]:
+def extract_support_surfaces(
+    game_map: object,
+    *,
+    moving_model: object | None = None,
+) -> tuple[SupportSurface, ...]:
     """Extract deterministic 2.5D support surfaces (ground + explicit elevated supports)."""
     boundary = getattr(game_map, "boundary", None)
     if boundary is None:
@@ -158,6 +162,30 @@ def extract_support_surfaces(game_map: object) -> tuple[SupportSurface, ...]:
                     floor_index=0,
                     terrain_type="HILLS_AND_SEALED_BUILDINGS",
                     metadata={},
+                )
+            )
+
+    placement_surfaces_fn = getattr(game_map, "_iter_emplacement_platform_surface_entries", None)
+    if callable(placement_surfaces_fn):
+        for entry_index, entry in enumerate(tuple(placement_surfaces_fn(moving_model=moving_model, require_eligibility=True) or ())):
+            polygon = entry.get("polygon")
+            if polygon is None:
+                continue
+            surface_z = _float_or_default(entry.get("surface_z"), 0.0)
+            if surface_z <= 0.0:
+                continue
+            surface_id = str(entry.get("surface_id", "") or f"emplacement:{entry_index}")
+            source_name = str(entry.get("source_name", "") or "Emplacement Platform").strip() or "Emplacement Platform"
+            surfaces.append(
+                SupportSurface(
+                    surface_id=surface_id,
+                    layer_kind=ELEVATED_LAYER_KIND,
+                    polygon=polygon,
+                    surface_z=float(surface_z),
+                    terrain_index=-(entry_index + 1000),
+                    floor_index=0,
+                    terrain_type="EMPLACEMENT_PLATFORM",
+                    metadata={"label": source_name},
                 )
             )
 

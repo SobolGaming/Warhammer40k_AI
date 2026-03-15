@@ -13,7 +13,7 @@ from shapely.affinity import translate, rotate
 from shapely.ops import unary_union
 from shapely import STRtree
 
-from ..utility.entity_ids import get_entity_id
+from ..utility.entity_ids import get_entity_id, maybe_entity_id
 from ..pathing.sweep import swept_footprint
 from ..pathing.types import MovementProfile, MovementType, Pose
 from ..pathing.rules_profile import (
@@ -96,6 +96,26 @@ def clear_enemy_model_cache(game_map_id: int = None):
         for key in keys_to_remove:
             del _enemy_aircraft_engagement_buffer_cache[key]
         logger.debug("Cleared enemy model cache for game map %s", game_map_id)
+
+
+def _eligible_emplacement_platform_polygons(game_map: 'Map', moving_model: 'Model' = None) -> dict[str, object]:
+    if game_map is None or moving_model is None:
+        return {}
+    get_entries = getattr(game_map, "get_emplacement_platform_surface_entries", None)
+    if not callable(get_entries):
+        get_entries = getattr(game_map, "_iter_emplacement_platform_surface_entries", None)
+    if not callable(get_entries):
+        return {}
+
+    polygons: dict[str, object] = {}
+    for entry in tuple(get_entries(moving_model=moving_model, require_eligibility=True) or ()):
+        source_unit = entry.get("source_unit")
+        polygon = entry.get("polygon")
+        source_unit_id = maybe_entity_id(source_unit)
+        if source_unit_id is None or polygon is None:
+            continue
+        polygons[str(source_unit_id)] = polygon
+    return polygons
 
 # Convert mm (as in base size of models) to inches
 def convert_mm_to_inches(value: float) -> float:
@@ -497,12 +517,21 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
         moved_models_in_unit = set()
     if movement_profile is None:
         movement_profile = build_movement_profile(moving_unit, movement_type)
+    emplacement_platform_polygons = _eligible_emplacement_platform_polygons(game_map, moving_model)
 
     def _unit_models_for_collision(u):
         try:
             return u.get_models_for_collision()
         except Exception:
             return u.models
+
+    def _unit_root_key(u) -> str:
+        get_root = getattr(u, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else u
+        root_id = maybe_entity_id(root)
+        if root_id:
+            return str(root_id)
+        return f"object:{id(root)}"
 
     def _is_moved(model_index: int, model_obj: 'Model') -> bool:
         """Support both old (indices) and new (model objects) moved_models_in_unit inputs."""
@@ -690,6 +719,12 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
                     continue
 
                 model_shape = model.model_base.get_base_shape()
+                platform_polygon = emplacement_platform_polygons.get(_unit_root_key(unit))
+                if platform_polygon is not None:
+                    adjusted_shape = model_shape.difference(platform_polygon)
+                    if adjusted_shape.is_empty:
+                        continue
+                    model_shape = adjusted_shape
 
                 if unit == moving_unit:
                     # For the moving unit, only include models that have already been moved
@@ -1512,7 +1547,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
         z = 0.0
         try:
             if game_map is not None:
-                z = float(game_map.get_height_at_point(x, y))
+                z = float(game_map.get_surface_height_for_model(model, x, y))
         except Exception:
             z = 0.0
         ground_cache[key] = z
@@ -1524,7 +1559,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
             options = list(surface_cache[key])
         else:
             options = []
-            options.append(_ground_height(x, y))
+            options.extend(list(getattr(game_map, "get_surface_options_for_model", lambda *_args, **_kwargs: [_ground_height(x, y)])(model, x, y) or []))
             try:
                 point = Point(float(x), float(y))
             except Exception:
@@ -2041,10 +2076,11 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                             if test_shape.intersects(other_shape):
                                 # Use exact model heights via Base.vertical_distance to determine separation sufficiency
                                 from ..utility.model_base import clone_base as _clone_base
+                                from ..utility.placement_validation import bases_overlap_3d as _bases_overlap_3d
                                 temp_base = _clone_base(model.model_base)
                                 temp_base.set_position(position[0], position[1], position[2])
                                 temp_base.set_facing(getattr(model.model_base, 'facing', 0.0))
-                                if temp_base.vertical_distance(other_model.model_base) > 0.0:
+                                if not _bases_overlap_3d(temp_base, other_model.model_base):
                                     allow_due_to_vertical_separation = True
                                 break
                         except Exception:
@@ -2384,6 +2420,11 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         ruins_validation = validate_ruins_placement(model.parent_unit, position, game_map.terrain_features, moving_model=model)
         if not ruins_validation['valid']:
             return {'valid': False, 'reason': f"RUINS placement invalid: {ruins_validation['reason']}"}
+        special_surface_validation = getattr(game_map, "validate_model_surface_placement", None)
+        if callable(special_surface_validation):
+            surface_validation = special_surface_validation(model, position)
+            if not surface_validation.get("valid", False):
+                return {'valid': False, 'reason': str(surface_validation.get('reason', 'Invalid elevated-surface placement'))}
 
     # Note: Deployment zone validation for scout movement is handled at a higher level
     # by the Game class validation methods, not in the pathfinding system

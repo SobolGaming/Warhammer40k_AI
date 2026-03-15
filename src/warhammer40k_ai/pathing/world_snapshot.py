@@ -142,8 +142,9 @@ def build_world_snapshot(
     movement_profile: MovementProfile,
     *,
     precomputed_surfaces: Optional[tuple[SupportSurface, ...]] = None,
+    moving_model: object | None = None,
 ) -> WorldSnapshot:
-    surfaces = precomputed_surfaces or extract_support_surfaces(game_map)
+    surfaces = precomputed_surfaces or extract_support_surfaces(game_map, moving_model=moving_model)
     ground_obstacles = extract_ground_transit_obstacles(game_map, movement_profile)
     return WorldSnapshot(
         terrain_revision=terrain_revision(game_map),

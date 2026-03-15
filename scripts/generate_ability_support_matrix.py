@@ -4906,9 +4906,33 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Aegis Defence Line deployment enforces section composition limits and connectivity, including the broken-shield 1/2\" middle-pair exception, while treating all sections as one model.",
         ),
+        ("AM", "Reinforced Cover"): (
+            "Supported",
+            "Fortification cover support: ranged attacks allocated to models not fully visible because of this FORTIFICATION grant Benefit of Cover.",
+        ),
+        ("AM", "Defence Line"): (
+            "Supported",
+            "Ranged attacks against friendly ASTRA MILITARUM INFANTRY models obscured by this fortification grant a 4+ invulnerable save when the Aegis Defence Line provides their cover.",
+        ),
+        ("AM", "Emplacement Platform"): (
+            "Supported",
+            "Friendly ASTRA MILITARUM INFANTRY models can be set up or end moves on the Aegis platform section, with elevated-surface placement/pathing support and legality checks.",
+        ),
         ("GC", "DEPLOYMENT"): (
             "Supported",
             "Aegis Defence Line deployment enforces section composition limits and connectivity, including the broken-shield 1/2\" middle-pair exception, while treating all sections as one model.",
+        ),
+        ("GC", "Reinforced Cover"): (
+            "Supported",
+            "Fortification cover support: ranged attacks allocated to models not fully visible because of this FORTIFICATION grant Benefit of Cover.",
+        ),
+        ("GC", "Defence Line"): (
+            "Supported",
+            "Ranged attacks against friendly ASTRA MILITARUM INFANTRY models obscured by this fortification grant a 4+ invulnerable save when the Aegis Defence Line provides their cover.",
+        ),
+        ("GC", "Emplacement Platform"): (
+            "Supported",
+            "Friendly ASTRA MILITARUM INFANTRY models can be set up or end moves on the Aegis platform section, with elevated-surface placement/pathing support and legality checks.",
         ),
         ("NEC", "DEPLOYMENT"): (
             "Supported",
@@ -5363,9 +5387,33 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
             "Supported",
             "Aegis Defence Line deployment enforces section composition limits and connectivity, including the broken-shield 1/2\" middle-pair exception, while treating all sections as one model.",
         ),
+        ("AM", "Reinforced Cover", "000002619"): (
+            "Supported",
+            "Fortification cover support: ranged attacks allocated to models not fully visible because of this FORTIFICATION grant Benefit of Cover.",
+        ),
+        ("AM", "Defence Line", "000002619"): (
+            "Supported",
+            "Ranged attacks against friendly ASTRA MILITARUM INFANTRY models obscured by this fortification grant a 4+ invulnerable save when the Aegis Defence Line provides their cover.",
+        ),
+        ("AM", "Emplacement Platform", "000002619"): (
+            "Supported",
+            "Friendly ASTRA MILITARUM INFANTRY models can be set up or end moves on the Aegis platform section, with elevated-surface placement/pathing support and legality checks.",
+        ),
         ("GC", "DEPLOYMENT", "000003955"): (
             "Supported",
             "Aegis Defence Line deployment enforces section composition limits and connectivity, including the broken-shield 1/2\" middle-pair exception, while treating all sections as one model.",
+        ),
+        ("GC", "Reinforced Cover", "000003955"): (
+            "Supported",
+            "Fortification cover support: ranged attacks allocated to models not fully visible because of this FORTIFICATION grant Benefit of Cover.",
+        ),
+        ("GC", "Defence Line", "000003955"): (
+            "Supported",
+            "Ranged attacks against friendly ASTRA MILITARUM INFANTRY models obscured by this fortification grant a 4+ invulnerable save when the Aegis Defence Line provides their cover.",
+        ),
+        ("GC", "Emplacement Platform", "000003955"): (
+            "Supported",
+            "Friendly ASTRA MILITARUM INFANTRY models can be set up or end moves on the Aegis platform section, with elevated-surface placement/pathing support and legality checks.",
         ),
         ("NEC", "DEPLOYMENT", "000002361"): (
             "Supported",
@@ -6220,6 +6268,14 @@ def _classify_ability_base(
         key = (fid, name_norm, dsid)
         if key in ABILITY_SUPPORT_BY_NAME_FACTION_DS:
             return ABILITY_SUPPORT_BY_NAME_FACTION_DS[key]
+        if not fid:
+            datasheet_matches = [
+                val
+                for (k_fid, k_name, k_dsid), val in ABILITY_SUPPORT_BY_NAME_FACTION_DS.items()
+                if k_name == name_norm and k_dsid == dsid
+            ]
+            if datasheet_matches:
+                return datasheet_matches[0]
         for k_fid, k_name, _k_ds in ABILITY_SUPPORT_BY_NAME_FACTION_DS.keys():
             if k_fid == fid and k_name == name_norm:
                 ambiguous_name = True

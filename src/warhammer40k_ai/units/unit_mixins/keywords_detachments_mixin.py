@@ -7270,6 +7270,121 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_defence_line_rule(self) -> Optional[dict]:
+        """
+        Return rule info for Defence Line-like abilities:
+        "While an ASTRA MILITARUM INFANTRY model has the Benefit of Cover as a result of this terrain feature,
+        that model has a 4+ invulnerable save."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "defence_line_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                match = unit._DEFENCE_LINE_RE.fullmatch(normalized)
+                if not match:
+                    continue
+                faction_keyword = str(match.group("faction") or "").strip().upper()
+                unit_keyword = str(match.group("unit_keyword") or "").strip().upper()
+                inv_value = int(match.group("inv") or 0)
+                if inv_value <= 0:
+                    continue
+                source = str(name or "Defence Line").strip() or "Defence Line"
+                rule = {
+                    "source": source,
+                    "faction_keyword": faction_keyword,
+                    "unit_keyword": unit_keyword,
+                    "invulnerable_save": inv_value,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def get_emplacement_platform_rule(self) -> Optional[dict]:
+        """
+        Return rule info for Emplacement Platform-like abilities:
+        "Friendly ASTRA MILITARUM INFANTRY models can be set up or end any type of move on top of the platform section
+        of this FORTIFICATION."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "emplacement_platform_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                match = unit._EMPLACEMENT_PLATFORM_RE.fullmatch(normalized)
+                if not match:
+                    continue
+                faction_keyword = str(match.group("faction") or "").strip().upper()
+                unit_keyword = str(match.group("unit_keyword") or "").strip().upper()
+                source = str(name or "Emplacement Platform").strip() or "Emplacement Platform"
+                rule = {
+                    "source": source,
+                    "faction_keyword": faction_keyword,
+                    "unit_keyword": unit_keyword,
+                    "part_id": "platform",
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def get_emanatus_force_field_rule(self) -> Optional[dict]:
         """
         Return rule info for Emanatus Force Field-like abilities:

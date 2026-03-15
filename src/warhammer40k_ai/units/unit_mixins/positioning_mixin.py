@@ -7143,7 +7143,7 @@ class PositioningMixin:
 
         # Single model - use fast path
         if len(self.models) == 1:
-            z = game_map.get_height_at_point(start_x, start_y)
+            z = game_map.get_surface_height_for_model(self.models[0], start_x, start_y)
             self.models[0].set_location(start_x, start_y, z, 0.0)
             return [(start_x, start_y, z, 0.0)]
 
@@ -7162,7 +7162,7 @@ class PositioningMixin:
         if len(self.models) == 1:
             logger.debug(f"DEBUG: Using single-model fast path")
             # initial drop
-            z = game_map.get_height_at_point(start_x, start_y)
+            z = game_map.get_surface_height_for_model(self.models[0], start_x, start_y)
             f = self.calculate_strategic_facing(start_x, start_y, game_map)
             pos = [start_x, start_y, z, f]
             m = self.models[0]
@@ -7225,7 +7225,7 @@ class PositioningMixin:
                 norm = get_dist(vx, vy) or 1.0
                 pos[0] += (vx / norm) * grid_step
                 pos[1] += (vy / norm) * grid_step
-                pos[2] = game_map.get_height_at_point(pos[0], pos[1])
+                pos[2] = game_map.get_surface_height_for_model(m, pos[0], pos[1])
 
             # commit and return
             m.set_location(*pos)
@@ -7285,7 +7285,7 @@ class PositioningMixin:
             world = []
             pts2d = offsets + origin_2d
             for x, y in pts2d:
-                z = game_map.get_height_at_point(x, y)
+                z = game_map.get_surface_height_for_model(self.models[len(world)], x, y)
                 f = self.calculate_strategic_facing(x, y, game_map)
                 world.append([x, y, z, f])
 
@@ -7374,7 +7374,7 @@ class PositioningMixin:
                         norm = get_dist(vx, vy) or 1.0
                         pos[0] += (vx / norm) * grid_step
                         pos[1] += (vy / norm) * grid_step
-                        pos[2] = game_map.get_height_at_point(pos[0], pos[1])
+                        pos[2] = game_map.get_surface_height_for_model(self.models[i], pos[0], pos[1])
                         collided = True
                         
                 if not collided:

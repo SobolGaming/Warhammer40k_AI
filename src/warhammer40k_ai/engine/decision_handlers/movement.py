@@ -985,6 +985,11 @@ def _validate_placement_positions(
         ruins_validation = validate_ruins_placement(unit, (x, y, z), game_map.terrain_features, moving_model=model)
         if not ruins_validation.get("valid", False):
             return (f"Move unit: RUINS placement invalid: {ruins_validation.get('reason', 'invalid')}",)
+        surface_validation_fn = getattr(game_map, "validate_model_surface_placement", None)
+        if callable(surface_validation_fn):
+            surface_validation = surface_validation_fn(model, (x, y, z))
+            if not surface_validation.get("valid", False):
+                return (f"Move unit: {surface_validation.get('reason', 'invalid elevated-surface placement')}",)
 
         if hasattr(unit, "_create_potential_base"):
             base = unit._create_potential_base(x, y, z, facing, model=model)

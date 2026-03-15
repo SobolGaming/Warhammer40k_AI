@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from math import atan2
 from typing import Mapping, Optional
 
@@ -101,6 +102,25 @@ def _build_pose_sequence(
     )
 
 
+def _waypoint_distance_cost(
+    points: tuple[tuple[float, float, float], ...],
+    *,
+    ignore_vertical: bool,
+) -> float:
+    if len(points) < 2:
+        return 0.0
+    total = 0.0
+    for index in range(1, len(points)):
+        dx = float(points[index][0]) - float(points[index - 1][0])
+        dy = float(points[index][1]) - float(points[index - 1][1])
+        if ignore_vertical:
+            total += (dx * dx + dy * dy) ** 0.5
+            continue
+        dz = float(points[index][2]) - float(points[index - 1][2])
+        total += (dx * dx + dy * dy + dz * dz) ** 0.5
+    return float(total)
+
+
 def _pivot_cost_for_path(
     query: PathQuery,
     poses: tuple[Pose, ...],
@@ -166,6 +186,115 @@ def _build_validation_rules(query: PathQuery, movement_profile: object) -> dict[
     return rules
 
 
+def _eligible_emplacement_platform_polygons(
+    game_map: object,
+    moving_model: object,
+) -> dict[str, object]:
+    if game_map is None or moving_model is None:
+        return {}
+    get_entries = getattr(game_map, "get_emplacement_platform_surface_entries", None)
+    if not callable(get_entries):
+        get_entries = getattr(game_map, "_iter_emplacement_platform_surface_entries", None)
+    if not callable(get_entries):
+        return {}
+
+    polygons: dict[str, object] = {}
+    for entry in tuple(get_entries(moving_model=moving_model, require_eligibility=True) or ()):
+        source_unit = entry.get("source_unit")
+        polygon = entry.get("polygon")
+        source_unit_id = maybe_entity_id(source_unit)
+        if source_unit_id is None or polygon is None:
+            continue
+        polygons[str(source_unit_id)] = polygon
+    return polygons
+
+
+def _rebuild_dynamic_overlay(dynamic_overlay: object, blockers: list[object]) -> object:
+    friendly_blockers = tuple(blocker for blocker in blockers if blocker.is_friendly)
+    enemy_blockers = tuple(blocker for blocker in blockers if blocker.is_enemy)
+    friendly_shapes = tuple(blocker.footprint for blocker in friendly_blockers)
+    enemy_shapes = tuple(blocker.footprint for blocker in enemy_blockers)
+    friendly_tree = STRtree(friendly_shapes) if friendly_shapes else None
+    enemy_tree = STRtree(enemy_shapes) if enemy_shapes else None
+    enemy_engagement_shapes = dynamic_overlay.enemy_engagement_shapes
+    enemy_engagement_tree = dynamic_overlay.enemy_engagement_tree
+    if len(enemy_blockers) != len(dynamic_overlay.enemy_blockers):
+        enemy_engagement_shapes = tuple(
+            shape
+            for shape, blocker in zip(dynamic_overlay.enemy_engagement_shapes, dynamic_overlay.enemy_blockers)
+            if blocker in enemy_blockers
+        )
+        enemy_engagement_tree = STRtree(enemy_engagement_shapes) if enemy_engagement_shapes else None
+    return dynamic_overlay.__class__(
+        blockers=tuple(blockers),
+        friendly_blockers=friendly_blockers,
+        enemy_blockers=enemy_blockers,
+        friendly_tree=friendly_tree,
+        enemy_tree=enemy_tree,
+        enemy_engagement_shapes=enemy_engagement_shapes,
+        enemy_engagement_tree=enemy_engagement_tree,
+    )
+
+
+def _direct_emplacement_platform_waypoints(
+    query: PathQuery,
+    movement_profile: object,
+    *,
+    start: tuple[float, float, float],
+    target: tuple[float, float, float],
+) -> tuple[tuple[float, float, float], ...]:
+    placement_fn = getattr(query.game_map, "get_emplacement_platform_placement", None)
+    if not callable(placement_fn):
+        return ()
+    target_platform = placement_fn(
+        query.model,
+        x=float(target[0]),
+        y=float(target[1]),
+        z=float(target[2]),
+        require_eligibility=True,
+    )
+    if not bool(target_platform.get("applies", False)):
+        start_platform = placement_fn(
+            query.model,
+            x=float(start[0]),
+            y=float(start[1]),
+            z=float(start[2]),
+            require_eligibility=True,
+        )
+        if not bool(start_platform.get("applies", False)):
+            return ()
+
+    waypoints = (
+        (float(start[0]), float(start[1]), float(start[2])),
+        (float(target[0]), float(target[1]), float(target[2])),
+    )
+    poses = _build_pose_sequence(
+        waypoints,
+        start_facing=float(_model_start_pose(query.model)[3]),
+        goal_facing=float(query.goal_facing) if query.goal_facing is not None else None,
+    )
+    validation_rules = _build_validation_rules(query, movement_profile)
+    collision_trees = _build_collision_trees_for_query(query, movement_profile)
+    final_validation = _validate_final_pose_with_context(
+        query,
+        poses[-1],
+        movement_profile=movement_profile,
+        validation_rules=validation_rules,
+        collision_trees=collision_trees,
+    )
+    if not final_validation.valid:
+        return ()
+    transit_validation = _validate_transit_path_with_context(
+        query,
+        poses,
+        validation_rules=validation_rules,
+        collision_trees=collision_trees,
+    )
+    if not transit_validation.valid:
+        return ()
+    return waypoints
+
+
 def _overlay_for_query(
     dynamic_overlay: object,
     query: PathQuery,
@@ -176,6 +305,7 @@ def _overlay_for_query(
 ) -> object:
     moved_tokens = _moved_model_identity_tokens(query)
     moved_set = set(moved_tokens)
+    platform_polygons = _eligible_emplacement_platform_polygons(query.game_map, query.model)
     terrain_rules = dict(getattr(movement_profile, "terrain_transition_rules", {}) or {})
     is_fly_move = bool(terrain_rules.get("is_fly_move", False))
     can_fly_over_big_models = bool(terrain_rules.get("can_fly_over_big_models", False))
@@ -201,6 +331,12 @@ def _overlay_for_query(
                 continue
             if str(blocker.model_id) not in moved_set:
                 continue
+        platform_polygon = platform_polygons.get(str(getattr(blocker, "unit_id", "") or ""))
+        if platform_polygon is not None and bool(getattr(blocker, "is_friendly", False)):
+            adjusted_footprint = blocker.footprint.difference(platform_polygon)
+            if adjusted_footprint.is_empty:
+                continue
+            blocker = replace(blocker, footprint=adjusted_footprint)
         if not for_pathfinding:
             blockers.append(blocker)
             continue
@@ -222,28 +358,9 @@ def _overlay_for_query(
         blockers.append(blocker)
 
     if len(blockers) == len(dynamic_overlay.blockers):
-        return dynamic_overlay
-
-    friendly_blockers = tuple(blocker for blocker in blockers if blocker.is_friendly)
-    enemy_blockers = tuple(blocker for blocker in blockers if blocker.is_enemy)
-    friendly_shapes = tuple(blocker.footprint for blocker in friendly_blockers)
-    enemy_shapes = tuple(blocker.footprint for blocker in enemy_blockers)
-    friendly_tree = STRtree(friendly_shapes) if friendly_shapes else None
-    enemy_tree = STRtree(enemy_shapes) if enemy_shapes else None
-    enemy_engagement_shapes = dynamic_overlay.enemy_engagement_shapes
-    enemy_engagement_tree = dynamic_overlay.enemy_engagement_tree
-    if len(enemy_blockers) != len(dynamic_overlay.enemy_blockers):
-        enemy_engagement_shapes = tuple(shape for shape, blocker in zip(dynamic_overlay.enemy_engagement_shapes, dynamic_overlay.enemy_blockers) if blocker in enemy_blockers)
-        enemy_engagement_tree = STRtree(enemy_engagement_shapes) if enemy_engagement_shapes else None
-    return dynamic_overlay.__class__(
-        blockers=tuple(blockers),
-        friendly_blockers=friendly_blockers,
-        enemy_blockers=enemy_blockers,
-        friendly_tree=friendly_tree,
-        enemy_tree=enemy_tree,
-        enemy_engagement_shapes=enemy_engagement_shapes,
-        enemy_engagement_tree=enemy_engagement_tree,
-    )
+        if all(blocker is original for blocker, original in zip(blockers, dynamic_overlay.blockers)):
+            return dynamic_overlay
+    return _rebuild_dynamic_overlay(dynamic_overlay, blockers)
 
 
 def _build_collision_trees_for_query(query: PathQuery, movement_profile: object) -> dict[str, object]:
@@ -256,6 +373,7 @@ def _build_collision_trees_for_query(query: PathQuery, movement_profile: object)
         moving_model=query.model,
         moved_models_in_unit=moved_models_in_unit,
         max_distance=float(query.max_distance),
+        target_position=_tuple_target(query.target, _model_start_pose(query.model)[2]),
         movement_profile=movement_profile,
     )
 
@@ -278,7 +396,7 @@ def _validate_final_pose_with_context(
     if boundary is not None and not boundary.covers(pose_shape):
         return ValidationResult(valid=False, reason="Position outside battlefield boundaries")
 
-    world_snapshot = build_world_snapshot(query.game_map, movement_profile)
+    world_snapshot = build_world_snapshot(query.game_map, movement_profile, moving_model=model)
     support_validation = validate_pose_support(
         model_base,
         world_snapshot.support_surfaces,
@@ -456,7 +574,7 @@ def plan_model_path(query: PathQuery) -> PathResult:
     validation_rules = _build_validation_rules(query, movement_profile)
     move_tag = str(getattr(query.movement_type, "value", query.movement_type) or "").strip().lower()
     enable_exact_refine = bool(query.enable_exact_refine) and move_tag not in {"pile_in", "consolidate"}
-    world_snapshot = build_world_snapshot(query.game_map, movement_profile)
+    world_snapshot = build_world_snapshot(query.game_map, movement_profile, moving_model=model)
     dynamic_overlay = build_dynamic_overlay(
         query.game_map,
         moving_unit,
@@ -488,37 +606,56 @@ def plan_model_path(query: PathQuery) -> PathResult:
         exact_refine_max_paths=int(query.exact_refine_max_paths),
         exact_refine_safety_margin=float(query.exact_refine_safety_margin),
     )
+    path_debug_artifacts = dict(graph_path.debug_artifacts) if query.debug_enabled else {}
+    used_exact_refiner = bool(graph_path.used_exact_refiner)
     if not graph_path.success:
-        debug_artifacts = dict(graph_path.debug_artifacts) if query.debug_enabled else {}
-        return PathResult(
-            valid=False,
-            poses=(),
-            waypoints=(),
-            distance_cost=0.0,
-            pivot_cost=0.0,
-            used_exact_refiner=bool(graph_path.used_exact_refiner),
-            failure_reason=str(graph_path.failure_reason or "No portal/connector route found"),
-            debug_artifacts=debug_artifacts,
+        fallback_waypoints = _direct_emplacement_platform_waypoints(
+            query,
+            movement_profile,
+            start=(start_x, start_y, start_z),
+            target=target,
         )
+        if not fallback_waypoints:
+            return PathResult(
+                valid=False,
+                poses=(),
+                waypoints=(),
+                distance_cost=0.0,
+                pivot_cost=0.0,
+                used_exact_refiner=used_exact_refiner,
+                failure_reason=str(graph_path.failure_reason or "No portal/connector route found"),
+                debug_artifacts=path_debug_artifacts,
+            )
+        waypoints = tuple(fallback_waypoints)
+        distance_cost = _waypoint_distance_cost(
+            waypoints,
+            ignore_vertical=bool(movement_profile.can_ignore_vertical_distance),
+        )
+        if query.debug_enabled:
+            path_debug_artifacts["fallback_mode"] = "direct_emplacement_platform"
+            path_debug_artifacts["fallback_waypoint_count"] = len(waypoints)
+    else:
+        waypoints = tuple(graph_path.waypoints)
+        distance_cost = float(graph_path.distance_cost)
+        used_exact_refiner = bool(graph_path.used_exact_refiner)
 
-    waypoints = tuple(graph_path.waypoints)
     poses = _build_pose_sequence(
         waypoints,
         start_facing=float(start_facing),
         goal_facing=float(query.goal_facing) if query.goal_facing is not None else None,
     )
     pivot_cost = _pivot_cost_for_path(query, poses, movement_profile)
-    total_distance = float(graph_path.distance_cost) + float(pivot_cost)
+    total_distance = float(distance_cost) + float(pivot_cost)
     if total_distance > float(query.max_distance) + 1e-6:
         return PathResult(
             valid=False,
             poses=poses,
             waypoints=waypoints,
-            distance_cost=float(graph_path.distance_cost),
+            distance_cost=float(distance_cost),
             pivot_cost=float(pivot_cost),
-            used_exact_refiner=bool(graph_path.used_exact_refiner),
+            used_exact_refiner=used_exact_refiner,
             failure_reason=f"Distance limit exceeded: {total_distance:.2f}\" > {float(query.max_distance):.2f}\"",
-            debug_artifacts=dict(graph_path.debug_artifacts) if query.debug_enabled else {},
+            debug_artifacts=path_debug_artifacts,
         )
 
     if poses:
@@ -535,9 +672,9 @@ def plan_model_path(query: PathQuery) -> PathResult:
                 valid=False,
                 poses=poses,
                 waypoints=waypoints,
-                distance_cost=float(graph_path.distance_cost),
+                distance_cost=float(distance_cost),
                 pivot_cost=float(pivot_cost),
-                used_exact_refiner=bool(graph_path.used_exact_refiner),
+                used_exact_refiner=used_exact_refiner,
                 failure_reason=str(validation.reason),
                 debug_artifacts=dict(validation.debug_artifacts) if query.debug_enabled else {},
             )
@@ -552,23 +689,23 @@ def plan_model_path(query: PathQuery) -> PathResult:
                 valid=False,
                 poses=poses,
                 waypoints=waypoints,
-                distance_cost=float(graph_path.distance_cost),
+                distance_cost=float(distance_cost),
                 pivot_cost=float(pivot_cost),
-                used_exact_refiner=bool(graph_path.used_exact_refiner),
+                used_exact_refiner=used_exact_refiner,
                 failure_reason=str(transit_validation.reason),
-                debug_artifacts=dict(graph_path.debug_artifacts) if query.debug_enabled else {},
+                debug_artifacts=path_debug_artifacts,
             )
 
     provisional = PathResult(
         valid=True,
         poses=poses,
         waypoints=waypoints,
-        distance_cost=float(graph_path.distance_cost),
+        distance_cost=float(distance_cost),
         pivot_cost=float(pivot_cost),
-        used_exact_refiner=bool(graph_path.used_exact_refiner),
+        used_exact_refiner=used_exact_refiner,
         moved_over_enemy_model_ids=(),
         failure_reason=None,
-        debug_artifacts=dict(graph_path.debug_artifacts) if query.debug_enabled else {},
+        debug_artifacts=path_debug_artifacts,
     )
     sweep = compute_swept_interactions(query, provisional)
     debug_artifacts = dict(provisional.debug_artifacts)
@@ -578,9 +715,9 @@ def plan_model_path(query: PathQuery) -> PathResult:
         valid=True,
         poses=poses,
         waypoints=waypoints,
-        distance_cost=float(graph_path.distance_cost),
+        distance_cost=float(distance_cost),
         pivot_cost=float(pivot_cost),
-        used_exact_refiner=bool(graph_path.used_exact_refiner),
+        used_exact_refiner=used_exact_refiner,
         moved_over_enemy_model_ids=tuple(sweep.moved_over_enemy_model_ids),
         failure_reason=None,
         debug_artifacts=debug_artifacts,

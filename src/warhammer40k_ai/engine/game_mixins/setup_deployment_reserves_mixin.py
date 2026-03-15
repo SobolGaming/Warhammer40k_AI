@@ -722,6 +722,9 @@ class GameSetupDeploymentReservesMixin:
         ruins_validation = validate_ruins_placement(unit, (x, y, z), self.map.terrain_features, moving_model=model)
         if not ruins_validation['valid']:
             return {'valid': False, 'reason': f"RUINS: {ruins_validation.get('reason', 'invalid placement')}"}
+        surface_validation = self.map.validate_model_surface_placement(model, (x, y, z))
+        if not surface_validation.get('valid', False):
+            return {'valid': False, 'reason': str(surface_validation.get('reason', 'invalid placement'))}
 
         return {'valid': True, 'reason': 'Valid single-model deployment'}
 

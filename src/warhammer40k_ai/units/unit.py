@@ -4685,6 +4685,17 @@ class Unit(
         r"(?:every model in )?the attacking unit because of this fortification that model has the benefit of cover against that attack\.?$",
         re.IGNORECASE,
     )
+    _DEFENCE_LINE_RE = re.compile(
+        r"^while an (?:(?P<faction>[a-z0-9 ]+) )?(?P<unit_keyword>infantry) model has the benefit of cover "
+        r"as a result of this (?:terrain feature(?: see (?:above|below))?|fortification(?: see (?:above|below|in fortification section))?) "
+        r"that model has a (?P<inv>\d+) invulnerable save\.?$",
+        re.IGNORECASE,
+    )
+    _EMPLACEMENT_PLATFORM_RE = re.compile(
+        r"^friendly (?:(?P<faction>[a-z0-9 ]+) )?(?P<unit_keyword>infantry) models can be set up or end any type "
+        r"of move on top of the platform section of this fortification\.?$",
+        re.IGNORECASE,
+    )
     _SELFLESS_PROTECTOR_RE = re.compile(
         r"^each time a ranged attack is allocated to an imperial knights model from your army if that model is not fully visible to "
         r"(?:every model in )?the attacking unit because of this knight defender model that model has the benefit of cover and a 4 invulnerable save against that attack\.?$",

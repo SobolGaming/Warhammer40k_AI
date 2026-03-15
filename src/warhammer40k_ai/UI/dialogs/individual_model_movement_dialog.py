@@ -869,8 +869,15 @@ class IndividualModelMovementDialog(BaseDialog):
                 # If UI fails, fall back to using provided Z
                 self._pending_floor_z_by_level = None
 
-        # Use provided Z if no selection needed (or single floor)
-        destination = (battlefield_x, battlefield_y, battlefield_z)
+        resolved_z = battlefield_z
+        if model is not None and self.game_map is not None:
+            try:
+                resolved_z = float(self.game_map.get_surface_height_for_model(model, battlefield_x, battlefield_y))
+            except Exception:
+                resolved_z = battlefield_z
+
+        # Use resolved surface Z if no selection needed (or single floor)
+        destination = (battlefield_x, battlefield_y, resolved_z)
 
         # If we're in deployment mode, run deployment validation and place the model directly
         if self.movement_type == 'deploy':
@@ -889,14 +896,14 @@ class IndividualModelMovementDialog(BaseDialog):
                 player_id = model.parent_unit.get_parent_army().player.id
             except Exception:
                 player_id = ''
-            validation = self._validate_deploy_like_placement(game, model, battlefield_x, battlefield_y, battlefield_z, player_id)
+            validation = self._validate_deploy_like_placement(game, model, battlefield_x, battlefield_y, resolved_z, player_id)
             if not validation['valid']:
                 try:
                     facing_deg = math.degrees(self.get_deploy_facing_radians())
                 except Exception:
                     facing_deg = 0.0
                 logger.error(f"ERROR: Deployment invalid for {model.name} at "
-                    f"({battlefield_x:.1f}, {battlefield_y:.1f}, {battlefield_z:.1f}) facing={facing_deg:.1f}deg: "
+                    f"({battlefield_x:.1f}, {battlefield_y:.1f}, {resolved_z:.1f}) facing={facing_deg:.1f}deg: "
                     f"{validation['reason']}")
                 return False
 
@@ -906,7 +913,7 @@ class IndividualModelMovementDialog(BaseDialog):
                 model=model,
                 x=battlefield_x,
                 y=battlefield_y,
-                z=battlefield_z,
+                z=resolved_z,
                 facing=self.get_deploy_facing_radians(),
             )
             if not overlap_validation['valid']:
@@ -915,7 +922,7 @@ class IndividualModelMovementDialog(BaseDialog):
                 except Exception:
                     facing_deg = 0.0
                 logger.error(f"ERROR: Deployment invalid for {model.name} at "
-                    f"({battlefield_x:.1f}, {battlefield_y:.1f}, {battlefield_z:.1f}) facing={facing_deg:.1f}deg: "
+                    f"({battlefield_x:.1f}, {battlefield_y:.1f}, {resolved_z:.1f}) facing={facing_deg:.1f}deg: "
                     f"{overlap_validation['reason']}")
                 return False
 
