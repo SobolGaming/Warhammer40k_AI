@@ -4129,6 +4129,30 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "While the bearer is leading a unit, that attached unit can be affected by up to two different Orders at the same time.",
         ),
+        ("AM", "Holy Piety"): (
+            "Supported",
+            "Passive melee support: while the Priest's unit is not Battle-shocked, this model can re-roll the Hit roll.",
+        ),
+        ("AM", "Thunderous Head-butt"): (
+            "Supported",
+            "Fight selection: optional enemy within Engagement Range of this model suffers D3 mortal wounds on 2-5 or D3+3 mortal wounds on 6.",
+        ),
+        ("AM", "Point-blank Barrage"): (
+            "Supported",
+            "Ranged attacks that target the closest eligible target improve AP by 1.",
+        ),
+        ("AM", "Psychic Barrier (Psychic)"): (
+            "Supported",
+            "Start of opponent Shooting phase: optional D6 roll; on 1 the unit suffers D3 mortal wounds, on 2+ the unit gains a 4+ invulnerable save until phase end.",
+        ),
+        ("AM", "Ratling Battlemutt"): (
+            "Supported",
+            "Once per battle when selected to shoot, unit ranged weapons gain Lethal Hits until end of phase.",
+        ),
+        ("AM", "Shoot Sharp and Scarper"): (
+            "Supported",
+            "After shooting (if not in Engagement Range): this unit can make a Normal move using its Move characteristic and then cannot charge this turn.",
+        ),
         ("GC", "Deathstrike Missile"): (
             "Supported",
             "Shooting phase action support: optional Designate/Adjust/None flow places or moves a unique Deathstrike marker for the unit, with phase-use and ONE SHOT constraints enforced.",
@@ -13145,7 +13169,7 @@ def _post_shoot_reactive_move_no_charge_support(description: str) -> Optional[Tu
     pattern = (
         r"in your shooting phase after this (?:model s unit|models unit|unit) has shot"
         r"(?: if it is not within engagement range of (?:one or more|any) enemy units)? "
-        r"(?:it|that unit|this unit) can make a normal move of up to (?P<move>d6|\d+)"
+        r"(?:it|that unit|this unit) can make a normal move(?: of up to (?P<move>d6|\d+))?"
         r"(?: as if it were your movement phase)? "
         r"if it does until the end of the turn (?:that unit|this unit) is not eligible to declare a charge"
     )
@@ -13153,11 +13177,15 @@ def _post_shoot_reactive_move_no_charge_support(description: str) -> Optional[Tu
     if not m:
         return None
     move = str(m.group("move") or "").strip().upper()
-    move_label = "D6" if move == "D6" else move
+    move_label = "its Move characteristic" if not move else ("D6" if move == "D6" else move)
     gated = "if it is not within engagement range" in norm
     note = f"After shooting: this unit can make a Normal move of up to {move_label}\" and then cannot charge this turn."
+    if not move:
+        note = "After shooting: this unit can make a Normal move using its Move characteristic and then cannot charge this turn."
     if gated:
         note = f"After shooting (if not in Engagement Range): this unit can make a Normal move of up to {move_label}\" and then cannot charge this turn."
+    if gated and not move:
+        note = "After shooting (if not in Engagement Range): this unit can make a Normal move using its Move characteristic and then cannot charge this turn."
     return ("Supported", note)
 
 

@@ -929,6 +929,69 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_ratling_battlemutt_specs(self) -> List[dict]:
+        """
+        Unit-level rule: once per battle, when selected to shoot, gain [LETHAL HITS]
+        for ranged weapons until end of phase.
+
+        Returns specs with keys:
+            - source: ability name
+            - ability_key: once-per-battle usage key
+            - keywords: list[str]
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_ratling_battlemutt_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                source = str(name or "").strip()
+                if source.lower() != "ratling battlemutt":
+                    continue
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "once per battle" not in normalized:
+                    continue
+                if "selected to shoot" not in normalized:
+                    continue
+                if "lethal hits" not in normalized:
+                    continue
+                ability_key = "ratling_battlemutt"
+                if ability_key in seen:
+                    continue
+                seen.add(ability_key)
+                specs.append(
+                    {
+                        "source": source or "Ratling Battlemutt",
+                        "ability_key": ability_key,
+                        "keywords": ["LETHAL HITS"],
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_cat_unit_specs(self) -> List[dict]:
         """
         Unit-level rule: once per battle, when selected to shoot, can gain [IGNORES COVER]
@@ -6002,6 +6065,68 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_opponent_shooting_phase_self_mortal_or_unit_invulnerable_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: at the start of your opponent's Shooting phase, roll one D6;
+        on a 1, this model's unit suffers D3 mortal wounds, otherwise the unit gains an
+        invulnerable save until end of phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - ability_key: deterministic decision key
+            - value: int (invulnerable save)
+            - apply_to_unit: bool
+        """
+        if model is None:
+            return []
+        cache_key = f"model_opponent_shooting_self_mw_or_invuln:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._OPPONENT_SHOOTING_PHASE_SELF_MORTAL_OR_UNIT_INVULN_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                invuln = int(m.group("invuln") or 0)
+            except Exception:
+                invuln = 0
+            if invuln <= 0:
+                continue
+            source = str(name or "Opponent Shooting phase invulnerable save").strip() or "Opponent Shooting phase invulnerable save"
+            key = ("psychic_barrier", int(invuln))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "ability_key": "psychic_barrier",
+                    "value": int(invuln),
+                    "apply_to_unit": True,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_start_any_phase_clear_battleshock_specs(self) -> List[dict]:
         """
         Unit-specific rule: once per battle, at the start of any phase, clear Battle-shock on a friendly unit in range.
@@ -10506,6 +10631,10 @@ class AbilitySpecsMixin:
 
         Returns list of specs with keys:
             - source: ability name
+            - ability_key: decision/apply key
+            - engagement_scope: "unit" or "model"
+            - is_psychic_attack: bool
+            - results: list[dict] with min/max and mortal wound resolution
             - threshold_low_min: int
             - threshold_low_max: int
             - mortal_low: int
@@ -10523,7 +10652,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[str] = set()
+        seen: set[tuple] = set()
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
             if not text_src:
@@ -10534,22 +10663,58 @@ class AbilitySpecsMixin:
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
-            if not self._FIGHT_SELECTED_MORTAL_TABLE_RE.fullmatch(normalized):
-                continue
             source = str(name or "Fight selected mortals").strip() or "Fight selected mortals"
-            key = source.lower()
+            if self._FIGHT_SELECTED_MORTAL_TABLE_RE.fullmatch(normalized):
+                key = (source.lower(), "hammer_aflame", "unit")
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "ability_key": "hammer_aflame",
+                        "engagement_scope": "unit",
+                        "is_psychic_attack": True,
+                        "results": [
+                            {"min": 2, "max": 3, "mortal": 1, "mortal_roll": "", "mortal_bonus": 0},
+                            {"min": 4, "max": 5, "mortal": 0, "mortal_roll": "D3", "mortal_bonus": 0},
+                            {"min": 6, "max": 6, "mortal": 0, "mortal_roll": "D3", "mortal_bonus": 3},
+                        ],
+                        "threshold_low_min": 2,
+                        "threshold_low_max": 3,
+                        "mortal_low": 1,
+                        "threshold_mid_min": 4,
+                        "threshold_mid_max": 5,
+                        "mortal_mid_roll": "D3",
+                        "threshold_high": 6,
+                        "mortal_high_roll": "D3",
+                        "mortal_high_bonus": 3,
+                    }
+                )
+                continue
+            if not self._FIGHT_SELECTED_SIMPLE_MORTAL_TABLE_RE.fullmatch(normalized):
+                continue
+            key = (source.lower(), "thunderous_head_butt", "model")
             if key in seen:
                 continue
             seen.add(key)
             specs.append(
                 {
                     "source": source,
+                    "ability_key": "thunderous_head_butt",
+                    "engagement_scope": "model",
+                    "is_psychic_attack": False,
+                    "results": [
+                        {"min": 2, "max": 5, "mortal": 0, "mortal_roll": "D3", "mortal_bonus": 0},
+                        {"min": 6, "max": 6, "mortal": 0, "mortal_roll": "D3", "mortal_bonus": 3},
+                    ],
                     "threshold_low_min": 2,
-                    "threshold_low_max": 3,
-                    "mortal_low": 1,
-                    "threshold_mid_min": 4,
-                    "threshold_mid_max": 5,
-                    "mortal_mid_roll": "D3",
+                    "threshold_low_max": 5,
+                    "mortal_low": 0,
+                    "mortal_low_roll": "D3",
+                    "threshold_mid_min": 0,
+                    "threshold_mid_max": 0,
+                    "mortal_mid_roll": "",
                     "threshold_high": 6,
                     "mortal_high_roll": "D3",
                     "mortal_high_bonus": 3,

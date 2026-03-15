@@ -19710,7 +19710,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return 1
-    if str(ctx.get("ability", "") or "") == "hammer_aflame":
+    if str(ctx.get("ability", "") or "") in {"hammer_aflame", "thunderous_head_butt"}:
         if is_skip_choice(request, result):
             return None
         payload = _option_payload(request, result)
@@ -19739,7 +19739,35 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             append_dice(player, f"{ability_name} roll: {roll}")
 
         mortal = 0
-        if 2 <= roll <= 3:
+        results = list(ctx.get("results") or [])
+        if results:
+            for entry in list(results or []):
+                try:
+                    min_roll = int(entry.get("min", 0) or 0)
+                except (TypeError, ValueError):
+                    min_roll = 0
+                try:
+                    max_roll = int(entry.get("max", min_roll) or min_roll)
+                except (TypeError, ValueError):
+                    max_roll = min_roll
+                if roll < min_roll or roll > max_roll:
+                    continue
+                try:
+                    mortal = int(entry.get("mortal", 0) or 0)
+                except (TypeError, ValueError):
+                    mortal = 0
+                mortal_roll = str(entry.get("mortal_roll", "") or "").strip().upper()
+                if mortal_roll:
+                    rolled_mortal = int(get_roll(mortal_roll) or 0)
+                    if player is not None:
+                        append_dice(player, f"{ability_name} mortal wounds: {rolled_mortal}")
+                    mortal += int(rolled_mortal)
+                try:
+                    mortal += int(entry.get("mortal_bonus", 0) or 0)
+                except (TypeError, ValueError):
+                    pass
+                break
+        elif 2 <= roll <= 3:
             mortal = 1
         elif 4 <= roll <= 5:
             mortal = int(get_roll("D3") or 0)
@@ -19751,7 +19779,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     target_unit,
                     int(mortal),
                     game_map=getattr(game, "map", None),
-                    is_psychic_attack=True,
+                    is_psychic_attack=bool(ctx.get("is_psychic_attack", str(ctx.get("ability", "") or "") == "hammer_aflame")),
                 )
             except Exception:
                 pass

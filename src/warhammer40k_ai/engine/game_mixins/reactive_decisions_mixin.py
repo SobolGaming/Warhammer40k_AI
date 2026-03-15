@@ -4903,6 +4903,7 @@ class GameReactiveDecisionsMixin:
             "start_any_phase_damage_set_one",
             "start_any_phase_invulnerable_save",
             "start_any_phase_fnp",
+            "psychic_barrier",
             "dark_ritual",
             "movement_phase_move_weapon_bonus",
             "hand_of_asuryan",
@@ -4913,6 +4914,7 @@ class GameReactiveDecisionsMixin:
             "lord_of_the_storm",
             "cat_unit",
             "ammo_runt",
+            "ratling_battlemutt",
             "plasmacyte",
             "extremis_trigger_word",
             "flickerjump",
@@ -6732,6 +6734,66 @@ class GameReactiveDecisionsMixin:
             model.mark_used_once_per_battle(key, ability_name=ability_name, source="datasheet")
             return
 
+        if ability_key == "psychic_barrier":
+            if not choice:
+                return
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or ctx.get("source_unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Psychic Barrier (Psychic)").strip()
+            try:
+                invuln = int(payload.get("invuln") or ctx.get("invuln") or 0)
+            except Exception:
+                invuln = 0
+            if invuln <= 0:
+                return
+            try:
+                from ...utility.dice import get_roll as _get_roll
+                from ...utility.event_bus import append_dice as _append_dice
+            except Exception:
+                _get_roll = None
+                _append_dice = None
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            roll = int(_get_roll("D6") or 0) if callable(_get_roll) else 0
+            if callable(_append_dice) and player is not None:
+                _append_dice(player, f"{ability_name} roll: {roll}")
+            if roll <= 1:
+                mortal = int(_get_roll("D3") or 0) if callable(_get_roll) else 0
+                if callable(_append_dice) and player is not None:
+                    _append_dice(player, f"{ability_name} mortal wounds: {mortal}")
+                if mortal > 0:
+                    root._apply_mortal_wounds_to_unit(
+                        root,
+                        int(mortal),
+                        game_map=getattr(self, "map", None),
+                        is_psychic_attack=True,
+                    )
+                return
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            for model in list(models or []):
+                if model is None or not getattr(model, "is_alive", False):
+                    continue
+                if hasattr(model, "set_temporary_invulnerable_save"):
+                    model.set_temporary_invulnerable_save(
+                        key=f"psychic_barrier:{get_entity_id(model)}",
+                        value=int(invuln),
+                        source=ability_name,
+                        expires_phase="SHOOTING_PHASE",
+                    )
+            return
+
         if ability_key == "start_any_phase_fnp":
             unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
             if not unit_id:
@@ -7568,6 +7630,72 @@ class GameReactiveDecisionsMixin:
                 mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
                 if callable(mark_used):
                     mark_used("ammo_runt", ability_name=ability_name)
+            return
+
+        if ability_key == "ratling_battlemutt":
+            if not choice:
+                return
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            resolved_key = str(payload.get("ability_key") or ctx.get("ability_key") or "ratling_battlemutt").strip().lower() or "ratling_battlemutt"
+            if getattr(root, "has_used_unit_once_per_battle", lambda _k: False)(resolved_key):
+                return
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Ratling Battlemutt").strip() or "Ratling Battlemutt"
+            keywords = [str(v or "").strip().upper() for v in list(payload.get("keywords") or ctx.get("keywords") or ["LETHAL HITS"]) if str(v or "").strip()]
+
+            def _iter_models() -> list:
+                try:
+                    return list(root.get_attached_unit_models() or [])
+                except Exception:
+                    return list(getattr(root, "models", []) or [])
+
+            for model in sorted(_iter_models(), key=lambda m: str(get_entity_id(m) or "")):
+                if model is None or not getattr(model, "is_alive", False):
+                    continue
+                set_fn = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_fn):
+                    continue
+                names: list[str] = []
+                seen: set[str] = set()
+                for wg in list(getattr(model, "wargear", []) or []):
+                    if wg is None:
+                        continue
+                    try:
+                        if not bool(getattr(wg, "is_ranged", lambda: False)()):
+                            continue
+                    except Exception:
+                        continue
+                    weapon_name = str(getattr(wg, "name", "") or "").strip()
+                    if not weapon_name:
+                        continue
+                    key_norm = Unit._norm_wargear_name(weapon_name)
+                    if not key_norm or key_norm in seen:
+                        continue
+                    seen.add(key_norm)
+                    names.append(weapon_name)
+                for idx, weapon_name in enumerate(names):
+                    set_fn(
+                        key=f"{resolved_key}:{get_entity_id(model)}:{idx}",
+                        weapon_name=weapon_name,
+                        keywords=list(keywords or ["LETHAL HITS"]),
+                        source=ability_name,
+                        expires_phase="SHOOTING_PHASE",
+                        attack_type="ranged",
+                    )
+
+            mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
+            if callable(mark_used):
+                mark_used(resolved_key, ability_name=ability_name)
             return
 
         if ability_key == "cat_unit":

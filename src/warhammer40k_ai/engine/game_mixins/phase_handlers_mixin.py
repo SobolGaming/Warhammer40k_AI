@@ -12349,6 +12349,123 @@ class GamePhaseHandlersMixin:
                         )
                         self.request_decision(request)
 
+    def _on_phase_start_astra_militarum_psychic_barrier(self, player=None, phase=None, **_kwargs) -> None:
+        """Start of opponent's Shooting phase: optional Psychic Barrier activation for eligible models."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        def _unit_sort_key(unit):
+            try:
+                return str(get_entity_id(unit))
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        def _model_sort_key(model):
+            try:
+                return str(get_entity_id(model))
+            except Exception:
+                return str(getattr(model, "name", "") or "")
+
+        for reacting_player in list(getattr(self, "players", []) or []):
+            if reacting_player is None or reacting_player is player:
+                continue
+            army = self._get_player_army(reacting_player)
+            if army is None:
+                continue
+            seen_roots: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if not root_id or root_id in seen_roots:
+                    continue
+                seen_roots.add(root_id)
+                if not bool(getattr(root, "is_alive", lambda: False)()):
+                    continue
+                if not bool(getattr(root, "deployed", False)):
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+
+                spec_fn = getattr(root, "model_start_opponent_shooting_phase_self_mortal_or_unit_invulnerable_specs", None)
+                if not callable(spec_fn):
+                    continue
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                if not models:
+                    continue
+
+                for model in sorted(list(models or []), key=_model_sort_key):
+                    is_alive_attr = getattr(model, "is_alive", True)
+                    if not bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr):
+                        continue
+                    specs = list(spec_fn(model) or [])
+                    if not specs:
+                        continue
+                    model_id = str(get_entity_id(model) or "")
+                    if not model_id:
+                        continue
+                    for spec in list(specs or []):
+                        ability_name = str(spec.get("source", "") or "Psychic Barrier (Psychic)").strip() or "Psychic Barrier (Psychic)"
+                        ability_key = str(spec.get("ability_key", "") or "psychic_barrier").strip().lower() or "psychic_barrier"
+                        try:
+                            invuln = int(spec.get("value", 0) or 0)
+                        except (TypeError, ValueError):
+                            invuln = 0
+                        if invuln <= 0:
+                            continue
+                        self._queue_optional_ability_confirmation(
+                            player=reacting_player,
+                            ability_key="psychic_barrier",
+                            ability_name=ability_name,
+                            message=f"Use {ability_name} for {getattr(root, 'name', 'Unit')}?",
+                            context={
+                                "ability": "psychic_barrier",
+                                "ability_key": ability_key,
+                                "ability_name": ability_name,
+                                "phase": "Opponent Shooting phase",
+                                "unit": getattr(root, "name", "") or "",
+                                "unit_id": root_id,
+                                "source_unit_id": root_id,
+                                "model": getattr(model, "name", "") or "",
+                                "model_id": model_id,
+                                "invuln": int(invuln),
+                                "turn": int(current_turn or 0),
+                                "opponent_player_id": str(getattr(player, "id", "") or ""),
+                            },
+                            payload={
+                                "unit_id": root_id,
+                                "source_unit_id": root_id,
+                                "model_id": model_id,
+                                "ability_key": ability_key,
+                                "ability_name": ability_name,
+                                "invuln": int(invuln),
+                            },
+                            instance_key=f"{model_id}:{ability_key}:{current_turn}:{getattr(player, 'id', '')}",
+                        )
+                        return
+
     def _on_phase_start_opponent_shooting_phase_disrupt(self, player=None, phase=None, **_kwargs) -> None:
         """Start of opponent's Shooting phase: resolve Mischief and Confusion / Horrible Fascination."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

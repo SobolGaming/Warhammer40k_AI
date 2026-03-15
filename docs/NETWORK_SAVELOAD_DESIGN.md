@@ -341,6 +341,7 @@ Lethal Surge uses a `CONFIRM_YES_NO` step and queues `MOVE_UNIT` with
 Fire and Fade and Reactive Reposition queue `MOVE_UNIT` with `movement_type="reactive"` and
 `reactive_move_kind="fire_and_fade"` / `reactive_move_kind="reactive_reposition"`.
 Tactical Acumen queues `MOVE_UNIT` with `movement_type="reactive"` and `reactive_move_kind="tactical_acumen"`.
+Shoot Sharp and Scarper queues `MOVE_UNIT` with `movement_type="reactive"` and `reactive_move_kind="post_shoot_no_charge"` using the unit's Move characteristic.
 A Foot in the Future queues `MOVE_UNIT` with `movement_type="reactive"` and `reactive_move_kind="a_foot_in_the_future"` (max distance from the recorded D6 roll).
 Gleaming Pinions uses `CONFIRM_YES_NO` then queues `MOVE_UNIT` with `movement_type="gleaming_pinions"` and `reactive_move_kind="gleaming_pinions"`.
 Martial Philosopher uses `CONFIRM_YES_NO` then queues `MOVE_UNIT` with `movement_type="martial_philosopher"` and `reactive_move_kind="martial_philosopher"`.
@@ -366,7 +367,9 @@ Shooting:
 - shooty_power_trip_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="shooty_power_trip"`, `ability_key`, `unit_id`, `ability_name`; optional selected-to-shoot D6 branch resolves through shared ranged stat/self-mortal helper plumbing)
 - pulsa_rokkit_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="pulsa_rokkit"`, `unit_id`, `model_id`, `ability_key`, `ability_name`, `strength_bonus`, `ap_bonus`; bearer-scoped once-per-battle selected-to-shoot ranged bonus)
 - shieldbreaker_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="shieldbreaker"`, `unit_id`, `model_id`, `ability_key`, `weapon_name`, `wound_bonus`)
+- ratling_battlemutt_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="ratling_battlemutt"`, `unit_id`, `ability_key`, `ability_name`)
 - dark_blessings_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_invulnerable_save"`, `unit_id`, `model_id`, `buff_key`, `invuln`; triggered after enemy target selection in Shooting/Fight)
+- psychic_barrier_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="psychic_barrier"`, `unit_id`, `source_unit_id`, `model_id`, `ability_key`, `invuln`; triggered at the start of the opponent's Shooting phase)
 - iron_resolve_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_fnp"`, `unit_id`, `ability_key`, `fnp_value`, `trigger_action`; triggered after bearer unit is selected as a target in Shooting/Fight)
 - troubling_visions_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="troubling_visions"`, `unit_id`, `source_member_unit_id`, `ability_key`, `expires_round`; triggered in the owner's Command phase)
 - student_of_the_codex_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="student_of_the_codex"`, `unit_id`, `source_member_unit_id`, `model_id`, `doctrine`, `expires_round`; triggered in the owner's Command phase)
@@ -450,6 +453,7 @@ Fight:
 - daemonic_patrons_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="daemonic_patrons"`, `unit_id`)
 - extremis_trigger_word_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="extremis_trigger_word"`, `unit_id`, `weapon_name`, `attacks_value`)
 - possessed_blade_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="possessed_blade_fight"`, `unit_id`, `model_id`, `weapon_name`)
+- thunderous_head_butt_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="thunderous_head_butt"`, `ability_name`, `source_unit_id`, `unit_id`, `model_id`, `results[]`)
 - daemonic_patrons_loss_dialog: ALLOCATE_DAMAGE {model_id} (context `selection_kind="daemonic_patrons_loss"`, `unit_id`, `ability_name`)
 - malefic_surge_diabolic_power_fight_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="fight"`)
 - malefic_surge_unnatural_fortitude_fight_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="targeted_fight"`)

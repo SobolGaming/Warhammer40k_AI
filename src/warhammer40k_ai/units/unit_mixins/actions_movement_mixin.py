@@ -3969,6 +3969,7 @@ class ActionsMovementMixin:
             - range: int (max distance for placement generation; D6 resolves to 6 here)
             - range_roll: str (e.g. "D6") or ""
             - requires_not_engaged: bool
+            - use_move_characteristic: bool
         """
         try:
             root = self.get_attached_unit_root()
@@ -4050,19 +4051,28 @@ class ActionsMovementMixin:
                 range_expr = str(m.group("range_expr") or "").strip().upper()
                 range_roll = ""
                 rng = 0
+                use_move_characteristic = False
                 if range_expr == "D6":
                     range_roll = "D6"
                     rng = 6
+                elif not range_expr:
+                    use_move_characteristic = True
                 else:
                     try:
                         rng = int(range_expr or 0)
                     except Exception:
                         rng = 0
-                if rng <= 0:
+                if rng <= 0 and not use_move_characteristic:
                     continue
                 source = str(name or "Post-shoot reactive move").strip() or "Post-shoot reactive move"
                 requires_not_engaged = "not within engagement range" in normalized
-                key = (source.lower(), int(rng), str(range_roll), bool(requires_not_engaged))
+                key = (
+                    source.lower(),
+                    int(rng),
+                    str(range_roll),
+                    bool(requires_not_engaged),
+                    bool(use_move_characteristic),
+                )
                 if key in seen:
                     continue
                 seen.add(key)
@@ -4072,6 +4082,7 @@ class ActionsMovementMixin:
                         "range": int(rng),
                         "range_roll": str(range_roll),
                         "requires_not_engaged": bool(requires_not_engaged),
+                        "use_move_characteristic": bool(use_move_characteristic),
                     }
                 )
 

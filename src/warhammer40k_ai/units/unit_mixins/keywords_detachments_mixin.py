@@ -12864,6 +12864,47 @@ class KeywordsDetachmentsMixin:
         source = str(rule.get("source", "") or "Soul Trap").strip() or "Soul Trap"
         return int(total), int(total), source
 
+    def get_model_non_battleshocked_melee_hit_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """Return melee hit re-roll support for model abilities gated on the unit not being Battle-shocked."""
+        if model is None:
+            return None
+        cache_key = f"non_battleshocked_melee_hit_reroll_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        entries = list(self._iter_model_specific_ability_entries(model) or [])
+        try:
+            entries.extend(list(self._iter_ability_entries_for_rules(model=model) or []))
+        except Exception:
+            pass
+        for name, desc in entries:
+            text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+            if not text:
+                continue
+            low = text.lower().replace("\u2019", "'")
+            if "each time this model makes a melee attack" not in low:
+                continue
+            if "hit roll" not in low:
+                continue
+            if ("re-roll" not in low) and ("reroll" not in low):
+                continue
+            if "unless this model's unit is battle-shocked" not in low and "if this model's unit is not battle-shocked" not in low:
+                continue
+            source = str(name or "Melee hit re-roll").strip() or "Melee hit re-roll"
+            rule = {
+                "attack_type": "melee",
+                "reroll_full": True,
+                "requires_not_battle_shocked": True,
+                "source": source,
+            }
+            break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def get_model_hit_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None) -> dict:
         mods = self._get_model_reroll_modifiers(model, attack_type=attack_type, target=target, roll="hit")
         attack_scope = str(attack_type or "").strip().lower()
@@ -12985,6 +13026,19 @@ class KeywordsDetachmentsMixin:
                         reason_text = str(reason or "").strip()
                         if reason_text:
                             reroll_full_reasons.append(reason_text)
+            holy_rule = self.get_model_non_battleshocked_melee_hit_reroll_rule(model)
+            if holy_rule is not None:
+                required_attack_type = str(holy_rule.get("attack_type", "any") or "any").strip().lower()
+                attack_type_ok = required_attack_type not in {"melee", "ranged"} or attack_scope in {"any", required_attack_type}
+                try:
+                    root = self.get_attached_unit_root()
+                except Exception:
+                    root = self
+                battle_shocked = bool(getattr(root, "is_battle_shocked", lambda: False)())
+                if attack_type_ok and not battle_shocked and bool(holy_rule.get("reroll_full", False)):
+                    source_name = str(holy_rule.get("source", "") or "Melee hit re-roll").strip() or "Melee hit re-roll"
+                    reroll_full = True
+                    reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
             orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
             mek_kaptin_fn = (
                 getattr(orks_mgr, "mek_kaptin_ranged_hit_reroll_applies", None)

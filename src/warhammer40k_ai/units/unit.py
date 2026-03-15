@@ -3784,9 +3784,9 @@ class Unit(
     _POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_RE = re.compile(
         r"in your shooting phase after this (?:model(?: s)?(?: unit)?|unit) has shot"
         r"(?: if it is not within engagement range of (?:one or more|any) enemy units)? "
-        r"(?:it|that unit|this unit|this model) can make a normal move of up to (?P<range_expr>d6|\d+)\s*\"?\s*"
-        r"(?:as if it were your movement phase )?"
-        r"if it does until the end of the turn (?:that unit|this unit|this model) is not eligible to declare a charge",
+        r"(?:it|that unit|this unit|this model) can make a normal move(?: of up to (?P<range_expr>d6|\d+)\s*\"?\s*)?"
+        r"(?: as if it were your movement phase)?"
+        r"\s*if it does until the end of the turn (?:that unit|this unit|this model) is not eligible to declare a charge",
         re.IGNORECASE,
     )
     _POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_BATTLELINE_ALT_RE = re.compile(
@@ -4126,6 +4126,11 @@ class Unit(
         r"on a 6 that enemy unit suffers d3 3 mortal wounds?",
         re.IGNORECASE,
     )
+    _FIGHT_SELECTED_SIMPLE_MORTAL_TABLE_RE = re.compile(
+        r"each time this model s unit is selected to fight you can select one enemy unit within engagement range of this model(?: s unit)? "
+        r"and roll one d6 on a 2 5 that enemy unit suffers d3 mortal wounds? on a 6 that enemy unit suffers d3 3 mortal wounds?",
+        re.IGNORECASE,
+    )
     _DAEMONIC_PATRONS_RE = re.compile(
         r"each time this unit is selected to fight it can call upon (?:the )?daemonic patrons if it does until the end of the phase "
         r"each time a model in this unit makes an attack an unmodified wound roll of (?P<thresh>\d) scores a critical wound "
@@ -4304,6 +4309,11 @@ class Unit(
     _START_ANY_PHASE_MODEL_UNIT_INVULN_RE = re.compile(
         r"once per battle at the start of any phase this model can use this ability if it does until the end of the phase "
         r"all models in this model s unit have a (?P<invuln>\d+) invulnerable save",
+        re.IGNORECASE,
+    )
+    _OPPONENT_SHOOTING_PHASE_SELF_MORTAL_OR_UNIT_INVULN_RE = re.compile(
+        r"at the start of your opponent s shooting phase you can roll one d6 on a 1 this psyker s unit suffers d3 mortal wounds? "
+        r"on a 2\+? until the end of the phase models in this psyker s unit have a (?P<invuln>\d+) invulnerable save",
         re.IGNORECASE,
     )
     _START_ANY_PHASE_UNIT_FNP_RE = re.compile(

@@ -511,7 +511,22 @@ class GameShootingFightHandlersMixin:
             if bool(spec.get("requires_not_engaged", False)) and engaged:
                 continue
             range_roll = str(spec.get("range_roll", "") or "").strip().upper()
-            if range_roll == "D6":
+            if bool(spec.get("use_move_characteristic", False)):
+                max_distance = 0
+                try:
+                    models = list(attacker_unit.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(attacker_unit, "models", []) or [])
+                for model in list(models or []):
+                    if model is None or not getattr(model, "is_alive", False):
+                        continue
+                    try:
+                        current = int(attacker_unit.get_effective_model_characteristic(model, "movement", game_map=self.map) or 0)
+                    except Exception:
+                        current = 0
+                    if current > max_distance:
+                        max_distance = int(current)
+            elif range_roll == "D6":
                 try:
                     from ...utility.dice import get_roll
                     max_distance = int(get_roll("D6") or 0)
@@ -5971,6 +5986,64 @@ class GameShootingFightHandlersMixin:
             instance_key=f"{unit_id}:ammo_runt:{used}",
         )
 
+    def _on_shooting_targets_selected_ratling_battlemutt(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+
+        specs = sorted(
+            list(getattr(root, "unit_ratling_battlemutt_specs", lambda: [])() or []),
+            key=lambda s: str(s.get("source", "") or "").strip().lower(),
+        )
+        if not specs:
+            return
+        spec = specs[0]
+        ability_name = str(spec.get("source", "") or "Ratling Battlemutt").strip() or "Ratling Battlemutt"
+        ability_key = str(spec.get("ability_key", "") or "ratling_battlemutt").strip().lower() or "ratling_battlemutt"
+        if getattr(root, "has_used_unit_once_per_battle", lambda _k: False)(ability_key):
+            return
+
+        unit_id = get_entity_id(root)
+        if not unit_id:
+            return
+        message = f"Use {ability_name} for {getattr(root, 'name', 'Unit')}?"
+        ctx = {
+            "ability": "ratling_battlemutt",
+            "ability_key": ability_key,
+            "ability_name": ability_name,
+            "phase": "Shooting phase",
+            "unit": getattr(root, "name", "") or "",
+            "unit_id": unit_id,
+            "keywords": list(spec.get("keywords", []) or ["LETHAL HITS"]),
+        }
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="ratling_battlemutt",
+            ability_name=ability_name,
+            message=message,
+            context=ctx,
+            payload={
+                "unit_id": unit_id,
+                "ability_key": ability_key,
+                "ability_name": ability_name,
+                "keywords": list(spec.get("keywords", []) or ["LETHAL HITS"]),
+            },
+            instance_key=f"{unit_id}:{ability_key}",
+        )
+
     def _on_shooting_targets_selected_orks_selected_to_shoot_utilities(
         self,
         attacking_unit=None,
@@ -8085,7 +8158,7 @@ class GameShootingFightHandlersMixin:
                 if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
                     continue
                 ctx = dict(getattr(req, "context", {}) or {})
-                if str(ctx.get("ability", "") or "") != "hammer_aflame":
+                if str(ctx.get("ability", "") or "") not in {"hammer_aflame", "thunderous_head_butt"}:
                     continue
                 if str(ctx.get("source_unit_id", "") or "") != str(get_entity_id(root) or ""):
                     continue
@@ -8118,40 +8191,46 @@ class GameShootingFightHandlersMixin:
             specs = list(get_specs(model) or []) if callable(get_specs) else []
             if not specs:
                 continue
-            candidates: list[Any] = []
-            seen_targets: set[str] = set()
-            try:
-                enemy_units = list(game_map.get_enemy_units(root) or [])
-            except Exception:
-                enemy_units = []
-            for enemy in enemy_units:
-                if enemy is None:
-                    continue
-                try:
-                    enemy_root = enemy.get_attached_unit_root()
-                except Exception:
-                    enemy_root = enemy
-                enemy_id = str(get_entity_id(enemy_root) or "")
-                if not enemy_id or enemy_id in seen_targets:
-                    continue
-                seen_targets.add(enemy_id)
-                if not enemy_root.is_alive() or not getattr(enemy_root, "deployed", True):
-                    continue
-                try:
-                    if enemy_root.is_in_reserves() or enemy_root.is_embarked:
-                        continue
-                except Exception:
-                    pass
-                try:
-                    if not game_map.is_within_engagement_range(root, enemy_root):
-                        continue
-                except Exception:
-                    continue
-                candidates.append(enemy_root)
-            if not candidates:
-                continue
             for spec in specs:
+                candidates: list[Any] = []
+                seen_targets: set[str] = set()
+                try:
+                    enemy_units = list(game_map.get_enemy_units(root) or [])
+                except Exception:
+                    enemy_units = []
+                engagement_scope = str(spec.get("engagement_scope", "unit") or "unit").strip().lower() or "unit"
+                for enemy in enemy_units:
+                    if enemy is None:
+                        continue
+                    try:
+                        enemy_root = enemy.get_attached_unit_root()
+                    except Exception:
+                        enemy_root = enemy
+                    enemy_id = str(get_entity_id(enemy_root) or "")
+                    if not enemy_id or enemy_id in seen_targets:
+                        continue
+                    seen_targets.add(enemy_id)
+                    if not enemy_root.is_alive() or not getattr(enemy_root, "deployed", True):
+                        continue
+                    try:
+                        if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if engagement_scope == "model":
+                            within_fn = getattr(root, "_model_within_engagement_range_of_unit", None)
+                            if not callable(within_fn) or not bool(within_fn(model, enemy_root)):
+                                continue
+                        elif not game_map.is_within_engagement_range(root, enemy_root):
+                            continue
+                    except Exception:
+                        continue
+                    candidates.append(enemy_root)
+                if not candidates:
+                    continue
                 ability_name = str(spec.get("source", "") or "Hammer Aflame (Psychic)").strip() or "Hammer Aflame (Psychic)"
+                ability_key = str(spec.get("ability_key", "") or "hammer_aflame").strip().lower() or "hammer_aflame"
                 options = [DecisionOption.create("None", payload={"action": "skip"})]
                 for cand in sorted(list(candidates), key=_unit_sort_key):
                     options.append(
@@ -8168,12 +8247,14 @@ class GameShootingFightHandlersMixin:
                     player_id=getattr(player, "id", None),
                     options=options,
                     context={
-                        "ability": "hammer_aflame",
+                        "ability": ability_key,
                         "ability_name": ability_name,
                         "phase": "Fight phase",
                         "source_unit_id": get_entity_id(root),
                         "unit_id": get_entity_id(root),
                         "model_id": model_id,
+                        "is_psychic_attack": bool(spec.get("is_psychic_attack", False)),
+                        "results": list(spec.get("results", []) or []),
                     },
                 )
                 self.request_decision(req)
