@@ -3099,6 +3099,7 @@ class GameShootingFightHandlersMixin:
                     "model_id": get_entity_id(model) if model is not None else None,
                     "ability_name": ability_name,
                     "source_key": spec.get("source_key"),
+                    "attack_types": list(spec.get("attack_types") or ("melee", "ranged")),
                 },
             )
             self.request_decision(request)

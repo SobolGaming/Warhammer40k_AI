@@ -1206,6 +1206,40 @@ class WargearProfile:
             return 0
         return int(extra)
 
+    def _critical_wound_extra_mortal_wounds(self, attacker: 'Model', target: 'Unit') -> tuple[int, str]:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None or target is None:
+            return 0, ""
+        get_specs = getattr(unit, "model_critical_wound_extra_mortal_specs", None)
+        if not callable(get_specs):
+            return 0, ""
+        for spec in list(get_specs(attacker) or []):
+            weapon_name = str(spec.get("weapon_name", "") or spec.get("weapon_key", "") or "").strip()
+            if weapon_name and not self._weapon_name_matches_for_attacker(attacker, weapon_name):
+                continue
+            excluded = False
+            for keyword in list(spec.get("exclude_keywords_any") or ()):
+                try:
+                    if bool(target.has_keyword(keyword)):
+                        excluded = True
+                        break
+                except Exception:
+                    continue
+            if excluded:
+                continue
+            mw_die = str(spec.get("mortal_wounds_die", "") or "").strip().upper()
+            if not mw_die:
+                continue
+            try:
+                mortal_wounds = int(get_roll(mw_die) or 0)
+            except Exception:
+                mortal_wounds = 0
+            if mortal_wounds <= 0:
+                continue
+            source = str(spec.get("source", "") or "Critical Wound").strip() or "Critical Wound"
+            return int(mortal_wounds), source
+        return 0, ""
+
     def _attacker_in_shadow_of_chaos(self, attacker: 'Model') -> bool:
         unit = getattr(attacker, "parent_unit", None)
         if unit is None:
@@ -10461,7 +10495,14 @@ class WargearProfile:
                 if sr.get("pain_suppressed_active"):
                     _add_hit_mod(-1, "-1 from Agonising Suppression (suppressed)")
                 if sr.get("post_shoot_suppressed_active"):
-                    _add_hit_mod(-1, "-1 from Suppressed")
+                    attack_types = {
+                        str(value or "").strip().lower()
+                        for value in list(sr.get("post_shoot_suppressed_attack_types", []) or [])
+                        if str(value or "").strip()
+                    }
+                    current_attack_type = str(attack_type or "").strip().lower()
+                    if not attack_types or current_attack_type in attack_types:
+                        _add_hit_mod(-1, "-1 from Suppressed")
                 get_owner_penalty = getattr(attacker.parent_unit, "get_owner_command_phase_attack_hit_penalty", None)
                 if callable(get_owner_penalty):
                     army = attacker.parent_unit.get_parent_army()
@@ -19536,6 +19577,14 @@ class WargearProfile:
             pass
 
         if wound_result.get("wound"):
+            if bool(attack_instance.get("crit_wound", False)):
+                crit_mortals, crit_source = self._critical_wound_extra_mortal_wounds(attacker, target)
+                if crit_mortals > 0:
+                    current_extra = int(attack_instance.get("successful_wound_extra_mortal_wounds", 0) or 0)
+                    attack_instance["successful_wound_extra_mortal_wounds"] = current_extra + crit_mortals
+                    wound_result["special_effects"].append(
+                        f"{crit_source}: {int(crit_mortals)} mortal wound(s) in addition"
+                    )
             extra_mortals = int(self._radiant_champion_extra_mortal_wounds(attacker) or 0)
             if extra_mortals > 0:
                 current_extra = int(attack_instance.get("successful_wound_extra_mortal_wounds", 0) or 0)
@@ -20309,6 +20358,147 @@ class WargearProfile:
                             condition_label = "Psychic/DAEMON attacks"
                             source = str(spec.get("source", "") or "Leading ability").strip() or "Leading ability"
                             attack_instance["inv_save_override_reason"] = f"{source} ({condition_label})"
+        except Exception:
+            pass
+        # Optional pre-save phase invulnerable activations (e.g. Distraction Grot).
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            get_sources = getattr(t_unit, "get_pre_save_phase_invulnerable_sources", None) if t_unit is not None else None
+            sources = list(get_sources() or []) if callable(get_sources) else []
+            if sources:
+                try:
+                    root = t_unit.get_attached_unit_root()
+                except Exception:
+                    root = t_unit
+                army = root.get_parent_army() if root is not None and hasattr(root, "get_parent_army") else None
+                player = getattr(army, "player", None) if army is not None else None
+                game = getattr(player, "game", None) if player is not None else None
+                is_ranged_attack = False
+                try:
+                    if self.parent_wargear is not None:
+                        is_ranged_attack = bool(self.parent_wargear.is_ranged())
+                except Exception:
+                    is_ranged_attack = False
+                if not is_ranged_attack:
+                    try:
+                        is_ranged_attack = bool(getattr(self, "range", None) and int(getattr(self.range, "max", 0) or 0) > 0)
+                    except Exception:
+                        is_ranged_attack = False
+                if game is not None and player is not None and is_ranged_attack and bool(getattr(game, "is_shooting_phase", lambda: False)()):
+                    current_player = getattr(game, "get_current_player", lambda: None)()
+                    owner_id = str(getattr(player, "id", "") or "")
+                    current_id = str(getattr(current_player, "id", "") or "")
+                    if owner_id and current_id and owner_id != current_id:
+                        root_id = str(get_entity_id(root) or "")
+
+                        def _normalize_usage_key(value: str) -> str:
+                            key = re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+                            return key or "pre_save_phase_invulnerable"
+
+                        for source_entry in list(sources or []):
+                            source = str(source_entry.get("source", "") or "Pre-save invulnerable save").strip() or "Pre-save invulnerable save"
+                            try:
+                                inv_value = int(source_entry.get("value", 0) or 0)
+                            except Exception:
+                                inv_value = 0
+                            usage_key = _normalize_usage_key(str(source_entry.get("usage_key", "") or source))
+                            if inv_value <= 0:
+                                continue
+                            has_used = getattr(root, "has_used_unit_once_per_battle", None)
+                            if callable(has_used) and bool(has_used(usage_key)):
+                                continue
+
+                            use_it = True
+                            if bool(source_entry.get("optional", False)):
+                                use_it = False
+                                try:
+                                    from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                                    from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+                                    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+                                except Exception:
+                                    use_it = False
+                                else:
+                                    request = DecisionRequest.create(
+                                        DECISION_CONFIRM_YES_NO,
+                                        f"{source}: use before this saving throw?",
+                                        player_id=getattr(player, "id", None),
+                                        options=[
+                                            DecisionOption.create("Use", payload={"choice": True}),
+                                            DecisionOption.create("Skip", payload={"choice": False}),
+                                        ],
+                                        context={
+                                            "ability": "distraction_grot",
+                                            "ability_name": source,
+                                            "unit_id": root_id or None,
+                                            "usage_key": usage_key,
+                                            "invuln": int(inv_value),
+                                        },
+                                    )
+                                    if hasattr(game, "request_decision"):
+                                        game.request_decision(request)
+                                    use_now = False
+                                    try:
+                                        use_now = bool(
+                                            getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
+                                                "DISTRACTION_GROT",
+                                                {
+                                                    "ability_name": source,
+                                                    "unit_id": root_id,
+                                                    "usage_key": usage_key,
+                                                    "invuln": int(inv_value),
+                                                },
+                                            )
+                                        )
+                                    except Exception:
+                                        use_now = False
+                                    option_id = None
+                                    for option in list(getattr(request, "options", []) or []):
+                                        payload = dict(getattr(option, "payload", {}) or {})
+                                        if bool(payload.get("choice", False)) == bool(use_now):
+                                            option_id = option.option_id
+                                            break
+                                    if option_id:
+                                        value, apply_result = resolve_decision_value(
+                                            game,
+                                            request,
+                                            option_id,
+                                            player_id=getattr(player, "id", None),
+                                        )
+                                        if apply_result is not None and getattr(apply_result, "ok", False):
+                                            if isinstance(value, dict):
+                                                use_it = bool(value.get("choice", bool(use_now)))
+                                            elif value is None:
+                                                use_it = bool(use_now)
+                                            else:
+                                                use_it = bool(value)
+                            if not use_it:
+                                continue
+
+                            try:
+                                models = list(root.get_attached_unit_models() or [])
+                            except Exception:
+                                models = list(getattr(root, "models", []) or [])
+                            temp_key = f"{usage_key}:{root_id}" if root_id else usage_key
+                            for model in list(models or []):
+                                if model is None:
+                                    continue
+                                alive_attr = getattr(model, "is_alive", True)
+                                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                                if not alive:
+                                    continue
+                                getattr(model, "set_temporary_invulnerable_save", lambda **_kw: None)(
+                                    key=temp_key,
+                                    value=int(inv_value),
+                                    source=source,
+                                    expires_phase="SHOOTING_PHASE",
+                                )
+                            mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
+                            if callable(mark_used):
+                                mark_used(usage_key, ability_name=source)
+                            save_result.setdefault("special_effects", []).append(
+                                f"{source}: unit gains a {int(inv_value)}+ invulnerable save until end of phase"
+                            )
+                            break
         except Exception:
             pass
         # Wargear abilities (e.g. "The bearer has a 4+ invulnerable save.").
@@ -22325,19 +22515,29 @@ class WargearProfile:
                     d_bonus = 0
                     unit = getattr(attacker, "parent_unit", None)
                     if unit is not None:
-                        fn = getattr(unit, "get_melee_damage_bonus_vs_monster_vehicle", None)
+                        fn = getattr(unit, "get_melee_damage_bonus_for_target", None)
                         if callable(fn):
-                            d_bonus = int(fn() or 0)
+                            d_bonus = int(fn(t_unit) or 0)
                         else:
-                            sr = getattr(unit, "special_rules", None)
-                            if isinstance(sr, dict):
-                                d_bonus = int(sr.get("melee_damage_bonus_vs_monster_vehicle", 0) or 0)
+                            legacy_fn = getattr(unit, "get_melee_damage_bonus_vs_monster_vehicle", None)
+                            if callable(legacy_fn):
+                                d_bonus = int(legacy_fn() or 0)
+                            else:
+                                sr = getattr(unit, "special_rules", None)
+                                if isinstance(sr, dict):
+                                    d_bonus = int(sr.get("melee_damage_bonus_vs_monster_vehicle", 0) or 0)
                     if d_bonus:
+                        target_label = "MONSTER/VEHICLE"
+                        try:
+                            if bool(t_unit.has_keyword("TITANIC")):
+                                target_label = "TITANIC"
+                        except Exception:
+                            pass
                         damage_mods.append(
                             Modifier(ModifierOp.ADD, int(d_bonus), source="ability:melee_damage_vs_monster_vehicle")
                         )
                         damage_result['special_effects'].append(
-                            f"+{d_bonus}D vs MONSTER/VEHICLE (melee)"
+                            f"+{d_bonus}D vs {target_label} (melee)"
                         )
         except Exception:
             pass

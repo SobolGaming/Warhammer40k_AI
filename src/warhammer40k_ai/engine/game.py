@@ -4702,6 +4702,13 @@ class Game(
             elif roll >= 6:
                 total_mw = int(get_roll("D3") or 0) + 3
             roll_summary = f"roll={roll}"
+        elif kind == "table_d6_2_5_6_flat3":
+            roll = int(get_roll("D6") or 0)
+            if 2 <= roll <= 5:
+                total_mw = int(get_roll("D3") or 0)
+            elif roll >= 6:
+                total_mw = 3
+            roll_summary = f"roll={roll}"
         elif kind == "single_4plus_die":
             try:
                 threshold = int(spec.get("threshold", 4) or 4)

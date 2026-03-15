@@ -7549,6 +7549,53 @@ def _orks_named_datasheet_support(name: str, description: str, *, faction_id: st
                 "Supported",
                 "Fight phase start: optional friendly ORKS unit within 12\" selection; roll 1 = self D3 mortal wounds, 2-5 = +1 Strength on melee weapons, 6 = +1 Strength and Lethal Hits on melee weapons until phase end.",
             )
+    if name_norm == "distraction grot":
+        if (
+            "once per battle" in norm
+            and "in your opponents shooting phase" in norm
+            and "before making a saving throw for a model in this unit" in norm
+            and "until the end of the phase models in this unit have a 5 invulnerable save" in norm
+        ):
+            return (
+                "Supported",
+                "Opponent Shooting phase before a saving throw: optional once-per-battle prompt activates a 5+ invulnerable save for models in the attached unit until phase end.",
+            )
+    if name_norm == "rivetin dakka":
+        if "rivet kannon" in norm and "makes a ranged attack" in norm and "that enemy unit is suppressed" in norm:
+            return (
+                "Supported",
+                "After shooting, suppress a hit enemy unit hit by the rivet kannon for -1 to hit with ranged attacks until your next turn.",
+            )
+    if name_norm == "drill through":
+        if "ends a charge move" in norm and "on a 2 5" in norm and "on a 6" in norm and "3 mortal wounds" in norm:
+            return (
+                "Supported",
+                "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-5=D3, 6=3).",
+            )
+    if name_norm == "one last kill":
+        if (
+            "while this model is leading a unit" in norm
+            and "is destroyed by a melee attack" in norm
+            and "roll one d6" in norm
+            and "on a 4" in norm
+            and "can fight after the attacking unit has finished making its attacks" in norm
+        ):
+            return (
+                "Supported",
+                "While leading, models destroyed by melee attacks can roll 4+ to fight after the attacker finishes its attacks.",
+            )
+    if name_norm == "da bigger dey iz":
+        if "targets a monster or vehicle unit" in norm and "targets a titanic unit" in norm:
+            return (
+                "Supported",
+                "Mozrog's melee attacks gain +1 Damage vs MONSTER/VEHICLE, or +2 instead vs TITANIC.",
+            )
+    if name_norm == "hold still and say aargh":
+        if "urty syringe" in norm and "scores a critical wound" in norm and "excluding vehicle units" in norm and "d6 mortal wounds" in norm:
+            return (
+                "Supported",
+                "Critical wounds with the 'Urty syringe inflict D6 mortal wounds in addition against non-VEHICLE units.",
+            )
     return None
 
 
@@ -9575,6 +9622,10 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         r"each time this model ends a charge move select one enemy unit within engagement range of (?:this model|it) "
         r"(?:then |and (?:then )?)?roll one d6 on a 2 5 that (?:enemy )?unit suffers d3 mortal wounds? on a 6 that (?:enemy )?unit suffers d3 3 mortal wounds?"
     )
+    table_2_5_flat3 = (
+        r"each time this model ends a charge move select one enemy unit within engagement range of (?:this model|it) "
+        r"(?:then |and (?:then )?)?roll one d6 on a 2 5 that (?:enemy )?unit suffers d3 mortal wounds? on a 6 that (?:enemy )?unit suffers 3 mortal wounds?"
+    )
     remaining_wounds = (
         r"each time this model ends a charge move select one enemy unit within engagement range of it "
         r"(?:then |and (?:then )?)?roll one d6 for each of this models remaining wounds for each 4 that enemy unit suffers 1 mortal wounds?"
@@ -9613,6 +9664,11 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         return (
             "Supported",
             "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-5=D3, 6=D3+3).",
+        )
+    if re.fullmatch(table_2_5_flat3, norm):
+        return (
+            "Supported",
+            "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-5=D3, 6=3).",
         )
     if re.fullmatch(remaining_wounds, norm):
         return (
@@ -12420,28 +12476,34 @@ def _post_shoot_suppression_support(description: str) -> Optional[Tuple[str, str
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    pattern = (
-        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit "
-        r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
-        r"(?:made with (?:(?:a|an|the|its)\s+)?(?P<weapon>[a-z0-9 ]+) )?"
-        r"(?:excluding monsters and vehicles )?until the start of your next turn that enemy unit is suppressed "
-        r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll"
-    )
-    m = re.fullmatch(pattern, norm)
-    if not m:
+    if not norm.startswith("in your shooting phase after this "):
         return None
-    weapon = str(m.group("weapon") or "").strip()
-    excluded_mv = bool(str(m.group("exclude") or "").strip()) or ("excluding monsters and vehicles" in norm)
+    if " has shot select one enemy unit " not in norm:
+        return None
+    if "hit by one or more of those attacks" not in norm:
+        return None
+    if "that enemy unit is suppressed" not in norm:
+        return None
+    if "subtract 1 from the hit roll" not in norm:
+        return None
+    weapon_match = re.search(
+        r"made with (?:(?:a|an|the|its)\s+)?(?P<weapon>[a-z0-9 ]+) until the start of your next turn that enemy unit is suppressed",
+        norm,
+    )
+    weapon = str(weapon_match.group("weapon") or "").strip() if weapon_match else ""
+    excluded_mv = "excluding monsters and vehicles" in norm
+    ranged_only = "makes a ranged attack subtract 1 from the hit roll" in norm
+    penalty_note = "-1 to hit with ranged attacks" if ranged_only else "-1 to hit"
     if excluded_mv:
         if weapon:
             return (
                 "Supported",
-                f"After shooting, suppress a hit enemy non-MONSTER/VEHICLE unit hit by {weapon} for -1 to hit until your next turn.",
+                f"After shooting, suppress a hit enemy non-MONSTER/VEHICLE unit hit by {weapon} for {penalty_note} until your next turn.",
             )
-        return ("Supported", "After shooting, suppress a hit enemy unit (not MONSTER/VEHICLE) for -1 to hit until your next turn.")
+        return ("Supported", f"After shooting, suppress a hit enemy unit (not MONSTER/VEHICLE) for {penalty_note} until your next turn.")
     if weapon:
-        return ("Supported", f"After shooting, suppress a hit enemy unit hit by {weapon} for -1 to hit until your next turn.")
-    return ("Supported", "After shooting, suppress a hit enemy unit for -1 to hit until your next turn.")
+        return ("Supported", f"After shooting, suppress a hit enemy unit hit by {weapon} for {penalty_note} until your next turn.")
+    return ("Supported", f"After shooting, suppress a hit enemy unit for {penalty_note} until your next turn.")
 
 
 def _post_shoot_reactive_move_no_charge_support(description: str) -> Optional[Tuple[str, str]]:
@@ -13741,6 +13803,7 @@ def _melee_fight_on_death_after_attacks_support(description: str) -> Optional[Tu
     if not norm:
         return None
     pattern = (
+        r"(?:while this model is leading a unit each time |each time |if )?"
         r"(?:each time |if )?(?:(?:an? )?[a-z0-9 ]+ model in this unit|a model in this unit|this model) "
         r"is destroyed by a melee attack if (?:that model|it) has not fought this phase "
         r"roll one d6 on a (?P<threshold>\d+) do not remove (?:it|this model|that destroyed model) from play "

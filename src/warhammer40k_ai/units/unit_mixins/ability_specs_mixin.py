@@ -4,6 +4,52 @@ from ._common import *
 
 
 class AbilitySpecsMixin:
+    @staticmethod
+    def _normalize_ability_text_for_matching(text: str) -> str:
+        normalized = str(text or "").replace("\u2019", "'").replace("\u0192?T", "'")
+        normalized = normalized.lower()
+        normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        return normalized
+
+    def _parse_post_shoot_suppression_spec(
+        self,
+        *,
+        normalized: str,
+        source: str,
+    ) -> Optional[dict]:
+        if not normalized:
+            return None
+        if not normalized.startswith("in your shooting phase after this "):
+            return None
+        if " has shot select one enemy " not in normalized:
+            return None
+        if "hit by one or more of those attacks" not in normalized:
+            return None
+        if "that enemy unit is suppressed" not in normalized:
+            return None
+        if "while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll" not in normalized and (
+            "while a unit is suppressed each time a model in that unit makes a ranged attack subtract 1 from the hit roll"
+            not in normalized
+        ):
+            return None
+        exclude_mv = "excluding monsters and vehicles" in normalized
+        weapon_match = re.search(
+            r"made with (?:(?:a|an|the|its)\s+)?(?P<weapon>[a-z0-9 ]+) until the start of your next turn that enemy unit is suppressed",
+            normalized,
+        )
+        weapon_raw = str(weapon_match.group("weapon") or "").strip() if weapon_match else ""
+        weapon_key = self._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+        ranged_only = "makes a ranged attack subtract 1 from the hit roll" in normalized
+        attack_types = ("ranged",) if ranged_only else ("melee", "ranged")
+        return {
+            "exclude_monster_vehicle": exclude_mv,
+            "weapon_key": weapon_key or None,
+            "weapon_name": weapon_raw or None,
+            "source": str(source or "Post-shoot Suppression").strip() or "Post-shoot Suppression",
+            "attack_types": tuple(sorted(set(attack_types))),
+        }
+
     def model_post_shoot_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: after this model has shot, select a hit enemy unit to take a Battle-shock test.
@@ -1761,7 +1807,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, bool, str]] = set()
+        seen: set[tuple[str, bool, str, tuple[str, ...]]] = set()
 
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
@@ -1769,29 +1815,23 @@ class AbilitySpecsMixin:
                 continue
             text_src = self._strip_eligibility_prefix(text_src)
             normalized = self._normalize_rules_text(text_src)
-            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
-            normalized = normalized.lower()
-            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
-            normalized = re.sub(r"\s+", " ", normalized).strip()
-            m = self._POST_SHOOT_SUPPRESSION_RE.fullmatch(normalized)
-            if not m:
+            normalized = self._normalize_ability_text_for_matching(normalized)
+            spec = self._parse_post_shoot_suppression_spec(
+                normalized=normalized,
+                source=str(name or "Post-shoot Suppression").strip() or "Post-shoot Suppression",
+            )
+            if spec is None:
                 continue
-            exclude_mv = bool(m.group("exclude")) or ("excluding monsters and vehicles" in normalized)
-            weapon_raw = str(m.group("weapon") or "").strip()
-            weapon_key = self._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
-            source = str(name or "Post-shoot Suppression").strip() or "Post-shoot Suppression"
-            key = (source.lower(), exclude_mv, weapon_key or "any")
+            key = (
+                str(spec.get("source", "") or "").strip().lower(),
+                bool(spec.get("exclude_monster_vehicle", False)),
+                str(spec.get("weapon_key", "") or "").strip().lower() or "any",
+                tuple(str(v or "").strip().lower() for v in list(spec.get("attack_types") or ()) if str(v or "").strip()),
+            )
             if key in seen:
                 continue
             seen.add(key)
-            specs.append(
-                {
-                    "exclude_monster_vehicle": exclude_mv,
-                    "weapon_key": weapon_key or None,
-                    "weapon_name": weapon_raw or None,
-                    "source": source,
-                }
-            )
+            specs.append(dict(spec))
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
@@ -1819,7 +1859,7 @@ class AbilitySpecsMixin:
 
         if base_specs is None:
             specs: list[dict] = []
-            seen: set[tuple[str, bool, str]] = set()
+            seen: set[tuple[str, bool, str, tuple[str, ...]]] = set()
             try:
                 members = list(root.get_attached_unit_members() or [])
             except Exception:
@@ -1834,29 +1874,23 @@ class AbilitySpecsMixin:
                         continue
                     text_src = u._strip_eligibility_prefix(text_src)
                     normalized = u._normalize_rules_text(text_src)
-                    normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
-                    normalized = normalized.lower()
-                    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
-                    normalized = re.sub(r"\s+", " ", normalized).strip()
-                    m = self._POST_SHOOT_SUPPRESSION_RE.fullmatch(normalized)
-                    if not m:
+                    normalized = self._normalize_ability_text_for_matching(normalized)
+                    spec = self._parse_post_shoot_suppression_spec(
+                        normalized=normalized,
+                        source=str(name or "Post-shoot Suppression").strip() or "Post-shoot Suppression",
+                    )
+                    if spec is None:
                         continue
-                    exclude_mv = bool(m.group("exclude")) or ("excluding monsters and vehicles" in normalized)
-                    weapon_raw = str(m.group("weapon") or "").strip()
-                    weapon_key = self._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
-                    source = str(name or "Post-shoot Suppression").strip() or "Post-shoot Suppression"
-                    key = (source.lower(), exclude_mv, weapon_key or "any")
+                    key = (
+                        str(spec.get("source", "") or "").strip().lower(),
+                        bool(spec.get("exclude_monster_vehicle", False)),
+                        str(spec.get("weapon_key", "") or "").strip().lower() or "any",
+                        tuple(str(v or "").strip().lower() for v in list(spec.get("attack_types") or ()) if str(v or "").strip()),
+                    )
                     if key in seen:
                         continue
                     seen.add(key)
-                    specs.append(
-                        {
-                            "exclude_monster_vehicle": exclude_mv,
-                            "weapon_key": weapon_key or None,
-                            "weapon_name": weapon_raw or None,
-                            "source": source,
-                        }
-                    )
+                    specs.append(dict(spec))
 
             if not hasattr(root, "_ability_cache"):
                 root._ability_cache = {}
@@ -1869,6 +1903,7 @@ class AbilitySpecsMixin:
                 str(spec.get("source", "") or "").strip().lower(),
                 bool(spec.get("exclude_monster_vehicle", False)),
                 str(spec.get("weapon_key", "") or "").strip().lower() or "any",
+                tuple(str(v or "").strip().lower() for v in list(spec.get("attack_types") or ()) if str(v or "").strip()),
             )
             for spec in specs
         }
@@ -1902,7 +1937,7 @@ class AbilitySpecsMixin:
                         return list(specs)
                 source = str(sr.get("unleash_hell_source", "") or "Unleash Hell").strip() or "Unleash Hell"
                 exclude_mv = bool(sr.get("unleash_hell_exclude_monster_vehicle", False))
-                key = (source.lower(), exclude_mv, "any")
+                key = (source.lower(), exclude_mv, "any", ("melee", "ranged"))
                 if key not in seen:
                     specs.append(
                         {
@@ -1911,8 +1946,133 @@ class AbilitySpecsMixin:
                             "weapon_name": None,
                             "source": source,
                             "source_key": "unleash_hell",
+                            "attack_types": ("melee", "ranged"),
                         }
                     )
+        return list(specs)
+
+    def get_pre_save_phase_invulnerable_sources(self) -> list[dict]:
+        """Return optional pre-save phase invulnerable-save activations."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "pre_save_phase_invulnerable_sources"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        pattern = (
+            r"once per battle in your opponent s shooting phase before making a saving throw for a model in this unit "
+            r"it can deploy the distraction grot if it does until the end of the phase models in this unit have a "
+            r"(?P<inv>\d) invulnerable save(?: designers note .+)?"
+        )
+        sources: list[dict] = []
+        seen: set[str] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = self._normalize_ability_text_for_matching(unit._normalize_rules_text(text_src))
+                match = re.fullmatch(pattern, normalized)
+                if not match:
+                    continue
+                source = str(name or "Pre-save invulnerable save").strip() or "Pre-save invulnerable save"
+                key = source.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                try:
+                    inv_value = int(match.group("inv") or 0)
+                except (TypeError, ValueError):
+                    inv_value = 0
+                if inv_value <= 0:
+                    continue
+                sources.append(
+                    {
+                        "source": source,
+                        "value": int(inv_value),
+                        "phase": "SHOOTING_PHASE",
+                        "opponent_turn_only": True,
+                        "usage_scope": "battle",
+                        "usage_key": "distraction_grot",
+                        "optional": True,
+                    }
+                )
+
+        if not isinstance(cache, dict):
+            root._ability_cache = {}
+            cache = root._ability_cache
+        cache[cache_key] = list(sources)
+        return list(sources)
+
+    def model_critical_wound_extra_mortal_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: a critical wound with a named weapon inflicts extra mortal wounds on the target unit.
+
+        Returns specs with keys:
+            - weapon_key: normalized weapon name
+            - weapon_name: display weapon name
+            - mortal_wounds_die: die expression or flat value
+            - exclude_keywords_any: tuple[str, ...]
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_critical_wound_extra_mortal:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        pattern = (
+            r"each time an attack made by this model with its (?P<weapon>[a-z0-9 ]+) scores a critical wound against a unit "
+            r"(?:excluding (?P<exclude>[a-z0-9 ]+) units )?that unit suffers (?P<mw>d3|d6|\d+) mortal wounds?"
+        )
+        specs: list[dict] = []
+        seen: set[tuple[str, str, str, tuple[str, ...]]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_ability_text_for_matching(self._normalize_rules_text(text_src))
+            match = re.fullmatch(pattern, normalized)
+            if not match:
+                continue
+            weapon_raw = str(match.group("weapon") or "").strip()
+            weapon_key = self._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+            mw_die = str(match.group("mw") or "").strip().upper()
+            exclude_keywords: tuple[str, ...] = ()
+            exclude_raw = str(match.group("exclude") or "").strip().lower()
+            if exclude_raw:
+                pieces = [p.strip().upper() for p in re.split(r"\s+or\s+|\s+and\s+", exclude_raw) if p.strip()]
+                exclude_keywords = tuple(sorted(dict.fromkeys(pieces)))
+            source = str(name or "Critical wound mortals").strip() or "Critical wound mortals"
+            key = (source.lower(), weapon_key or "", mw_die, exclude_keywords)
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "weapon_key": weapon_key or None,
+                    "weapon_name": weapon_raw or None,
+                    "mortal_wounds_die": mw_die,
+                    "exclude_keywords_any": exclude_keywords,
+                    "source": source,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def unit_post_shoot_afflicted_specs(self) -> List[dict]:

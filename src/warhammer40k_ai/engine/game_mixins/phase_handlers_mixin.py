@@ -4133,6 +4133,7 @@ class GamePhaseHandlersMixin:
                         "post_shoot_suppressed_owner",
                         "post_shoot_suppressed_turn",
                         "post_shoot_suppressed_source",
+                        "post_shoot_suppressed_attack_types",
                         ):
                             sr.pop(key, None)
                     unit.special_rules = sr

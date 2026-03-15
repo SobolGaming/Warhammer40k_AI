@@ -2646,6 +2646,12 @@ class RulesParsingMixin:
                     kind = "table_d6_2_3_4_5_6"
                 elif self._CHARGE_END_MORTAL_TABLE_2_5_D3_RE.search(text):
                     kind = "table_d6_2_5_6"
+                elif re.search(
+                    r"roll one d6 on a 2 5 that (?:enemy )?unit suffers d3 mortal wounds on a 6 that (?:enemy )?unit suffers 3 mortal wounds",
+                    low_compact,
+                    flags=re.IGNORECASE,
+                ):
+                    kind = "table_d6_2_5_6_flat3"
                 if not kind:
                     continue
                 battle_shock_on_models_destroyed = bool(
@@ -3111,6 +3117,10 @@ class RulesParsingMixin:
                     continue
                 text = text.replace("\u2019", "'").replace("\u0192?T", "'")
                 text_lower = text.lower()
+                conditional_pre_save_invuln_ability = bool(
+                    "once per battle" in text_lower
+                    and "before making a saving throw" in text_lower
+                )
                 requires_attached_leader = bool(
                     re.search(r"\b(?:this model|the bearer|bearer|this unit)\s+is\s+leading\b", text_lower)
                     or re.search(r"\bleading\s+a\s+unit\b", text_lower)
@@ -3525,7 +3535,7 @@ class RulesParsingMixin:
                             source = str(name or "Unit contains ability").strip() or "Unit contains ability"
                             invuln_entries.append({"value": int(val), "source": source})
 
-                    if not unit_contains_invuln_matched:
+                    if not unit_contains_invuln_matched and not conditional_pre_save_invuln_ability:
                         m = self._BEARER_UNIT_INVULNERABLE_SAVE_RE.search(sentence)
                         if not m:
                             m = re.search(

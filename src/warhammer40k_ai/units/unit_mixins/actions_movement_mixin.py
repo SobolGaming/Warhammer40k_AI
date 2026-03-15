@@ -7141,7 +7141,8 @@ class ActionsMovementMixin:
             norm = self._normalize_rules_text(text)
             if not norm:
                 return 0
-            key = (str(name or "").strip().lower(), norm.lower())
+            norm_lower = norm.lower()
+            key = (str(name or "").strip().lower(), norm_lower)
             if key in seen:
                 return 0
             seen.add(key)
@@ -7200,6 +7201,104 @@ class ActionsMovementMixin:
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = int(bonus or 0)
+        return int(bonus or 0)
+
+    def get_melee_damage_bonus_for_target(self, target_unit: Optional['Unit'] = None) -> int:
+        """
+        Return bonus Damage for melee attacks against a specific target unit.
+
+        Falls back to the generic MONSTER/VEHICLE bonus lookup when no target is supplied.
+        """
+        if target_unit is None:
+            return int(self.get_melee_damage_bonus_vs_monster_vehicle() or 0)
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+
+        def _target_has_keyword(keyword: str) -> bool:
+            try:
+                return bool(target_unit.has_keyword(keyword))
+            except Exception:
+                return bool(getattr(target_unit, f"is_{str(keyword or '').strip().lower()}", False))
+
+        seen: set[tuple[str, str]] = set()
+
+        def _scan(text: str, name: str = "") -> int:
+            if not text:
+                return 0
+            norm = self._normalize_rules_text(text)
+            if not norm:
+                return 0
+            norm_lower = norm.lower()
+            key = (str(name or "").strip().lower(), norm_lower)
+            if key in seen:
+                return 0
+            seen.add(key)
+            total = 0
+            for rule in self._parse_attack_roll_rules_from_text(text):
+                if rule.scope not in ("unit", "leading"):
+                    continue
+                if rule.subject not in ("model_in_this_unit", "model_in_that_unit", "this_model"):
+                    continue
+                if rule.attack_type not in ("melee", "any"):
+                    continue
+                for eff in rule.effects:
+                    if eff.roll != "damage" or eff.kind != "add":
+                        continue
+                    if not self._attack_condition_met(eff.condition, target=target_unit, source_unit=root):
+                        continue
+                    try:
+                        total += int(eff.value or 0)
+                    except Exception:
+                        continue
+
+            if _target_has_keyword("TITANIC"):
+                titanic_match = re.search(
+                    r"each time (?:this model|a model in this unit) makes a melee attack that targets a titanic unit"
+                    r",?\s*add (?P<bonus>\d+) to the damage characteristic of that attack instead",
+                    norm_lower,
+                )
+                if titanic_match:
+                    try:
+                        total = max(total, int(titanic_match.group("bonus") or 0))
+                    except Exception:
+                        pass
+            return int(total or 0)
+
+        bonus = 0
+        for ab in root._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    bonus += _scan(ab, "")
+                else:
+                    desc = str(getattr(ab, "description", "") or "")
+                    name = str(getattr(ab, "name", "") or "")
+                    if desc:
+                        bonus += _scan(desc, name)
+                    else:
+                        bonus += _scan(name, name)
+            except Exception:
+                continue
+
+        try:
+            for ab, _leader in root._iter_attached_leader_leading_abilities():
+                try:
+                    if isinstance(ab, str):
+                        bonus += _scan(ab, "")
+                    else:
+                        desc = str(getattr(ab, "description", "") or "")
+                        name = str(getattr(ab, "name", "") or "")
+                        if desc:
+                            bonus += _scan(desc, name)
+                        else:
+                            bonus += _scan(name, name)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
         return int(bonus or 0)
 
     def get_melee_charge_strength_damage_entries(self) -> list[dict]:

@@ -23689,6 +23689,13 @@ def _apply_post_shoot_suppression_target(game: object, request: DecisionRequest,
             player = attacker_unit.get_parent_army().player
         except Exception:
             player = None
+    attack_types = tuple(
+        str(value or "").strip().lower()
+        for value in list(ctx.get("attack_types") or payload.get("attack_types") or ())
+        if str(value or "").strip()
+    )
+    if not attack_types:
+        attack_types = ("melee", "ranged")
     owner_id = str(getattr(player, "id", "") or "")
     current_turn = int(getattr(game, "turn", 0) or 0)
 
@@ -23713,6 +23720,8 @@ def _apply_post_shoot_suppression_target(game: object, request: DecisionRequest,
         sr["post_shoot_suppressed_active"] = True
         sr["post_shoot_suppressed_owner"] = owner_id
         sr["post_shoot_suppressed_turn"] = int(current_turn)
+        sr["post_shoot_suppressed_source"] = ability_name
+        sr["post_shoot_suppressed_attack_types"] = list(dict.fromkeys(attack_types))
         unit.special_rules = sr
 
     try:
