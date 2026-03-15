@@ -155,6 +155,109 @@ class VoiceOfCommandManager:
             pass
         return True
 
+    def _transport_has_mobile_command_vehicle(self, transport_unit) -> bool:
+        if transport_unit is None:
+            return False
+        for ab in self._iter_unit_abilities(transport_unit):
+            try:
+                text = ab if isinstance(ab, str) else getattr(ab, "description", "")
+                if not text:
+                    text = ab if isinstance(ab, str) else getattr(ab, "name", "")
+            except Exception:
+                continue
+            norm = self._normalize_order_text(str(text or ""))
+            if (
+                "in your command phase" in norm
+                and "embarked within this transport can issue orders" in norm
+                and "measure distances to and from this transport" in norm
+            ):
+                return True
+        return False
+
+    def _mobile_command_vehicle_selected_officer_id(self, transport_unit, battle_round: int) -> str:
+        if transport_unit is None or battle_round <= 0:
+            return ""
+        sr = getattr(transport_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        try:
+            selected_round = int(sr.get("mobile_command_vehicle_round", -1) or -1)
+        except Exception:
+            selected_round = -1
+        if selected_round != int(battle_round):
+            sr.pop("mobile_command_vehicle_round", None)
+            sr.pop("mobile_command_vehicle_officer_id", None)
+            transport_unit.special_rules = sr
+            return ""
+        return str(sr.get("mobile_command_vehicle_officer_id", "") or "").strip()
+
+    def _mark_mobile_command_vehicle_selected_officer(self, transport_unit, battle_round: int, officer_unit) -> None:
+        if transport_unit is None or officer_unit is None or battle_round <= 0:
+            return
+        sr = getattr(transport_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["mobile_command_vehicle_round"] = int(battle_round)
+        sr["mobile_command_vehicle_officer_id"] = str(get_entity_id(officer_unit) or "").strip()
+        transport_unit.special_rules = sr
+
+    def _mobile_command_vehicle_transport(
+        self,
+        officer_unit,
+        *,
+        phase_name: str = "",
+        battle_round: int = 0,
+        game=None,
+    ):
+        if officer_unit is None:
+            return None
+        try:
+            if hasattr(officer_unit, "is_alive") and callable(officer_unit.is_alive) and not officer_unit.is_alive():
+                return None
+        except Exception:
+            return None
+        if not bool(getattr(officer_unit, "deployed", True)):
+            return None
+        reserve_status = str(getattr(officer_unit, "reserve_status", "deployed") or "deployed").strip().lower()
+        if reserve_status not in ("deployed", "embarked"):
+            return None
+        transport = getattr(officer_unit, "embarked_in", None)
+        if transport is None:
+            return None
+        if not self._transport_has_mobile_command_vehicle(transport):
+            return None
+        pname = str(phase_name or "").strip().upper()
+        if not pname:
+            game_obj = game
+            if game_obj is None:
+                try:
+                    army = officer_unit.get_parent_army()
+                except Exception:
+                    army = None
+                game_obj = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            pname = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return None
+        if not self._unit_is_available(transport):
+            return None
+        if battle_round <= 0:
+            game_obj = game
+            if game_obj is None:
+                try:
+                    army = officer_unit.get_parent_army()
+                except Exception:
+                    army = None
+                game_obj = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            try:
+                battle_round = int(getattr(game_obj, "turn", 0) or 0)
+            except Exception:
+                battle_round = 0
+        officer_id = str(get_entity_id(officer_unit) or "").strip()
+        selected_officer_id = self._mobile_command_vehicle_selected_officer_id(transport, battle_round)
+        if selected_officer_id and officer_id and selected_officer_id != officer_id:
+            return None
+        return transport
+
     def _unit_is_battleshocked(self, unit) -> bool:
         try:
             if hasattr(unit, "is_battle_shocked") and callable(unit.is_battle_shocked):
@@ -1030,7 +1133,13 @@ class VoiceOfCommandManager:
                 continue
             if not self._unit_is_officer(unit):
                 continue
-            if not self._unit_is_available(unit):
+            mobile_command_transport = self._mobile_command_vehicle_transport(
+                unit,
+                phase_name=phase_name,
+                battle_round=battle_round,
+                game=game,
+            )
+            if not self._unit_is_available(unit) and mobile_command_transport is None:
                 continue
             if self._unit_is_battleshocked(unit):
                 continue
@@ -1051,6 +1160,17 @@ class VoiceOfCommandManager:
                 game = None
         game_map = getattr(game, "map", None) if game is not None else None
         if game_map is None:
+            return []
+        try:
+            battle_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        except Exception:
+            battle_round = 0
+        order_anchor = self._mobile_command_vehicle_transport(
+            officer_unit,
+            battle_round=battle_round,
+            game=game,
+        )
+        if order_anchor is None and not self._unit_is_available(officer_unit):
             return []
 
         _, keywords, _ = self._parse_orders_profile(officer_unit)
@@ -1079,7 +1199,7 @@ class VoiceOfCommandManager:
 
         out = []
         try:
-            friendlies = list(game_map.get_friendly_units(officer_unit))
+            friendlies = list(game_map.get_friendly_units(order_anchor or officer_unit))
         except Exception:
             friendlies = []
         seen = set()
@@ -1108,14 +1228,12 @@ class VoiceOfCommandManager:
                 except Exception:
                     continue
             try:
-                dist = float(game_map.get_distance_between_units(officer_unit, root))
+                dist = float(game_map.get_distance_between_units(order_anchor or officer_unit, root))
             except Exception:
                 dist = 999.0
             if dist > float(max_range):
                 continue
             out.append(root)
-
-        battle_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
         pending_bombast = self._bombast_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
         if pending_bombast:
             pending_order = str(pending_bombast.get("order_key", "") or "").strip().upper()
@@ -1315,7 +1433,17 @@ class VoiceOfCommandManager:
             return False
         if not self._unit_is_officer(officer_unit):
             return False
-        if not self._unit_is_available(officer_unit):
+        try:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        order_anchor = self._mobile_command_vehicle_transport(
+            officer_unit,
+            phase_name=phase_name,
+            battle_round=battle_round,
+            game=game,
+        )
+        if not self._unit_is_available(officer_unit) and order_anchor is None:
             return False
         if self._unit_is_battleshocked(officer_unit):
             return False
@@ -1329,10 +1457,6 @@ class VoiceOfCommandManager:
             return False
         if allowed and order_key not in allowed and order_key not in enhancement_order_keys:
             return False
-        try:
-            battle_round = int(getattr(game, "turn", 0) or 0)
-        except Exception:
-            battle_round = 0
         trigger_key = str(trigger or "").strip().lower()
         reactive_trigger = trigger_key == "reactive_command_setup"
         pending_bombast = self._bombast_pending_state(officer_unit, battle_round) if battle_round > 0 else {}
@@ -1428,6 +1552,8 @@ class VoiceOfCommandManager:
             source_id = ""
 
         self._apply_order_to_unit_and_attached(target_unit, order_key, owner_id, source_id)
+        if order_anchor is not None:
+            self._mark_mobile_command_vehicle_selected_officer(order_anchor, battle_round, officer_unit)
         additional_order_key = self._stalwarts_honours_additional_order_key(target_unit)
         if additional_order_key and additional_order_key != order_key:
             self._apply_additional_order_to_unit_and_attached(target_unit, additional_order_key)

@@ -1347,6 +1347,90 @@ class TestVoiceOfCommand(unittest.TestCase):
         )
         self.assertFalse(bool(capped_save.get("saved")))
 
+    def test_mobile_command_vehicle_uses_transport_range_and_locks_to_one_embarked_officer(self):
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
+
+        orders_text = "This model can issue 2 orders to REGIMENT units within 6\"."
+        mobile_command_vehicle_text = (
+            "In your Command phase, one OFFICER model embarked within this Transport can issue Orders even though it "
+            "is not on the battlefield. When doing so, measure distances to and from this Transport."
+        )
+
+        class _DistanceMap:
+            def __init__(self, friendlies, distances):
+                self._friendlies = list(friendlies or [])
+                self._distances = dict(distances or {})
+
+            def get_friendly_units(self, _unit):
+                return list(self._friendlies)
+
+            def get_distance_between_units(self, unit_a, unit_b):
+                key = (getattr(unit_a, "name", ""), getattr(unit_b, "name", ""))
+                return float(self._distances.get(key, self._distances.get((key[1], key[0]), 99.0)))
+
+        army = _ArmyStub()
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        transport = _UnitStub(
+            "Chimera",
+            keywords=["VEHICLE", "TRANSPORT", "ASTRA MILITARUM"],
+            abilities=[_Ability("Mobile Command Vehicle", mobile_command_vehicle_text)],
+            army=army,
+        )
+        officer_a = _UnitStub(
+            "Officer A",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text)],
+            army=army,
+        )
+        officer_b = _UnitStub(
+            "Officer B",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text)],
+            army=army,
+        )
+        regiment = _UnitStub(
+            "Infantry",
+            keywords=["REGIMENT", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+
+        officer_a.embarked_in = transport
+        officer_a.reserve_status = "embarked"
+        officer_b.embarked_in = transport
+        officer_b.reserve_status = "embarked"
+
+        army.units = [transport, officer_a, officer_b, regiment]
+        for unit in army.units:
+            unit.set_parent_army(army)
+
+        game_map = _DistanceMap(
+            [transport, regiment],
+            {
+                ("Chimera", "Infantry"): 5.0,
+                ("Officer A", "Infantry"): 99.0,
+                ("Officer B", "Infantry"): 99.0,
+            },
+        )
+        game = SimpleNamespace(turn=1, phase=SimpleNamespace(name="COMMAND_PHASE"), map=game_map)
+        army.player.game = game
+
+        eligible_officers = list(mgr.get_eligible_officers(game=game, player=army.player, phase_name="COMMAND_PHASE"))
+        self.assertEqual([unit.name for unit in eligible_officers], ["Officer A", "Officer B"])
+
+        eligible_targets = list(mgr.get_eligible_targets(officer_a, game=game, order_key=ORDER_MOVE.key))
+        self.assertEqual([unit.name for unit in eligible_targets], ["Infantry"])
+
+        self.assertTrue(mgr.issue_order(game, officer_a, regiment, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+        self.assertEqual(regiment.special_rules.get("voice_of_command_order_key"), ORDER_MOVE.key)
+
+        locked_officers = list(mgr.get_eligible_officers(game=game, player=army.player, phase_name="COMMAND_PHASE"))
+        self.assertEqual([unit.name for unit in locked_officers], ["Officer A"])
+        self.assertFalse(mgr.issue_order(game, officer_b, regiment, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+
 
 if __name__ == "__main__":
     unittest.main()

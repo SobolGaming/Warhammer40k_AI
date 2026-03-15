@@ -2985,6 +2985,7 @@ class RulesParsingMixin:
                     "bearer_unit_benefit_of_cover",
                     "bearer_unit_target_hit_penalties",
                     "bearer_unit_assault_ranged",
+                    "bearer_unit_assault_ranged_entries",
                     "bearer_unit_pile_in_distance_override",
                     "bearer_unit_consolidate_distance_override",
                     "bearer_unit_consolidate_requires_engagement",
@@ -3046,6 +3047,8 @@ class RulesParsingMixin:
         benefit_of_cover_seen: set[tuple[str, str]] = set()
         hit_penalties: list[dict] = []
         assault_ranged = False
+        assault_ranged_entries: list[dict] = []
+        assault_ranged_seen: set[tuple[str, str]] = set()
         pile_in_distance_override = 0
         consolidate_distance_override = 0
         consolidate_requires_engagement = False
@@ -3606,7 +3609,25 @@ class RulesParsingMixin:
                         source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                         ignores_cover_sources.add(source)
                     if self._BEARER_UNIT_ASSAULT_RANGED_RE.search(sentence):
-                        assault_ranged = True
+                        required_keyword = ""
+                        contains_match = re.search(
+                            r"while\s+(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit|this\s+model'?s\s+unit)\s+contains\s+an?\s+([a-z0-9 ]+?)\s*(?:,|ranged\s+weapons)",
+                            sentence,
+                            flags=re.IGNORECASE,
+                        )
+                        if contains_match:
+                            required_keyword = str(contains_match.group(1) or "").strip().upper()
+                        entry_key = (source.lower(), required_keyword)
+                        if entry_key not in assault_ranged_seen:
+                            assault_ranged_seen.add(entry_key)
+                            assault_ranged_entries.append(
+                                {
+                                    "source": source,
+                                    "requires_contains_keyword": required_keyword or None,
+                                }
+                            )
+                        if not required_keyword:
+                            assault_ranged = True
 
                     objective_cover_matched = False
                     m = self._CONTAINS_KEYWORD_OBJECTIVE_RANGE_BENEFIT_OF_COVER_RE.search(sentence)
@@ -4125,6 +4146,14 @@ class RulesParsingMixin:
                         break
         except Exception:
             pass
+
+        if assault_ranged_entries:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_assault_ranged_entries"] = list(assault_ranged_entries)
+                u.special_rules = sr
 
         if assault_ranged:
             for u in members:

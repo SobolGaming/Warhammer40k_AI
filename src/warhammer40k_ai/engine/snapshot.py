@@ -118,6 +118,7 @@ _UNIT_ROUND_FIELDS = [
     "reinforced_this_round",
     "attempted_charge_this_round",
     "charged_this_round",
+    "was_charged_this_round",
     "charged_turn",
     "charged_turn_owner",
     "charge_bonus_suppressed_turn",

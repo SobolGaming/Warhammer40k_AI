@@ -6048,6 +6048,8 @@ class AbilitySpecsMixin:
                 if key in seen:
                     continue
                 seen.add(key)
+                once_per_battle_round = bool(m.group("per_round"))
+                destroy_target_model_count = 1 if str(m.group("destroy_one") or "").strip() else 0
                 specs.append(
                     {
                         "source": source,
@@ -6055,6 +6057,9 @@ class AbilitySpecsMixin:
                         "keyword": keyword_raw,
                         "model_name": model_name,
                         "ability_key": ability_key,
+                        "once_per_battle": not once_per_battle_round,
+                        "once_per_battle_round": once_per_battle_round,
+                        "destroy_target_model_count": int(destroy_target_model_count),
                     }
                 )
 

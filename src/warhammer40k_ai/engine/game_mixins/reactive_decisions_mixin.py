@@ -2298,6 +2298,7 @@ class GameReactiveDecisionsMixin:
             "requires_bearer_alive": bool(spec.get("requires_bearer_alive", False)),
             "requires_target_battle_shocked": bool(spec.get("requires_target_battle_shocked", True)),
             "mortal_wounds_roll": str(spec.get("mortal_wounds_roll", "") or "").strip().upper(),
+            "destroy_target_model_count": int(spec.get("destroy_target_model_count", 0) or 0),
             "source_model_id": str(spec.get("source_model_id", "") or "").strip(),
         }
         prompt = str(spec.get("selection_prompt", "") or "").strip()

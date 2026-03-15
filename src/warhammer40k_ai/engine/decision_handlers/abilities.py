@@ -23613,6 +23613,111 @@ def _apply_battleshock_clear_target(game: object, request: DecisionRequest, resu
             ability_name=ability_name,
             player=player,
         )
+    try:
+        destroy_target_model_count = int(ctx.get("destroy_target_model_count", 0) or 0)
+    except (TypeError, ValueError):
+        destroy_target_model_count = 0
+    if destroy_target_model_count > 0:
+        try:
+            models = list(target_root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(target_root, "models", []) or [])
+        models = [m for m in list(models or []) if _model_is_alive(m)]
+        try:
+            models.sort(key=lambda m: str(get_entity_id(m)))
+        except Exception:
+            pass
+        if not models:
+            return target_root
+        if len(models) == 1:
+            try:
+                models[0].die(game_map=getattr(game, "map", None))
+            except Exception:
+                pass
+            cleared = False
+            is_battle_shocked = getattr(target_root, "is_battle_shocked", None)
+            clear_battle_shock = getattr(target_root, "clear_battle_shock", None)
+            if _unit_is_on_battlefield(target_root) and callable(is_battle_shocked) and bool(is_battle_shocked()) and callable(clear_battle_shock):
+                cleared = bool(clear_battle_shock())
+            if bool(ctx.get("once_per_battle_round", False)) and source_model is not None:
+                mark_used_round = getattr(source_model, "mark_used_once_per_battle_round", None)
+                if callable(mark_used_round):
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except (TypeError, ValueError):
+                        current_turn = 0
+                    if current_turn > 0:
+                        mark_used_round(
+                            ability_key,
+                            battle_round=int(current_turn),
+                            ability_name=ability_name,
+                            source="datasheet",
+                        )
+            elif source_root is not None:
+                mark_used = getattr(source_root, "mark_unit_once_per_battle_used", None)
+                if callable(mark_used):
+                    mark_used(ability_key, ability_name=ability_name)
+            target_name = getattr(target_root, "name", "Unit")
+            destroyed_name = getattr(models[0], "name", "a model")
+            if player is not None:
+                from ...utility.event_bus import append_action
+
+                if cleared:
+                    append_action(player, f"{ability_name}: {target_name} loses {destroyed_name} and clears Battle-shock.")
+                elif _unit_is_on_battlefield(target_root):
+                    append_action(player, f"{ability_name}: {target_name} loses {destroyed_name} but remains Battle-shocked.")
+                else:
+                    append_action(player, f"{ability_name}: {target_name} loses {destroyed_name} and is destroyed.")
+            return target_root
+
+        from ...engine.decision_kinds import DECISION_SELECT_TARGET_MODEL
+        from ...engine.decisions import DecisionOption
+
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_SELECT_TARGET_MODEL:
+                    continue
+                req_ctx = dict(getattr(req, "context", {}) or {})
+                if (
+                    str(req_ctx.get("selection_kind", "") or "") == "battleshock_clear_destroy_model"
+                    and str(req_ctx.get("target_unit_id", "") or "") == str(get_entity_id(target_root) or "")
+                ):
+                    return target_root
+
+        options = [
+            DecisionOption.create(
+                str(getattr(model, "name", "Model") or "Model"),
+                payload={"model_id": get_entity_id(model)},
+            )
+            for model in list(models or [])
+        ]
+        if not options:
+            return target_root
+        try:
+            target_player = getattr(target_root.get_parent_army(), "player", None)
+        except Exception:
+            target_player = None
+        followup_ctx = {
+            "selection_kind": "battleshock_clear_destroy_model",
+            "target_unit_id": get_entity_id(target_root),
+            "source_unit_id": get_entity_id(source_root) if source_root is not None else "",
+            "source_model_id": get_entity_id(source_model) if source_model is not None else "",
+            "ability_name": ability_name,
+            "ability_key": ability_key,
+            "once_per_battle": bool(ctx.get("once_per_battle", True)),
+            "once_per_battle_round": bool(ctx.get("once_per_battle_round", False)),
+        }
+        req = DecisionRequest.create(
+            DECISION_SELECT_TARGET_MODEL,
+            f"{ability_name}: select a model to destroy.",
+            player_id=getattr(target_player, "id", None),
+            options=options,
+            context=followup_ctx,
+        )
+        if game is not None and hasattr(game, "request_decision"):
+            game.request_decision(req)
+        return target_root
     cleared = False
     is_battle_shocked = getattr(target_root, "is_battle_shocked", None)
     clear_battle_shock = getattr(target_root, "clear_battle_shock", None)

@@ -356,11 +356,69 @@ def _apply_select_model(game: object, request: DecisionRequest, result: Decision
     model = resolve_model(game, model_val)
     ctx = dict(getattr(request, "context", {}) or {})
     selection_kind = str(ctx.get("selection_kind", "") or "")
-    if selection_kind in {"cankerblight_destroy", "fear_made_manifest_destroy"} and model is not None:
+    if selection_kind in {"cankerblight_destroy", "fear_made_manifest_destroy", "battleshock_clear_destroy_model"} and model is not None:
         try:
             model.die(game_map=getattr(game, "map", None))
         except Exception:
             pass
+        if selection_kind == "battleshock_clear_destroy_model":
+            target_unit = resolve_unit(game, ctx.get("target_unit_id"))
+            ability_name = str(ctx.get("ability_name", "") or "Battle-shock clear").strip() or "Battle-shock clear"
+            ability_key = str(ctx.get("ability_key", "") or "start_any_phase_clear_battleshock").strip().lower()
+            source_unit = resolve_unit(game, ctx.get("source_unit_id"))
+            source_model = resolve_model(game, ctx.get("source_model_id"))
+            cleared = False
+            if target_unit is not None:
+                try:
+                    if hasattr(target_unit, "get_attached_unit_root"):
+                        target_unit = target_unit.get_attached_unit_root()
+                except Exception:
+                    pass
+                is_battle_shocked = getattr(target_unit, "is_battle_shocked", None)
+                clear_battle_shock = getattr(target_unit, "clear_battle_shock", None)
+                try:
+                    target_alive = bool(target_unit.is_alive())
+                except Exception:
+                    target_alive = True
+                if target_alive and callable(is_battle_shocked) and bool(is_battle_shocked()) and callable(clear_battle_shock):
+                    cleared = bool(clear_battle_shock())
+            if bool(ctx.get("once_per_battle_round", False)) and source_model is not None:
+                mark_used_round = getattr(source_model, "mark_used_once_per_battle_round", None)
+                if callable(mark_used_round):
+                    try:
+                        battle_round = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        battle_round = 0
+                    if battle_round > 0:
+                        mark_used_round(
+                            ability_key,
+                            battle_round=int(battle_round),
+                            ability_name=ability_name,
+                            source="datasheet",
+                        )
+            elif source_unit is not None:
+                try:
+                    if hasattr(source_unit, "get_attached_unit_root"):
+                        source_unit = source_unit.get_attached_unit_root()
+                except Exception:
+                    pass
+                mark_used = getattr(source_unit, "mark_unit_once_per_battle_used", None)
+                if callable(mark_used):
+                    mark_used(ability_key, ability_name=ability_name)
+            try:
+                player = getattr(source_unit.get_parent_army(), "player", None) if source_unit is not None else None
+            except Exception:
+                player = None
+            if player is not None and target_unit is not None:
+                from ...utility.event_bus import append_action
+
+                target_name = getattr(target_unit, "name", "Unit")
+                model_name = getattr(model, "name", "a model")
+                if cleared:
+                    append_action(player, f"{ability_name}: {target_name} loses {model_name} and clears Battle-shock.")
+                else:
+                    append_action(player, f"{ability_name}: {target_name} loses {model_name}.")
+            return model
         if selection_kind == "fear_made_manifest_destroy":
             try:
                 remaining = int(ctx.get("destroy_remaining", 1) or 1)

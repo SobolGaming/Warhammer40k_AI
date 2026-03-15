@@ -11774,6 +11774,8 @@ class KeywordsDetachmentsMixin:
                 parts.append("while below Half-strength")
             if cond.attacker_charged_this_turn:
                 parts.append("after making a Charge move this turn")
+            if cond.attacker_charge_related_this_turn:
+                parts.append("after charging or being charged this turn")
             if cond.attacker_contains_model_keywords_any:
                 kw = "/".join(k.upper() for k in cond.attacker_contains_model_keywords_any)
                 parts.append(f"while containing {kw} model")
@@ -12643,6 +12645,8 @@ class KeywordsDetachmentsMixin:
                 parts.append("while below Half-strength")
             if cond.attacker_charged_this_turn:
                 parts.append("after making a Charge move this turn")
+            if cond.attacker_charge_related_this_turn:
+                parts.append("after charging or being charged this turn")
             if cond.attacker_contains_model_keywords_any:
                 kw = "/".join(k.upper() for k in cond.attacker_contains_model_keywords_any)
                 parts.append(f"while containing {kw} model")

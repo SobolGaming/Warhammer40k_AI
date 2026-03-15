@@ -2728,7 +2728,41 @@ class ActionsMovementMixin:
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
-            if not self._LEADING_LEADERSHIP_REROLL_RE.fullmatch(normalized):
+            matched = bool(self._LEADING_LEADERSHIP_REROLL_RE.fullmatch(normalized))
+            if not matched:
+                political_overwatch = (
+                    r"while another officer model is in this unit you can re roll battle shock tests taken for this unit"
+                )
+                if re.fullmatch(political_overwatch, normalized):
+                    try:
+                        models = list(root.get_attached_unit_models() or [])
+                    except Exception:
+                        models = list(getattr(root, "models", []) or [])
+                    officer_count = 0
+                    for model in list(models or []):
+                        if model is None:
+                            continue
+                        try:
+                            alive = getattr(model, "is_alive", True)
+                            alive = alive() if callable(alive) else alive
+                        except Exception:
+                            alive = True
+                        if not alive:
+                            continue
+                        try:
+                            if hasattr(model, "has_any_keyword") and model.has_any_keyword("OFFICER"):
+                                officer_count += 1
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if hasattr(model, "has_keyword") and model.has_keyword("OFFICER"):
+                                officer_count += 1
+                                continue
+                        except Exception:
+                            pass
+                    matched = officer_count > 1
+            if not matched:
                 continue
             source = str(name or "Leadership re-roll").strip() or "Leadership re-roll"
             key = source.lower()
@@ -2736,6 +2770,74 @@ class ActionsMovementMixin:
                 continue
             seen.add(key)
             sources.append(source)
+
+        political_overwatch = (
+            r"while another officer model is in this unit you can re roll battle shock tests taken for this unit"
+        )
+        for leader in list(getattr(root, "attached_leaders", []) or []):
+            if leader is None:
+                continue
+            try:
+                abilities = list(getattr(leader, "possible_abilities", []) or [])
+            except Exception:
+                abilities = []
+            for ab in abilities:
+                try:
+                    if leader._ability_requires_leading(ab):
+                        continue
+                    if not leader._ability_is_active(ab):
+                        continue
+                    if isinstance(ab, str):
+                        name = str(ab or "")
+                        desc = str(ab or "")
+                    else:
+                        name = str(getattr(ab, "name", "") or "")
+                        desc = str(getattr(ab, "description", "") or "") or name
+                except Exception:
+                    continue
+                text_src = leader._strip_eligibility_prefix(desc or "")
+                normalized = leader._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not re.fullmatch(political_overwatch, normalized):
+                    continue
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                officer_count = 0
+                for model in list(models or []):
+                    if model is None:
+                        continue
+                    try:
+                        alive = getattr(model, "is_alive", True)
+                        alive = alive() if callable(alive) else alive
+                    except Exception:
+                        alive = True
+                    if not alive:
+                        continue
+                    try:
+                        if hasattr(model, "has_any_keyword") and model.has_any_keyword("OFFICER"):
+                            officer_count += 1
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(model, "has_keyword") and model.has_keyword("OFFICER"):
+                            officer_count += 1
+                            continue
+                    except Exception:
+                        pass
+                if officer_count <= 1:
+                    continue
+                source = str(name or "Leadership re-roll").strip() or "Leadership re-roll"
+                key = source.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                sources.append(source)
 
         if not isinstance(cache, dict):
             cache = {}
@@ -4464,6 +4566,15 @@ class ActionsMovementMixin:
         if condition.attacker_charged_this_turn:
             try:
                 if not bool(getattr(unit.round_state, "charged_this_round", False)):
+                    return False
+            except Exception:
+                return False
+        if condition.attacker_charge_related_this_turn:
+            try:
+                if not (
+                    bool(getattr(unit.round_state, "charged_this_round", False))
+                    or bool(getattr(unit.round_state, "was_charged_this_round", False))
+                ):
                     return False
             except Exception:
                 return False
@@ -15460,9 +15571,30 @@ class ActionsMovementMixin:
             pass
         try:
             sr = getattr(self, "special_rules", None)
-            if isinstance(sr, dict) and sr.get("bearer_unit_assault_ranged"):
+            if isinstance(sr, dict):
                 if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
-                    return True
+                    entries = list(sr.get("bearer_unit_assault_ranged_entries", []) or [])
+                    if entries:
+                        try:
+                            root = self.get_attached_unit_root()
+                        except Exception:
+                            root = self
+                        if root is None:
+                            root = self
+                        for entry in entries:
+                            if not isinstance(entry, dict):
+                                continue
+                            required_keyword = str(entry.get("requires_contains_keyword", "") or "").strip().upper()
+                            if required_keyword:
+                                try:
+                                    if not bool(root._unit_contains_model_with_keyword(required_keyword)):
+                                        continue
+                                except Exception:
+                                    continue
+                            return True
+                if sr.get("bearer_unit_assault_ranged"):
+                    if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
+                        return True
         except Exception:
             pass
         try:

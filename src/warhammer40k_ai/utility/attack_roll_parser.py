@@ -10,6 +10,7 @@ class AttackRollCondition:
     attacker_below_starting_strength: bool = False
     attacker_below_half_strength: bool = False
     attacker_charged_this_turn: bool = False
+    attacker_charge_related_this_turn: bool = False
     attacker_waaagh_active: bool = False
     attacker_contains_model_keywords_any: Tuple[str, ...] = ()
     attacker_within_objective_controlled: bool = False
@@ -45,6 +46,9 @@ class AttackRollCondition:
             ),
             attacker_charged_this_turn=bool(
                 self.attacker_charged_this_turn or other.attacker_charged_this_turn
+            ),
+            attacker_charge_related_this_turn=bool(
+                self.attacker_charge_related_this_turn or other.attacker_charge_related_this_turn
             ),
             attacker_waaagh_active=bool(
                 self.attacker_waaagh_active or other.attacker_waaagh_active
@@ -137,6 +141,8 @@ def _normalize_text(text: str) -> str:
     t = t.replace("\u2019", "'").replace("\u2018", "'")
     t = re.sub(r"\ba model in the bearer'?s unit\b", "a model in this unit", t, flags=re.IGNORECASE)
     t = re.sub(r"\bmodels in the bearer'?s unit\b", "models in this unit", t, flags=re.IGNORECASE)
+    t = re.sub(r"\bmonster\s+of\s+vehicle\b", "monster or vehicle", t, flags=re.IGNORECASE)
+    t = re.sub(r"\bvehicle\s+of\s+monster\b", "vehicle or monster", t, flags=re.IGNORECASE)
     t = t.replace("unmodifed", "unmodified")
     t = t.replace("re-roll", "reroll")
     t = t.replace("\n", " ").replace("\r", " ")
@@ -211,6 +217,16 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
 
     if re.fullmatch(r"(?:this model|this unit|it|that unit) made a charge move this turn", t):
         return AttackRollCondition(attacker_charged_this_turn=True)
+    if re.fullmatch(
+        r"(?:this model|this unit|it|that unit) made a charge move or was charged this turn",
+        t,
+    ):
+        return AttackRollCondition(attacker_charge_related_this_turn=True)
+    if re.fullmatch(
+        r"(?:this model|this unit|it|that unit) was charged this turn",
+        t,
+    ):
+        return AttackRollCondition(attacker_charge_related_this_turn=True)
     if re.fullmatch(r"the waaagh!? is active for your army", t):
         return AttackRollCondition(attacker_waaagh_active=True)
 

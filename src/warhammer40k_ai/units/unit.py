@@ -50,6 +50,7 @@ class UnitRoundState:
     reinforced_this_round: bool = False
     attempted_charge_this_round: bool = False  # Track if unit attempted a charge (prevents multiple attempts)
     charged_this_round: bool = False  # Track if unit successfully made a charge move (charge bonus may be suppressed)
+    was_charged_this_round: bool = False  # Track if this unit was a successful charge target
     charged_turn: Optional[int] = None
     charged_turn_owner: Optional[str] = None
     charge_bonus_suppressed_turn: Optional[int] = None
@@ -3993,8 +3994,11 @@ class Unit(
         re.IGNORECASE,
     )
     _START_ANY_PHASE_CLEAR_BATTLESHOCK_RE = re.compile(
-        r"once per battle at the start of any phase you can select one friendly (?P<keyword>[a-z0-9 ]+?) unit that is battle shocked "
-        r"and within (?P<range>\d+)\s*\"?\s*of (?:this model|the bearer|this unit s (?P<model>[a-z0-9 ]+?) model) that unit is no longer battle shocked",
+        r"once per battle(?P<per_round>\s+round)? at the start of any phase you can select one friendly "
+        r"(?P<keyword>[a-z0-9 ]+?) unit that is battle shocked and within (?P<range>\d+)\s*\"?\s*of "
+        r"(?:this model|the bearer|this unit s (?P<model>[a-z0-9 ]+?) model) "
+        r"(?:if you do )?(?:(?P<destroy_one>one)\s+model\s+in\s+that\s+unit\s+is\s+destroyed\s+and\s+)?"
+        r"that unit is (?:then )?no longer battle shocked",
         re.IGNORECASE,
     )
     _START_ANY_PHASE_TOME_SKULL_RE = re.compile(

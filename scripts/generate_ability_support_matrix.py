@@ -6148,6 +6148,9 @@ def _classify_ability_base(
     gheistskull_grenade_support = _gheistskull_grenade_support(description)
     battle_focus_token_refund_support = _battle_focus_agile_maneuver_token_refund_support(description)
     leading_leadership_reroll_support = _leading_leadership_reroll_support(description)
+    unit_contains_other_model_battleshock_reroll_support = _unit_contains_other_model_battleshock_reroll_support(
+        description
+    )
     dark_pacts_leadership_reroll_support = _dark_pacts_leadership_reroll_support(description)
     start_of_battle_keyword_reroll_support = _start_of_battle_keyword_reroll_ones_support(description)
     daemonic_patrons_support = _daemonic_patrons_support(description)
@@ -6163,12 +6166,14 @@ def _classify_ability_base(
     friendly_destroyed_weapon_attacks_override_support = _friendly_destroyed_model_weapon_attacks_override_support(description)
     battlesuit_support_system_support = _battlesuit_support_system_support(name, description)
     attack_roll_rule_support = _attack_roll_rule_support(description)
+    unit_contains_model_weapon_keyword_grant_support = _unit_contains_model_weapon_keyword_grant_support(description)
     objective_attack_keyword_support = _objective_attack_keyword_support(description)
     half_range_attack_keyword_support = _half_range_attack_keyword_support(description)
     target_keyword_attack_keyword_support = _target_keyword_attack_keyword_support(description)
     weapon_keyword_grant_support = _weapon_keyword_grant_support(description)
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
     order_range_extension_support = _order_range_extension_support(description)
+    mobile_command_vehicle_support = _mobile_command_vehicle_support(description)
     datasheet_command_reroll_cherub_support = _datasheet_command_reroll_cherub_support(description)
     shieldbreaker_support = _shieldbreaker_support(description)
     act_of_faith_cherub_support = _act_of_faith_cherub_support(description)
@@ -6671,6 +6676,8 @@ def _classify_ability_base(
         return battle_focus_token_refund_support
     if leading_leadership_reroll_support:
         return leading_leadership_reroll_support
+    if unit_contains_other_model_battleshock_reroll_support:
+        return unit_contains_other_model_battleshock_reroll_support
     if dark_pacts_leadership_reroll_support:
         return dark_pacts_leadership_reroll_support
     if start_of_battle_keyword_reroll_support:
@@ -6695,12 +6702,16 @@ def _classify_ability_base(
         return cp_on_destroy_support
     if attack_roll_rule_support:
         return attack_roll_rule_support
+    if unit_contains_model_weapon_keyword_grant_support:
+        return unit_contains_model_weapon_keyword_grant_support
     if objective_attack_keyword_support:
         return objective_attack_keyword_support
     if closest_enemy_hit_charge_support:
         return closest_enemy_hit_charge_support
     if order_range_extension_support:
         return order_range_extension_support
+    if mobile_command_vehicle_support:
+        return mobile_command_vehicle_support
     if datasheet_command_reroll_cherub_support:
         return datasheet_command_reroll_cherub_support
     if shieldbreaker_support:
@@ -8406,6 +8417,7 @@ def _weapon_keyword_grant_support(description: str) -> Optional[Tuple[str, str]]
         patterns_local = (
             r"anti [a-z0-9 \-]+ \d+",
             r"sustained hits (?:d3|d6|\d+)",
+            r"assault",
             r"devastating wounds",
             r"ignores cover",
             r"twin linked",
@@ -8492,6 +8504,89 @@ def _weapon_keyword_grant_support(description: str) -> Optional[Tuple[str, str]]
         if notes:
             return ("Partial", " ".join(dict.fromkeys(notes)) + " Some weapon keywords are not supported.")
         return ("Partial", "Weapon keyword grants not supported for this keyword.")
+    return ("Supported", " ".join(dict.fromkeys(notes)))
+
+
+def _unit_contains_model_weapon_keyword_grant_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    sentences = [
+        s for s in (_norm_rules_text(part) for part in re.split(r"[.;]\s*", _strip_html(description))) if s
+    ]
+    if not sentences:
+        return None
+
+    def _parse_keyword_labels(text_value: str) -> List[str]:
+        normalized = re.sub(r"\s+", " ", str(text_value or "")).strip().lower()
+        if not normalized:
+            return []
+        labels: List[str] = []
+        patterns_local = (
+            r"anti [a-z0-9 \-]+ \d+",
+            r"sustained hits (?:d3|d6|\d+)",
+            r"assault",
+            r"devastating wounds",
+            r"ignores cover",
+            r"twin linked",
+            r"twin-linked",
+            r"lethal hits",
+            r"precision",
+            r"lance",
+            r"heavy",
+        )
+        for pat in patterns_local:
+            for match in re.finditer(pat, normalized, flags=re.IGNORECASE):
+                token = str(match.group(0) or "").strip().lower().replace("twin linked", "twin-linked")
+                if not token:
+                    continue
+                label = _attack_keyword_label_from_text(token)
+                if label and label not in labels:
+                    labels.append(label)
+        return labels
+
+    def _join_labels(labels: List[str]) -> str:
+        values = [str(v or "").strip() for v in labels if str(v or "").strip()]
+        if not values:
+            return ""
+        if len(values) == 1:
+            return values[0]
+        if len(values) == 2:
+            return f"{values[0]} and {values[1]}"
+        return f"{', '.join(values[:-1])}, and {values[-1]}"
+
+    pattern = (
+        r"while this unit contains an? (?P<required>[a-z0-9 '\-]+?)(?: model)? "
+        r"(?:(?P<scope>melee|ranged) )?weapons equipped by models in this unit "
+        r"(?:have|gain) (?:the )?(?P<kw_section>[a-z0-9 \-]+?) abil(?:ity|ities)"
+    )
+    notes: List[str] = []
+    unsupported = False
+    for sentence in sentences:
+        match = re.fullmatch(pattern, sentence)
+        if not match:
+            continue
+        labels = _parse_keyword_labels(match.group("kw_section") or "")
+        if not labels:
+            unsupported = True
+            continue
+        required = str(match.group("required") or "").strip().upper()
+        scope = str(match.group("scope") or "").strip().lower()
+        scope_text = "weapons"
+        if scope == "melee":
+            scope_text = "melee weapons"
+        elif scope == "ranged":
+            scope_text = "ranged weapons"
+        label_text = _join_labels(labels)
+        if not label_text:
+            unsupported = True
+            continue
+        notes.append(f"While this unit contains {required}, unit {scope_text} gain {label_text}.")
+    if not notes and not unsupported:
+        return None
+    if unsupported:
+        if notes:
+            return ("Partial", " ".join(dict.fromkeys(notes)) + " Some weapon keywords are not supported.")
+        return ("Partial", "Conditional weapon keyword grants not supported for this keyword.")
     return ("Supported", " ".join(dict.fromkeys(notes)))
 
 
@@ -8846,6 +8941,8 @@ def _attack_keyword_label_from_text(raw: str) -> Optional[str]:
     kw = re.sub(r"\s+", " ", str(raw or "")).strip().lower()
     if not kw:
         return None
+    if kw == "assault":
+        return "Assault"
     if kw == "ignores cover":
         return "Ignores Cover"
     if kw == "lethal hits":
@@ -9103,6 +9200,26 @@ def _leading_leadership_reroll_support(description: str) -> Optional[Tuple[str, 
     if not re.fullmatch(pattern, norm):
         return None
     return ("Supported", "Leading: re-roll Leadership tests taken for the unit.")
+
+
+def _unit_contains_other_model_battleshock_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while another (?P<keyword>[a-z0-9 '\-]+?) model is "
+        r"(?:in this unit|in the same unit as this model) "
+        r"you can reroll battle shock tests taken for (?:this unit|that unit)"
+    )
+    match = re.fullmatch(pattern, norm)
+    if not match:
+        return None
+    keyword = str(match.group("keyword") or "").strip().upper()
+    if not keyword:
+        return None
+    return ("Supported", f"While another {keyword} model is in this unit, re-roll Battle-shock tests taken for this unit.")
 
 
 def _dark_pacts_leadership_reroll_support(description: str) -> Optional[Tuple[str, str]]:
@@ -13528,8 +13645,10 @@ def _start_any_phase_battleshock_clear_support(description: str) -> Optional[Tup
     if not norm:
         return None
     pattern = (
-        r"once per battle at the start of any phase you can select one friendly (?P<keyword>[a-z0-9 ]+?) unit that is battle shocked "
-        r"and within (?P<range>\d+) of (?:this model|the bearer|this unit s (?P<model>[a-z0-9 ]+?) model) that unit is no longer battle shocked"
+        r"once per battle(?: round)? at the start of any phase you can select one friendly (?P<keyword>[a-z0-9 ]+?) unit that is battle shocked "
+        r"and within (?P<range>\d+) of (?:this model|the bearer|this unit s (?P<model>[a-z0-9 ]+?) model) "
+        r"(?:(?:if you do )?(?:(?:destroy|destroying) (?P<destroy_count>one|\d+) model in that unit and |(?P<destroy_count_post>one|\d+) model in that unit is destroyed and ))?"
+        r"that unit is (?:then )?no longer battle shocked"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
@@ -13542,7 +13661,16 @@ def _start_any_phase_battleshock_clear_support(description: str) -> Optional[Tup
         return None
     keyword = str(m.group("keyword") or "").strip()
     keyword_label = keyword.upper() if keyword else "friendly"
-    note = f"Once per battle, start of any phase: clear Battle-shock on a {keyword_label} unit within {rng}\"."
+    destroy_count_raw = str(m.group("destroy_count") or m.group("destroy_count_post") or "").strip().lower()
+    destroy_count = 1 if destroy_count_raw == "one" else int(destroy_count_raw) if destroy_count_raw.isdigit() else 0
+    once_text = "Once per battle round" if "once per battle round" in norm else "Once per battle"
+    note = f"{once_text}, start of any phase: clear Battle-shock on a {keyword_label} unit within {rng}\"."
+    if destroy_count > 0:
+        plural = "s" if destroy_count != 1 else ""
+        note = (
+            f"{once_text}, start of any phase: select a Battle-shocked {keyword_label} unit within {rng}\", "
+            f"destroy {destroy_count} model{plural} in that unit, then clear Battle-shock."
+        )
     return ("Supported", note)
 
 
@@ -15205,6 +15333,24 @@ def _order_range_extension_support(description: str) -> Optional[Tuple[str, str]
     return (
         "Supported",
         f"Voice of Command range extension: issuing OFFICER can target eligible units up to {rng}\" away.",
+    )
+
+
+def _mobile_command_vehicle_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your command phase one officer model embarked within this transport can issue orders "
+        r"even though it is not on the battlefield when doing so measure distances to and from this transport"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Command phase: one embarked OFFICER can issue Orders from this transport, measuring ranges to and from the transport.",
     )
 
 

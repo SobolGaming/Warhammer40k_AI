@@ -12232,6 +12232,10 @@ class Game(
             if final_distance <= 1.0:
                 charging_unit.round_state.charged_this_round = True
                 try:
+                    target_unit.round_state.was_charged_this_round = True
+                except Exception:
+                    pass
+                try:
                     charging_unit.round_state.charged_turn = int(getattr(self, "turn", 0) or 0)
                 except Exception:
                     charging_unit.round_state.charged_turn = int(getattr(self, "turn", 0) or 0)
