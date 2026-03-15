@@ -7161,6 +7161,49 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(model_within_range_of_unit(source_model, target_root, float(range_inches), use_attached_aggregate=True)):
             return ("Squig Mine target must be within range of the source model.",)
         return ()
+    if ability == "warrior_elite_order":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Warrior Elite source unit was not found.",)
+        source_root = _resolve_unit_root(source_unit)
+        if source_root is None or not _unit_is_on_battlefield(source_root):
+            return ("Warrior Elite source unit must be on the battlefield.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        mgr = getattr(source_army, "voice_of_command", None) if source_army is not None else None
+        if mgr is None:
+            return ("Voice of Command manager not found.",)
+        if is_skip_choice(request, result):
+            return ()
+        is_battle_shocked_fn = getattr(source_root, "is_battle_shocked", None)
+        if callable(is_battle_shocked_fn) and bool(is_battle_shocked_fn()):
+            return ("Warrior Elite cannot affect a Battle-shocked unit.",)
+        try:
+            current_turn = int(ctx.get("battle_round", getattr(game, "turn", 0)) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if current_turn > 0 and int(sr.get("warrior_elite_used_round", 0) or 0) == int(current_turn):
+            return ("Warrior Elite has already been used this battle round.",)
+        order_key = str(payload.get("order_key") or ctx.get("order_key") or "").strip().upper()
+        if not order_key:
+            return ("Warrior Elite requires an order selection.",)
+        allowed_order_keys = {
+            str(value or "").strip().upper()
+            for value in list(ctx.get("allowed_order_keys", []) or [])
+            if str(value or "").strip()
+        }
+        if allowed_order_keys and order_key not in allowed_order_keys:
+            return ("Warrior Elite selected an ineligible Order.",)
+        return ()
     if ability == "da_jump":
         payload = _option_payload(request, result)
         player = _resolve_player(game, request, payload)
@@ -17508,6 +17551,16 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 "target_unit_id": str(get_entity_id(target_root) or ""),
             }
         mortal_roll = str(ctx.get("mortal_wounds_roll", "") or ctx.get("mortal_wounds", "") or "D6").strip().upper() or "D6"
+        alternate_target_keywords_any = [
+            str(value or "").strip().upper()
+            for value in list(ctx.get("alternate_target_keywords_any", []) or [])
+            if str(value or "").strip()
+        ]
+        alternate_mortal_roll = str(ctx.get("alternate_mortal_wounds_roll", "") or "").strip().upper()
+        if alternate_target_keywords_any and alternate_mortal_roll:
+            has_any_keyword = getattr(target_root, "has_any_keyword", None)
+            if callable(has_any_keyword) and any(bool(has_any_keyword(keyword)) for keyword in alternate_target_keywords_any):
+                mortal_roll = alternate_mortal_roll
         mortal_wounds = _apply_mortal_wounds_roll_to_unit(
             game,
             source_root=source_root,
@@ -17528,6 +17581,66 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "roll": int(roll),
             "mortal_wounds": int(mortal_wounds),
             "target_unit_id": str(get_entity_id(target_root) or ""),
+        }
+    if str(ctx.get("ability", "") or "") == "warrior_elite_order":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        source_root = _resolve_unit_root(source_unit)
+        if source_root is None:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        mgr = getattr(source_army, "voice_of_command", None) if source_army is not None else None
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Warrior Elite").strip() or "Warrior Elite"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {"action": "skip", "applied": False}
+        order_key = str(payload.get("order_key") or ctx.get("order_key") or "").strip().upper()
+        if not order_key:
+            return None
+        try:
+            current_turn = int(ctx.get("battle_round", getattr(game, "turn", 0)) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if current_turn > 0 and int(sr.get("warrior_elite_used_round", 0) or 0) == int(current_turn):
+            return None
+        apply_order = getattr(mgr, "_apply_additional_order_to_unit_and_attached", None)
+        if not callable(apply_order):
+            return None
+        apply_order(source_root, order_key)
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["warrior_elite_used_round"] = int(current_turn or 0)
+        source_root.special_rules = sr
+        try:
+            from ...rules.voice_of_command import ORDER_BY_KEY
+            order_name = str(getattr(ORDER_BY_KEY.get(order_key), "name", "") or order_key)
+        except Exception:
+            order_name = order_key
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(source_root, 'name', 'Unit')} gains {order_name} until your next Command phase.",
+        )
+        return {
+            "action": "use",
+            "applied": True,
+            "order_key": order_key,
+            "source_unit_id": str(get_entity_id(source_root) or ""),
         }
     if ability == "da_jump":
         payload = _option_payload(request, result)

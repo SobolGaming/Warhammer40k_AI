@@ -3727,6 +3727,12 @@ class RulesParsingMixin:
                             if key not in benefit_of_cover_seen:
                                 benefit_of_cover_seen.add(key)
                                 benefit_of_cover_entries.append({"attack_type": atype, "source": source})
+                        elif self._UNIT_ALWAYS_HAS_BENEFIT_OF_COVER_RE.fullmatch(sentence.strip()):
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            key = ("any", source.lower(), "always", "always")
+                            if key not in benefit_of_cover_seen:
+                                benefit_of_cover_seen.add(key)
+                                benefit_of_cover_entries.append({"attack_type": "any", "source": source})
                         elif self._LEADING_UNIT_BENEFIT_OF_COVER_RE.search(sentence):
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                             key = ("any", source.lower(), "any", "always")

@@ -5972,6 +5972,7 @@ def _classify_ability_base(
     aura_oc_support = _aura_objective_control_support(description)
     aura_leadership_bonus_support = _aura_leadership_bonus_support(description)
     aura_benefit_of_cover_support = _aura_benefit_of_cover_support(description)
+    unit_benefit_of_cover_support = _unit_benefit_of_cover_support(description)
     contains_keyword_objective_cover_support = _contains_keyword_objective_cover_support(description)
     obscuring_model_cover_support = _obscuring_model_cover_support(description)
     fortification_cover_support = _fortification_cover_support(description)
@@ -5987,6 +5988,7 @@ def _classify_ability_base(
     aura_strength_support = _aura_strength_support(description)
     aura_toughness_support = _aura_toughness_support(description)
     aura_melee_ap_support = _aura_melee_ap_support(description)
+    ranged_attack_engagement_hit_penalty_ignore_support = _ranged_attack_engagement_hit_penalty_ignore_support(description)
     fall_back_shoot_support = _fall_back_shoot_support(description)
     advance_selected_redeploy_support = _advance_selected_redeploy_support(description)
     advance_no_roll_phase_move_support = _advance_no_roll_with_phase_move_support(description)
@@ -6113,6 +6115,7 @@ def _classify_ability_base(
     start_any_phase_tome_skull_support = _start_any_phase_tome_skull_support(description)
     start_any_phase_battleshock_clear_support = _start_any_phase_battleshock_clear_support(description)
     start_any_phase_enemy_range_mortal_threshold_support = _start_any_phase_enemy_range_mortal_threshold_support(description)
+    start_any_phase_additional_self_order_support = _start_any_phase_additional_self_order_support(description)
     fight_phase_below_starting_strength_fight_first_support = _fight_phase_below_starting_strength_fight_first_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
     fight_phase_melee_ap_boost_support = _fight_phase_once_melee_attacks_ap_support(description)
@@ -6336,6 +6339,8 @@ def _classify_ability_base(
         return aura_leadership_bonus_support
     if aura_benefit_of_cover_support:
         return aura_benefit_of_cover_support
+    if unit_benefit_of_cover_support:
+        return unit_benefit_of_cover_support
     if contains_keyword_objective_cover_support:
         return contains_keyword_objective_cover_support
     if obscuring_model_cover_support:
@@ -6366,6 +6371,8 @@ def _classify_ability_base(
         return aura_toughness_support
     if aura_melee_ap_support:
         return aura_melee_ap_support
+    if ranged_attack_engagement_hit_penalty_ignore_support:
+        return ranged_attack_engagement_hit_penalty_ignore_support
     if fall_back_shoot_support:
         return fall_back_shoot_support
     if advance_selected_redeploy_support:
@@ -6613,6 +6620,8 @@ def _classify_ability_base(
         return start_any_phase_battleshock_clear_support
     if start_any_phase_enemy_range_mortal_threshold_support:
         return start_any_phase_enemy_range_mortal_threshold_support
+    if start_any_phase_additional_self_order_support:
+        return start_any_phase_additional_self_order_support
     if fight_phase_end_mortal_support:
         return fight_phase_end_mortal_support
     if fight_phase_melee_ap_boost_support:
@@ -7820,6 +7829,20 @@ def _aura_benefit_of_cover_support(description: str) -> Optional[Tuple[str, str]
     target = str(match.group("target") or "").strip()
     rng = str(match.group("rng") or "").strip()
     return ("Supported", f"Aura: friendly {target} within {rng}\" gain Benefit of Cover against ranged attacks.")
+
+
+def _unit_benefit_of_cover_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if not re.fullmatch(
+        r"(?:models in this unit|this unit|that unit) (?:has|have) the benefit of cover(?: against that attack)?",
+        norm,
+    ):
+        return None
+    return ("Supported", "This unit gains Benefit of Cover against ranged attacks.")
 
 
 def _contains_keyword_objective_cover_support(description: str) -> Optional[Tuple[str, str]]:
@@ -10912,16 +10935,68 @@ def _start_any_phase_enemy_range_mortal_threshold_support(description: str) -> O
     if not norm:
         return None
     m = re.fullmatch(
-        r"once per battle at the start of any phase select one enemy unit within (?P<range>\d+) of this model "
-        r"and roll (?:one|1) d6 on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d\d+(?:\+\d+)?|\d+) mortal wounds?"
+        r"once per battle at the start of any phase (?:you can )?select one enemy unit within (?P<range>\d+) of "
+        r"(?:this model|the bearer) "
+        r"and roll (?:one|1) d6 on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>\d*d\d+(?:\+\d+)?|\d+) mortal wounds?"
+        r"(?: or (?P<alt_mw>\d*d\d+(?:\+\d+)?|\d+) mortal wounds? instead if it is a (?P<alt_keywords>[a-z0-9 ]+?) unit)?"
         r"(?: designer(?:s| s)? note .*)?",
         norm,
     )
     if not m:
         return None
+    note = (
+        f"Start of any phase optional selection: choose one enemy unit within {m.group('range')}\"; on {m.group('threshold')}+ "
+        f"it suffers {str(m.group('mw') or '').upper()} mortal wounds. Once per battle."
+    )
+    alt_mw = str(m.group("alt_mw") or "").strip().upper()
+    alt_keywords_raw = str(m.group("alt_keywords") or "").strip()
+    if alt_mw and alt_keywords_raw:
+        alt_keywords = [
+            str(token or "").strip().upper()
+            for token in re.split(r"\s+(?:or|and)\s+", alt_keywords_raw)
+            if str(token or "").strip()
+        ]
+        if alt_keywords:
+            note += f" {('/'.join(alt_keywords))} targets instead suffer {alt_mw} mortal wounds."
     return (
         "Supported",
-        f"Start of any phase optional selection: choose one enemy unit within {m.group('range')}\"; on {m.group('threshold')}+ it suffers {str(m.group('mw') or '').upper()} mortal wounds. Once per battle.",
+        note,
+    )
+
+
+def _start_any_phase_additional_self_order_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if not re.fullmatch(
+        r"once per battle round at the start of any phase you can select one order to affect this unit "
+        r"until the start of your next command phase in addition to any other orders issued to this unit "
+        r"by an officer model this battle round",
+        norm,
+    ):
+        return None
+    return (
+        "Supported",
+        "Once per battle round at the start of any phase: select one standard Order to affect this unit until your next Command phase as an additional Order.",
+    )
+
+
+def _ranged_attack_engagement_hit_penalty_ignore_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if not re.fullmatch(
+        r"this model does not suffer the penalty to its hit rolls for making ranged attacks while enemy units are within engagement range of it",
+        norm,
+    ):
+        return None
+    return (
+        "Supported",
+        "This model ignores Big Guns Never Tire hit penalties for ranged attacks while enemy units are within Engagement Range of it.",
     )
 
 
@@ -12977,6 +13052,16 @@ def _post_shoot_no_cover_support(description: str) -> Optional[Tuple[str, str]]:
         r"that (?:enemy )?unit cannot have the benefit of cover"
     )
     m = re.fullmatch(pattern, norm)
+    if m is None:
+        m = re.fullmatch(
+            r"(?:(?:in your shooting phase (?:(?:each time )?this (?:model|unit) is selected to shoot )?)?"
+            r"(?:after (?:this (?:model|unit) has shot|resolving (?:its|those) attacks)|each time this (?:model|unit) has shot)) "
+            r"select one enemy unit (?:that was )?hit by one or more of those attacks "
+            r"(?:made with (?:a|an|the|its) (?P<weapon>[a-z0-9 ]+) )?"
+            r"until the (?P<duration>end of the phase|start of your next shooting phase) that unit is (?P<state>[a-z0-9 -]+) "
+            r"while a unit is (?P=state) it cannot have the benefit of cover",
+            norm,
+        )
     if not m:
         return None
     weapon = str(m.group("weapon") or "").strip()

@@ -591,6 +591,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_tripwires_stunned_cleanup(player=player, phase=phase)
         self._on_phase_start_adaptive_instincts(player=player, phase=phase)
         self._on_phase_start_orks_squig_mine(player=player, phase=phase)
+        self._on_phase_start_astra_militarum_warrior_elite(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
                 if p is None:
@@ -3141,6 +3142,12 @@ class GamePhaseHandlersMixin:
                         except Exception:
                             roll_threshold = 0
                         mortal_wounds_roll = str(spec.get("mortal_wounds", "") or "").strip().upper()
+                        alternate_mortal_wounds_roll = str(spec.get("alternate_mortal_wounds", "") or "").strip().upper()
+                        alternate_target_keywords_any = [
+                            str(value or "").strip().upper()
+                            for value in list(spec.get("alternate_target_keywords_any", []) or [])
+                            if str(value or "").strip()
+                        ]
                         if range_value <= 0 or roll_threshold <= 0 or not mortal_wounds_roll:
                             continue
                         ability_name = str(spec.get("source", "") or "Squig Mine").strip() or "Squig Mine"
@@ -3197,6 +3204,8 @@ class GamePhaseHandlersMixin:
                                 "range": int(range_value),
                                 "roll_threshold": int(roll_threshold),
                                 "mortal_wounds_roll": mortal_wounds_roll,
+                                "alternate_mortal_wounds_roll": alternate_mortal_wounds_roll,
+                                "alternate_target_keywords_any": list(alternate_target_keywords_any),
                                 "candidate_unit_ids": list(candidate_ids),
                                 "optional": True,
                             },
@@ -3205,6 +3214,156 @@ class GamePhaseHandlersMixin:
                         if model_id:
                             pending_models.add(model_id)
                         break
+
+    def _on_phase_start_astra_militarum_warrior_elite(self, player=None, phase=None, **_kwargs) -> None:
+        """Any phase start: Kasrkin can select one additional Order for themselves once per battle round."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if not pname:
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        try:
+            from ...rules.voice_of_command import ORDER_LIST
+        except ImportError:
+            return
+
+        pending_source_ids: set[str] = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "warrior_elite_order":
+                        continue
+                    source_unit_id = str(ctx.get("source_unit_id", "") or "")
+                    if source_unit_id:
+                        pending_source_ids.add(source_unit_id)
+        except Exception:
+            pending_source_ids = set()
+
+        def _unit_sort_key(unit) -> str:
+            try:
+                return str(get_entity_id(unit) or "")
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        warrior_elite_pattern = re.compile(
+            r"once per battle round at the start of any phase you can select one order to affect this unit "
+            r"until the start of your next command phase in addition to any other orders issued to this unit "
+            r"by an officer model this battle round",
+            re.IGNORECASE,
+        )
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        for owner in list(getattr(self, "players", []) or []):
+            if owner is None:
+                continue
+            army = owner.get_army()
+            if army is None:
+                continue
+            if str(getattr(army, "faction_id", "") or "").strip().upper() != "AM":
+                continue
+            mgr = getattr(army, "voice_of_command", None)
+            if mgr is None or not bool(getattr(mgr, "_army_has_voice", lambda: False)()):
+                continue
+
+            seen_roots: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "").strip()
+                if not root_id or root_id in seen_roots:
+                    continue
+                seen_roots.add(root_id)
+                if root_id in pending_source_ids:
+                    continue
+                root_is_alive_fn = getattr(root, "is_alive", None)
+                root_alive = bool(root_is_alive_fn()) if callable(root_is_alive_fn) else bool(root_is_alive_fn)
+                if not root_alive:
+                    continue
+                if not bool(getattr(root, "deployed", False)):
+                    continue
+                root_is_in_reserves_fn = getattr(root, "is_in_reserves", None)
+                if callable(root_is_in_reserves_fn) and bool(root_is_in_reserves_fn()):
+                    continue
+                if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                    continue
+                is_battle_shocked_fn = getattr(root, "is_battle_shocked", None)
+                if callable(is_battle_shocked_fn) and bool(is_battle_shocked_fn()):
+                    continue
+
+                root_sr = getattr(root, "special_rules", None)
+                if not isinstance(root_sr, dict):
+                    root_sr = {}
+                if current_turn > 0 and int(root_sr.get("warrior_elite_used_round", 0) or 0) == int(current_turn):
+                    continue
+
+                ability_name = ""
+                for name, desc in root._iter_ability_entries_for_rules(model=None):
+                    text_src = root._strip_eligibility_prefix(desc or name or "")
+                    if not text_src:
+                        continue
+                    normalized = root._normalize_rules_text(text_src)
+                    normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                    normalized = normalized.lower()
+                    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                    normalized = re.sub(r"\s+", " ", normalized).strip()
+                    if not warrior_elite_pattern.fullmatch(normalized):
+                        continue
+                    ability_name = str(name or "Warrior Elite").strip() or "Warrior Elite"
+                    break
+                if not ability_name:
+                    continue
+
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                allowed_order_keys: list[str] = []
+                for order in list(ORDER_LIST or []):
+                    order_key = str(getattr(order, "key", "") or "").strip().upper()
+                    if not order_key:
+                        continue
+                    has_order_key = getattr(mgr, "_attached_unit_has_order_key", None)
+                    if callable(has_order_key) and bool(has_order_key(root, order_key)):
+                        continue
+                    allowed_order_keys.append(order_key)
+                    options.append(
+                        DecisionOption.create(
+                            str(getattr(order, "name", "Order") or "Order"),
+                            payload={
+                                "order_key": order_key,
+                                "source_unit_id": root_id,
+                            },
+                        )
+                    )
+                if not allowed_order_keys:
+                    continue
+
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{ability_name}: select one Order to affect this unit (or None).",
+                    player_id=getattr(owner, "id", None),
+                    options=options,
+                    context={
+                        "ability": "warrior_elite_order",
+                        "ability_name": ability_name,
+                        "source_unit_id": root_id,
+                        "unit_id": root_id,
+                        "phase_name": pname,
+                        "battle_round": int(current_turn),
+                        "allowed_order_keys": list(allowed_order_keys),
+                        "optional": True,
+                    },
+                )
+                self.request_decision(request)
+                pending_source_ids.add(root_id)
 
     def _on_phase_end_orks_da_jump(self, player=None, phase=None, **_kwargs) -> None:
         """End of Movement phase: one Weirdboy from the active Orks army can use Da Jump."""

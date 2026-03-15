@@ -4018,12 +4018,19 @@ class AbilitySpecsMixin:
                         duration = "owner_next_shooting_start"
                 else:
                     m = unit._POST_SHOOT_NO_COVER_RE.fullmatch(normalized)
-                    if not m:
-                        continue
-                    any_weapon = True
-                    duration_raw = str(m.group("duration") or "").strip().lower()
-                    if "start of your next shooting phase" in duration_raw:
-                        duration = "owner_next_shooting_start"
+                    if m:
+                        any_weapon = True
+                        duration_raw = str(m.group("duration") or "").strip().lower()
+                        if "start of your next shooting phase" in duration_raw:
+                            duration = "owner_next_shooting_start"
+                    else:
+                        m = unit._POST_SHOOT_NO_COVER_STATE_RE.fullmatch(normalized)
+                        if not m:
+                            continue
+                        any_weapon = True
+                        duration_raw = str(m.group("duration") or "").strip().lower()
+                        if "start of your next shooting phase" in duration_raw:
+                            duration = "owner_next_shooting_start"
                 source = str(name or "Post-shoot no cover").strip() or "Post-shoot no cover"
                 key = (source.lower(), weapon_key or "any", duration)
                 if key in seen:
@@ -8558,6 +8565,8 @@ class AbilitySpecsMixin:
             - range: int
             - threshold: int
             - mortal_wounds: str | int
+            - alternate_mortal_wounds: Optional[str | int]
+            - alternate_target_keywords_any: Optional[list[str]]
         """
         if model is None:
             return []
@@ -8568,8 +8577,10 @@ class AbilitySpecsMixin:
         specs: list[dict] = []
         seen: set[tuple[str, str, int, int, str]] = set()
         pattern = re.compile(
-            r"once per battle at the start of any phase select one enemy unit within (?P<range>\d+) of this model "
-            r"and roll (?:one|1) d6 on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d\d+(?:\+\d+)?|\d+) mortal wounds?"
+            r"once per battle at the start of any phase (?:you can )?select one enemy unit within (?P<range>\d+) of "
+            r"(?:this model|the bearer) "
+            r"and roll (?:one|1) d6 on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>\d*d\d+(?:\+\d+)?|\d+) mortal wounds?"
+            r"(?: or (?P<alt_mw>\d*d\d+(?:\+\d+)?|\d+) mortal wounds? instead if it is a (?P<alt_keywords>[a-z0-9 ]+?) unit)?"
             r"(?: designer s note .*)?",
             re.IGNORECASE,
         )
@@ -8613,7 +8624,7 @@ class AbilitySpecsMixin:
             mortal_raw = str(m.group("mw") or "").strip().lower()
             if not mortal_raw:
                 continue
-            if mortal_raw in ("d3", "d6"):
+            if re.fullmatch(r"\d*d\d+(?:\+\d+)?", mortal_raw):
                 mortal_wounds: str | int = mortal_raw
             else:
                 try:
@@ -8621,6 +8632,27 @@ class AbilitySpecsMixin:
                 except Exception:
                     continue
                 if mortal_wounds <= 0:
+                    continue
+            alternate_mortal_wounds: str | int | None = None
+            alternate_target_keywords_any: list[str] = []
+            alternate_mortal_raw = str(m.group("alt_mw") or "").strip().lower()
+            if alternate_mortal_raw:
+                if re.fullmatch(r"\d*d\d+(?:\+\d+)?", alternate_mortal_raw):
+                    alternate_mortal_wounds = alternate_mortal_raw
+                else:
+                    try:
+                        alternate_mortal_wounds = int(alternate_mortal_raw)
+                    except Exception:
+                        continue
+                alt_keywords_raw = str(m.group("alt_keywords") or "").strip()
+                if not alt_keywords_raw:
+                    continue
+                alternate_target_keywords_any = [
+                    str(token or "").strip().upper()
+                    for token in re.split(r"\s+(?:or|and)\s+", alt_keywords_raw)
+                    if str(token or "").strip()
+                ]
+                if not alternate_target_keywords_any:
                     continue
             source = str(name or "Start of phase mortals").strip() or "Start of phase mortals"
             key_seed = self._normalize_keyword_phrase(source) or "start_any_phase_enemy_range_mortal_threshold"
@@ -8631,19 +8663,23 @@ class AbilitySpecsMixin:
                 int(range_value),
                 int(threshold),
                 str(mortal_wounds),
+                str(alternate_mortal_wounds),
+                tuple(alternate_target_keywords_any),
             )
             if dedupe_key in seen:
                 continue
             seen.add(dedupe_key)
-            specs.append(
-                {
-                    "source": source,
-                    "ability_key": ability_key,
-                    "range": int(range_value),
-                    "threshold": int(threshold),
-                    "mortal_wounds": mortal_wounds,
-                }
-            )
+            spec = {
+                "source": source,
+                "ability_key": ability_key,
+                "range": int(range_value),
+                "threshold": int(threshold),
+                "mortal_wounds": mortal_wounds,
+            }
+            if alternate_mortal_wounds is not None and alternate_target_keywords_any:
+                spec["alternate_mortal_wounds"] = alternate_mortal_wounds
+                spec["alternate_target_keywords_any"] = list(alternate_target_keywords_any)
+            specs.append(spec)
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

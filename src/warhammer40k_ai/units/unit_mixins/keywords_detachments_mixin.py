@@ -2648,6 +2648,40 @@ class KeywordsDetachmentsMixin:
         self._ability_cache["siege_shield"] = bool(found)
         return bool(found)
 
+    def ignores_big_guns_never_tire_hit_penalty(self) -> bool:
+        """Return True if this unit ignores BGNT hit penalties while engaged."""
+        cache_key = "ignores_bgnt_hit_penalty"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache[cache_key])
+
+        found = False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            entries = list(root._iter_ability_entries_for_rules(model=None))
+        except Exception:
+            entries = []
+        for name, desc in entries:
+            text = root._normalize_rules_text(root._strip_eligibility_prefix(desc or name or ""))
+            if not text:
+                continue
+            normalized = text.lower().replace("\u2019", "'")
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if re.fullmatch(
+                r"this model does not suffer the penalty to its hit rolls for making ranged attacks while enemy units are within engagement range of it",
+                normalized,
+            ):
+                found = True
+                break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
     def has_soul_eater(self) -> bool:
         """Return True if this unit has the Soul Eater ability."""
         if "soul_eater" in getattr(self, "_ability_cache", {}):

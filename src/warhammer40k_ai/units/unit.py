@@ -3063,6 +3063,11 @@ class Unit(
         r"(?:it|that\s+unit|this\s+unit|the\s+bearer'?s\s+unit)\s+(?:have|gain)\s+the\s+benefit\s+of\s+cover",
         re.IGNORECASE,
     )
+    _UNIT_ALWAYS_HAS_BENEFIT_OF_COVER_RE = re.compile(
+        r"^(?:models\s+in\s+this\s+unit|this\s+unit|that\s+unit)\s+(?:has|have)\s+the\s+benefit\s+of\s+cover"
+        r"(?:\s+against\s+that\s+attack)?\.?$",
+        re.IGNORECASE,
+    )
     _LEADING_UNIT_BENEFIT_OF_COVER_RE = re.compile(
         r"while\s+this\s+model\s+is\s+leading\s+a\s+unit,?\s*models\s+in\s+"
         r"(?:it|that\s+unit|this\s+unit|the\s+bearer'?s\s+unit)\s+(?:have|gain)\s+the\s+benefit\s+of\s+cover",
@@ -3833,6 +3838,14 @@ class Unit(
         r"(?:after (?:this (?:model|unit) has shot|resolving (?:its|those) attacks)|each time this (?:model|unit) has shot)) "
         r"select one enemy unit (?:that was )?hit by one or more of those attacks "
         r"until the (?P<duration>end of the phase|start of your next shooting phase) that (?:enemy )?unit cannot have the benefit of cover",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_NO_COVER_STATE_RE = re.compile(
+        r"(?:(?:in your shooting phase (?:(?:each time )?this (?:model|unit) is selected to shoot )?)?"
+        r"(?:after (?:this (?:model|unit) has shot|resolving (?:its|those) attacks)|each time this (?:model|unit) has shot)) "
+        r"select one enemy unit (?:that was )?hit by one or more of those attacks "
+        r"until the (?P<duration>end of the phase|start of your next shooting phase) that unit is (?P<state>[a-z0-9 -]+) "
+        r"while a unit is (?P=state) it cannot have the benefit of cover",
         re.IGNORECASE,
     )
     _POST_SHOOT_NO_OVERWATCH_WEAPON_RE = re.compile(

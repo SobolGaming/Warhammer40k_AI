@@ -10411,6 +10411,8 @@ class WargearProfile:
                     skip_bgnt = False
                 if self._is_siege_shield_demolisher_attack(attacker):
                     skip_bgnt = True
+                if callable(getattr(pu, "ignores_big_guns_never_tire_hit_penalty", None)):
+                    skip_bgnt = skip_bgnt or bool(pu.ignores_big_guns_never_tire_hit_penalty())
                 if not skip_bgnt:
                     _add_hit_mod(-1, "-1 from Big Guns Never Tire (locked when selecting targets)")
         except Exception:
@@ -10451,6 +10453,8 @@ class WargearProfile:
                         )
                     )
                     skip_target_penalty = self._is_siege_shield_demolisher_attack(attacker)
+                    if callable(getattr(pu, "ignores_big_guns_never_tire_hit_penalty", None)):
+                        skip_target_penalty = skip_target_penalty or bool(pu.ignores_big_guns_never_tire_hit_penalty())
                     if engaged_with_friendly and not skip_target_penalty:
                         _add_hit_mod(-1, "-1 from Big Guns Never Tire (target engaged)")
         except Exception:
