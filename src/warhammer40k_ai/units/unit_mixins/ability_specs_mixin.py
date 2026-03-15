@@ -4104,7 +4104,7 @@ class AbilitySpecsMixin:
             members = [root]
 
         specs: list[dict] = []
-        seen: set[tuple[str, str, str, int, bool, str]] = set()
+        seen: set[tuple[str, str, str, int, bool, str, str]] = set()
         for unit in members:
             if unit is None:
                 continue
@@ -4137,13 +4137,17 @@ class AbilitySpecsMixin:
                 if value <= 0:
                     continue
                 exclude_mv = bool(m.group("exclude"))
+                weapon_name = str(m.group("weapon") or "").strip()
+                weapon_key = ""
+                if weapon_name:
+                    weapon_key = unit._normalize_keyword_phrase(weapon_name) or weapon_name.lower()
                 limit_scope = None
                 if "once per turn" in normalized:
                     limit_scope = "turn"
                 elif "once per phase" in normalized:
                     limit_scope = "phase"
                 source = str(name or "Post-shoot AP bonus").strip() or "Post-shoot AP bonus"
-                key = (source.lower(), keyword, attack_type, int(value), bool(exclude_mv), duration_key)
+                key = (source.lower(), keyword, attack_type, int(value), bool(exclude_mv), duration_key, weapon_key)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -4156,6 +4160,8 @@ class AbilitySpecsMixin:
                         "duration": duration_key,
                         "limit_scope": limit_scope,
                         "exclude_monster_vehicle": bool(exclude_mv),
+                        "weapon_key": weapon_key,
+                        "weapon_name": weapon_name,
                     }
                 )
 

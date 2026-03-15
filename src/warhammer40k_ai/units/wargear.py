@@ -11077,6 +11077,32 @@ class WargearProfile:
         except Exception:
             unit_hit_mods = None
         try:
+            unit = attacker.parent_unit
+            weapon_rule = (
+                unit.get_ranged_below_half_strength_weapon_hit_bonus_rule(attacker)
+                if unit is not None and hasattr(unit, "get_ranged_below_half_strength_weapon_hit_bonus_rule")
+                else None
+            )
+            if isinstance(weapon_rule, dict):
+                try:
+                    hit_bonus = int(weapon_rule.get("hit_bonus", 0) or 0)
+                except Exception:
+                    hit_bonus = 0
+                weapon_name = str(weapon_rule.get("weapon_names", [""])[0] if weapon_rule.get("weapon_names") else "" or "").strip()
+                target_below_half = bool(target is not None and getattr(target, "is_below_half_strength", lambda: False)())
+                if (
+                    hit_bonus > 0
+                    and target_below_half
+                    and self._weapon_name_matches_for_attacker(attacker, weapon_name)
+                ):
+                    source_name = str(weapon_rule.get("source", "") or "Weapon hit bonus").strip() or "Weapon hit bonus"
+                    _add_hit_mod(
+                        int(hit_bonus),
+                        f"+{int(hit_bonus)} to hit from {source_name} ({weapon_name} vs Below Half-strength target)",
+                    )
+        except Exception:
+            pass
+        try:
             admech_rules = self._admech_datasheet_weapon_rules(attacker)
             for rule in list(admech_rules.get("hit_bonus", []) or []):
                 if not isinstance(rule, dict):
@@ -22999,6 +23025,10 @@ class WargearProfile:
                     entry_type = str(entry.get("attack_type") or "any").strip().lower()
                     if entry_type not in ("any", attack_type):
                         continue
+                    if bool(entry.get("requires_benefit_of_cover")):
+                        has_cover = bool(attack_instance.get("benefit_of_cover")) and not bool(attack_instance.get("ignores_cover"))
+                        if not has_cover:
+                            continue
                     entry_op = str(entry.get("op") or "sub").strip().lower()
                     if entry_op in ("div", "divide", "halve", "half"):
                         div = int(entry.get("value", 0) or 0) or 2

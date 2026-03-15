@@ -2780,7 +2780,7 @@ class KeywordsDetachmentsMixin:
         """Return True if this unit has the Siege Shield ability."""
         if "siege_shield" in getattr(self, "_ability_cache", {}):
             return bool(self._ability_cache["siege_shield"])
-        found, _ = self._find_ability_with_patterns(["siege shield"])
+        found, _ = self._find_ability_with_patterns(["siege shield", "line-breaker", "line breaker"])
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache["siege_shield"] = bool(found)
@@ -2808,8 +2808,9 @@ class KeywordsDetachmentsMixin:
             normalized = text.lower().replace("\u2019", "'")
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
-            if re.fullmatch(
-                r"this model does not suffer the penalty to its hit rolls for making ranged attacks while enemy units are within engagement range of it",
+            if re.search(
+                r"this model does not suffer the penalty to its hit rolls for "
+                r"(?:making ranged attacks while enemy units are within engagement range of it|being within engagement range of one or more enemy units)",
                 normalized,
             ):
                 found = True
@@ -10385,6 +10386,60 @@ class KeywordsDetachmentsMixin:
                 rule = {
                     "hit_bonus": int(bonus),
                     "source": source,
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
+    def get_ranged_below_half_strength_weapon_hit_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return ranged hit bonus rule for patterns like:
+        "Each time this model makes an attack with its executioner plasma cannon that targets a unit that is Below Half-strength,
+         add 1 to the Hit roll."
+        """
+        if model is None:
+            return None
+        cache_key = f"ranged_below_half_strength_weapon_hit_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            entries = list(self._iter_model_specific_ability_entries(model) or [])
+            entries.extend(list(self._iter_ability_entries_for_rules(model=None) or []))
+            for name, desc in entries:
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                normalized = text.lower().replace("\u2019", "'")
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                match = re.fullmatch(
+                    r"each time this model makes an attack with its (?P<weapon>[a-z0-9 ]+?) "
+                    r"that targets (?:an? )?(?:enemy )?unit that is below half strength add (?P<val>\d+) to the hit roll",
+                    normalized,
+                )
+                if not match:
+                    continue
+                weapon_name = str(match.group("weapon") or "").strip()
+                if not weapon_name:
+                    continue
+                try:
+                    hit_bonus = int(match.group("val") or 0)
+                except Exception:
+                    hit_bonus = 0
+                if hit_bonus <= 0:
+                    continue
+                rule = {
+                    "attack_type": "ranged",
+                    "weapon_names": [weapon_name],
+                    "hit_bonus": int(hit_bonus),
+                    "source": str(name or "Weapon hit bonus").strip() or "Weapon hit bonus",
                 }
                 break
         except Exception:

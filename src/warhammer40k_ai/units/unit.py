@@ -3913,6 +3913,7 @@ class Unit(
     _POST_SHOOT_AP_BONUS_RE = re.compile(
         r"in your shooting phase after this (?:unit|model) has shot select one enemy unit "
         r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
+        r"(?:made with (?:its|this model s) (?P<weapon>[a-z0-9 ]+) )?"
         r"until the end of the (?P<duration>phase|turn) each time a friendly (?P<keyword>[a-z0-9 ]+?) unit makes (?:a|an) (?:(?P<atype>ranged|melee) )?attack "
         r"that targets that enemy unit improve the armou?r penetration characteristic of that attack by (?P<val>\d+)"
         r"(?: the same enemy unit can only be affected by this ability once per (?:turn|phase)| each unit can only be selected for this ability once per turn)?",

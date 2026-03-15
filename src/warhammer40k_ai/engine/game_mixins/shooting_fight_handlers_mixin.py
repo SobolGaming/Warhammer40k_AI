@@ -3561,6 +3561,7 @@ class GameShootingFightHandlersMixin:
         self,
         attacker_unit=None,
         hits_by_target=None,
+        hit_models_by_target_weapon=None,
         **_kwargs,
     ) -> None:
         if attacker_unit is None or not hits_by_target:
@@ -3589,6 +3590,37 @@ class GameShootingFightHandlersMixin:
                 return bool(unit.has_any_keyword("MONSTER")) or bool(unit.has_any_keyword("VEHICLE"))
             except Exception:
                 return False
+
+        def _normalize_weapon_key(value: str) -> str:
+            normalizer = getattr(attacker_unit, "_normalize_keyword_phrase", None)
+            if callable(normalizer):
+                try:
+                    return str(normalizer(value) or "")
+                except Exception:
+                    return ""
+            text = str(value or "").lower()
+            text = re.sub(r"[^a-z0-9]+", " ", text)
+            return re.sub(r"\s+", " ", text).strip()
+
+        def _target_hit_with_weapon_key(target, weapon_key: str) -> bool:
+            normalized_key = _normalize_weapon_key(weapon_key)
+            if not normalized_key or not isinstance(hit_models_by_target_weapon, dict):
+                return False
+            target_map = hit_models_by_target_weapon.get(target)
+            if target_map is None:
+                try:
+                    target_root = target.get_attached_unit_root()
+                except Exception:
+                    target_root = target
+                target_map = hit_models_by_target_weapon.get(target_root)
+            if not isinstance(target_map, dict):
+                return False
+            models = target_map.get(normalized_key)
+            if not models and normalized_key.endswith("s"):
+                models = target_map.get(normalized_key[:-1])
+            if not models and not normalized_key.endswith("s"):
+                models = target_map.get(f"{normalized_key}s")
+            return bool(models)
 
         def _target_already_selected(unit, owner_id: str, turn: int, scope: str, phase_name: str) -> bool:
             if unit is None or not scope:
@@ -3642,6 +3674,7 @@ class GameShootingFightHandlersMixin:
                 ap_bonus = 0
             limit_scope = str(spec.get("limit_scope", "") or "").strip().lower()
             exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
+            weapon_key = str(spec.get("weapon_key", "") or "").strip()
             if not keyword or ap_bonus <= 0:
                 continue
             candidates: list[Any] = []
@@ -3653,6 +3686,8 @@ class GameShootingFightHandlersMixin:
                 if not _is_enemy_unit(target_unit):
                     continue
                 if exclude_mv and _is_monster_or_vehicle(target_unit):
+                    continue
+                if weapon_key and not _target_hit_with_weapon_key(target_unit, weapon_key):
                     continue
                 if limit_scope and _target_already_selected(target_unit, owner_id, turn, limit_scope, phase_name):
                     continue

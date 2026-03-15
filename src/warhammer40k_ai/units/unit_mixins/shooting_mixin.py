@@ -1256,7 +1256,7 @@ class ShootingMixin:
                 has_siege_shield = bool(has_siege_shield_fn())
             except Exception:
                 has_siege_shield = False
-        is_siege_shield_demolisher = has_siege_shield and ("demolisher cannon" in weapon_name)
+        is_siege_shield_demolisher = has_siege_shield and ("demolisher" in weapon_name and "cannon" in weapon_name)
         ficklefire_active = False
         try:
             if hasattr(self, "_is_ficklefire_active"):
@@ -1826,7 +1826,7 @@ class ShootingMixin:
                         has_siege_shield = False
                 siege_shield_override = (
                     has_siege_shield
-                    and ("demolisher cannon" in weapon_name)
+                    and ("demolisher" in weapon_name and "cannon" in weapon_name)
                     and self._is_controlling_players_shooting_phase()
                     and game_map.is_within_engagement_range(self, target_unit)
                 )

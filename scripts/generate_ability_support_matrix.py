@@ -4105,6 +4105,22 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Marker-based firing is implemented: must remain stationary, cannot fire in a phase where Designate/Adjust was used, and resolves attacks against each unit within 6\" of the unit's Deathstrike marker without selecting a target unit.",
         ),
+        ("AM", "Line-breaker"): (
+            "Supported",
+            "Demolisher battle cannon own-engagement targeting exception is implemented, and the model ignores Big Guns Never Tire hit penalties while engaged.",
+        ),
+        ("AM", "Urban Warfare"): (
+            "Supported",
+            "Ranged attacks against the model suffer -1 Damage while it has the Benefit of Cover against that attack.",
+        ),
+        ("AM", "Gung-ho Executioners"): (
+            "Supported",
+            "Executioner plasma cannon attacks gain +1 to hit against Below Half-strength targets.",
+        ),
+        ("AM", "Mow Down the Enemy"): (
+            "Supported",
+            "Punisher gatling cannon attacks gain [DEVASTATING WOUNDS] against non-MONSTER/non-VEHICLE targets.",
+        ),
         ("GC", "Deathstrike Missile"): (
             "Supported",
             "Shooting phase action support: optional Designate/Adjust/None flow places or moves a unique Deathstrike marker for the unit, with phase-use and ONE SHOT constraints enforced.",
@@ -13434,6 +13450,7 @@ def _post_shoot_ap_bonus_support(description: str) -> Optional[Tuple[str, str]]:
     pattern = (
         r"in your shooting phase after this (?:model|unit) has shot select one enemy unit "
         r"(?:excluding monsters and vehicles )?hit by one or more of those attacks "
+        r"(?:made with (?:its|this model s) (?P<weapon>[a-z0-9 ]+) )?"
         r"until the end of the (?P<duration>phase|turn) each time a friendly (?P<keyword>[a-z0-9 ]+?) unit makes (?:a|an) "
         r"(?:(?P<atype>ranged|melee) )?attack that targets that enemy unit improve the armour penetration characteristic "
         r"of that attack by (?P<val>\d+)(?: the same enemy unit can only be affected by this ability once per (?:turn|phase)"
@@ -13458,8 +13475,13 @@ def _post_shoot_ap_bonus_support(description: str) -> Optional[Tuple[str, str]]:
         scope = "melee attacks"
     duration_note = "until phase end" if duration == "phase" else "until turn end"
     note = f"After shooting: select a hit enemy unit; friendly {keyword} {scope} against it gain AP +{val} {duration_note}."
+    weapon = str(m.group("weapon") or "").strip()
+    if weapon:
+        note = f"After shooting: select a hit enemy unit hit by {weapon}; friendly {keyword} {scope} against it gain AP +{val} {duration_note}."
     if "excluding monsters and vehicles" in norm:
         note = f"After shooting: select a hit enemy unit (not MONSTER/VEHICLE); friendly {keyword} {scope} against it gain AP +{val} {duration_note}."
+        if weapon:
+            note = f"After shooting: select a hit enemy unit (not MONSTER/VEHICLE) hit by {weapon}; friendly {keyword} {scope} against it gain AP +{val} {duration_note}."
     if "once per turn" in norm:
         note += " Target limit: once per turn."
     elif "once per phase" in norm:

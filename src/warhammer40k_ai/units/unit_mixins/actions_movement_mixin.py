@@ -1615,6 +1615,26 @@ class ActionsMovementMixin:
                     }
                 )
 
+        m = re.search(
+            r"each time a ranged attack targets this model\s*,?\s*if this model has the benefit of cover against that attack\s*,?\s*"
+            r"subtract (?P<val>\d+) from the damage characteristic of that attack",
+            tl,
+        )
+        if m:
+            try:
+                val = int(m.group("val"))
+            except Exception:
+                val = 0
+            if val:
+                entries.append(
+                    {
+                        "value": int(val),
+                        "attack_type": "ranged",
+                        "op": "sub",
+                        "requires_benefit_of_cover": True,
+                    }
+                )
+
         m = self._BEARER_ALLOCATED_DAMAGE_HALVING_RE.search(tl)
         if not m:
             m = self._BEARER_ALLOCATED_DAMAGE_HALVING_ALT_RE.search(tl)

@@ -6038,6 +6038,72 @@ class PositioningMixin:
             return {}
         return self._resolve_attack_keyword_bonuses_from_rules(rules, attack_type=attack_type)
 
+    def get_weapon_target_excluding_keywords_keyword_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return weapon-scoped attack keyword bonus rules for patterns like:
+        "Each time this model makes an attack with its punisher gatling cannon that targets an enemy unit
+         (excluding MONSTERS and VEHICLES), that attack has the [DEVASTATING WOUNDS] ability."
+        """
+        if model is None:
+            return None
+        cache_key = f"weapon_target_excluding_keywords_keyword_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            entries = list(self._iter_model_specific_ability_entries(model) or [])
+            entries.extend(list(self._iter_ability_entries_for_rules(model=None) or []))
+            for name, desc in entries:
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                normalized = text.lower().replace("\u2019", "'")
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                match = re.fullmatch(
+                    r"each time this model makes an attack with its (?P<weapon>[a-z0-9 ]+?) "
+                    r"that targets (?:an? )?(?:enemy )?unit excluding (?P<exclude>[a-z0-9 ]+) that attack has "
+                    r"(?:the )?(?P<keyword>[a-z0-9 ]+) ability",
+                    normalized,
+                )
+                if not match:
+                    continue
+                weapon_name = str(match.group("weapon") or "").strip()
+                keyword = str(match.group("keyword") or "").strip().upper()
+                raw_exclude = str(match.group("exclude") or "").strip().lower()
+                if not weapon_name or not keyword or not raw_exclude:
+                    continue
+                excluded_values = []
+                for token in re.split(r"\s*(?:,|and|or)\s*", raw_exclude):
+                    token = token.strip()
+                    if not token:
+                        continue
+                    normalized_keyword = self._normalize_keyword_phrase(token) or token.strip().upper()
+                    normalized_keyword = str(normalized_keyword or "").strip().upper()
+                    if normalized_keyword.endswith("S") and len(normalized_keyword) > 1:
+                        normalized_keyword = normalized_keyword[:-1]
+                    if normalized_keyword and normalized_keyword not in excluded_values:
+                        excluded_values.append(normalized_keyword)
+                excluded = tuple(excluded_values)
+                if not excluded:
+                    continue
+                rule = {
+                    "attack_type": "ranged",
+                    "weapon_names": [weapon_name],
+                    "keyword": keyword,
+                    "target_exclude_keywords_any": excluded,
+                    "source": str(name or "Weapon keyword bonus").strip() or "Weapon keyword bonus",
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def get_attack_keyword_bonuses(
         self,
         *,
@@ -6053,6 +6119,9 @@ class PositioningMixin:
         Supported keywords: Ignores Cover, Lethal Hits, Sustained Hits X, Devastating Wounds, Twin-linked.
         """
         rules = list(self._get_attack_keyword_bonus_rules(model=model) or [])
+        extra_rule = self.get_weapon_target_excluding_keywords_keyword_bonus_rule(model)
+        if isinstance(extra_rule, dict):
+            rules.append(extra_rule)
         # Unholy Bloodshed: temporary Devastating Wounds after Dark Pact.
         try:
             root = self.get_attached_unit_root()
@@ -6280,6 +6349,17 @@ class PositioningMixin:
         if target is None:
             return {}
         filtered = []
+        current_weapon_name = ""
+        if weapon_profile is not None:
+            try:
+                current_weapon_name = str(getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or "").strip()
+            except Exception:
+                current_weapon_name = ""
+            if not current_weapon_name:
+                try:
+                    current_weapon_name = str(getattr(weapon_profile, "name", "") or "").strip()
+                except Exception:
+                    current_weapon_name = ""
 
         def _target_has_keyword(val: str) -> bool:
             key = str(val or "").strip()
@@ -6330,9 +6410,19 @@ class PositioningMixin:
                         has_required_model_keyword = False
                 if not has_required_model_keyword:
                     continue
+            weapon_names = list(rule.get("weapon_names", []) or [])
+            if weapon_names:
+                if not current_weapon_name:
+                    continue
+                if not self._weapon_name_matches(weapon_names, current_weapon_name):
+                    continue
             target_keywords_any = tuple(rule.get("target_keywords_any") or ())
             if target_keywords_any:
                 if not any(_target_has_keyword(k) for k in target_keywords_any):
+                    continue
+            target_exclude_keywords = tuple(rule.get("target_exclude_keywords_any") or ())
+            if target_exclude_keywords:
+                if any(_target_has_keyword(k) for k in target_exclude_keywords):
                     continue
             if bool(rule.get("requires_closest_eligible_target", False)):
                 if model is None or weapon_profile is None:
