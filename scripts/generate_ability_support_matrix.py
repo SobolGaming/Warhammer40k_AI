@@ -3528,6 +3528,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "If equipped with a cult sniper rifle, once per turn after an enemy Normal/Advance/Fall Back move ends within 9\" and the model is not in Engagement Range, this unit can make a reactive Normal move up to 6\".",
         ),
+        ("GC", "Transport Support"): (
+            "Supported",
+            "After shooting: select a hit enemy unit; friendly models that disembarked from this TRANSPORT this turn re-roll Hit rolls against it until phase end.",
+        ),
         ("AS", "Extremis Trigger Word"): (
             "Supported",
             "Fight phase selected-unit trigger: optional CONFIRM_YES_NO applies Attacks 6 and [HAZARDOUS] to arco-flails until phase end.",
