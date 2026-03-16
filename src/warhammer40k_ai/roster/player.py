@@ -2070,6 +2070,20 @@ class Player:
             return False
         return True
 
+    def _target_unit_can_use_blackwing_mantle_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        stratagem_key = self._normalize_stratagem_name_key(stratagem_name)
+        if stratagem_key not in ("RAPID INGRESS", "HEROIC INTERVENTION"):
+            return False
+        fn = getattr(target_unit, "can_use_blackwing_mantle_stratagem_discount", None)
+        if not callable(fn):
+            return False
+        return bool(fn(self.game, stratagem_name=stratagem_key))
+
     def _target_unit_can_use_beast_handler_heroic_intervention(self, target_unit) -> bool:
         if target_unit is None:
             return False
@@ -2756,6 +2770,17 @@ class Player:
         if name_u not in ("RAPID INGRESS", "HEROIC INTERVENTION"):
             return 0
         if not self._target_unit_can_use_hypersensory_array_stratagem_discount(target_unit, stratagem_name=name_u):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_blackwing_mantle_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u not in ("RAPID INGRESS", "HEROIC INTERVENTION"):
+            return 0
+        if not self._target_unit_can_use_blackwing_mantle_stratagem_discount(target_unit, stratagem_name=name_u):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -3778,6 +3803,23 @@ class Player:
                 discount = base
                 reasons.append(f"{ability_name}: Grenade for 0CP.")
                 return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        blackwing = self._preview_blackwing_mantle_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if blackwing:
+            ability_name = "Blackwing Mantle"
+            try:
+                get_rule = getattr(target_unit, "get_blackwing_mantle_stratagem_discount_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
+            reasons.append(f"{ability_name}: {stratagem_label} for 0CP.")
+            return {"base": base, "discount": base, "cost": 0, "reasons": reasons}
 
         hypersensory = self._preview_hypersensory_array_discount(
             stratagem=stratagem,
@@ -5535,6 +5577,27 @@ class Player:
 
         if name_u == "GRENADE" and grenade_used_this_phase:
             return {"denied": True, "reason": "Grenade already used this phase"}
+
+        blackwing = self._preview_blackwing_mantle_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if blackwing:
+            ability_name = "Blackwing Mantle"
+            try:
+                get_rule = getattr(target_unit, "get_blackwing_mantle_stratagem_discount_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            stratagem_label = str(getattr(stratagem, "name", "") or "").strip() or "Stratagem"
+            return {
+                "base": base,
+                "discount": base,
+                "cost": 0,
+                "reasons": [f"{ability_name}: {stratagem_label} for 0CP."],
+            }
 
         hypersensory = self._preview_hypersensory_array_discount(
             stratagem=stratagem,

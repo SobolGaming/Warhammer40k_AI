@@ -72,6 +72,23 @@ class PositioningMixin:
             self._pending_leader_separation = False
             return
 
+        try:
+            if len(getattr(self, "models", []) or []) == 0:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                event_system = getattr(game, "event_system", None) if game is not None else None
+                if event_system is not None:
+                    event_system.publish(
+                        "bodyguard_unit_destroyed",
+                        bodyguard_unit=self,
+                        surviving_leaders=list(attached),
+                        destroyed_by_model=getattr(self, "_last_destroyed_by_model", None),
+                        destroyed_by_unit=getattr(self, "_last_destroyed_by_unit", None),
+                        destroyed_by_weapon_profile=getattr(self, "_last_destroyed_by_weapon_profile", None),
+                        game_map=game_map,
+                    )
+        except Exception:
+            pass
+
         for leader in attached:
             try:
                 leader.detach_from_unit()

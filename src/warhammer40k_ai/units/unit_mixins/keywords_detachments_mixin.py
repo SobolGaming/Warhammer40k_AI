@@ -3850,6 +3850,129 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_master_of_shadows_rule(self) -> Optional[dict]:
+        """
+        Detect Aethon Shaan's Master of Shadows ability:
+        "In your Command phase, you can select one unit from your opponent's army.
+        Until the start of your next Command phase, each time an ADEPTUS ASTARTES
+        unit from your army declares a charge while it is within 12" of that enemy
+        unit, you can re-roll the Charge roll, but it must declare that enemy unit
+        as a target of that charge (if possible)."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "master_of_shadows_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                key = (str(name or "").strip().lower(), normalized)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if "select one unit from your opponent s army" not in normalized:
+                    continue
+                if "each time an adeptus astartes unit from your army declares a charge" not in normalized:
+                    continue
+                if "within 12 of that enemy unit" not in normalized:
+                    continue
+                if "reroll the charge roll" not in normalized and "re roll the charge roll" not in normalized:
+                    continue
+                if "it must declare that enemy unit as a target of that charge if possible" not in normalized:
+                    continue
+                source = str(name or "Master of Shadows").strip() or "Master of Shadows"
+                rule = {
+                    "source": source,
+                    "range": 12,
+                    "friendly_keyword": "ADEPTUS ASTARTES",
+                    "ability_key": "master_of_shadows",
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def clear_master_of_shadows_selection(self) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        changed = False
+        for key in (
+            "master_of_shadows_target_unit_id",
+            "master_of_shadows_target_name",
+            "master_of_shadows_source",
+            "master_of_shadows_owner_id",
+            "master_of_shadows_selected_turn",
+        ):
+            if key in sr:
+                sr.pop(key, None)
+                changed = True
+        if changed:
+            root.special_rules = sr
+
+    def select_master_of_shadows_target(self, target_unit, *, game=None, player=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root.get_master_of_shadows_rule() is None or target_unit is None:
+            return False
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return False
+        target_id = str(get_entity_id(target_root) or "")
+        if not target_id:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        rule = root.get_master_of_shadows_rule() or {}
+        sr["master_of_shadows_target_unit_id"] = target_id
+        sr["master_of_shadows_target_name"] = str(getattr(target_root, "name", "") or "").strip()
+        sr["master_of_shadows_source"] = str(rule.get("source", "") or "Master of Shadows").strip() or "Master of Shadows"
+        if player is not None:
+            sr["master_of_shadows_owner_id"] = str(getattr(player, "id", "") or "")
+        if game is not None:
+            try:
+                sr["master_of_shadows_selected_turn"] = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                sr["master_of_shadows_selected_turn"] = 0
+        root.special_rules = sr
+        return True
+
     def get_singular_purpose_rule(self) -> Optional[dict]:
         """
         Detect TYRANIDS "Singular Purpose" text:
@@ -5573,6 +5696,119 @@ class KeywordsDetachmentsMixin:
             root._ability_cache = {}
         root._ability_cache[cache_key] = rule
         return rule
+
+    def get_blackwing_mantle_stratagem_discount_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "You can target this model's unit with the Rapid Ingress and Heroic Intervention Stratagems
+        for 0CP, even if you have already used that Stratagem on a different unit this phase."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "blackwing_mantle_stratagem_discount_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not normalized:
+                    continue
+                if "rapid ingress" not in normalized or "heroic intervention" not in normalized:
+                    continue
+                if "stratagem" not in normalized or "0cp" not in normalized:
+                    continue
+                if "this model s unit" not in normalized and "this models unit" not in normalized:
+                    continue
+                if (
+                    "already used that stratagem on a different unit this phase" not in normalized
+                    and "already targeted a different unit with that stratagem this phase" not in normalized
+                    and "already used that stratagem on another unit this phase" not in normalized
+                    and "already targeted another unit with that stratagem this phase" not in normalized
+                ):
+                    continue
+                source = str(name or "Blackwing Mantle").strip() or "Blackwing Mantle"
+                rule = {
+                    "source": source,
+                    "ability_key": "blackwing_mantle_stratagem_discount",
+                    "stratagems": ("RAPID INGRESS", "HEROIC INTERVENTION"),
+                    "repeat_bypass": True,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def can_use_blackwing_mantle_stratagem_discount(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive():
+                return False
+        except Exception:
+            return False
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_blackwing_mantle_stratagem_discount_rule()
+        if not rule:
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        if name_u == "RAPID INGRESS":
+            try:
+                if not root.is_in_reserves():
+                    return False
+            except Exception:
+                return False
+        elif name_u == "HEROIC INTERVENTION":
+            try:
+                if not root.is_alive() or not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                return False
+            try:
+                if root.is_in_reserves():
+                    return False
+            except Exception:
+                pass
+        return True
 
     def _hypersensory_array_battle_round_key(self, game=None) -> str:
         if game is None:

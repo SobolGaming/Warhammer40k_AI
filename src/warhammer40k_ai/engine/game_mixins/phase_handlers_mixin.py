@@ -408,6 +408,162 @@ class GamePhaseHandlersMixin:
                 )
                 self.request_decision(request)
 
+    def _on_phase_start_master_of_shadows(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase start: queue Master of Shadows quarry selection for Aethon Shaan."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        player_id = str(getattr(player, "id", "") or "")
+
+        queue = getattr(self, "decision_queue", None)
+
+        def _already_pending_for_unit(unit_id: str) -> bool:
+            if queue is None or not hasattr(queue, "list"):
+                return False
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "master_of_shadows":
+                    continue
+                if str(ctx.get("source_unit_id", "") or "") != unit_id:
+                    continue
+                if player_id and str(ctx.get("player_id", "") or "") != player_id:
+                    continue
+                if current_turn and int(ctx.get("turn", 0) or 0) != current_turn:
+                    continue
+                return True
+            return False
+
+        def _unit_sort_key(unit_obj) -> str:
+            return str(get_entity_id(unit_obj) or "")
+
+        enemy_roots: list = []
+        seen_enemy: set[str] = set()
+        for other_player in list(getattr(self, "players", []) or []):
+            if other_player is None or other_player is player:
+                continue
+            other_army = self._get_player_army(other_player)
+            if other_army is None:
+                continue
+            for enemy in sorted(list(getattr(other_army, "units", []) or []), key=_unit_sort_key):
+                if enemy is None:
+                    continue
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None:
+                    continue
+                enemy_id = str(get_entity_id(enemy_root) or "")
+                if not enemy_id or enemy_id in seen_enemy:
+                    continue
+                if not bool(getattr(enemy_root, "is_alive", lambda: False)()):
+                    continue
+                seen_enemy.add(enemy_id)
+                enemy_roots.append(enemy_root)
+
+        processed_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id in processed_roots:
+                continue
+            if root_id:
+                processed_roots.add(root_id)
+
+            rule_fn = getattr(root, "get_master_of_shadows_rule", None)
+            rule = rule_fn() if callable(rule_fn) else None
+            if not isinstance(rule, dict):
+                continue
+
+            clear_fn = getattr(root, "clear_master_of_shadows_selection", None)
+            if callable(clear_fn):
+                clear_fn()
+
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", True)):
+                continue
+            try:
+                if root.is_in_reserves():
+                    continue
+            except Exception:
+                pass
+            if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                continue
+            if not root_id or _already_pending_for_unit(root_id):
+                continue
+            if not enemy_roots:
+                continue
+
+            ability_name = str(rule.get("source", "") or "Master of Shadows").strip() or "Master of Shadows"
+            options = [
+                DecisionOption.create(
+                    "None",
+                    payload={
+                        "action": "skip",
+                        "source_unit_id": root_id,
+                        "summary": f"Do not use {ability_name}.",
+                    },
+                )
+            ]
+            candidate_ids: list[str] = []
+            for enemy_root in list(enemy_roots or []):
+                enemy_id = str(get_entity_id(enemy_root) or "")
+                if not enemy_id:
+                    continue
+                candidate_ids.append(enemy_id)
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(enemy_root, "name", "Unit") or "Unit"),
+                        payload={
+                            "source_unit_id": root_id,
+                            "target_unit_id": enemy_id,
+                        },
+                    )
+                )
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select one enemy unit (or None).",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "master_of_shadows",
+                    "ability_name": ability_name,
+                    "phase": "Command phase",
+                    "phase_name": "COMMAND_PHASE",
+                    "optional": True,
+                    "player_id": player_id,
+                    "source_unit_id": root_id,
+                    "unit_id": root_id,
+                    "candidate_unit_ids": list(candidate_ids),
+                    "turn": int(current_turn or 0),
+                    "range": int(rule.get("range", 12) or 12),
+                },
+            )
+            self.request_decision(request)
+
     def _on_phase_start_ds8_support_turret_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Movement phase start: clear prior DS8 Support Turret virtual weapons for the active player."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -5684,10 +5840,31 @@ class GamePhaseHandlersMixin:
                             range_value = int(spec.get("range", 0) or 0)
                         except Exception:
                             range_value = 0
+                        try:
+                            penalty = int(spec.get("penalty", 0) or 0)
+                        except Exception:
+                            penalty = 0
                         if range_value <= 0:
                             continue
+                        required_keywords = [
+                            str(value or "").strip().upper()
+                            for value in list(spec.get("required_keywords", []) or [])
+                            if str(value or "").strip()
+                        ]
+                        required_keyword_mode = str(spec.get("required_keyword_mode", "all") or "all").strip().lower()
                         exclude_keywords = list(spec.get("exclude_keywords", []) or [])
                         for enemy_root in enemy_roots:
+                            if required_keywords:
+                                try:
+                                    enemy_keywords = {str(k).upper() for k in list(getattr(enemy_root, "keywords", []) or [])}
+                                except Exception:
+                                    enemy_keywords = set()
+                                if required_keyword_mode == "any":
+                                    if set(required_keywords).isdisjoint(enemy_keywords):
+                                        continue
+                                else:
+                                    if not set(required_keywords).issubset(enemy_keywords):
+                                        continue
                             try:
                                 excluded = any(enemy_root.has_any_keyword(kw) for kw in exclude_keywords)
                             except Exception:
@@ -5699,7 +5876,9 @@ class GamePhaseHandlersMixin:
                                     continue
                             except Exception:
                                 continue
-                            _apply_battleshock(enemy_root)
+                            modifier = -abs(int(penalty)) if penalty else 0
+                            reason = f"{source} modifier" if modifier else ""
+                            _apply_battleshock(enemy_root, modifier=modifier, reason=reason)
                             from ...utility.event_bus import append_action
                             if p is not None:
                                 label = f"{getattr(model, 'name', 'Model')} {source}".strip()

@@ -1149,8 +1149,31 @@ class Unit(
                 sr_root = getattr(root, "special_rules", None)
                 entries = sr_root.get("kill_reward_objective_control_bonus_entries") if isinstance(sr_root, dict) else None
                 if isinstance(entries, list):
+                    model_id = str(get_entity_id(model) or "") if model is not None else ""
                     for entry in entries:
                         if not isinstance(entry, dict):
+                            continue
+                        source = str(entry.get("source", "") or "Kill reward").strip() or "Kill reward"
+                        mode = str(entry.get("mode", "add") or "add").strip().lower()
+                        entry_model_id = str(entry.get("source_model_id", "") or "").strip()
+                        if entry_model_id and entry_model_id != model_id:
+                            continue
+                        if bool(entry.get("requires_not_battle_shocked", False)) and root.is_battle_shocked():
+                            continue
+                        if mode == "set":
+                            try:
+                                set_value = int(entry.get("value", entry.get("set_value", 0)) or 0)
+                            except Exception:
+                                continue
+                            if set_value < 0:
+                                continue
+                            mods.append(
+                                Modifier(
+                                    ModifierOp.SET,
+                                    int(set_value),
+                                    source=f"ability:kill_reward_objective_control:{source}",
+                                )
+                            )
                             continue
                         try:
                             bonus = int(entry.get("bonus", 0) or 0)
@@ -1163,9 +1186,6 @@ class Unit(
                         except Exception:
                             stacks = 1
                         stacks = max(1, int(stacks))
-                        if bool(entry.get("requires_not_battle_shocked", False)) and root.is_battle_shocked():
-                            continue
-                        source = str(entry.get("source", "") or "Kill reward").strip() or "Kill reward"
                         mods.append(
                             Modifier(
                                 ModifierOp.ADD,
@@ -4075,8 +4095,11 @@ class Unit(
         re.IGNORECASE,
     )
     _FIGHT_PHASE_RANGE_BATTLESHOCK_RE = re.compile(
-        r"at the start of the fight phase (?:each|every) enemy unit(?: excluding (?P<exclude>[a-z0-9 ]+?))? within "
-        r"(?P<range>\d+)\s*\"?\s*of this model must take a battle shock test",
+        r"at the start of the fight phase (?:each|every) enemy"
+        r"(?: (?P<required>[a-z0-9 ]+?))? unit(?:s)?"
+        r"(?: excluding (?P<exclude>[a-z0-9 ]+?))? within "
+        r"(?P<range>\d+)\s*\"?\s*of this model must take a battle shock test"
+        r"(?: subtracting (?P<penalty>\d+) from (?:that test|the result)(?: when they do)?)?",
         re.IGNORECASE,
     )
     _OPPONENT_COMMAND_PHASE_BELOW_STARTING_BATTLESHOCK_RE = re.compile(

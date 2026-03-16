@@ -39,6 +39,23 @@ def _validate_declare_charge(game: object, request: DecisionRequest, result: Dec
         for target in targets:
             if not attacker.can_declare_charge_against(target, game, out_of_turn=out_of_turn):
                 return ("Unit cannot declare a charge against one or more targets.",)
+        master_of_shadows = getattr(attacker, "get_master_of_shadows_required_charge_target_ids", None)
+        if callable(master_of_shadows):
+            option_units = [
+                get_unit(game, target_id)
+                for target_id in sorted(str(target_id or "") for target_id in option_targets if str(target_id or ""))
+            ]
+            option_units = [unit for unit in list(option_units or []) if unit is not None]
+            required_target_ids = set(
+                master_of_shadows(
+                    target_units=option_units,
+                    game=game,
+                    game_map=getattr(game, "map", None),
+                )
+                or set()
+            )
+            if required_target_ids and not required_target_ids.issubset({str(tid) for tid in selected_ids}):
+                return ("Charge must include the marked Master of Shadows target if it is a legal target within 12\".",)
         sycophantic_active_fn = getattr(attacker, "_carnival_sycophantic_surge_active_for_charge", None)
         sycophantic_target_fn = getattr(attacker, "_carnival_sycophantic_target_condition_met", None)
         if callable(sycophantic_active_fn) and bool(sycophantic_active_fn(game=game)):

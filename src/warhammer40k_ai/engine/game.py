@@ -7991,11 +7991,23 @@ class Game(
         """Apply persistent Objective Control bonuses granted by on-destroy kill-reward specs."""
         if attacker_unit is None or not isinstance(spec, dict):
             return
+        mode = "add"
+        source_model_id = str(spec.get("source_model_id", "") or "").strip()
         try:
             oc_bonus = int(spec.get("objective_control_bonus", 0) or 0)
         except Exception:
             oc_bonus = 0
-        if oc_bonus <= 0:
+        try:
+            oc_set_value = int(
+                spec.get("objective_control_set_value", spec.get("set_value", spec.get("value", 0))) or 0
+            )
+        except Exception:
+            oc_set_value = 0
+        if "objective_control_set_value" in spec or str(spec.get("mode", "") or "").strip().lower() == "set":
+            mode = "set"
+        if mode == "add" and oc_bonus <= 0:
+            return
+        if mode == "set" and oc_set_value < 0:
             return
 
         try:
@@ -8025,34 +8037,55 @@ class Game(
         existing_entry: Optional[dict] = None
         for entry in entries:
             entry_norm = str(entry.get("source_norm", "") or "").strip().lower()
-            if entry_norm and entry_norm == source_norm:
+            entry_mode = str(entry.get("mode", "add") or "add").strip().lower() or "add"
+            entry_model_id = str(entry.get("source_model_id", "") or "").strip()
+            if entry_norm and entry_norm == source_norm and entry_mode == mode and entry_model_id == source_model_id:
                 existing_entry = entry
                 break
 
         if existing_entry is not None:
-            if first_time:
+            if mode == "add" and first_time:
                 return
-            try:
-                stacks = int(existing_entry.get("stacks", 1) or 1)
-            except Exception:
-                stacks = 1
-            existing_entry["stacks"] = int(max(1, stacks + 1))
-            existing_entry["bonus"] = int(oc_bonus)
+            if mode == "set":
+                existing_entry["value"] = int(oc_set_value)
+                existing_entry["set_value"] = int(oc_set_value)
+            else:
+                try:
+                    stacks = int(existing_entry.get("stacks", 1) or 1)
+                except Exception:
+                    stacks = 1
+                existing_entry["stacks"] = int(max(1, stacks + 1))
+                existing_entry["bonus"] = int(oc_bonus)
             existing_entry["source"] = source
             existing_entry["source_norm"] = source_norm
+            existing_entry["mode"] = mode
+            if source_model_id:
+                existing_entry["source_model_id"] = source_model_id
             existing_entry["requires_not_battle_shocked"] = bool(requires_not_battle_shocked)
         else:
-            entries.append(
-                {
-                    "source": source,
-                    "source_norm": source_norm,
-                    "bonus": int(oc_bonus),
-                    "stacks": 1,
-                    "requires_not_battle_shocked": bool(requires_not_battle_shocked),
-                }
-            )
+            entry = {
+                "source": source,
+                "source_norm": source_norm,
+                "mode": mode,
+                "requires_not_battle_shocked": bool(requires_not_battle_shocked),
+            }
+            if source_model_id:
+                entry["source_model_id"] = source_model_id
+            if mode == "set":
+                entry["value"] = int(oc_set_value)
+                entry["set_value"] = int(oc_set_value)
+            else:
+                entry["bonus"] = int(oc_bonus)
+                entry["stacks"] = 1
+            entries.append(entry)
 
-        entries.sort(key=lambda e: str(e.get("source_norm", "") or ""))
+        entries.sort(
+            key=lambda e: (
+                str(e.get("source_norm", "") or ""),
+                str(e.get("source_model_id", "") or ""),
+                str(e.get("mode", "add") or "add"),
+            )
+        )
         sr["kill_reward_objective_control_bonus_entries"] = entries
         root.special_rules = sr
 
@@ -9417,6 +9450,49 @@ class Game(
                         spec=spec,
                     )
 
+        try:
+            attacker_members = list(attacker_root.get_attached_unit_members() or [])
+        except Exception:
+            attacker_members = [attacker_root]
+        if not attacker_members:
+            attacker_members = [attacker_root]
+        for member in list(attacker_members or []):
+            if member is None:
+                continue
+            models = list(getattr(member, "models", []) or [])
+            models.sort(key=lambda model: str(get_entity_id(model) or ""))
+            for model in list(models or []):
+                if model is None:
+                    continue
+                alive = getattr(model, "is_alive", True)
+                try:
+                    if callable(alive):
+                        alive = alive()
+                except Exception:
+                    alive = True
+                if not bool(alive):
+                    continue
+                model_specs_fn = getattr(member, "model_unit_destroyed_objective_control_set_specs", None)
+                model_specs = list(model_specs_fn(model) or []) if callable(model_specs_fn) else []
+                for model_spec in list(model_specs or []):
+                    if not isinstance(model_spec, dict):
+                        continue
+                    if bool(model_spec.get("requires_melee", False)):
+                        wp = destroyed_by_weapon_profile
+                        pw = getattr(wp, "parent_wargear", None)
+                        if wp is None or pw is None or not pw.is_melee():
+                            continue
+                    enriched_spec = dict(model_spec)
+                    enriched_spec["mode"] = "set"
+                    enriched_spec["objective_control_set_value"] = int(
+                        model_spec.get("value", model_spec.get("set_value", 0)) or 0
+                    )
+                    enriched_spec["source_model_id"] = str(get_entity_id(model) or "")
+                    self._apply_kill_reward_objective_control_bonus(
+                        attacker_unit=attacker_root,
+                        spec=enriched_spec,
+                    )
+
         hunter_rule = None
         if destroyed_by_model is not None:
             get_rule = getattr(destroyed_by_unit, "get_hunter_of_souls_rule", None)
@@ -10209,6 +10285,84 @@ class Game(
                 continue
             candidates.append(unit)
         return candidates
+
+    def _on_bodyguard_unit_destroyed_cp_gain(
+        self,
+        bodyguard_unit=None,
+        surviving_leaders=None,
+        destroyed_by_unit=None,
+        destroyed_by_model=None,
+        **_kwargs,
+    ) -> None:
+        if bodyguard_unit is None:
+            return
+        leaders = list(surviving_leaders or [])
+        if not leaders:
+            return
+
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_action, append_dice
+
+        leaders.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        for leader in list(leaders or []):
+            if leader is None:
+                continue
+            try:
+                player = leader.get_parent_army().player
+            except Exception:
+                player = None
+            if player is None:
+                continue
+            models = list(getattr(leader, "models", []) or [])
+            models.sort(key=lambda model: str(get_entity_id(model) or ""))
+            for model in list(models or []):
+                if model is None:
+                    continue
+                alive = getattr(model, "is_alive", True)
+                try:
+                    if callable(alive):
+                        alive = alive()
+                except Exception:
+                    alive = True
+                if not bool(alive):
+                    continue
+                specs_fn = getattr(leader, "model_bodyguard_destroyed_cp_gain_specs", None)
+                specs = list(specs_fn(model) or []) if callable(specs_fn) else []
+                for spec in list(specs or []):
+                    if not isinstance(spec, dict):
+                        continue
+                    try:
+                        threshold = int(spec.get("threshold", 0) or 0)
+                    except Exception:
+                        threshold = 0
+                    try:
+                        cp_gain = int(spec.get("cp", 0) or 0)
+                    except Exception:
+                        cp_gain = 0
+                    if threshold <= 0 or cp_gain <= 0:
+                        continue
+                    source = str(spec.get("source", "") or "Bodyguard destroyed CP gain").strip() or "Bodyguard destroyed CP gain"
+                    roll = int(get_roll("D6") or 0)
+                    append_dice(player, f"{source}: rolled D6={int(roll)} (need {int(threshold)}+).")
+                    if int(roll) >= int(threshold):
+                        gained = int(player.gain_command_points(cp_gain, reason=source, source="ability") or 0)
+                        append_action(player, f"{source}: gained {int(gained)}CP.")
+                    else:
+                        gained = 0
+                        append_action(player, f"{source}: failed to gain CP ({int(roll)} < {int(threshold)}).")
+                    self.event_system.publish(
+                        "command_points_gained",
+                        player=player,
+                        amount=int(gained or 0),
+                        reason=source,
+                        source="bodyguard_unit_destroyed",
+                        attacker_unit=destroyed_by_unit,
+                        target_unit=bodyguard_unit,
+                        attacker_model=destroyed_by_model,
+                        roll=int(roll),
+                        success_on=int(threshold),
+                        cp_gain=int(cp_gain),
+                    )
 
     def _on_unit_destroyed_power_from_pain(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
         if unit is None:
@@ -12364,6 +12518,45 @@ class Game(
                 return None
             if not charging_unit.can_declare_charge_against(tgt, self, out_of_turn=True):
                 return None
+        master_of_shadows_fn = getattr(charging_unit, "get_master_of_shadows_required_charge_target_ids", None)
+        if callable(master_of_shadows_fn):
+            possible_targets: list[Unit] = []
+            try:
+                enemy_units = list(getattr(self.map, "get_enemy_units", lambda _u: [])(charging_unit) or [])
+            except Exception:
+                enemy_units = []
+            seen_possible: set[str] = set()
+            for enemy in list(enemy_units or []):
+                if enemy is None:
+                    continue
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None:
+                    continue
+                enemy_id = str(get_entity_id(enemy_root) or "")
+                if not enemy_id or enemy_id in seen_possible:
+                    continue
+                seen_possible.add(enemy_id)
+                try:
+                    if not charging_unit.can_declare_charge_against(enemy_root, self, out_of_turn=out_of_turn):
+                        continue
+                except Exception:
+                    continue
+                possible_targets.append(enemy_root)
+            required_targets = set(
+                master_of_shadows_fn(
+                    target_units=possible_targets,
+                    game_map=getattr(self, "map", None),
+                    game=self,
+                )
+                or set()
+            )
+            if required_targets:
+                selected_target_ids = {str(get_entity_id(tgt) or "") for tgt in list(targets or []) if tgt is not None}
+                if not required_targets.issubset(selected_target_ids):
+                    return None
         sycophantic_active_fn = getattr(charging_unit, "_carnival_sycophantic_surge_active_for_charge", None)
         sycophantic_target_fn = getattr(charging_unit, "_carnival_sycophantic_target_condition_met", None)
         if callable(sycophantic_active_fn) and bool(sycophantic_active_fn(game=self)):

@@ -18051,10 +18051,71 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "unit_id": root_id,
         }
     if is_skip_choice(request, result):
+        if ability == "master_of_shadows":
+            payload = _option_payload(request, result)
+            source_unit = resolve_unit(
+                game,
+                payload.get("source_unit_id")
+                or ctx.get("source_unit_id")
+                or payload.get("unit_id")
+                or ctx.get("unit_id"),
+            )
+            if source_unit is not None:
+                try:
+                    source_root = source_unit.get_attached_unit_root()
+                except Exception:
+                    source_root = source_unit
+                clear_fn = getattr(source_root, "clear_master_of_shadows_selection", None) if source_root is not None else None
+                if callable(clear_fn):
+                    clear_fn()
+                player = _resolve_player(game, request, payload)
+                if player is None and source_root is not None:
+                    try:
+                        player = source_root.get_parent_army().player
+                    except Exception:
+                        player = None
+                ability_name = str(ctx.get("ability_name", "") or "Master of Shadows").strip() or "Master of Shadows"
+                _log_action_for_players(game, player, f"{ability_name}: selected none.")
         return None
     payload = _option_payload(request, result)
     unit_val = payload.get("target_unit_id", payload.get("unit_id", payload.get("unit")))
     chosen = resolve_unit(game, unit_val)
+    if ability == "master_of_shadows":
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return chosen
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        if source_root is None:
+            return chosen
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_root.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Master of Shadows").strip() or "Master of Shadows"
+        clear_fn = getattr(source_root, "clear_master_of_shadows_selection", None)
+        if callable(clear_fn):
+            clear_fn()
+        if chosen is not None:
+            select_fn = getattr(source_root, "select_master_of_shadows_target", None)
+            if callable(select_fn):
+                select_fn(chosen, game=game, player=player)
+            source_name = str(getattr(source_root, "name", "Unit") or "Unit")
+            target_name = str(getattr(chosen, "name", "Unit") or "Unit")
+            _log_action_for_players(game, player, f"{ability_name}: {source_name} selected {target_name}.")
+        else:
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+        return chosen
     if str(ctx.get("ability", "") or "") == "imperial_agents_psychic_veil":
         source_unit = resolve_unit(
             game,

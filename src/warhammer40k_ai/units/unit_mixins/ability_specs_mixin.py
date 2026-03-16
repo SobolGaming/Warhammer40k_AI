@@ -4789,6 +4789,7 @@ class AbilitySpecsMixin:
             - source: ability name
             - range: int
             - exclude_keywords: list[str]
+            - penalty: optional fixed Battle-shock test modifier
         """
         if model is None:
             return []
@@ -4797,51 +4798,182 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, tuple[str, ...]]] = set()
+        seen: set[tuple[str, int, tuple[str, ...], str, tuple[str, ...], int]] = set()
 
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
             if not text_src:
                 continue
             text_src = self._strip_eligibility_prefix(text_src)
+            sentences = [part.strip() for part in re.split(r"[.;]\s*", text_src) if str(part or "").strip()]
+            for sentence in list(sentences or []):
+                normalized = self._normalize_rules_text(sentence)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = self._FIGHT_PHASE_RANGE_BATTLESHOCK_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                try:
+                    penalty = int(m.group("penalty") or 0)
+                except Exception:
+                    penalty = 0
+
+                def _parse_keyword_tokens(raw: str) -> tuple[list[str], str]:
+                    cleaned = str(raw or "").strip().lower()
+                    if not cleaned:
+                        return [], "all"
+                    mode = "all"
+                    if " or " in cleaned:
+                        tokens = re.split(r"\bor\b|,", cleaned)
+                        mode = "any"
+                    else:
+                        tokens = re.split(r"\band\b|,", cleaned)
+                    parsed: list[str] = []
+                    for token in tokens:
+                        t = str(token or "").strip().lower()
+                        if not t:
+                            continue
+                        if t.endswith("s") and t[:-1] in ("character", "infantry", "monster", "vehicle", "psyker"):
+                            t = t[:-1]
+                        if t == "monster":
+                            parsed.append("MONSTER")
+                        elif t == "vehicle":
+                            parsed.append("VEHICLE")
+                        else:
+                            parsed.append(str(t).upper())
+                    return parsed, mode
+
+                required_keywords, required_keyword_mode = _parse_keyword_tokens(str(m.group("required") or ""))
+                exclude_keywords, _exclude_mode = _parse_keyword_tokens(str(m.group("exclude") or ""))
+                source = str(name or "Fight phase Battle-shock").strip() or "Fight phase Battle-shock"
+                key = (
+                    source.lower(),
+                    int(range_value),
+                    tuple(required_keywords),
+                    str(required_keyword_mode),
+                    tuple(exclude_keywords),
+                    int(penalty),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "required_keywords": list(required_keywords),
+                        "required_keyword_mode": str(required_keyword_mode),
+                        "exclude_keywords": list(exclude_keywords),
+                        "penalty": int(penalty),
+                    }
+                )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_bodyguard_destroyed_cp_gain_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """Model-specific rule: when this model's Bodyguard unit is destroyed, roll to gain CP."""
+        if model is None:
+            return []
+        cache_key = f"model_bodyguard_destroyed_cp_gain:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        pattern = re.compile(
+            r"when this model s bodyguard unit is destroyed roll one d6 on a (?P<threshold>\d+)(?:\+)? you gain (?P<cp>\d+)cp",
+            re.IGNORECASE,
+        )
+        specs: List[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
             normalized = self._normalize_rules_text(text_src)
             normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
-            m = self._FIGHT_PHASE_RANGE_BATTLESHOCK_RE.fullmatch(normalized)
-            if not m:
+            match = pattern.fullmatch(normalized)
+            if not match:
                 continue
             try:
-                range_value = int(m.group("range") or 0)
+                threshold = int(match.group("threshold") or 0)
+                cp_gain = int(match.group("cp") or 0)
             except Exception:
-                range_value = 0
-            if range_value <= 0:
                 continue
-            exclude_raw = str(m.group("exclude") or "").strip()
-            exclude_keywords: list[str] = []
-            if exclude_raw:
-                tokens = re.split(r"\band\b|,", exclude_raw)
-                for token in tokens:
-                    t = str(token or "").strip().lower()
-                    if not t:
-                        continue
-                    if t == "monsters":
-                        exclude_keywords.append("MONSTER")
-                    elif t == "vehicles":
-                        exclude_keywords.append("VEHICLE")
-                    else:
-                        exclude_keywords.append(str(t).upper())
-            source = str(name or "Fight phase Battle-shock").strip() or "Fight phase Battle-shock"
-            key = (source.lower(), int(range_value), tuple(exclude_keywords))
+            if threshold <= 0 or cp_gain <= 0:
+                continue
+            source = str(name or "Bodyguard destroyed CP gain").strip() or "Bodyguard destroyed CP gain"
+            key = (source.lower(), int(threshold), int(cp_gain))
             if key in seen:
                 continue
             seen.add(key)
             specs.append(
                 {
                     "source": source,
-                    "range": int(range_value),
-                    "exclude_keywords": list(exclude_keywords),
+                    "threshold": int(threshold),
+                    "cp": int(cp_gain),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_unit_destroyed_objective_control_set_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """Model-specific rule: when this model's unit destroys an enemy unit, this model's OC is set to a value."""
+        if model is None:
+            return []
+        cache_key = f"model_unit_destroyed_objective_control_set:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        pattern = re.compile(
+            r"if this model s unit destroys an enemy unit as (?:a|the) result of a melee attack until the end of the battle this model has an objective control characteristic of (?P<value>\d+)",
+            re.IGNORECASE,
+        )
+        specs: List[dict] = []
+        seen: set[tuple[str, int]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            match = pattern.fullmatch(normalized)
+            if not match:
+                continue
+            try:
+                value = int(match.group("value") or 0)
+            except Exception:
+                continue
+            if value < 0:
+                continue
+            source = str(name or "Objective Control on destroy").strip() or "Objective Control on destroy"
+            key = (source.lower(), int(value))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "value": int(value),
+                    "requires_melee": True,
                 }
             )
 

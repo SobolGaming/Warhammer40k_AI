@@ -6209,6 +6209,7 @@ def _classify_ability_base(
     sticky_support = _sticky_objective_support(description)
     command_phase_unit_return_support = _command_phase_unit_return_support(description)
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
+    bodyguard_destroyed_cp_gain_support = _bodyguard_destroyed_cp_gain_support(description)
     charge_phase_bodyguard_loss_support = _charge_phase_bodyguard_loss_support(description)
     opponent_turn_reserves_support = _opponent_turn_strategic_reserves_support(description)
     strategic_reserves_early_arrival_support = _strategic_reserves_early_arrival_support(description)
@@ -6263,6 +6264,7 @@ def _classify_ability_base(
     post_shoot_keyword_hit_reroll_ones_support = _post_shoot_keyword_hit_reroll_ones_support(description)
     ranged_target_within_range_ap_bonus_support = _ranged_target_within_range_ap_bonus_support(description)
     aura_battleshock_leadership_penalty_support = _aura_battleshock_leadership_penalty_support(description)
+    model_unit_destroyed_objective_control_set_support = _model_unit_destroyed_objective_control_set_support(description)
     failed_battleshock_aura_mortal_heal_support = _failed_battleshock_aura_mortal_heal_support(description)
     fight_phase_select_engagement_battleshock_support = _fight_phase_select_engagement_battleshock_support(description)
     fight_phase_select_enemy_melee_hit_penalty_support = _fight_phase_select_enemy_melee_hit_penalty_support(description)
@@ -6270,6 +6272,10 @@ def _classify_ability_base(
         _fight_phase_visible_select_enemy_roll_self_mortal_attacks_penalty_support(description)
     )
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
+    fight_phase_range_battleshock_support = _fight_phase_range_battleshock_support(description)
+    fight_phase_range_battleshock_plus_cp_on_destroy_support = _fight_phase_range_battleshock_plus_cp_on_destroy_support(
+        description
+    )
     fight_phase_aura_battleshock_support = _fight_phase_aura_battleshock_support(description)
     post_fight_destroyed_aura_battleshock_support = _post_fight_destroyed_aura_battleshock_support(description)
     charge_end_engagement_battleshock_support = _charge_end_engagement_battleshock_support(description)
@@ -6346,6 +6352,7 @@ def _classify_ability_base(
     weapon_target_keyword_attack_keyword_support = _weapon_target_keyword_attack_keyword_support(description)
     weapon_keyword_grant_support = _weapon_keyword_grant_support(description)
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
+    master_of_shadows_support = _master_of_shadows_support(description)
     reactive_targeted_shooting_support = _reactive_targeted_shooting_support(description)
     order_range_extension_support = _order_range_extension_support(description)
     mobile_command_vehicle_support = _mobile_command_vehicle_support(description)
@@ -6717,6 +6724,8 @@ def _classify_ability_base(
         return command_phase_unit_return_support
     if bodyguard_return_support:
         return bodyguard_return_support
+    if bodyguard_destroyed_cp_gain_support:
+        return bodyguard_destroyed_cp_gain_support
     if charge_phase_bodyguard_loss_support:
         return charge_phase_bodyguard_loss_support
     if opponent_turn_reserves_support:
@@ -6811,6 +6820,8 @@ def _classify_ability_base(
         return ranged_target_within_range_ap_bonus_support
     if aura_battleshock_leadership_penalty_support:
         return aura_battleshock_leadership_penalty_support
+    if model_unit_destroyed_objective_control_set_support:
+        return model_unit_destroyed_objective_control_set_support
     if failed_battleshock_aura_mortal_heal_support:
         return failed_battleshock_aura_mortal_heal_support
     if fight_phase_visible_select_enemy_roll_self_mortal_attacks_penalty_support:
@@ -6821,6 +6832,10 @@ def _classify_ability_base(
         return fight_phase_select_engagement_battleshock_support
     if fight_phase_engagement_battleshock_support:
         return fight_phase_engagement_battleshock_support
+    if fight_phase_range_battleshock_plus_cp_on_destroy_support:
+        return fight_phase_range_battleshock_plus_cp_on_destroy_support
+    if fight_phase_range_battleshock_support:
+        return fight_phase_range_battleshock_support
     if fight_phase_aura_battleshock_support:
         return fight_phase_aura_battleshock_support
     if post_fight_destroyed_aura_battleshock_support:
@@ -6983,6 +6998,8 @@ def _classify_ability_base(
         return selected_to_shoot_or_fight_reroll_choice_support
     if selected_to_shoot_reroll_support:
         return selected_to_shoot_reroll_support
+    if master_of_shadows_support:
+        return master_of_shadows_support
     if attack_roll_cp_support:
         return attack_roll_cp_support
     if attack_roll_battleshock_support:
@@ -7236,11 +7253,18 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         low,
         flags=re.IGNORECASE,
     )
+    advance_model_re = re.search(
+        r"re-?roll\s+advance\s+rolls?\s+made\s+for\s+this\s+model",
+        low,
+        flags=re.IGNORECASE,
+    )
     if advance_only_re:
         if leading_prefix:
             notes.append("Leading: re-roll Advance rolls for the unit.")
         else:
             notes.append("Re-roll Advance rolls for bearer's unit.")
+    elif advance_model_re:
+        notes.append("Re-roll Advance rolls for this model.")
     agile_re = re.search(
         r"re-?roll any rolls made for (?:the )?(?:bearer'?s|that) unit while it is performing an agile (?:manoeuvre|maneuver)",
         low,
@@ -7656,6 +7680,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}add \d+ to the move characteristic of models in {unit_ref} and add \d+ to advance and charge rolls made for {unit_ref}",
         rf"{lead_prefix}add \d+ to advance rolls made for {unit_ref}",
         rf"{lead_prefix}(?:you can |can )?reroll advance and charge rolls made for (?:this model|{unit_ref})",
+        rf"{lead_prefix}(?:you can |can )?reroll advance rolls? made for (?:this model|{unit_ref})",
         rf"{lead_prefix}(?:you can |can )?reroll charge rolls made for (?:this model|{unit_ref})",
         r"each time this unit declares a charge you can reroll the charge roll",
         rf"{lead_prefix}bearers unit declares a charge .* objective marker .* reroll the charge roll",
@@ -8995,6 +9020,33 @@ def _closest_enemy_hit_and_charge_reroll_support(description: str) -> Optional[T
     return (
         "Supported",
         "Ranged attacks vs closest enemy unit: re-roll Hit roll. Charges vs closest eligible enemy unit: re-roll Charge roll.",
+    )
+
+
+def _master_of_shadows_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your command phase you can select one unit from your opponents army "
+        r"until the start of your next command phase each time an adeptus astartes unit from your army "
+        r"declares a charge while it is within (?P<range>\d+) of that enemy unit you can reroll the charge roll "
+        r"but it must declare that enemy unit as a target of that charge if possible"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        range_value = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        range_value = 0
+    if range_value <= 0:
+        return None
+    return (
+        "Supported",
+        f"Command phase: optionally mark one enemy unit; until next Command phase, friendly ADEPTUS ASTARTES units within {range_value}\" of that unit can re-roll Charge rolls but must declare it as a charge target if legal.",
     )
 
 
@@ -10658,8 +10710,6 @@ def _rapid_ingress_heroic_intervention_zero_cp_repeat_support(description: str) 
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    if "once per battle round" not in norm:
-        return None
     if "rapid ingress" not in norm or "heroic intervention" not in norm:
         return None
     if "stratagem" not in norm or "0cp" not in norm:
@@ -10671,9 +10721,16 @@ def _rapid_ingress_heroic_intervention_zero_cp_repeat_support(description: str) 
         and "already used that stratagem on a different unit this phase" not in norm
     ):
         return None
+    subject = "this unit"
+    if (
+        "target this model s unit with the rapid ingress and heroic intervention stratagems for 0cp" in norm
+        or "target this models unit with the rapid ingress and heroic intervention stratagems for 0cp" in norm
+    ):
+        subject = "this model's unit"
+    limit_prefix = "Once per battle round, " if "once per battle round" in norm else ""
     return (
         "Supported",
-        "Once per battle round, this unit can be targeted with Rapid Ingress or Heroic Intervention for 0CP, including repeat-use bypass when that Stratagem already targeted a different unit.",
+        f"{limit_prefix}{subject.capitalize()} can be targeted with Rapid Ingress or Heroic Intervention for 0CP, including repeat-use bypass when that Stratagem already targeted a different unit.",
     )
 
 
@@ -12523,6 +12580,43 @@ def _command_phase_bodyguard_return_support(description: str) -> Optional[Tuple[
     )
 
 
+def _bodyguard_destroyed_cp_gain_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"when this models bodyguard unit is destroyed roll one d6 on a (?P<threshold>\d+)(?:\+)? you gain (?P<cp>\d+)cp",
+        norm,
+    )
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"When this model's Bodyguard unit is destroyed: roll D6, gain {m.group('cp')}CP on {m.group('threshold')}+.",
+    )
+
+
+def _model_unit_destroyed_objective_control_set_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"if this models unit destroys an enemy unit as (?:a|the) result of a melee attack until the end of the battle "
+        r"this model has an objective control characteristic of (?P<value>\d+)",
+        norm,
+    )
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"If this model's unit destroys an enemy unit with a melee attack, this model's Objective Control becomes {m.group('value')} until end of battle.",
+    )
+
+
 def _charge_phase_bodyguard_loss_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -12844,6 +12938,7 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
     if not norm:
         return None
     amount_token = r"(one|a|\d+|(?:\d+)?d\d+(?:\s+\d+)?)"
+    leading_clause = r"(?:while (?:this model|this unit|the bearer) is leading a unit )?"
 
     def _amount_label(token: str) -> str:
         token_l = str(token or "").strip().lower()
@@ -12864,6 +12959,8 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
             label = f"{label}+{modifier}"
         return label
     targeted_model_pattern = (
+        leading_clause
+        +
         r"(?:in your command phase|(?:at the )?(?:start|end) of your command phase) "
         r"(?P<optional>you can )?select one friendly (?P<target_keyword>[a-z0-9 ]+) unit within (?P<range>\d+) of this model "
         r"and return(?: (?P<up_to>up to))? (?P<amt>"
@@ -12885,6 +12982,8 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
             note = f"{note} Affected target units can only be selected once per phase."
         return ("Supported", note)
     targeted_unit_pattern = (
+        leading_clause
+        +
         r"(?:in your command phase|(?:at the )?(?:start|end) of your command phase) "
         r"select one friendly (?P<target_keyword>[a-z0-9 ]+) unit within (?P<range>\d+) of this unit "
         r"one destroyed model is returned to that (?P=target_keyword) unit for each (?P<count_keyword>[a-z0-9 ]+) model in this unit"
@@ -12918,6 +13017,8 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
         base_norm = str(norm[:alt_clause_match.start()] or "").strip()
     target_unit_re = r"(?:this unit|the bearer s unit|the bearers unit|that unit)"
     pattern = (
+        leading_clause
+        +
         r"(?:in your command phase|(?:at the )?(?:start|end) of your command phase)"
         r"(?: if (?P<condition>[^,]+))? "
         r"you can return(?: (?P<up_to>up to))? (?P<amt>"
@@ -12934,10 +13035,16 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
         timing_label = "Start of Command phase"
     elif "end of your command phase" in base_norm:
         timing_label = "End of Command phase"
+    leading_note = bool(
+        re.search(r"while (?:this model|this unit|the bearer) is leading a unit", base_norm, flags=re.IGNORECASE)
+    )
     amount_label = _amount_label(str(m.group("amt") or ""))
     up_to_prefix = "up to " if m.group("up_to") else ""
     returned_phrase = str(m.group("returned") or "").strip()
-    note = f"{timing_label}: return {up_to_prefix}{amount_label} destroyed model(s) to this/bearer's unit."
+    if leading_note:
+        note = f"{timing_label} while leading: return {up_to_prefix}{amount_label} destroyed model(s) to this/bearer's unit."
+    else:
+        note = f"{timing_label}: return {up_to_prefix}{amount_label} destroyed model(s) to this/bearer's unit."
     if "excluding character" in returned_phrase or "excluding character" in norm:
         note = f"{note} Excludes CHARACTER models."
     returned_clean = re.sub(r"\s+excluding\s+characters?(?:\s+models?)?", "", returned_phrase).strip()
@@ -14473,6 +14580,90 @@ def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tu
     return ("Supported", "Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test.")
 
 
+def _fight_phase_range_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:at the )?start of the fight phase each enemy (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of this model "
+        r"must take a battle shock test(?: subtracting (?P<penalty>\d+) from that test when they do)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper()
+    try:
+        range_value = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        range_value = 0
+    try:
+        penalty = int(m.group("penalty") or 0)
+    except (TypeError, ValueError):
+        penalty = 0
+    if range_value <= 0:
+        return None
+    keyword_prefix = f"{keyword} " if keyword else ""
+    if penalty > 0:
+        return (
+            "Supported",
+            f"Start of Fight phase: enemy {keyword_prefix}units within {range_value}\" take a Battle-shock test at -{penalty}.",
+        )
+    return (
+        "Supported",
+        f"Start of Fight phase: enemy {keyword_prefix}units within {range_value}\" take a Battle-shock test.",
+    )
+
+
+def _fight_phase_range_battleshock_plus_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:at the )?start of the fight phase each enemy (?P<aura_keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of this model "
+        r"must take a battle shock test(?: subtracting (?P<penalty>\d+) from that test when they do)? "
+        r"in addition each time (?P<subject>this model|this unit|this models unit) destroys an? (?:enemy )?"
+        r"(?P<kill_keyword>character|epic hero|monster|vehicle|psyker)? ?(?P<trigger>model|unit)?"
+        r"(?P<melee> with a melee attack| as (?:a|the) result of a melee attack)? you gain (?P<cp>\d+) ?cp"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    aura_keyword = str(m.group("aura_keyword") or "").strip().upper()
+    kill_keyword = str(m.group("kill_keyword") or "").strip().upper()
+    trigger = str(m.group("trigger") or "target").strip().lower() or "target"
+    subject = str(m.group("subject") or "this model").strip()
+    try:
+        range_value = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        range_value = 0
+    try:
+        penalty = int(m.group("penalty") or 0)
+    except (TypeError, ValueError):
+        penalty = 0
+    cp = str(m.group("cp") or "").strip()
+    melee_only = bool(str(m.group("melee") or "").strip())
+    if range_value <= 0 or not cp:
+        return None
+    aura_text = f"enemy {aura_keyword} units within {range_value}\"" if aura_keyword else f"enemy units within {range_value}\""
+    cp_target = f"enemy {kill_keyword} {trigger}".strip() if kill_keyword and trigger in ("model", "unit") else f"enemy {trigger}".strip()
+    cp_clause = f"gain {cp} CP when {subject} destroys an {cp_target}"
+    if melee_only:
+        cp_clause = f"{cp_clause} with a melee attack"
+    if penalty > 0:
+        return (
+            "Supported",
+            f"Start of Fight phase: {aura_text} take a Battle-shock test at -{penalty}. {cp_clause}.",
+        )
+    return (
+        "Supported",
+        f"Start of Fight phase: {aura_text} take a Battle-shock test. {cp_clause}.",
+    )
+
+
 def _fight_phase_select_engagement_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -15651,7 +15842,7 @@ def _gain_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
         return None
     pattern = (
         r"each time (?:this model|this unit|this models unit) destroys an? (?:enemy )?(?:character|epic hero|monster|vehicle|psyker)? ?"
-        r"(?:model|unit)? you gain (?P<cp>\d+) ?cp"
+        r"(?:model|unit)?(?: with a melee attack| as (?:a|the) result of a melee attack)? you gain (?P<cp>\d+) ?cp"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
@@ -15688,7 +15879,9 @@ def _gain_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
             target_text = f"enemy {kw_text} target"
     else:
         target_text = f"enemy {trigger}" if trigger in ("model", "unit") else "enemy unit/model"
-
+    melee_only = "with a melee attack" in norm or "as a result of a melee attack" in norm or "as the result of a melee attack" in norm
+    if melee_only:
+        return ("Supported", f"Gain {cp} CP when {subject} destroys an {target_text} with a melee attack.")
     return ("Supported", f"Gain {cp} CP when {subject} destroys an {target_text}.")
 
 

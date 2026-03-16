@@ -10317,6 +10317,122 @@ class ActionsMovementMixin:
                 return True
         return False
 
+    def get_master_of_shadows_required_charge_target_ids(
+        self,
+        *,
+        target_units=None,
+        game_map=None,
+        game=None,
+    ) -> set[str]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return set()
+        try:
+            if not root.has_any_keyword("ADEPTUS ASTARTES"):
+                return set()
+        except Exception:
+            return set()
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        if game_map is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            game_map = getattr(getattr(army, "player", None), "game", None)
+            game_map = getattr(game_map, "map", None) if game_map is not None else None
+        if game_map is None:
+            return set()
+
+        try:
+            candidates = list(target_units or [])
+        except Exception:
+            candidates = []
+        if not candidates:
+            return set()
+
+        candidate_by_id: dict[str, object] = {}
+        for target in list(candidates or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id:
+                continue
+            candidate_by_id[target_id] = target_root
+        if not candidate_by_id:
+            return set()
+
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return set()
+
+        matching: set[str] = set()
+        seen_sources: set[str] = set()
+        for maybe_unit in list(getattr(army, "units", []) or []):
+            if maybe_unit is None:
+                continue
+            try:
+                source_root = maybe_unit.get_attached_unit_root()
+            except Exception:
+                source_root = maybe_unit
+            if source_root is None:
+                continue
+            source_id = str(get_entity_id(source_root) or "")
+            if source_id and source_id in seen_sources:
+                continue
+            if source_id:
+                seen_sources.add(source_id)
+            try:
+                if not source_root.is_alive():
+                    continue
+            except Exception:
+                continue
+            if not bool(getattr(source_root, "deployed", True)):
+                continue
+            try:
+                if source_root.is_in_reserves():
+                    continue
+            except Exception:
+                pass
+            if bool(getattr(source_root, "is_embarked", False)) or getattr(source_root, "embarked_in", None) is not None:
+                continue
+            rule = getattr(source_root, "get_master_of_shadows_rule", None)
+            rule = rule() if callable(rule) else None
+            if not isinstance(rule, dict):
+                continue
+            sr = getattr(source_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            target_id = str(sr.get("master_of_shadows_target_unit_id", "") or "")
+            if not target_id:
+                continue
+            target_root = candidate_by_id.get(target_id)
+            if target_root is None:
+                continue
+            try:
+                distance = float(game_map.get_distance_between_units(root, target_root))
+            except Exception:
+                continue
+            try:
+                range_value = float(rule.get("range", 12) or 12)
+            except Exception:
+                range_value = 12.0
+            if distance <= range_value + 1e-6:
+                matching.add(target_id)
+        return matching
+
     def can_reroll_charge_roll(self, *, target_unit=None, game_map=None, game=None) -> bool:
         """
         Best-effort detection for abilities that allow re-rolling Charge rolls for this unit/model.
@@ -10474,6 +10590,17 @@ class ActionsMovementMixin:
 
         if _orks_temp_charge_reroll_applies_for_unit(self, target_units=target_units):
             return True
+
+        if target_units:
+            try:
+                if self.get_master_of_shadows_required_charge_target_ids(
+                    target_units=target_units,
+                    game_map=game_map,
+                    game=game,
+                ):
+                    return True
+            except Exception:
+                pass
 
         if target_units:
             is_gsc_unit = False
