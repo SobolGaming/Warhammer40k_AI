@@ -24,6 +24,8 @@ class CultAmbushMarker:
     z: float = 0.0
     active: bool = True
     pending_relocation: bool = False
+    last_moved_turn: int = 0
+    last_moved_turn_owner_id: str = ""
 
     @property
     def id(self) -> str:
@@ -475,6 +477,61 @@ class CultAmbushManager:
         models.sort(key=lambda model: str(get_entity_id(model) or ""))
         return models
 
+    def get_cult_infiltration_sources(self) -> list[dict]:
+        if self.army is None:
+            return []
+        sources: list[dict] = []
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not self._unit_is_alive(root) or not self._unit_on_battlefield(root):
+                continue
+            if not self._unit_has_named_ability(unit, "Cult Infiltration"):
+                continue
+            models = [model for model in list(getattr(unit, "models", []) or []) if getattr(model, "is_alive", True)]
+            if not models:
+                continue
+            unit_id = str(get_entity_id(unit) or "")
+            if unit_id and unit_id in seen:
+                continue
+            if unit_id:
+                seen.add(unit_id)
+            sources.append(
+                {
+                    "root": root,
+                    "unit": unit,
+                    "model": models[0],
+                }
+            )
+        sources.sort(
+            key=lambda entry: (
+                str(get_entity_id(entry.get("model")) or ""),
+                str(get_entity_id(entry.get("unit")) or ""),
+            )
+        )
+        return sources
+
+    def marker_moved_this_turn(self, marker: CultAmbushMarker, *, game=None) -> bool:
+        if marker is None or game is None:
+            return False
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        owner_id = str(getattr(current_player, "id", "") or "")
+        if not owner_id:
+            return False
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        return (
+            str(getattr(marker, "last_moved_turn_owner_id", "") or "") == owner_id
+            and int(getattr(marker, "last_moved_turn", 0) or 0) == current_turn
+        )
+
     def can_use_summon_the_cult(self, *, game=None) -> bool:
         if bool(self.summon_the_cult_used):
             return False
@@ -582,12 +639,7 @@ class CultAmbushManager:
         self._publish_update(game)
 
     def _marker_position_valid(self, game, x: float, y: float) -> bool:
-        try:
-            w = float(getattr(getattr(game, "battlefield", None), "width", 0.0))
-            h = float(getattr(getattr(game, "battlefield", None), "height", 0.0))
-        except Exception:
-            return False
-        if x < 0 or y < 0 or x > w or y > h:
+        if not self._marker_position_on_battlefield(game, x, y):
             return False
         if game is None:
             return False
@@ -603,6 +655,103 @@ class CultAmbushManager:
                     continue
                 if horizontal_distance_point_to_model_base_2d(m, x, y) <= 9.0 + 1e-6:
                     return False
+        return True
+
+    def _marker_position_on_battlefield(self, game, x: float, y: float) -> bool:
+        try:
+            w = float(getattr(getattr(game, "battlefield", None), "width", 0.0))
+            h = float(getattr(getattr(game, "battlefield", None), "height", 0.0))
+        except Exception:
+            return False
+        if x < 0 or y < 0 or x > w or y > h:
+            return False
+        return True
+
+    def validate_cult_infiltration_relocation(
+        self,
+        marker_id: str,
+        point,
+        *,
+        source_unit_id: str = "",
+        game=None,
+    ) -> tuple[bool, str]:
+        marker = self.get_marker(marker_id)
+        if marker is None or not bool(getattr(marker, "active", False)):
+            return (False, "Cult Ambush marker is no longer active.")
+        if self.marker_moved_this_turn(marker, game=game):
+            return (False, "Selected Cult Ambush marker has already been moved this turn.")
+        if game is None:
+            return (False, "Cult Infiltration requires an active game.")
+        source_unit = None
+        key = str(source_unit_id or "").strip()
+        for entry in list(self.get_cult_infiltration_sources() or []):
+            unit = entry.get("unit")
+            if unit is None:
+                continue
+            if str(get_entity_id(unit) or "") != key:
+                continue
+            source_unit = unit
+            break
+        if source_unit is None:
+            return (False, "Cult Infiltration source is unavailable.")
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            return (False, "Cult Infiltration requires a valid point.")
+        try:
+            x = float(point[0])
+            y = float(point[1])
+        except (TypeError, ValueError):
+            return (False, "Cult Infiltration point must be numeric.")
+        if not self._marker_position_on_battlefield(game, x, y):
+            return (False, "Cult Ambush marker must remain on the battlefield.")
+        try:
+            z = float(getattr(game.map, "get_height_at_point", lambda _x, _y: 0.0)(x, y))
+        except Exception:
+            z = float(getattr(marker, "z", 0.0) or 0.0)
+        dx = float(x) - float(getattr(marker, "x", 0.0) or 0.0)
+        dy = float(y) - float(getattr(marker, "y", 0.0) or 0.0)
+        dz = float(z) - float(getattr(marker, "z", 0.0) or 0.0)
+        distance = math.sqrt((dx * dx) + (dy * dy) + (dz * dz))
+        if float(distance) > 6.0 + 1e-6:
+            return (False, 'Cult Infiltration marker must be moved up to 6".')
+        return (True, "")
+
+    def apply_cult_infiltration_relocation(
+        self,
+        marker_id: str,
+        point,
+        *,
+        source_unit_id: str = "",
+        game=None,
+    ) -> bool:
+        valid, _reason = self.validate_cult_infiltration_relocation(
+            marker_id,
+            point,
+            source_unit_id=source_unit_id,
+            game=game,
+        )
+        if not valid:
+            return False
+        marker = self.get_marker(marker_id)
+        if marker is None:
+            return False
+        try:
+            x = float(point[0])
+            y = float(point[1])
+            z = float(getattr(game.map, "get_height_at_point", lambda _x, _y: 0.0)(x, y))
+        except Exception:
+            return False
+        marker.x = float(x)
+        marker.y = float(y)
+        marker.z = float(z)
+        marker.active = True
+        marker.pending_relocation = False
+        current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        marker.last_moved_turn_owner_id = str(getattr(current_player, "id", "") or "")
+        try:
+            marker.last_moved_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            marker.last_moved_turn = 0
+        self._publish_update(game)
         return True
 
     def find_marker_position(self, game, attempts: int = 200) -> Optional[tuple[float, float]]:

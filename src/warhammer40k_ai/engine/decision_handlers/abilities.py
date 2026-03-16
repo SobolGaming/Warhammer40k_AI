@@ -7196,6 +7196,87 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(model_within_range_of_unit(source_model, target_root, float(range_inches), use_attached_aggregate=True)):
             return ("Squig Mine target must be within range of the source model.",)
         return ()
+    if ability == "enemy_move_range_mortal_threshold":
+        payload = _option_payload(request, result)
+        player = _resolve_player(game, request, payload)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Enemy-move mortal-wound source unit was not found.",)
+        source_root = _resolve_unit_root(source_unit)
+        if source_root is None or not _unit_is_on_battlefield(source_root):
+            return ("Enemy-move mortal-wound source unit must be on the battlefield.",)
+        source_model = _resolve_source_model(game, source_root, ctx=ctx, payload=payload)
+        if not _model_is_alive(source_model):
+            return ("Enemy-move mortal-wound source model was not found.",)
+        ability_name = str(ctx.get("ability_name", "") or "Enemy move mortals").strip() or "Enemy move mortals"
+        ability_key = (
+            str(ctx.get("ability_key", "") or "enemy_move_range_mortal_threshold").strip().lower()
+            or "enemy_move_range_mortal_threshold"
+        )
+        if bool(getattr(source_model, "has_used_once_per_battle", lambda _k: False)(ability_key)):
+            return (f"{ability_name} has already been used this battle.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Enemy-move mortal-wound target unit was not found.",)
+        target_root = _resolve_unit_root(target_unit)
+        if target_root is None or not _unit_is_on_battlefield(target_root):
+            return ("Enemy-move mortal-wound target unit must be on the battlefield.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is target_army:
+            return ("Enemy-move mortal-wound target must be an enemy unit.",)
+        candidate_source_unit_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_source_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        candidate_source_model_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_source_model_ids", []) or [])
+            if str(value or "").strip()
+        }
+        source_unit_id = str(get_entity_id(source_root) or "")
+        source_model_id = str(get_entity_id(source_model) or "")
+        if candidate_source_unit_ids and source_unit_id not in candidate_source_unit_ids:
+            return ("Enemy-move mortal-wound source unit is not an eligible choice.",)
+        if candidate_source_model_ids and source_model_id not in candidate_source_model_ids:
+            return ("Enemy-move mortal-wound source model is not an eligible choice.",)
+        try:
+            range_inches = float(ctx.get("range", 0) or 0)
+        except (TypeError, ValueError):
+            range_inches = 0.0
+        if range_inches <= 0:
+            return ("Enemy-move mortal-wound range is invalid.",)
+        try:
+            from ...utility.aura_utils import model_within_range_of_unit
+        except ImportError:
+            return ("Enemy-move mortal-wound range helper is unavailable.",)
+        if not bool(model_within_range_of_unit(source_model, target_root, float(range_inches), use_attached_aggregate=True)):
+            return ("Enemy-move mortal-wound target must be within range of the source model.",)
+        army_usage_key = str(ctx.get("army_usage_key", "") or payload.get("army_usage_key", "") or "").strip().upper()
+        army_usage_scope = str(ctx.get("army_usage_scope", "") or payload.get("army_usage_scope", "") or "").strip().lower()
+        if army_usage_key and player is not None:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if army_usage_scope == "battle_round" and current_turn > 0:
+                used_rounds = getattr(player, "_ability_used_battle_round", None)
+                if isinstance(used_rounds, dict) and int(used_rounds.get(army_usage_key, 0) or 0) == int(current_turn):
+                    return (f"{ability_name} has already been used this battle round.",)
+            elif army_usage_scope == "turn":
+                used_turn_fn = getattr(player, "_ability_used_this_turn", None)
+                if callable(used_turn_fn) and bool(used_turn_fn(army_usage_key)):
+                    return (f"{ability_name} has already been used this turn.",)
+        return ()
     if ability == "warrior_elite_order":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(
@@ -17652,6 +17733,111 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             has_any_keyword = getattr(target_root, "has_any_keyword", None)
             if callable(has_any_keyword) and any(bool(has_any_keyword(keyword)) for keyword in alternate_target_keywords_any):
                 mortal_roll = alternate_mortal_roll
+        mortal_wounds = _apply_mortal_wounds_roll_to_unit(
+            game,
+            source_root=source_root,
+            source_model=source_model,
+            target_root=target_root,
+            roll_expr=mortal_roll,
+            ability_name=ability_name,
+            player=player,
+        )
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {target_name} suffers {int(mortal_wounds)} mortal wounds.",
+        )
+        return {
+            "action": "use",
+            "triggered": True,
+            "roll": int(roll),
+            "mortal_wounds": int(mortal_wounds),
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+        }
+    if str(ctx.get("ability", "") or "") == "enemy_move_range_mortal_threshold":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        source_root = _resolve_unit_root(source_unit)
+        source_model = _resolve_source_model(game, source_root, ctx=ctx, payload=payload) if source_root is not None else None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_root is not None:
+            try:
+                player = source_root.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Enemy move mortals").strip() or "Enemy move mortals"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {"action": "skip", "triggered": False, "mortal_wounds": 0}
+        if source_root is None or source_model is None:
+            return None
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        target_root = _resolve_unit_root(target_unit)
+        if target_root is None:
+            return None
+        ability_key = (
+            str(ctx.get("ability_key", "") or "enemy_move_range_mortal_threshold").strip().lower()
+            or "enemy_move_range_mortal_threshold"
+        )
+        mark_used = getattr(source_model, "mark_used_once_per_battle", None)
+        if callable(mark_used):
+            if not bool(mark_used(ability_key, ability_name=ability_name, source="datasheet")):
+                return None
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        army_usage_key = str(ctx.get("army_usage_key", "") or payload.get("army_usage_key", "") or "").strip().upper()
+        army_usage_scope = str(ctx.get("army_usage_scope", "") or payload.get("army_usage_scope", "") or "").strip().lower()
+        if army_usage_key and player is not None:
+            if army_usage_scope == "battle_round" and current_turn > 0:
+                used_rounds = getattr(player, "_ability_used_battle_round", None)
+                if isinstance(used_rounds, dict) and int(used_rounds.get(army_usage_key, 0) or 0) == int(current_turn):
+                    return None
+            elif army_usage_scope == "turn":
+                used_turn_fn = getattr(player, "_ability_used_this_turn", None)
+                if callable(used_turn_fn) and bool(used_turn_fn(army_usage_key)):
+                    return None
+            if army_usage_scope == "battle_round" and current_turn > 0:
+                used_rounds = getattr(player, "_ability_used_battle_round", None)
+                if isinstance(used_rounds, dict):
+                    used_rounds[army_usage_key] = int(current_turn)
+            elif army_usage_scope == "turn":
+                mark_turn = getattr(player, "_mark_ability_used_turn", None)
+                if callable(mark_turn):
+                    mark_turn(army_usage_key)
+        try:
+            roll_threshold = int(ctx.get("roll_threshold", 4) or 4)
+        except (TypeError, ValueError):
+            roll_threshold = 4
+        roll_threshold = max(2, min(6, int(roll_threshold)))
+        from ...utility.dice import get_roll
+        from ...utility.event_bus import append_dice
+
+        roll = int(get_roll("D6") or 0)
+        if player is not None:
+            append_dice(player, f"{ability_name} roll: {int(roll)}")
+        target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+        if int(roll) < int(roll_threshold):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {target_name} selected; roll {int(roll)} fails to trigger.",
+            )
+            return {
+                "action": "use",
+                "triggered": False,
+                "roll": int(roll),
+                "mortal_wounds": 0,
+                "target_unit_id": str(get_entity_id(target_root) or ""),
+            }
+        mortal_roll = str(ctx.get("mortal_wounds_roll", "") or ctx.get("mortal_wounds", "") or "D6").strip().upper() or "D6"
         mortal_wounds = _apply_mortal_wounds_roll_to_unit(
             game,
             source_root=source_root,

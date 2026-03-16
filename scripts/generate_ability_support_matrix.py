@@ -3508,6 +3508,26 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "When an enemy moves within 9\" of your Cult Ambush marker, queue an optional relocation PICK_POINT for one threatened marker within 12\" of a model with this ability and more than 9\" from enemy units; Skip removes the marker as normal.",
         ),
+        ("GC", "Cult Infiltration"): (
+            "Supported",
+            "Start of each player's Command phase: each on-battlefield Nexos can queue an optional PICK_POINT to select one active Cult Ambush marker that has not been moved this turn and relocate it up to 6\".",
+        ),
+        ("GC", "Cult Demagogue"): (
+            "Supported",
+            "While leading a unit, models in that unit gain +1 to hit on their attacks.",
+        ),
+        ("GC", "Decoys and Misdirection"): (
+            "Supported",
+            "After deployment: redeploy up to three friendly GENESTEALER CULTS units; selected units may be placed into Strategic Reserves regardless of current reserve limits.",
+        ),
+        ("GC", "Planted Explosives"): (
+            "Supported",
+            "Once per battle, when an enemy Normal/Advance/Fall Back move ends within 9\" of a Reductus Saboteur, choose one eligible source model to roll a D6; on 2+ that enemy suffers D3+3 mortal wounds. The armywide one-use-per-battle-round cap is enforced.",
+        ),
+        ("GC", "Creeping Shadow"): (
+            "Supported",
+            "If equipped with a cult sniper rifle, once per turn after an enemy Normal/Advance/Fall Back move ends within 9\" and the model is not in Engagement Range, this unit can make a reactive Normal move up to 6\".",
+        ),
         ("AS", "Extremis Trigger Word"): (
             "Supported",
             "Fight phase selected-unit trigger: optional CONFIRM_YES_NO applies Attacks 6 and [HAZARDOUS] to arco-flails until phase end.",
@@ -4190,6 +4210,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Ranged attacks that target the closest eligible target improve AP by 1.",
         ),
         ("AM", "Psychic Barrier (Psychic)"): (
+            "Supported",
+            "Start of opponent Shooting phase: optional D6 roll; on 1 the unit suffers D3 mortal wounds, on 2+ the unit gains a 4+ invulnerable save until phase end.",
+        ),
+        ("GC", "Psychic Barrier (Psychic)"): (
             "Supported",
             "Start of opponent Shooting phase: optional D6 roll; on 1 the unit suffers D3 mortal wounds, on 2+ the unit gains a 4+ invulnerable save until phase end.",
         ),

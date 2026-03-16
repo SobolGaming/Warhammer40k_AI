@@ -3544,6 +3544,324 @@ class Game(
                 if request is None:
                     continue
 
+    def _on_unit_move_ended_enemy_move_range_mortal_threshold(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in ("move", "advance", "fall_back"):
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        try:
+            moving_root = unit.get_attached_unit_root()
+        except Exception:
+            moving_root = unit
+        if moving_root is None:
+            return
+        try:
+            moving_owner = moving_root.get_parent_army().player
+        except Exception:
+            moving_owner = None
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        def _unit_sort_key(candidate) -> str:
+            try:
+                return str(get_entity_id(candidate) or "")
+            except Exception:
+                return str(getattr(candidate, "name", "") or "")
+
+        def _model_sort_key(candidate) -> str:
+            try:
+                return str(get_entity_id(candidate) or "")
+            except Exception:
+                return str(getattr(candidate, "name", "") or "")
+
+        def _unit_active(candidate) -> bool:
+            if candidate is None:
+                return False
+            try:
+                if not candidate.is_alive():
+                    return False
+            except Exception:
+                return False
+            if not bool(getattr(candidate, "deployed", True)):
+                return False
+            try:
+                if candidate.is_in_reserves() or candidate.is_embarked:
+                    return False
+            except Exception:
+                pass
+            return True
+
+        pending_group_keys: set[tuple[str, str, str, str, str]] = set()
+        pending_model_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "").strip().lower() != "enemy_move_range_mortal_threshold":
+                    continue
+                player_id = str(getattr(req, "player_id", "") or ctx.get("player_id", "") or "")
+                context_ability = (
+                    str(ctx.get("context_ability", "") or ctx.get("ability", "") or "enemy_move_range_mortal_threshold")
+                    .strip()
+                    .lower()
+                )
+                usage_key = str(ctx.get("army_usage_key", "") or "").strip().upper()
+                usage_scope = str(ctx.get("army_usage_scope", "") or "").strip().lower()
+                target_unit_id = str(ctx.get("target_unit_id", "") or "")
+                if usage_key:
+                    pending_group_keys.add((player_id, context_ability, usage_key, usage_scope, target_unit_id))
+                for model_id in list(ctx.get("candidate_source_model_ids", []) or []):
+                    model_id_str = str(model_id or "").strip()
+                    if model_id_str:
+                        pending_model_ids.add(model_id_str)
+                model_id = str(ctx.get("model_id", "") or "")
+                if model_id:
+                    pending_model_ids.add(model_id)
+
+        grouped_entries: dict[tuple[str, str, str, str, str], list[dict]] = {}
+        for player in list(self.players or []):
+            if player is None or player is moving_owner:
+                continue
+            army = player.get_army()
+            if army is None:
+                continue
+            seen_root_ids: set[str] = set()
+            for candidate in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if candidate is None:
+                    continue
+                try:
+                    root = candidate.get_attached_unit_root()
+                except Exception:
+                    root = candidate
+                if root is None or not _unit_active(root):
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if root_id and root_id in seen_root_ids:
+                    continue
+                if root_id:
+                    seen_root_ids.add(root_id)
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                if not models:
+                    continue
+                spec_fn = getattr(root, "model_enemy_move_end_range_mortal_threshold_specs", None)
+                if not callable(spec_fn):
+                    continue
+                for model in sorted(
+                    [m for m in list(models or []) if getattr(m, "is_alive", True)],
+                    key=_model_sort_key,
+                ):
+                    model_id = str(get_entity_id(model) or "")
+                    specs = list(spec_fn(model) or [])
+                    if not specs:
+                        continue
+                    for spec in list(specs or []):
+                        move_types = {
+                            str(value or "").strip().lower()
+                            for value in list(spec.get("move_types", []) or [])
+                            if str(value or "").strip()
+                        }
+                        if move_types and action_key not in move_types:
+                            continue
+                        ability_key = (
+                            str(spec.get("ability_key", "") or "").strip().lower()
+                            or "enemy_move_range_mortal_threshold"
+                        )
+                        if bool(getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key)):
+                            continue
+                        try:
+                            range_value = int(spec.get("range", 0) or 0)
+                        except (TypeError, ValueError):
+                            range_value = 0
+                        try:
+                            threshold = int(spec.get("threshold", 0) or 0)
+                        except (TypeError, ValueError):
+                            threshold = 0
+                        mortal_wounds = str(spec.get("mortal_wounds", "") or "").strip().upper()
+                        if range_value <= 0 or threshold <= 0 or not mortal_wounds:
+                            continue
+                        if not self._unit_within_range_of_model(model, moving_root, range_value=float(range_value)):
+                            continue
+                        context_ability = (
+                            str(spec.get("context_ability", "") or "enemy_move_range_mortal_threshold")
+                            .strip()
+                            .lower()
+                            or "enemy_move_range_mortal_threshold"
+                        )
+                        army_usage_key = str(spec.get("army_usage_key", "") or "").strip().upper()
+                        army_usage_scope = str(spec.get("army_usage_scope", "") or "").strip().lower()
+                        if army_usage_key:
+                            if army_usage_scope == "battle_round" and current_turn > 0:
+                                used_rounds = getattr(player, "_ability_used_battle_round", None)
+                                if isinstance(used_rounds, dict) and int(used_rounds.get(army_usage_key, 0) or 0) == int(current_turn):
+                                    continue
+                            elif army_usage_scope == "turn":
+                                used_turn_fn = getattr(player, "_ability_used_this_turn", None)
+                                if callable(used_turn_fn) and bool(used_turn_fn(army_usage_key)):
+                                    continue
+                            group_key = (
+                                str(getattr(player, "id", "") or ""),
+                                context_ability,
+                                army_usage_key,
+                                army_usage_scope,
+                                str(get_entity_id(moving_root) or ""),
+                            )
+                            if group_key in pending_group_keys:
+                                continue
+                            grouped_entries.setdefault(group_key, []).append(
+                                {
+                                    "source_unit": getattr(model, "parent_unit", None) or root,
+                                    "model": model,
+                                    "spec": dict(spec),
+                                }
+                            )
+                            continue
+                        if model_id and model_id in pending_model_ids:
+                            continue
+                        source_unit = getattr(model, "parent_unit", None) or root
+                        ability_name = str(spec.get("source", "") or "Enemy move mortals").strip() or "Enemy move mortals"
+                        request = DecisionRequest.create(
+                            DECISION_CHOOSE_QUARRY,
+                            f"{ability_name}: choose whether to use this ability against {getattr(moving_root, 'name', 'the enemy unit')} (or None).",
+                            player_id=getattr(player, "id", None),
+                            options=[
+                                DecisionOption.create("None", payload={"action": "skip"}),
+                                DecisionOption.create(
+                                    str(getattr(source_unit, "name", "Model") or "Model"),
+                                    payload={
+                                        "source_unit_id": get_entity_id(source_unit),
+                                        "model_id": get_entity_id(model),
+                                        "target_unit_id": get_entity_id(moving_root),
+                                    },
+                                ),
+                            ],
+                            context={
+                                "ability": context_ability,
+                                "context_ability": context_ability,
+                                "ability_name": ability_name,
+                                "source_unit_id": get_entity_id(source_unit),
+                                "unit_id": get_entity_id(source_unit),
+                                "model_id": model_id,
+                                "target_unit_id": get_entity_id(moving_root),
+                                "ability_key": ability_key,
+                                "range": int(range_value),
+                                "roll_threshold": int(threshold),
+                                "mortal_wounds_roll": mortal_wounds,
+                                "optional": True,
+                            },
+                        )
+                        self.request_decision(request)
+                        if model_id:
+                            pending_model_ids.add(model_id)
+                        break
+
+        for group_key, entries in sorted(grouped_entries.items(), key=lambda item: item[0]):
+            if not entries:
+                continue
+            first_entry = dict(entries[0] or {})
+            spec = dict(first_entry.get("spec", {}) or {})
+            player_id, context_ability, army_usage_key, army_usage_scope, target_unit_id = group_key
+            if not target_unit_id:
+                continue
+            registry = getattr(self, "entity_registry", None)
+            target_unit = registry.get(target_unit_id, kind="unit") if registry is not None and target_unit_id else None
+            if target_unit is None:
+                continue
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            if target_root is None or not _unit_active(target_root):
+                continue
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            candidate_source_unit_ids: list[str] = []
+            candidate_source_model_ids: list[str] = []
+            seen_pairs: set[tuple[str, str]] = set()
+            for entry in sorted(
+                list(entries or []),
+                key=lambda value: (
+                    str(get_entity_id(value.get("source_unit")) or ""),
+                    str(get_entity_id(value.get("model")) or ""),
+                ),
+            ):
+                source_unit = entry.get("source_unit")
+                model = entry.get("model")
+                if source_unit is None or model is None:
+                    continue
+                source_unit_id = str(get_entity_id(source_unit) or "")
+                model_id = str(get_entity_id(model) or "")
+                if not source_unit_id or not model_id:
+                    continue
+                pair = (source_unit_id, model_id)
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                candidate_source_unit_ids.append(source_unit_id)
+                candidate_source_model_ids.append(model_id)
+                label = str(getattr(source_unit, "name", "Model") or "Model")
+                options.append(
+                    DecisionOption.create(
+                        f"{label} [{model_id[:8]}]",
+                        payload={
+                            "source_unit_id": source_unit_id,
+                            "model_id": model_id,
+                            "target_unit_id": target_unit_id,
+                        },
+                    )
+                )
+            if len(options) <= 1:
+                continue
+            try:
+                range_value = int(spec.get("range", 0) or 0)
+            except (TypeError, ValueError):
+                range_value = 0
+            try:
+                threshold = int(spec.get("threshold", 0) or 0)
+            except (TypeError, ValueError):
+                threshold = 0
+            mortal_wounds = str(spec.get("mortal_wounds", "") or "").strip().upper()
+            if range_value <= 0 or threshold <= 0 or not mortal_wounds:
+                continue
+            ability_name = str(spec.get("source", "") or "Enemy move mortals").strip() or "Enemy move mortals"
+            ability_key = (
+                str(spec.get("ability_key", "") or "").strip().lower()
+                or "enemy_move_range_mortal_threshold"
+            )
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: choose one model to use this ability against {getattr(target_root, 'name', 'the enemy unit')} (or None).",
+                player_id=player_id,
+                options=options,
+                context={
+                    "ability": context_ability,
+                    "context_ability": context_ability,
+                    "ability_name": ability_name,
+                    "target_unit_id": target_unit_id,
+                    "ability_key": ability_key,
+                    "range": int(range_value),
+                    "roll_threshold": int(threshold),
+                    "mortal_wounds_roll": mortal_wounds,
+                    "army_usage_key": army_usage_key,
+                    "army_usage_scope": army_usage_scope,
+                    "candidate_source_unit_ids": list(candidate_source_unit_ids),
+                    "candidate_source_model_ids": list(candidate_source_model_ids),
+                    "optional": True,
+                },
+            )
+            self.request_decision(request)
+
     def _on_unit_move_ended_floating_death(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return
@@ -10366,6 +10684,73 @@ class Game(
         player = getattr(getattr(mgr, "army", None), "player", None)
         if player is not None:
             append_action(player, "Summon the Cult: marker removed as normal.")
+
+    def _mark_cult_infiltration_phase_used(self, source_unit_id: str, phase_key: str) -> None:
+        key = str(source_unit_id or "").strip()
+        if not key:
+            return
+        source_unit = self.get_unit_by_id(key) if hasattr(self, "get_unit_by_id") else None
+        if source_unit is None:
+            return
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["cult_infiltration_last_phase_key"] = str(phase_key or "")
+        source_unit.special_rules = sr
+
+    def _validate_cult_infiltration_marker_relocation(self, context: dict, *, marker_id: str, point) -> tuple[bool, str]:
+        mgr = self._cult_ambush_manager_for_player_id(str(context.get("owner_player_id", "") or ""))
+        if mgr is None:
+            return (False, "Cult Infiltration manager is unavailable.")
+        validate_fn = getattr(mgr, "validate_cult_infiltration_relocation", None)
+        if not callable(validate_fn):
+            return (False, "Cult Infiltration validation is unavailable.")
+        return validate_fn(
+            str(marker_id or ""),
+            point,
+            source_unit_id=str(context.get("source_member_unit_id", "") or ""),
+            game=self,
+        )
+
+    def _apply_cult_infiltration_marker_relocation(self, context: dict, *, marker_id: str, point) -> bool:
+        mgr = self._cult_ambush_manager_for_player_id(str(context.get("owner_player_id", "") or ""))
+        if mgr is None:
+            return False
+        apply_fn = getattr(mgr, "apply_cult_infiltration_relocation", None)
+        if not callable(apply_fn):
+            return False
+        applied = bool(
+            apply_fn(
+                str(marker_id or ""),
+                point,
+                source_unit_id=str(context.get("source_member_unit_id", "") or ""),
+                game=self,
+            )
+        )
+        if not applied:
+            return False
+        self._mark_cult_infiltration_phase_used(
+            str(context.get("source_member_unit_id", "") or ""),
+            str(context.get("phase_key", "") or ""),
+        )
+        from ..utility.event_bus import append_action
+
+        player = getattr(getattr(mgr, "army", None), "player", None)
+        if player is not None:
+            append_action(player, "Cult Infiltration: moved a Cult Ambush marker.")
+        return True
+
+    def _skip_cult_infiltration_marker_relocation(self, context: dict) -> None:
+        self._mark_cult_infiltration_phase_used(
+            str(context.get("source_member_unit_id", "") or ""),
+            str(context.get("phase_key", "") or ""),
+        )
+        mgr = self._cult_ambush_manager_for_player_id(str(context.get("owner_player_id", "") or ""))
+        from ..utility.event_bus import append_action
+
+        player = getattr(getattr(mgr, "army", None), "player", None) if mgr is not None else None
+        if player is not None:
+            append_action(player, "Cult Infiltration: no marker moved.")
 
     def _on_unit_destroyed_acts_of_faith(self, unit=None, last_model=None, **_kwargs) -> None:
         if unit is None:

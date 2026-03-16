@@ -4089,6 +4089,31 @@ class KeywordsDetachmentsMixin:
         if cache_key in getattr(root, "_ability_cache", {}):
             return root._ability_cache[cache_key]
 
+        def _single_model_matches_equipped_prefix(prefix_text: str) -> bool:
+            low_prefix = str(prefix_text or "").strip().lower()
+            if "if this model is equipped with" not in low_prefix:
+                return True
+            match = re.search(
+                r"if this model is equipped with (?P<wargear>[a-z0-9 ]+?)(?:,|$)",
+                low_prefix,
+            )
+            if match is None:
+                return False
+            wargear_name = str(match.group("wargear") or "").strip()
+            wargear_name = re.sub(r"^(?:a|an|the)\s+", "", wargear_name)
+            if not wargear_name:
+                return False
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if len(models) != 1:
+                return False
+            has_wargear = getattr(root, "_model_has_wargear_named", None)
+            if not callable(has_wargear):
+                return False
+            return bool(has_wargear(models[0], wargear_name))
+
         rule = None
         source_unit, source_sr = root._higher_duty_source_unit()
         if source_unit is not None and isinstance(source_sr, dict):
@@ -4130,6 +4155,9 @@ class KeywordsDetachmentsMixin:
                 text = text.replace("\u2019", "'").replace("\u0192?T", "'")
                 m = self._ENEMY_MOVE_REACTIVE_D6_RE.search(text)
                 if not m:
+                    continue
+                prefix_text = str(text[: m.start()] or "")
+                if not _single_model_matches_equipped_prefix(prefix_text):
                     continue
                 try:
                     rng = int(m.group("range") or 0)
@@ -4695,6 +4723,31 @@ class KeywordsDetachmentsMixin:
             r"if this model is equipped with [a-z0-9 ]+ enemy units cannot use the fire overwatch stratagem to shoot at this model"
         )
 
+        def _single_model_matches_equipped_prefix(prefix_text: str) -> bool:
+            low_prefix = str(prefix_text or "").strip().lower()
+            if "if this model is equipped with" not in low_prefix:
+                return True
+            match = re.search(
+                r"if this model is equipped with (?P<wargear>[a-z0-9 ]+?)(?:,|$)",
+                low_prefix,
+            )
+            if match is None:
+                return False
+            wargear_name = str(match.group("wargear") or "").strip()
+            wargear_name = re.sub(r"^(?:a|an|the)\s+", "", wargear_name)
+            if not wargear_name:
+                return False
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if len(models) != 1:
+                return False
+            has_wargear = getattr(root, "_model_has_wargear_named", None)
+            if not callable(has_wargear):
+                return False
+            return bool(has_wargear(models[0], wargear_name))
+
         rule = None
         seen = set()
         try:
@@ -4722,8 +4775,17 @@ class KeywordsDetachmentsMixin:
                 normalized = re.sub(r"\s+", " ", normalized).strip()
                 if not normalized:
                     continue
-                if not direct_pattern.fullmatch(normalized) and not equipped_pattern.fullmatch(normalized):
+                direct_match = direct_pattern.fullmatch(normalized)
+                equipped_match = equipped_pattern.fullmatch(normalized)
+                if not direct_match and not equipped_match:
                     continue
+                if equipped_match:
+                    prefix_text = str(normalized or "").split(
+                        " enemy units cannot use the fire overwatch stratagem to shoot at this model",
+                        1,
+                    )[0]
+                    if not _single_model_matches_equipped_prefix(prefix_text):
+                        continue
                 source = str(name or "No Overwatch").strip() or "No Overwatch"
                 rule = {
                     "source": source,

@@ -1455,15 +1455,24 @@ class ActionsMovementMixin:
         want = Unit._norm_wargear_name(name)
         if not want:
             return False
+        want_loose = re.sub(r"[\s\-]+", " ", want).strip()
         try:
             for wg in list(getattr(model, "wargear", []) or []):
-                if wg and Unit._norm_wargear_name(getattr(wg, "name", "")) == want:
+                if not wg:
+                    continue
+                candidate = Unit._norm_wargear_name(getattr(wg, "name", ""))
+                if candidate == want:
+                    return True
+                if want_loose and re.sub(r"[\s\-]+", " ", candidate).strip() == want_loose:
                     return True
         except Exception:
             pass
         try:
             for ow in list(getattr(model, "optional_wargear", []) or []):
-                if Unit._norm_wargear_name(str(ow or "")) == want:
+                candidate = Unit._norm_wargear_name(str(ow or ""))
+                if candidate == want:
+                    return True
+                if want_loose and re.sub(r"[\s\-]+", " ", candidate).strip() == want_loose:
                     return True
         except Exception:
             pass
@@ -5034,6 +5043,28 @@ class ActionsMovementMixin:
                     crit_hit_threshold = 5 if crit_hit_threshold is None else min(crit_hit_threshold, 5)
                     crit_hit_reasons.append(f"Leading: critical hit on 5+ from {label} (while Waaagh! is active)")
                 break
+
+        for ab, _leader in root._iter_attached_leader_leading_abilities():
+            try:
+                label = str(getattr(ab, "name", "") or "Leading ability").replace("\u2019", "'")
+                desc = str(getattr(ab, "description", "") or "")
+            except Exception:
+                continue
+            text = self._normalize_rules_text(desc)
+            if not text:
+                continue
+            normalized = text.lower()
+            if (
+                "while this model is leading a unit" not in normalized
+                or "each time a model in that unit makes an attack" not in normalized
+                or "add 1 to the hit roll" not in normalized
+                or "wound roll" in normalized
+            ):
+                continue
+            if any(str(label) in str(reason or "") for reason in list(hit_reasons or [])):
+                continue
+            mods["hit"] += 1
+            hit_reasons.append(f"+1 to hit from {label}")
 
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))

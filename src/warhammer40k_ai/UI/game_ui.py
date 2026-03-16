@@ -3842,6 +3842,28 @@ class GameView:
                     if not bool(valid):
                         return {"valid": False, "reason": str(reason or "Invalid point.")}
                     return {"valid": True, "reason": "OK"}
+                if ability_key == "cult_infiltration_marker_relocation":
+                    selected_option_id = ""
+                    try:
+                        selected_option_id = self.cult_ambush_point_dialog.get_selected_option_id()
+                    except Exception:
+                        selected_option_id = ""
+                    marker_id = ""
+                    for entry in list(option_entries(request) or []):
+                        if str(entry.get("option_id", "") or "") != str(selected_option_id or ""):
+                            continue
+                        payload = dict(entry.get("payload", {}) or {})
+                        marker_id = str(payload.get("marker_id", "") or "").strip()
+                        break
+                    if not marker_id:
+                        return {"valid": False, "reason": "Select a Cult Ambush marker first."}
+                    validate_fn = getattr(self.game, "_validate_cult_infiltration_marker_relocation", None)
+                    if not callable(validate_fn):
+                        return {"valid": False, "reason": "Cult Infiltration validation unavailable."}
+                    valid, reason = validate_fn(ctx, marker_id=marker_id, point=(float(x), float(y)))
+                    if not bool(valid):
+                        return {"valid": False, "reason": str(reason or "Invalid point.")}
+                    return {"valid": True, "reason": "OK"}
                 return {"valid": True, "reason": "OK"}
 
             def _on_confirm(option_id: str, point):

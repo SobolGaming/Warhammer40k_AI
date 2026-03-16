@@ -9222,6 +9222,130 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_enemy_move_end_range_mortal_threshold_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, when an enemy unit ends a move within range,
+        select one source model to inflict mortal wounds on a threshold.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - ability_key: once-per-battle tracking key
+            - range: int
+            - threshold: int
+            - mortal_wounds: str | int
+            - move_types: list[str]
+            - context_ability: str
+            - army_usage_key: Optional[str]
+            - army_usage_scope: Optional[str]
+        """
+        if model is None:
+            return []
+        cache_key = f"model_enemy_move_end_range_mortal_threshold:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int, str, tuple[str, ...], str, str]] = set()
+        pattern = re.compile(
+            r"once per battle when an enemy unit ends a (?P<moves>normal advance or fall back) move within (?P<range>\d+) of this model "
+            r"this model can use (?P<device>[a-z0-9 ]+) if it does roll (?:one|1) d6 on a (?P<threshold>\d)\+? "
+            r"that enemy unit suffers (?P<mw>\d*d\d+(?:\s*\+\s*\d+)?|\d+) mortal wounds?"
+            r"(?: only one model from your army with this ability can use it in the same battle round)?"
+            r"(?: designer s note .*)?",
+            re.IGNORECASE,
+        )
+        armywide_phrase = "only one model from your army with this ability can use it in the same battle round"
+
+        ability_entries: list[tuple[str, str]] = []
+        seen_entries: set[tuple[str, str]] = set()
+        for iterator in (
+            self._iter_model_specific_ability_entries(model),
+            self._iter_ability_entries_for_rules(model=model),
+        ):
+            for name, desc in iterator:
+                entry_key = (str(name or ""), str(desc or ""))
+                if entry_key in seen_entries:
+                    continue
+                seen_entries.add(entry_key)
+                ability_entries.append((name, desc))
+
+        for name, desc in ability_entries:
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u201d", '"').replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9\+]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = pattern.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except (TypeError, ValueError):
+                range_value = 0
+            try:
+                threshold = int(m.group("threshold") or 0)
+            except (TypeError, ValueError):
+                threshold = 0
+            if range_value <= 0 or threshold <= 0:
+                continue
+            mortal_raw = re.sub(r"\s+", "", str(m.group("mw") or "").strip().lower())
+            if not mortal_raw:
+                continue
+            if re.fullmatch(r"\d*d\d+(?:\+\d+)?", mortal_raw):
+                mortal_wounds: str | int = mortal_raw
+            else:
+                try:
+                    mortal_wounds = int(mortal_raw)
+                except (TypeError, ValueError):
+                    continue
+                if mortal_wounds <= 0:
+                    continue
+            move_types = ("move", "advance", "fall_back")
+            source = str(name or "Enemy move mortals").strip() or "Enemy move mortals"
+            key_seed = self._normalize_keyword_phrase(source) or "enemy_move_range_mortal_threshold"
+            ability_key = f"enemy_move_range_mortal_threshold:{key_seed}"
+            army_usage_key = ""
+            army_usage_scope = ""
+            if armywide_phrase in normalized:
+                army_usage_key = f"ENEMY_MOVE_RANGE_MORTAL_THRESHOLD:{key_seed.upper()}"
+                army_usage_scope = "battle_round"
+            dedupe_key = (
+                source.lower(),
+                ability_key,
+                int(range_value),
+                int(threshold),
+                str(mortal_wounds),
+                tuple(move_types),
+                army_usage_key,
+                army_usage_scope,
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            spec = {
+                "source": source,
+                "ability_key": ability_key,
+                "range": int(range_value),
+                "threshold": int(threshold),
+                "mortal_wounds": mortal_wounds,
+                "move_types": list(move_types),
+                "context_ability": "enemy_move_range_mortal_threshold",
+                "optional": True,
+            }
+            if army_usage_key and army_usage_scope:
+                spec["army_usage_key"] = army_usage_key
+                spec["army_usage_scope"] = army_usage_scope
+            specs.append(spec)
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_post_shoot_no_overwatch_specs(self) -> List[dict]:
         """
         Unit-specific rule: after this unit has shot, select a hit enemy unit that cannot be targeted with Fire Overwatch.

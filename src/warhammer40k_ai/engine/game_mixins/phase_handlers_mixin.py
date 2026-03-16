@@ -14702,6 +14702,103 @@ class GamePhaseHandlersMixin:
         else:
             append_action(player, "Claimed for the Cult: CP gain prevented by the battle-round guardrail.")
 
+    def _on_phase_start_cult_infiltration(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        from ...utility.entity_ids import get_entity_id
+        from ..decision_kinds import DECISION_PICK_POINT
+        from ..decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(self, "decision_queue", None)
+
+        def _pending_request(source_member_unit_id: str) -> bool:
+            if queue is None or not hasattr(queue, "list"):
+                return False
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_PICK_POINT:
+                    continue
+                req_ctx = dict(getattr(req, "context", {}) or {})
+                if str(req_ctx.get("ability", "") or "").strip().lower() != "cult_infiltration_marker_relocation":
+                    continue
+                if str(req_ctx.get("source_member_unit_id", "") or "") != str(source_member_unit_id or ""):
+                    continue
+                return True
+            return False
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        current_player_id = str(getattr(player, "id", "") or "")
+        phase_key = f"{current_turn}:{current_player_id}:COMMAND_PHASE"
+
+        for owner in list(getattr(self, "players", []) or []):
+            if owner is None:
+                continue
+            army = self._get_player_army(owner)
+            mgr = getattr(army, "cult_ambush", None) if army is not None else None
+            if mgr is None:
+                continue
+            markers = [
+                marker
+                for marker in list(getattr(mgr, "get_active_markers", lambda: [])() or [])
+                if marker is not None and not bool(getattr(mgr, "marker_moved_this_turn", lambda *_a, **_k: False)(marker, game=self))
+            ]
+            markers.sort(key=lambda marker: str(getattr(marker, "marker_id", "") or ""))
+            if not markers:
+                continue
+            for source in list(getattr(mgr, "get_cult_infiltration_sources", lambda: [])() or []):
+                source_unit = source.get("unit")
+                source_model = source.get("model")
+                if source_unit is None or source_model is None:
+                    continue
+                source_member_unit_id = str(get_entity_id(source_unit) or "")
+                if not source_member_unit_id or _pending_request(source_member_unit_id):
+                    continue
+                source_sr = getattr(source_unit, "special_rules", None)
+                if isinstance(source_sr, dict) and str(source_sr.get("cult_infiltration_last_phase_key", "") or "") == phase_key:
+                    continue
+                source_unit_id = str(get_entity_id(source.get("root")) or source_member_unit_id)
+                model_id = str(get_entity_id(source_model) or "")
+                options = [DecisionOption.create("Skip", payload={"action": "skip"})]
+                for idx, marker in enumerate(list(markers), start=1):
+                    marker_id = str(getattr(marker, "marker_id", "") or "").strip()
+                    if not marker_id:
+                        continue
+                    options.append(
+                        DecisionOption.create(
+                            f"Marker {idx}",
+                            payload={"marker_id": marker_id},
+                        )
+                    )
+                if len(options) <= 1:
+                    continue
+                request = DecisionRequest.create(
+                    DECISION_PICK_POINT,
+                    'Cult Infiltration: select one Cult Ambush marker to move up to 6", or Skip.',
+                    player_id=getattr(owner, "id", None),
+                    options=options,
+                    context={
+                        "ability": "cult_infiltration_marker_relocation",
+                        "ability_name": "Cult Infiltration",
+                        "owner_player_id": str(getattr(owner, "id", "") or ""),
+                        "source_unit_id": source_unit_id,
+                        "source_member_unit_id": source_member_unit_id,
+                        "model_id": model_id,
+                        "phase": "Command phase",
+                        "phase_key": phase_key,
+                        "optional": True,
+                        "instruction": 'Choose a Cult Ambush marker, then choose a point up to 6" away, or Skip.',
+                    },
+                )
+                self.request_decision(request)
+
     def _apply_aeldari_light_of_clarity_effect(
         self,
         *,
