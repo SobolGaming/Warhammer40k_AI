@@ -877,6 +877,42 @@ class GameShootingFightHandlersMixin:
                     continue
             return False
 
+        from ..decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
+
+        def _army_usage_available(spec: dict) -> bool:
+            usage_key = str(spec.get("army_usage_key", "") or "").strip().upper()
+            usage_scope = str(spec.get("army_usage_scope", "") or "").strip().lower()
+            if not usage_key or attacker_player is None:
+                return True
+            if usage_scope == "turn":
+                used_turn_fn = getattr(attacker_player, "_ability_used_this_turn", None)
+                if callable(used_turn_fn) and bool(used_turn_fn(usage_key)):
+                    return False
+            elif usage_scope == "battle_round":
+                try:
+                    current_turn = int(getattr(self, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                used_rounds = getattr(attacker_player, "_ability_used_battle_round", None)
+                if isinstance(used_rounds, dict) and current_turn > 0:
+                    if int(used_rounds.get(usage_key, 0) or 0) == int(current_turn):
+                        return False
+            queue = getattr(self, "decision_queue", None)
+            if queue is None or not hasattr(queue, "list"):
+                return True
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET:
+                    continue
+                if getattr(req, "player_id", None) != getattr(attacker_player, "id", None):
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("army_usage_key", "") or "").strip().upper() != usage_key:
+                    continue
+                if str(ctx.get("army_usage_scope", "") or "").strip().lower() != usage_scope:
+                    continue
+                return False
+            return True
+
         triggers: list[tuple[Any, dict, list[Any]]] = []
         for model in list(attacker_unit.models or []):
             if not getattr(model, "is_alive", False):
@@ -885,6 +921,8 @@ class GameShootingFightHandlersMixin:
             if not specs:
                 continue
             for spec in specs:
+                if not _army_usage_available(spec):
+                    continue
                 candidates: list[Any] = []
                 for target_unit, hits in (hits_by_target or {}).items():
                     if target_unit is None:
@@ -907,6 +945,8 @@ class GameShootingFightHandlersMixin:
 
         unit_specs = attacker_unit.unit_post_shoot_battleshock_specs() or []
         for spec in unit_specs:
+            if not _army_usage_available(spec):
+                continue
             candidates: list[Any] = []
             for target_unit, hits in (hits_by_target or {}).items():
                 if target_unit is None:
@@ -975,8 +1015,6 @@ class GameShootingFightHandlersMixin:
                 pass
             return int(modifier)
 
-        from ..decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
-
         for model, spec, candidates in triggers:
             if not candidates:
                 continue
@@ -1035,6 +1073,8 @@ class GameShootingFightHandlersMixin:
                     "attacker_unit_id": get_entity_id(attacker_unit),
                     "model_id": get_entity_id(model) if model is not None else None,
                     "ability_name": ability_name,
+                    "army_usage_key": str(spec.get("army_usage_key", "") or "").strip().upper(),
+                    "army_usage_scope": str(spec.get("army_usage_scope", "") or "").strip().lower(),
                 },
             )
             self.request_decision(request)
@@ -4407,6 +4447,7 @@ class GameShootingFightHandlersMixin:
         self,
         attacker_unit=None,
         hits_by_target=None,
+        hit_models_by_target_weapon=None,
         **_kwargs,
     ) -> None:
         if attacker_unit is None or not hits_by_target:
@@ -4428,6 +4469,37 @@ class GameShootingFightHandlersMixin:
                 return False
             return True
 
+        def _normalize_weapon_key(value: str) -> str:
+            normalizer = getattr(attacker_unit, "_normalize_keyword_phrase", None)
+            if callable(normalizer):
+                try:
+                    return str(normalizer(value) or "")
+                except Exception:
+                    return ""
+            text = str(value or "").lower()
+            text = re.sub(r"[^a-z0-9]+", " ", text)
+            return re.sub(r"\s+", " ", text).strip()
+
+        def _target_hit_with_weapon_key(target, weapon_key: str) -> bool:
+            normalized_key = _normalize_weapon_key(weapon_key)
+            if not normalized_key or not isinstance(hit_models_by_target_weapon, dict):
+                return False
+            target_map = hit_models_by_target_weapon.get(target)
+            if target_map is None:
+                try:
+                    target_root = target.get_attached_unit_root()
+                except Exception:
+                    target_root = target
+                target_map = hit_models_by_target_weapon.get(target_root)
+            if not isinstance(target_map, dict):
+                return False
+            models = target_map.get(normalized_key)
+            if not models and normalized_key.endswith("s"):
+                models = target_map.get(normalized_key[:-1])
+            if not models and not normalized_key.endswith("s"):
+                models = target_map.get(f"{normalized_key}s")
+            return bool(models)
+
         specs = attacker_unit.unit_post_shoot_keyword_hit_reroll_ones_specs() or []
         if not specs:
             return
@@ -4442,6 +4514,9 @@ class GameShootingFightHandlersMixin:
                 if int(hits or 0) <= 0:
                     continue
                 if not _is_enemy_unit(target_unit):
+                    continue
+                weapon_key = str(spec.get("weapon_key", "") or "")
+                if weapon_key and not _target_hit_with_weapon_key(target_unit, weapon_key):
                     continue
                 candidates.append(target_unit)
             if not candidates:
@@ -4461,9 +4536,13 @@ class GameShootingFightHandlersMixin:
             if not options:
                 continue
             ability_name = str(spec.get("source", "") or "Post-shoot Hit reroll").strip() or "Post-shoot Hit reroll"
+            weapon_name = str(spec.get("weapon_name", "") or "").strip()
+            prompt = f"{ability_name}: select a unit."
+            if weapon_name:
+                prompt = f"{ability_name}: select a unit hit by {weapon_name}."
             request = DecisionRequest.create(
                 DECISION_CHOOSE_QUARRY,
-                f"{ability_name}: select a unit.",
+                prompt,
                 player_id=getattr(attacker_player, "id", None),
                 options=options,
                 context={
@@ -4471,6 +4550,8 @@ class GameShootingFightHandlersMixin:
                     "ability": "post_shoot_keyword_hit_reroll_ones",
                     "ability_name": ability_name,
                     "keyword_phrase": str(spec.get("keyword_phrase", "") or "").strip(),
+                    "weapon_key": str(spec.get("weapon_key", "") or ""),
+                    "weapon_name": weapon_name,
                 },
             )
             self.request_decision(request)
@@ -14344,6 +14425,67 @@ class GameShootingFightHandlersMixin:
             request.context["guns_blazing_unit_id"] = source_id
             pending_for_source.add(source_id)
 
+    def _on_unit_shooting_resolved_hypersensory_abilities(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("hypersensory_abilities_pending_move", False)):
+            return
+
+        source_name = str(sr.get("hypersensory_abilities_pending_move_source", "") or "Hypersensory Abilities").strip()
+        source_name = source_name or "Hypersensory Abilities"
+        enemy_unit_id = str(sr.get("hypersensory_abilities_pending_enemy_unit_id", "") or "")
+        sr.pop("hypersensory_abilities_pending_move", None)
+        sr.pop("hypersensory_abilities_pending_move_source", None)
+        sr.pop("hypersensory_abilities_pending_enemy_unit_id", None)
+        attacker_root.special_rules = sr
+
+        if not self._unit_is_active_for_reactive_trigger(attacker_root):
+            return
+        player = getattr(attacker_root.get_parent_army(), "player", None)
+        if player is None:
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        source_id = str(get_entity_id(attacker_root) or "")
+        if source_id and queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_MOVE_UNIT:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("reactive_move_kind", "") or "").strip() != "hypersensory_abilities":
+                    continue
+                if str(ctx.get("reactive_move_unit_id", "") or "") == source_id:
+                    return
+
+        roll = int(get_roll("D6") or 0)
+        try:
+            from ...utility.event_bus import append_dice
+
+            append_dice(player, f"{source_name}: {roll}")
+        except Exception:
+            pass
+        if roll <= 0:
+            return
+
+        resolve_unit_fn = getattr(self, "_resolve_unit_by_id", None)
+        enemy_unit = resolve_unit_fn(enemy_unit_id) if callable(resolve_unit_fn) and enemy_unit_id else None
+        self._queue_reactive_move_movement_decision(
+            player=player,
+            unit=attacker_root,
+            max_distance=int(roll),
+            kind="hypersensory_abilities",
+            movement_type="reactive",
+            source=source_name,
+            moving_unit=enemy_unit,
+        )
+
     def _on_shooting_targets_selected_brazen_fury(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return
@@ -14486,6 +14628,10 @@ class GameShootingFightHandlersMixin:
             if callable(can_fn):
                 if not can_fn(game=self, game_map=getattr(self, "map", None)):
                     continue
+            rule_fn = getattr(target, "get_horde_move_rule", None)
+            rule = rule_fn(game=self) if callable(rule_fn) else None
+            if not isinstance(rule, dict):
+                rule = {}
             player = None
             try:
                 player = target.get_parent_army().player
@@ -14519,6 +14665,11 @@ class GameShootingFightHandlersMixin:
                     has_insurmountable_odds = bool(has_insurmountable_odds_fn())
                 except Exception:
                     has_insurmountable_odds = False
+            source_name = str(rule.get("source", "") or "Horde Move").strip() or "Horde Move"
+            try:
+                fixed_distance = int(rule.get("fixed_distance", 0) or 0)
+            except Exception:
+                fixed_distance = 0
             if has_righteous_zeal:
                 msg = (
                     "Righteous Zeal: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
@@ -14531,12 +14682,17 @@ class GameShootingFightHandlersMixin:
                     "This unit can move within Engagement Range and cannot make this move while Battle-shocked."
                 )
                 source_name = "Insurmountable Odds"
+            elif source_name.lower() == "brood surge":
+                distance_text = f"{int(fixed_distance)}\"" if fixed_distance > 0 else "D6\""
+                msg = (
+                    f"Brood Surge: Move {distance_text} as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                    "This unit can move within Engagement Range of that enemy unit and cannot make this move while Battle-shocked."
+                )
             else:
                 msg = (
                     "Horde Move: Move D6\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
                     "This unit cannot make a Horde move while Battle-shocked."
                 )
-                source_name = "Horde Move"
             self._queue_reactive_move_confirmation(
                 player=player,
                 unit=target,

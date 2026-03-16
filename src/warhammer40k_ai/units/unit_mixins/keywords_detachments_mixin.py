@@ -3524,6 +3524,26 @@ class KeywordsDetachmentsMixin:
                     "use_once_per_phase": True,
                     "closest_enemy_unit_exclude_keywords": ("AIRCRAFT",),
                 }
+            else:
+                brood_surge, _ = self._find_ability_with_patterns(["brood surge"])
+                if brood_surge:
+                    has_hand_flamer = False
+                    has_wargear_named = getattr(self, "_has_wargear_named", None)
+                    if callable(has_wargear_named):
+                        try:
+                            has_hand_flamer = bool(has_wargear_named("Hand flamer"))
+                        except Exception:
+                            has_hand_flamer = False
+                    rule = {
+                        "source": "Brood Surge",
+                        "distance_bonus": 0,
+                        "distance_reroll": False,
+                        "requires_not_engaged": False,
+                        "use_once_per_phase": False,
+                        "closest_enemy_unit_exclude_keywords": ("AIRCRAFT",),
+                        "allow_engagement_range": True,
+                        "fixed_distance": 0 if has_hand_flamer else 6,
+                    }
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = dict(rule) if rule is not None else None
@@ -4153,6 +4173,85 @@ class KeywordsDetachmentsMixin:
                             rule["battleline_wholly_within_range"] = int(alt_rng)
                             rule["battleline_required_keyword"] = "BATTLELINE"
                             rule["battleline_required_faction_keyword"] = "ADEPTUS MECHANICUS"
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def get_hypersensory_abilities_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Once per turn, in your opponent's Movement phase, when an enemy unit ends a Normal, Advance or Fall Back move within 9"
+        of this model, if this model is not within Engagement Range of one or more enemy units, it can shoot at that unit as if it
+        were your Shooting phase and then make a Normal move of up to D6"."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "hypersensory_abilities_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text = unit._normalize_rules_text(unit._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                norm = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = re.sub(r"[^a-z0-9]+", " ", norm.lower()).strip()
+                norm = re.sub(r"\s+", " ", norm)
+                key = (str(name or "").strip().lower(), norm)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if "once per turn" not in norm or "opponent s movement phase" not in norm:
+                    continue
+                if "ends a normal advance or fall back move within " not in norm:
+                    continue
+                if "shoot at that unit as if it were your shooting phase" not in norm:
+                    continue
+                if "then make a normal move of up to d6" not in norm:
+                    continue
+                if "not within engagement range of one or more enemy units" not in norm:
+                    continue
+                m = re.search(
+                    r"ends a normal advance or fall back move within (?P<range>\d+) of this model",
+                    norm,
+                )
+                if not m:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                source = str(name or "Hypersensory Abilities").strip() or "Hypersensory Abilities"
+                rule = {
+                    "source": source,
+                    "range": int(range_value),
+                    "move_distance_roll": "D6",
+                    "forbid_embark": "cannot embark within a transport" in norm,
+                }
                 break
             if rule is not None:
                 break
@@ -9735,6 +9834,94 @@ class KeywordsDetachmentsMixin:
                         break
                 if not visible:
                     return False
+        return True
+
+    def _hypersensory_abilities_turn_key(self, game=None) -> str:
+        return self._hyperspace_hunters_turn_key(game)
+
+    def hypersensory_abilities_used_this_turn(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._hypersensory_abilities_turn_key(game)
+        return str(sr.get("hypersensory_abilities_used_turn_key", "")) == key
+
+    def mark_hypersensory_abilities_used(self, game=None) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hypersensory_abilities_used_turn_key"] = self._hypersensory_abilities_turn_key(game)
+        root.special_rules = sr
+
+    def can_use_hypersensory_abilities(self, game=None, game_map=None, *, enemy_unit=None) -> bool:
+        rule = self.get_hypersensory_abilities_rule()
+        if not rule:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        if not root.is_alive() or not getattr(root, "deployed", False):
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        if root.hypersensory_abilities_used_this_turn(game):
+            return False
+        owner_army = root.get_parent_army()
+        owner_player = getattr(owner_army, "player", None) if owner_army is not None else None
+        current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        if owner_player is not None and current_player is owner_player:
+            return False
+        if game_map is None:
+            try:
+                game_map = getattr(game, "map", None)
+            except Exception:
+                game_map = None
+        if game_map is not None:
+            try:
+                for enemy in game_map.get_enemy_units(root):
+                    if game_map.is_within_engagement_range(root, enemy):
+                        return False
+            except Exception:
+                pass
+        if enemy_unit is None:
+            return True
+        try:
+            enemy_root = enemy_unit.get_attached_unit_root()
+        except Exception:
+            enemy_root = enemy_unit
+        if enemy_root is None:
+            return False
+        if not enemy_root.is_alive() or not getattr(enemy_root, "deployed", True):
+            return False
+        if enemy_root.get_parent_army() is owner_army:
+            return False
+        if game_map is not None:
+            try:
+                from ...utility.aura_utils import unit_within_range_of_unit
+
+                if not unit_within_range_of_unit(root, enemy_root, float(rule.get("range", 9) or 9), use_attached_aggregate=True):
+                    return False
+            except Exception:
+                return False
         return True
 
     def loping_speed_used_this_turn(self, game=None) -> bool:

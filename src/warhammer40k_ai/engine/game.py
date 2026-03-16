@@ -3308,6 +3308,88 @@ class Game(
                 continue
         return False
 
+    def _on_unit_move_ended_hypersensory_abilities(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in ("move", "advance", "fall_back"):
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            moving_root = unit.get_attached_unit_root()
+        except Exception:
+            moving_root = unit
+        if moving_root is None:
+            return
+        moving_owner = getattr(moving_root.get_parent_army(), "player", None)
+
+        queue = getattr(self, "decision_queue", None)
+        pending_for_source: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_DECLARE_SHOTS:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if not bool(ctx.get("hypersensory_abilities_flow", False)):
+                    continue
+                uid = str(ctx.get("unit_id", "") or "")
+                if uid:
+                    pending_for_source.add(uid)
+
+        for p in list(self.players or []):
+            if p is None or p is moving_owner:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            roots: dict[str, Any] = {}
+            for candidate in list(army.units):
+                if candidate is None:
+                    continue
+                try:
+                    root = candidate.get_attached_unit_root()
+                except Exception:
+                    root = candidate
+                if root is None:
+                    continue
+                rid = str(get_entity_id(root) or "")
+                if not rid:
+                    continue
+                roots[rid] = root
+            for rid in sorted(list(roots.keys())):
+                root = roots[rid]
+                if rid in pending_for_source:
+                    continue
+                if not bool(getattr(root, "can_use_hypersensory_abilities", lambda **_k: False)(
+                    game=self,
+                    game_map=game_map,
+                    enemy_unit=moving_root,
+                )):
+                    continue
+                if not self._setup_reactive_can_shoot_target(root, moving_root):
+                    continue
+                source_name = "Hypersensory Abilities"
+                rule_fn = getattr(root, "get_hypersensory_abilities_rule", None)
+                reactive_rule = rule_fn() if callable(rule_fn) else None
+                if isinstance(reactive_rule, dict):
+                    source_name = str(reactive_rule.get("source", "") or source_name).strip() or source_name
+                request = self._queue_setup_reactive_shooting_decision(
+                    player=p,
+                    unit=root,
+                    target_unit=moving_root,
+                    source=source_name,
+                )
+                if request is None:
+                    continue
+                request.context["hypersensory_abilities_flow"] = True
+                request.context["hypersensory_abilities_source"] = source_name
+                request.context["hypersensory_abilities_enemy_unit_id"] = str(get_entity_id(moving_root) or "")
+                request.context["hypersensory_abilities_unit_id"] = rid
+                pending_for_source.add(rid)
+
     def _on_unit_move_ended_loping_speed(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return
@@ -12296,12 +12378,16 @@ class Game(
         """Roll Horde Move distance (D6)."""
         if unit is None:
             return 0
-        from ..utility.dice import get_roll
-        base_roll = int(get_roll("D6") or 0)
         rule_fn = getattr(unit, "get_horde_move_rule", None)
         rule = rule_fn(game=self) if callable(rule_fn) else None
         if not isinstance(rule, dict):
             rule = {}
+        try:
+            fixed_distance = int(rule.get("fixed_distance", 0) or 0)
+        except Exception:
+            fixed_distance = 0
+        from ..utility.dice import get_roll
+        base_roll = int(fixed_distance if fixed_distance > 0 else (get_roll("D6") or 0))
         distance_bonus = int(rule.get("distance_bonus", 0) or 0)
         can_reroll = bool(rule.get("distance_reroll"))
         source = str(rule.get("source", "") or "Horde Move").strip() or "Horde Move"
@@ -12309,7 +12395,7 @@ class Game(
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
         is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
-        if is_human and can_reroll:
+        if fixed_distance <= 0 and is_human and can_reroll:
             provider = getattr(getattr(self, "map", None), "roll_reroll_provider", None)
             if callable(provider):
                 want = bool(
@@ -12328,7 +12414,9 @@ class Game(
                     reroll_used = True
         max_distance = int(base_roll + distance_bonus)
         if player is not None:
-            if distance_bonus:
+            if fixed_distance > 0:
+                append_dice(player, f"{source} fixed distance: {int(base_roll or 0)}\" for {unit.name}")
+            elif distance_bonus:
                 tag = f"{source} reroll" if reroll_used else f"{source} roll"
                 append_dice(player, f"{tag}: {int(base_roll or 0)} (move {int(max_distance or 0)}\") for {unit.name}")
             else:

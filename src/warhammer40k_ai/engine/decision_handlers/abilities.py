@@ -23468,12 +23468,42 @@ def _apply_post_shoot_battleshock_target(game: object, request: DecisionRequest,
             player = attacker_unit.get_parent_army().player
         except Exception:
             player = None
+    army_usage_key = str(ctx.get("army_usage_key", "") or payload.get("army_usage_key", "") or "").strip().upper()
+    army_usage_scope = str(ctx.get("army_usage_scope", "") or payload.get("army_usage_scope", "") or "").strip().lower()
+    if army_usage_key and player is not None:
+        if army_usage_scope == "turn":
+            used_turn_fn = getattr(player, "_ability_used_this_turn", None)
+            if callable(used_turn_fn) and bool(used_turn_fn(army_usage_key)):
+                return None
+        elif army_usage_scope == "battle_round":
+            used_rounds = getattr(player, "_ability_used_battle_round", None)
+            if isinstance(used_rounds, dict):
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                if current_turn > 0 and int(used_rounds.get(army_usage_key, 0) or 0) == int(current_turn):
+                    return None
     try:
         from ...utility.event_bus import append_action
         if player is not None:
             append_action(player, f"{model_name} used {ability_name} on {target_unit.name}")
     except Exception:
         pass
+    if army_usage_key and player is not None:
+        if army_usage_scope == "turn":
+            mark_turn = getattr(player, "_mark_ability_used_turn", None)
+            if callable(mark_turn):
+                mark_turn(army_usage_key)
+        elif army_usage_scope == "battle_round":
+            used_rounds = getattr(player, "_ability_used_battle_round", None)
+            if isinstance(used_rounds, dict):
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                if current_turn > 0:
+                    used_rounds[army_usage_key] = int(current_turn)
     return target_unit
 
 

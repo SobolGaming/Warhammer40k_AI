@@ -217,6 +217,30 @@ class AbilitySpecsMixin:
                     }
                 )
                 continue
+            m_army = self._ARMY_ONCE_PER_TURN_POST_SHOOT_BATTLESHOCK_RE.fullmatch(normalized)
+            if m_army:
+                infantry_only = bool(m_army.group("infantry"))
+                source = str(name or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
+                army_usage_key = re.sub(r"[^A-Z0-9]+", "_", source.upper()).strip("_") or "POST_SHOOT_BATTLESHOCK"
+                key = (
+                    source.lower(),
+                    "model_post_shoot_battleshock_army_turn",
+                    bool(infantry_only),
+                    army_usage_key,
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "infantry_only": infantry_only,
+                        "exclude_monster_vehicle": False,
+                        "army_usage_key": army_usage_key,
+                        "army_usage_scope": "turn",
+                        "source": source,
+                    }
+                )
+                continue
             m = self._POST_SHOOT_BATTLESHOCK_RE.fullmatch(normalized)
             if not m:
                 continue
@@ -4494,6 +4518,8 @@ class AbilitySpecsMixin:
         Returns a list of specs with keys:
             - source: ability name
             - keyword_phrase: str
+            - weapon_key: Optional[str]
+            - weapon_name: str
         """
         try:
             root = self.get_attached_unit_root()
@@ -4511,7 +4537,7 @@ class AbilitySpecsMixin:
             members = [root]
 
         specs: list[dict] = []
-        seen: set[tuple[str, str]] = set()
+        seen: set[tuple[str, str, str]] = set()
         for unit in members:
             if unit is None:
                 continue
@@ -4532,8 +4558,12 @@ class AbilitySpecsMixin:
                 keyword_phrase = unit._normalize_keyword_phrase(keyword_raw) if keyword_raw else ""
                 if not keyword_phrase:
                     keyword_phrase = "friendly"
+                weapon_name = str(m.group("weapon") or "").strip()
+                weapon_key = ""
+                if weapon_name:
+                    weapon_key = unit._normalize_keyword_phrase(weapon_name) or weapon_name.lower()
                 source = str(name or "Post-shoot Hit reroll").strip() or "Post-shoot Hit reroll"
-                key = (source.lower(), keyword_phrase.lower())
+                key = (source.lower(), keyword_phrase.lower(), weapon_key)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -4541,6 +4571,8 @@ class AbilitySpecsMixin:
                     {
                         "source": source,
                         "keyword_phrase": keyword_phrase,
+                        "weapon_key": weapon_key or None,
+                        "weapon_name": weapon_name,
                     }
                 )
 

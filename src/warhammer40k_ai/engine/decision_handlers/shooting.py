@@ -367,9 +367,34 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
         declarations.append(entry)
     if not declarations:
         return False
+    hypersensory_flow = bool(request.context.get("hypersensory_abilities_flow", False))
+    if hypersensory_flow:
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["hypersensory_abilities_pending_move"] = True
+        sr["hypersensory_abilities_pending_move_source"] = (
+            str(request.context.get("hypersensory_abilities_source", "") or "Hypersensory Abilities").strip()
+            or "Hypersensory Abilities"
+        )
+        sr["hypersensory_abilities_pending_enemy_unit_id"] = str(
+            request.context.get("hypersensory_abilities_enemy_unit_id", "") or ""
+        )
+        unit.special_rules = sr
     success = bool(unit.execute_shooting_declarations(declarations, game_map, out_of_phase=out_of_phase))
+    if not success and hypersensory_flow:
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict):
+            sr.pop("hypersensory_abilities_pending_move", None)
+            sr.pop("hypersensory_abilities_pending_move_source", None)
+            sr.pop("hypersensory_abilities_pending_enemy_unit_id", None)
+            unit.special_rules = sr
     if success and bool(request.context.get("guns_blazing_flow", False)):
         mark_used = getattr(unit, "mark_guns_blazing_used", None)
+        if callable(mark_used):
+            mark_used(game)
+    if success and hypersensory_flow:
+        mark_used = getattr(unit, "mark_hypersensory_abilities_used", None)
         if callable(mark_used):
             mark_used(game)
     try:

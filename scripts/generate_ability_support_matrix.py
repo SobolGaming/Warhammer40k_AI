@@ -4117,7 +4117,15 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Demolisher battle cannon own-engagement targeting exception is implemented, and the model ignores Big Guns Never Tire hit penalties while engaged.",
         ),
+        ("GC", "Line-breaker"): (
+            "Supported",
+            "Demolisher battle cannon own-engagement targeting exception is implemented, and the model ignores Big Guns Never Tire hit penalties while engaged.",
+        ),
         ("AM", "Urban Warfare"): (
+            "Supported",
+            "Ranged attacks against the model suffer -1 Damage while it has the Benefit of Cover against that attack.",
+        ),
+        ("GC", "Urban Warfare"): (
             "Supported",
             "Ranged attacks against the model suffer -1 Damage while it has the Benefit of Cover against that attack.",
         ),
@@ -6085,6 +6093,7 @@ def _classify_ability_base(
     move_over_mortal_support = _move_over_mortal_wounds_support(description)
     spore_mine_cysts_support = _spore_mine_cysts_support(description)
     floating_death_support = _floating_death_support(description)
+    hypersensory_abilities_support = _hypersensory_abilities_support(description)
     parasitic_infection_support = _parasitic_infection_support(description)
     hazardous_test_modifier_support = _hazardous_test_modifier_support(description)
     orks_waaagh_conditional_support = _orks_waaagh_conditional_model_and_unit_support(description)
@@ -6126,6 +6135,7 @@ def _classify_ability_base(
     enemy_move_reactive_d6_support = _enemy_move_reactive_d6_support(description)
     conniving_runts_support = _conniving_runts_support(description)
     horde_move_support = _horde_move_support(description)
+    brood_surge_support = _brood_surge_support(description)
     blistering_assault_support = _blistering_assault_support(description)
     setup_reactive_shoot_charge_support = _setup_reactive_shoot_or_charge_support(description)
     deep_strike_setup_range_no_charge_support = _deep_strike_setup_range_no_charge_support(description)
@@ -6344,6 +6354,8 @@ def _classify_ability_base(
         return move_over_mortal_support
     if floating_death_support:
         return floating_death_support
+    if hypersensory_abilities_support:
+        return hypersensory_abilities_support
     if parasitic_infection_support:
         return parasitic_infection_support
     if hazardous_test_modifier_support:
@@ -6595,6 +6607,8 @@ def _classify_ability_base(
         return enemy_move_reactive_d6_support
     if horde_move_support:
         return horde_move_support
+    if brood_surge_support:
+        return brood_surge_support
     if blistering_assault_support:
         return blistering_assault_support
     if setup_reactive_shoot_charge_support:
@@ -11944,6 +11958,42 @@ def _horde_move_support(description: str) -> Optional[Tuple[str, str]]:
     return ("Supported", note)
 
 
+def _brood_surge_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm or "brood surge move" not in norm:
+        return None
+    if "enemy unit is selected to shoot" not in norm or "after that unit has shot" not in norm:
+        return None
+    if not re.search(
+        r"if (?:one or more|any) models from this unit were destroyed as a result of those attacks",
+        norm,
+    ):
+        return None
+    if "roll one d6" not in norm and "roll a d6" not in norm:
+        return None
+    if "as close as possible to the closest enemy unit" not in norm:
+        return None
+    if "excluding aircraft" not in norm:
+        return None
+    if "within engagement range of that enemy unit" not in norm:
+        return None
+    if "battle shocked" not in norm:
+        return None
+    if "move it up to 6 instead of up to d6" in norm:
+        fixed_note = " If no model in the unit started the battle with a hand flamer, that move is fixed at 6\"."
+    elif "moved up to 6 instead of up to d6" in norm:
+        fixed_note = " If no model in the unit started the battle with a hand flamer, that move is fixed at 6\"."
+    else:
+        fixed_note = ""
+    return (
+        "Supported",
+        "Reactive move after enemy shooting casualties: move toward the closest non-AIRCRAFT enemy unit, can enter Engagement Range, and is blocked while Battle-shocked."
+        + fixed_note,
+    )
+
+
 def _blistering_assault_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -13277,6 +13327,22 @@ def _post_shoot_battleshock_support(description: str) -> Optional[Tuple[str, str
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    heroic_pattern = (
+        r"once per turn after one model from your army with this ability has shot you can select one "
+        r"(?:(?P<infantry>infantry) )?(?:enemy )?unit hit by one or more of those attacks "
+        r"that (?:enemy )?unit must take a battle shock test"
+    )
+    heroic_match = re.fullmatch(heroic_pattern, norm)
+    if heroic_match:
+        if heroic_match.group("infantry"):
+            return (
+                "Supported",
+                "Once per turn after one model with this ability shoots, pick a hit enemy INFANTRY unit to take a Battle-shock test.",
+            )
+        return (
+            "Supported",
+            "Once per turn after one model with this ability shoots, pick a hit enemy unit to take a Battle-shock test.",
+        )
     indirect_pattern = (
         r"in your shooting phase after this model has shot if one or more of those attacks made with an indirect fire weapon "
         r"scored a hit against an enemy unit that unit must take a battle shock test"
@@ -13868,8 +13934,9 @@ def _post_shoot_keyword_hit_reroll_ones_support(description: str) -> Optional[Tu
     if not norm:
         return None
     pattern = (
-        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit hit by one or more of those attacks "
-        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) model makes an attack that targets that unit "
+        r"in your shooting phase after this (?:(?:model s unit)|(?:models unit)|model|unit) has shot select one enemy unit hit by one or more of those attacks "
+        r"(?:made with (?:(?:a|an|the|its|this model s|this unit s) )?(?P<weapon>[a-z0-9 ' -]+?) )?"
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) model makes an attack that targets that (?:enemy )?unit "
         r"(?:you can )?re ?roll a hit roll of 1"
     )
     m = re.fullmatch(pattern, norm)
@@ -13878,10 +13945,11 @@ def _post_shoot_keyword_hit_reroll_ones_support(description: str) -> Optional[Tu
     keyword = str(m.group("keyword") or "").strip().upper()
     if not keyword:
         keyword = "FRIENDLY"
-    return (
-        "Supported",
-        f"After shooting: select a hit enemy unit; friendly {keyword} models re-roll Hit rolls of 1 when attacking that unit until phase end.",
-    )
+    weapon = str(m.group("weapon") or "").strip()
+    note = f"After shooting: select a hit enemy unit; friendly {keyword} models re-roll Hit rolls of 1 when attacking that unit until phase end."
+    if weapon:
+        note = f"After shooting: select a hit enemy unit hit by {weapon}; friendly {keyword} models re-roll Hit rolls of 1 when attacking that unit until phase end."
+    return ("Supported", note)
 
 
 def _aura_battleshock_leadership_penalty_support(description: str) -> Optional[Tuple[str, str]]:
@@ -15900,6 +15968,32 @@ def _floating_death_support(description: str) -> Optional[Tuple[str, str]]:
             "Move end (self or enemy): each model within 3\" selects an enemy unit within 3\", is destroyed, then deals D3 mortal wounds on 2-5 or D6 on 6.",
         )
     return None
+
+
+def _hypersensory_abilities_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per turn in your opponent(?:s| s) movement phase when an enemy unit ends a normal advance or fall back move within (?P<range>\d+) of this model "
+        r"if this model is not within engagement range of one or more enemy units it can shoot at that unit as if it were your shooting phase "
+        r"and then make a normal move of up to d6(?: it cannot embark within a transport as part of this move)?"
+    )
+    match = re.fullmatch(pattern, norm)
+    if not match:
+        return None
+    try:
+        range_value = int(match.group("range") or 0)
+    except (TypeError, ValueError):
+        range_value = 0
+    if range_value <= 0:
+        return None
+    return (
+        "Supported",
+        f"Once per turn in your opponent's Movement phase, when an enemy unit ends a move within {int(range_value)}\" and this model is not in Engagement Range, it can make a forced-target reactive shooting attack into that unit and then make a D6 reactive Normal move.",
+    )
 
 
 def _parasitic_infection_support(description: str) -> Optional[Tuple[str, str]]:

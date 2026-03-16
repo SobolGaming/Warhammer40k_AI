@@ -3398,6 +3398,11 @@ class Unit(
         r"(?:that was )?hit by one or more of those attacks that (?:enemy )?unit must take a battle shock test",
         re.IGNORECASE,
     )
+    _ARMY_ONCE_PER_TURN_POST_SHOOT_BATTLESHOCK_RE = re.compile(
+        r"once per turn after one model from your army with this ability has shot you can select one "
+        r"(?:(?P<infantry>infantry) )?(?:enemy )?unit hit by one or more of those attacks that (?:enemy )?unit must take a battle shock test",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_BATTLESHOCK_PENALTY_RE = re.compile(
         r"in your shooting phase after this (?P<subject>model|unit) has shot select one (?:enemy )?unit "
         r"(?:excluding monsters and vehicles )?hit by one or more of those attacks "
@@ -3952,8 +3957,9 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_KEYWORD_HIT_REROLL_ONES_RE = re.compile(
-        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit hit by one or more of those attacks "
-        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+) model makes an attack that targets that unit "
+        r"in your shooting phase after this (?:(?:model s unit)|(?:models unit)|model|unit) has shot select one enemy unit hit by one or more of those attacks "
+        r"(?:made with (?:(?:a|an|the|its|this model s|this unit s) )?(?P<weapon>[a-z0-9 ' -]+?) )?"
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+) model makes an attack that targets that (?:enemy )?unit "
         r"(?:you can )?re ?roll a hit roll of 1",
         re.IGNORECASE,
     )
