@@ -3544,6 +3544,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Once per battle, start of Fight phase: optional CONFIRM_YES_NO grants +3 melee Attacks and [DEVASTATING WOUNDS] to the bearer until phase end.",
         ),
+        ("SM", "Interception Strike"): (
+            "Supported",
+            "Repulsor Executioner ranged attacks can re-roll Hit rolls against enemy units within 12\" of one or more friendly ADEPTUS ASTARTES units, including the source unit itself.",
+        ),
         ("AS", "The Emperor's Grace"): (
             "Supported",
             "Once per battle, start of any phase: optional CONFIRM_YES_NO grants the bearer a 2+ invulnerable save until phase end.",

@@ -8132,11 +8132,42 @@ class ActionsMovementMixin:
         if root is None:
             return False
         try:
+            from ...utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return False
+        for candidate in self._iter_friendly_keyword_units(
+            required_keyword=required_keyword,
+            required_faction_keyword=required_faction_keyword,
+            game_map=game_map,
+            include_self=include_self,
+        ):
+            try:
+                if unit_within_range_of_unit(root, candidate, float(range_value), use_attached_aggregate=True):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _iter_friendly_keyword_units(
+        self,
+        *,
+        required_keyword: str = "",
+        required_faction_keyword: str = "",
+        game_map=None,
+        include_self: bool = False,
+    ):
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return
+        try:
             army = root.get_parent_army()
         except Exception:
             army = None
         if army is None:
-            return False
+            return
         if game_map is None:
             try:
                 game = getattr(getattr(army, "player", None), "game", None)
@@ -8146,10 +8177,6 @@ class ActionsMovementMixin:
 
         kw = str(required_keyword or "").strip()
         faction_kw = str(required_faction_keyword or "").strip()
-        try:
-            from ...utility.aura_utils import unit_within_range_of_unit
-        except Exception:
-            return False
 
         seen: set[str] = set()
         for candidate in list(getattr(army, "units", []) or []):
@@ -8194,8 +8221,38 @@ class ActionsMovementMixin:
                         continue
                 except Exception:
                     continue
+            yield cand_root
+
+    def _target_within_friendly_keyword_unit(
+        self,
+        target,
+        *,
+        range_value: float = 6.0,
+        required_keyword: str = "",
+        required_faction_keyword: str = "",
+        game_map=None,
+        include_self: bool = False,
+    ) -> bool:
+        if target is None:
+            return False
+        try:
+            target_root = target.get_attached_unit_root()
+        except Exception:
+            target_root = target
+        if target_root is None:
+            return False
+        try:
+            from ...utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return False
+        for candidate in self._iter_friendly_keyword_units(
+            required_keyword=required_keyword,
+            required_faction_keyword=required_faction_keyword,
+            game_map=game_map,
+            include_self=include_self,
+        ):
             try:
-                if unit_within_range_of_unit(root, cand_root, float(range_value), use_attached_aggregate=True):
+                if unit_within_range_of_unit(target_root, candidate, float(range_value), use_attached_aggregate=True):
                     return True
             except Exception:
                 continue

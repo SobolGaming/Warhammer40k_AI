@@ -13458,6 +13458,62 @@ class KeywordsDetachmentsMixin:
         self._ability_cache[cache_key] = source
         return str(source or "")
 
+    def get_interception_strike_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """Parse Interception Strike (ranged full hit re-rolls vs targets near friendly ADEPTUS ASTARTES units)."""
+        if model is None:
+            return None
+        cache_key = f"interception_strike_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule: Optional[dict] = None
+
+        def _parse_entry(name: str, desc: str) -> Optional[dict]:
+            source = str(name or "").strip()
+            source_key = source.lower()
+            text_src = desc or name or ""
+            if not text_src:
+                return None
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            low = normalized.lower().replace("reroll", "re roll")
+            low = re.sub(r"[^a-z0-9]+", " ", low)
+            low = re.sub(r"\s+", " ", low).strip()
+            if source_key != "interception strike" and "adeptus astartes units from your army" not in low:
+                return None
+            if "each time this model makes a ranged attack" not in low:
+                return None
+            if "targets an enemy unit within" not in low or "re roll the hit roll" not in low:
+                return None
+            match = re.search(
+                r"targets an enemy unit within (?P<range>\d+) of one or more adeptus astartes units from your army",
+                low,
+            )
+            if match is None:
+                return None
+            return {
+                "source": source or "Interception Strike",
+                "attack_type": "ranged",
+                "range": float(match.group("range")),
+                "required_faction_keyword": "ADEPTUS ASTARTES",
+                "include_self": True,
+            }
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            rule = _parse_entry(name, desc)
+            if rule:
+                break
+        if rule is None:
+            for name, desc in self._iter_ability_entries_for_rules(model=model):
+                rule = _parse_entry(name, desc)
+                if rule:
+                    break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def get_model_soul_trap_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """Parse Soul Trap rule for baseline and post-first-melee-kill bonuses."""
         if model is None:
@@ -13743,6 +13799,22 @@ class KeywordsDetachmentsMixin:
                 reroll_full = True
                 reroll_full_reasons.append(
                     f"{silent_source}: re-roll Hit roll vs targets below Starting Strength"
+                )
+        interception = self.get_interception_strike_rule(model)
+        if interception and target is not None:
+            required_attack_type = str(interception.get("attack_type", "any") or "any").strip().lower()
+            attack_type_ok = required_attack_type not in {"melee", "ranged"} or attack_scope in {"any", required_attack_type}
+            if attack_type_ok and self._target_within_friendly_keyword_unit(
+                target,
+                range_value=float(interception.get("range", 0.0) or 0.0),
+                required_faction_keyword=str(interception.get("required_faction_keyword", "") or ""),
+                include_self=bool(interception.get("include_self", False)),
+            ):
+                source = str(interception.get("source", "") or "Interception Strike").strip() or "Interception Strike"
+                range_value = int(float(interception.get("range", 0.0) or 0.0))
+                reroll_full = True
+                reroll_full_reasons.append(
+                    f"{source}: re-roll Hit roll vs targets within {range_value}\" of friendly ADEPTUS ASTARTES units"
                 )
         if model is not None:
             army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
