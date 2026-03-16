@@ -11420,6 +11420,19 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
         re.IGNORECASE,
     )
+    keyword_exclusion_clause_re = re.compile(
+        r"^if (?:the )?target(?: of that attack)? does not have the (?P<keywords>[a-z0-9 ,/]+?) keywords?"
+        r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
+        re.IGNORECASE,
+    )
+
+    def _split_keywords(raw_keywords: str) -> List[str]:
+        keywords: List[str] = []
+        for chunk in re.split(r",|\s+(?:or|and)\s+", str(raw_keywords or "").strip(), flags=re.IGNORECASE):
+            token = str(chunk or "").strip().upper()
+            if token and token not in keywords:
+                keywords.append(token)
+        return keywords
 
     base_sentences: List[str] = []
     base_atype = None
@@ -11459,6 +11472,7 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
     closest_sentences = [s for s in sentences if closest_clause_re.match(s.lower())]
     charge_sentences = [s for s in sentences if charge_clause_re.match(s.lower())]
     battleline_sentences = [s for s in sentences if battleline_clause_re.match(s.lower())]
+    keyword_exclusion_sentences = [s for s in sentences if keyword_exclusion_clause_re.match(s.lower())]
     unsupported = [
         s
         for s in sentences
@@ -11468,6 +11482,7 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         and not closest_clause_re.match(s.lower())
         and not charge_clause_re.match(s.lower())
         and not battleline_clause_re.match(s.lower())
+        and not keyword_exclusion_clause_re.match(s.lower())
     ]
 
     if objective_sentences:
@@ -11486,6 +11501,15 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         notes.append(
             f"If this unit is within {battleline_range}\" of friendly ADEPTUS MECHANICUS BATTLELINE units, the Hit roll can be re-rolled instead (optional)."
         )
+    if keyword_exclusion_sentences:
+        keyword_match = keyword_exclusion_clause_re.match(keyword_exclusion_sentences[0].lower())
+        keyword_labels = _split_keywords(keyword_match.group("keywords") if keyword_match else "")
+        if keyword_labels:
+            notes.append(
+                f"If the target does not have the {'/'.join(keyword_labels)} keywords, the Hit roll can be re-rolled instead (optional)."
+            )
+        else:
+            notes.append("If the target lacks the listed keywords, the Hit roll can be re-rolled instead (optional).")
 
     if multiple_bases or unsupported:
         notes.append("Additional clauses not handled.")

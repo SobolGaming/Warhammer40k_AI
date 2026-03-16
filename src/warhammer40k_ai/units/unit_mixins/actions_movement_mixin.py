@@ -4812,12 +4812,18 @@ class ActionsMovementMixin:
             if kw_norm == "afflicted":
                 return bool(self._target_is_afflicted(target, source_unit=unit))
             try:
-                return bool(target.has_keyword(kw.upper()))
+                has_keyword = getattr(target, "has_keyword", None)
+                if callable(has_keyword) and bool(has_keyword(kw.upper())):
+                    return True
             except Exception:
-                try:
-                    return bool(target.has_any_keyword(kw.upper()))
-                except Exception:
-                    return False
+                pass
+            try:
+                has_any_keyword = getattr(target, "has_any_keyword", None)
+                if callable(has_any_keyword) and bool(has_any_keyword(kw.upper())):
+                    return True
+            except Exception:
+                pass
+            return False
 
         if condition.target_keywords_any:
             if not any(_target_has_keyword(k) for k in condition.target_keywords_any):

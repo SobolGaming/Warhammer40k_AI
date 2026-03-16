@@ -141,6 +141,9 @@ def _normalize_text(text: str) -> str:
     t = t.replace("\u2019", "'").replace("\u2018", "'")
     t = re.sub(r"\ba model in the bearer'?s unit\b", "a model in this unit", t, flags=re.IGNORECASE)
     t = re.sub(r"\bmodels in the bearer'?s unit\b", "models in this unit", t, flags=re.IGNORECASE)
+    t = re.sub(r"\beach time the bearer makes\b", "each time this model makes", t, flags=re.IGNORECASE)
+    t = re.sub(r"\bthe bearer makes\b", "this model makes", t, flags=re.IGNORECASE)
+    t = re.sub(r"\bbearer makes\b", "this model makes", t, flags=re.IGNORECASE)
     t = re.sub(r"\bmonster\s+of\s+vehicle\b", "monster or vehicle", t, flags=re.IGNORECASE)
     t = re.sub(r"\bvehicle\s+of\s+monster\b", "vehicle or monster", t, flags=re.IGNORECASE)
     t = t.replace("unmodifed", "unmodified")
@@ -376,6 +379,19 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
         t,
     ):
         return AttackRollCondition(target_keywords_any=("monster", "vehicle"))
+    m = re.fullmatch(
+        r"(?:the )?target(?: of that attack)? does not have the (?P<keywords>[a-z0-9 ,/]+?) keywords?",
+        t,
+    )
+    if m:
+        raw_keywords = str(m.group("keywords") or "").strip()
+        keywords = _parse_keyword_list_clause(raw_keywords)
+        if not keywords and raw_keywords:
+            keyword = _strip_punct(raw_keywords).strip().lower()
+            if keyword:
+                keywords = (keyword,)
+        if keywords:
+            return AttackRollCondition(target_exclude_keywords_any=keywords)
 
     m = re.fullmatch(
         r"(?:the target of that attack|that attack) targets (?:a|an)?\s*(?:enemy\s+)?unit that is below (?:its )?starting strength",
