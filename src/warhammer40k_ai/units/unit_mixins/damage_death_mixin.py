@@ -1557,14 +1557,26 @@ class DamageDeathMixin:
                         root._melee_fight_on_death_pending_models = pending
                         return
 
+        shoot_on_death_triggered_immediately = False
         shoot_rule = self.get_shoot_on_death_after_attacks_rule(model=model)
+        if shoot_rule is not None:
+            damage_source_kind = str(getattr(model, "_last_damage_source_kind", "") or "").strip().lower()
+            allowed_damage_sources = tuple(
+                str(value or "").strip().lower()
+                for value in tuple(shoot_rule.get("allowed_damage_sources", ()) or ())
+                if str(value or "").strip()
+            )
+            if allowed_damage_sources and damage_source_kind not in allowed_damage_sources:
+                shoot_rule = None
         if shoot_rule is not None:
             try:
                 root = self.get_attached_unit_root()
             except Exception:
                 root = self
             if root is not None:
-                wp = getattr(self, "_last_destroyed_by_weapon_profile", None)
+                wp = getattr(model, "_last_damage_weapon_profile", None)
+                if wp is None:
+                    wp = getattr(self, "_last_destroyed_by_weapon_profile", None)
                 trigger_attack_type = str(shoot_rule.get("attack_type", "ranged") or "ranged").strip().lower()
                 is_ranged = False
                 is_melee = False
@@ -1594,13 +1606,19 @@ class DamageDeathMixin:
                             f"{shoot_rule.get('source', 'Shoot on death')} roll: {roll} for {self.name}",
                         )
                     if total >= int(shoot_rule.get("threshold", 0) or 0):
-                        pending = getattr(root, "_shoot_on_death_pending_models", None)
-                        if not isinstance(pending, list):
-                            pending = []
-                        if model not in pending:
-                            pending.append(model)
-                        root._shoot_on_death_pending_models = pending
-                        return
+                        try:
+                            attack_depth = int(getattr(root, "_attack_resolution_depth", 0) or 0)
+                        except Exception:
+                            attack_depth = 0
+                        if attack_depth > 0:
+                            pending = getattr(root, "_shoot_on_death_pending_models", None)
+                            if not isinstance(pending, list):
+                                pending = []
+                            if model not in pending:
+                                pending.append(model)
+                            root._shoot_on_death_pending_models = pending
+                            return
+                        shoot_on_death_triggered_immediately = True
 
         # Temporarily treat the model as "alive" so existing targeting/engagement checks work.
         original_wounds = getattr(model, "_wounds", None)
@@ -1636,7 +1654,7 @@ class DamageDeathMixin:
             if (not did_fight) and self.has_fight_on_death():
                 did_fight = self._try_fight_on_death(model=model, game_map=game_map)
 
-            if (not did_fight) and self.has_shoot_on_death():
+            if (not did_fight) and (shoot_on_death_triggered_immediately or self.has_shoot_on_death()):
                 self._try_shoot_on_death(model=model, game_map=game_map)
         finally:
             if original_wounds is not None:
@@ -1734,6 +1752,7 @@ class DamageDeathMixin:
 
         shoot_rule = self.get_shoot_on_death_after_attacks_rule(model=model)
         full_wounds_remaining = bool((shoot_rule or {}).get("full_wounds_remaining", False))
+        auto_pass_hazardous = bool((shoot_rule or {}).get("auto_pass_hazardous", False))
 
         # Collect one profile per ranged weapon (choose 'default' or the first profile).
         ranged_profiles = []
@@ -1796,6 +1815,11 @@ class DamageDeathMixin:
             "hit_models_by_target_weapon": hit_models_by_target_weapon,
             "hit_models_by_target_psychic": hit_models_by_target_psychic,
         }
+        if auto_pass_hazardous:
+            attack_context["auto_pass_hazardous"] = True
+            attack_context["hazardous_auto_pass_source"] = str(
+                (shoot_rule or {}).get("source", "") or "Shoot on death"
+            ).strip() or "Shoot on death"
         original_wounds = None
         try:
             original_wounds = int(getattr(model, "wounds", 0) or 0)

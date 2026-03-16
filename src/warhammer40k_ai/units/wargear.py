@@ -7297,7 +7297,13 @@ class WargearProfile:
                     pass
         except Exception:
             pass
-        if hazardous_active:
+        auto_pass_hazardous = bool(attack_context.get("auto_pass_hazardous", False))
+        hazardous_auto_pass_source = str(attack_context.get("hazardous_auto_pass_source", "") or "").strip()
+        if hazardous_active and auto_pass_hazardous:
+            note = f"{hazardous_auto_pass_source or 'Ability'}: auto-pass Hazardous tests"
+            if note not in attack_result.attacks_special_modifiers:
+                attack_result.attacks_special_modifiers.append(note)
+        elif hazardous_active:
             # Provide reroll callback for hazardous test
             def _reroll_hazard():
                 new_roll = get_roll("D6")

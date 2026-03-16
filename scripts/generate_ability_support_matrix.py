@@ -6347,6 +6347,7 @@ def _classify_ability_base(
     datasheet_command_reroll_cherub_support = _datasheet_command_reroll_cherub_support(description)
     unit_once_per_battle_unmodified_six_support = _unit_once_per_battle_unmodified_six_support(description)
     armorium_cherub_token_reminder_support = _armorium_cherub_token_reminder_support(description)
+    hellblaster_designer_note_support = _hellblaster_designer_note_support(description)
     drop_pod_designer_note_support = _drop_pod_designer_note_support(description)
     shieldbreaker_support = _shieldbreaker_support(description)
     act_of_faith_cherub_support = _act_of_faith_cherub_support(description)
@@ -6952,6 +6953,8 @@ def _classify_ability_base(
         return unit_once_per_battle_unmodified_six_support
     if armorium_cherub_token_reminder_support:
         return armorium_cherub_token_reminder_support
+    if hellblaster_designer_note_support:
+        return hellblaster_designer_note_support
     if drop_pod_designer_note_support:
         return drop_pod_designer_note_support
     if shieldbreaker_support:
@@ -15353,7 +15356,8 @@ def _shoot_on_death_after_attacks_support(description: str) -> Optional[Tuple[st
     m = re.fullmatch(
         r"when this model is destroyed roll one d6 on a (?P<threshold>\d)\+? do not remove it from play "
         r"(?:it|this model) can after the attacking (?:unit|model'?s unit|model s unit|models unit) has finished making its attacks "
-        r"shoot as if it were your shooting phase(?: and as if it had its full wounds remaining)? this model is then removed from play",
+        r"shoot as if it were your shooting phase(?: and as if it had its full wounds remaining)? this model is then removed from play"
+        r"(?: when resolving these attacks any hazardous tests taken for that attack are automatically passed)?",
         norm,
     )
     if m:
@@ -15362,6 +15366,21 @@ def _shoot_on_death_after_attacks_support(description: str) -> Optional[Tuple[st
         )
         if "full wounds remaining" in norm:
             note += " Shooting is resolved as if the model had full wounds remaining."
+        if "when resolving these attacks any hazardous tests taken for that attack are automatically passed" in norm:
+            note += " Those return shots auto-pass Hazardous tests and only trigger when destroyed by an attack or Hazardous test."
+        return ("Supported", note)
+    m = re.fullmatch(
+        r"each time a model in (?:this|that) unit is destroyed roll one d6 on a (?P<threshold>\d)\+? do not remove it from play "
+        r"the destroyed model can shoot after the attacking (?:unit|model'?s unit|model s unit|models unit) has finished making its attacks "
+        r"and is then removed from play(?: when resolving these attacks any hazardous tests taken for that attack are automatically passed)?",
+        norm,
+    )
+    if m:
+        note = (
+            f"Shoot-on-death: roll D6 on destruction; on {m.group('threshold')}+ the destroyed model shoots after the attacker finishes its attacks."
+        )
+        if "when resolving these attacks any hazardous tests taken for that attack are automatically passed" in norm:
+            note += " Those return shots auto-pass Hazardous tests and only trigger when destroyed by an attack or Hazardous test."
         return ("Supported", note)
     m = re.fullmatch(
         r"while the (?P<required>[a-z0-9 '\-]+?) model is on the battlefield each time a (?P<destroyed>[a-z0-9 '\-]+?) model "
@@ -16658,6 +16677,23 @@ def _armorium_cherub_token_reminder_support(description: str) -> Optional[Tuple[
     return (
         "Supported",
         "Reminder token only; Armorium Cherub once-per-battle usage is tracked by the engine.",
+    )
+
+
+def _hellblaster_designer_note_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if (
+        norm
+        != "this ability is triggered even when a model in this unit is destroyed as the result of failing a hazardous test meaning such a model may be able to shoot twice in the same phase"
+    ):
+        return None
+    return (
+        "Supported",
+        "Rules note only; For the Chapter! already triggers on destruction by an attack or Hazardous test, and the return shot is implemented accordingly.",
     )
 
 

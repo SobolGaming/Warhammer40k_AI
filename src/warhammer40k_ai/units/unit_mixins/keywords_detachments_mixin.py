@@ -1718,18 +1718,45 @@ class KeywordsDetachmentsMixin:
             model_rule = re.fullmatch(
                 r"when this model is destroyed roll one d6 on a (?P<threshold>\d)\+? do not remove it from play "
                 r"(?:it|this model) can after the attacking (?:unit|model'?s unit|model s unit|models unit) has finished making its attacks "
-                r"shoot as if it were your shooting phase(?: and as if it had its full wounds remaining)? this model is then removed from play",
+                r"shoot as if it were your shooting phase(?: and as if it had its full wounds remaining)? this model is then removed from play"
+                r"(?: when resolving these attacks any hazardous tests taken for that attack are automatically passed)?",
                 low,
             )
             if model_rule:
                 threshold = int(model_rule.group("threshold") or 0)
                 if threshold < 2 or threshold > 6:
                     return None
+                auto_pass_hazardous = bool(
+                    "when resolving these attacks any hazardous tests taken for that attack are automatically passed" in low
+                )
                 return {
                     "threshold": threshold,
                     "source": str(name or "Shoot on death").strip() or "Shoot on death",
                     "attack_type": "any",
                     "full_wounds_remaining": bool("full wounds remaining" in low),
+                    "auto_pass_hazardous": auto_pass_hazardous,
+                    "allowed_damage_sources": ("attack", "hazardous") if auto_pass_hazardous else (),
+                }
+
+            generic_unit_rule = re.fullmatch(
+                r"each time a model in (?:this|that) unit is destroyed roll one d6 on a (?P<threshold>\d)\+? do not remove it from play "
+                r"the destroyed model can shoot after the attacking (?:unit|model'?s unit|model s unit|models unit) has finished making its attacks "
+                r"and is then removed from play(?: when resolving these attacks any hazardous tests taken for that attack are automatically passed)?",
+                low,
+            )
+            if generic_unit_rule:
+                threshold = int(generic_unit_rule.group("threshold") or 0)
+                if threshold < 2 or threshold > 6:
+                    return None
+                auto_pass_hazardous = bool(
+                    "when resolving these attacks any hazardous tests taken for that attack are automatically passed" in low
+                )
+                return {
+                    "threshold": threshold,
+                    "source": str(name or "Shoot on death").strip() or "Shoot on death",
+                    "attack_type": "any",
+                    "auto_pass_hazardous": auto_pass_hazardous,
+                    "allowed_damage_sources": ("attack", "hazardous") if auto_pass_hazardous else (),
                 }
 
             unit_rule = re.fullmatch(
