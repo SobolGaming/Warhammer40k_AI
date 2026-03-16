@@ -1186,6 +1186,17 @@ class Unit(
             except Exception:
                 pass
             try:
+                curse_bonus_fn = getattr(self, "curse_of_the_wulfen_objective_control_bonus", None)
+                if callable(curse_bonus_fn):
+                    curse_bonus, curse_source = curse_bonus_fn(model, game_map=game_map)
+                else:
+                    curse_bonus, curse_source = 0, ""
+                if int(curse_bonus or 0) > 0:
+                    source = str(curse_source or "Curse of the Wulfen").strip() or "Curse of the Wulfen"
+                    mods.append(Modifier(ModifierOp.ADD, int(curse_bonus), source=f"ability:{source}"))
+            except Exception:
+                pass
+            try:
                 from ..utility.aura_effects import (
                     get_enemy_aura_move_oc_penalties,
                     get_enemy_aura_objective_control_minimum_floor,

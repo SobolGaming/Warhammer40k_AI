@@ -6226,6 +6226,7 @@ def _classify_ability_base(
     shadow_in_the_warp_enemy_battleshock_penalty_support = _shadow_in_the_warp_enemy_battleshock_penalty_support(description)
     command_phase_enemy_no_cover_support = _command_phase_enemy_no_cover_support(description)
     watcher_in_the_dark_support = _watcher_in_the_dark_support(description)
+    curse_of_the_wulfen_support = _curse_of_the_wulfen_support(description)
     command_phase_psychic_veil_support = _command_phase_psychic_veil_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
     start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
@@ -6429,6 +6430,8 @@ def _classify_ability_base(
         return friendly_destroyed_weapon_attacks_override_support
     if watcher_in_the_dark_support:
         return watcher_in_the_dark_support
+    if curse_of_the_wulfen_support:
+        return curse_of_the_wulfen_support
     prey_selection_support = _prey_selection_support(description)
     if prey_selection_support:
         return prey_selection_support
@@ -13723,6 +13726,44 @@ def _watcher_in_the_dark_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         f"Once per battle, after a mortal wound is allocated: optional Watcher in the Dark activation grants Feel No Pain {int(value)}+ against mortal wounds until end of phase.",
+    )
+
+
+def _curse_of_the_wulfen_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this unit is within (?P<char_range>\d+) of one or more friendly (?P<char_keyword>[a-z0-9 ]+) models "
+        r"excluding (?P<char_exclude>[a-z0-9 ]+) models or within (?P<priest_range>\d+) of one or more friendly "
+        r"(?P<priest_keyword>[a-z0-9 ]+) models if it is not battle shocked add (?P<infantry_bonus>\d+) to the "
+        r"objective control characteristic of (?P<infantry_keyword>[a-z0-9 ]+) models in it and add "
+        r"(?P<vehicle_bonus>\d+) to the objective control characteristic of (?P<vehicle_keyword>[a-z0-9 ]+) models in it"
+    )
+    match = re.fullmatch(pattern, norm)
+    if not match:
+        return None
+    try:
+        char_range = int(match.group("char_range") or 0)
+        priest_range = int(match.group("priest_range") or 0)
+        infantry_bonus = int(match.group("infantry_bonus") or 0)
+        vehicle_bonus = int(match.group("vehicle_bonus") or 0)
+    except (TypeError, ValueError):
+        return None
+    if min(char_range, priest_range, infantry_bonus, vehicle_bonus) <= 0:
+        return None
+    char_keyword = re.sub(r"\s+", " ", str(match.group("char_keyword") or "").strip()).upper()
+    char_exclude = re.sub(r"\s+", " ", str(match.group("char_exclude") or "").strip()).upper()
+    priest_keyword = re.sub(r"\s+", " ", str(match.group("priest_keyword") or "").strip()).upper()
+    infantry_keyword = re.sub(r"\s+", " ", str(match.group("infantry_keyword") or "").strip()).upper()
+    vehicle_keyword = re.sub(r"\s+", " ", str(match.group("vehicle_keyword") or "").strip()).upper()
+    if not all((char_keyword, char_exclude, priest_keyword, infantry_keyword, vehicle_keyword)):
+        return None
+    return (
+        "Supported",
+        f"While non-Battle-shocked, models in this unit gain +{int(infantry_bonus)} Objective Control if they are {infantry_keyword} while within {int(char_range)}\" of friendly {char_keyword} models excluding {char_exclude}, or within {int(priest_range)}\" of friendly {priest_keyword} models; {vehicle_keyword} models in this unit gain +{int(vehicle_bonus)} Objective Control instead.",
     )
 
 

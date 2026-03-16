@@ -820,6 +820,310 @@ class LateGameplayMixin:
             model_specs.extend(self._parse_objective_control_bonus_on_kill_specs_from_text(n, d))
 
         return list(base_specs) + model_specs
+
+    def _parse_curse_of_the_wulfen_oc_bonus_specs_from_text(
+        self,
+        ability_name: str,
+        ability_desc: str,
+    ) -> List[dict]:
+        normalized_name = self._normalize_keyword_phrase(ability_name)
+        normalized = self._normalize_ability_text_for_matching(self._normalize_rules_text(ability_desc))
+        if not normalized:
+            return []
+        if normalized_name != "curse of the wulfen":
+            return []
+        prefix_match = re.fullmatch(
+            r"while this unit is (?P<clauses>within .+?) if (?:this unit|it) is not battle shocked (?P<effect>.+)",
+            normalized,
+        )
+        if not prefix_match:
+            return []
+
+        source_clauses: List[dict] = []
+        clauses_text = str(prefix_match.group("clauses") or "").strip()
+        for clause_text in re.split(
+            r"\s+or\s+(?=within\s+\d+\s+of\s+one\s+or\s+more\s+friendly\s+)",
+            clauses_text,
+        ):
+            clause_match = re.fullmatch(
+                r"within (?P<range>\d+) of one or more friendly (?P<keyword>[a-z0-9 ]+?) models"
+                r"(?: excluding (?P<exclude>[a-z0-9 ]+?) models?)?",
+                str(clause_text or "").strip(),
+            )
+            if not clause_match:
+                return []
+            try:
+                range_inches = int(clause_match.group("range") or 0)
+            except (TypeError, ValueError):
+                return []
+            keyword_phrase = str(clause_match.group("keyword") or "").strip()
+            if range_inches <= 0 or not keyword_phrase:
+                return []
+            excluded_keywords: tuple[str, ...] = ()
+            excluded_phrase = str(clause_match.group("exclude") or "").strip()
+            if excluded_phrase:
+                excluded_keywords = (excluded_phrase,)
+            source_clauses.append(
+                {
+                    "range": int(range_inches),
+                    "keyword": keyword_phrase,
+                    "excluded_keywords": excluded_keywords,
+                }
+            )
+        if not source_clauses:
+            return []
+
+        effect_match = re.fullmatch(
+            r"add (?P<infantry_bonus>\d+) to the objective control characteristic of (?P<infantry_keyword>[a-z0-9 ]+) models in (?:this unit|it) "
+            r"and add (?P<vehicle_bonus>\d+) to the objective control characteristic of (?P<vehicle_keyword>[a-z0-9 ]+) models in (?:this unit|it)",
+            str(prefix_match.group("effect") or "").strip(),
+        )
+        if not effect_match:
+            return []
+        try:
+            infantry_bonus = int(effect_match.group("infantry_bonus") or 0)
+            vehicle_bonus = int(effect_match.group("vehicle_bonus") or 0)
+        except (TypeError, ValueError):
+            return []
+        if infantry_bonus <= 0 or vehicle_bonus <= 0:
+            return []
+
+        infantry_keyword = str(effect_match.group("infantry_keyword") or "").strip()
+        vehicle_keyword = str(effect_match.group("vehicle_keyword") or "").strip()
+        if not infantry_keyword or not vehicle_keyword:
+            return []
+
+        return [
+            {
+                "source_ability": str(ability_name or "Curse of the Wulfen").strip() or "Curse of the Wulfen",
+                "source_clauses": tuple(source_clauses),
+                "target_bonuses": (
+                    {"keyword": infantry_keyword, "amount": int(infantry_bonus)},
+                    {"keyword": vehicle_keyword, "amount": int(vehicle_bonus)},
+                ),
+            }
+        ]
+
+    @classmethod
+    def _model_matches_keyword_phrase(cls, model, phrase: str) -> bool:
+        keyword_phrase = cls._normalize_keyword_phrase(phrase)
+        if not keyword_phrase:
+            return False
+        tokens = keyword_phrase.split()
+        if not tokens:
+            return False
+
+        keywords: set[str] = set()
+        for field in ("keywords", "faction_keywords"):
+            for raw in list(getattr(model, field, []) or []):
+                normalized = cls._normalize_keyword_phrase(raw)
+                if normalized:
+                    keywords.add(normalized)
+        normalized_name = cls._normalize_keyword_phrase(getattr(model, "name", ""))
+        if normalized_name:
+            keywords.add(normalized_name)
+        parent_unit = getattr(model, "parent_unit", None)
+        if parent_unit is not None:
+            parent_name = cls._normalize_keyword_phrase(getattr(parent_unit, "name", ""))
+            if parent_name:
+                keywords.add(parent_name)
+        if not keywords:
+            return False
+
+        token_count = len(tokens)
+        dp = [False] * (token_count + 1)
+        dp[token_count] = True
+        for index in range(token_count - 1, -1, -1):
+            for end in range(index + 1, token_count + 1):
+                candidate = " ".join(tokens[index:end])
+                if candidate in keywords and dp[end]:
+                    dp[index] = True
+                    break
+        return bool(dp[0])
+
+    def get_curse_of_the_wulfen_oc_bonus_specs(self) -> List[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "curse_of_the_wulfen_oc_bonus_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: List[dict] = []
+        seen: set[tuple[str, tuple[tuple[int, str, tuple[str, ...]], ...], tuple[tuple[str, int], ...]]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                for spec in unit._parse_curse_of_the_wulfen_oc_bonus_specs_from_text(name, desc):
+                    clause_key = tuple(
+                        (
+                            int(clause.get("range", 0) or 0),
+                            str(clause.get("keyword", "") or "").strip().lower(),
+                            tuple(
+                                str(v or "").strip().lower()
+                                for v in tuple(clause.get("excluded_keywords", ()) or ())
+                            ),
+                        )
+                        for clause in tuple(spec.get("source_clauses", ()) or ())
+                    )
+                    target_key = tuple(
+                        (
+                            str(target.get("keyword", "") or "").strip().lower(),
+                            int(target.get("amount", 0) or 0),
+                        )
+                        for target in tuple(spec.get("target_bonuses", ()) or ())
+                    )
+                    dedupe_key = (
+                        str(spec.get("source_ability", "") or "").strip().lower(),
+                        clause_key,
+                        target_key,
+                    )
+                    if dedupe_key in seen:
+                        continue
+                    seen.add(dedupe_key)
+                    specs.append(spec)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def _curse_of_the_wulfen_source_clause_satisfied(self, root, clause: dict, *, game_map) -> bool:
+        if root is None or clause is None or game_map is None:
+            return False
+        get_friendly_units = getattr(game_map, "get_friendly_units", None)
+        if not callable(get_friendly_units):
+            return False
+
+        try:
+            range_inches = float(clause.get("range", 0) or 0)
+        except (TypeError, ValueError):
+            return False
+        if range_inches <= 0:
+            return False
+
+        keyword_phrase = str(clause.get("keyword", "") or "").strip()
+        if not keyword_phrase:
+            return False
+        excluded_keywords = tuple(clause.get("excluded_keywords", ()) or ())
+
+        try:
+            from ...utility.aura_utils import model_within_range_of_unit
+        except Exception:
+            return False
+
+        seen_roots: set[str] = set()
+        for source_unit in list(get_friendly_units(root) or []):
+            if source_unit is None:
+                continue
+            try:
+                source_root = (
+                    source_unit.get_attached_unit_root()
+                    if hasattr(source_unit, "get_attached_unit_root")
+                    else source_unit
+                )
+            except Exception:
+                source_root = source_unit
+            if source_root is None or source_root is root:
+                continue
+
+            source_key = str(get_entity_id(source_root) or "") or f"obj:{id(source_root)}"
+            if source_key in seen_roots:
+                continue
+            seen_roots.add(source_key)
+
+            try:
+                source_models = list(source_root.get_attached_unit_models() or [])
+            except Exception:
+                source_models = list(getattr(source_root, "models", []) or [])
+            for source_model in source_models:
+                if source_model is None or not getattr(source_model, "is_alive", False):
+                    continue
+                if not self._model_matches_keyword_phrase(source_model, keyword_phrase):
+                    continue
+                if excluded_keywords and any(
+                    self._model_matches_keyword_phrase(source_model, excluded_keyword)
+                    for excluded_keyword in excluded_keywords
+                ):
+                    continue
+                if model_within_range_of_unit(source_model, root, range_inches, use_attached_aggregate=True):
+                    return True
+        return False
+
+    def curse_of_the_wulfen_objective_control_bonus(
+        self,
+        model: Optional['Model'],
+        *,
+        game_map=None,
+    ) -> tuple[int, str]:
+        if model is None:
+            return 0, ""
+        try:
+            if not getattr(model, "is_alive", False):
+                return 0, ""
+        except Exception:
+            return 0, ""
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return 0, ""
+
+        try:
+            if bool(root.is_battle_shocked()):
+                return 0, ""
+        except Exception:
+            pass
+
+        if game_map is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return 0, ""
+
+        best_bonus = 0
+        best_source = ""
+        for spec in list(root.get_curse_of_the_wulfen_oc_bonus_specs() or []):
+            source_clauses = tuple(spec.get("source_clauses", ()) or ())
+            if not source_clauses:
+                continue
+            if not any(
+                root._curse_of_the_wulfen_source_clause_satisfied(root, clause, game_map=game_map)
+                for clause in source_clauses
+            ):
+                continue
+
+            model_bonus = 0
+            for target_bonus in tuple(spec.get("target_bonuses", ()) or ()):
+                target_keyword = str(target_bonus.get("keyword", "") or "").strip()
+                if not target_keyword:
+                    continue
+                if not root._model_matches_keyword_phrase(model, target_keyword):
+                    continue
+                try:
+                    amount = int(target_bonus.get("amount", 0) or 0)
+                except (TypeError, ValueError):
+                    amount = 0
+                model_bonus = max(model_bonus, int(max(0, amount)))
+            if model_bonus > best_bonus:
+                best_bonus = int(model_bonus)
+                best_source = str(spec.get("source_ability", "") or "Curse of the Wulfen").strip() or "Curse of the Wulfen"
+        return int(best_bonus), best_source
     
 
     def is_eligible_to_fight(self, game_map: 'Map') -> bool:
