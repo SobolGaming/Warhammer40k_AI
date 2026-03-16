@@ -9143,6 +9143,52 @@ class WargearProfile:
         base_skill = self.skill
         skill_mods: list[tuple[int, str]] = []
         ftgg_guided_bonus: dict = {}
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        parent_wargear = getattr(self, "parent_wargear", None)
+
+        def _parent_wargear_is_ranged() -> bool:
+            if parent_wargear is None:
+                return False
+            is_ranged = getattr(parent_wargear, "is_ranged", None)
+            if callable(is_ranged):
+                return bool(is_ranged())
+            is_melee = getattr(parent_wargear, "is_melee", None)
+            if callable(is_melee):
+                return not bool(is_melee())
+            return False
+
+        def _parent_wargear_is_melee() -> bool:
+            if parent_wargear is None:
+                return False
+            is_melee = getattr(parent_wargear, "is_melee", None)
+            if callable(is_melee):
+                return bool(is_melee())
+            is_ranged = getattr(parent_wargear, "is_ranged", None)
+            if callable(is_ranged):
+                return not bool(is_ranged())
+            return False
+
+        attack_is_ranged = _parent_wargear_is_ranged()
+        attack_is_melee = _parent_wargear_is_melee()
+
+        try:
+            if attacker_unit is not None:
+                override_fn = getattr(attacker_unit, "get_model_attack_skill_override", None)
+                if callable(override_fn):
+                    override = override_fn(
+                        attacker,
+                        attack_type="ranged" if attack_is_ranged else "melee" if attack_is_melee else "any",
+                        weapon_profile=self,
+                    )
+                    if isinstance(override, dict):
+                        override_value = int(override.get("value", 0) or 0)
+                        if override_value > 0:
+                            base_skill = int(override_value)
+                            source = str(override.get("source", "") or "Attack skill override").strip()
+                            if source:
+                                hit_result["special_effects"].append(f"{source}: set skill to {int(base_skill)}+")
+        except Exception:
+            pass
 
         def _add_skill_mod(delta, reason: str):
             try:
@@ -9157,11 +9203,10 @@ class WargearProfile:
             skill_mods.append((val, msg))
 
         try:
-            unit = getattr(attacker, "parent_unit", None)
-            army = unit.get_parent_army() if unit is not None else None
+            army = attacker_unit.get_parent_army() if attacker_unit is not None else None
             mgr = getattr(army, "for_the_greater_good", None) if army is not None else None
             if mgr is not None:
-                bonus = mgr.guided_attack_bonus(unit, target)
+                bonus = mgr.guided_attack_bonus(attacker_unit, target)
                 if isinstance(bonus, dict):
                     ftgg_guided_bonus = dict(bonus)
                     attack_instance["_ftgg_guided_bonus"] = dict(ftgg_guided_bonus)
@@ -9177,18 +9222,20 @@ class WargearProfile:
         except Exception:
             pass
         try:
-            unit = getattr(attacker, "parent_unit", None)
-            army = unit.get_parent_army() if unit is not None else None
+            army = attacker_unit.get_parent_army() if attacker_unit is not None else None
             mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
-            if mgr is not None and unit is not None:
+            if mgr is not None and attacker_unit is not None:
                 game = getattr(getattr(army, "player", None), "game", None)
-                imperative_keys = set(getattr(mgr, "get_active_imperative_keys_for_unit", lambda *_a, **_k: set())(unit, game=game))
+                imperative_keys = set(
+                    getattr(mgr, "get_active_imperative_keys_for_unit", lambda *_a, **_k: set())(
+                        attacker_unit,
+                        game=game,
+                    )
+                )
                 if imperative_keys:
-                    is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
-                    is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
-                    if "PROTECTOR" in imperative_keys and is_ranged:
+                    if "PROTECTOR" in imperative_keys and attack_is_ranged:
                         _add_skill_mod(1, "Protector Imperative: +1 BS")
-                    if "CONQUEROR" in imperative_keys and is_melee:
+                    if "CONQUEROR" in imperative_keys and attack_is_melee:
                         _add_skill_mod(1, "Conqueror Imperative: +1 WS")
         except Exception:
             pass
@@ -9197,8 +9244,8 @@ class WargearProfile:
             sr = getattr(unit, "special_rules", None)
             order_key = str(sr.get("voice_of_command_order_key", "") or "") if isinstance(sr, dict) else ""
             if order_key:
-                is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
-                is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+                is_ranged = _parent_wargear_is_ranged()
+                is_melee = _parent_wargear_is_melee()
                 if order_key == "TAKE_AIM" and is_ranged:
                     _add_skill_mod(1, "Take Aim!: +1 BS")
                 elif order_key == "FIX_BAYONETS" and is_melee:
@@ -9219,8 +9266,8 @@ class WargearProfile:
                 game = getattr(getattr(army, "player", None), "game", None)
                 keys = mgr.get_active_combat_drug_keys_for_model(attacker, game=game)
                 if keys:
-                    is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
-                    is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
+                    is_melee = _parent_wargear_is_melee()
+                    is_ranged = _parent_wargear_is_ranged()
                     if is_melee and "SERPENTIN" in keys:
                         _add_skill_mod(1, "Combat Drugs: Serpentin +1 WS")
                     if is_ranged and "SPLINTERMIND" in keys:
@@ -9246,7 +9293,7 @@ class WargearProfile:
         try:
             unit = getattr(attacker, "parent_unit", None)
             sr = getattr(unit, "special_rules", None) if unit is not None else None
-            is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+            is_melee = _parent_wargear_is_melee()
             if is_melee and isinstance(sr, dict) and sr.get("enhancement_knight_diabolus"):
                 if self._attacker_is_enhancement_bearer(attacker, sr):
                     _add_skill_mod(1, "Knight Diabolus: +1 WS")
@@ -9255,7 +9302,7 @@ class WargearProfile:
         try:
             unit = getattr(attacker, "parent_unit", None)
             sr = getattr(unit, "special_rules", None) if unit is not None else None
-            is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+            is_melee = _parent_wargear_is_melee()
             if is_melee and isinstance(sr, dict) and bool(sr.get("data_spike_ws_penalty_active")):
                 expires_phase = str(sr.get("data_spike_ws_penalty_expires_phase", "") or "").strip().upper()
                 current_phase = ""
@@ -9274,7 +9321,7 @@ class WargearProfile:
         try:
             unit = getattr(attacker, "parent_unit", None)
             sr = getattr(unit, "special_rules", None) if unit is not None else None
-            is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+            is_melee = _parent_wargear_is_melee()
             if is_melee and isinstance(sr, dict) and bool(sr.get("accelerator_mandible_ws_bonus_active")):
                 applies = True
                 expires_phase = str(sr.get("accelerator_mandible_ws_bonus_expires_phase", "") or "").strip().upper()
@@ -9319,7 +9366,7 @@ class WargearProfile:
             pass
         unit = getattr(attacker, "parent_unit", None)
         sr = getattr(unit, "special_rules", None) if unit is not None else None
-        is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+        is_melee = _parent_wargear_is_melee()
         if is_melee and isinstance(sr, dict):
             bonus = int(sr.get("enhancement_bionik_workshop_melee_ws_bonus", 0) or 0)
             if bonus > 0:
@@ -9333,8 +9380,8 @@ class WargearProfile:
             if callable(bonus_fn):
                 bonus, source = bonus_fn(attacker, unit=unit, weapon_profile=self)
                 if bonus:
-                    is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
-                    is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
+                    is_melee = _parent_wargear_is_melee()
+                    is_ranged = _parent_wargear_is_ranged()
                     if is_melee and not is_ranged:
                         skill_label = "WS"
                     elif is_ranged and not is_melee:

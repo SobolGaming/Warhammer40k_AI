@@ -2542,6 +2542,10 @@ def _ability_id_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Templar Vows": ("Supported", "Vow selection with combat/objective effects."),
         "Leader": ("Supported", "Attach Leaders during battle formations; protect Characters until Bodyguard is gone."),
         "Deep Strike": ("Supported", "Reserves placement in Reinforcements step; enforces >9\" distance."),
+        "Summon the Cult": (
+            "Supported",
+            "When an enemy moves within 9\" of your Cult Ambush marker, queue an optional relocation PICK_POINT for one threatened marker within 12\" of a model with this ability and more than 9\" from enemy units; Skip removes the marker as normal.",
+        ),
         "Etheric Emergence": (
             "Supported",
             "Optional Deep Strike arrival profile with >6\" enemy setup and turn-limited no-charge enforcement.",
@@ -3499,6 +3503,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AS", "Embodied Prophecy"): (
             "Supported",
             "Fight phase selected-unit trigger: if the unit charged this turn, melee weapons gain both [LETHAL HITS] and [SUSTAINED HITS 1] until end of phase; otherwise a deterministic CHOOSE_QUARRY selection applies one of those keywords until end of phase.",
+        ),
+        ("GC", "Summon the Cult"): (
+            "Supported",
+            "When an enemy moves within 9\" of your Cult Ambush marker, queue an optional relocation PICK_POINT for one threatened marker within 12\" of a model with this ability and more than 9\" from enemy units; Skip removes the marker as normal.",
         ),
         ("AS", "Extremis Trigger Word"): (
             "Supported",
@@ -6094,8 +6102,10 @@ def _classify_ability_base(
     leading_unit_contains_invuln_support = _leading_unit_contains_invuln_support(description)
     bearer_keyword_support = _bearer_keyword_support(description)
     bearer_unit_keyword_support = _bearer_unit_keyword_support(description)
+    smokescreen_zero_cp_support = _smokescreen_zero_cp_support(description)
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     unit_wound_reroll_support = _unit_wound_reroll_ones_support(description)
+    model_attack_skill_override_support = _model_attack_skill_override_support(description)
     target_hit_penalty_support = _target_hit_roll_penalty_support(description)
     defensive_ap_worsen_support = _defensive_ap_worsen_support(description)
     defensive_wound_penalty_support = _defensive_wound_penalty_support(description)
@@ -6135,6 +6145,7 @@ def _classify_ability_base(
     opponent_turn_destroyed_reposition_support = _opponent_turn_destroyed_reposition_support(description)
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     enemy_fall_back_selection_mortal_wounds_support = _enemy_fall_back_selection_mortal_wounds_support(description)
+    objective_marker_command_phase_cp_gain_support = _objective_marker_command_phase_cp_gain_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     phase_end_leadership_cp_gain_support = _phase_end_leadership_cp_gain_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
@@ -6168,6 +6179,7 @@ def _classify_ability_base(
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
     post_shoot_reactive_move_no_charge_support = _post_shoot_reactive_move_no_charge_support(description)
     post_shoot_no_cover_support = _post_shoot_no_cover_support(description)
+    post_shoot_friendly_attack_ignores_cover_support = _post_shoot_friendly_attack_ignores_cover_support(description)
     post_shoot_snare_support = _post_shoot_snare_support(description)
     post_shoot_leadership_debuff_support = _post_shoot_leadership_debuff_support(description)
     post_shoot_keyword_hit_reroll_ones_support = _post_shoot_keyword_hit_reroll_ones_support(description)
@@ -6531,12 +6543,16 @@ def _classify_ability_base(
         return model_fnp_support
     if bearer_keyword_support:
         return bearer_keyword_support
+    if smokescreen_zero_cp_support:
+        return smokescreen_zero_cp_support
     if bearer_unit_keyword_support:
         return bearer_unit_keyword_support
     if unit_hit_reroll_support:
         return unit_hit_reroll_support
     if unit_wound_reroll_support:
         return unit_wound_reroll_support
+    if model_attack_skill_override_support:
+        return model_attack_skill_override_support
     if target_hit_penalty_support:
         return target_hit_penalty_support
     if defensive_ap_worsen_support:
@@ -6609,6 +6625,8 @@ def _classify_ability_base(
         return enemy_fall_back_desperate_escape_support
     if enemy_fall_back_selection_mortal_wounds_support:
         return enemy_fall_back_selection_mortal_wounds_support
+    if objective_marker_command_phase_cp_gain_support:
+        return objective_marker_command_phase_cp_gain_support
     if command_phase_bonus_cp_support:
         return command_phase_bonus_cp_support
     if phase_end_leadership_cp_gain_support:
@@ -6673,6 +6691,8 @@ def _classify_ability_base(
         return post_shoot_reactive_move_no_charge_support
     if post_shoot_no_cover_support:
         return post_shoot_no_cover_support
+    if post_shoot_friendly_attack_ignores_cover_support:
+        return post_shoot_friendly_attack_ignores_cover_support
     if post_shoot_snare_support:
         return post_shoot_snare_support
     if post_shoot_leadership_debuff_support:
@@ -8397,12 +8417,20 @@ def _bearer_unit_keyword_support(description: str) -> Optional[Tuple[str, str]]:
     if not norm:
         return None
     lead_prefix = r"(?:while this model is leading a unit )?"
-    pattern = rf"{lead_prefix}(?:the )?(?:bearers unit|that unit|this unit) has the grenades keyword"
+    pattern = (
+        rf"{lead_prefix}(?:the )?(?:bearers unit|that unit|this unit) has the "
+        r"(?P<keywords>smoke and grenades|grenades and smoke|smoke|grenades) keywords?"
+    )
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
     leading = norm.startswith("while this model is leading a unit")
     prefix = "Leading: " if leading else ""
+    raw_keywords = str(m.group("keywords") or "").strip().lower()
+    if raw_keywords in {"smoke and grenades", "grenades and smoke"}:
+        return ("Supported", f"{prefix}Unit gains the SMOKE and GRENADES keywords.")
+    if raw_keywords == "smoke":
+        return ("Supported", f"{prefix}Unit gains the SMOKE keyword.")
     return ("Supported", f"{prefix}Unit gains the GRENADES keyword.")
 
 
@@ -10353,6 +10381,23 @@ def _allocated_damage_set_zero_support(description: str) -> Optional[Tuple[str, 
     return None
 
 
+def _smokescreen_zero_cp_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if not re.fullmatch(
+        r"the bearers unit has the smoke keyword and you can target it with the smokescreen stratagem for 0cp",
+        norm,
+    ):
+        return None
+    return (
+        "Supported",
+        "Unit gains the SMOKE keyword and can be targeted with Smokescreen for 0CP.",
+    )
+
+
 def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -11405,12 +11450,12 @@ def _unit_wound_reroll_ones_support(description: str) -> Optional[Tuple[str, str
         r"(?:(?:a|an) (?:enemy )?unit )?(?:that is )?"
         r"within range of (?:an|one or more) objective marker(?:s)?"
         r"(?: you do not control| your opponent controls)?"
-        r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the wound roll instead$",
+        r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the wound roll(?: instead)?$",
         re.IGNORECASE,
     )
     objective_unit_clause_re = re.compile(
         r"^while this unit is within range of an objective marker you control"
-        r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the wound roll instead$",
+        r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the wound roll(?: instead)?$",
         re.IGNORECASE,
     )
 
@@ -11535,6 +11580,32 @@ def _target_hit_roll_penalty_support(description: str) -> Optional[Tuple[str, st
 
     status = "Partial" if partial else "Supported"
     return (status, " ".join(notes) if notes else "-1 to hit when targeted.")
+
+
+def _model_attack_skill_override_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"the bearers (?P<attack_type>ranged|melee) weapons have a (?P<label>ballistic|weapon) skill characteristic of (?P<value>\d+)\+?",
+        norm,
+    )
+    if not m:
+        return None
+    attack_type = str(m.group("attack_type") or "").strip().lower()
+    label = str(m.group("label") or "").strip().lower()
+    value = str(m.group("value") or "").strip()
+    if attack_type == "ranged" and label != "ballistic":
+        return None
+    if attack_type == "melee" and label != "weapon":
+        return None
+    skill_label = "BS" if attack_type == "ranged" else "WS"
+    return (
+        "Supported",
+        f"Bearer’s {attack_type} weapons use {skill_label} {value}+.",
+    )
 
 
 def _enemy_aura_attack_hit_wound_penalty_support(description: str) -> Optional[Tuple[str, str]]:
@@ -12428,6 +12499,26 @@ def _command_phase_bonus_cp_support(description: str) -> Optional[Tuple[str, str
     return (
         "Supported",
         f"End of Command phase: roll {dice_count}D6; on {m_end.group('threshold')}+ gain {m_end.group('cp')} CP.",
+    )
+
+
+def _objective_marker_command_phase_cp_gain_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of your command phase roll one d6 for each objective marker you control "
+        r"that has one or more units from your army with this ability within range of it "
+        r"if one or more of the results is a (?P<threshold>\d+)\+? you gain (?P<cp>\d+) ?cp"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"Start of Command phase: roll once per controlled objective with a unit that has this ability in range; any {m.group('threshold')}+ grants {m.group('cp')} CP.",
     )
 
 
@@ -13392,6 +13483,27 @@ def _post_shoot_no_cover_support(description: str) -> Optional[Tuple[str, str]]:
     if weapon:
         return ("Supported", f"After shooting: select a hit enemy unit hit by {weapon}; it cannot gain Benefit of Cover until phase end.")
     return ("Supported", "After shooting: select a hit enemy unit; it cannot gain Benefit of Cover until phase end.")
+
+
+def _post_shoot_friendly_attack_ignores_cover_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time the bearers unit has shot select one enemy unit that was hit by one or more attacks made by the bearer this phase "
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+) model makes an attack against that unit "
+        r"that attack has the ignores cover ability"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = re.sub(r"\s+", " ", str(m.group("keyword") or "").strip()).upper()
+    return (
+        "Supported",
+        f"After the bearer’s unit shoots: select an enemy unit hit by the bearer; friendly {keyword} attacks against it gain [IGNORES COVER] until phase end.",
+    )
 
 
 def _command_phase_enemy_no_cover_support(description: str) -> Optional[Tuple[str, str]]:
@@ -14730,10 +14842,10 @@ def _melee_fight_on_death_after_attacks_support(description: str) -> Optional[Tu
         return None
     pattern = (
         r"(?:while this model is leading a unit each time |each time |if )?"
-        r"(?:each time |if )?(?:(?:an? )?[a-z0-9 ]+ model in this unit|a model in this unit|this model) "
+        r"(?:each time |if )?(?:(?:an? )?[a-z0-9 ]+ model in (?:this|that) unit|a model in (?:this|that) unit|this model) "
         r"is destroyed by a melee attack if (?:that model|it) has not fought this phase "
-        r"roll one d6 on a (?P<threshold>\d+) do not remove (?:it|this model|that destroyed model) from play "
-        r"(?:that destroyed model|the destroyed model|this model) can fight after the attacking (?:unit|model s unit|models unit) has finished making its attacks "
+        r"roll one d6 on a (?P<threshold>\d+) do not remove (?:it|this model|that destroyed model|the destroyed model) from play "
+        r"(?:that destroyed model|the destroyed model|this model|it) can fight after the attacking (?:unit|model s unit|models unit) has finished making its attacks "
         r"and (?:is|it is) then removed from play"
     )
     m = re.fullmatch(pattern, norm)

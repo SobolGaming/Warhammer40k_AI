@@ -3767,7 +3767,7 @@ class GameView:
             if self.cult_ambush_point_dialog is None:
                 return
             from ..utility.decision_utils import resolve_decision_command
-            from .decision_ui_utils import first_option_id, option_id_for_action
+            from .decision_ui_utils import first_option_id, option_entries, option_id_for_action
 
             ctx = dict(getattr(request, "context", {}) or {})
             ability_key = str(ctx.get("ability", "") or "").strip().lower()
@@ -3820,20 +3820,60 @@ class GameView:
                             "reason": f"Second marker must be within {marker_range:.1f}\" of the first marker.",
                         }
                     return {"valid": True, "reason": "OK"}
+                if ability_key == "summon_the_cult_marker_relocation":
+                    selected_option_id = ""
+                    try:
+                        selected_option_id = self.cult_ambush_point_dialog.get_selected_option_id()
+                    except Exception:
+                        selected_option_id = ""
+                    marker_id = ""
+                    for entry in list(option_entries(request) or []):
+                        if str(entry.get("option_id", "") or "") != str(selected_option_id or ""):
+                            continue
+                        payload = dict(entry.get("payload", {}) or {})
+                        marker_id = str(payload.get("marker_id", "") or "").strip()
+                        break
+                    if not marker_id:
+                        return {"valid": False, "reason": "Select a threatened Cult Ambush marker first."}
+                    validate_fn = getattr(self.game, "_validate_summon_the_cult_marker_relocation", None)
+                    if not callable(validate_fn):
+                        return {"valid": False, "reason": "Summon the Cult validation unavailable."}
+                    valid, reason = validate_fn(ctx, marker_id=marker_id, point=(float(x), float(y)))
+                    if not bool(valid):
+                        return {"valid": False, "reason": str(reason or "Invalid point.")}
+                    return {"valid": True, "reason": "OK"}
                 return {"valid": True, "reason": "OK"}
 
             def _on_confirm(option_id: str, point):
-                resolve_decision_command(
+                cmd_result = resolve_decision_command(
                     self.game,
                     request,
                     option_id,
                     result_payload={"point": list(point)},
                     player_id=getattr(player, "id", None),
                 )
+                if not bool(getattr(cmd_result, "ok", False)):
+                    errors = tuple(getattr(cmd_result, "errors", ()) or ())
+                    reason = str(errors[0] or "Invalid point.") if errors else "Invalid point."
+                    try:
+                        self.cult_ambush_point_dialog.set_validation_result(valid=False, reason=reason)
+                    except Exception:
+                        pass
+                    return False
+                apply_result = getattr(cmd_result, "value", None)
+                if apply_result is not None and not bool(getattr(apply_result, "ok", False)):
+                    errors = tuple(getattr(apply_result, "errors", ()) or ())
+                    reason = str(errors[0] or "Invalid point.") if errors else "Invalid point."
+                    try:
+                        self.cult_ambush_point_dialog.set_validation_result(valid=False, reason=reason)
+                    except Exception:
+                        pass
+                    return False
                 try:
                     self.cult_ambush_point_dialog.hide()
                 except Exception:
                     pass
+                return True
 
             def _on_cancel():
                 skip_id = option_id_for_action(request, "skip")

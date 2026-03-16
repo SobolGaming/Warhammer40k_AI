@@ -4096,60 +4096,153 @@ class AbilitySpecsMixin:
             members = [root]
 
         specs: list[dict] = []
-        seen: set[tuple[str, str, str]] = set()
-        for unit in members:
-            if unit is None:
-                continue
-            for name, desc in unit._iter_ability_entries_for_rules(model=None):
-                text_src = unit._strip_eligibility_prefix(desc or name or "")
-                if not text_src:
-                    continue
-                normalized = unit._normalize_rules_text(text_src)
-                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
-                normalized = normalized.lower()
-                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
-                normalized = re.sub(r"\s+", " ", normalized).strip()
-                m = unit._POST_SHOOT_NO_COVER_WEAPON_RE.fullmatch(normalized)
-                weapon_raw = ""
-                weapon_key = ""
-                any_weapon = False
-                duration = "phase_end"
+        seen: set[tuple[str, str, str, str]] = set()
+
+        def _append_spec(
+            *,
+            source: str,
+            weapon_key: str = "",
+            weapon_name: str = "",
+            any_weapon: bool,
+            duration: str,
+            source_model_id: str = "",
+        ) -> None:
+            key = (
+                str(source or "").strip().lower(),
+                str(weapon_key or "any"),
+                str(duration or ""),
+                str(source_model_id or ""),
+            )
+            if key in seen:
+                return
+            seen.add(key)
+            entry = {
+                "source": str(source or "Post-shoot no cover").strip() or "Post-shoot no cover",
+                "weapon_key": weapon_key or None,
+                "weapon_name": str(weapon_name or ""),
+                "any_weapon": bool(any_weapon),
+                "duration": str(duration or "phase_end"),
+            }
+            if source_model_id:
+                entry["source_model_id"] = str(source_model_id)
+            specs.append(entry)
+
+        def _parse_no_cover_entry(
+            unit,
+            *,
+            name: str,
+            desc: str,
+            source_model_id: str = "",
+        ) -> None:
+            text_src = unit._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                return
+            normalized = unit._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not normalized:
+                return
+            source = str(name or "Post-shoot no cover").strip() or "Post-shoot no cover"
+
+            # Bearer-scoped variants need the source model id for correct targeting.
+            # Skip unit-level parsing here and let the model-scoped pass emit the spec.
+            if (
+                not source_model_id
+                and normalized.startswith("each time the bearer s unit has shot")
+                and "that attack has the ignores cover ability" in normalized
+            ):
+                return
+
+            survey_match = re.fullmatch(
+                r"each time the bearer s unit has shot select one enemy unit that was hit by one or more attacks made by the bearer this phase until the end of the phase each time a friendly [a-z0-9 ]+ model makes an attack against that unit that attack has the ignores cover ability",
+                normalized,
+            )
+            if survey_match:
+                _append_spec(
+                    source=source,
+                    any_weapon=True,
+                    duration="phase_end",
+                    source_model_id=source_model_id,
+                )
+                return
+
+            m = unit._POST_SHOOT_NO_COVER_WEAPON_RE.fullmatch(normalized)
+            weapon_raw = ""
+            weapon_key = ""
+            any_weapon = False
+            duration = "phase_end"
+            if m:
+                weapon_raw = str(m.group("weapon") or "").strip()
+                if weapon_raw:
+                    weapon_key = unit._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+                duration_raw = str(m.group("duration") or "").strip().lower()
+                if "start of your next shooting phase" in duration_raw:
+                    duration = "owner_next_shooting_start"
+            else:
+                m = unit._POST_SHOOT_NO_COVER_RE.fullmatch(normalized)
                 if m:
-                    weapon_raw = str(m.group("weapon") or "").strip()
-                    if weapon_raw:
-                        weapon_key = unit._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+                    any_weapon = True
                     duration_raw = str(m.group("duration") or "").strip().lower()
                     if "start of your next shooting phase" in duration_raw:
                         duration = "owner_next_shooting_start"
                 else:
-                    m = unit._POST_SHOOT_NO_COVER_RE.fullmatch(normalized)
-                    if m:
-                        any_weapon = True
-                        duration_raw = str(m.group("duration") or "").strip().lower()
-                        if "start of your next shooting phase" in duration_raw:
-                            duration = "owner_next_shooting_start"
-                    else:
-                        m = unit._POST_SHOOT_NO_COVER_STATE_RE.fullmatch(normalized)
-                        if not m:
-                            continue
-                        any_weapon = True
-                        duration_raw = str(m.group("duration") or "").strip().lower()
-                        if "start of your next shooting phase" in duration_raw:
-                            duration = "owner_next_shooting_start"
-                source = str(name or "Post-shoot no cover").strip() or "Post-shoot no cover"
-                key = (source.lower(), weapon_key or "any", duration)
-                if key in seen:
+                    m = unit._POST_SHOOT_NO_COVER_STATE_RE.fullmatch(normalized)
+                    if not m:
+                        return
+                    any_weapon = True
+                    duration_raw = str(m.group("duration") or "").strip().lower()
+                    if "start of your next shooting phase" in duration_raw:
+                        duration = "owner_next_shooting_start"
+            _append_spec(
+                source=source,
+                weapon_key=weapon_key,
+                weapon_name=weapon_raw,
+                any_weapon=bool(any_weapon),
+                duration=duration,
+                source_model_id=source_model_id,
+            )
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                _parse_no_cover_entry(unit, name=name, desc=desc)
+            for model in list(getattr(unit, "models", []) or []):
+                if model is None:
                     continue
-                seen.add(key)
-                specs.append(
-                    {
-                        "source": source,
-                        "weapon_key": weapon_key or None,
-                        "weapon_name": weapon_raw,
-                        "any_weapon": bool(any_weapon),
-                        "duration": str(duration),
-                    }
-                )
+                source_model_id = str(get_entity_id(model) or "")
+                model_entries = []
+                for ability in list(getattr(model, "abilities", {}).values() or []):
+                    if isinstance(ability, str):
+                        model_entries.append((ability, ability))
+                    else:
+                        model_entries.append(
+                            (
+                                getattr(ability, "name", "") or "",
+                                getattr(ability, "description", "") or "",
+                            )
+                        )
+                iter_optional = getattr(unit, "_iter_model_optional_wargear_abilities", None)
+                if callable(iter_optional):
+                    for ability in list(iter_optional(model) or []):
+                        if isinstance(ability, str):
+                            model_entries.append((ability, ability))
+                        else:
+                            model_entries.append(
+                                (
+                                    getattr(ability, "name", "") or "",
+                                    getattr(ability, "description", "") or "",
+                                )
+                            )
+                for name, desc in model_entries:
+                    _parse_no_cover_entry(
+                        unit,
+                        name=name,
+                        desc=desc,
+                        source_model_id=source_model_id,
+                    )
             source_sr = getattr(unit, "special_rules", None)
             if isinstance(source_sr, dict) and bool(source_sr.get("enhancement_warp_tracer")):
                 source = str(source_sr.get("enhancement_warp_tracer_source", "") or "Warp Tracer").strip() or "Warp Tracer"

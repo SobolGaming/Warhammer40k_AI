@@ -4926,6 +4926,108 @@ class KeywordsDetachmentsMixin:
             return True
         return False
 
+    def get_flare_launcher_smokescreen_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "The bearer's unit has the SMOKE keyword and you can target it with the Smokescreen Stratagem for 0CP."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "flare_launcher_smokescreen_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            cached = root._ability_cache.get(cache_key)
+            return dict(cached) if isinstance(cached, dict) else None
+
+        rule = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for model in list(getattr(unit, "models", []) or []):
+                if model is None:
+                    continue
+                for name, desc in unit._iter_model_specific_ability_entries(model):
+                    text_src = unit._strip_eligibility_prefix(desc or name or "")
+                    if not text_src:
+                        continue
+                    normalized = unit._normalize_rules_text(text_src)
+                    normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                    normalized = normalized.lower()
+                    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                    normalized = re.sub(r"\s+", " ", normalized).strip()
+                    if normalized != "the bearer s unit has the smoke keyword and you can target it with the smokescreen stratagem for 0cp":
+                        continue
+                    rule = {
+                        "source": str(name or "Flare Launcher").strip() or "Flare Launcher",
+                        "ability_key": "flare_launcher_smokescreen_discount",
+                        "stratagems": ("SMOKESCREEN",),
+                        "source_model_id": str(get_entity_id(model) or ""),
+                    }
+                    break
+                if rule is not None:
+                    break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = dict(rule) if isinstance(rule, dict) else None
+        return dict(rule) if isinstance(rule, dict) else None
+
+    def can_use_flare_launcher_smokescreen_discount(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not bool(getattr(root, "deployed", True)):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_flare_launcher_smokescreen_rule()
+        if not rule:
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {
+            str(value or "").strip().upper()
+            for value in list(rule.get("stratagems", ()) or ())
+            if str(value or "").strip()
+        }
+        if name_u and allowed and name_u not in allowed:
+            return False
+        source_model_id = str(rule.get("source_model_id", "") or "").strip()
+        if source_model_id:
+            alive = False
+            for model in list(getattr(root, "get_attached_unit_models", lambda: [])() or []):
+                if str(get_entity_id(model) or "") != source_model_id:
+                    continue
+                model_alive_attr = getattr(model, "is_alive", True)
+                alive = bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr)
+                break
+            if not alive:
+                return False
+        return True
+
     def get_datasheet_command_reroll_stratagem_discount_rule(self) -> Optional[dict]:
         """
         Return rule info for datasheet abilities that grant Command Re-roll for 0CP
@@ -12461,6 +12563,36 @@ class KeywordsDetachmentsMixin:
                             yield getattr(a, "name", "") or "", getattr(a, "description", "") or ""
             except Exception:
                 pass
+            try:
+                for a in self._iter_model_optional_wargear_abilities(model):
+                    if isinstance(a, str):
+                        if self._ability_is_active(a):
+                            yield a, a
+                    else:
+                        if self._ability_is_active(a):
+                            yield getattr(a, "name", "") or "", getattr(a, "description", "") or ""
+            except Exception:
+                pass
+
+    def _iter_model_optional_wargear_abilities(self, model: Optional['Model'] = None):
+        """Yield resolved optional-wargear abilities for the specified model."""
+        if model is None:
+            return
+        get_by_name = getattr(model, "get_optional_wargear_by_name", None)
+        if not callable(get_by_name):
+            return
+        seen: set[str] = set()
+        for wargear_name in list(getattr(model, "optional_wargear", []) or []):
+            key = str(wargear_name or "").strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            try:
+                ability = get_by_name(str(wargear_name))
+            except Exception:
+                ability = None
+            if ability is not None:
+                yield ability
 
     def _iter_model_specific_ability_entries(self, model: Optional['Model'] = None):
         """
@@ -12493,6 +12625,101 @@ class KeywordsDetachmentsMixin:
                     yield getattr(a, "name", "") or "", getattr(a, "description", "") or ""
         except Exception:
             pass
+        try:
+            for a in self._iter_model_optional_wargear_abilities(model):
+                try:
+                    if not self._ability_is_active(a):
+                        continue
+                except Exception:
+                    pass
+                if isinstance(a, str):
+                    yield a, a
+                else:
+                    yield getattr(a, "name", "") or "", getattr(a, "description", "") or ""
+        except Exception:
+            pass
+
+    def get_model_attack_skill_override(
+        self,
+        model: Optional['Model'] = None,
+        *,
+        attack_type: str = "any",
+        weapon_profile=None,
+    ) -> Optional[dict]:
+        """
+        Return a model-specific WS/BS characteristic override when an ability sets the attacker's
+        characteristic directly (e.g. "The bearer's ranged weapons have a Ballistic Skill of 3+").
+        """
+        if model is None:
+            return None
+        attack_key = str(attack_type or "").strip().lower()
+        if attack_key not in {"melee", "ranged"}:
+            attack_key = "any"
+
+        weapon_key = ""
+        if weapon_profile is not None:
+            try:
+                weapon_key = str(get_entity_id(weapon_profile) or "")
+            except Exception:
+                weapon_key = ""
+        cache_key = f"model_attack_skill_override:{str(get_entity_id(model) or '')}:{attack_key}:{weapon_key}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            cached = self._ability_cache.get(cache_key)
+            return dict(cached) if isinstance(cached, dict) else None
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+
+        best_rule = None
+        best_value = 0
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not normalized:
+                continue
+            match = re.fullmatch(
+                r"the bearer s (?P<mode>ranged|melee) weapons have a (?P<label>ballistic|weapon) skill characteristic of (?P<value>\d+)",
+                normalized,
+            )
+            if not match:
+                continue
+            mode = str(match.group("mode") or "").strip().lower()
+            label = str(match.group("label") or "").strip().lower()
+            if mode == "ranged":
+                if label != "ballistic":
+                    continue
+                if attack_key not in {"any", "ranged"}:
+                    continue
+            elif mode == "melee":
+                if label != "weapon":
+                    continue
+                if attack_key not in {"any", "melee"}:
+                    continue
+            try:
+                value = int(match.group("value") or 0)
+            except (TypeError, ValueError):
+                value = 0
+            if value <= 0:
+                continue
+            if best_rule is None or value < best_value:
+                best_value = int(value)
+                best_rule = {
+                    "value": int(value),
+                    "source": str(name or "Attack skill override").strip() or "Attack skill override",
+                    "attack_type": mode,
+                    "source_model_id": str(get_entity_id(model) or ""),
+                }
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = dict(best_rule) if isinstance(best_rule, dict) else None
+        return dict(best_rule) if isinstance(best_rule, dict) else None
 
     def _get_model_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None, roll: str = "hit") -> dict:
         mods = {

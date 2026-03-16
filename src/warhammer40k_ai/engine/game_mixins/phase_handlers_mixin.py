@@ -14449,6 +14449,129 @@ class GamePhaseHandlersMixin:
         else:
             append_action(player, "Thievin' Scavengers: CP gain prevented by the battle-round guardrail.")
 
+    def _on_phase_start_genestealer_cults_claimed_for_the_cult(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase start: roll once per controlled objective with Claimed for the Cult units in range."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        game_map = getattr(self, "map", None)
+        if army is None or game_map is None:
+            return
+
+        from ...utility.event_bus import append_action, append_dice
+
+        def _unit_sort_key(unit):
+            try:
+                return str(get_entity_id(unit))
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        def _objective_sort_key(obj):
+            location = getattr(obj, "location", None)
+            try:
+                oid = str(get_entity_id(location) or "")
+            except Exception:
+                oid = ""
+            if oid:
+                return oid
+            return str(getattr(location, "id", "") or getattr(obj, "name", "") or "")
+
+        def _unit_active(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                if not bool(getattr(unit, "is_alive", lambda: False)()):
+                    return False
+            except Exception:
+                return False
+            if not bool(getattr(unit, "deployed", True)):
+                return False
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    return False
+            except Exception:
+                pass
+            return True
+
+        def _unit_has_ability_named(unit, ability_name: str) -> bool:
+            target = str(ability_name or "").replace("\u2019", "'").strip().lower()
+            if not target or unit is None:
+                return False
+            try:
+                for ability in list(getattr(unit, "possible_abilities", []) or []):
+                    name = str(getattr(ability, "name", "") or "").replace("\u2019", "'").strip().lower()
+                    if name == target:
+                        return True
+            except Exception:
+                return False
+            return False
+
+        objectives = sorted(list(getattr(game_map, "objectives", []) or []), key=_objective_sort_key)
+        if not objectives:
+            return
+
+        eligible_roots = []
+        processed: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not _unit_active(root):
+                continue
+            rid = str(get_entity_id(root) or "")
+            if rid and rid in processed:
+                continue
+            if rid:
+                processed.add(rid)
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            if any(_unit_has_ability_named(member, "Claimed for the Cult") for member in members if member is not None):
+                eligible_roots.append(root)
+
+        if not eligible_roots:
+            return
+
+        any_success = False
+        for objective in objectives:
+            location = getattr(objective, "location", None)
+            if location is None or getattr(location, "removed", False):
+                continue
+            if getattr(location, "controlling_player", None) is not player:
+                continue
+            if not any(
+                bool(getattr(root, "is_within_objective_range", lambda _location: False)(location))
+                for root in list(eligible_roots or [])
+                if root is not None
+            ):
+                continue
+            roll = int(get_roll("D6") or 0)
+            label = str(getattr(location, "id", "") or getattr(objective, "name", "") or "Objective").strip() or "Objective"
+            append_dice(player, f"Claimed for the Cult ({label}) roll: {int(roll)}")
+            if int(roll) >= 4:
+                any_success = True
+
+        if not any_success:
+            append_action(player, "Claimed for the Cult: no CP gained.")
+            return
+
+        gained = int(player.gain_command_points(1, reason="Claimed for the Cult") or 0)
+        if gained:
+            append_action(player, "Claimed for the Cult: gained 1 CP.")
+        else:
+            append_action(player, "Claimed for the Cult: CP gain prevented by the battle-round guardrail.")
+
     def _apply_aeldari_light_of_clarity_effect(
         self,
         *,

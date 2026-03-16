@@ -27,6 +27,9 @@ class BattlefieldPointPickDialog(BaseDialog):
         self._on_cancel: Optional[Callable[[], None]] = None
         self.decision_request = None
         self._option_entries = []
+        self._selectable_option_entries = []
+        self._selected_option_id: str = ""
+        self._option_rects: list[tuple[pygame.Rect, str]] = []
 
         self.selected_point: Optional[Tuple[float, float]] = None
         self._last_validation: dict = {"valid": False, "reason": "No point selected"}
@@ -41,6 +44,39 @@ class BattlefieldPointPickDialog(BaseDialog):
         self.buttons.clear()
         self.add_button("confirm", self.panel_x + 20, self.panel_y + self.panel_h - 50, 160, 35)
         self.add_button("cancel", self.panel_x + 200, self.panel_y + self.panel_h - 50, 140, 35)
+
+    def _rebuild_layout(self) -> None:
+        extra_rows = len(self._selectable_option_entries or [])
+        extra_height = 0
+        if extra_rows:
+            extra_height = 34 + (extra_rows * 34)
+        self.panel_h = 170 + extra_height
+        self.buttons.clear()
+        self.add_button("confirm", self.panel_x + 20, self.panel_y + self.panel_h - 50, 160, 35)
+        self.add_button("cancel", self.panel_x + 200, self.panel_y + self.panel_h - 50, 140, 35)
+
+    def _default_confirm_option_id(self) -> str:
+        if self._selected_option_id:
+            return self._selected_option_id
+        if self._selectable_option_entries:
+            return str(self._selectable_option_entries[0].get("option_id", "") or "")
+        if self._option_entries:
+            for entry in list(self._option_entries or []):
+                payload = dict(entry.get("payload", {}) or {})
+                if str(payload.get("action", "") or "").strip().lower() == "skip":
+                    continue
+                return str(entry.get("option_id", "") or "")
+            return str(self._option_entries[0].get("option_id", "") or "")
+        return ""
+
+    def get_selected_option_id(self) -> str:
+        return str(self._default_confirm_option_id() or "")
+
+    def set_validation_result(self, *, valid: bool, reason: str) -> None:
+        self._last_validation = {
+            "valid": bool(valid),
+            "reason": str(reason or "").strip(),
+        }
 
     def show(
         self,
@@ -63,10 +99,21 @@ class BattlefieldPointPickDialog(BaseDialog):
         self._on_cancel = on_cancel
         self.decision_request = decision_request
         self._option_entries = []
+        self._selectable_option_entries = []
+        self._selected_option_id = ""
+        self._option_rects = []
         if self.decision_request is not None:
             from ..decision_ui_utils import option_entries
 
             self._option_entries = option_entries(self.decision_request)
+        self._selectable_option_entries = [
+            dict(entry)
+            for entry in list(self._option_entries or [])
+            if str(dict(entry.get("payload", {}) or {}).get("action", "") or "").strip().lower() != "skip"
+        ]
+        if self._selectable_option_entries:
+            self._selected_option_id = str(self._selectable_option_entries[0].get("option_id", "") or "")
+        self._rebuild_layout()
         self.selected_point = None
         self._last_validation = {"valid": False, "reason": "No point selected"}
 
@@ -80,6 +127,9 @@ class BattlefieldPointPickDialog(BaseDialog):
         self._last_validation = {"valid": False, "reason": "No point selected"}
         self.decision_request = None
         self._option_entries = []
+        self._selectable_option_entries = []
+        self._selected_option_id = ""
+        self._option_rects = []
 
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == "cancel":
@@ -97,10 +147,12 @@ class BattlefieldPointPickDialog(BaseDialog):
                 return True
             if self._on_confirm:
                 try:
-                    option_id = self._option_entries[0]["option_id"] if self._option_entries else ""
-                    self._on_confirm(option_id, self.selected_point)
+                    option_id = self._default_confirm_option_id()
+                    close_after = self._on_confirm(option_id, self.selected_point)
+                    if close_after is False:
+                        return True
                 except Exception:
-                    pass
+                    return True
             self.hide()
             return True
         return False
@@ -111,6 +163,10 @@ class BattlefieldPointPickDialog(BaseDialog):
         mx, my = mouse_pos
         panel_rect = pygame.Rect(self.panel_x, self.panel_y, self.panel_w, self.panel_h)
         if panel_rect.collidepoint((mx, my)):
+            for rect, option_id in list(self._option_rects or []):
+                if rect.collidepoint((mx, my)):
+                    self._selected_option_id = str(option_id or "")
+                    return True
             return False
 
         if not self.game_view:
@@ -194,6 +250,25 @@ class BattlefieldPointPickDialog(BaseDialog):
             s = self.font_small.render(line, True, TEXT_SECONDARY)
             screen.blit(s, (self.panel_x + 20, y))
             y += 18
+
+        self._option_rects = []
+        if self._selectable_option_entries:
+            label = self.font_small.render("Choice:", True, TEXT_PRIMARY)
+            screen.blit(label, (self.panel_x + 20, y + 2))
+            y += 24
+            for entry in list(self._selectable_option_entries or []):
+                option_id = str(entry.get("option_id", "") or "")
+                option_label = str(entry.get("label", "") or "Option")
+                rect = pygame.Rect(self.panel_x + 20, y, self.panel_w - 40, 28)
+                self._option_rects.append((rect, option_id))
+                selected = option_id == self._selected_option_id
+                hovered = rect.collidepoint(pygame.mouse.get_pos())
+                bg = BUTTON_SELECTED if selected else (BUTTON_HOVER if hovered else BUTTON_BG)
+                pygame.draw.rect(screen, bg, rect, border_radius=6)
+                pygame.draw.rect(screen, PANEL_BORDER, rect, width=2, border_radius=6)
+                text = self.font_small.render(option_label, True, TEXT_PRIMARY)
+                screen.blit(text, (rect.x + 10, rect.y + (rect.height - text.get_height()) // 2))
+                y += 34
 
         # Selected point + validation
         if self.selected_point:

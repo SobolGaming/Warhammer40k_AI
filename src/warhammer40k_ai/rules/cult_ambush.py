@@ -23,6 +23,7 @@ class CultAmbushMarker:
     y: float
     z: float = 0.0
     active: bool = True
+    pending_relocation: bool = False
 
     @property
     def id(self) -> str:
@@ -41,6 +42,7 @@ class CultAmbushManager:
         self.resurgence_points: int = 0
         self._initialized: bool = False
         self.markers: list[CultAmbushMarker] = []
+        self.summon_the_cult_used: bool = False
 
     def _army_has_rule(self) -> bool:
         if self.army is None:
@@ -393,6 +395,164 @@ class CultAmbushManager:
     def get_active_markers(self) -> list[CultAmbushMarker]:
         return [m for m in list(self.markers or []) if bool(getattr(m, "active", False))]
 
+    def get_marker(self, marker_id: str) -> Optional[CultAmbushMarker]:
+        key = str(marker_id or "").strip()
+        if not key:
+            return None
+        for marker in list(self.markers or []):
+            if str(getattr(marker, "marker_id", "") or "") != key:
+                continue
+            return marker
+        return None
+
+    @staticmethod
+    def _normalize_ability_name(value: str) -> str:
+        text = str(value or "").replace("\u2019", "'").strip().lower()
+        return " ".join(text.split())
+
+    def _model_has_named_ability(self, unit, model, ability_name: str) -> bool:
+        target = self._normalize_ability_name(ability_name)
+        if not target or unit is None or model is None:
+            return False
+        iter_entries = getattr(unit, "_iter_model_specific_ability_entries", None)
+        if callable(iter_entries):
+            for name, _desc in list(iter_entries(model) or []):
+                if self._normalize_ability_name(name) == target:
+                    return True
+        return False
+
+    def get_summon_the_cult_source_models(self, *, game=None) -> list:
+        if self.army is None:
+            return []
+        models: list = []
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None or not self._unit_is_alive(unit) or not self._unit_on_battlefield(unit):
+                continue
+            for model in list(getattr(unit, "models", []) or []):
+                if model is None:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not alive:
+                    continue
+                if not self._model_has_named_ability(unit, model, "Summon the Cult"):
+                    continue
+                model_id = str(get_entity_id(model) or "")
+                if model_id and model_id in seen:
+                    continue
+                if model_id:
+                    seen.add(model_id)
+                models.append(model)
+        models.sort(key=lambda model: str(get_entity_id(model) or ""))
+        return models
+
+    def can_use_summon_the_cult(self, *, game=None) -> bool:
+        if bool(self.summon_the_cult_used):
+            return False
+        return bool(self.get_summon_the_cult_source_models(game=game))
+
+    def _marker_within_summon_the_cult_range(self, x: float, y: float, z: float, *, game=None) -> bool:
+        source_models = self.get_summon_the_cult_source_models(game=game)
+        if not source_models:
+            return False
+        point_base = Base(BaseType.CIRCULAR, 0.0)
+        point_base.set_position(float(x), float(y), float(z))
+        from ..utility.aura_utils import distance_between_bases_3d
+
+        for model in list(source_models or []):
+            model_base = getattr(model, "model_base", None)
+            if model_base is None:
+                continue
+            if float(distance_between_bases_3d(model_base, point_base)) <= 12.0 + 1e-6:
+                return True
+        return False
+
+    def validate_summon_the_cult_relocation(self, marker_id: str, point, *, game=None) -> tuple[bool, str]:
+        marker = self.get_marker(marker_id)
+        if marker is None or not bool(getattr(marker, "active", False)):
+            return (False, "Cult Ambush marker is no longer active.")
+        if bool(self.summon_the_cult_used):
+            return (False, "Summon the Cult has already been used this battle.")
+        if game is None:
+            return (False, "Summon the Cult requires an active game.")
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            return (False, "Summon the Cult requires a valid point.")
+        try:
+            x = float(point[0])
+            y = float(point[1])
+        except (TypeError, ValueError):
+            return (False, "Summon the Cult point must be numeric.")
+        if not self._marker_position_valid(game, x, y):
+            return (False, "Summon the Cult marker must be more than 9\" horizontally from all enemy units and on the battlefield.")
+        try:
+            z = float(getattr(game.map, "get_height_at_point", lambda _x, _y: 0.0)(x, y))
+        except Exception:
+            z = float(getattr(marker, "z", 0.0) or 0.0)
+        if not self._marker_within_summon_the_cult_range(x, y, z, game=game):
+            return (False, "Summon the Cult marker must be within 12\" of a friendly model with Summon the Cult.")
+        return (True, "")
+
+    def _clear_pending_relocation(self, marker_ids: list[str] | tuple[str, ...] | None) -> None:
+        for marker_id in list(marker_ids or []):
+            marker = self.get_marker(marker_id)
+            if marker is None:
+                continue
+            try:
+                marker.pending_relocation = False
+            except Exception:
+                pass
+
+    def apply_summon_the_cult_relocation(
+        self,
+        marker_id: str,
+        point,
+        *,
+        threatened_marker_ids: list[str] | tuple[str, ...] | None = None,
+        game=None,
+    ) -> bool:
+        valid, _reason = self.validate_summon_the_cult_relocation(marker_id, point, game=game)
+        if not valid:
+            return False
+        marker = self.get_marker(marker_id)
+        if marker is None:
+            return False
+        try:
+            x = float(point[0])
+            y = float(point[1])
+            z = float(getattr(game.map, "get_height_at_point", lambda _x, _y: 0.0)(x, y))
+        except Exception:
+            return False
+        marker.x = float(x)
+        marker.y = float(y)
+        marker.z = float(z)
+        marker.active = True
+        marker.pending_relocation = False
+        self.summon_the_cult_used = True
+
+        threatened_ids = [str(value or "").strip() for value in list(threatened_marker_ids or []) if str(value or "").strip()]
+        self._clear_pending_relocation(threatened_ids)
+        chosen_id = str(marker_id or "").strip()
+        for threatened_id in threatened_ids:
+            if threatened_id == chosen_id:
+                continue
+            other = self.get_marker(threatened_id)
+            if other is None:
+                continue
+            self.remove_marker(other)
+        self._publish_update(game)
+        return True
+
+    def skip_summon_the_cult_relocation(self, marker_ids: list[str] | tuple[str, ...] | None, *, game=None) -> None:
+        threatened_ids = [str(value or "").strip() for value in list(marker_ids or []) if str(value or "").strip()]
+        self._clear_pending_relocation(threatened_ids)
+        for marker_id in threatened_ids:
+            marker = self.get_marker(marker_id)
+            if marker is None:
+                continue
+            self.remove_marker(marker)
+        self._publish_update(game)
+
     def _marker_position_valid(self, game, x: float, y: float) -> bool:
         try:
             w = float(getattr(getattr(game, "battlefield", None), "width", 0.0))
@@ -462,6 +622,7 @@ class CultAmbushManager:
             return
         try:
             marker.active = False
+            marker.pending_relocation = False
         except Exception:
             pass
 
@@ -484,16 +645,45 @@ class CultAmbushManager:
             return
         if not self._unit_on_battlefield(enemy_unit):
             return
-        removed_any = False
+        threatened_markers: list[CultAmbushMarker] = []
         for marker in list(self.get_active_markers()):
+            if bool(getattr(marker, "pending_relocation", False)):
+                continue
             for m in list(getattr(enemy_unit, "models", []) or []):
                 if not getattr(m, "is_alive", True):
                     continue
                 if horizontal_distance_point_to_model_base_2d(m, marker.x, marker.y) <= 9.0 + 1e-6:
-                    self.remove_marker(marker)
-                    removed_any = True
+                    threatened_markers.append(marker)
                     break
-        if removed_any:
+        if not threatened_markers:
+            return
+
+        preserve_ids: set[str] = set()
+        if game is not None:
+            handler = getattr(game, "_handle_cult_ambush_threatened_markers", None)
+            if callable(handler):
+                try:
+                    preserve_ids = {
+                        str(value or "").strip()
+                        for value in list(handler(self, enemy_unit, threatened_markers) or [])
+                        if str(value or "").strip()
+                    }
+                except Exception:
+                    preserve_ids = set()
+
+        changed = False
+        for marker in threatened_markers:
+            marker_id = str(getattr(marker, "marker_id", "") or "")
+            if marker_id in preserve_ids:
+                try:
+                    marker.pending_relocation = True
+                except Exception:
+                    pass
+                changed = True
+                continue
+            self.remove_marker(marker)
+            changed = True
+        if changed:
             self._publish_update(game)
 
     def _placements_respect_enemy_distance(self, unit, placements, *, game=None) -> bool:

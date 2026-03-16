@@ -4971,17 +4971,17 @@ class RulesParsingMixin:
                     flags=re.IGNORECASE,
                 ):
                     removed.append("Firing Deck")
-                if re.fullmatch(r"(?:the )?bearers unit has the smoke keyword", norm):
+                if re.search(r"\b(?:the )?bearers unit has the smoke keyword\b", norm):
                     unit_added.append("Smoke")
-                if re.fullmatch(r"this unit has the smoke keyword", norm):
+                if re.search(r"\bthis unit has the smoke keyword\b", norm):
                     unit_added.append("Smoke")
-                if re.fullmatch(r"(?:the )?bearers unit has the smoke and grenades keywords", norm):
+                if re.search(r"\b(?:the )?bearers unit has the smoke and grenades keywords\b", norm):
                     unit_added.extend(["Smoke", "Grenades"])
-                if re.fullmatch(r"this unit has the smoke and grenades keywords", norm):
+                if re.search(r"\bthis unit has the smoke and grenades keywords\b", norm):
                     unit_added.extend(["Smoke", "Grenades"])
-                if re.fullmatch(r"(?:the )?bearers unit has the grenades keyword", norm):
+                if re.search(r"\b(?:the )?bearers unit has the grenades keyword\b", norm):
                     unit_added.append("Grenades")
-                if re.fullmatch(r"this unit has the grenades keyword", norm):
+                if re.search(r"\bthis unit has the grenades keyword\b", norm):
                     unit_added.append("Grenades")
             if added or removed:
                 sr = getattr(u, "special_rules", None)

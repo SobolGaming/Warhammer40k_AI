@@ -2899,6 +2899,18 @@ def _validate_pick_point(game: object, request: DecisionRequest, result: Decisio
         valid, reason = validate_fn(ctx, point)
         if not bool(valid):
             return (str(reason or "Parasitic Infection spawn point is invalid."),)
+    if ability_key == "summon_the_cult_marker_relocation":
+        opt = find_option(request, result.option_id)
+        option_payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+        marker_id = str(option_payload.get("marker_id", "") or "")
+        if not marker_id:
+            return ("Summon the Cult requires a threatened Cult Ambush marker.",)
+        validate_fn = getattr(game, "_validate_summon_the_cult_marker_relocation", None)
+        if not callable(validate_fn):
+            return ("Summon the Cult validation is unavailable.",)
+        valid, reason = validate_fn(ctx, marker_id=marker_id, point=point)
+        if not bool(valid):
+            return (str(reason or "Summon the Cult relocation point is invalid."),)
     return ()
 
 
@@ -2925,7 +2937,13 @@ def _apply_pick_point(game: object, request: DecisionRequest, result: DecisionRe
             skip_fn = getattr(game, "_skip_parasitic_infection_spawn", None)
             if callable(skip_fn):
                 skip_fn(ctx)
+        if ability_key == "summon_the_cult_marker_relocation":
+            skip_fn = getattr(game, "_skip_summon_the_cult_marker_relocation", None)
+            if callable(skip_fn):
+                skip_fn(ctx)
         return None
+    opt = find_option(request, result.option_id)
+    option_payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
     payload = dict(result.payload or {})
     point = payload.get("point") or []
     if not isinstance(point, (list, tuple)) or len(point) < 2:
@@ -3042,6 +3060,17 @@ def _apply_pick_point(game: object, request: DecisionRequest, result: DecisionRe
         if not callable(apply_fn):
             return None
         apply_fn(ctx, point)
+        if len(point) > 2:
+            return (x, y, float(point[2]))
+        return (x, y)
+    if ability_key == "summon_the_cult_marker_relocation":
+        marker_id = str(option_payload.get("marker_id", "") or "")
+        apply_fn = getattr(game, "_apply_summon_the_cult_marker_relocation", None)
+        if not callable(apply_fn) or not marker_id:
+            return None
+        applied = bool(apply_fn(ctx, marker_id=marker_id, point=point))
+        if not applied:
+            return None
         if len(point) > 2:
             return (x, y, float(point[2]))
         return (x, y)

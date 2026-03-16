@@ -194,6 +194,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_target_tracking"),
                 ("phase_start", "_on_phase_start_ds8_support_turret_cleanup"),
                 ("phase_start", "_on_phase_start_command_phase_cp_rolls"),
+                ("phase_start", "_on_phase_start_genestealer_cults_claimed_for_the_cult"),
                 ("phase_start", "_on_phase_start_orks_thievin_scavengers"),
                 ("phase_start", "_on_phase_start_fiery_conviction"),
                 ("phase_start", "_on_phase_start_neuroloids_cleanup"),
