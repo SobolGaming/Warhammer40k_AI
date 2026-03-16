@@ -2763,6 +2763,17 @@ class KeywordsDetachmentsMixin:
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
 
+    def has_no_hiding_from_the_watchers_aura(self) -> bool:
+        """Return True if this unit has No Hiding From the Watchers (Aura)."""
+        cache_key = "no_hiding_from_the_watchers_aura"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache[cache_key])
+        found, _ = self._find_ability_with_patterns(["no hiding from the watchers"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
     def has_plough_through_the_enemy(self) -> bool:
         """Return True if this unit has the Plough Through the Enemy ability."""
         if "plough_through_the_enemy" in getattr(self, "_ability_cache", {}):

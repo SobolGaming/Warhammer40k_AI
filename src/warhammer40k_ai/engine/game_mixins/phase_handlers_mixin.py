@@ -735,6 +735,9 @@ class GamePhaseHandlersMixin:
                             "ability_key": ability_key,
                             "fnp_value": int(spec.get("value", 0) or 0),
                         }
+                        condition = str(spec.get("condition", "") or "").strip()
+                        if condition:
+                            ctx["fnp_condition"] = condition
                         message = f"Activate {ability_name} for {getattr(root, 'name', 'Unit')}?"
                         self._queue_optional_ability_confirmation(
                             player=p,

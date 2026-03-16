@@ -3165,6 +3165,15 @@ class RulesParsingMixin:
                             pass
             return False
 
+        def _sanitize_named_model_fnp_target_name(value: str) -> str:
+            text = str(value or "").strip()
+            if not text:
+                return ""
+            text = re.sub(r"^this\s+unit'?s\s+", "", text, flags=re.IGNORECASE)
+            text = re.sub(r"^the\s+bearer'?s\s+", "", text, flags=re.IGNORECASE)
+            text = re.sub(r"\s+model$", "", text, flags=re.IGNORECASE)
+            return re.sub(r"\s+", " ", text).strip()
+
         for u in members:
             for name, desc in u._iter_ability_entries_for_rules(model=None):
                 key = (
@@ -3210,6 +3219,9 @@ class RulesParsingMixin:
                                     "source": source,
                                 }
                             )
+                watcher_in_the_dark_once_per_battle_ability = bool(
+                    "once per battle" in text_lower and "watcher in the dark" in text_lower
+                )
 
                 for sentence in _iter_sentences(text):
                     if not sentence:
@@ -3311,7 +3323,7 @@ class RulesParsingMixin:
                     if m:
                         try:
                             val = int(m.group(1))
-                        except Exception:
+                        except (TypeError, ValueError):
                             val = None
                         if val:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
@@ -3476,8 +3488,17 @@ class RulesParsingMixin:
                             bearer_unit_keyword_fnp_matched = True
 
                     upgrade_fnp_match = self._FIGHT_PHASE_DESTROY_ENEMY_FNP_UPGRADE_RE.search(sentence.lower())
+                    watcher_in_the_dark_once_per_battle_clause = bool(
+                        watcher_in_the_dark_once_per_battle_ability and "against mortal wounds" in sentence_lower
+                    )
                     m = self._BEARER_UNIT_FNP_RE.search(sentence)
-                    if m and not upgrade_fnp_match and not attached_character_fnp_matched and not bearer_unit_keyword_fnp_matched:
+                    if (
+                        m
+                        and not upgrade_fnp_match
+                        and not attached_character_fnp_matched
+                        and not bearer_unit_keyword_fnp_matched
+                        and not watcher_in_the_dark_once_per_battle_clause
+                    ):
                         try:
                             val = int(m.group(1))
                         except Exception:
@@ -3539,7 +3560,7 @@ class RulesParsingMixin:
                         except Exception:
                             val = None
                         required_model = str(m.group("required_model") or "").strip()
-                        target_model = str(m.group("target_model") or "").strip()
+                        target_model = _sanitize_named_model_fnp_target_name(str(m.group("target_model") or "").strip())
                         if val and required_model and target_model:
                             source = str(name or "Unit contains ability").strip() or "Unit contains ability"
                             unit_contains_named_model_fnp_entries.append(

@@ -1454,9 +1454,37 @@ class LateGameplayMixin:
             normalized = re.sub(r"\s+", " ", normalized).strip()
             return bool(
                 re.fullmatch(
-                    r"once per battle in any phase just after a mortal wound is allocated to an? [a-z0-9 ]+ model in this unit "
-                    r"this unit can summon a watcher in the dark when it does until the end of the phase "
-                    r"models in this unit have the feel no pain [1-6](?: ability)? against mortal wounds?(?: designer s note .+)?",
+                    r"(?:models in the bearer(?:s| s) unit have a [1-6] invulnerable save in addition )?"
+                    r"once per battle in any phase "
+                    r"(?:(?:just after a mortal wound is allocated to an? [a-z0-9 ]+ model in this unit )?"
+                    r"(?:this unit|the bearer) can summon a watcher in the dark )"
+                    r"when it does until the end of the phase models in "
+                    r"(?:this unit|the bearer(?:s| s) unit) have the feel no pain [1-6](?: ability)? "
+                    r"against mortal wounds?(?: designer s note .+)?",
+                    normalized,
+                )
+            )
+
+        def _is_unbreakable_duty_text(value: str) -> bool:
+            normalized = self._normalize_rules_text(value or "").lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            return bool(
+                re.fullmatch(
+                    r"while this model is within range of an objective marker and or within 6 of the centre of the battlefield "
+                    r"this model has the feel no pain [1-6](?: ability)?",
+                    normalized,
+                )
+            )
+
+        def _is_no_hiding_from_watchers_aura_text(value: str) -> bool:
+            normalized = self._normalize_rules_text(value or "").lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            return bool(
+                re.fullmatch(
+                    r"while a friendly adeptus astartes unit is within 6 of this model "
+                    r"models in that unit have the feel no pain [1-6](?: ability)? against mortal wounds?",
                     normalized,
                 )
             )
@@ -1482,7 +1510,11 @@ class LateGameplayMixin:
                     if pattern.lower() in ability.lower():
                         if _is_waaagh_conditional_text(ability):
                             continue
-                        if fnp_pattern_requested and _is_watcher_in_the_dark_text(ability):
+                        if fnp_pattern_requested and (
+                            _is_watcher_in_the_dark_text(ability)
+                            or _is_unbreakable_duty_text(ability)
+                            or _is_no_hiding_from_watchers_aura_text(ability)
+                        ):
                             continue
                         match = re.search(value_pattern, ability.lower())
                         if match:
@@ -1522,7 +1554,11 @@ class LateGameplayMixin:
                         continue
                     if fnp_pattern_requested and _is_named_model_fnp_conditional_text(desc_text):
                         continue
-                    if fnp_pattern_requested and _is_watcher_in_the_dark_text(desc_text):
+                    if fnp_pattern_requested and (
+                        _is_watcher_in_the_dark_text(desc_text)
+                        or _is_unbreakable_duty_text(desc_text)
+                        or _is_no_hiding_from_watchers_aura_text(desc_text)
+                    ):
                         continue
                     for pattern in patterns:
                         if pattern.lower() in desc_text.lower():
@@ -1546,7 +1582,11 @@ class LateGameplayMixin:
                     if pattern.lower() in ability.lower():
                         if _is_waaagh_conditional_text(ability):
                             continue
-                        if fnp_pattern_requested and _is_watcher_in_the_dark_text(ability):
+                        if fnp_pattern_requested and (
+                            _is_watcher_in_the_dark_text(ability)
+                            or _is_unbreakable_duty_text(ability)
+                            or _is_no_hiding_from_watchers_aura_text(ability)
+                        ):
                             continue
                         match = re.search(value_pattern, ability.lower())
                         if match:
@@ -1586,7 +1626,11 @@ class LateGameplayMixin:
                         continue
                     if fnp_pattern_requested and _is_named_model_fnp_conditional_text(desc_text):
                         continue
-                    if fnp_pattern_requested and _is_watcher_in_the_dark_text(desc_text):
+                    if fnp_pattern_requested and (
+                        _is_watcher_in_the_dark_text(desc_text)
+                        or _is_unbreakable_duty_text(desc_text)
+                        or _is_no_hiding_from_watchers_aura_text(desc_text)
+                    ):
                         continue
                     for pattern in patterns:
                         if pattern.lower() in desc_text.lower():
@@ -1897,6 +1941,9 @@ class LateGameplayMixin:
 
             def _normalize_name(value: object) -> str:
                 raw = str(value or "").strip().lower()
+                raw = re.sub(r"^this\s+unit'?s\s+", "", raw)
+                raw = re.sub(r"^the\s+bearer'?s\s+", "", raw)
+                raw = re.sub(r"\s+model$", "", raw)
                 if not raw:
                     return ""
                 if callable(normalize_name_fn):
@@ -1980,6 +2027,102 @@ class LateGameplayMixin:
                     result.append((int(val), None))
         except Exception:
             pass
+        if target_model is not None:
+            model_unit = getattr(target_model, "parent_unit", None)
+            if model_unit is not None:
+                from ...utility.aura_utils import unit_within_horizontal_distance_of_point
+
+                army = model_unit.get_parent_army() if hasattr(model_unit, "get_parent_army") else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                game_map = getattr(game, "map", None) if game is not None else None
+
+                objective_check = getattr(model_unit, "is_within_any_objective_range", None)
+                within_objective = bool(objective_check()) if callable(objective_check) else False
+
+                width_raw = getattr(game_map, "width", 0.0) if game_map is not None else 0.0
+                height_raw = getattr(game_map, "height", 0.0) if game_map is not None else 0.0
+                try:
+                    width = float(width_raw or 0.0)
+                    height = float(height_raw or 0.0)
+                except (TypeError, ValueError):
+                    width = 0.0
+                    height = 0.0
+                within_center = bool(
+                    game_map is not None
+                    and width > 0.0
+                    and height > 0.0
+                    and unit_within_horizontal_distance_of_point(
+                        model_unit,
+                        width * 0.5,
+                        height * 0.5,
+                        6.0,
+                    )
+                )
+
+                if within_objective or within_center:
+                    iter_entries = getattr(model_unit, "_iter_ability_entries_for_rules", None)
+                    entries = list(iter_entries(model=target_model) or []) if callable(iter_entries) else []
+                    seen = set((int(v), (c or "")) for v, c in result)
+                    for name, desc in entries:
+                        text_src = str(desc or name or "")
+                        if not text_src:
+                            continue
+                        strip_prefix = getattr(model_unit, "_strip_eligibility_prefix", None)
+                        if callable(strip_prefix):
+                            text_src = str(strip_prefix(text_src) or "")
+                        normalized = self._normalize_rules_text(text_src).lower()
+                        normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                        normalized = re.sub(r"\s+", " ", normalized).strip()
+                        m = re.fullmatch(
+                            r"while this model is within range of an objective marker and or within 6 of the centre of the battlefield "
+                            r"this model has the feel no pain (?P<value>[1-6])(?: ability)?",
+                            normalized,
+                        )
+                        if not m:
+                            continue
+                        try:
+                            value = int(m.group("value") or 0)
+                        except (TypeError, ValueError):
+                            value = 0
+                        if value <= 0:
+                            continue
+                        key = (int(value), "")
+                        if key not in seen:
+                            seen.add(key)
+                            result.append((int(value), None))
+                        break
+        if self.has_any_keyword("ADEPTUS ASTARTES"):
+            from ...utility.aura_utils import unit_within_range_of_unit
+
+            army = self.get_parent_army()
+            friendly_units = []
+            if army is not None:
+                game = getattr(getattr(army, "player", None), "game", None)
+                game_map = getattr(game, "map", None) if game is not None else None
+                get_friendly_units = getattr(game_map, "get_friendly_units", None) if game_map is not None else None
+                if callable(get_friendly_units):
+                    friendly_units = list(get_friendly_units(self) or [])
+                if not friendly_units:
+                    friendly_units = list(getattr(army, "units", []) or [])
+
+            if friendly_units:
+                seen = set((int(v), (c or "")) for v, c in result)
+                for source in list(friendly_units):
+                    if source is None:
+                        continue
+                    has_aura = getattr(source, "has_no_hiding_from_the_watchers_aura", None)
+                    if not callable(has_aura) or not bool(has_aura()):
+                        continue
+                    is_active_for_rules = getattr(source, "is_active_for_rules", None)
+                    if callable(is_active_for_rules) and not is_active_for_rules():
+                        continue
+                    if not unit_within_range_of_unit(source, self, 6.0, use_attached_aggregate=True):
+                        continue
+                    key = (4, "against mortal wounds")
+                    if key not in seen:
+                        seen.add(key)
+                        result.append((4, "against mortal wounds"))
+                    break
         try:
             if target_model is not None and hasattr(target_model, "get_temporary_fnp_entries"):
                 entries = list(target_model.get_temporary_fnp_entries() or [])

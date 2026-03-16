@@ -6164,6 +6164,7 @@ def _classify_ability_base(
     model_fnp_support = _model_fnp_support(description)
     attached_character_fnp_support = _attached_character_fnp_support(description)
     unit_contains_character_fnp_support = _unit_contains_character_fnp_support(description)
+    unit_contains_named_model_fnp_support = _unit_contains_named_model_fnp_support(description)
     leading_unit_contains_invuln_support = _leading_unit_contains_invuln_support(description)
     bearer_keyword_support = _bearer_keyword_support(description)
     bearer_unit_keyword_support = _bearer_unit_keyword_support(description)
@@ -6231,6 +6232,9 @@ def _classify_ability_base(
     shadow_in_the_warp_enemy_battleshock_penalty_support = _shadow_in_the_warp_enemy_battleshock_penalty_support(description)
     command_phase_enemy_no_cover_support = _command_phase_enemy_no_cover_support(description)
     watcher_in_the_dark_support = _watcher_in_the_dark_support(description)
+    lion_helm_support = _lion_helm_support(name, description)
+    unbreakable_duty_support = _unbreakable_duty_support(name, description, faction_id=faction_id)
+    no_hiding_from_watchers_support = _no_hiding_from_the_watchers_support(name, description, faction_id=faction_id)
     curse_of_the_wulfen_support = _curse_of_the_wulfen_support(description)
     command_phase_psychic_veil_support = _command_phase_psychic_veil_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
@@ -6435,6 +6439,12 @@ def _classify_ability_base(
         return friendly_destroyed_weapon_attacks_override_support
     if watcher_in_the_dark_support:
         return watcher_in_the_dark_support
+    if lion_helm_support:
+        return lion_helm_support
+    if unbreakable_duty_support:
+        return unbreakable_duty_support
+    if no_hiding_from_watchers_support:
+        return no_hiding_from_watchers_support
     if curse_of_the_wulfen_support:
         return curse_of_the_wulfen_support
     prey_selection_support = _prey_selection_support(description)
@@ -6575,6 +6585,8 @@ def _classify_ability_base(
         return target_keyword_attack_keyword_support
     if weapon_target_keyword_attack_keyword_support:
         return weapon_target_keyword_attack_keyword_support
+    if unit_contains_named_model_fnp_support:
+        return unit_contains_named_model_fnp_support
     if unit_contains_character_fnp_support:
         return unit_contains_character_fnp_support
     if leading_unit_contains_invuln_support:
@@ -8579,6 +8591,30 @@ def _unit_contains_character_fnp_support(description: str) -> Optional[Tuple[str
     keyword = (m.group("keyword") or "specified").strip()
     val = m.group("val")
     return ("Supported", f"While this unit is in the same unit as a {keyword} model, that model gains Feel No Pain {val}+.")
+
+
+def _unit_contains_named_model_fnp_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this unit contains one or more (?P<required_model>.+?) models this units (?P<target_model>.+?) model has the "
+        r"feel no pain (?P<val>[1-6])(?: ability)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    required_model = re.sub(r"\s+", " ", str(m.group("required_model") or "").strip()).upper()
+    target_model = re.sub(r"\s+", " ", str(m.group("target_model") or "").strip()).upper()
+    val = str(m.group("val") or "").strip()
+    if not required_model or not target_model or not val:
+        return None
+    return (
+        "Supported",
+        f"While this unit contains one or more {required_model} models, {target_model} gains Feel No Pain {val}+.",
+    )
 
 
 def _unit_contains_model_action_support(description: str) -> Optional[Tuple[str, str]]:
@@ -13779,6 +13815,90 @@ def _watcher_in_the_dark_support(description: str) -> Optional[Tuple[str, str]]:
     )
 
 
+def _unbreakable_duty_support(
+    name: str,
+    description: str,
+    *,
+    faction_id: str = "",
+) -> Optional[Tuple[str, str]]:
+    if _norm(name) != "unbreakable duty":
+        return None
+    fid = str(faction_id or "").strip().upper()
+    if fid and fid != "SM":
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this model is within range of an objective marker and or within 6 of the centre of the battlefield "
+        r"this model has the feel no pain (?P<val>[1-6])(?: ability)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    val = str(m.group("val") or "").strip()
+    if not val:
+        return None
+    return (
+        "Supported",
+        f"While within range of an objective marker or within 6\" of the battlefield centre, this model gains Feel No Pain {val}+.",
+    )
+
+
+def _no_hiding_from_the_watchers_support(
+    name: str,
+    description: str,
+    *,
+    faction_id: str = "",
+) -> Optional[Tuple[str, str]]:
+    if _norm(name) != "no hiding from the watchers aura":
+        return None
+    fid = str(faction_id or "").strip().upper()
+    if fid and fid != "SM":
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while a friendly adeptus astartes unit is within 6 of this model "
+        r"models in that unit have the feel no pain (?P<val>[1-6])(?: ability)? against mortal wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    val = str(m.group("val") or "").strip()
+    if not val:
+        return None
+    return (
+        "Supported",
+        f"Aura: friendly ADEPTUS ASTARTES units within 6\" gain Feel No Pain {val}+ against mortal wounds.",
+    )
+
+
+def _lion_helm_support(name: str, description: str) -> Optional[Tuple[str, str]]:
+    if _norm(name) != "the lion helm":
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"models in the bearers unit have a (?P<inv>[1-6]) invulnerable save in addition once per battle in any phase "
+        r"the bearer can summon a watcher in the dark when it does until the end of the phase models in the bearers unit "
+        r"have the feel no pain (?P<fnp>[1-6])(?: ability)? against mortal wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    inv = str(m.group("inv") or "").strip()
+    fnp = str(m.group("fnp") or "").strip()
+    if not inv or not fnp:
+        return None
+    return (
+        "Supported",
+        f"Bearer's unit gains a {inv}+ invulnerable save. Once per battle, optional Watcher in the Dark activation grants Feel No Pain {fnp}+ against mortal wounds until end of phase.",
+    )
+
+
 def _curse_of_the_wulfen_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -17376,6 +17496,8 @@ def _stratagem_support(
         "FRENZIED RESILIENCE": "Fight phase: after enemy targets; WORLD EATERS unit reduces damage by 1.",
         "HACK AND SLASH": "Fight phase: charged WORLD EATERS unit gains +1 AP on melee weapons.",
         "LAYERED WARDS": "Any phase reaction after a mortal wound allocation: targeted AELDARI VEHICLE gains Feel No Pain 5+ against mortal wounds until end of phase.",
+        "ANGELIC GRACE": "Any phase reaction after an ADEPTUS ASTARTES unit is allocated a mortal wound: that unit gains Feel No Pain 5+ against mortal wounds until end of phase.",
+        "FUELLED BY FAITH": "Any phase reaction after an ADEPTUS ASTARTES unit is allocated a mortal wound: that unit gains Feel No Pain 5+ against mortal wounds until end of phase.",
         "PLAGUESURGE": "Command phase: your DEATH GUARD WARLORD on battlefield gains +3\" Contagion Range until the start of your next Command phase.",
         "LEECHSPORE ERUPTION": "Command phase: wounded DEATH GUARD model rolls D6s equal to wounds lost; on each 5+ deal 1 mortal to an enemy within 3\" and heal 1 (both capped at 6).",
         "OVERWHELMING GENEROSITY": "Start of Shooting phase: mark one visible enemy unit; DEATH GUARD units can re-roll attack-count dice when making ranged attacks that target it this phase.",

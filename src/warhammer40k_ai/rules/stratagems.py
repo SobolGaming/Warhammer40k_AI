@@ -37,6 +37,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ADRENAL SURGE",
     "AGGRESSIVE MOBILITY",
     "AGGRESSOR IMPERATIVE",
+    "ANGELIC GRACE",
     "ANGELIC DESCENT",
     "BALEFUL HALO",
     "BLAZING IRE",
@@ -113,6 +114,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HORRIFYING VIOLENCE",
     "FEIGNED RETREAT",
     "FIRE AND FADE",
+    "FUELLED BY FAITH",
     "HACK AND SLASH",
     "HEIGHTENED JEALOUSY",
     "LAYERED WARDS",
@@ -1674,7 +1676,14 @@ class StratagemManager(
 
         if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION", "SANCTIFIED IMMOLATION", "STAGED DEATH"}:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
-        if names & {"BALEFUL BLESSING", "PROTECTION OF THE DARK PRINCE", "LAYERED WARDS", "THIEVES OF PAIN"}:
+        if names & {
+            "ANGELIC GRACE",
+            "BALEFUL BLESSING",
+            "FUELLED BY FAITH",
+            "LAYERED WARDS",
+            "PROTECTION OF THE DARK PRINCE",
+            "THIEVES OF PAIN",
+        }:
             add("mortal_wound_allocated", self._on_mortal_wound_allocated)
         if names & {"PROTECTION OF THE DARK PRINCE", "THIEVES OF PAIN"}:
             add("attack_allocated", self._on_attack_allocated)
@@ -12463,6 +12472,15 @@ class StratagemManager(
                 target_model=target_model,
                 phase_name=phase_name,
                 trigger_event="mortal_wound_allocated",
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_space_marines_mortal_wound_reactions(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                phase_name=phase_name,
             )
         except Exception:
             raise

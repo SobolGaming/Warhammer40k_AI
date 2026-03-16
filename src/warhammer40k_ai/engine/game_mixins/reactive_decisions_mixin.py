@@ -7189,6 +7189,7 @@ class GameReactiveDecisionsMixin:
                 fnp_val = 0
             if fnp_val <= 0:
                 return
+            fnp_condition = str(ctx.get("fnp_condition", "") or "").strip() or None
             phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
             if not phase_name:
                 phase_name = str(ctx.get("phase", "") or "").strip().upper()
@@ -7206,6 +7207,7 @@ class GameReactiveDecisionsMixin:
                         key=f"{ability_key}:{get_entity_id(m)}",
                         value=fnp_val,
                         source=ability_name,
+                        condition=fnp_condition,
                         expires_phase=phase_name,
                     )
             root.mark_unit_once_per_battle_used(ability_key, ability_name=ability_name)

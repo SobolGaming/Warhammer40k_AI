@@ -128,12 +128,17 @@ class SpaceMarinesStratagemMixin:
             cache.pop(str(key), None)
 
     @staticmethod
-    def _sm_spend_cp(player: Any, stratagem: Any, *, target_unit: Any = None) -> bool:
+    def _sm_effective_cp_cost(player: Any, stratagem: Any, *, target_unit: Any = None) -> int:
         cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         apply_fn = getattr(player, "apply_stratagem_cp_cost", None)
         if callable(apply_fn):
             preview = apply_fn(stratagem, target_unit=target_unit) or {}
-            cp_cost = int(preview.get("cost", cp_cost))
+            cp_cost = int(preview.get("cost", cp_cost) or cp_cost)
+        return int(cp_cost)
+
+    @staticmethod
+    def _sm_spend_cp(player: Any, stratagem: Any, *, target_unit: Any = None) -> bool:
+        cp_cost = SpaceMarinesStratagemMixin._sm_effective_cp_cost(player, stratagem, target_unit=target_unit)
         return bool(
             player.spend_command_points(
                 int(cp_cost),
@@ -150,6 +155,26 @@ class SpaceMarinesStratagemMixin:
             name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
             if name_u:
                 used.add(name_u)
+
+    def _sm_reaction_already_queued(
+        self,
+        *,
+        event_name: str,
+        stratagem_name: str,
+        phase_name: str,
+        target_unit: Any = None,
+    ) -> bool:
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != str(event_name):
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() != str(phase_name or "").strip().lower():
+                continue
+            if target_unit is not None and reaction.get("target_unit") is not target_unit and reaction.get("unit") is not target_unit:
+                continue
+            return True
+        return False
 
     def _space_marines_shock_cavalry_candidates(self, *, phase_name: str) -> list[Any]:
         if not self._is_saga_of_the_beastslayer_detachment():
@@ -215,10 +240,8 @@ class SpaceMarinesStratagemMixin:
         return sorted(out, key=self._sm_sort_key)
 
     def _cleanup_space_marines_saga_of_the_beastslayer_phase_end_effects(self, *, phase: Any = None) -> None:
-        if not self._is_saga_of_the_beastslayer_detachment():
-            return
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_name not in ("MOVEMENT_PHASE", "CHARGE_PHASE", "SHOOTING_PHASE"):
+        if not phase_name:
             return
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
@@ -226,6 +249,46 @@ class SpaceMarinesStratagemMixin:
             return
 
         seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            models = []
+            get_models = getattr(root, "get_attached_unit_models", None)
+            if callable(get_models):
+                models = list(get_models() or [])
+            if not models:
+                models = list(getattr(root, "models", []) or [])
+            for model in models:
+                effects = getattr(model, "_temporary_effects", None)
+                if not isinstance(effects, dict) or not effects:
+                    continue
+                remove_keys: list[str] = []
+                for key, value in list(effects.items()):
+                    key_text = str(key or "")
+                    if not (
+                        key_text.startswith("angelic_grace:")
+                        or key_text.startswith("fuelled_by_faith:")
+                        or key_text.startswith("watcher_in_the_dark:")
+                    ):
+                        continue
+                    exp_phase = str(value.get("expires_phase", "") or "").strip().upper() if isinstance(value, dict) else ""
+                    if not exp_phase or exp_phase == phase_name:
+                        remove_keys.append(str(key))
+                for key in remove_keys:
+                    effects.pop(key, None)
+
+        if not self._is_saga_of_the_beastslayer_detachment():
+            return
+        if phase_name not in ("MOVEMENT_PHASE", "CHARGE_PHASE", "SHOOTING_PHASE"):
+            return
+
+        seen = set()
         for unit in list(getattr(army, "units", []) or []):
             root = self._sm_root(unit)
             if root is None:
@@ -309,12 +372,181 @@ class SpaceMarinesStratagemMixin:
                     self._sm_clear_ability_cache(root, "unit_post_shoot_pinned_specs")
             root.special_rules = sr
 
+    def _queue_space_marines_mortal_wound_reactions(
+        self,
+        *,
+        target_unit: Any,
+        attacker_unit: Any = None,
+        target_model: Any = None,
+        phase_name: str = "",
+    ) -> None:
+        root = self._sm_root(target_unit)
+        if root is None:
+            return
+        if not self._sm_owned_by_player(root, self.player):
+            return
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            return
+        if not self._is_adeptus_astartes_unit(root):
+            return
+
+        if not phase_name:
+            phase_name = str(getattr(self, "_current_phase_name", "") or "")
+        if not phase_name:
+            phase_key = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+            name_map = {
+                "COMMAND_PHASE": "Command phase",
+                "MOVEMENT_PHASE": "Movement phase",
+                "SHOOTING_PHASE": "Shooting phase",
+                "CHARGE_PHASE": "Charge phase",
+                "FIGHT_PHASE": "Fight phase",
+            }
+            phase_name = name_map.get(phase_key, phase_key.title().replace("_", " ")) if phase_key else ""
+        if not phase_name:
+            phase_name = "Any phase"
+
+        for stratagem_name in ("ANGELIC GRACE", "FUELLED BY FAITH"):
+            stratagem = self.get_by_name(stratagem_name)
+            if stratagem is None:
+                continue
+            if int(getattr(self.player, "command_points", 0) or 0) < self._sm_effective_cp_cost(self.player, stratagem, target_unit=root):
+                continue
+            if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                continue
+            if self._sm_reaction_already_queued(
+                event_name="mortal_wound_allocated",
+                stratagem_name=stratagem.name,
+                phase_name=phase_name,
+                target_unit=root,
+            ):
+                continue
+            self._queue_reaction(
+                {
+                    "event": "mortal_wound_allocated",
+                    "phase_name": phase_name,
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "target_unit": root,
+                    "unit": root,
+                    "attacking_unit": attacker_unit,
+                    "target_model": target_model,
+                    "candidates": [root],
+                    "mortal_wound_allocated": True,
+                },
+                use_timer=False,
+            )
+
+    def _use_space_marines_mortal_wound_stratagem(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        from_pending = False
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                from_pending = True
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                kwargs.setdefault("mortal_wound_allocated", reaction.get("mortal_wound_allocated"))
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: %s: no target unit provided", getattr(stratagem, "name", "Space Marines stratagem"))
+            return False
+
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not from_pending:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                pending_root = self._sm_root(reaction.get("unit") or reaction.get("target_unit"))
+                if pending_root is not root:
+                    continue
+                from_pending = True
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                kwargs.setdefault("mortal_wound_allocated", reaction.get("mortal_wound_allocated"))
+                break
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: %s: target unit is not yours", getattr(stratagem, "name", "Space Marines stratagem"))
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: %s: target must be on the battlefield and targetable", getattr(stratagem, "name", "Space Marines stratagem"))
+            return False
+        if candidates and root not in candidates:
+            logger.error("ERROR: %s: selected unit is not currently eligible", getattr(stratagem, "name", "Space Marines stratagem"))
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: %s: target must be an ADEPTUS ASTARTES unit", getattr(stratagem, "name", "Space Marines stratagem"))
+            return False
+
+        trigger_flag = bool(kwargs.get("mortal_wound_allocated", False))
+        trigger_name = str(kwargs.get("trigger", "") or "").strip().lower()
+        if not from_pending and not trigger_flag and trigger_name not in {"mortal_wound_allocated", "mortal_wound"}:
+            logger.error("ERROR: %s: missing mortal-wound trigger context", getattr(stratagem, "name", "Space Marines stratagem"))
+            return False
+
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "")
+        phase_key = self._phase_key_from_name(phase_name) if phase_name else ""
+        models = []
+        get_models = getattr(root, "get_attached_unit_models", None)
+        if callable(get_models):
+            models = list(get_models() or [])
+        if not models:
+            models = list(getattr(root, "models", []) or [])
+        key_seed = self._normalize_stratagem_name(getattr(stratagem, "name", "") or "").lower().replace(" ", "_")
+        for index, model in enumerate(models):
+            is_alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+            if not is_alive:
+                continue
+            key = f"{key_seed}:{get_entity_id(model) or index}"
+            set_temporary_fnp = getattr(model, "set_temporary_fnp", None)
+            if callable(set_temporary_fnp):
+                set_temporary_fnp(
+                    key=key,
+                    value=5,
+                    source=str(getattr(stratagem, "name", "") or "Space Marines mortal-wound stratagem"),
+                    condition="against mortal wounds",
+                    expires_phase=phase_key,
+                )
+                continue
+            effects = getattr(model, "_temporary_effects", None)
+            if not isinstance(effects, dict):
+                effects = {}
+                model._temporary_effects = effects
+            effects[key] = {
+                "expires_phase": str(phase_key or "").strip().upper(),
+                "temporary_fnp_value": 5,
+                "temporary_fnp_source": str(getattr(stratagem, "name", "") or "Space Marines mortal-wound stratagem"),
+                "temporary_fnp_condition": "against mortal wounds",
+            }
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: %s: %s gains FNP 5+ against mortal wounds this phase.",
+            getattr(stratagem, "name", "Space Marines mortal-wound stratagem"),
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _use_space_marines_saga_of_the_beastslayer_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "SHOCK CAVALRY":
             return self._use_space_marines_shock_cavalry(stratagem, **kwargs)
         if name_u == "PINNING FIRE":
             return self._use_space_marines_pinning_fire(stratagem, **kwargs)
+        if name_u in {"ANGELIC GRACE", "FUELLED BY FAITH"}:
+            return self._use_space_marines_mortal_wound_stratagem(stratagem, **kwargs)
         return None
 
     def _use_space_marines_shock_cavalry(self, stratagem: Any, **kwargs) -> bool:

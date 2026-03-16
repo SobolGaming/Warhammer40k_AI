@@ -272,6 +272,53 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         if buff_key:
             self.assertTrue(model.has_used_once_per_battle(buff_key))
 
+    def test_the_lion_helm_queues_start_of_phase_mortal_fnp_prompt(self):
+        army = Army("Space Marines", detachment_type="Other")
+        army.faction_id = "SM"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "EN"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 1
+
+        ability_desc = (
+            "Models in the bearer's unit have a 4+ invulnerable save. In addition, once per battle, in any phase, the "
+            "bearer can summon a Watcher in the Dark. When it does, until the end of the phase, models in the bearer's "
+            "unit have the Feel No Pain 4+ ability against mortal wounds."
+        )
+        ability = Ability("The Lion Helm", "SM", ability_desc, "Datasheet", "")
+        unit = self._make_unit(
+            "Azrael",
+            army,
+            keywords=["ADEPTUS ASTARTES", "CHARACTER", "INFANTRY"],
+            abilities=[ability],
+        )
+        model = self._make_model("Azrael", unit, wounds=6)
+        unit.models = [model]
+        army.units = [unit]
+        game.rebuild_entity_registry()
+
+        game._on_phase_start_optional_abilities(player=enemy_player, phase=game.phase)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "start_any_phase_fnp")
+        self.assertEqual(ctx.get("ability_name"), "The Lion Helm")
+        self.assertIn("mortal", str(ctx.get("fnp_condition", "") or "").lower())
+
+        self._resolve_yes(game, request, player)
+
+        fnp_entries = list(model.get_temporary_fnp_entries() or [])
+        self.assertTrue(any(int(value or 0) == 4 and "mortal" in str(cond or "").lower() for value, cond in fnp_entries))
+        self.assertTrue(unit.has_used_unit_once_per_battle("watcher_in_the_dark:the_lion_helm"))
+
     def test_chance_for_glory_queues_and_applies(self):
         army = Army("Chaos", detachment_type="Other")
         army.faction_id = "CSM"

@@ -79,9 +79,12 @@ class AbilitySpecsMixin:
             members = [root]
 
         pattern = re.compile(
-            r"once per battle in any phase just after a mortal wound is allocated to "
-            r"an? [a-z0-9 ]+ model in this unit this unit can summon a watcher in the dark "
-            r"when it does until the end of the phase models in this unit have the feel no pain "
+            r"(?:models in the bearer(?:s| s) unit have a [1-6] invulnerable save in addition )?"
+            r"once per battle in any phase "
+            r"(?:(?:just after a mortal wound is allocated to an? [a-z0-9 ]+ model in this unit )?"
+            r"(?:this unit|the bearer) can summon a watcher in the dark )"
+            r"when it does until the end of the phase models in "
+            r"(?:this unit|the bearer(?:s| s) unit) have the feel no pain "
             r"(?P<val>\d+)(?: ability)? against mortal wounds?(?: designer s note .+)?",
             re.IGNORECASE,
         )
@@ -6661,6 +6664,7 @@ class AbilitySpecsMixin:
             - source: ability name
             - value: int (FNP roll)
             - ability_key: str (once-per-battle tracking key)
+            - condition: Optional[str]
         """
         try:
             root = self.get_attached_unit_root()
@@ -6671,13 +6675,21 @@ class AbilitySpecsMixin:
             return list(root._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int]] = set()
+        seen: set[tuple[str, int, str]] = set()
         try:
             members = list(root.get_attached_unit_members() or [])
         except Exception:
             members = [root]
         if not members:
             members = [root]
+
+        bearer_watcher_pattern = re.compile(
+            r"(?:models in the bearer(?:s| s) unit have a [1-6] invulnerable save in addition )?"
+            r"once per battle in any phase the bearer can summon a watcher in the dark "
+            r"when it does until the end of the phase models in the bearer(?:s| s) unit have the feel no pain "
+            r"(?P<val>\d+)(?: ability)? against mortal wounds?",
+            re.IGNORECASE,
+        )
 
         for u in members:
             for name, desc in u._iter_ability_entries_for_rules(model=None):
@@ -6691,22 +6703,41 @@ class AbilitySpecsMixin:
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
                 m = self._START_ANY_PHASE_UNIT_FNP_RE.fullmatch(normalized)
-                if not m:
-                    continue
-                try:
-                    val = int(m.group("val") or 0)
-                except Exception:
-                    val = 0
-                if val <= 0:
-                    continue
-                source = str(name or "Start of phase FNP").strip() or "Start of phase FNP"
-                key_seed = self._normalize_keyword_phrase(source) or "start_any_phase_fnp"
-                ability_key = f"start_any_phase_fnp:{key_seed}"
-                key = (source.lower(), int(val))
+                condition = None
+                if m:
+                    try:
+                        val = int(m.group("val") or 0)
+                    except (TypeError, ValueError):
+                        val = 0
+                    if val <= 0:
+                        continue
+                    source = str(name or "Start of phase FNP").strip() or "Start of phase FNP"
+                    key_seed = self._normalize_keyword_phrase(source) or "start_any_phase_fnp"
+                    key_seed = re.sub(r"\s+", "_", str(key_seed or "").strip()) or "start_any_phase_fnp"
+                    ability_key = f"start_any_phase_fnp:{key_seed}"
+                else:
+                    m = bearer_watcher_pattern.fullmatch(normalized)
+                    if not m:
+                        continue
+                    try:
+                        val = int(m.group("val") or 0)
+                    except (TypeError, ValueError):
+                        val = 0
+                    if val <= 0:
+                        continue
+                    source = str(name or "Watcher in the Dark").strip() or "Watcher in the Dark"
+                    key_seed = self._normalize_keyword_phrase(source) or "watcher_in_the_dark"
+                    key_seed = re.sub(r"\s+", "_", str(key_seed or "").strip()) or "watcher_in_the_dark"
+                    ability_key = f"watcher_in_the_dark:{key_seed}"
+                    condition = "against mortal wounds"
+                key = (str(ability_key).lower(), int(val), str(condition or "").lower())
                 if key in seen:
                     continue
                 seen.add(key)
-                specs.append({"source": source, "value": int(val), "ability_key": ability_key})
+                spec = {"source": source, "value": int(val), "ability_key": ability_key}
+                if condition:
+                    spec["condition"] = condition
+                specs.append(spec)
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
