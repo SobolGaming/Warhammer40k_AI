@@ -2952,33 +2952,42 @@ class AbilitySpecsMixin:
                 r"(?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) that(?: enemy)? unit must take a battle shock test",
                 normalized,
             )
-            if not command_phase_no_penalty:
+            army_model_command_phase_no_penalty = re.fullmatch(
+                r"in your command phase one model from your army with this ability can use it if it does "
+                r"select one enemy unit within (?P<range>\d+) of it that(?: enemy)? unit must take a battle shock test",
+                normalized,
+            )
+            if not command_phase_no_penalty and not army_model_command_phase_no_penalty:
                 continue
             try:
-                range_value = int(command_phase_no_penalty.group("range") or 0)
+                range_value = int((command_phase_no_penalty or army_model_command_phase_no_penalty).group("range") or 0)
             except (TypeError, ValueError):
                 range_value = 0
             if range_value <= 0:
                 continue
-            optional = bool(str(command_phase_no_penalty.group("optional") or "").strip())
+            optional = bool(str((command_phase_no_penalty.group("optional") if command_phase_no_penalty else "") or "").strip())
             phase_names = ["COMMAND_PHASE"]
             ability_key = f"command_phase_select_enemy_battleshock:{source_key}"
+            usage_seed = re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_") or "start_phase_battleshock"
             dedupe_key = (source.lower(), int(range_value), 0, tuple(phase_names))
             if dedupe_key in seen:
                 continue
             seen.add(dedupe_key)
-            specs.append(
-                {
-                    "source": source,
-                    "range": int(range_value),
-                    "test_penalty": 0,
-                    "phase_names": list(phase_names),
-                    "ability_key": ability_key,
-                    "optional": bool(optional),
-                    "once_per_turn": False,
-                    "context_ability": "command_phase_select_enemy_battleshock",
-                }
-            )
+            spec = {
+                "source": source,
+                "range": int(range_value),
+                "test_penalty": 0,
+                "phase_names": list(phase_names),
+                "ability_key": ability_key,
+                "optional": bool(optional),
+                "once_per_turn": False,
+                "context_ability": "command_phase_select_enemy_battleshock",
+            }
+            if army_model_command_phase_no_penalty:
+                spec["optional"] = True
+                spec["army_usage_key"] = f"COMMAND_PHASE_SELECT_ENEMY_BATTLESHOCK:{usage_seed.upper()}"
+                spec["army_usage_scope"] = "battle_round"
+            specs.append(spec)
 
         root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
         root_special_rules = getattr(root, "special_rules", None)
@@ -7154,7 +7163,7 @@ class AbilitySpecsMixin:
                 "max_mortal": int(cap) if int(cap or 0) > 0 else 0,
                 "move_types": ["move", "advance", "fall_back"],
                 "once_per_turn": True,
-                "trigger_on_setup": True,
+                "trigger_on_setup": bool(m.group("trigger_on_setup")),
                 "dice_per_model": True,
             }
             if models_raw:
@@ -10988,6 +10997,130 @@ class AbilitySpecsMixin:
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_fight_selected_weapon_attacks_damage_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, when selected to fight, improve a named weapon's
+        Attacks and Damage characteristics until end of phase.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - buff_key: once-per-battle tracking key
+            - weapon_name: str
+            - attacks_bonus: int
+            - damage_bonus: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_selected_weapon_attacks_damage_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._MODEL_FIGHT_SELECTED_WEAPON_ATTACKS_DAMAGE_BONUS_RE.fullmatch(normalized)
+            if not m:
+                continue
+            weapon_name = str(m.group("weapon") or "").strip()
+            if not weapon_name:
+                continue
+            try:
+                bonus = int(m.group("bonus") or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            source = str(name or "Fight-selected weapon attacks and damage bonus").strip() or "Fight-selected weapon attacks and damage bonus"
+            dedupe_key = (source.lower(), weapon_name.lower(), int(bonus))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            source_key = self._normalize_keyword_phrase(source) or "fight_selected_weapon_attacks_damage_bonus"
+            specs.append(
+                {
+                    "source": source,
+                    "buff_key": f"fight_selected_weapon_attacks_damage_bonus:{source_key}",
+                    "weapon_name": weapon_name,
+                    "attacks_bonus": int(bonus),
+                    "damage_bonus": int(bonus),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_fight_selected_unit_target_keyword_wound_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, when the bearer’s unit is selected to fight,
+        unit attacks against a matching target keyword gain +1 to wound until end of phase.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - buff_key: once-per-battle tracking key
+            - target_keyword: str
+            - wound_bonus: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_selected_unit_target_keyword_wound_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._MODEL_FIGHT_SELECTED_UNIT_TARGET_KEYWORD_WOUND_BONUS_RE.fullmatch(normalized)
+            if not m:
+                continue
+            keyword_raw = str(m.group("keyword") or "").strip()
+            target_keyword = self._normalize_keyword_phrase(keyword_raw) or keyword_raw.lower()
+            if not target_keyword:
+                continue
+            try:
+                wound_bonus = int(m.group("bonus") or 0)
+            except Exception:
+                wound_bonus = 0
+            if wound_bonus <= 0:
+                continue
+            source = str(name or m.group("source") or "Fight-selected target keyword wound bonus").strip()
+            source = source or "Fight-selected target keyword wound bonus"
+            dedupe_key = (source.lower(), target_keyword, int(wound_bonus))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            source_key = self._normalize_keyword_phrase(source) or "fight_selected_unit_target_keyword_wound_bonus"
+            specs.append(
+                {
+                    "source": source,
+                    "buff_key": f"fight_selected_unit_target_keyword_wound_bonus:{source_key}",
+                    "target_keyword": target_keyword,
+                    "wound_bonus": int(wound_bonus),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def model_fight_selected_mortal_table_specs(self, model: Optional['Model'] = None) -> List[dict]:

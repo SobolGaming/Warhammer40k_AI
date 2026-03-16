@@ -1032,6 +1032,9 @@ class DatasheetWargearMixin:
                 return count, parsed_item
             return 1, token
 
+        def _split_loadout_items(raw_items: str) -> List[str]:
+            return [item.strip() for item in re.split(r"[;,]", str(raw_items or "")) if str(item or "").strip()]
+
         starting_wargear = []
         optional_wargear: List[str] = []
         wargear_lookup = {
@@ -1070,11 +1073,11 @@ class DatasheetWargearMixin:
             entry = entry.strip()
 
             if match := re.match(r"^this model is equipped with: (.*)$", entry):
-                for item_name in match.group(1).split(";"):
+                for item_name in _split_loadout_items(match.group(1)):
                     quantity, item_name = _parse_loadout_quantity(item_name)
                     _record_item(item_name, quantity)
             elif match := re.match(r"^every model is equipped with: (.*)$", entry):
-                for item_name in match.group(1).split(";"):
+                for item_name in _split_loadout_items(match.group(1)):
                     quantity, item_name = _parse_loadout_quantity(item_name)
                     _record_item(item_name, quantity)
             elif match := re.match(r"^(?:the|every|a|an)?\s*(\D+)\s+added to this unit using the split ability is equipped with: (.*)$", entry):
@@ -1085,14 +1088,14 @@ class DatasheetWargearMixin:
                     actors = actors[0].split(" and ")
                 for actor in actors:
                     if model_name_norm and model_name_norm == _norm_item(actor.strip()):
-                        for item_name in match.group(2).split(";"):
+                        for item_name in _split_loadout_items(match.group(2)):
                             quantity, item_name = _parse_loadout_quantity(item_name)
                             _record_item(item_name, quantity)
                     else:
                         continue
             elif match := re.match(r"^(?:the|every) (.*) model is equipped with: (.*)$", entry):
                 if model_name_norm and model_name_norm == _norm_item(match.group(1).strip()):
-                    for item_name in match.group(2).split(";"):
+                    for item_name in _split_loadout_items(match.group(2)):
                         quantity, item_name = _parse_loadout_quantity(item_name)
                         _record_item(item_name, quantity)
                 else:
@@ -1103,7 +1106,7 @@ class DatasheetWargearMixin:
                     actors = actors[0].split(" and ")
                 for actor in actors:
                     if model_name_norm and model_name_norm == _norm_item(actor.strip()):
-                        for item_name in match.group(2).split(";"):
+                        for item_name in _split_loadout_items(match.group(2)):
                             quantity, item_name = _parse_loadout_quantity(item_name)
                             _record_item(item_name, quantity)
                     else:
@@ -1114,7 +1117,7 @@ class DatasheetWargearMixin:
                     actors = actors[0].split(" and ")
                 for actor in actors:
                     if model_name_norm and model_name_norm == _norm_item(actor.strip()):
-                        for item_name in match.group(2).split(";"):
+                        for item_name in _split_loadout_items(match.group(2)):
                             quantity, item_name = _parse_loadout_quantity(item_name)
                             _record_item(item_name, quantity)
                     else:

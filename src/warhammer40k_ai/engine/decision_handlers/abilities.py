@@ -8746,6 +8746,20 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
         if source_army is not None and target_army is not None and source_army is target_army:
             return (f"{error_prefix} target must be an enemy unit.",)
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        army_usage_key = str(ctx.get("army_usage_key", "") or payload.get("army_usage_key", "") or "").strip().upper()
+        army_usage_scope = str(ctx.get("army_usage_scope", "") or payload.get("army_usage_scope", "") or "").strip().lower()
+        if army_usage_key and player is not None:
+            if army_usage_scope == "battle_round" and current_turn > 0:
+                used_rounds = getattr(player, "_ability_used_battle_round", None)
+                if isinstance(used_rounds, dict) and int(used_rounds.get(army_usage_key, 0) or 0) == int(current_turn):
+                    return (f"{error_prefix} has already been used this battle round.",)
+            elif army_usage_scope == "turn":
+                used_turn_fn = getattr(player, "_ability_used_this_turn", None)
+                if callable(used_turn_fn) and bool(used_turn_fn(army_usage_key)):
+                    return (f"{error_prefix} has already been used this turn.",)
         engagement_only = bool(ctx.get("engagement_only", False))
         try:
             range_value = float(ctx.get("range", payload.get("range", 0)) or 0)
@@ -17257,6 +17271,8 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             ability_key = f"start_phase_select_battleshock:{source_key}"
         optional = bool(ctx.get("optional", ability == "harbinger_of_despair_battleshock"))
         once_per_turn = bool(ctx.get("once_per_turn", ability == "harbinger_of_despair_battleshock"))
+        army_usage_key = str(ctx.get("army_usage_key", "") or payload.get("army_usage_key", "") or "").strip().upper()
+        army_usage_scope = str(ctx.get("army_usage_scope", "") or payload.get("army_usage_scope", "") or "").strip().lower()
         try:
             current_turn = int(getattr(game, "turn", 0) or 0)
         except (TypeError, ValueError):
@@ -17273,6 +17289,15 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if once_per_turn and callable(has_used) and ability_key and current_turn > 0:
             if bool(has_used(ability_key, battle_round=int(current_turn))):
                 return None
+        if army_usage_key and player is not None:
+            if army_usage_scope == "battle_round" and current_turn > 0:
+                used_rounds = getattr(player, "_ability_used_battle_round", None)
+                if isinstance(used_rounds, dict) and int(used_rounds.get(army_usage_key, 0) or 0) == int(current_turn):
+                    return None
+            elif army_usage_scope == "turn":
+                used_turn_fn = getattr(player, "_ability_used_this_turn", None)
+                if callable(used_turn_fn) and bool(used_turn_fn(army_usage_key)):
+                    return None
         target_unit = resolve_unit(
             game,
             payload.get("target_unit_id") or ctx.get("target_unit_id"),
@@ -17319,6 +17344,15 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 ability_name=ability_name,
                 source="datasheet",
             )
+        if army_usage_key and player is not None:
+            if army_usage_scope == "battle_round" and current_turn > 0:
+                used_rounds = getattr(player, "_ability_used_battle_round", None)
+                if isinstance(used_rounds, dict):
+                    used_rounds[army_usage_key] = int(current_turn)
+            elif army_usage_scope == "turn":
+                mark_turn = getattr(player, "_mark_ability_used_turn", None)
+                if callable(mark_turn):
+                    mark_turn(army_usage_key)
         force_test = getattr(target_root, "force_battle_shock_test", None)
         if callable(force_test):
             force_test(

@@ -7993,6 +7993,7 @@ class GamePhaseHandlersMixin:
             current_turn = 0
 
         seen_roots: set[str] = set()
+        grouped_army_usage_entries: dict[tuple[str, str, str, str], list[dict]] = {}
         for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
             if unit is None:
                 continue
@@ -8054,10 +8055,22 @@ class GamePhaseHandlersMixin:
                     ability_key = str(spec.get("ability_key", "") or "").strip().lower()
                     if not ability_key:
                         ability_key = "start_phase_select_battleshock"
+                    army_usage_key = str(spec.get("army_usage_key", "") or "").strip().upper()
+                    army_usage_scope = str(spec.get("army_usage_scope", "") or "").strip().lower()
                     if bool(spec.get("once_per_turn", True)):
                         used_fn = getattr(model, "has_used_once_per_battle_round", None)
                         if callable(used_fn) and current_turn > 0:
                             if bool(used_fn(ability_key, battle_round=int(current_turn))):
+                                continue
+                    if army_usage_key and player is not None:
+                        if army_usage_scope == "battle_round":
+                            used_rounds = getattr(player, "_ability_used_battle_round", None)
+                            if isinstance(used_rounds, dict) and current_turn > 0:
+                                if int(used_rounds.get(army_usage_key, 0) or 0) == int(current_turn):
+                                    continue
+                        elif army_usage_scope == "turn":
+                            used_turn_fn = getattr(player, "_ability_used_this_turn", None)
+                            if callable(used_turn_fn) and bool(used_turn_fn(army_usage_key)):
                                 continue
                     requires_visibility = bool(spec.get("requires_visibility", False))
                     if requires_visibility:
@@ -8077,6 +8090,20 @@ class GamePhaseHandlersMixin:
                     if not candidates:
                         continue
                     source_unit = getattr(model, "parent_unit", None) or root
+                    if army_usage_key:
+                        ability_context = str(
+                            spec.get("context_ability", "") or spec.get("ability", "") or "harbinger_of_despair_battleshock"
+                        ).strip().lower() or "harbinger_of_despair_battleshock"
+                        group_key = (ability_context, army_usage_key, army_usage_scope, pname)
+                        grouped_army_usage_entries.setdefault(group_key, []).append(
+                            {
+                                "source_unit": source_unit,
+                                "model": model,
+                                "candidates": list(candidates),
+                                "spec": dict(spec),
+                            }
+                        )
+                        continue
                     queue_fn = getattr(self, "_queue_start_phase_select_enemy_battleshock", None)
                     if not callable(queue_fn):
                         continue
@@ -8088,6 +8115,14 @@ class GamePhaseHandlersMixin:
                         spec=dict(spec),
                         phase_name=pname,
                     )
+        grouped_queue_fn = getattr(self, "_queue_start_phase_select_enemy_battleshock_grouped", None)
+        if callable(grouped_queue_fn):
+            for _group_key, entries in sorted(grouped_army_usage_entries.items(), key=lambda item: item[0]):
+                grouped_queue_fn(
+                    player=player,
+                    entries=list(entries),
+                    phase_name=pname,
+                )
 
     def _on_phase_start_empowered_by_death(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase: below Starting Strength units with Empowered by Death gain Fight First until end of phase."""

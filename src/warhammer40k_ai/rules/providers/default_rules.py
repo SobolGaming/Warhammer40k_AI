@@ -179,6 +179,8 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("fight_attacks_resolved", "_on_fight_attacks_resolved_soul_trap"),
                 ("fight_unit_selected", "_on_fight_unit_selected_daemonic_patrons"),
                 ("fight_unit_selected", "_on_fight_unit_selected_plasmacyte"),
+                ("fight_unit_selected", "_on_fight_unit_selected_biological_warfare"),
+                ("fight_unit_selected", "_on_fight_unit_selected_alchemicus_familiar"),
                 ("fight_unit_selected", "_on_fight_unit_selected_extremis_trigger_word"),
                 ("fight_unit_selected", "_on_fight_unit_selected_sacrificial_dagger"),
                 ("fight_unit_selected", "_on_fight_unit_selected_sacrificial_blessing"),

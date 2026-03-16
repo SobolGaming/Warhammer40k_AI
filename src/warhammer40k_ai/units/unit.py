@@ -3465,6 +3465,18 @@ class Unit(
         r"have the devastating wounds ability(?: .*)?",
         re.IGNORECASE,
     )
+    _MODEL_FIGHT_SELECTED_WEAPON_ATTACKS_DAMAGE_BONUS_RE = re.compile(
+        r"once per battle when this model s unit is selected to fight this model can use this ability "
+        r"if it does until the end of the phase improve the attacks and damage characteristics of its "
+        r"(?P<weapon>[a-z0-9 \-]+?) by (?P<bonus>\d+)",
+        re.IGNORECASE,
+    )
+    _MODEL_FIGHT_SELECTED_UNIT_TARGET_KEYWORD_WOUND_BONUS_RE = re.compile(
+        r"once per battle when the bearer s unit is selected to fight the bearer can use its (?P<source>[a-z0-9 \-]+?) "
+        r"if it does until the end of the phase each time a model in the bearer s unit makes an attack that targets "
+        r"an (?P<keyword>[a-z0-9 \-]+?) unit add (?P<bonus>\d+) to the wound roll(?: .*)?",
+        re.IGNORECASE,
+    )
     _BOMB_SQUIGS_RE = re.compile(
         r"once per battle for each bomb squig this unit has after this unit ends a normal move "
         r"you can use one bomb squig if you do select one enemy unit within (?P<range>\d+) and visible to this unit "
@@ -4498,11 +4510,14 @@ class Unit(
         re.IGNORECASE,
     )
     _GRENADE_PACK_FLYOVER_RE = re.compile(
-        r"once per turn in your movement phase when this unit is set up on the battlefield or ends a "
-        r"normal advance or fall back move it can use this ability if it does select one enemy unit within "
+        r"once per turn in your movement phase when this unit "
+        r"(?:(?P<trigger_on_setup>is set up on the battlefield) or )?ends a "
+        r"normal advance or fall back move "
+        r"(?:(?:it can use this ability if it does|you can) )?select one enemy unit within "
         r"(?P<range>\d+) of and visible to this unit and roll one d6 for each (?P<models>[a-z0-9 ]+) model in this unit "
         r"for each (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>\d+) mortal wounds? "
-        r"\(?(?:to a maximum of )?(?P<cap>\d+)? mortal wounds?\)?",
+        r"\(?(?:to a maximum of )?(?P<cap>\d+)? mortal wounds?\)?"
+        r"(?: each time this unit uses this ability until the end of the turn you cannot target this unit with the grenade stratagem)?",
         re.IGNORECASE,
     )
     _END_OF_FIGHT_EMBARK_RE = re.compile(

@@ -6204,6 +6204,7 @@ def _classify_ability_base(
     fight_phase_melee_ap_boost_support = _fight_phase_once_melee_attacks_ap_support(description)
     fight_phase_melee_strength_boost_support = _fight_phase_once_melee_attacks_strength_support(description)
     start_any_phase_damage_set_one_support = _start_any_phase_damage_set_one_support(description)
+    start_any_phase_model_invuln_support = _start_any_phase_model_invuln_support(description)
     start_any_phase_unit_invuln_support = _start_any_phase_unit_invuln_support(description)
     start_any_phase_unit_fnp_support = _start_any_phase_unit_fnp_support(description)
     reanimation_dice_reroll_support = _reanimation_dice_reroll_support(description)
@@ -6230,6 +6231,7 @@ def _classify_ability_base(
     movement_phase_visible_hit_bonus_support = _movement_phase_end_visible_hit_bonus_support(description)
     movement_phase_end_select_enemy_battleshock_support = _movement_phase_end_select_enemy_battleshock_support(description)
     grenade_pack_flyover_support = _grenade_pack_flyover_support(description)
+    cult_ambush_edge_setup_support = _cult_ambush_edge_setup_support(description)
     grenadiers_grenade_support = _grenadiers_grenade_support(description)
     primed_and_ready_grenade_support = _primed_and_ready_grenade_support(description)
     gheistskull_grenade_support = _gheistskull_grenade_support(description)
@@ -6244,6 +6246,8 @@ def _classify_ability_base(
     start_of_battle_keyword_reroll_support = _start_of_battle_keyword_reroll_ones_support(description)
     daemonic_patrons_support = _daemonic_patrons_support(description)
     plasmacyte_support = _plasmacyte_support(description)
+    fight_selected_weapon_attacks_damage_bonus_support = _fight_selected_weapon_attacks_damage_bonus_support(description)
+    fight_selected_unit_target_keyword_wound_bonus_support = _fight_selected_unit_target_keyword_wound_bonus_support(description)
     shoot_on_death_after_attacks_support = _shoot_on_death_after_attacks_support(description)
     return_on_death_support = _return_on_death_support(description)
     crewed_platform_support = _crewed_platform_support(description)
@@ -6735,6 +6739,8 @@ def _classify_ability_base(
         return fight_phase_melee_strength_boost_support
     if start_any_phase_damage_set_one_support:
         return start_any_phase_damage_set_one_support
+    if start_any_phase_model_invuln_support:
+        return start_any_phase_model_invuln_support
     if start_any_phase_unit_invuln_support:
         return start_any_phase_unit_invuln_support
     if start_any_phase_unit_fnp_support:
@@ -6781,6 +6787,8 @@ def _classify_ability_base(
         return movement_phase_end_select_enemy_battleshock_support
     if grenade_pack_flyover_support:
         return grenade_pack_flyover_support
+    if cult_ambush_edge_setup_support:
+        return cult_ambush_edge_setup_support
     if grenadiers_grenade_support:
         return grenadiers_grenade_support
     if primed_and_ready_grenade_support:
@@ -6809,6 +6817,10 @@ def _classify_ability_base(
         return daemonic_patrons_support
     if plasmacyte_support:
         return plasmacyte_support
+    if fight_selected_weapon_attacks_damage_bonus_support:
+        return fight_selected_weapon_attacks_damage_bonus_support
+    if fight_selected_unit_target_keyword_wound_bonus_support:
+        return fight_selected_unit_target_keyword_wound_bonus_support
     if shoot_on_death_after_attacks_support:
         return shoot_on_death_after_attacks_support
     if melee_fight_on_death_support:
@@ -12428,7 +12440,7 @@ def _enemy_fall_back_desperate_escape_support(description: str) -> Optional[Tupl
         return None
     base = (
         r"each time an enemy unit(?: excluding monsters and vehicles)?(?: that is)? within engagement range of "
-        r"(?:this unit|this model s unit|one or more units from your army with this ability) "
+        r"(?:this unit|this model|this model s unit|one or more units from your army with this ability) "
         r"(?:falls back|is selected to fall back) "
         r"(?:all )?(?:models in that enemy unit|that unit) must take (?:a )?desperate escape tests?"
     )
@@ -13170,20 +13182,30 @@ def _command_phase_enemy_range_battleshock_support(description: str) -> Optional
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    pattern = (
+    direct_pattern = (
         r"in your command phase (?:you can )?select one enemy unit within (?P<range>\d+) of "
         r"(?:this model|the bearer|this unit(?: s [a-z0-9 ]+ model)?) "
         r"that(?: enemy)? unit must take a battle shock test"
     )
-    m = re.fullmatch(pattern, norm)
-    if not m:
+    army_model_pattern = (
+        r"in your command phase one model from your army with this ability can use it if it does "
+        r"select one enemy unit within (?P<range>\d+) of it that(?: enemy)? unit must take a battle shock test"
+    )
+    direct_match = re.fullmatch(direct_pattern, norm)
+    army_model_match = re.fullmatch(army_model_pattern, norm)
+    if not direct_match and not army_model_match:
         return None
     try:
-        rng = int(m.group("range") or 0)
+        rng = int((direct_match or army_model_match).group("range") or 0)
     except (TypeError, ValueError):
         rng = 0
     if rng <= 0:
         return None
+    if army_model_match:
+        return (
+            "Supported",
+            f"Command phase: one model from your army with this ability can select one enemy unit within {rng}\" of itself to take a Battle-shock test.",
+        )
     return (
         "Supported",
         f"Command phase: select one enemy unit within {rng}\" of the source model to take a Battle-shock test.",
@@ -14362,6 +14384,25 @@ def _start_any_phase_damage_set_one_support(description: str) -> Optional[Tuple[
     )
 
 
+def _start_any_phase_model_invuln_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle at the start of any phase this model can use this ability if it does until the end of the phase "
+        r"this model has a (?P<val>[1-6]) invulnerable save"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"Once per battle (start of any phase): this model gains a {m.group('val')}+ invulnerable save until end of phase.",
+    )
+
+
 def _start_any_phase_unit_fnp_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -14699,12 +14740,13 @@ def _grenade_pack_flyover_support(description: str) -> Optional[Tuple[str, str]]
     if not norm:
         return None
     pattern = (
-        r"once per turn in your movement phase when this unit is set up on the battlefield or ends a normal advance or fall back move "
-        r"it can use this ability if it does select one enemy unit within (?P<range>\d+) of and visible to this unit "
+        r"once per turn in your movement phase when this unit "
+        r"(?:(?P<trigger_setup>is set up on the battlefield) or )?ends a normal advance or fall back move "
+        r"(?:(?:it can use this ability if it does|you can) )?select one enemy unit within (?P<range>\d+) of and visible to this unit "
         r"and roll one d6 for each (?P<models>[a-z0-9 ]+) model in this unit "
         r"for each (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>\d+) mortal wounds? "
-        r"(?:to a maximum of (?P<cap>\d+) mortal wounds?)? "
-        r"each time this unit uses this ability until the end of the turn you cannot target this unit with the grenade stratagem"
+        r"(?:to a maximum of (?P<cap>\d+) mortal wounds?)?"
+        r"(?: each time this unit uses this ability until the end of the turn you cannot target this unit with the grenade stratagem)?"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
@@ -14713,9 +14755,38 @@ def _grenade_pack_flyover_support(description: str) -> Optional[Tuple[str, str]]
     threshold = m.group("threshold") or "4"
     cap = m.group("cap") or ""
     cap_note = f" (max {cap})" if cap else ""
+    trigger_note = (
+        "after setup or after a Normal/Advance/Fall Back move"
+        if str(m.group("trigger_setup") or "").strip()
+        else "after a Normal/Advance/Fall Back move"
+    )
+    grenade_lockout = "grenade stratagem" in norm
+    lockout_note = "; cannot be targeted by Grenade stratagem that turn" if grenade_lockout else ""
     return (
         "Supported",
-        f"Movement phase (once per turn): select visible enemy within {range_val}\"; roll D6 per model, each {threshold}+ inflicts 1 mortal wound{cap_note}; cannot be targeted by Grenade stratagem that turn.",
+        f"Movement phase (once per turn) {trigger_note}: select visible enemy within {range_val}\"; roll D6 per model, each {threshold}+ inflicts 1 mortal wound{cap_note}{lockout_note}.",
+    )
+
+
+def _cult_ambush_edge_setup_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"each time you use the cult ambush ability to set this unit back upon the battlefield in addition to the normal rules "
+        r"all of its models must be set up wholly within (?P<range>\d+) of a battlefield edge and at least one of its models "
+        r"must be touching one of your cult ambush markers that marker is then removed(?: from the battlefield)? "
+        r"if this cannot be done this unit cannot be set back up",
+        norm,
+    )
+    if not m:
+        return None
+    range_val = m.group("range") or "9"
+    return (
+        "Supported",
+        f"Cult Ambush setup from a marker requires every model in the unit to be wholly within {range_val}\" of a battlefield edge; if no legal placement exists, the unit cannot be set up.",
     )
 
 
@@ -14763,6 +14834,51 @@ def _plasmacyte_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         "Plasmacyte: once per battle when selected to fight, optional activation grants [DEVASTATING WOUNDS] to unit melee weapons until end of phase.",
+    )
+
+
+def _fight_selected_weapon_attacks_damage_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle when this models unit is selected to fight this model can use this ability "
+        r"if it does until the end of the phase improve the attacks and damage characteristics of its "
+        r"(?P<weapon>[a-z0-9 \-]+?) by (?P<bonus>\d+)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    weapon = str(m.group("weapon") or "weapon").strip()
+    bonus = str(m.group("bonus") or "0")
+    return (
+        "Supported",
+        f"Once per battle when selected to fight: the bearer gains +{bonus} Attacks and +{bonus} Damage on {weapon} until end of phase.",
+    )
+
+
+def _fight_selected_unit_target_keyword_wound_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle when the bearers unit is selected to fight the bearer can use its (?P<source>[a-z0-9 \-]+?) "
+        r"if it does until the end of the phase each time a model in the bearers unit makes an attack that targets "
+        r"an (?P<keyword>[a-z0-9 \-]+?) unit add (?P<bonus>\d+) to the wound roll(?: .*)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "target").strip().upper()
+    bonus = str(m.group("bonus") or "0")
+    source = str(m.group("source") or "Familiar").strip()
+    return (
+        "Supported",
+        f"Once per battle when selected to fight: {source} grants the bearer’s unit +{bonus} to wound against {keyword} targets until end of phase.",
     )
 
 

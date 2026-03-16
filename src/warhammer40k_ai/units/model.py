@@ -1003,6 +1003,7 @@ class Model:
         attacks_bonus: int = 0,
         strength_bonus: int = 0,
         ap_bonus: int = 0,
+        damage_bonus: int = 0,
         source: str = "",
         expires_phase: str = "",
     ) -> None:
@@ -1024,7 +1025,11 @@ class Model:
             ap_bonus = int(ap_bonus or 0)
         except Exception:
             ap_bonus = 0
-        if attacks_bonus <= 0 and strength_bonus <= 0 and ap_bonus <= 0:
+        try:
+            damage_bonus = int(damage_bonus or 0)
+        except Exception:
+            damage_bonus = 0
+        if attacks_bonus <= 0 and strength_bonus <= 0 and ap_bonus <= 0 and damage_bonus <= 0:
             effects.pop(key_norm, None)
             return
         entry = {"expires_phase": str(expires_phase or "").strip().upper()}
@@ -1039,6 +1044,9 @@ class Model:
         if weapon_name and ap_bonus:
             entry["weapon_ap_bonus"] = {weapon_name: int(ap_bonus)}
             entry["weapon_ap_bonus_source"] = label
+        if weapon_name and damage_bonus:
+            entry["weapon_damage_bonus"] = {weapon_name: int(damage_bonus)}
+            entry["weapon_damage_bonus_source"] = label
         effects[key_norm] = entry
 
     def get_temporary_weapon_attacks_bonus(self, weapon_name: str) -> tuple[int, list[str]]:
@@ -1137,6 +1145,64 @@ class Model:
                     reasons.append(f"{label} +{bonus_val}AP ({key_norm}) [temporary]")
         return int(total), reasons
 
+    def get_temporary_weapon_damage_bonus(self, weapon_name: str) -> tuple[int, list[str]]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0, []
+        target = self._normalize_weapon_name(weapon_name)
+        if not target:
+            return 0, []
+        total = 0
+        reasons: list[str] = []
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            bonus_map = v.get("weapon_damage_bonus")
+            if not isinstance(bonus_map, dict):
+                continue
+            source = str(v.get("weapon_damage_bonus_source") or "").strip()
+            for key, bonus in bonus_map.items():
+                try:
+                    bonus_val = int(bonus or 0)
+                except Exception:
+                    bonus_val = 0
+                if bonus_val == 0:
+                    continue
+                key_norm = self._normalize_weapon_name(str(key or ""))
+                if not key_norm:
+                    continue
+                if key_norm == target or key_norm in target or target in key_norm:
+                    total += int(bonus_val)
+                    label = source or str(key or weapon_name)
+                    reasons.append(f"{label} +{bonus_val}D ({key_norm}) [temporary]")
+        return int(total), reasons
+
+    @staticmethod
+    def _temporary_target_matches_keywords(target, keywords: list[str]) -> bool:
+        if target is None:
+            return False
+        normalized_keywords = [str(keyword or "").strip().lower() for keyword in list(keywords or []) if str(keyword or "").strip()]
+        if not normalized_keywords:
+            return True
+        candidates = [target]
+        parent_unit = getattr(target, "parent_unit", None)
+        if parent_unit is not None:
+            candidates.append(parent_unit)
+        for candidate in candidates:
+            has_any_keyword = getattr(candidate, "has_any_keyword", None)
+            has_keyword = getattr(candidate, "has_keyword", None)
+            keywords_iter = list(getattr(candidate, "keywords", []) or [])
+            keywords_iter.extend(list(getattr(candidate, "faction_keywords", []) or []))
+            keywords_seen = {str(keyword or "").strip().lower() for keyword in keywords_iter if str(keyword or "").strip()}
+            for keyword in normalized_keywords:
+                if callable(has_any_keyword) and bool(has_any_keyword(keyword)):
+                    return True
+                if callable(has_keyword) and bool(has_keyword(keyword)):
+                    return True
+                if keyword in keywords_seen:
+                    return True
+        return False
+
     def set_temporary_weapon_wound_crit_bonus(
         self,
         *,
@@ -1144,6 +1210,7 @@ class Model:
         weapon_name: str,
         wound_bonus: int = 0,
         crit_wound_threshold: int = 0,
+        target_keywords_any: Optional[list[str]] = None,
         source: str = "",
         expires_phase: str = "",
     ) -> None:
@@ -1167,6 +1234,13 @@ class Model:
             return
         entry = {"expires_phase": str(expires_phase or "").strip().upper()}
         label = str(source or "").strip() or "Weapon wound bonus"
+        target_keywords = [
+            str(keyword or "").strip().lower()
+            for keyword in list(target_keywords_any or [])
+            if str(keyword or "").strip()
+        ]
+        if target_keywords:
+            entry["target_keywords_any"] = list(target_keywords)
         if wound_bonus > 0:
             entry["weapon_wound_bonus"] = {weapon_name: int(wound_bonus)}
             entry["weapon_wound_bonus_source"] = label
@@ -1175,17 +1249,20 @@ class Model:
             entry["weapon_crit_wound_threshold_source"] = label
         effects[key_norm] = entry
 
-    def get_temporary_weapon_wound_bonus(self, weapon_name: str) -> tuple[int, list[str]]:
+    def get_temporary_weapon_wound_bonus(self, weapon_name: str, target=None) -> tuple[int, list[str]]:
         eff = getattr(self, "_temporary_effects", {}) or {}
         if not isinstance(eff, dict) or not eff:
             return 0, []
-        target = self._normalize_weapon_name(weapon_name)
-        if not target:
+        weapon_key = self._normalize_weapon_name(weapon_name)
+        if not weapon_key:
             return 0, []
         total = 0
         reasons: list[str] = []
         for v in eff.values():
             if not isinstance(v, dict):
+                continue
+            target_keywords_any = list(v.get("target_keywords_any") or [])
+            if target_keywords_any and not self._temporary_target_matches_keywords(target=target, keywords=target_keywords_any):
                 continue
             bonus_map = v.get("weapon_wound_bonus")
             if not isinstance(bonus_map, dict):
@@ -1201,23 +1278,26 @@ class Model:
                 key_norm = self._normalize_weapon_name(str(key or ""))
                 if not key_norm:
                     continue
-                if key_norm == target or key_norm in target or target in key_norm:
+                if key_norm == weapon_key or key_norm in weapon_key or weapon_key in key_norm:
                     total += int(bonus_val)
                     label = source or str(key or weapon_name)
                     reasons.append(f"{label}: +{int(bonus_val)} to wound")
         return int(total), reasons
 
-    def get_temporary_weapon_crit_wound_threshold(self, weapon_name: str) -> tuple[int, list[str]]:
+    def get_temporary_weapon_crit_wound_threshold(self, weapon_name: str, target=None) -> tuple[int, list[str]]:
         eff = getattr(self, "_temporary_effects", {}) or {}
         if not isinstance(eff, dict) or not eff:
             return 0, []
-        target = self._normalize_weapon_name(weapon_name)
-        if not target:
+        weapon_key = self._normalize_weapon_name(weapon_name)
+        if not weapon_key:
             return 0, []
         best_threshold = 0
         reasons: list[str] = []
         for v in eff.values():
             if not isinstance(v, dict):
+                continue
+            target_keywords_any = list(v.get("target_keywords_any") or [])
+            if target_keywords_any and not self._temporary_target_matches_keywords(target=target, keywords=target_keywords_any):
                 continue
             threshold_map = v.get("weapon_crit_wound_threshold")
             if not isinstance(threshold_map, dict):
@@ -1233,7 +1313,7 @@ class Model:
                 key_norm = self._normalize_weapon_name(str(key or ""))
                 if not key_norm:
                     continue
-                if key_norm != target and key_norm not in target and target not in key_norm:
+                if key_norm != weapon_key and key_norm not in weapon_key and weapon_key not in key_norm:
                     continue
                 if best_threshold <= 0 or threshold_val < best_threshold:
                     best_threshold = int(threshold_val)

@@ -1522,6 +1522,8 @@ class GameReactiveDecisionsMixin:
         optional = bool(spec.get("optional", True))
         once_per_turn = bool(spec.get("once_per_turn", True))
         engagement_only = bool(spec.get("engagement_only", False))
+        army_usage_key = str(spec.get("army_usage_key", "") or "").strip().upper()
+        army_usage_scope = str(spec.get("army_usage_scope", "") or "").strip().lower()
         phase_key = str(phase_name or "").strip().upper()
         if not phase_key:
             return None
@@ -1615,6 +1617,8 @@ class GameReactiveDecisionsMixin:
             "once_per_turn": bool(once_per_turn),
             "requires_visibility": bool(requires_visibility),
             "turn": int(current_turn or 0),
+            "army_usage_key": army_usage_key,
+            "army_usage_scope": army_usage_scope,
         }
         phase_label = phase_key.replace("_", " ").title()
         if engagement_only:
@@ -1632,6 +1636,202 @@ class GameReactiveDecisionsMixin:
                 f"{ability_name}: select one enemy unit {target_label} to take a Battle-shock test"
                 f"{penalty_clause} ({phase_label})."
             )
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            prompt,
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_start_phase_select_enemy_battleshock_grouped(
+        self,
+        *,
+        player,
+        entries: list[dict],
+        phase_name: str,
+    ) -> DecisionRequest | None:
+        if player is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not entries:
+            return None
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
+
+        resolved_entries: list[dict] = []
+        for entry in list(entries or []):
+            if not isinstance(entry, dict):
+                continue
+            source_unit = entry.get("source_unit")
+            model = entry.get("model")
+            candidates = list(entry.get("candidates") or [])
+            spec = dict(entry.get("spec") or {})
+            if source_unit is None or model is None or not candidates or not spec:
+                continue
+            model_id = str(get_entity_id(model) or "").strip()
+            unit_id = str(get_entity_id(source_unit) or "").strip()
+            if not model_id or not unit_id:
+                continue
+            resolved_entries.append(
+                {
+                    "source_unit": source_unit,
+                    "model": model,
+                    "model_id": model_id,
+                    "unit_id": unit_id,
+                    "candidates": list(candidates),
+                    "spec": spec,
+                }
+            )
+        if not resolved_entries:
+            return None
+
+        first_spec = dict(resolved_entries[0].get("spec") or {})
+        ability_name = str(first_spec.get("source", "") or "Start phase Battle-shock selection").strip()
+        ability_name = ability_name or "Start phase Battle-shock selection"
+        ability_context = str(
+            first_spec.get("context_ability", "") or first_spec.get("ability", "") or "harbinger_of_despair_battleshock"
+        ).strip().lower()
+        if not ability_context:
+            ability_context = "harbinger_of_despair_battleshock"
+        ability_key = str(first_spec.get("ability_key", "") or "").strip().lower()
+        if not ability_key:
+            source_key = re.sub(r"[^a-z0-9]+", "_", ability_name.lower()).strip("_")
+            if not source_key:
+                source_key = "start_phase_battleshock"
+            ability_key = f"start_phase_select_battleshock:{source_key}"
+        optional = bool(first_spec.get("optional", True))
+        once_per_turn = bool(first_spec.get("once_per_turn", True))
+        engagement_only = bool(first_spec.get("engagement_only", False))
+        requires_visibility = bool(first_spec.get("requires_visibility", False))
+        army_usage_key = str(first_spec.get("army_usage_key", "") or "").strip().upper()
+        army_usage_scope = str(first_spec.get("army_usage_scope", "") or "").strip().lower()
+        phase_key = str(phase_name or "").strip().upper()
+        if not phase_key:
+            return None
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        try:
+            range_value = int(first_spec.get("range", 0) or 0)
+        except (TypeError, ValueError):
+            range_value = 0
+        if range_value < 0:
+            range_value = 0
+        try:
+            test_penalty = int(first_spec.get("test_penalty", 0) or 0)
+        except (TypeError, ValueError):
+            test_penalty = 0
+        if test_penalty < 0:
+            test_penalty = abs(int(test_penalty))
+        if not engagement_only and range_value <= 0:
+            return None
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "").strip().lower() != ability_context:
+                    continue
+                if str(ctx.get("army_usage_key", "") or "").strip().upper() != army_usage_key:
+                    continue
+                if str(ctx.get("phase_name", "") or "").strip().upper() != phase_key:
+                    continue
+                try:
+                    queued_turn = int(ctx.get("turn", 0) or 0)
+                except (TypeError, ValueError):
+                    queued_turn = 0
+                if queued_turn and current_turn and queued_turn != current_turn:
+                    continue
+                return None
+
+        def _entry_sort_key(entry: dict) -> tuple[str, str]:
+            return (str(entry.get("unit_id", "") or ""), str(entry.get("model_id", "") or ""))
+
+        def _candidate_sort_key(unit) -> str:
+            try:
+                return str(get_entity_id(unit) or "")
+            except (AttributeError, TypeError, ValueError):
+                return str(getattr(unit, "name", "") or "")
+
+        options = []
+        if optional:
+            options.append(DecisionOption.create("None", payload={"action": "skip"}))
+        candidate_ids: list[str] = []
+        source_unit_ids: list[str] = []
+        source_model_ids: list[str] = []
+        multi_source = len(resolved_entries) > 1
+        for entry in sorted(resolved_entries, key=_entry_sort_key):
+            source_unit = entry["source_unit"]
+            unit_id = str(entry.get("unit_id", "") or "")
+            model_id = str(entry.get("model_id", "") or "")
+            source_unit_ids.append(unit_id)
+            source_model_ids.append(model_id)
+            source_label = str(getattr(source_unit, "name", "") or "").strip() or str(getattr(entry["model"], "name", "") or "Model")
+            for cand in sorted(list(entry.get("candidates", []) or []), key=_candidate_sort_key):
+                cand_id = str(get_entity_id(cand) or "").strip()
+                if not cand_id:
+                    continue
+                candidate_ids.append(cand_id)
+                option_label = str(getattr(cand, "name", "Unit") or "Unit")
+                if multi_source:
+                    option_label = f"{option_label} ({source_label})"
+                options.append(
+                    DecisionOption.create(
+                        option_label,
+                        payload={
+                            "target_unit_id": cand_id,
+                            "source_unit_id": unit_id,
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                        },
+                    )
+                )
+        if optional and len(options) <= 1:
+            return None
+        if (not optional) and not options:
+            return None
+
+        ctx = {
+            "ability": ability_context,
+            "ability_name": ability_name,
+            "ability_key": ability_key,
+            "phase_name": phase_key,
+            "phase": phase_key.replace("_", " ").title(),
+            "range": int(range_value),
+            "test_penalty": int(test_penalty),
+            "engagement_only": bool(engagement_only),
+            "candidate_unit_ids": list(dict.fromkeys(candidate_ids)),
+            "candidate_source_unit_ids": list(dict.fromkeys(source_unit_ids)),
+            "candidate_source_model_ids": list(dict.fromkeys(source_model_ids)),
+            "optional": bool(optional),
+            "once_per_turn": bool(once_per_turn),
+            "requires_visibility": bool(requires_visibility),
+            "turn": int(current_turn or 0),
+            "army_usage_key": army_usage_key,
+            "army_usage_scope": army_usage_scope,
+        }
+        phase_label = phase_key.replace("_", " ").title()
+        if engagement_only:
+            target_label = "within Engagement Range"
+        elif requires_visibility:
+            target_label = f"within {int(range_value)}\" and visible to the selected source model"
+        else:
+            target_label = f"within {int(range_value)}\" of the selected source model"
+        penalty_clause = ""
+        if test_penalty > 0:
+            penalty_clause = f", subtracting {int(test_penalty)} from the test"
+        prompt = (
+            f"{ability_name}: select one enemy unit {target_label} to take a Battle-shock test"
+            f"{penalty_clause} ({phase_label})."
+        )
         request = DecisionRequest.create(
             DECISION_CHOOSE_QUARRY,
             prompt,
@@ -5077,6 +5277,8 @@ class GameReactiveDecisionsMixin:
             "ammo_runt",
             "ratling_battlemutt",
             "plasmacyte",
+            "biological_warfare",
+            "alchemicus_familiar",
             "extremis_trigger_word",
             "flickerjump",
             "advance_redeploy",
@@ -8035,6 +8237,156 @@ class GameReactiveDecisionsMixin:
                     append_action(
                         player,
                         f"{ability_name}: {getattr(root, 'name', 'Unit')} gains [DEVASTATING WOUNDS] on melee weapons this phase.",
+                    )
+            except (ImportError, AttributeError, TypeError, ValueError):
+                pass
+            return
+
+        if ability_key == "biological_warfare":
+            if choice is False:
+                return
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not unit_id or not model_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            model = self._resolve_model_by_id(model_id)
+            if unit is None or model is None:
+                return
+            root_getter = getattr(unit, "get_attached_unit_root", None)
+            root = root_getter() if callable(root_getter) else unit
+            if root is None or not root.is_alive():
+                return
+            if not bool(getattr(model, "is_alive", False)):
+                return
+            members_getter = getattr(root, "get_attached_unit_members", None)
+            members = list(members_getter() or []) if callable(members_getter) else [root]
+            if getattr(model, "parent_unit", None) not in members:
+                return
+            weapon_name = str(payload.get("weapon_name") or ctx.get("weapon_name") or "").strip()
+            buff_key = str(payload.get("buff_key") or ctx.get("buff_key") or "biological_warfare").strip().lower()
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Biological Warfare").strip()
+            if not weapon_name or not buff_key:
+                return
+            if bool(getattr(model, "has_used_once_per_battle", lambda _k: False)(buff_key)):
+                return
+            try:
+                attacks_bonus = int(payload.get("attacks_bonus") or ctx.get("attacks_bonus") or 0)
+            except (TypeError, ValueError):
+                attacks_bonus = 0
+            try:
+                damage_bonus = int(payload.get("damage_bonus") or ctx.get("damage_bonus") or 0)
+            except (TypeError, ValueError):
+                damage_bonus = 0
+            if attacks_bonus <= 0 and damage_bonus <= 0:
+                return
+            set_bonus = getattr(model, "set_temporary_weapon_bonus", None)
+            if not callable(set_bonus):
+                return
+            set_bonus(
+                key=f"{buff_key}:{model_id}",
+                weapon_name=weapon_name,
+                attacks_bonus=int(attacks_bonus),
+                damage_bonus=int(damage_bonus),
+                source=ability_name,
+                expires_phase="FIGHT_PHASE",
+            )
+            mark_used = getattr(model, "mark_used_once_per_battle", None)
+            if callable(mark_used):
+                mark_used(buff_key, ability_name=ability_name, source="datasheet")
+            try:
+                from ...utility.event_bus import append_action
+
+                player = getattr(root.get_parent_army(), "player", None)
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(model, 'name', 'Model')} gains +{int(attacks_bonus)} Attacks and +{int(damage_bonus)} Damage on {weapon_name} this phase.",
+                    )
+            except (ImportError, AttributeError, TypeError, ValueError):
+                pass
+            return
+
+        if ability_key == "alchemicus_familiar":
+            if choice is False:
+                return
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not unit_id or not model_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            model = self._resolve_model_by_id(model_id)
+            if unit is None or model is None:
+                return
+            root_getter = getattr(unit, "get_attached_unit_root", None)
+            root = root_getter() if callable(root_getter) else unit
+            if root is None or not root.is_alive():
+                return
+            if not bool(getattr(model, "is_alive", False)):
+                return
+            members_getter = getattr(root, "get_attached_unit_members", None)
+            members = list(members_getter() or []) if callable(members_getter) else [root]
+            if getattr(model, "parent_unit", None) not in members:
+                return
+            buff_key = str(payload.get("buff_key") or ctx.get("buff_key") or "alchemicus_familiar").strip().lower()
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Alchemicus Familiar").strip()
+            target_keyword = str(payload.get("target_keyword") or ctx.get("target_keyword") or "").strip().lower()
+            if not buff_key or not target_keyword:
+                return
+            if bool(getattr(model, "has_used_once_per_battle", lambda _k: False)(buff_key)):
+                return
+            try:
+                wound_bonus = int(payload.get("wound_bonus") or ctx.get("wound_bonus") or 0)
+            except (TypeError, ValueError):
+                wound_bonus = 0
+            if wound_bonus <= 0:
+                return
+            models_getter = getattr(root, "get_attached_unit_models", None)
+            attack_models = list(models_getter() or []) if callable(models_getter) else list(getattr(root, "models", []) or [])
+            applied = 0
+            for attack_model in sorted(attack_models, key=lambda entry: str(get_entity_id(entry) or "")):
+                if attack_model is None or not bool(getattr(attack_model, "is_alive", False)):
+                    continue
+                set_bonus = getattr(attack_model, "set_temporary_weapon_wound_crit_bonus", None)
+                if not callable(set_bonus):
+                    continue
+                weapon_names: list[str] = []
+                seen_weapon_keys: set[str] = set()
+                for wargear in list(getattr(attack_model, "wargear", []) or []):
+                    if wargear is None:
+                        continue
+                    is_melee = getattr(wargear, "is_melee", None)
+                    if not callable(is_melee) or not bool(is_melee()):
+                        continue
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    weapon_key = Unit._norm_wargear_name(weapon_name)
+                    if not weapon_key or weapon_key in seen_weapon_keys:
+                        continue
+                    seen_weapon_keys.add(weapon_key)
+                    weapon_names.append(weapon_name)
+                for weapon_index, weapon_name in enumerate(weapon_names):
+                    set_bonus(
+                        key=f"{buff_key}:{get_entity_id(attack_model)}:{weapon_index}",
+                        weapon_name=weapon_name,
+                        wound_bonus=int(wound_bonus),
+                        target_keywords_any=[target_keyword],
+                        source=ability_name,
+                        expires_phase="FIGHT_PHASE",
+                    )
+                    applied += 1
+            if applied <= 0:
+                return
+            mark_used = getattr(model, "mark_used_once_per_battle", None)
+            if callable(mark_used):
+                mark_used(buff_key, ability_name=ability_name, source="datasheet")
+            try:
+                from ...utility.event_bus import append_action
+
+                player = getattr(root.get_parent_army(), "player", None)
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(root, 'name', 'Unit')} gains +{int(wound_bonus)} to wound against {target_keyword.upper()} this phase.",
                     )
             except (ImportError, AttributeError, TypeError, ValueError):
                 pass

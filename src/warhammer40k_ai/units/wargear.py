@@ -16263,8 +16263,9 @@ class WargearProfile:
         try:
             weapon_lookup_name = self._temporary_weapon_lookup_name()
             if weapon_lookup_name:
-                bonus, reasons = getattr(attacker, "get_temporary_weapon_wound_bonus", lambda _n: (0, []))(
-                    weapon_lookup_name
+                bonus, reasons = getattr(attacker, "get_temporary_weapon_wound_bonus", lambda _n, target=None: (0, []))(
+                    weapon_lookup_name,
+                    target=target,
                 )
                 if bonus:
                     dice_modifier += int(bonus)
@@ -16737,8 +16738,13 @@ class WargearProfile:
         try:
             weapon_lookup_name = self._temporary_weapon_lookup_name()
             if weapon_lookup_name:
-                threshold, reasons = getattr(attacker, "get_temporary_weapon_crit_wound_threshold", lambda _n: (0, []))(
-                    weapon_lookup_name
+                threshold, reasons = getattr(
+                    attacker,
+                    "get_temporary_weapon_crit_wound_threshold",
+                    lambda _n, target=None: (0, []),
+                )(
+                    weapon_lookup_name,
+                    target=target,
                 )
                 val = int(threshold or 0)
                 if val > 0:
@@ -22593,6 +22599,24 @@ class WargearProfile:
                         damage_result['special_effects'].extend(list(d_reasons))
                     else:
                         damage_result['special_effects'].append(f"+{int(d_bonus)}D from temporary melee bonus")
+        except Exception:
+            pass
+        try:
+            weapon_lookup_name = self._temporary_weapon_lookup_name()
+            if weapon_lookup_name:
+                d_bonus, d_reasons = getattr(attacker, "get_temporary_weapon_damage_bonus", lambda _n: (0, []))(
+                    weapon_lookup_name
+                )
+                if d_bonus:
+                    damage_mods.append(
+                        Modifier(ModifierOp.ADD, int(d_bonus), source="ability:temporary_weapon_damage_add")
+                    )
+                    if d_reasons:
+                        damage_result['special_effects'].extend(list(d_reasons))
+                    else:
+                        damage_result['special_effects'].append(
+                            f"+{int(d_bonus)}D ({weapon_lookup_name}) [temporary]"
+                        )
         except Exception:
             pass
         if self.parent_wargear and self.parent_wargear.is_melee():

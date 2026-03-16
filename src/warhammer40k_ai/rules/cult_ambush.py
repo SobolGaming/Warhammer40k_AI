@@ -61,6 +61,34 @@ class CultAmbushManager:
                 return True
         return False
 
+    def _unit_has_named_ability(self, unit, ability_name: str) -> bool:
+        if unit is None:
+            return False
+        wanted = str(ability_name or "").strip().lower()
+        if not wanted:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            for ab in list(getattr(member, "possible_abilities", []) or []):
+                try:
+                    name = str(getattr(ab, "name", "") or "").strip().lower()
+                except Exception:
+                    name = ""
+                if name == wanted:
+                    return True
+        return False
+
     def _unit_members_all_have_cult_ambush(self, unit) -> bool:
         if unit is None:
             return False
@@ -805,6 +833,65 @@ class CultAmbushManager:
             return ""
         return str(sr.get("lying_in_wait_cult_ambush_enemy_distance_mode", "") or "").strip().lower()
 
+    def _cult_ambush_battlefield_edge_limit(self, unit) -> float:
+        if not self._unit_has_named_ability(unit, "Outrider Gangs"):
+            return 0.0
+        return 9.0
+
+    def _model_wholly_within_battlefield_edge_limit(
+        self,
+        model,
+        x: float,
+        y: float,
+        *,
+        game=None,
+        edge_limit: float,
+    ) -> bool:
+        if model is None or game is None or edge_limit <= 0:
+            return True
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return False
+        try:
+            radius = float(model.model_base.get_longest_radius())
+        except Exception:
+            try:
+                radius = float(model.model_base.get_radius())
+            except Exception:
+                radius = 0.0
+        try:
+            distances = (
+                float(x),
+                float(y),
+                float(getattr(game_map, "width", 0.0) or 0.0) - float(x),
+                float(getattr(game_map, "height", 0.0) or 0.0) - float(y),
+            )
+        except Exception:
+            return False
+        return float(min(distances)) + float(radius) <= float(edge_limit) + 1e-6
+
+    def _placements_within_battlefield_edge_limit(self, unit, placements, *, game=None) -> bool:
+        if unit is None or game is None:
+            return False
+        edge_limit = float(self._cult_ambush_battlefield_edge_limit(unit) or 0.0)
+        if edge_limit <= 0:
+            return True
+        models = [m for m in list(getattr(unit, "models", []) or []) if getattr(m, "is_alive", True)]
+        if len(models) > len(list(placements or [])):
+            return False
+        for model, pos in zip(models, list(placements or [])):
+            if pos is None or len(pos) < 2:
+                return False
+            if not self._model_wholly_within_battlefield_edge_limit(
+                model,
+                float(pos[0]),
+                float(pos[1]),
+                game=game,
+                edge_limit=edge_limit,
+            ):
+                return False
+        return True
+
     def _find_cult_ambush_placements(self, unit, marker: CultAmbushMarker, *, game=None):
         if unit is None or marker is None or game is None:
             return None
@@ -871,6 +958,8 @@ class CultAmbushManager:
             if not ok:
                 continue
             if not self._placements_respect_enemy_distance(unit, placed, game=game):
+                continue
+            if not self._placements_within_battlefield_edge_limit(unit, placed, game=game):
                 continue
             return placed
 
