@@ -55,6 +55,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ENDLESS SWARM",
     "EXPERIMENTAL AMMUNITION",
     "EXPERIMENTAL WEAPONRY",
+    "EXEMPLAR'S WISDOM",
+    "EXEMPLAR’S WISDOM",
     "IMPLACABLE GUARDIANS",
     "INFERNAL FUSILLADE",
     "GLIMMERSHIFT PORTAL",
@@ -62,6 +64,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OVERRUN",
     "OVERRIDE INSTINCTS",
     "PINPOINT COUNTER-OFFENSIVE",
+    "POINT-BLANK AMBUSH",
     "POUNCE ON THE PREY",
     "PULSE ONSLAUGHT",
     "SKYBORNE ANNIHILATION",
@@ -118,7 +121,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HACK AND SLASH",
     "HEIGHTENED JEALOUSY",
     "LAYERED WARDS",
+    "LET DUTY BE YOUR SHIELD",
     "LIGHTNING-FAST REACTIONS",
+    "LITANIES OF PURGATION",
     "LIMB FROM LIMB",
     "LETHAL DOSAGE",
     "MURDER-CALL",
@@ -1720,6 +1725,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_thousand_sons_rubricae_revenge)
         if "PULSE ONSLAUGHT" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_tau_pulse_onslaught)
+        if "EXEMPLAR'S WISDOM" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_imperial_knights_exemplars_wisdom)
         if "BLAZING IRE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_bringers_of_flame_blazing_ire)
         if names & {"VENGEFUL SORROW", "INTO THE BREACH"}:
@@ -1771,6 +1778,7 @@ class StratagemManager(
             "CALL DAT DAKKA?",
             "PRAISE THE FALLEN",
             "THE FOE FORESEEN",
+            "LET DUTY BE YOUR SHIELD",
             "BRAZEN CONTEMPT",
             "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
@@ -1852,6 +1860,7 @@ class StratagemManager(
 
         needs_attacker_cleanup_shooting = (
             "ARMOUR OF CONTEMPT" in names
+            or "LET DUTY BE YOUR SHIELD" in names
             or "THE FOE FORESEEN" in names
             or ("shooting" in defensive_attacker_phases)
         )
@@ -6931,6 +6940,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._cleanup_tau_kauyon_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_tau_auxiliary_cadre_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -6944,6 +6957,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_space_marines_saga_of_the_beastslayer_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_imperial_knights_spearhead_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -9450,6 +9467,20 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_imperial_knights_exemplars_wisdom(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ):
+        try:
+            self._queue_imperial_knights_spearhead_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_bringers_of_flame_blazing_ire(
         self,
         attacker_unit=None,
@@ -9850,6 +9881,13 @@ class StratagemManager(
             raise
         try:
             self._queue_legion_of_excess_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_imperial_knights_spearhead_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -13269,8 +13307,9 @@ class StratagemManager(
         return list(self.available)
 
     def get_by_name(self, name: str) -> Optional[Stratagem]:
+        target = self._normalize_stratagem_name(name)
         for s in self.available:
-            if s.name.lower() == name.lower():
+            if self._normalize_stratagem_name(getattr(s, "name", "") or "") == target:
                 return s
         return None
 
@@ -15937,6 +15976,9 @@ class StratagemManager(
         cult_result = self._use_world_eaters_cult_stratagem(s, **kwargs)
         if cult_result is not None:
             return cult_result
+        vindication_result = self._use_space_marines_vindication_task_force_stratagem(s, **kwargs)
+        if vindication_result is not None:
+            return vindication_result
         saga_beastslayer_result = self._use_space_marines_saga_of_the_beastslayer_stratagem(s, **kwargs)
         if saga_beastslayer_result is not None:
             return saga_beastslayer_result

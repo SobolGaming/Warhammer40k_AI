@@ -6371,6 +6371,7 @@ def _classify_ability_base(
     model_self_strength_support = _model_self_strength_hit_wound_support(description)
     model_attack_roll_bonus_support = _model_attack_roll_bonus_support(description)
     model_closest_target_ap_bonus_support = _model_closest_target_ap_bonus_support(description)
+    model_target_keyword_ap_bonus_support = _model_target_keyword_ap_bonus_support(description)
     model_stationary_ranged_sustained_support = _model_stationary_ranged_sustained_hits_support(description)
     model_stationary_weapon_keyword_support = _model_stationary_weapon_keyword_support(description)
     unit_stationary_weapon_keyword_support = _unit_stationary_weapon_keyword_support(description)
@@ -6991,6 +6992,8 @@ def _classify_ability_base(
         return model_attack_roll_bonus_support
     if model_closest_target_ap_bonus_support:
         return model_closest_target_ap_bonus_support
+    if model_target_keyword_ap_bonus_support:
+        return model_target_keyword_ap_bonus_support
     if model_stationary_ranged_sustained_support:
         return model_stationary_ranged_sustained_support
     if model_stationary_weapon_keyword_support:
@@ -9856,7 +9859,7 @@ def _model_closest_target_ap_bonus_support(description: str) -> Optional[Tuple[s
     if not norm:
         return None
     m = re.fullmatch(
-        r"each time this model makes a ranged attack that targets the closest (?:eligible )?(?:enemy )?(?:target|unit) "
+        r"each time (?:this model|a model in this unit) makes a ranged attack that targets the closest (?:eligible )?(?:enemy )?(?:target|unit) "
         r"(?:improve the armour penetration characteristic of that attack by|add) (?P<val>\d+)"
         r"(?: to the armour penetration characteristic of that attack)?",
         norm,
@@ -9865,6 +9868,27 @@ def _model_closest_target_ap_bonus_support(description: str) -> Optional[Tuple[s
         return None
     val = str(m.group("val") or "1")
     return ("Supported", f"Model ranged attacks improve AP by {val} when targeting the closest eligible target.")
+
+
+def _model_target_keyword_ap_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"each time (?:a ranged attack made by this model|this model makes a ranged attack) targets (?:an? )?(?:enemy )?(?P<keyword>[a-z0-9 ]+?) unit "
+        r"(?:improve the armour penetration characteristic of that attack by|add) (?P<val>\d+)"
+        r"(?: to the armour penetration characteristic of that attack)?",
+        norm,
+    )
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper()
+    val = str(m.group("val") or "1")
+    if not keyword:
+        return None
+    return ("Supported", f"Model ranged attacks improve AP by {val} against {keyword} units.")
 
 
 def _model_stationary_ranged_sustained_hits_support(description: str) -> Optional[Tuple[str, str]]:
@@ -14207,7 +14231,7 @@ def _post_shoot_ap_bonus_support(description: str) -> Optional[Tuple[str, str]]:
     if not norm:
         return None
     pattern = (
-        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit "
+        r"(?:in your shooting phase after this|each time this) (?:model|unit) has shot select one enemy unit "
         r"(?:excluding monsters and vehicles )?hit by one or more of those attacks "
         r"(?:made with (?:its|this model s) (?P<weapon>[a-z0-9 ]+) )?"
         r"until the end of the (?P<duration>phase|turn) each time a friendly (?P<keyword>[a-z0-9 ]+?) unit makes (?:a|an) "
@@ -17537,6 +17561,7 @@ def _stratagem_support(
         "APOPLECTIC FRENZY": "Advance and Charge for a BERZERKERS unit; Berzerker Warband only.",
         "A GRIM WARNING": "Destroyed BLOOD ANGELS unit on a previously controlled objective lets you select a marker to remain under your control until broken.",
         "ARMOUR OF CONTEMPT": "Shooting/Fight phase: targeted ADEPTUS ASTARTES unit worsens AP by 1 vs the attacking unit until it finishes its attacks.",
+        "LITANIES OF PURGATION": "Fight phase: selected ADEPTUS ASTARTES unit that has not fought improves AP by 1 while it or its target is within objective range until end of phase.",
         "BERZERKER'S WRATH": "Blood Surge distance is fixed at 8\" (no D6 roll) for a BERZERKERS unit.",
         "BERZERKER’S WRATH": "Blood Surge distance is fixed at 8\" (no D6 roll) for a BERZERKERS unit.",
         "ANTI-GRAV REPULSION": "Opponent Charge phase reaction: AELDARI VEHICLE FLY target imposes -2 to that enemy unit's Charge rolls until phase end (target-filtered modifier).",
@@ -17701,6 +17726,7 @@ def _stratagem_support(
         "COMBAT DEBARKATION": "Your Shooting phase: selected T'AU EMPIRE INFANTRY unit that disembarked from a friendly TRANSPORT this turn can re-roll Wound rolls when making attacks that target the closest eligible enemy unit until end of phase.",
         "COUNTERFIRE DEFENCE SYSTEMS": "Opponent Shooting phase reaction after enemy targets are selected: selected T'AU EMPIRE unit reduces the Damage characteristic of attacks allocated to it by 1 until end of phase.",
         "FOCUSED FIRE": "Start of your Shooting phase: select two T'AU EMPIRE units that have not been selected to shoot and one enemy unit; selected friendly units can only target that enemy unit and improve AP by 1 for those attacks until end of phase (cannot be used in battle rounds 4-5).",
+        "POINT-BLANK AMBUSH": "Your Shooting phase: selected T'AU EMPIRE unit that has not been selected to shoot improves AP by 1 on ranged attacks against enemy units within 9\" until end of phase (battle rounds 3+ only).",
         "ARDENT AUTOMATA": "Movement phase reaction after a RUBRICAE unit Falls Back: selected unit can shoot and declare a charge this turn despite Falling Back.",
         "IMPLACABLE GUARDIANS": "Opponent Shooting phase defensive reaction after enemy targets are selected: selected RUBRIC MARINES PSYKER unit reduces the Damage characteristic of incoming attacks by 1 this phase, excluding attacks allocated to PSYKER models.",
         "INFERNAL FUSILLADE": "Shooting phase: selected THOUSAND SONS PSYKER unit not yet selected to shoot has inferno bolt pistol/boltguns/combi-bolters/combi-weapons gain [PSYCHIC] and set Strength 5 until end of phase.",
@@ -17778,6 +17804,8 @@ def _stratagem_support(
         "RUN THEM THROUGH!": "Fight phase: IMPERIAL KNIGHTS unit that has not been selected to fight gains [LANCE] on melee weapons until end of phase.",
         "THUNDERSTOMP": "Fight phase: selected IMPERIAL KNIGHTS model's Armoured/Titanic Feet melee weapons are set to 8/12 Attacks and improve AP by 1 until end of phase.",
         "TACTICAL FOIL": "Opponent Movement phase reaction after an enemy ends a Normal/Advance/Fall Back move: IMPERIAL KNIGHTS unit within 9\" can make a reactive Normal move of up to D6\".",
+        "LET DUTY BE YOUR SHIELD": "Opponent Shooting phase reaction after enemy targets are selected: selected Armiger unit worsens AP by 1 from that attacking enemy unit until it finishes its attacks.",
+        "EXEMPLAR'S WISDOM": "Your Shooting phase reaction after a Titanic IMPERIAL KNIGHTS unit shoots: select one or more bonded Armiger units and one enemy unit it hit; those selected Armigers improve AP by 1 against that enemy until end of phase.",
         "BLAZING IRE": "Opponent Shooting phase reaction after an enemy unit resolves its attacks: selected ADEPTA SORORITAS TRANSPORT with embarked units can disembark one embarked unit and queue reactive shooting restricted to the attacking enemy unit.",
         "CARRY FORTH THE FAITHFUL": "Your Movement phase reaction before an ADEPTA SORORITAS TRANSPORT Advances: that TRANSPORT can re-roll its Advance roll this turn, and units can disembark from it after it Advances (counting as having made a Normal move and unable to declare a charge this turn).",
         "RIGHTEOUS VENGEANCE": "Fight phase: selected ADEPTA SORORITAS unit that has not fought re-rolls melee Hit rolls, and re-rolls melee Wound rolls against Below Half-strength targets, until end of phase.",

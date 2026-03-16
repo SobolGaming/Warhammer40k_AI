@@ -274,6 +274,35 @@ class TauEmpireStratagemMixin:
             out.append(root)
         return sorted(out, key=self._tau_sort_key)
 
+    def _tau_point_blank_ambush_candidates(self) -> list[Any]:
+        if not self._is_tau_kauyon_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_empire_unit(root):
+                continue
+            if self._tau_has_shot_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
     def _tau_auxiliary_cadre_interlocking_candidates(self) -> list[Any]:
         if not self._is_tau_auxiliary_cadre_detachment():
             return []
@@ -1341,6 +1370,43 @@ class TauEmpireStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload, use_timer=False)
 
+    def _cleanup_tau_kauyon_phase_end_effects(self, *, phase: Any = None) -> None:
+        if not self._is_tau_kauyon_detachment():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "SHOOTING_PHASE":
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            exp = str(sr.get("tau_point_blank_ambush_expires_phase", "") or "").strip().upper()
+            if sr.get("tau_point_blank_ambush_active") is True and (not exp or exp == phase_name):
+                for key in (
+                    "tau_point_blank_ambush_active",
+                    "tau_point_blank_ambush_ap_bonus",
+                    "tau_point_blank_ambush_range",
+                    "tau_point_blank_ambush_expires_phase",
+                    "tau_point_blank_ambush_turn_owner",
+                    "tau_point_blank_ambush_turn",
+                    "tau_point_blank_ambush_source",
+                ):
+                    sr.pop(key, None)
+                root.special_rules = sr
+
     def _queue_tau_auxiliary_cadre_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_tau_auxiliary_cadre_detachment():
             return
@@ -1595,6 +1661,8 @@ class TauEmpireStratagemMixin:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "WALL OF MIRRORS":
             return self._use_tau_wall_of_mirrors(stratagem, **kwargs)
+        if name_u == "POINT-BLANK AMBUSH":
+            return self._use_tau_point_blank_ambush(stratagem, **kwargs)
         return None
 
     def _use_tau_interlocking_manoeuvres(self, stratagem: Any, **kwargs) -> bool:
@@ -1746,6 +1814,70 @@ class TauEmpireStratagemMixin:
         self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: WALL OF MIRRORS: %s entered Strategic Reserves.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_point_blank_ambush(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: POINT-BLANK AMBUSH: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: POINT-BLANK AMBUSH: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: POINT-BLANK AMBUSH: not your Shooting phase")
+            return False
+        if self._tau_current_battle_round() <= 2:
+            logger.error("ERROR: POINT-BLANK AMBUSH: cannot be used in the first or second battle rounds")
+            return False
+
+        eligible = candidates or self._tau_point_blank_ambush_candidates()
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: POINT-BLANK AMBUSH: target is not currently eligible")
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: POINT-BLANK AMBUSH: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(root):
+            logger.error("ERROR: POINT-BLANK AMBUSH: target must be a T'AU EMPIRE unit")
+            return False
+        if self._tau_has_shot_this_phase(root):
+            logger.error("ERROR: POINT-BLANK AMBUSH: target has already been selected to shoot this phase")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, target_unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: POINT-BLANK AMBUSH: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_point_blank_ambush_active"] = True
+        sr["tau_point_blank_ambush_ap_bonus"] = 1
+        sr["tau_point_blank_ambush_range"] = 9.0
+        sr["tau_point_blank_ambush_expires_phase"] = "SHOOTING_PHASE"
+        sr["tau_point_blank_ambush_turn_owner"] = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        sr["tau_point_blank_ambush_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["tau_point_blank_ambush_source"] = str(getattr(stratagem, "name", "") or "POINT-BLANK AMBUSH")
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: POINT-BLANK AMBUSH: %s improves AP by 1 against enemies within 9\" this phase.",
             getattr(root, "name", "Unit"),
         )
         return True

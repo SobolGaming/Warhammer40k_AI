@@ -519,6 +519,95 @@ class TestModelHitBonusClosestEligibleTarget(unittest.TestCase):
 
         self.assertEqual(int(attack_instance.get("sustained_hit", 0) or 0), 0)
 
+    def test_close_quarters_firepower_applies_vs_closest_eligible_target(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Close-quarters Firepower",
+            "description": (
+                "Each time a model in this unit makes a ranged attack that targets the closest eligible target, "
+                "improve the Armour Penetration characteristic of that attack by 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        attacker = _make_unit("Infernus Marines", abilities=[ability], faction_name="Space Marines")
+        close_target = _make_unit("Close Target", keywords=["INFANTRY"])
+        far_target = _make_unit("Far Target", keywords=["INFANTRY"])
+        army1.add_unit(attacker)
+        army2.add_unit(close_target)
+        army2.add_unit(far_target)
+
+        attacker.deployed = True
+        close_target.deployed = True
+        far_target.deployed = True
+        attacker.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        close_target.models[0].set_location(8.0, 0.0, 0.0, 0.0)
+        far_target.models[0].set_location(16.0, 0.0, 0.0, 0.0)
+        game.map.units = [attacker, close_target, far_target]
+
+        parent = SimpleNamespace(name="Pyreblaster", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "12",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "5",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+
+        self.assertEqual(profile.get_effective_ap(attacker.models[0], close_target), -1)
+        self.assertEqual(profile.get_effective_ap(attacker.models[0], far_target), 0)
+
+    def test_destructor_applies_only_against_infantry_targets(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Destructor",
+            "description": (
+                "Each time a ranged attack made by this model targets an enemy INFANTRY unit, "
+                "improve the Armour Penetration characteristic of that attack by 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        attacker = _make_unit("Predator Destructor", abilities=[ability], faction_name="Space Marines")
+        infantry_target = _make_unit("Infantry Target", keywords=["INFANTRY"])
+        vehicle_target = _make_unit("Vehicle Target", keywords=["VEHICLE"])
+        army1.add_unit(attacker)
+        army2.add_unit(infantry_target)
+        army2.add_unit(vehicle_target)
+
+        attacker.deployed = True
+        infantry_target.deployed = True
+        vehicle_target.deployed = True
+        game.map.units = [attacker, infantry_target, vehicle_target]
+
+        parent = SimpleNamespace(name="Destructor Autocannon", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "48",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "9",
+                "AP": "0",
+                "D": "3",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+
+        self.assertEqual(profile.get_effective_ap(attacker.models[0], infantry_target), -1)
+        self.assertEqual(profile.get_effective_ap(attacker.models[0], vehicle_target), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

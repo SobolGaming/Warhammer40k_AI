@@ -11446,7 +11446,7 @@ class KeywordsDetachmentsMixin:
     def get_model_target_keyword_ap_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return model attack AP bonus rule for patterns like:
-        "Each time a ranged attack made by this model targets an enemy INFANTRY unit,
+        "Each time this model makes a ranged attack that targets an enemy INFANTRY unit,
          improve the Armour Penetration characteristic of that attack by 1."
         """
         if model is None:
@@ -11462,11 +11462,17 @@ class KeywordsDetachmentsMixin:
                 if not text:
                     continue
                 low = text.lower().replace("\u2019", "'")
+                low = re.sub(r"'s\b", "s", low)
+                low = re.sub(r"[^a-z0-9]+", " ", low)
+                low = re.sub(r"\s+", " ", low).strip()
                 if "ranged attack" not in low:
                     continue
-                if "each time a ranged attack made by this model" not in low:
+                if (
+                    "each time a ranged attack made by this model" not in low
+                    and "each time this model makes a ranged attack" not in low
+                ):
                     continue
-                if "targets" not in low:
+                if "targets" not in low and "targets a" not in low:
                     continue
                 if "armour penetration" not in low and "armor penetration" not in low:
                     continue
@@ -11474,7 +11480,14 @@ class KeywordsDetachmentsMixin:
                     continue
                 if "improve" not in low:
                     continue
-                if "enemy infantry unit" not in low:
+                target_keyword = ""
+                match = re.search(
+                    r"targets (?:an? )?(?:enemy )?(?P<keyword>[a-z0-9 ]+?) unit",
+                    low,
+                )
+                if match:
+                    target_keyword = str(match.group("keyword") or "").strip().upper()
+                if not target_keyword:
                     continue
                 m = re.search(r"by\s+(\d+)", low)
                 if not m:
@@ -11488,7 +11501,7 @@ class KeywordsDetachmentsMixin:
                 source = str(name or "Target AP bonus").strip() or "Target AP bonus"
                 rule = {
                     "attack_type": "ranged",
-                    "target_keyword": "INFANTRY",
+                    "target_keyword": target_keyword,
                     "ap_bonus": int(ap_bonus),
                     "source": source,
                 }

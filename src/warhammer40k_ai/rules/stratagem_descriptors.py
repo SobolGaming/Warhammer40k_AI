@@ -3637,6 +3637,22 @@ _AUXILIARY_CADRE_STRATAGEM_BY_NAME = {
 }
 
 _KAUYON_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008443003": StratagemToolDescriptor(
+        stratagem_id="000008443003",
+        name="Point-Blank Ambush",
+        timing="shooting_phase_on_select_to_shoot_after_battle_round_2",
+        target="tau_empire_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="conditional_ranged_ap_bonus_within_range",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "attack_type": "ranged",
+            "ap_bonus": 1,
+            "max_range": 9.0,
+            "min_battle_round": 3,
+        },
+    ),
     "000008443007": StratagemToolDescriptor(
         stratagem_id="000008443007",
         name="Wall of Mirrors",
@@ -3853,6 +3869,27 @@ _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescripto
 
 _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS.values()
+}
+
+_VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010397003": StratagemToolDescriptor(
+        stratagem_id="000010397003",
+        name="Litanies of Purgation",
+        timing="fight_phase_on_select_to_fight",
+        target="adeptus_astartes_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="conditional_melee_ap_bonus_if_attacker_or_target_within_objective_range",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "ap_bonus": 1,
+            "requires_attacker_or_target_within_objective_range": True,
+        },
+    ),
+}
+
+_VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
 _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
@@ -4115,6 +4152,38 @@ _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = 
 
 _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS.values()
+}
+
+_SPEARHEAD_AT_ARMS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010507006": StratagemToolDescriptor(
+        stratagem_id="000010507006",
+        name="Let Duty Be Your Shield",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="armiger_unit_selected_as_target",
+        duration="until_attacker_finishes_attacks",
+        effect="worsen_incoming_ap",
+        cp_cost=1,
+        effect_params={"ap_worsen": 1, "duration_scope": "attacking_enemy_unit"},
+    ),
+    "000010507003": StratagemToolDescriptor(
+        stratagem_id="000010507003",
+        name="Exemplar's Wisdom",
+        timing="shooting_phase_after_titanic_model_shoots",
+        target="imperial_knights_titanic_model_and_one_or_more_bondsman_armigers_then_one_hit_enemy",
+        duration="until_end_of_phase",
+        effect="selected_bondsman_armigers_gain_ap_against_selected_hit_enemy",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "ap_bonus": 1,
+            "requires_bondsman": True,
+            "requires_hit_enemy_selection": True,
+        },
+    ),
+}
+
+_SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPEARHEAD_AT_ARMS_STRATAGEM_DESCRIPTORS.values()
 }
 
 _IMPERIALIS_FLEET_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
@@ -4447,6 +4516,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _VINDICATION_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _CHANGEHOST_OF_DECEIT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -4457,6 +4529,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         if desc is not None:
             return desc
         desc = _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
+        desc = _SPEARHEAD_AT_ARMS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
         desc = _IMPERIALIS_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
@@ -4527,10 +4602,12 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SYNAPTIC_NEXUS_STRATAGEM_BY_NAME.get(key)
         or _CRUSHER_STAMPEDE_STRATAGEM_BY_NAME.get(key)
         or _SAGA_OF_THE_BEASTSLAYER_STRATAGEM_BY_NAME.get(key)
+        or _VINDICATION_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CHANGEHOST_OF_DECEIT_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
+        or _SPEARHEAD_AT_ARMS_STRATAGEM_BY_NAME.get(key)
         or _IMPERIALIS_FLEET_STRATAGEM_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME.get(key)
         or _HYPERCRYPT_LEGION_STRATAGEM_BY_NAME.get(key)

@@ -289,6 +289,83 @@ class TestPostShootApBonus(unittest.TestCase):
         self.assertNotIn(str(monster_target._id), option_ids)
         self.assertNotIn(str(vehicle_target._id), option_ids)
 
+    def test_hailstrike_marks_only_hit_non_monster_vehicle_target(self):
+        army = Army("Space Marines", detachment_type="Other")
+        army.faction_id = "SM"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "EN"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "Each time this model has shot, select one enemy unit (excluding MONSTERS and VEHICLES) hit by one or more of those attacks. "
+            "Until the end of the phase, each time a friendly ADEPTUS ASTARTES unit makes a ranged attack that targets that enemy unit, "
+            "improve the Armour Penetration characteristic of that attack by 1. "
+            "The same enemy unit can only be affected by this ability once per phase."
+        )
+        ability = Ability("Hailstrike", "SM", ability_desc, "Datasheet", "")
+
+        attacker_unit = self._make_unit(
+            "Storm Speeder Hailstrike",
+            army,
+            abilities=[ability],
+            faction_keywords=["ADEPTUS ASTARTES"],
+        )
+        attacker_model = self._make_model("Storm Speeder", attacker_unit)
+        attacker_unit.models = [attacker_model]
+
+        ally_unit = self._make_unit("Intercessors", army, faction_keywords=["ADEPTUS ASTARTES"])
+        ally_model = self._make_model("Intercessor", ally_unit)
+        ally_unit.models = [ally_model]
+        army.units = [attacker_unit, ally_unit]
+
+        target_unit = self._make_unit("Enemy Infantry", enemy_army, keywords=["INFANTRY"])
+        target_model = self._make_model("Enemy Infantry", target_unit)
+        target_unit.models = [target_model]
+
+        monster_unit = self._make_unit("Enemy Monster", enemy_army, keywords=["MONSTER"])
+        monster_model = self._make_model("Enemy Monster", monster_unit)
+        monster_unit.models = [monster_model]
+
+        enemy_army.units = [target_unit, monster_unit]
+        game.rebuild_entity_registry()
+
+        game._on_unit_shooting_resolved_post_shoot_ap_bonus(
+            attacker_unit=attacker_unit,
+            hits_by_target={target_unit: 1, monster_unit: 1},
+        )
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(len(request.options), 1)
+        resolve_decision_command(game, request, request.options[0].option_id, player_id=player.id)
+
+        sr = getattr(target_unit, "special_rules", {}) or {}
+        self.assertTrue(sr.get("post_shoot_ap_bonus_active"))
+
+        ranged_parent = SimpleNamespace(name="Bolt Rifle", is_ranged=lambda: True, is_melee=lambda: False)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=ranged_parent,
+        )
+        self.assertEqual(profile.get_effective_ap(ally_model, target_unit), -1)
+        self.assertEqual(profile.get_effective_ap(ally_model, monster_unit), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

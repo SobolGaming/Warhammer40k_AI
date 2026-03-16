@@ -34,6 +34,11 @@ class SpaceMarinesStratagemMixin:
         checker = getattr(mgr, "is_saga_of_the_beastslayer", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_vindication_task_force_detachment(self) -> bool:
+        mgr = self._sm_detachment_mgr()
+        checker = getattr(mgr, "is_vindication_task_force", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _sm_owned_by_player(unit: Any, player: Any) -> bool:
         if unit is None or player is None:
@@ -239,6 +244,35 @@ class SpaceMarinesStratagemMixin:
             out.append(root)
         return sorted(out, key=self._sm_sort_key)
 
+    def _space_marines_litanies_of_purgation_candidates(self) -> list[Any]:
+        if not self._is_vindication_task_force_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._sm_root(unit)
+            if root is None:
+                continue
+            uid = self._sm_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._sm_owned_by_player(root, self.player):
+                continue
+            if not self._sm_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_adeptus_astartes_unit(root):
+                continue
+            if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._sm_sort_key)
+
     def _cleanup_space_marines_saga_of_the_beastslayer_phase_end_effects(self, *, phase: Any = None) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
         if not phase_name:
@@ -282,6 +316,33 @@ class SpaceMarinesStratagemMixin:
                         remove_keys.append(str(key))
                 for key in remove_keys:
                     effects.pop(key, None)
+
+        if phase_name == "FIGHT_PHASE":
+            seen = set()
+            for unit in list(getattr(army, "units", []) or []):
+                root = self._sm_root(unit)
+                if root is None:
+                    continue
+                uid = self._sm_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                exp = str(sr.get("space_marines_litanies_of_purgation_expires_phase", "") or "").strip().upper()
+                if sr.get("space_marines_litanies_of_purgation_active") is True and (not exp or exp == phase_name):
+                    for key in (
+                        "space_marines_litanies_of_purgation_active",
+                        "space_marines_litanies_of_purgation_ap_bonus",
+                        "space_marines_litanies_of_purgation_expires_phase",
+                        "space_marines_litanies_of_purgation_turn_owner",
+                        "space_marines_litanies_of_purgation_turn",
+                        "space_marines_litanies_of_purgation_source",
+                    ):
+                        sr.pop(key, None)
+                    root.special_rules = sr
 
         if not self._is_saga_of_the_beastslayer_detachment():
             return
@@ -548,6 +609,84 @@ class SpaceMarinesStratagemMixin:
         if name_u in {"ANGELIC GRACE", "FUELLED BY FAITH"}:
             return self._use_space_marines_mortal_wound_stratagem(stratagem, **kwargs)
         return None
+
+    def _use_space_marines_vindication_task_force_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_vindication_task_force_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "LITANIES OF PURGATION":
+            return self._use_space_marines_litanies_of_purgation(stratagem, **kwargs)
+        return None
+
+    def _use_space_marines_litanies_of_purgation(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_vindication_task_force_detachment():
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: LITANIES OF PURGATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: LITANIES OF PURGATION: not your Fight phase")
+            return False
+
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: LITANIES OF PURGATION: no target unit provided")
+            return False
+
+        root = self._sm_root(unit)
+        if root is None:
+            return False
+        if not self._sm_owned_by_player(root, self.player):
+            logger.error("ERROR: LITANIES OF PURGATION: target unit is not yours")
+            return False
+        if not self._sm_on_battlefield(root, require_targetable=True):
+            logger.error("ERROR: LITANIES OF PURGATION: target must be on the battlefield and targetable")
+            return False
+        if not self._is_adeptus_astartes_unit(root):
+            logger.error("ERROR: LITANIES OF PURGATION: target must be an ADEPTUS ASTARTES unit")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: LITANIES OF PURGATION: target has already been selected to fight this phase")
+            return False
+
+        eligible = candidates or self._space_marines_litanies_of_purgation_candidates()
+        if eligible:
+            eid = self._sm_sort_key(root)
+            if all(self._sm_sort_key(candidate) != eid for candidate in eligible):
+                logger.error("ERROR: LITANIES OF PURGATION: selected unit is not currently eligible")
+                return False
+
+        if not stratagem.can_use(self.player, self.game, target_unit=root, unit=root, phase_name="Fight phase"):
+            logger.error("ERROR: LITANIES OF PURGATION: cannot be used in current state")
+            return False
+        if not self._sm_spend_cp(self.player, stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["space_marines_litanies_of_purgation_active"] = True
+        sr["space_marines_litanies_of_purgation_ap_bonus"] = 1
+        sr["space_marines_litanies_of_purgation_expires_phase"] = "FIGHT_PHASE"
+        sr["space_marines_litanies_of_purgation_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["space_marines_litanies_of_purgation_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["space_marines_litanies_of_purgation_source"] = str(getattr(stratagem, "name", "") or "LITANIES OF PURGATION")
+        root.special_rules = sr
+
+        self._sm_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: LITANIES OF PURGATION: %s improves AP by 1 while it or its target is within objective range this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
 
     def _use_space_marines_shock_cavalry(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_saga_of_the_beastslayer_detachment():

@@ -3735,6 +3735,56 @@ class WargearProfile:
                     )
                     if bonus:
                         ap_val -= int(bonus)
+                sr = getattr(unit, "special_rules", None) if unit is not None else None
+                if isinstance(sr, dict) and sr.get("space_marines_litanies_of_purgation_active"):
+                    apply_bonus = True
+                    exp = str(sr.get("space_marines_litanies_of_purgation_expires_phase", "") or "").strip().upper()
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                    if exp and current_phase and exp != current_phase:
+                        apply_bonus = False
+                    owner_id = str(sr.get("space_marines_litanies_of_purgation_turn_owner", "") or "")
+                    if apply_bonus and owner_id:
+                        attacker_player = getattr(army, "player", None) if army is not None else None
+                        attacker_id = str(get_entity_id(attacker_player) or getattr(attacker_player, "id", "")) if attacker_player is not None else ""
+                        if attacker_id and attacker_id != owner_id:
+                            apply_bonus = False
+                    try:
+                        effect_turn = int(sr.get("space_marines_litanies_of_purgation_turn", 0) or 0)
+                    except Exception:
+                        effect_turn = 0
+                    current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                    if apply_bonus and effect_turn and current_turn and effect_turn != current_turn:
+                        apply_bonus = False
+                    if apply_bonus:
+                        game_map = getattr(game, "map", None) if game is not None else None
+
+                        def _within_any_objective_range(unit_obj):
+                            root = unit_obj.get_attached_unit_root() if hasattr(unit_obj, "get_attached_unit_root") else unit_obj
+                            if root is None:
+                                return False
+                            checker = getattr(root, "is_within_any_objective_range", None)
+                            if callable(checker):
+                                try:
+                                    return bool(checker(game_map=game_map))
+                                except TypeError:
+                                    return bool(checker())
+                            within_one = getattr(root, "is_within_objective_range", None)
+                            if not callable(within_one) or game_map is None:
+                                return False
+                            for objective in list(getattr(game_map, "objectives", []) or []):
+                                location = getattr(objective, "location", objective)
+                                if location is None:
+                                    continue
+                                if bool(within_one(location)):
+                                    return True
+                            return False
+
+                        if _within_any_objective_range(unit) or _within_any_objective_range(target):
+                            try:
+                                ap_val -= int(sr.get("space_marines_litanies_of_purgation_ap_bonus", 0) or 0)
+                            except Exception:
+                                pass
         except Exception:
             pass
         try:
@@ -3867,6 +3917,93 @@ class WargearProfile:
                             float(range_value),
                             use_attached_aggregate=True,
                         ):
+                            ap_val -= int(bonus)
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged() and target is not None:
+                unit = getattr(attacker, "parent_unit", None)
+                sr = getattr(unit, "special_rules", None) if unit is not None else None
+                if isinstance(sr, dict) and sr.get("tau_point_blank_ambush_active"):
+                    apply_bonus = True
+                    army = unit.get_parent_army() if unit is not None else None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    exp = str(sr.get("tau_point_blank_ambush_expires_phase", "") or "").strip().upper()
+                    current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                    if exp and current_phase and exp != current_phase:
+                        apply_bonus = False
+                    owner_id = str(sr.get("tau_point_blank_ambush_turn_owner", "") or "")
+                    if apply_bonus and owner_id:
+                        attacker_player = getattr(army, "player", None) if army is not None else None
+                        attacker_id = str(get_entity_id(attacker_player) or getattr(attacker_player, "id", "")) if attacker_player is not None else ""
+                        if attacker_id and attacker_id != owner_id:
+                            apply_bonus = False
+                    try:
+                        effect_turn = int(sr.get("tau_point_blank_ambush_turn", 0) or 0)
+                    except Exception:
+                        effect_turn = 0
+                    current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                    if apply_bonus and effect_turn and current_turn and effect_turn != current_turn:
+                        apply_bonus = False
+                    if apply_bonus:
+                        try:
+                            bonus = int(sr.get("tau_point_blank_ambush_ap_bonus", 0) or 0)
+                        except Exception:
+                            bonus = 0
+                        try:
+                            range_value = float(sr.get("tau_point_blank_ambush_range", 0) or 0)
+                        except Exception:
+                            range_value = 0.0
+                        if bonus > 0 and range_value > 0:
+                            from ..utility.aura_utils import model_within_range_of_unit
+
+                            target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                            if target_root is not None and model_within_range_of_unit(
+                                attacker,
+                                target_root,
+                                float(range_value),
+                                use_attached_aggregate=True,
+                            ):
+                                ap_val -= int(bonus)
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged() and target is not None:
+                unit = getattr(attacker, "parent_unit", None)
+                sr = getattr(unit, "special_rules", None) if unit is not None else None
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                if isinstance(sr, dict) and sr.get("imperial_knights_exemplars_wisdom_active") and target_root is not None:
+                    apply_bonus = True
+                    army = unit.get_parent_army() if unit is not None else None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    exp = str(sr.get("imperial_knights_exemplars_wisdom_expires_phase", "") or "").strip().upper()
+                    current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                    if exp and current_phase and exp != current_phase:
+                        apply_bonus = False
+                    owner_id = str(sr.get("imperial_knights_exemplars_wisdom_turn_owner", "") or "")
+                    if apply_bonus and owner_id:
+                        attacker_player = getattr(army, "player", None) if army is not None else None
+                        attacker_id = str(get_entity_id(attacker_player) or getattr(attacker_player, "id", "")) if attacker_player is not None else ""
+                        if attacker_id and attacker_id != owner_id:
+                            apply_bonus = False
+                    try:
+                        effect_turn = int(sr.get("imperial_knights_exemplars_wisdom_turn", 0) or 0)
+                    except Exception:
+                        effect_turn = 0
+                    current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                    if apply_bonus and effect_turn and current_turn and effect_turn != current_turn:
+                        apply_bonus = False
+                    if apply_bonus:
+                        target_id = str(sr.get("imperial_knights_exemplars_wisdom_target_id", "") or "").strip()
+                        current_target_id = str(get_entity_id(target_root) or "")
+                        if target_id and current_target_id and target_id != current_target_id:
+                            apply_bonus = False
+                    if apply_bonus:
+                        try:
+                            bonus = int(sr.get("imperial_knights_exemplars_wisdom_ap_bonus", 0) or 0)
+                        except Exception:
+                            bonus = 0
+                        if bonus:
                             ap_val -= int(bonus)
         except Exception:
             pass

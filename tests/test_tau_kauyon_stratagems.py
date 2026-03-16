@@ -103,6 +103,15 @@ def test_wall_of_mirrors_descriptor_registered():
     assert int(desc.cp_cost or 0) == 1
 
 
+def test_point_blank_ambush_descriptor_registered():
+    desc = get_stratagem_tool_descriptor(stratagem_id="000008443003")
+    assert desc is not None
+    assert desc.name == "Point-Blank Ambush"
+    assert desc.effect == "conditional_ranged_ap_bonus_within_range"
+    assert int(desc.cp_cost or 0) == 1
+    assert float(desc.range_in or 0) == 9.0
+
+
 def test_wall_of_mirrors_queues_at_opponent_fight_phase_end_and_enters_strategic_reserves():
     game, p1, p2, army_tau, army_enemy = _build_game()
     stealth = _make_unit(
@@ -136,3 +145,88 @@ def test_wall_of_mirrors_queues_at_opponent_fight_phase_end_and_enters_strategic
     assert int(p1.command_points or 0) == 4
     assert str(getattr(stealth, "reserve_status", "") or "") == "strategic_reserves"
     assert stealth not in list(getattr(game.map, "units", []) or [])
+
+
+def test_point_blank_ambush_grants_ap_within_9_in_battle_round_3():
+    from warhammer40k_ai.units.wargear import WargearProfile
+
+    game, p1, _p2, army_tau, army_enemy = _build_game()
+    game.turn = 3
+    breachers = _make_unit(
+        "Breacher Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    close_enemy = _make_unit(
+        "Close Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    far_enemy = _make_unit(
+        "Far Enemy",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    army_tau.add_unit(breachers)
+    army_enemy.add_unit(close_enemy)
+    army_enemy.add_unit(far_enemy)
+    for unit, x, y in (
+        (breachers, 0.0, 0.0),
+        (close_enemy, 8.0, 0.0),
+        (far_enemy, 15.0, 0.0),
+    ):
+        for model in list(getattr(unit, "models", []) or []):
+            model.set_location(float(x), float(y), 0.0, 0.0)
+    game.map.units = [breachers, close_enemy, far_enemy]
+    game.rebuild_entity_registry()
+
+    _set_phase(game, p1, "SHOOTING_PHASE", 0)
+    ok = p1.stratagems.use("POINT-BLANK AMBUSH", unit=breachers, phase_name="Shooting phase")
+    assert ok
+    assert int(p1.command_points or 0) == 4
+
+    parent = SimpleNamespace(name="Pulse Blaster", is_melee=lambda: False, is_ranged=lambda: True)
+    profile = WargearProfile(
+        profile_name="Ranged",
+        wargear_data={
+            "range": "10",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "6",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=parent,
+    )
+
+    assert profile.get_effective_ap(breachers.models[0], close_enemy) == -1
+    assert profile.get_effective_ap(breachers.models[0], far_enemy) == 0
+
+
+def test_point_blank_ambush_rejected_in_battle_round_2():
+    game, p1, _p2, army_tau, army_enemy = _build_game()
+    game.turn = 2
+    breachers = _make_unit(
+        "Breacher Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    enemy = _make_unit(
+        "Enemy Unit",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    army_tau.add_unit(breachers)
+    army_enemy.add_unit(enemy)
+    for unit, x, y in ((breachers, 0.0, 0.0), (enemy, 8.0, 0.0)):
+        for model in list(getattr(unit, "models", []) or []):
+            model.set_location(float(x), float(y), 0.0, 0.0)
+    game.map.units = [breachers, enemy]
+    game.rebuild_entity_registry()
+
+    _set_phase(game, p1, "SHOOTING_PHASE", 0)
+    before_cp = int(p1.command_points or 0)
+    ok = p1.stratagems.use("POINT-BLANK AMBUSH", unit=breachers, phase_name="Shooting phase")
+    assert not ok
+    assert int(p1.command_points or 0) == before_cp

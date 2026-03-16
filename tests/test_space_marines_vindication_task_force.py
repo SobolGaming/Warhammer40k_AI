@@ -107,7 +107,70 @@ def _make_ranged_profile(*, strength: int = 6):
     )
 
 
+def _make_melee_profile(*, strength: int = 4):
+    from warhammer40k_ai.units.wargear import WargearProfile
+
+    parent = SimpleNamespace(name="Combat Blade", is_melee=lambda: True, is_ranged=lambda: False)
+    return WargearProfile(
+        profile_name="Melee",
+        wargear_data={
+            "range": "Melee",
+            "A": "2",
+            "BS_WS": "3+",
+            "S": str(int(strength)),
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=parent,
+    )
+
+
 class TestSpaceMarinesVindicationTaskForce(unittest.TestCase):
+    def test_litanies_of_purgation_grants_melee_ap_while_near_objective(self):
+        game, sm_player, enemy_player, army_sm, army_enemy = _build_game("Vindication Task Force")
+        sm_player.command_points = 5
+        attacker = _make_unit(
+            "Bladeguard Veterans",
+            keywords=["INFANTRY"],
+            faction_keywords=["ADEPTUS ASTARTES"],
+            toughness=4,
+        )
+        defender = _make_unit(
+            "Enemy Infantry",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+            toughness=4,
+        )
+        attacker.deployed = True
+        defender.deployed = True
+        attacker.faction = "SM"
+        defender.faction = "EN"
+        army_sm.add_unit(attacker)
+        army_enemy.add_unit(defender)
+
+        objective_loc = SimpleNamespace(id="obj-litanies", x=0.0, y=0.0, z=0.0, removed=False)
+        game.map.objectives = [SimpleNamespace(id="obj-litanies", location=objective_loc)]
+        attacker.is_within_objective_range = lambda loc: str(getattr(loc, "id", "")) == "obj-litanies"
+
+        game.rebuild_entity_registry()
+        sm_player.stratagems.refresh_available()
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game.current_player_index = 0
+        game.event_system.publish("phase_start", player=sm_player, phase=BattleRoundPhases.FIGHT_PHASE)
+
+        ok = sm_player.stratagems.use("LITANIES OF PURGATION", unit=attacker, phase_name="Fight phase")
+        self.assertTrue(ok)
+        self.assertEqual(int(sm_player.command_points), 4)
+
+        melee_profile = _make_melee_profile()
+        ranged_profile = _make_ranged_profile()
+        self.assertEqual(melee_profile.get_effective_ap(attacker.models[0], defender), -1)
+        self.assertEqual(ranged_profile.get_effective_ap(attacker.models[0], defender), 0)
+
+        game.event_system.publish("phase_end", player=sm_player, phase=BattleRoundPhases.FIGHT_PHASE)
+        self.assertEqual(melee_profile.get_effective_ap(attacker.models[0], defender), 0)
+
     def test_purge_and_sanctify_wound_penalty_applies_for_ancient_on_objective(self):
         game, sm_player, enemy_player, army_sm, army_enemy = _build_game("Vindication Task Force")
         defended = _make_unit(

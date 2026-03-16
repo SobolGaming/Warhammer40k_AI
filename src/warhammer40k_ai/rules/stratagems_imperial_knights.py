@@ -35,6 +35,15 @@ class ImperialKnightsStratagemMixin:
         checker = getattr(mgr, "is_valourstrike_lance", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_spearhead_at_arms(self) -> bool:
+        mgr = self._ik_detachment_mgr()
+        checker = getattr(mgr, "is_spearhead_at_arms", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    @staticmethod
+    def _ik_normalize_name(value: str) -> str:
+        return str(value or "").replace("\u2019", "'").strip().upper()
+
     @staticmethod
     def _ik_owned_by_player(unit: Any, player: Any) -> bool:
         if unit is None or player is None:
@@ -89,6 +98,34 @@ class ImperialKnightsStratagemMixin:
         if callable(has_any_keyword):
             return bool(has_any_keyword("IMPERIAL KNIGHTS"))
         return str(getattr(root, "faction_id", "") or "").strip().upper() == "QI"
+
+    @staticmethod
+    def _ik_has_any_keyword(entity: Any, keyword: str) -> bool:
+        if entity is None:
+            return False
+        has_any = getattr(entity, "has_any_keyword", None)
+        if callable(has_any) and has_any(keyword):
+            return True
+        has_kw = getattr(entity, "has_keyword", None)
+        if callable(has_kw) and has_kw(keyword):
+            return True
+        return False
+
+    def _ik_is_armiger_unit(self, unit: Any) -> bool:
+        root = self._ik_root(unit)
+        if root is None or not self._is_imperial_knights_unit(root):
+            return False
+        if self._ik_has_any_keyword(root, "ARMIGER"):
+            return True
+        return "ARMIGER" in str(getattr(root, "name", "") or "").strip().upper()
+
+    def _ik_is_titanic_unit(self, unit: Any) -> bool:
+        root = self._ik_root(unit)
+        if root is None or not self._is_imperial_knights_unit(root):
+            return False
+        if self._ik_has_any_keyword(root, "TITANIC"):
+            return True
+        return bool(getattr(root, "is_titanic", False))
 
     def _imperial_knights_vow_of_retribution_candidates(self) -> list[Any]:
         if not self._is_valourstrike_lance():
@@ -354,12 +391,12 @@ class ImperialKnightsStratagemMixin:
         phase_name: str,
         enemy_unit: Any = None,
     ) -> bool:
-        wanted_name = str(stratagem_name or "").strip().upper()
+        wanted_name = self._ik_normalize_name(stratagem_name)
         wanted_phase = str(phase_name or "").strip().lower()
         for reaction in list(getattr(self, "_pending_reactions", []) or []):
             if str(reaction.get("event", "") or "") != str(event_name):
                 continue
-            if str(reaction.get("stratagem", "") or "").strip().upper() != wanted_name:
+            if self._ik_normalize_name(str(reaction.get("stratagem", "") or "")) != wanted_name:
                 continue
             if str(reaction.get("phase_name", "") or "").strip().lower() != wanted_phase:
                 continue
@@ -367,6 +404,273 @@ class ImperialKnightsStratagemMixin:
                 continue
             return True
         return False
+
+    def _imperial_knights_let_duty_be_your_shield_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_spearhead_at_arms():
+            return []
+        attacker_root = self._ik_root(attacking_unit)
+        if attacker_root is None:
+            return []
+        if self._ik_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ik_owned_by_player(root, self.player):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._ik_is_armiger_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _imperial_knights_exemplars_wisdom_friendly_candidates(self, *, source_unit: Any = None) -> list[Any]:
+        if not self._is_spearhead_at_arms():
+            return []
+        source_root = self._ik_root(source_unit)
+        if source_root is None:
+            return []
+        source_id = self._ik_sort_key(source_root)
+        if not source_id:
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if root is source_root:
+                continue
+            if not self._ik_owned_by_player(root, self.player):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._ik_is_armiger_unit(root):
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("bondsman_active")):
+                continue
+            if str(sr.get("bondsman_source_unit_id", "") or "").strip() != source_id:
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _imperial_knights_exemplars_wisdom_enemy_candidates(
+        self,
+        *,
+        attacker_unit: Any = None,
+        hits_by_target: Any = None,
+    ) -> list[Any]:
+        if not self._is_spearhead_at_arms():
+            return []
+        attacker_root = self._ik_root(attacker_unit)
+        if attacker_root is None or not self._ik_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        if isinstance(hits_by_target, dict):
+            for unit, hits in list(hits_by_target.items()):
+                try:
+                    if int(hits or 0) <= 0:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                root = self._ik_root(unit)
+                if root is None:
+                    continue
+                uid = self._ik_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                if self._ik_owned_by_player(root, self.player):
+                    continue
+                if not self._ik_on_battlefield(root, require_targetable=True):
+                    continue
+                out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _queue_imperial_knights_spearhead_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> None:
+        if not self._is_spearhead_at_arms():
+            return
+        if self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacker_root = self._ik_root(attacking_unit)
+        if attacker_root is None or self._ik_owned_by_player(attacker_root, self.player):
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        stratagem = self.get_by_name("LET DUTY BE YOUR SHIELD")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ik_reaction_already_queued(
+            event_name="shooting_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            enemy_unit=attacker_root,
+        ):
+            return
+        candidates = self._imperial_knights_let_duty_be_your_shield_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not candidates:
+            return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_imperial_knights_spearhead_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any = None,
+        hits_by_target: Any = None,
+    ) -> None:
+        if not self._is_spearhead_at_arms():
+            return
+        if self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        attacker_root = self._ik_root(attacker_unit)
+        if attacker_root is None:
+            return
+        if not self._ik_owned_by_player(attacker_root, self.player):
+            return
+        if not self._ik_on_battlefield(attacker_root, require_targetable=True):
+            return
+        if not self._ik_is_titanic_unit(attacker_root):
+            return
+
+        stratagem = self.get_by_name("EXEMPLAR'S WISDOM") or self.get_by_name("EXEMPLAR’S WISDOM")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ik_reaction_already_queued(
+            event_name="unit_shooting_resolved",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            enemy_unit=attacker_root,
+        ):
+            return
+        friendly_candidates = self._imperial_knights_exemplars_wisdom_friendly_candidates(source_unit=attacker_root)
+        if not friendly_candidates:
+            return
+        enemy_candidates = self._imperial_knights_exemplars_wisdom_enemy_candidates(
+            attacker_unit=attacker_root,
+            hits_by_target=hits_by_target,
+        )
+        if not enemy_candidates:
+            return
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": attacker_root,
+            "source_unit": attacker_root,
+            "friendly_candidates": friendly_candidates,
+            "enemy_candidates": enemy_candidates,
+            "hits_by_target": hits_by_target,
+        }
+        if len(enemy_candidates) == 1:
+            payload["enemy_unit"] = enemy_candidates[0]
+            payload["target_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload)
+
+    def _cleanup_imperial_knights_spearhead_phase_end_effects(self, *, phase: Any = None) -> None:
+        if not self._is_spearhead_at_arms():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "SHOOTING_PHASE":
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            exp = str(sr.get("imperial_knights_exemplars_wisdom_expires_phase", "") or "").strip().upper()
+            if sr.get("imperial_knights_exemplars_wisdom_active") is True and (not exp or exp == phase_name):
+                for key in (
+                    "imperial_knights_exemplars_wisdom_active",
+                    "imperial_knights_exemplars_wisdom_ap_bonus",
+                    "imperial_knights_exemplars_wisdom_target_id",
+                    "imperial_knights_exemplars_wisdom_source_unit_id",
+                    "imperial_knights_exemplars_wisdom_expires_phase",
+                    "imperial_knights_exemplars_wisdom_turn_owner",
+                    "imperial_knights_exemplars_wisdom_turn",
+                    "imperial_knights_exemplars_wisdom_source",
+                ):
+                    sr.pop(key, None)
+                root.special_rules = sr
 
     def _queue_imperial_knights_valourstrike_move_end_reactions(self, *, unit: Any, action: str) -> None:
         if not self._is_valourstrike_lance():
@@ -443,9 +747,12 @@ class ImperialKnightsStratagemMixin:
             name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
             if name_u:
                 used.add(name_u)
+            normalized = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
+            if normalized:
+                used.add(normalized)
 
     def _use_imperial_knights_valourstrike_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
-        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        name_u = self._ik_normalize_name(getattr(stratagem, "name", "") or "")
         if name_u == "VOW OF RETRIBUTION":
             return self._use_valourstrike_vow_of_retribution(stratagem, **kwargs)
         if name_u == "FULL TILT":
@@ -456,7 +763,200 @@ class ImperialKnightsStratagemMixin:
             return self._use_valourstrike_thunderstomp(stratagem, **kwargs)
         if name_u == "TACTICAL FOIL":
             return self._use_valourstrike_tactical_foil(stratagem, **kwargs)
+        if name_u == "LET DUTY BE YOUR SHIELD":
+            return self._use_spearhead_let_duty_be_your_shield(stratagem, **kwargs)
+        if name_u == "EXEMPLAR'S WISDOM":
+            return self._use_spearhead_exemplars_wisdom(stratagem, **kwargs)
         return None
+
+    def _use_spearhead_let_duty_be_your_shield(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_spearhead_at_arms():
+            return False
+
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacker_unit = kwargs.get("attacker_unit") or kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if self._ik_normalize_name(str(reaction.get("stratagem", "") or "")) != "LET DUTY BE YOUR SHIELD":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                attacker_unit = attacker_unit or reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: LET DUTY BE YOUR SHIELD: no target unit provided")
+            return False
+        if attacker_unit is None:
+            logger.error("ERROR: LET DUTY BE YOUR SHIELD: missing attacking unit context")
+            return False
+
+        root = self._ik_root(unit)
+        attacker_root = self._ik_root(attacker_unit)
+        if root is None or attacker_root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: LET DUTY BE YOUR SHIELD: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: LET DUTY BE YOUR SHIELD: not opponent's Shooting phase")
+            return False
+        if candidates and not self._ik_unit_in_candidates(root, candidates):
+            logger.error("ERROR: LET DUTY BE YOUR SHIELD: target is not currently eligible")
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: LET DUTY BE YOUR SHIELD: target unit is not yours")
+            return False
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._ik_is_armiger_unit(root):
+            logger.error("ERROR: LET DUTY BE YOUR SHIELD: target must be an Armiger unit")
+            return False
+        if self._ik_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: LET DUTY BE YOUR SHIELD: attacking unit must be enemy")
+            return False
+        if not self._ik_on_battlefield(attacker_root, require_targetable=False):
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._apply_armour_of_contempt(root, attacker_root, amount=1):
+            return False
+
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: LET DUTY BE YOUR SHIELD: %s worsens AP by 1 against attacks from %s.",
+            getattr(root, "name", "Unit"),
+            getattr(attacker_root, "name", "Enemy unit"),
+        )
+        return True
+
+    def _use_spearhead_exemplars_wisdom(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_spearhead_at_arms():
+            return False
+
+        source_unit = kwargs.get("source_unit") or kwargs.get("unit")
+        selected_units = kwargs.get("selected_units") or kwargs.get("units") or kwargs.get("friendly_units")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_unit")
+        friendly_candidates = list(kwargs.get("friendly_candidates") or [])
+        enemy_candidates = list(kwargs.get("enemy_candidates") or kwargs.get("candidates") or [])
+        hits_by_target = kwargs.get("hits_by_target")
+        if source_unit is None or not friendly_candidates or not enemy_candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if self._ik_normalize_name(str(reaction.get("stratagem", "") or "")) != "EXEMPLAR'S WISDOM":
+                    continue
+                source_unit = source_unit or reaction.get("source_unit") or reaction.get("unit")
+                if selected_units is None:
+                    selected_units = reaction.get("selected_units") or reaction.get("friendly_units")
+                enemy_unit = enemy_unit or reaction.get("enemy_unit") or reaction.get("target_unit")
+                if not friendly_candidates:
+                    friendly_candidates = list(reaction.get("friendly_candidates") or [])
+                if not enemy_candidates:
+                    enemy_candidates = list(reaction.get("enemy_candidates") or reaction.get("candidates") or [])
+                if hits_by_target is None:
+                    hits_by_target = reaction.get("hits_by_target")
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        source_root = self._ik_root(source_unit)
+        if source_root is None:
+            logger.error("ERROR: EXEMPLAR'S WISDOM: missing Titanic source unit")
+            return False
+        selected_roots_raw = list(selected_units) if isinstance(selected_units, (list, tuple, set)) else ([selected_units] if selected_units is not None else [])
+        selected_roots: list[Any] = []
+        seen_selected: set[str] = set()
+        for unit in list(selected_roots_raw or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen_selected:
+                continue
+            if uid:
+                seen_selected.add(uid)
+            selected_roots.append(root)
+        if not selected_roots and len(friendly_candidates) == 1:
+            selected_roots = [friendly_candidates[0]]
+        enemy_root = self._ik_root(enemy_unit)
+        if enemy_root is None and len(enemy_candidates) == 1:
+            enemy_root = self._ik_root(enemy_candidates[0])
+        if not selected_roots:
+            logger.error("ERROR: EXEMPLAR'S WISDOM: no bonded Armiger targets selected")
+            return False
+        if enemy_root is None:
+            logger.error("ERROR: EXEMPLAR'S WISDOM: no enemy target selected")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: EXEMPLAR'S WISDOM: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: EXEMPLAR'S WISDOM: not your Shooting phase")
+            return False
+        if not self._ik_owned_by_player(source_root, self.player):
+            logger.error("ERROR: EXEMPLAR'S WISDOM: source unit is not yours")
+            return False
+        if not self._ik_on_battlefield(source_root, require_targetable=True):
+            return False
+        if not self._ik_is_titanic_unit(source_root):
+            logger.error("ERROR: EXEMPLAR'S WISDOM: source must be a Titanic Imperial Knights unit")
+            return False
+        if not bool(getattr(getattr(source_root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: EXEMPLAR'S WISDOM: source must have just shot")
+            return False
+        eligible_friendly = friendly_candidates or self._imperial_knights_exemplars_wisdom_friendly_candidates(source_unit=source_root)
+        for root in list(selected_roots):
+            if not self._ik_unit_in_candidates(root, eligible_friendly):
+                logger.error("ERROR: EXEMPLAR'S WISDOM: one or more selected Armiger units are not eligible")
+                return False
+        if self._ik_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: EXEMPLAR'S WISDOM: enemy target is invalid")
+            return False
+        eligible_enemy = enemy_candidates or self._imperial_knights_exemplars_wisdom_enemy_candidates(
+            attacker_unit=source_root,
+            hits_by_target=hits_by_target,
+        )
+        if eligible_enemy and not self._ik_unit_in_candidates(enemy_root, eligible_enemy):
+            logger.error("ERROR: EXEMPLAR'S WISDOM: enemy target was not hit by the Titanic model")
+            return False
+        if not self._ik_on_battlefield(enemy_root, require_targetable=True):
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=source_root):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        enemy_id = self._ik_sort_key(enemy_root)
+        source_id = self._ik_sort_key(source_root)
+        for root in list(selected_roots):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["imperial_knights_exemplars_wisdom_active"] = True
+            sr["imperial_knights_exemplars_wisdom_ap_bonus"] = 1
+            sr["imperial_knights_exemplars_wisdom_target_id"] = enemy_id
+            sr["imperial_knights_exemplars_wisdom_source_unit_id"] = source_id
+            sr["imperial_knights_exemplars_wisdom_expires_phase"] = "SHOOTING_PHASE"
+            sr["imperial_knights_exemplars_wisdom_turn_owner"] = owner_id
+            sr["imperial_knights_exemplars_wisdom_turn"] = turn
+            sr["imperial_knights_exemplars_wisdom_source"] = str(getattr(stratagem, "name", "") or "EXEMPLAR'S WISDOM")
+            root.special_rules = sr
+
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: EXEMPLAR'S WISDOM: %d Armiger unit(s) improve AP by 1 against %s this phase.",
+            len(selected_roots),
+            getattr(enemy_root, "name", "Enemy unit"),
+        )
+        return True
 
     def _use_valourstrike_vow_of_retribution(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_valourstrike_lance():

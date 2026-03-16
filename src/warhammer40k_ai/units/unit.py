@@ -4024,7 +4024,7 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_AP_BONUS_RE = re.compile(
-        r"in your shooting phase after this (?:unit|model) has shot select one enemy unit "
+        r"(?:in your shooting phase after this|each time this) (?:unit|model) has shot select one enemy unit "
         r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
         r"(?:made with (?:its|this model s) (?P<weapon>[a-z0-9 ]+) )?"
         r"until the end of the (?P<duration>phase|turn) each time a friendly (?P<keyword>[a-z0-9 ]+?) unit makes (?:a|an) (?:(?P<atype>ranged|melee) )?attack "
