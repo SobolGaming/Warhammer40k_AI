@@ -16584,6 +16584,50 @@ class WargearProfile:
                     wound_result["modifiers"].append(f"-{int(penalty)} to wound from {source_name}")
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            if isinstance(sr, dict) and sr.get("shooting_phase_wound_penalty_active"):
+                apply_penalty = True
+                exp = str(sr.get("shooting_phase_wound_penalty_expires_phase", "") or "").strip().upper()
+                if exp:
+                    phase_key = self._resolve_phase_key(attacker_unit=unit, target_unit=target)
+                    if phase_key and phase_key != exp:
+                        apply_penalty = False
+                if apply_penalty:
+                    owner_id = str(sr.get("shooting_phase_wound_penalty_owner", "") or "")
+                    if owner_id:
+                        try:
+                            army = unit.get_parent_army()
+                            player = getattr(army, "player", None) if army is not None else None
+                        except Exception:
+                            player = None
+                        attacker_id = ""
+                        if player is not None:
+                            try:
+                                attacker_id = get_entity_id(player)
+                            except Exception:
+                                attacker_id = str(getattr(player, "id", "") or "")
+                        if attacker_id and attacker_id != owner_id:
+                            apply_penalty = False
+                if apply_penalty:
+                    try:
+                        turn = int(sr.get("shooting_phase_wound_penalty_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    if turn:
+                        try:
+                            game = getattr(getattr(unit.get_parent_army(), "player", None), "game", None)
+                        except Exception:
+                            game = None
+                        if game is not None and int(getattr(game, "turn", 0) or 0) != int(turn or 0):
+                            apply_penalty = False
+                if apply_penalty:
+                    source_name = str(sr.get("shooting_phase_wound_penalty_source", "") or "Mind Control").strip() or "Mind Control"
+                    dice_modifier -= 1
+                    wound_result["modifiers"].append(f"-1 to wound from {source_name}")
+        except Exception:
+            pass
         # Necrons: Merciless Reclamation (+1 to wound vs targets within objective range).
         try:
             unit = getattr(attacker, "parent_unit", None)

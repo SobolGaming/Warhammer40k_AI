@@ -3696,6 +3696,18 @@ class Unit(
         r"makes an attack subtract 1 from the hit roll on a 6 that enemy unit is not eligible to shoot this phase",
         re.IGNORECASE,
     )
+    _START_OPP_SHOOTING_PHASE_MIND_CONTROL_RE = re.compile(
+        r"at the start of your opponent s shooting phase one psyker model from your army with this ability can use it if used "
+        r"select one enemy unit within (?P<range>\d+) of that psyker model and roll (?:one|1) d6 on a 1 that psyker model suffers d3 mortal wounds "
+        r"on a 2 5 until the end of the phase each time a model in that enemy unit makes an attack subtract 1 from the hit roll "
+        r"on a 6 each time a model in that enemy unit makes an attack subtract 1 from the hit roll and subtract 1 from the wound roll",
+        re.IGNORECASE,
+    )
+    _START_OPP_SHOOTING_PHASE_MIND_CONTROL_FAMILIAR_RE = re.compile(
+        r"once per battle at the start of your opponent s shooting phase this model can use its psychic familiar if it does "
+        r"until the end of the phase add (?P<bonus>\d+) to the range of its mind control ability(?: designer s note .+)?",
+        re.IGNORECASE,
+    )
     _START_OPP_SHOOTING_PHASE_TREASON_HAZARDOUS_RE = re.compile(
         r"at the start of your opponent s shooting phase select one enemy unit within (?P<range>\d+) "
         r"(?:of and visible to|of) this psyker until the end of the phase ranged weapons equipped by models in that unit "

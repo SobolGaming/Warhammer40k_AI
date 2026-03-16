@@ -8521,6 +8521,28 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         for keyword in excluded_keywords:
             if _unit_has_keyword(target_unit, keyword):
                 return (f"Opponent Shooting phase disruption target cannot have keyword {keyword}.",)
+        if bool(payload.get("use_extended_range", False)):
+            source_unit = resolve_unit(
+                game,
+                payload.get("source_unit_id") or ctx.get("source_unit_id") or payload.get("unit_id") or ctx.get("unit_id"),
+            )
+            if source_unit is None:
+                return ("Extended-range disruption source unit was not found.",)
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            sr = getattr(source_root, "special_rules", None)
+            usage_map = dict(sr.get("opponent_shooting_phase_disrupt_extended_range_used", {}) or {}) if isinstance(sr, dict) else {}
+            usage_key = str(payload.get("extended_range_usage_key", "") or "").strip()
+            model_id = str(payload.get("model_id", "") or ctx.get("model_id", "") or "").strip()
+            used_ids = {
+                str(value or "").strip()
+                for value in list(usage_map.get(usage_key, []) or [])
+                if str(value or "").strip()
+            }
+            if usage_key and model_id and model_id in used_ids:
+                return ("Extended-range disruption option has already been used for this model.",)
         return ()
     if ability == "gravitic_pulse_target":
         payload = _option_payload(request, result)
@@ -20143,6 +20165,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             turn = int(getattr(game, "turn", 0) or 0)
         except Exception:
             turn = 0
+
         def _apply_hit_penalty() -> None:
             for unit in members:
                 if unit is None:
@@ -20155,6 +20178,20 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 sr["shooting_phase_hit_penalty_turn"] = int(turn or 0)
                 sr["shooting_phase_hit_penalty_source"] = ability_name
                 sr["shooting_phase_hit_penalty_expires_phase"] = "SHOOTING_PHASE"
+                unit.special_rules = sr
+
+        def _apply_wound_penalty() -> None:
+            for unit in members:
+                if unit is None:
+                    continue
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["shooting_phase_wound_penalty_active"] = True
+                sr["shooting_phase_wound_penalty_owner"] = owner_id
+                sr["shooting_phase_wound_penalty_turn"] = int(turn or 0)
+                sr["shooting_phase_wound_penalty_source"] = ability_name
+                sr["shooting_phase_wound_penalty_expires_phase"] = "SHOOTING_PHASE"
                 unit.special_rules = sr
 
         def _apply_ineligible_to_shoot() -> None:
@@ -20190,6 +20227,48 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             except Exception:
                 pass
             return target_unit
+
+        use_extended_range = bool(payload.get("use_extended_range", False) or ctx.get("use_extended_range", False))
+        if use_extended_range and source_unit is not None:
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            if source_root is not None:
+                sr = getattr(source_root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                usage_map = dict(sr.get("opponent_shooting_phase_disrupt_extended_range_used", {}) or {})
+                usage_key = str(payload.get("extended_range_usage_key", "") or ctx.get("extended_range_usage_key", "") or "").strip()
+                used_model_id = str(model_id or "").strip()
+                used_ids = [
+                    str(value or "").strip()
+                    for value in list(usage_map.get(usage_key, []) or [])
+                    if str(value or "").strip()
+                ]
+                if usage_key and used_model_id and used_model_id not in used_ids:
+                    used_ids.append(used_model_id)
+                    usage_map[usage_key] = sorted(used_ids)
+                    sr["opponent_shooting_phase_disrupt_extended_range_used"] = usage_map
+                    source_root.special_rules = sr
+                extended_range_source = str(
+                    payload.get("extended_range_source", "") or ctx.get("extended_range_source", "") or ""
+                ).strip()
+                try:
+                    extended_range_bonus = int(
+                        payload.get("extended_range_bonus", 0) or ctx.get("extended_range_bonus", 0) or 0
+                    )
+                except Exception:
+                    extended_range_bonus = 0
+                if extended_range_source and extended_range_bonus > 0:
+                    try:
+                        _log_action_for_players(
+                            game,
+                            player,
+                            f"{extended_range_source}: {ability_name} range extended by {int(extended_range_bonus)}\".",
+                        )
+                    except Exception:
+                        pass
 
         resolution_mode = str(
             ctx.get("resolution_mode", payload.get("resolution_mode", ""))
@@ -20282,12 +20361,25 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             except Exception:
                 pass
         elif roll >= 6:
-            _apply_ineligible_to_shoot()
-            try:
-                tname = str(getattr(target_root, "name", "Unit") or "Unit")
-                _log_action_for_players(game, player, f"{ability_name}: {tname} cannot shoot this phase.")
-            except Exception:
-                pass
+            if bool(ctx.get("apply_wound_penalty_on_six", False)):
+                _apply_hit_penalty()
+                _apply_wound_penalty()
+                try:
+                    tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                    _log_action_for_players(
+                        game,
+                        player,
+                        f"{ability_name}: {tname} suffers -1 to hit and -1 to wound this phase.",
+                    )
+                except Exception:
+                    pass
+            else:
+                _apply_ineligible_to_shoot()
+                try:
+                    tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                    _log_action_for_players(game, player, f"{ability_name}: {tname} cannot shoot this phase.")
+                except Exception:
+                    pass
         return target_unit
     if str(ctx.get("ability", "") or "") == "maggot_maws":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))

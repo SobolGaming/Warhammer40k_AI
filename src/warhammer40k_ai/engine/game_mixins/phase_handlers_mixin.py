@@ -5429,6 +5429,15 @@ class GamePhaseHandlersMixin:
                         "shooting_phase_hit_penalty_expires_phase",
                     ):
                         sr.pop(key, None)
+                if str(sr.get("shooting_phase_wound_penalty_owner", "") or "") == owner_id and sr.get("shooting_phase_wound_penalty_active"):
+                    for key in (
+                        "shooting_phase_wound_penalty_active",
+                        "shooting_phase_wound_penalty_owner",
+                        "shooting_phase_wound_penalty_turn",
+                        "shooting_phase_wound_penalty_source",
+                        "shooting_phase_wound_penalty_expires_phase",
+                    ):
+                        sr.pop(key, None)
                 if str(sr.get("shooting_phase_ineligible_owner", "") or "") == owner_id and sr.get("shooting_phase_ineligible_active"):
                     for key in (
                         "shooting_phase_ineligible_active",
@@ -12667,7 +12676,7 @@ class GamePhaseHandlersMixin:
             if not enemy_roots:
                 continue
             enemy_roots.sort(key=_unit_sort_key)
-            groups: dict[tuple, list[tuple]] = {}
+            groups: dict[tuple, list[dict]] = {}
             group_meta: dict[tuple, dict] = {}
             for unit in sorted(list(army.units or []), key=_unit_sort_key):
                 if unit is None:
@@ -12706,21 +12715,56 @@ class GamePhaseHandlersMixin:
                             range_value = 0
                         if range_value <= 0:
                             continue
-                        candidates = self._visible_enemy_candidates_for_model(
-                            source_unit=source_unit,
-                            model=model,
-                            enemy_roots=enemy_roots,
-                            range_value=float(range_value),
-                            game_map=game_map,
-                        )
-                        if not candidates:
+                        requires_visibility = bool(spec.get("requires_visibility", True))
+                        if requires_visibility:
+                            candidates = self._visible_enemy_candidates_for_model(
+                                source_unit=source_unit,
+                                model=model,
+                                enemy_roots=enemy_roots,
+                                range_value=float(range_value),
+                                game_map=game_map,
+                            )
+                        else:
+                            candidates = self._enemy_candidates_within_range_of_model(
+                                model=model,
+                                enemy_roots=enemy_roots,
+                                range_value=float(range_value),
+                            )
+                        try:
+                            extended_range_bonus = int(spec.get("extended_range_bonus", 0) or 0)
+                        except Exception:
+                            extended_range_bonus = 0
+                        extended_range_source = str(spec.get("extended_range_source", "") or "").strip()
+                        extended_range_usage_key = str(spec.get("extended_range_usage_key", "") or "").strip()
+                        extended_candidates = []
+                        if extended_range_bonus > 0:
+                            if requires_visibility:
+                                extended_candidates = self._visible_enemy_candidates_for_model(
+                                    source_unit=source_unit,
+                                    model=model,
+                                    enemy_roots=enemy_roots,
+                                    range_value=float(range_value + extended_range_bonus),
+                                    game_map=game_map,
+                                )
+                            else:
+                                extended_candidates = self._enemy_candidates_within_range_of_model(
+                                    model=model,
+                                    enemy_roots=enemy_roots,
+                                    range_value=float(range_value + extended_range_bonus),
+                                )
+                        if not candidates and not extended_candidates:
                             continue
                         ability_name = str(spec.get("source", "") or "Opponent Shooting phase disruption").strip()
-                        ability_key = re.sub(r"[^a-z0-9]+", "_", ability_name.lower()).strip("_") or "opponent_shooting_phase_disrupt"
+                        ability_key = (
+                            str(spec.get("ability_key", "") or "").strip().lower()
+                            or re.sub(r"[^a-z0-9]+", "_", ability_name.lower()).strip("_")
+                            or "opponent_shooting_phase_disrupt"
+                        )
                         limit_one = bool(spec.get("limit_one_per_army", False))
                         optional = bool(spec.get("optional", False))
                         mortal_on_one = bool(spec.get("mortal_on_one", False))
                         grant_ranged_hazardous = bool(spec.get("grant_ranged_hazardous", False))
+                        apply_wound_penalty_on_six = bool(spec.get("apply_wound_penalty_on_six", False))
                         resolution_mode = str(spec.get("resolution_mode", "") or "d6_table").strip().lower() or "d6_table"
                         required_keywords: list[str] = []
                         for keyword in list(spec.get("required_target_keywords", ()) or []):
@@ -12747,22 +12791,55 @@ class GamePhaseHandlersMixin:
                                 "limit_one": limit_one,
                                 "mortal_on_one": mortal_on_one,
                                 "grant_ranged_hazardous": grant_ranged_hazardous,
+                                "apply_wound_penalty_on_six": apply_wound_penalty_on_six,
                                 "resolution_mode": resolution_mode,
                                 "required_target_keywords": list(required_keywords),
                                 "excluded_target_keywords": list(excluded_keywords),
                                 "model_id": None if limit_one else model_id,
                             }
                         entries = groups.setdefault(group_key, [])
-                        for cand in list(candidates):
+                        base_candidate_ids: set[str] = set()
+                        for cand in list(candidates or []):
                             target_id = str(get_entity_id(cand) or "")
                             if not target_id:
+                                continue
+                            base_candidate_ids.add(target_id)
+                            if required_keywords:
+                                if not all(_unit_has_keyword(cand, keyword) for keyword in required_keywords):
+                                    continue
+                            if excluded_keywords and any(_unit_has_keyword(cand, keyword) for keyword in excluded_keywords):
+                                continue
+                            entries.append(
+                                {
+                                    "model": model,
+                                    "candidate": cand,
+                                    "source_unit": source_unit,
+                                    "use_extended_range": False,
+                                    "extended_range_source": "",
+                                    "extended_range_usage_key": "",
+                                    "extended_range_bonus": 0,
+                                }
+                            )
+                        for cand in list(extended_candidates or []):
+                            target_id = str(get_entity_id(cand) or "")
+                            if not target_id or target_id in base_candidate_ids:
                                 continue
                             if required_keywords:
                                 if not all(_unit_has_keyword(cand, keyword) for keyword in required_keywords):
                                     continue
                             if excluded_keywords and any(_unit_has_keyword(cand, keyword) for keyword in excluded_keywords):
                                 continue
-                            entries.append((model, cand, source_unit))
+                            entries.append(
+                                {
+                                    "model": model,
+                                    "candidate": cand,
+                                    "source_unit": source_unit,
+                                    "use_extended_range": True,
+                                    "extended_range_source": extended_range_source,
+                                    "extended_range_usage_key": extended_range_usage_key,
+                                    "extended_range_bonus": int(extended_range_bonus),
+                                }
+                            )
 
             queue = getattr(self, "decision_queue", None)
             if groups:
@@ -12788,8 +12865,17 @@ class GamePhaseHandlersMixin:
                     if meta.get("optional"):
                         options.append(DecisionOption.create("None", payload={"action": "skip"}))
                     seen_pairs: set[tuple[str, str]] = set()
-                    entries.sort(key=lambda t: (str(get_entity_id(t[0]) or ""), str(get_entity_id(t[1]) or "")))
-                    for model, cand, source_unit in entries:
+                    entries.sort(
+                        key=lambda entry: (
+                            str(get_entity_id(entry.get("model")) or ""),
+                            str(get_entity_id(entry.get("candidate")) or ""),
+                            int(bool(entry.get("use_extended_range", False))),
+                        )
+                    )
+                    for entry in entries:
+                        model = entry.get("model")
+                        cand = entry.get("candidate")
+                        source_unit = entry.get("source_unit")
                         model_id = str(get_entity_id(model) or "")
                         target_id = str(get_entity_id(cand) or "")
                         unit_id = str(get_entity_id(source_unit) or "")
@@ -12800,6 +12886,10 @@ class GamePhaseHandlersMixin:
                             continue
                         seen_pairs.add(key)
                         label = f"{getattr(model, 'name', 'Model')} -> {getattr(cand, 'name', 'Unit')}"
+                        if bool(entry.get("use_extended_range", False)):
+                            extended_source = str(entry.get("extended_range_source", "") or "").strip()
+                            if extended_source:
+                                label = f"{label} ({extended_source})"
                         options.append(
                             DecisionOption.create(
                                 label,
@@ -12807,6 +12897,10 @@ class GamePhaseHandlersMixin:
                                     "target_unit_id": target_id,
                                     "model_id": model_id,
                                     "source_unit_id": unit_id,
+                                    "use_extended_range": bool(entry.get("use_extended_range", False)),
+                                    "extended_range_source": str(entry.get("extended_range_source", "") or ""),
+                                    "extended_range_usage_key": str(entry.get("extended_range_usage_key", "") or ""),
+                                    "extended_range_bonus": int(entry.get("extended_range_bonus", 0) or 0),
                                 },
                             )
                         )
@@ -12819,6 +12913,7 @@ class GamePhaseHandlersMixin:
                         "ability_key": ability_key,
                         "mortal_on_one": bool(meta.get("mortal_on_one", False)),
                         "grant_ranged_hazardous": bool(meta.get("grant_ranged_hazardous", False)),
+                        "apply_wound_penalty_on_six": bool(meta.get("apply_wound_penalty_on_six", False)),
                         "resolution_mode": str(meta.get("resolution_mode", "") or "d6_table").strip().lower() or "d6_table",
                         "optional": bool(meta.get("optional", False)),
                         "limit_one_per_army": bool(meta.get("limit_one", False)),

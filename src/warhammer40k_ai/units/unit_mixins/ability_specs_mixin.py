@@ -9703,12 +9703,52 @@ class AbilitySpecsMixin:
         """
         if model is None:
             return []
-        cache_key = f"model_start_opponent_shooting_phase_disrupt:{get_entity_id(model)}"
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        usage_map = dict(sr.get("opponent_shooting_phase_disrupt_extended_range_used", {}) or {}) if isinstance(sr, dict) else {}
+        usage_signature = tuple(
+            sorted(
+                (
+                    str(key or ""),
+                    tuple(sorted(str(value or "") for value in list(values or []) if str(value or "").strip())),
+                )
+                for key, values in dict(usage_map).items()
+            )
+        )
+        cache_key = f"model_start_opponent_shooting_phase_disrupt:{get_entity_id(model)}:{usage_signature}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
         seen: set[tuple] = set()
+        familiar_range_bonus = 0
+        familiar_source = ""
+        model_id = str(get_entity_id(model) or "")
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            familiar_match = self._START_OPP_SHOOTING_PHASE_MIND_CONTROL_FAMILIAR_RE.fullmatch(normalized)
+            if not familiar_match:
+                continue
+            try:
+                bonus = int(familiar_match.group("bonus") or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            familiar_range_bonus = max(int(familiar_range_bonus), int(bonus))
+            familiar_source = str(name or "Psychic Familiar").strip() or "Psychic Familiar"
 
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
@@ -9725,6 +9765,10 @@ class AbilitySpecsMixin:
             optional = False
             limit_one = False
             grant_ranged_hazardous = False
+            apply_wound_penalty_on_six = False
+            requires_visibility = True
+            extended_range_bonus = 0
+            extended_range_source = ""
             if not m:
                 m = self._START_OPP_SHOOTING_PHASE_HORRIBLE_FASCINATION_RE.fullmatch(normalized)
                 if m:
@@ -9732,10 +9776,18 @@ class AbilitySpecsMixin:
                     optional = True
                     limit_one = True
                 else:
-                    m = self._START_OPP_SHOOTING_PHASE_TREASON_HAZARDOUS_RE.fullmatch(normalized)
-                    if not m:
-                        continue
-                    grant_ranged_hazardous = True
+                    m = self._START_OPP_SHOOTING_PHASE_MIND_CONTROL_RE.fullmatch(normalized)
+                    if m:
+                        mortal_on_one = True
+                        optional = True
+                        limit_one = True
+                        apply_wound_penalty_on_six = True
+                        requires_visibility = False
+                    else:
+                        m = self._START_OPP_SHOOTING_PHASE_TREASON_HAZARDOUS_RE.fullmatch(normalized)
+                        if not m:
+                            continue
+                        grant_ranged_hazardous = True
             try:
                 range_value = int(m.group("range") or 0)
             except Exception:
@@ -9743,6 +9795,16 @@ class AbilitySpecsMixin:
             if range_value <= 0:
                 continue
             source = str(name or "Opponent Shooting phase disruption").strip() or "Opponent Shooting phase disruption"
+            source_key = re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_") or "opponent_shooting_phase_disrupt"
+            extended_range_usage_key = f"{source_key}:extended_range"
+            used_model_ids = [
+                str(value or "").strip()
+                for value in list(usage_map.get(extended_range_usage_key, []) or [])
+                if str(value or "").strip()
+            ]
+            if apply_wound_penalty_on_six and familiar_range_bonus > 0 and model_id not in used_model_ids:
+                extended_range_bonus = int(familiar_range_bonus)
+                extended_range_source = familiar_source
             key = (
                 source.lower(),
                 int(range_value),
@@ -9750,6 +9812,10 @@ class AbilitySpecsMixin:
                 bool(grant_ranged_hazardous),
                 bool(optional),
                 bool(limit_one),
+                bool(apply_wound_penalty_on_six),
+                bool(requires_visibility),
+                int(extended_range_bonus),
+                str(extended_range_source or ""),
                 "d6_table",
                 tuple(),
                 tuple(),
@@ -9765,6 +9831,12 @@ class AbilitySpecsMixin:
                     "optional": bool(optional),
                     "limit_one_per_army": bool(limit_one),
                     "grant_ranged_hazardous": bool(grant_ranged_hazardous),
+                    "apply_wound_penalty_on_six": bool(apply_wound_penalty_on_six),
+                    "requires_visibility": bool(requires_visibility),
+                    "ability_key": str(source_key),
+                    "extended_range_bonus": int(extended_range_bonus),
+                    "extended_range_source": str(extended_range_source or ""),
+                    "extended_range_usage_key": str(extended_range_usage_key),
                 }
             )
 

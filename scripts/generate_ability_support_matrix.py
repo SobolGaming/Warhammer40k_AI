@@ -4133,11 +4133,23 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Executioner plasma cannon attacks gain +1 to hit against Below Half-strength targets.",
         ),
+        ("GC", "Gung-ho Executioners"): (
+            "Supported",
+            "Executioner plasma cannon attacks gain +1 to hit against Below Half-strength targets.",
+        ),
         ("AM", "Furious Barrage"): (
             "Supported",
             "After shooting: select a non-MONSTER/non-VEHICLE unit hit by storm eagle rockets; until your next Shooting phase it is staggered and suffers Objective Control -1 (minimum 1).",
         ),
+        ("GC", "Furious Barrage"): (
+            "Supported",
+            "After shooting: select a non-MONSTER/non-VEHICLE unit hit by storm eagle rockets; until your next Shooting phase it is staggered and suffers Objective Control -1 (minimum 1).",
+        ),
         ("AM", "Mow Down the Enemy"): (
+            "Supported",
+            "Punisher gatling cannon attacks gain [DEVASTATING WOUNDS] against non-MONSTER/non-VEHICLE targets.",
+        ),
+        ("GC", "Mow Down the Enemy"): (
             "Supported",
             "Punisher gatling cannon attacks gain [DEVASTATING WOUNDS] against non-MONSTER/non-VEHICLE targets.",
         ),
@@ -5148,6 +5160,18 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("TYR", "Pheromone Trail"): (
             "Supported",
             "Once per battle round, this unit can be targeted with Rapid Ingress for 0CP.",
+        ),
+        ("GC", "Pheromone Trail"): (
+            "Supported",
+            "Once per battle round, this unit can be targeted with Rapid Ingress for 0CP.",
+        ),
+        ("GC", "Mind Control (Psychic)"): (
+            "Supported",
+            "Start of opponent Shooting phase: one model with this ability can select an enemy unit within 18\" without requiring visibility, roll D6, suffer D3 mortal wounds on 1, apply -1 to hit on 2-5, or apply -1 to hit and -1 to wound on 6 until phase end.",
+        ),
+        ("GC", "Psychic Familiar"): (
+            "Supported",
+            "Once per battle, when selecting a Mind Control target at the start of your opponent's Shooting phase, this model can extend Mind Control range by 6\" for that phase.",
         ),
         ("TYR", "Hypersensory Array"): (
             "Supported",

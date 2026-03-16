@@ -49,3 +49,51 @@ def test_gc_urban_warfare_support_matrix_classifies_supported():
     assert status == "Supported"
     assert "Benefit of Cover" in str(notes or "")
     assert "-1 Damage" in str(notes or "")
+
+
+def test_gc_gung_ho_executioners_support_matrix_classifies_supported():
+    gsm = _seed_support_maps()
+    status, notes = gsm._classify_ability(
+        "Gung-ho Executioners",
+        (
+            "Each time this model makes an attack with its executioner plasma cannon that targets a unit that is Below "
+            "Half-strength, add 1 to the Hit roll."
+        ),
+        ability_id="",
+        faction_id="GC",
+        datasheet_id="000003982",
+    )
+    assert status == "Supported"
+    assert "executioner plasma cannon" in str(notes or "").lower()
+    assert "Below Half-strength" in str(notes or "")
+
+
+def test_gc_mow_down_the_enemy_support_matrix_classifies_supported():
+    gsm = _seed_support_maps()
+    status, notes = gsm._classify_ability(
+        "Mow Down the Enemy",
+        (
+            "Each time this model makes an attack with its punisher gatling cannon that targets an enemy unit "
+            "(excluding MONSTERS and VEHICLES), that attack has the [DEVASTATING WOUNDS] ability."
+        ),
+        ability_id="",
+        faction_id="GC",
+        datasheet_id="000003984",
+    )
+    assert status == "Supported"
+    assert "Punisher gatling cannon" in str(notes or "")
+    assert "DEVASTATING WOUNDS" in str(notes or "")
+
+
+def test_gc_pheromone_trail_support_matrix_classifies_supported():
+    gsm = _seed_support_maps()
+    status, notes = gsm._classify_ability(
+        "Pheromone Trail",
+        "Once per battle round, you can target one model with this ability with the Rapid Ingress Stratagem for 0CP.",
+        ability_id="",
+        faction_id="GC",
+        datasheet_id="000003883",
+    )
+    assert status == "Supported"
+    assert "Rapid Ingress" in str(notes or "")
+    assert "battle round" in str(notes or "").lower()
