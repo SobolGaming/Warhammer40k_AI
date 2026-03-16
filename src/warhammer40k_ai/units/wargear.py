@@ -23436,6 +23436,18 @@ class WargearProfile:
         if target_model is not None:
             target_model._last_damage_weapon_profile = self
             target_model._last_damage_source_kind = "attack"
+
+        if is_mortal:
+            target_unit = getattr(target_model, "parent_unit", None)
+            maybe_watcher = getattr(target_unit, "_maybe_activate_watcher_in_the_dark", None)
+            if callable(maybe_watcher):
+                maybe_watcher(
+                    target_model=target_model,
+                    attacker_model=attacker,
+                    attacker_unit=getattr(attacker, "parent_unit", None),
+                    weapon_profile=self,
+                    game_map=game_map,
+                )
         
         # Handle Feel No Pain saves
         final_damage = damage_amount

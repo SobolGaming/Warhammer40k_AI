@@ -6,6 +6,235 @@ logger = logging.getLogger(__name__)
 
 
 class DamageDeathMixin:
+    def _maybe_activate_watcher_in_the_dark(
+        self,
+        *,
+        target_model: Optional[Model],
+        attacker_model: Optional[Model] = None,
+        attacker_unit: Optional['Unit'] = None,
+        weapon_profile=None,
+        game_map: Optional['Map'] = None,
+        phase_name: str = "",
+    ) -> bool:
+        if target_model is None:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if target_model not in list(root.get_attached_unit_models() or []):
+                return False
+        except Exception:
+            pass
+        has_astartes = getattr(target_model, "has_any_keyword", None)
+        if callable(has_astartes) and not bool(has_astartes("ADEPTUS ASTARTES")):
+            return False
+
+        specs_fn = getattr(root, "unit_watcher_in_the_dark_specs", None)
+        specs = list(specs_fn() or []) if callable(specs_fn) else []
+        if not specs:
+            return False
+
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None:
+            return False
+        game = getattr(player, "game", None)
+
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if not current_phase:
+            current_phase = str(phase_name or "").strip().upper()
+        if not current_phase:
+            current_phase = "ANY_PHASE"
+
+        phase_label = str(phase_name or "").strip()
+        if not phase_label:
+            phase_map = {
+                "COMMAND_PHASE": "Command phase",
+                "MOVEMENT_PHASE": "Movement phase",
+                "SHOOTING_PHASE": "Shooting phase",
+                "CHARGE_PHASE": "Charge phase",
+                "FIGHT_PHASE": "Fight phase",
+            }
+            phase_label = phase_map.get(current_phase, current_phase.replace("_", " ").title())
+
+        unit_id = ""
+        model_id = ""
+        attacker_unit_id = ""
+        attacker_model_id = ""
+        weapon_name = ""
+        try:
+            unit_id = str(get_entity_id(root) or "")
+        except Exception:
+            unit_id = ""
+        try:
+            model_id = str(get_entity_id(target_model) or "")
+        except Exception:
+            model_id = ""
+        try:
+            if attacker_unit is None and attacker_model is not None:
+                attacker_unit = getattr(attacker_model, "parent_unit", None)
+            attacker_unit_root = (
+                attacker_unit.get_attached_unit_root()
+                if attacker_unit is not None and hasattr(attacker_unit, "get_attached_unit_root")
+                else attacker_unit
+            )
+            attacker_unit_id = str(get_entity_id(attacker_unit_root) or "") if attacker_unit_root is not None else ""
+        except Exception:
+            attacker_unit_id = ""
+        try:
+            attacker_model_id = str(get_entity_id(attacker_model) or "") if attacker_model is not None else ""
+        except Exception:
+            attacker_model_id = ""
+        try:
+            weapon_name = str(
+                getattr(getattr(weapon_profile, "parent_wargear", None), "name", "")
+                or getattr(weapon_profile, "name", "")
+                or ""
+            )
+        except Exception:
+            weapon_name = ""
+
+        provider = getattr(game_map, "unit_mortal_wound_fnp_provider", None) if game_map is not None else None
+
+        for spec in list(specs):
+            ability_key = str(spec.get("ability_key") or "watcher_in_the_dark").strip().lower()
+            if not ability_key:
+                ability_key = "watcher_in_the_dark"
+            if getattr(root, "has_used_unit_once_per_battle", lambda _k: False)(ability_key):
+                continue
+            try:
+                fnp_value = int(spec.get("value", 0) or 0)
+            except (TypeError, ValueError):
+                fnp_value = 0
+            if fnp_value <= 0:
+                continue
+            ability_name = str(spec.get("source", "") or "Watcher in the Dark").strip() or "Watcher in the Dark"
+            condition = str(spec.get("condition", "") or "against mortal wounds").strip() or "against mortal wounds"
+            context = {
+                "ability": "watcher_in_the_dark",
+                "ability_name": ability_name,
+                "unit_id": unit_id,
+                "model_id": model_id,
+                "ability_key": ability_key,
+                "fnp_value": int(fnp_value),
+                "condition": condition,
+                "phase_name": phase_label,
+                "attacker_unit_id": attacker_unit_id,
+                "attacker_model_id": attacker_model_id,
+                "weapon_name": weapon_name,
+            }
+
+            use_now = False
+            if callable(getattr(player, "has_control", None)) and player.has_control() and callable(provider):
+                if game is not None:
+                    from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                    from ...engine.decisions import DecisionOption, DecisionRequest
+
+                    request = DecisionRequest.create(
+                        DECISION_CONFIRM_YES_NO,
+                        ability_name,
+                        player_id=getattr(player, "id", None),
+                        options=[
+                            DecisionOption.create("Use", payload={"choice": True}),
+                            DecisionOption.create("Skip", payload={"choice": False}),
+                        ],
+                        context=context,
+                    )
+                    request_fn = getattr(game, "request_decision", None)
+                    if callable(request_fn):
+                        request_fn(request)
+                decision = provider(
+                    player=player,
+                    unit=root,
+                    target_model=target_model,
+                    attacker_model=attacker_model,
+                    weapon_profile=weapon_profile,
+                    ability_name=ability_name,
+                    ability_key=ability_key,
+                    fnp_value=int(fnp_value),
+                    condition=condition,
+                    phase_name=phase_label,
+                )
+                use_now = str(decision or "").strip().lower() in ("use", "yes", "true")
+            elif game is not None:
+                from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                from ...engine.decisions import DecisionOption, DecisionRequest
+                from ...utility.decision_utils import resolve_decision_value
+
+                request = DecisionRequest.create(
+                    DECISION_CONFIRM_YES_NO,
+                    ability_name,
+                    player_id=getattr(player, "id", None),
+                    options=[
+                        DecisionOption.create("Use", payload={"choice": True}),
+                        DecisionOption.create("Skip", payload={"choice": False}),
+                    ],
+                    context=context,
+                )
+                request_fn = getattr(game, "request_decision", None)
+                if callable(request_fn):
+                    request_fn(request)
+                should_use_fn = getattr(player, "_should_use_optional_ability", None)
+                if callable(should_use_fn):
+                    use_now = bool(should_use_fn("WATCHER_IN_THE_DARK", context))
+                option_id = None
+                for opt in list(getattr(request, "options", []) or []):
+                    payload = dict(getattr(opt, "payload", {}) or {})
+                    if bool(payload.get("choice", False)) == use_now:
+                        option_id = opt.option_id
+                        break
+                if option_id:
+                    _value, apply_result = resolve_decision_value(
+                        game,
+                        request,
+                        option_id,
+                        player_id=getattr(player, "id", None),
+                    )
+                    if apply_result is None or not getattr(apply_result, "ok", False):
+                        use_now = False
+            if not use_now:
+                continue
+
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            for model in list(models or []):
+                alive_attr = getattr(model, "is_alive", False)
+                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not alive:
+                    continue
+                set_temporary_fnp = getattr(model, "set_temporary_fnp", None)
+                if callable(set_temporary_fnp):
+                    set_temporary_fnp(
+                        key=f"{ability_key}:{get_entity_id(model)}",
+                        value=int(fnp_value),
+                        source=ability_name,
+                        condition=condition,
+                        expires_phase=current_phase,
+                    )
+            mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
+            if callable(mark_used):
+                mark_used(ability_key, ability_name=ability_name)
+            try:
+                from ...utility.event_bus import append_action
+
+                append_action(
+                    player,
+                    f"{getattr(root, 'name', 'Unit')}: {ability_name} grants Feel No Pain {int(fnp_value)}+ {condition} until end of phase.",
+                )
+            except Exception:
+                pass
+            return True
+        return False
+
     def remove_model(self, model: Model, fleed: bool = False, game_map: Optional['Map'] = None) -> None:
         assert model in self.models
 

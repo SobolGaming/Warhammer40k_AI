@@ -6225,6 +6225,7 @@ def _classify_ability_base(
     command_phase_select_friendly_synapse_units_support = _command_phase_select_friendly_synapse_units_support(description)
     shadow_in_the_warp_enemy_battleshock_penalty_support = _shadow_in_the_warp_enemy_battleshock_penalty_support(description)
     command_phase_enemy_no_cover_support = _command_phase_enemy_no_cover_support(description)
+    watcher_in_the_dark_support = _watcher_in_the_dark_support(description)
     command_phase_psychic_veil_support = _command_phase_psychic_veil_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
     start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
@@ -6426,6 +6427,8 @@ def _classify_ability_base(
         return fight_phase_below_starting_strength_fight_first_support
     if friendly_destroyed_weapon_attacks_override_support:
         return friendly_destroyed_weapon_attacks_override_support
+    if watcher_in_the_dark_support:
+        return watcher_in_the_dark_support
     prey_selection_support = _prey_selection_support(description)
     if prey_selection_support:
         return prey_selection_support
@@ -13669,6 +13672,33 @@ def _command_phase_enemy_no_cover_support(description: str) -> Optional[Tuple[st
     return (
         "Supported",
         f"Command phase: select one enemy unit within {int(range_value)}\" of the bearer; it cannot gain Benefit of Cover until your next Command phase.",
+    )
+
+
+def _watcher_in_the_dark_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle in any phase just after a mortal wound is allocated to an? [a-z0-9 ]+ model in this unit "
+        r"this unit can summon a watcher in the dark when it does until the end of the phase "
+        r"models in this unit have the feel no pain (?P<val>\d+)(?: ability)? against mortal wounds?"
+        r"(?: designer(?:s| s)? note .+)?"
+    )
+    match = re.fullmatch(pattern, norm)
+    if not match:
+        return None
+    try:
+        value = int(match.group("val") or 0)
+    except (TypeError, ValueError):
+        value = 0
+    if value <= 0:
+        return None
+    return (
+        "Supported",
+        f"Once per battle, after a mortal wound is allocated: optional Watcher in the Dark activation grants Feel No Pain {int(value)}+ against mortal wounds until end of phase.",
     )
 
 

@@ -52,6 +52,8 @@ class Map:
         self.leading_unmodified_six_provider = None
         # Signature: provider(player, model, ability_name, ability_key, ...) -> "use" | "skip"
         self.model_allocated_damage_zero_provider = None
+        # Signature: provider(player, unit, target_model, ability_name, ability_key, fnp_value, condition, ...) -> "use" | "skip"
+        self.unit_mortal_wound_fnp_provider = None
         # Signature: provider(player, attacker, target, weapon_profile, ability_name, choices) -> choice_key | None
         self.hit_modifier_choice_provider = None
         # Signature: provider(player, attacker, target, weapon_profile, ability_name, choices) -> choice_key | None

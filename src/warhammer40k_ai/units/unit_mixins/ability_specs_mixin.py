@@ -50,6 +50,86 @@ class AbilitySpecsMixin:
             "attack_types": tuple(sorted(set(attack_types))),
         }
 
+    def unit_watcher_in_the_dark_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: once per battle, after a mortal wound is allocated, optionally gain
+        Feel No Pain against mortal wounds until the end of the phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - value: int (FNP roll)
+            - ability_key: str (once-per-battle tracking key)
+            - condition: str
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_watcher_in_the_dark_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, str]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        pattern = re.compile(
+            r"once per battle in any phase just after a mortal wound is allocated to "
+            r"an? [a-z0-9 ]+ model in this unit this unit can summon a watcher in the dark "
+            r"when it does until the end of the phase models in this unit have the feel no pain "
+            r"(?P<val>\d+)(?: ability)? against mortal wounds?(?: designer s note .+)?",
+            re.IGNORECASE,
+        )
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                match = pattern.fullmatch(normalized)
+                if not match:
+                    continue
+                try:
+                    value = int(match.group("val") or 0)
+                except (TypeError, ValueError):
+                    value = 0
+                if value <= 0:
+                    continue
+                source = str(name or "Watcher in the Dark").strip() or "Watcher in the Dark"
+                key_seed = self._normalize_keyword_phrase(source) or "watcher_in_the_dark"
+                key_seed = re.sub(r"\s+", "_", str(key_seed or "").strip()) or "watcher_in_the_dark"
+                ability_key = f"watcher_in_the_dark:{key_seed}"
+                dedupe_key = (source.lower(), int(value), ability_key)
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                specs.append(
+                    {
+                        "source": source,
+                        "value": int(value),
+                        "ability_key": ability_key,
+                        "condition": "against mortal wounds",
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_post_shoot_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: after this model has shot, select a hit enemy unit to take a Battle-shock test.

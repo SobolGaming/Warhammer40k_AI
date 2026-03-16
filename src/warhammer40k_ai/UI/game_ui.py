@@ -2999,6 +2999,7 @@ class GameView:
                 self.game.map.leading_unmodified_six_provider = self._leading_unmodified_six_provider
                 self.game.map.model_unmodified_six_provider = self._model_unmodified_six_provider
                 self.game.map.model_allocated_damage_zero_provider = self._model_allocated_damage_zero_provider
+                self.game.map.unit_mortal_wound_fnp_provider = self._unit_mortal_wound_fnp_provider
                 self.game.map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
                 self.game.map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
                 self.game.map.move_modifier_choice_provider = self._move_modifier_choice_provider
@@ -3019,6 +3020,7 @@ class GameView:
                 self.game_map.leading_unmodified_six_provider = self._leading_unmodified_six_provider
                 self.game_map.model_unmodified_six_provider = self._model_unmodified_six_provider
                 self.game_map.model_allocated_damage_zero_provider = self._model_allocated_damage_zero_provider
+                self.game_map.unit_mortal_wound_fnp_provider = self._unit_mortal_wound_fnp_provider
                 self.game_map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
                 self.game_map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
                 self.game_map.move_modifier_choice_provider = self._move_modifier_choice_provider
@@ -14683,6 +14685,133 @@ class GameView:
                 "unit_id": unit_id,
                 "model_id": model_id,
                 "ability_key": str(ability_key or ""),
+            },
+
+        )
+
+        choice_holder = {"choice": "skip", "done": False}
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                value = None
+            if isinstance(value, dict) and bool(value.get("choice")):
+                choice_holder["choice"] = "use"
+            else:
+                choice_holder["choice"] = "skip"
+            choice_holder["done"] = True
+
+        self.yes_no_dialog.show(title, message, _on_choice, decision_request=req)
+        try:
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            pass
+
+        clock = pygame.time.Clock()
+        while self.yes_no_dialog.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return "skip"
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    self.yes_no_dialog.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        return str(choice_holder["choice"] or "skip")
+
+    def _unit_mortal_wound_fnp_provider(
+        self,
+        *,
+        player=None,
+        unit=None,
+        target_model=None,
+        attacker_model=None,
+        weapon_profile=None,
+        ability_name: str = "",
+        ability_key: str = "",
+        fnp_value: int = 0,
+        condition: str = "",
+        phase_name: str = "",
+    ) -> str:
+        try:
+            if player is None or not getattr(player, "has_control", lambda: False)():
+                return "skip"
+        except Exception:
+            return "skip"
+
+        if getattr(self, "yes_no_dialog", None) is None:
+            return "skip"
+
+        from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+        from ..engine.decisions import DecisionOption
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        ability_label = str(ability_name or "Watcher in the Dark").strip() or "Watcher in the Dark"
+        unit_label = getattr(unit, "name", "Unit")
+        model_label = getattr(target_model, "name", "Model")
+        phase_label = str(phase_name or "").strip() or "this phase"
+        condition_label = str(condition or "against mortal wounds").strip() or "against mortal wounds"
+        title = ability_label
+        message = (
+            f"{unit_label} can use {ability_label} after {model_label} was allocated a mortal wound. "
+            f"Use it now to gain Feel No Pain {int(fnp_value or 0)}+ {condition_label} until the end of {phase_label.lower()}?"
+        )
+
+        unit_id = ""
+        model_id = ""
+        attacker_model_id = ""
+        weapon_name = ""
+        try:
+            unit_id = get_entity_id(unit)
+        except Exception:
+            unit_id = ""
+        try:
+            model_id = get_entity_id(target_model)
+        except Exception:
+            model_id = ""
+        try:
+            attacker_model_id = get_entity_id(attacker_model)
+        except Exception:
+            attacker_model_id = ""
+        try:
+            weapon_name = str(
+                getattr(getattr(weapon_profile, "parent_wargear", None), "name", "")
+                or getattr(weapon_profile, "name", "")
+                or ""
+            )
+        except Exception:
+            weapon_name = ""
+
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
+            DECISION_CONFIRM_YES_NO,
+            title,
+            player_id=getattr(player, "id", None),
+            options=[
+                DecisionOption.create("Use", payload={"choice": True}),
+                DecisionOption.create("Skip", payload={"choice": False}),
+            ],
+            context={
+                "ability": "watcher_in_the_dark",
+                "ability_name": ability_label,
+                "unit_id": unit_id,
+                "model_id": model_id,
+                "ability_key": str(ability_key or ""),
+                "fnp_value": int(fnp_value or 0),
+                "condition": condition_label,
+                "phase_name": phase_label,
+                "attacker_model_id": attacker_model_id,
+                "weapon_name": weapon_name,
             },
 
         )

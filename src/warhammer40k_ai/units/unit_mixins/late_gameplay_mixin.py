@@ -1144,6 +1144,19 @@ class LateGameplayMixin:
                 return False
             return bool(matcher.search(normalized))
 
+        def _is_watcher_in_the_dark_text(value: str) -> bool:
+            normalized = self._normalize_rules_text(value or "").lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            return bool(
+                re.fullmatch(
+                    r"once per battle in any phase just after a mortal wound is allocated to an? [a-z0-9 ]+ model in this unit "
+                    r"this unit can summon a watcher in the dark when it does until the end of the phase "
+                    r"models in this unit have the feel no pain [1-6](?: ability)? against mortal wounds?(?: designer s note .+)?",
+                    normalized,
+                )
+            )
+
         fnp_pattern_requested = any(str(pattern or "").strip().lower() in {"feel no pain", "fnp"} for pattern in list(patterns or []))
         
         # Check keywords first
@@ -1164,6 +1177,8 @@ class LateGameplayMixin:
                 for pattern in patterns:
                     if pattern.lower() in ability.lower():
                         if _is_waaagh_conditional_text(ability):
+                            continue
+                        if fnp_pattern_requested and _is_watcher_in_the_dark_text(ability):
                             continue
                         match = re.search(value_pattern, ability.lower())
                         if match:
@@ -1203,6 +1218,8 @@ class LateGameplayMixin:
                         continue
                     if fnp_pattern_requested and _is_named_model_fnp_conditional_text(desc_text):
                         continue
+                    if fnp_pattern_requested and _is_watcher_in_the_dark_text(desc_text):
+                        continue
                     for pattern in patterns:
                         if pattern.lower() in desc_text.lower():
                             match = re.search(value_pattern, desc_text.lower())
@@ -1224,6 +1241,8 @@ class LateGameplayMixin:
                 for pattern in patterns:
                     if pattern.lower() in ability.lower():
                         if _is_waaagh_conditional_text(ability):
+                            continue
+                        if fnp_pattern_requested and _is_watcher_in_the_dark_text(ability):
                             continue
                         match = re.search(value_pattern, ability.lower())
                         if match:
@@ -1262,6 +1281,8 @@ class LateGameplayMixin:
                     if _is_waaagh_conditional_text(desc_text):
                         continue
                     if fnp_pattern_requested and _is_named_model_fnp_conditional_text(desc_text):
+                        continue
+                    if fnp_pattern_requested and _is_watcher_in_the_dark_text(desc_text):
                         continue
                     for pattern in patterns:
                         if pattern.lower() in desc_text.lower():

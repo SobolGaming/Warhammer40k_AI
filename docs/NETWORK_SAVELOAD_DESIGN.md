@@ -488,6 +488,7 @@ Optional ability confirmations (yes/no):
 - our_time_is_nigh_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="our_time_is_nigh"`, `unit_id`, `turn`, `turn_owner_id`, `phase`)
 - start_any_phase_damage_set_one_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_damage_set_one"`, `unit_id`, `model_id`, `buff_key`)
 - start_any_phase_fnp_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_fnp"`, `unit_id`, `ability_key`)
+- watcher_in_the_dark_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="watcher_in_the_dark"`, `unit_id`, `model_id`, `ability_key`, `fnp_value`, `condition`, `phase_name`)
 - dark_ritual_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="dark_ritual"`, `unit_id`, `ability_key`)
 - desperate_devotion_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="desperate_devotion"`, `unit_id`, `trigger_action`, `turn`, `turn_owner_id`, `phase`)
 - sentinel_storm_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="sentinel_storm"`, `unit_id`, `ability_key`)
