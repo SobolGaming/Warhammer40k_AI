@@ -8375,6 +8375,103 @@ class GameShootingFightHandlersMixin:
                     )
                     pending_keys.add((model_id, buff_key))
 
+    def _on_fight_unit_selected_deeds_of_heroism(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        pname = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if pname and pname != "FIGHT_PHASE":
+            return
+        root_getter = getattr(unit, "get_attached_unit_root", None)
+        root = root_getter() if callable(root_getter) else unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        army_getter = getattr(root, "get_parent_army", None)
+        army = army_getter() if callable(army_getter) else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None:
+            return
+        if selecting_player is not None and selecting_player is not player:
+            return
+
+        pending_keys: set[tuple[str, str]] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "deeds_of_heroism":
+                    continue
+                model_id = str(ctx.get("model_id", "") or "")
+                buff_key = str(ctx.get("buff_key", "") or "")
+                if model_id and buff_key:
+                    pending_keys.add((model_id, buff_key))
+
+        members_getter = getattr(root, "get_attached_unit_members", None)
+        members = list(members_getter() or []) if callable(members_getter) else [root]
+        if not members:
+            members = [root]
+        unit_id = get_entity_id(root)
+        if not unit_id:
+            return
+        for member in sorted(members, key=lambda entry: str(get_entity_id(entry) or "")):
+            if member is None:
+                continue
+            for model in sorted(list(getattr(member, "models", []) or []), key=lambda entry: str(get_entity_id(entry) or "")):
+                if model is None or not bool(getattr(model, "is_alive", False)):
+                    continue
+                model_id = str(get_entity_id(model) or "")
+                if not model_id:
+                    continue
+                specs = list(
+                    getattr(member, "model_fight_selected_unit_melee_attacks_bonus_specs", lambda _m: [])(model) or []
+                )
+                for spec in specs:
+                    buff_key = str(spec.get("buff_key", "") or "").strip().lower()
+                    if not buff_key or (model_id, buff_key) in pending_keys:
+                        continue
+                    if bool(getattr(model, "has_used_once_per_battle", lambda _k: False)(buff_key)):
+                        continue
+                    ability_name = str(spec.get("source", "") or "Deeds of Heroism").strip() or "Deeds of Heroism"
+                    try:
+                        attacks_bonus = int(spec.get("attacks_bonus", 0) or 0)
+                    except (TypeError, ValueError):
+                        attacks_bonus = 0
+                    if attacks_bonus <= 0:
+                        continue
+                    message = f"Use {ability_name} for {getattr(model, 'name', 'Model')}?"
+                    ctx = {
+                        "ability": "deeds_of_heroism",
+                        "ability_name": ability_name,
+                        "phase": "Fight phase",
+                        "unit": getattr(root, "name", "") or "",
+                        "unit_id": unit_id,
+                        "model": getattr(model, "name", "") or "",
+                        "model_id": model_id,
+                        "attacks_bonus": int(attacks_bonus),
+                        "buff_key": buff_key,
+                    }
+                    self._queue_optional_ability_confirmation(
+                        player=player,
+                        ability_key="deeds_of_heroism",
+                        ability_name=ability_name,
+                        message=message,
+                        context=ctx,
+                        payload={
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "attacks_bonus": ctx["attacks_bonus"],
+                            "buff_key": buff_key,
+                            "ability_name": ability_name,
+                        },
+                        instance_key=f"{model_id}:{buff_key}:fight",
+                    )
+                    pending_keys.add((model_id, buff_key))
+
     def _on_fight_unit_selected_alchemicus_familiar(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None:
             return
@@ -13772,6 +13869,109 @@ class GameShootingFightHandlersMixin:
                 sr.pop("lethal_ichor_allocations", None)
                 sr.pop("lethal_ichor_source", None)
             enemy_root.special_rules = sr
+
+    def _on_fight_sequence_complete_allocated_melee_mortal_retaliation(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if not self.is_fight_phase():
+            return
+        try:
+            attacker_root = unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = unit
+        if attacker_root is None:
+            return
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        if not attacker_id:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        try:
+            from ...utility.event_bus import append_dice
+        except Exception:
+            append_dice = None
+
+        for enemy in list(game_map.get_enemy_units(attacker_root) or []):
+            if enemy is None:
+                continue
+            try:
+                enemy_root = enemy.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy
+            if enemy_root is None:
+                continue
+            sr = getattr(enemy_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            allocations_by_key = sr.get("allocated_melee_retaliation_allocations")
+            specs_by_key = sr.get("allocated_melee_retaliation_specs")
+            if not isinstance(allocations_by_key, dict) or not isinstance(specs_by_key, dict):
+                continue
+
+            changed = False
+            for ability_key, spec in list(specs_by_key.items()):
+                if not isinstance(spec, dict):
+                    continue
+                allocations = allocations_by_key.get(ability_key)
+                if not isinstance(allocations, dict):
+                    continue
+                try:
+                    num_allocations = int(allocations.get(attacker_id, 0) or 0)
+                except (TypeError, ValueError):
+                    num_allocations = 0
+                if num_allocations <= 0:
+                    continue
+                try:
+                    threshold = int(spec.get("threshold", 4) or 4)
+                except (TypeError, ValueError):
+                    threshold = 4
+                try:
+                    mortal_wounds = int(spec.get("mortal_wounds", 1) or 1)
+                except (TypeError, ValueError):
+                    mortal_wounds = 1
+                rolls: list[int] = []
+                total_mortal_wounds = 0
+                for _ in range(int(num_allocations)):
+                    try:
+                        roll = int(get_roll("D6") or 0)
+                    except Exception:
+                        roll = 0
+                    rolls.append(int(roll))
+                    if int(roll) >= int(threshold):
+                        total_mortal_wounds += int(mortal_wounds)
+                source_name = str(spec.get("source", "") or "Allocated melee retaliation").strip() or "Allocated melee retaliation"
+                player = getattr(enemy_root.get_parent_army(), "player", None)
+                if callable(append_dice) and player is not None:
+                    append_dice(
+                        player,
+                        f"{source_name}: {int(num_allocations)} roll(s) vs {getattr(attacker_root, 'name', 'Unit')} -> {', '.join(str(r) for r in rolls)}",
+                    )
+                if total_mortal_wounds > 0:
+                    enemy_root._apply_mortal_wounds_to_unit(
+                        attacker_root,
+                        int(total_mortal_wounds),
+                        game_map=game_map,
+                        attacker_unit=enemy_root,
+                    )
+                allocations.pop(attacker_id, None)
+                changed = True
+                if allocations:
+                    allocations_by_key[ability_key] = allocations
+                else:
+                    allocations_by_key.pop(ability_key, None)
+                    specs_by_key.pop(ability_key, None)
+
+            if changed:
+                if allocations_by_key:
+                    sr["allocated_melee_retaliation_allocations"] = allocations_by_key
+                else:
+                    sr.pop("allocated_melee_retaliation_allocations", None)
+                if specs_by_key:
+                    sr["allocated_melee_retaliation_specs"] = specs_by_key
+                else:
+                    sr.pop("allocated_melee_retaliation_specs", None)
+                enemy_root.special_rules = sr
 
     def _on_unit_shooting_resolved_repulsor_grid(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:

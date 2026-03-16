@@ -2711,6 +2711,12 @@ class RulesParsingMixin:
                     flags=re.IGNORECASE,
                 ):
                     kind = "table_d6_2_5_6_flat3"
+                elif re.search(
+                    r"roll one d6 on a 2 3 that (?:enemy )?unit suffers d3 mortal wounds on a 4 5 that (?:enemy )?unit suffers 3 mortal wounds on a 6 that (?:enemy )?unit suffers d3 3 mortal wounds",
+                    low_compact,
+                    flags=re.IGNORECASE,
+                ):
+                    kind = "table_d6_2_3_d3_4_5_3_6_d3_3"
                 if not kind:
                     continue
                 battle_shock_on_models_destroyed = bool(

@@ -7140,6 +7140,75 @@ class WargearProfile:
                                 sr["lethal_ichor_allocations"] = allocations
                                 sr["lethal_ichor_source"] = str(sr.get("lethal_ichor_source", "") or "Lethal Ichor")
                                 target_root.special_rules = sr
+                target_unit = getattr(target_model, "parent_unit", None) if target_model is not None else None
+                retaliation_specs_fn = getattr(target_unit, "model_allocated_melee_mortal_retaliation_specs", None)
+                retaliation_specs = (
+                    list(retaliation_specs_fn(target_model) or [])
+                    if callable(retaliation_specs_fn) and target_model is not None
+                    else []
+                )
+                if retaliation_specs and attacker_unit is not None and target_unit is not None:
+                    try:
+                        target_root = (
+                            target_unit.get_attached_unit_root()
+                            if hasattr(target_unit, "get_attached_unit_root")
+                            else target_unit
+                        )
+                    except Exception:
+                        target_root = target_unit
+                    if target_root is not None:
+                        try:
+                            same_army = target_root.get_parent_army() == attacker_unit.get_parent_army()
+                        except Exception:
+                            same_army = True
+                        if not same_army:
+                            try:
+                                attacker_root = (
+                                    attacker_unit.get_attached_unit_root()
+                                    if hasattr(attacker_unit, "get_attached_unit_root")
+                                    else attacker_unit
+                                )
+                            except Exception:
+                                attacker_root = attacker_unit
+                            attacker_id = str(get_entity_id(attacker_root) or "")
+                            if attacker_id:
+                                sr = getattr(target_root, "special_rules", None)
+                                if not isinstance(sr, dict):
+                                    sr = {}
+                                allocations_by_key = sr.get("allocated_melee_retaliation_allocations")
+                                if not isinstance(allocations_by_key, dict):
+                                    allocations_by_key = {}
+                                specs_by_key = sr.get("allocated_melee_retaliation_specs")
+                                if not isinstance(specs_by_key, dict):
+                                    specs_by_key = {}
+                                for spec in retaliation_specs:
+                                    ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+                                    if not ability_key:
+                                        continue
+                                    try:
+                                        cap = int(spec.get("max_rolls_per_attacker_unit", 6) or 6)
+                                    except Exception:
+                                        cap = 6
+                                    if cap <= 0:
+                                        continue
+                                    allocations = allocations_by_key.get(ability_key)
+                                    if not isinstance(allocations, dict):
+                                        allocations = {}
+                                    try:
+                                        current = int(allocations.get(attacker_id, 0) or 0)
+                                    except Exception:
+                                        current = 0
+                                    allocations[attacker_id] = int(min(int(cap), max(0, current + 1)))
+                                    allocations_by_key[ability_key] = allocations
+                                    specs_by_key[ability_key] = {
+                                        "source": str(spec.get("source", "") or "Allocated melee retaliation").strip()
+                                        or "Allocated melee retaliation",
+                                        "threshold": int(spec.get("threshold", 4) or 4),
+                                        "mortal_wounds": int(spec.get("mortal_wounds", 1) or 1),
+                                    }
+                                sr["allocated_melee_retaliation_allocations"] = allocations_by_key
+                                sr["allocated_melee_retaliation_specs"] = specs_by_key
+                                target_root.special_rules = sr
 
             # INDIRECT FIRE: if no target models were visible at selection time, the target gains Benefit of Cover
             # (unless the weapon ignores cover). This stacks with terrain evaluation but is not cumulative (+1 max).
@@ -9829,6 +9898,14 @@ class WargearProfile:
                             int(veteran_sustained or 0),
                             str(veteran_source or "Veteran of Behemoth"),
                         )
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            precision_source_fn = getattr(unit, "get_leading_precision_on_critical_hit_source", None) if unit is not None else None
+            precision_source = str(precision_source_fn() or "").strip() if callable(precision_source_fn) else ""
+            if precision_source:
+                bonus_precision_on_crit = True
         except Exception:
             pass
         # Grey Knights (Banishers): Channelled Force.
@@ -21424,6 +21501,28 @@ class WargearProfile:
                 save_result["reroll"] = rr
                 save_result["special_effects"].append(
                     "Adaptive Instincts (Bioregeneration): re-roll saving throw of 1"
+                )
+                dice_roll = rr
+                save_result["roll"] = dice_roll
+
+        if (
+            rerolls_allowed
+            and not shadow_field_no_reroll
+            and dice_roll == 1
+            and "reroll" not in save_result
+            and save_result.get("save_type") == "invulnerable"
+        ):
+            t_unit = getattr(target_model, "parent_unit", None)
+            choice_fn = getattr(t_unit, "_bladeguard_choice", None) if t_unit is not None else None
+            army = t_unit.get_parent_army() if t_unit is not None and hasattr(t_unit, "get_parent_army") else None
+            game_local = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            choice = str(choice_fn(game=game_local) or "").strip().upper() if callable(choice_fn) else ""
+            if choice == "SHIELDS":
+                rr = _reroll_save()
+                save_result["reroll_of_one"] = 1
+                save_result["reroll"] = rr
+                save_result["special_effects"].append(
+                    "Bladeguard (Shields of the Chapter): re-roll invulnerable save of 1"
                 )
                 dice_roll = rr
                 save_result["roll"] = dice_roll

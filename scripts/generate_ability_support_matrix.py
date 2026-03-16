@@ -5587,6 +5587,30 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
             "Supported",
             "After deployment, redeploy this unit and one other friendly KROOT unit; selected units can be placed into Strategic Reserves regardless of current limits.",
         ),
+        ("SM", "Ballistus Strike", "000000091"): (
+            "Supported",
+            "Ballistus Dreadnought ranged attacks can re-roll the Hit roll against targets that are not Below Half-strength.",
+        ),
+        ("SM", "Grand Master of the Deathwing", "000000219"): (
+            "Supported",
+            "While Belial is leading, attacks made by models in that attached unit gain [PRECISION] on Critical Hits.",
+        ),
+        ("SM", "Strikes of Retribution", "000000219"): (
+            "Supported",
+            "Each melee attack allocated to Belial is tracked per attacking unit (max 6); after that unit finishes its attacks, roll D6s and each 4+ inflicts 1 mortal wound back on the attacker.",
+        ),
+        ("SM", "Bladeguard", "000000071"): (
+            "Supported",
+            "Start of the Fight phase: Bladeguard Veteran Squad chooses None, Swords of the Chapter (melee Hit re-rolls of 1), or Shields of the Chapter (invulnerable save re-rolls of 1) until phase end.",
+        ),
+        ("SM", "Deeds of Heroism", "000001165"): (
+            "Supported",
+            "Once per battle when Bladeguard Ancient is selected to fight, optional activation grants +1 Attacks to melee weapons equipped by models in its unit until end of phase.",
+        ),
+        ("SM", "Brutalis Charge", "000000136"): (
+            "Supported",
+            "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-3=D3, 4-5=3, 6=D3+3).",
+        ),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
     for (fid, name, dsid), val in raw.items():
@@ -6474,11 +6498,15 @@ def _classify_ability_base(
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
     dsid = str(datasheet_id or "").strip()
+    datasheet_support_by_name = _datasheet_ability_support_by_name_faction_datasheet()
+    faction_support_by_name = _datasheet_ability_support_by_name_faction()
     ambiguous_name = False
     if name_norm and dsid:
         key = (fid, name_norm, dsid)
         if key in ABILITY_SUPPORT_BY_NAME_FACTION_DS:
             return ABILITY_SUPPORT_BY_NAME_FACTION_DS[key]
+        if key in datasheet_support_by_name:
+            return datasheet_support_by_name[key]
         if not fid:
             datasheet_matches = [
                 val
@@ -6487,12 +6515,26 @@ def _classify_ability_base(
             ]
             if datasheet_matches:
                 return datasheet_matches[0]
+            static_datasheet_matches = [
+                val
+                for (k_fid, k_name, k_dsid), val in datasheet_support_by_name.items()
+                if k_name == name_norm and k_dsid == dsid
+            ]
+            if static_datasheet_matches:
+                return static_datasheet_matches[0]
         for k_fid, k_name, _k_ds in ABILITY_SUPPORT_BY_NAME_FACTION_DS.keys():
             if k_fid == fid and k_name == name_norm:
                 ambiguous_name = True
                 break
+        if not ambiguous_name:
+            for k_fid, k_name, _k_ds in datasheet_support_by_name.keys():
+                if k_fid == fid and k_name == name_norm:
+                    ambiguous_name = True
+                    break
     if name_norm and (not ambiguous_name) and (fid, name_norm) in ABILITY_SUPPORT_BY_NAME_FACTION:
         return ABILITY_SUPPORT_BY_NAME_FACTION[(fid, name_norm)]
+    if name_norm and (not ambiguous_name) and (fid, name_norm) in faction_support_by_name:
+        return faction_support_by_name[(fid, name_norm)]
     if fid == "TAU" and name_norm == "kroot packmates":
         tau_norm = _norm_rules_text(description)
         if (
@@ -10339,6 +10381,11 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         r"each time this model ends a charge move select one enemy unit within engagement range of (?:this model|it) "
         r"(?:then |and (?:then )?)?roll one d6 on a 2 5 that (?:enemy )?unit suffers d3 mortal wounds? on a 6 that (?:enemy )?unit suffers 3 mortal wounds?"
     )
+    table_d3_flat3 = (
+        r"each time this model ends a charge move select one enemy unit within engagement range of (?:this model|it) "
+        r"(?:then |and (?:then )?)?roll one d6 on a 2 3 that (?:enemy )?unit suffers d3 mortal wounds? "
+        r"on a 4 5 that (?:enemy )?unit suffers 3 mortal wounds? on a 6 that (?:enemy )?unit suffers d3 3 mortal wounds?"
+    )
     remaining_wounds = (
         r"each time this model ends a charge move select one enemy unit within engagement range of it "
         r"(?:then |and (?:then )?)?roll one d6 for each of this models remaining wounds for each 4 that enemy unit suffers 1 mortal wounds?"
@@ -10382,6 +10429,11 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         return (
             "Supported",
             "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-5=D3, 6=3).",
+        )
+    if re.fullmatch(table_d3_flat3, norm):
+        return (
+            "Supported",
+            "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-3=D3, 4-5=3, 6=D3+3).",
         )
     if re.fullmatch(remaining_wounds, norm):
         return (
@@ -18737,9 +18789,8 @@ def _build_faction_content(
         name = entry.get("name", "") or ""
         desc = entry.get("description", "") or ""
         ability_id = str(entry.get("ability_id", "") or "")
-        name_norm = _norm(name)
         ds_ids = sorted({str(d or "").strip() for d in (entry.get("datasheet_ids") or set()) if str(d or "").strip()})
-        if name_norm and name_norm in ambiguous_names:
+        if ds_ids:
             if len(ds_ids) == 1:
                 status, notes = _classify_ability(
                     name,
@@ -18766,8 +18817,6 @@ def _build_faction_content(
                     notes = next((n for n in notes_list if n), "")
                 else:
                     status, notes = _abilities_support_summary(statuses)
-            else:
-                status, notes = _classify_ability(name, desc, ability_id=ability_id, faction_id=faction_id)
         else:
             status, notes = _classify_ability(name, desc, ability_id=ability_id, faction_id=faction_id)
         faction_items.append((status, name))
@@ -18804,21 +18853,13 @@ def _build_faction_content(
                 ab_name = entry.get("name", "") or ""
                 ab_desc = entry.get("description", "") or ""
                 ab_id = str(entry.get("ability_id", "") or "")
-                if _norm(ab_name) in ambiguous_names:
-                    ab_status, _ab_notes = _classify_ability(
-                        ab_name,
-                        ab_desc,
-                        ability_id=ab_id,
-                        faction_id=faction_id,
-                        datasheet_id=dsid,
-                    )
-                else:
-                    ab_status, _ab_notes = _classify_ability(
-                        ab_name,
-                        ab_desc,
-                        ability_id=ab_id,
-                        faction_id=faction_id,
-                    )
+                ab_status, _ab_notes = _classify_ability(
+                    ab_name,
+                    ab_desc,
+                    ability_id=ab_id,
+                    faction_id=faction_id,
+                    datasheet_id=dsid,
+                )
                 ability_statuses.append(ab_status)
 
             ability_status, ability_note = _abilities_support_summary(ability_statuses)

@@ -431,6 +431,7 @@ Fight:
 - fight_within_3_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="fight_within_3"`, `unit_id`, `target_unit_id`)
 - possessed_lord_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="possessed_lord"`, `unit_id`, `model_id`)
 - dance_of_death_dialog: CHOOSE_DANCE_OF_DEATH {choice} (context `unit_id`, `phase_name`, `ability_name`)
+- bladeguard_stance_dialog: CHOOSE_BLADEGUARD_STANCE {choice} (context `unit_id`, `phase_name`, `ability_name`)
 - adaptive_instincts_dialog: CHOOSE_ADAPTIVE_INSTINCTS {choice} (context `unit_id`, `phase_name`, `ability_name`)
 - dread_mob_try_dat_button_fight_dialog: CHOOSE_QUARRY {button_mode, button_effect?} (context `ability="dread_mob_try_dat_button"`, `ability_name="Try Dat Button!"`, `army_id`, `unit_id`, `phase_name`, `trigger="fight"`, `candidate_button_modes[]`, `candidate_button_effects[]`, `optional=false`)
 - harbinger_of_death_dialog: CHOOSE_HARBINGER_OF_DEATH {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)

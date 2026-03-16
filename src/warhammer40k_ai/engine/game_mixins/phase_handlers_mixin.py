@@ -745,6 +745,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_adepta_sororitas_enhancements(player=player, phase=phase)
         self._on_phase_start_astra_militarum_enhancements(player=player, phase=phase)
         self._on_phase_start_tripwires_stunned_cleanup(player=player, phase=phase)
+        self._on_phase_start_bladeguard_stance(player=player, phase=phase)
         self._on_phase_start_adaptive_instincts(player=player, phase=phase)
         self._on_phase_start_orks_squig_mine(player=player, phase=phase)
         self._on_phase_start_shooting_phase_enemy_range_mortal_threshold(player=player, phase=phase)
@@ -3901,6 +3902,106 @@ class GamePhaseHandlersMixin:
                 req = DecisionRequest.create(
                     DECISION_CHOOSE_DANCE_OF_DEATH,
                     "Dance of Death: select a performance.",
+                    player_id=getattr(p, "id", None),
+                    options=options,
+                    context=ctx,
+                )
+                self.request_decision(req)
+
+    def _on_phase_start_bladeguard_stance(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_BLADEGUARD_STANCE
+        from ..decisions import DecisionOption, DecisionRequest
+
+        pending_units = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_BLADEGUARD_STANCE:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                uid = str(ctx.get("unit_id", "") or "")
+                if uid:
+                    pending_units.add(uid)
+
+        def _unit_sort_key(u):
+            uid = get_entity_id(u)
+            if uid is not None:
+                return str(uid)
+            return str(getattr(u, "name", "") or "")
+
+        seen_roots = set()
+        players = sorted(
+            list(getattr(self, "players", []) or []),
+            key=lambda pl: str(getattr(pl, "id", "") or ""),
+        )
+        for p in players:
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None or not unit.is_alive():
+                    continue
+                root_fn = getattr(unit, "get_attached_unit_root", None)
+                root = root_fn() if callable(root_fn) else unit
+                if root is None or not root.is_alive():
+                    continue
+                if not self._unit_on_battlefield_for_reposition(root):
+                    continue
+                unit_id = str(get_entity_id(root) or "")
+                if unit_id and unit_id in seen_roots:
+                    continue
+                if unit_id:
+                    seen_roots.add(unit_id)
+                has_fn = getattr(root, "has_bladeguard_stance", None)
+                if not callable(has_fn) or not bool(has_fn()):
+                    continue
+                choice_fn = getattr(root, "_bladeguard_choice", None)
+                if callable(choice_fn) and choice_fn(game=self):
+                    continue
+                if unit_id and unit_id in pending_units:
+                    continue
+                options = [
+                    DecisionOption.create(
+                        "None",
+                        payload={
+                            "choice": "NONE",
+                            "summary": "Do not apply a Bladeguard stance this phase.",
+                            "unit_id": unit_id,
+                        },
+                    ),
+                    DecisionOption.create(
+                        "Swords of the Chapter",
+                        payload={
+                            "choice": "SWORDS",
+                            "summary": "Re-roll Hit rolls of 1 for melee attacks made by this unit.",
+                            "unit_id": unit_id,
+                        },
+                    ),
+                    DecisionOption.create(
+                        "Shields of the Chapter",
+                        payload={
+                            "choice": "SHIELDS",
+                            "summary": "Re-roll invulnerable saving throws of 1 for this unit.",
+                            "unit_id": unit_id,
+                        },
+                    ),
+                ]
+                ctx = {
+                    "unit_id": unit_id,
+                    "ability_name": "Bladeguard",
+                    "phase_name": pname,
+                }
+                req = DecisionRequest.create(
+                    DECISION_CHOOSE_BLADEGUARD_STANCE,
+                    "Bladeguard: select a stance.",
                     player_id=getattr(p, "id", None),
                     options=options,
                     context=ctx,

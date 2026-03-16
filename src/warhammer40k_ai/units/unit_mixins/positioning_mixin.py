@@ -2656,6 +2656,29 @@ class PositioningMixin:
         root._ability_cache[cache_key] = bool(found)
         return bool(found)
 
+    def has_bladeguard_stance(self) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "bladeguard_stance"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return bool(cache.get(cache_key))
+        found = False
+        for name, desc in root._iter_ability_entries_for_rules(model=None):
+            text = f"{name or ''} {desc or ''}".lower()
+            if "swords of the chapter" in text and "shields of the chapter" in text:
+                found = True
+                break
+            if "bladeguard" in text and "re-roll a saving throw of 1" in text:
+                found = True
+                break
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
     def has_adaptive_instincts(self) -> bool:
         root_fn = getattr(self, "get_attached_unit_root", None)
         root = root_fn() if callable(root_fn) else self
@@ -6777,6 +6800,25 @@ class PositioningMixin:
         if not isinstance(sr, dict):
             return
         for k in ("dance_of_death_choice", "dance_of_death_expires_phase"):
+            sr.pop(k, None)
+        root.special_rules = sr
+
+    def set_bladeguard_choice(self, choice: str, *, phase_name: str = "") -> None:
+        root = self.get_attached_unit_root()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["bladeguard_choice"] = str(choice or "").strip().upper()
+        if phase_name:
+            sr["bladeguard_expires_phase"] = str(phase_name or "").strip().upper()
+        root.special_rules = sr
+
+    def clear_bladeguard_choice(self) -> None:
+        root = self.get_attached_unit_root()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for k in ("bladeguard_choice", "bladeguard_expires_phase"):
             sr.pop(k, None)
         root.special_rules = sr
 

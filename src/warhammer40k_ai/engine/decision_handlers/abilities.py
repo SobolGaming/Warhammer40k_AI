@@ -35,6 +35,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_TECHNOSORCEROUS_AUGMENTATION,
     DECISION_CHOOSE_HARBINGER_OF_DEATH,
     DECISION_CHOOSE_DANCE_OF_DEATH,
+    DECISION_CHOOSE_BLADEGUARD_STANCE,
     DECISION_CHOOSE_ADAPTIVE_INSTINCTS,
     DECISION_CHOOSE_LIMB_FROM_LIMB,
     DECISION_CHOOSE_RED_WRATH,
@@ -2062,6 +2063,56 @@ def _apply_choose_dance_of_death(game: object, request: DecisionRequest, result:
             player,
             f"Dance of Death: {getattr(unit, 'name', 'Unit')} chose {label}.",
         )
+    except Exception:
+        pass
+    return str(choice_key)
+
+
+def _validate_choose_bladeguard_stance(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    payload = _option_payload(request, result)
+    unit_val = payload.get("unit_id") or payload.get("unit") or request.context.get("unit_id")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    if unit_val is None or not choice:
+        return ("Bladeguard stance requires unit_id and choice.",)
+    unit = resolve_unit(game, unit_val)
+    if unit is None:
+        return ("Bladeguard stance unit not found.",)
+    choice_key = str(choice or "").strip().upper()
+    if choice_key not in ("NONE", "SWORDS", "SHIELDS"):
+        return ("Bladeguard stance choice must be NONE, SWORDS, or SHIELDS.",)
+    has_fn = getattr(unit, "has_bladeguard_stance", None)
+    if callable(has_fn) and not has_fn():
+        return ("Bladeguard stance is not applicable for this unit.",)
+    return ()
+
+
+def _apply_choose_bladeguard_stance(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    unit = resolve_unit(game, payload.get("unit_id") or payload.get("unit") or request.context.get("unit_id"))
+    if unit is None:
+        raise RuntimeError("Bladeguard stance unit not found.")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    choice_key = str(choice or "").strip().upper()
+    phase_name = str(request.context.get("phase_name", "") or payload.get("phase_name", "") or "FIGHT_PHASE")
+    set_fn = getattr(unit, "set_bladeguard_choice", None)
+    if not callable(set_fn):
+        raise RuntimeError("Bladeguard stance apply hook missing.")
+    set_fn(choice_key, phase_name=phase_name)
+    try:
+        player = getattr(unit.get_parent_army(), "player", None)
+        label = {
+            "NONE": "None",
+            "SWORDS": "Swords of the Chapter",
+            "SHIELDS": "Shields of the Chapter",
+        }.get(choice_key, choice_key.title())
+        if choice_key == "NONE":
+            message = f"Bladeguard: {getattr(unit, 'name', 'Unit')} selected no stance."
+        else:
+            message = f"Bladeguard: {getattr(unit, 'name', 'Unit')} chose {label}."
+        _log_action_for_players(game, player, message)
     except Exception:
         pass
     return str(choice_key)
@@ -26290,6 +26341,11 @@ register_decision_handler(
 )
 register_decision_handler(DECISION_CHOOSE_HARBINGER_OF_DEATH, validate=_validate_choose_harbinger_of_death, apply=_apply_choose_harbinger_of_death)
 register_decision_handler(DECISION_CHOOSE_DANCE_OF_DEATH, validate=_validate_choose_dance_of_death, apply=_apply_choose_dance_of_death)
+register_decision_handler(
+    DECISION_CHOOSE_BLADEGUARD_STANCE,
+    validate=_validate_choose_bladeguard_stance,
+    apply=_apply_choose_bladeguard_stance,
+)
 register_decision_handler(
     DECISION_CHOOSE_ADAPTIVE_INSTINCTS,
     validate=_validate_choose_adaptive_instincts,

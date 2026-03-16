@@ -5245,6 +5245,28 @@ class ActionsMovementMixin:
                     return ""
         return choice
 
+    def _bladeguard_choice(self, *, game=None) -> str:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        choice = str(sr.get("bladeguard_choice", "") or "").strip().upper()
+        if not choice:
+            return ""
+        exp = str(sr.get("bladeguard_expires_phase", "") or "").strip().upper()
+        if exp:
+            if game is None:
+                army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if game is not None:
+                pname = str(getattr(getattr(game, "phase", None), "name", "") or getattr(game, "phase", "") or "").strip().upper()
+                if pname and pname != exp:
+                    return ""
+        return choice
+
     def _adaptive_instincts_choice(self, *, game=None) -> str:
         root_fn = getattr(self, "get_attached_unit_root", None)
         root = root_fn() if callable(root_fn) else self
@@ -5718,6 +5740,12 @@ class ActionsMovementMixin:
         if choice in ("HERO", "ALL"):
             reroll_hit_values.add(1)
             reroll_hit_reasons.append("Dance of Death (Hero's Prowess): re-roll Hit rolls of 1")
+
+        choice_fn = getattr(self, "_bladeguard_choice", None)
+        choice = choice_fn() if callable(choice_fn) else ""
+        if choice == "SWORDS":
+            reroll_hit_values.add(1)
+            reroll_hit_reasons.append("Bladeguard (Swords of the Chapter): re-roll Hit rolls of 1")
 
         choice_fn = getattr(self, "_adaptive_instincts_choice", None)
         choice = choice_fn() if callable(choice_fn) else ""

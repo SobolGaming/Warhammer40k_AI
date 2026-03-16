@@ -3757,6 +3757,7 @@ class GameView:
                 DECISION_CHOOSE_TECHNOSORCEROUS_AUGMENTATION,
                 DECISION_CHOOSE_HARBINGER_OF_DEATH,
                 DECISION_CHOOSE_DANCE_OF_DEATH,
+                DECISION_CHOOSE_BLADEGUARD_STANCE,
                 DECISION_CHOOSE_ADAPTIVE_INSTINCTS,
                 DECISION_USE_CAREEN,
                 DECISION_USE_GILDED_CHAMPION,
@@ -4992,7 +4993,11 @@ class GameView:
                 pass
             return
 
-        if decision_type in (DECISION_CHOOSE_DANCE_OF_DEATH, DECISION_CHOOSE_ADAPTIVE_INSTINCTS):
+        if decision_type in (
+            DECISION_CHOOSE_DANCE_OF_DEATH,
+            DECISION_CHOOSE_BLADEGUARD_STANCE,
+            DECISION_CHOOSE_ADAPTIVE_INSTINCTS,
+        ):
             if self.martial_katah_dialog is None:
                 try:
                     from .dialogs import MartialKatahDialog
@@ -5007,12 +5012,16 @@ class GameView:
 
             ctx = dict(getattr(request, "context", {}) or {})
             unit = self._resolve_unit_by_id(ctx.get("unit_id"))
-            default_ability = "Dance of Death" if decision_type == DECISION_CHOOSE_DANCE_OF_DEATH else "Adaptive Instincts"
-            ability_name = str(ctx.get("ability_name", "") or default_ability).strip()
             if decision_type == DECISION_CHOOSE_DANCE_OF_DEATH:
+                default_ability = "Dance of Death"
                 subtitle = f"{getattr(unit, 'name', 'Unit')} selects a performance."
+            elif decision_type == DECISION_CHOOSE_BLADEGUARD_STANCE:
+                default_ability = "Bladeguard"
+                subtitle = f"{getattr(unit, 'name', 'Unit')} selects a Bladeguard stance."
             else:
+                default_ability = "Adaptive Instincts"
                 subtitle = f"{getattr(unit, 'name', 'Unit')} selects an imperative."
+            ability_name = str(ctx.get("ability_name", "") or default_ability).strip()
 
             def _on_confirm(option_id: str):
                 resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))

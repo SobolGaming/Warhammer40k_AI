@@ -113,6 +113,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `CHOOSE_TECHNOSORCEROUS_AUGMENTATION` — Choose Technosorcerous Augmentations weapon ability.
 - `CHOOSE_HARBINGER_OF_DEATH` — Choose Harbinger of Death.
 - `CHOOSE_DANCE_OF_DEATH` — Choose Dance of Death.
+- `CHOOSE_BLADEGUARD_STANCE` — Choose Bladeguard stance.
 - `CHOOSE_ADAPTIVE_INSTINCTS` — Choose Adaptive Instincts imperative.
 - `CHOOSE_LIMB_FROM_LIMB` — Choose Limb from Limb target.
 - `CHOOSE_RED_WRATH` — Choose Red Wrath option.

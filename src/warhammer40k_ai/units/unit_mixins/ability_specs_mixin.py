@@ -10803,6 +10803,83 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_allocated_melee_mortal_retaliation_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: when melee attacks are allocated to this model, roll a limited number of D6
+        after the attacking unit has finished making its attacks, dealing mortal wounds on success.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - ability_key: stable state key
+            - max_rolls_per_attacker_unit: int
+            - threshold: int
+            - mortal_wounds: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_allocated_melee_mortal_retaliation:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int, int]] = set()
+        entries = list(self._iter_model_specific_ability_entries(model) or [])
+        entries.extend(list(self._iter_ability_entries_for_rules(model=model) or []))
+        pattern = re.compile(
+            r"each time a melee attack is allocated to this model after the attacking model s unit has finished making its attacks "
+            r"roll one d6\s*\(\s*to a maximum of (?P<cap>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 per attacking unit\s*\)\s*"
+            r"for each (?P<threshold>\d)\+?\s*the attacking unit suffers (?P<mortal>\d+) mortal wounds?",
+            re.IGNORECASE,
+        )
+
+        for name, desc in entries:
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9()+]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            match = pattern.fullmatch(normalized)
+            if match is None:
+                continue
+            cap_raw = str(match.group("cap") or "").strip().lower()
+            try:
+                cap = int(cap_raw) if cap_raw.isdigit() else int(self._NUMBER_WORDS.get(cap_raw, 0) or 0)
+            except (TypeError, ValueError):
+                cap = 0
+            try:
+                threshold = int(match.group("threshold") or 0)
+            except (TypeError, ValueError):
+                threshold = 0
+            try:
+                mortal_wounds = int(match.group("mortal") or 0)
+            except (TypeError, ValueError):
+                mortal_wounds = 0
+            if cap <= 0 or threshold <= 0 or mortal_wounds <= 0:
+                continue
+            source = str(name or "Allocated melee retaliation").strip() or "Allocated melee retaliation"
+            dedupe_key = (source.lower(), int(cap), int(threshold), int(mortal_wounds))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            source_key = self._normalize_keyword_phrase(source) or "allocated_melee_retaliation"
+            specs.append(
+                {
+                    "source": source,
+                    "ability_key": f"allocated_melee_retaliation:{source_key}",
+                    "max_rolls_per_attacker_unit": int(cap),
+                    "threshold": int(threshold),
+                    "mortal_wounds": int(mortal_wounds),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_fight_selected_enemy_melee_hit_penalty_specs(self) -> List[dict]:
         """
         Unit-specific rule: enemy units selected to fight while within Engagement Range suffer -1 to hit for melee attacks
@@ -11524,6 +11601,69 @@ class AbilitySpecsMixin:
                     "weapon_name": weapon_name,
                     "attacks_bonus": int(bonus),
                     "damage_bonus": int(bonus),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_fight_selected_unit_melee_attacks_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, when this model is selected to fight, optionally add
+        to the Attacks characteristic of melee weapons equipped by models in this model's unit until end of phase.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - buff_key: once-per-battle tracking key
+            - attacks_bonus: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_selected_unit_melee_attacks_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+        entries = list(self._iter_model_specific_ability_entries(model) or [])
+        entries.extend(list(self._iter_ability_entries_for_rules(model=model) or []))
+        pattern = re.compile(
+            r"once per battle when this model is selected to fight it can use this ability if it does until the end of the phase "
+            r"add (?P<bonus>\d+) to the attacks characteristic of melee weapons equipped by models in this model s unit",
+            re.IGNORECASE,
+        )
+
+        for name, desc in entries:
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            match = pattern.fullmatch(normalized)
+            if match is None:
+                continue
+            try:
+                attacks_bonus = int(match.group("bonus") or 0)
+            except (TypeError, ValueError):
+                attacks_bonus = 0
+            if attacks_bonus <= 0:
+                continue
+            source = str(name or "Fight-selected unit melee attacks bonus").strip() or "Fight-selected unit melee attacks bonus"
+            dedupe_key = (source.lower(), int(attacks_bonus))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            source_key = self._normalize_keyword_phrase(source) or "fight_selected_unit_melee_attacks_bonus"
+            specs.append(
+                {
+                    "source": source,
+                    "buff_key": f"fight_selected_unit_melee_attacks_bonus:{source_key}",
+                    "attacks_bonus": int(attacks_bonus),
                 }
             )
 
