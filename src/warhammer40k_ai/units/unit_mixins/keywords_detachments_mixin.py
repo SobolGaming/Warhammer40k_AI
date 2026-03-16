@@ -11241,6 +11241,43 @@ class KeywordsDetachmentsMixin:
         except Exception:
             rule = None
 
+        if rule is None:
+            try:
+                for name, desc in self._iter_ability_entries_for_rules(model=None):
+                    text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                    if not text:
+                        continue
+                    low = text.lower().replace("\u2019", "'")
+                    if not re.search(r"\b(?:each\s+time|if)\s+this\s+unit\s+remain(?:s|ed)?\s+stationary\b", low):
+                        continue
+                    m = re.search(
+                        r"\branged\s+weapons?\s+equipped\s+by\s+models\s+in\s+this\s+unit\s+have\s+the\s+\[?(?P<keyword>[a-z0-9 +\-]+)\]?\s+ability\b",
+                        low,
+                    )
+                    if not m:
+                        continue
+                    keyword = str(m.group("keyword") or "").strip().upper()
+                    keyword = re.sub(r"\s+", " ", keyword)
+                    if not keyword:
+                        continue
+                    requires_owner_turn = True
+                    if re.search(r"\buntil\s+the\s+start\s+of\s+your\s+next\s+movement\s+phase\b", low):
+                        requires_owner_turn = False
+                    elif not re.search(r"\buntil\s+(?:the\s+)?end\s+of\s+(?:your\s+|the\s+)?turn\b", low):
+                        continue
+                    source = str(name or "Remains Stationary").strip() or "Remains Stationary"
+                    rule = {
+                        "attack_type": "ranged",
+                        "requires_remained_stationary": True,
+                        "requires_owner_turn": requires_owner_turn,
+                        "weapon_names": [],
+                        "keyword": keyword,
+                        "source": source,
+                    }
+                    break
+            except Exception:
+                rule = None
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = rule

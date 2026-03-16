@@ -6345,6 +6345,8 @@ def _classify_ability_base(
     order_range_extension_support = _order_range_extension_support(description)
     mobile_command_vehicle_support = _mobile_command_vehicle_support(description)
     datasheet_command_reroll_cherub_support = _datasheet_command_reroll_cherub_support(description)
+    unit_once_per_battle_unmodified_six_support = _unit_once_per_battle_unmodified_six_support(description)
+    armorium_cherub_token_reminder_support = _armorium_cherub_token_reminder_support(description)
     shieldbreaker_support = _shieldbreaker_support(description)
     act_of_faith_cherub_support = _act_of_faith_cherub_support(description)
     auto_tapestry_support = _auto_tapestry_of_the_emperors_judgement_support(description)
@@ -6369,6 +6371,7 @@ def _classify_ability_base(
     model_closest_target_ap_bonus_support = _model_closest_target_ap_bonus_support(description)
     model_stationary_ranged_sustained_support = _model_stationary_ranged_sustained_hits_support(description)
     model_stationary_weapon_keyword_support = _model_stationary_weapon_keyword_support(description)
+    unit_stationary_weapon_keyword_support = _unit_stationary_weapon_keyword_support(description)
     ordered_stationary_heavy_sustained_support = _ordered_stationary_heavy_sustained_hits_support(description)
     targeted_stratagem_refund_support = _targeted_stratagem_cp_refund_support(description)
     opponent_ability_cp_gain_reaction_support = _opponent_ability_cp_gain_reaction_support(description)
@@ -6944,6 +6947,10 @@ def _classify_ability_base(
         return mobile_command_vehicle_support
     if datasheet_command_reroll_cherub_support:
         return datasheet_command_reroll_cherub_support
+    if unit_once_per_battle_unmodified_six_support:
+        return unit_once_per_battle_unmodified_six_support
+    if armorium_cherub_token_reminder_support:
+        return armorium_cherub_token_reminder_support
     if shieldbreaker_support:
         return shieldbreaker_support
     if act_of_faith_cherub_support:
@@ -6982,6 +6989,8 @@ def _classify_ability_base(
         return model_stationary_ranged_sustained_support
     if model_stationary_weapon_keyword_support:
         return model_stationary_weapon_keyword_support
+    if unit_stationary_weapon_keyword_support:
+        return unit_stationary_weapon_keyword_support
     if ordered_stationary_heavy_sustained_support:
         return ordered_stationary_heavy_sustained_support
     if targeted_stratagem_refund_support:
@@ -9892,6 +9901,33 @@ def _model_stationary_weapon_keyword_support(description: str) -> Optional[Tuple
     return (
         "Supported",
         f"If this model remains stationary in your Movement phase, its {weapon} gains [{keyword}] until end of turn.",
+    )
+
+
+def _unit_stationary_weapon_keyword_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"(?:each time|if) this unit remains stationary until "
+        r"(?:(?:the )?start of your next movement phase|(?:the )?end of (?:the |your )?turn) "
+        r"ranged weapons equipped by models in this unit have the (?P<keyword>[a-z0-9 ]+) ability",
+        norm,
+    )
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper()
+    if not keyword:
+        return None
+    if "start of your next movement phase" in norm:
+        duration = "until the start of your next Movement phase"
+    else:
+        duration = "until end of turn"
+    return (
+        "Supported",
+        f"If this unit remains stationary, its ranged weapons gain [{keyword}] {duration}.",
     )
 
 
@@ -16576,6 +16612,46 @@ def _datasheet_command_reroll_cherub_support(description: str) -> Optional[Tuple
     return (
         "Supported",
         "Once per battle: this unit can be targeted with Command Re-roll for 0CP, including as a same-phase repeat target.",
+    )
+
+
+def _unit_once_per_battle_unmodified_six_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"once per battle after making (?:a|one) (?P<roll_type>hit|wound|saving throw|save) roll "
+        r"for a model in this unit you can change (?:that roll|the result of that roll|it) to an unmodified 6"
+        r"(?: designer(?:s| s)? note .+)?",
+        norm,
+    )
+    if not m:
+        return None
+    roll_type = str(m.group("roll_type") or "").strip().lower()
+    label = "Hit"
+    if roll_type == "wound":
+        label = "Wound"
+    elif roll_type in {"saving throw", "save"}:
+        label = "Save"
+    return (
+        "Supported",
+        f"Once per battle after making a {label} roll for a model in the unit: optional activation changes that roll to an unmodified 6.",
+    )
+
+
+def _armorium_cherub_token_reminder_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if norm != "place an armorium cherub token next to the unit removing it once this ability has been used":
+        return None
+    return (
+        "Supported",
+        "Reminder token only; Armorium Cherub once-per-battle usage is tracked by the engine.",
     )
 
 

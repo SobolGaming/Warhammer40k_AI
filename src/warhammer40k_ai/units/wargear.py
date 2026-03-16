@@ -7824,7 +7824,7 @@ class WargearProfile:
         target: Optional['Unit'] = None,
     ) -> tuple[Optional[int], Optional[str]]:
         """
-        Model ability: once per battle, after making a hit/wound/save roll, set it to an unmodified 6.
+        Model or unit ability: once per battle, after making a hit/wound/save roll, set it to an unmodified 6.
         Returns (new_roll_value, decision_str) where decision_str is ability_key or "skip".
         """
         try:
@@ -7846,14 +7846,23 @@ class WargearProfile:
             return roll_value, None
 
         try:
-            specs = list(getattr(unit, "model_once_per_battle_unmodified_six_specs", lambda _m: [])(model) or [])
+            root = unit.get_attached_unit_root()
         except Exception:
-            specs = []
-        if not specs:
+            root = unit
+
+        try:
+            model_specs = list(getattr(unit, "model_once_per_battle_unmodified_six_specs", lambda _m: [])(model) or [])
+        except Exception:
+            model_specs = []
+        try:
+            unit_specs = list(getattr(root, "unit_once_per_battle_unmodified_six_specs", lambda: [])() or [])
+        except Exception:
+            unit_specs = []
+        if not model_specs and not unit_specs:
             return roll_value, None
 
         available: list[dict] = []
-        for spec in list(specs or []):
+        for spec in list(model_specs or []):
             key = str(spec.get("key", "") or "").strip().lower()
             if not key:
                 continue
@@ -7883,7 +7892,29 @@ class WargearProfile:
                     current_yp = 0
                 if mgr is None or current_yp < int(yp_cost):
                     continue
-            available.append(spec)
+            spec_entry = dict(spec)
+            spec_entry["scope"] = "model"
+            available.append(spec_entry)
+
+        for spec in list(unit_specs or []):
+            key = str(spec.get("key", "") or "").strip().lower()
+            if not key:
+                continue
+            allowed_roll_types = tuple(
+                str(value or "").strip().lower()
+                for value in list(spec.get("allowed_roll_types", ()) or ())
+                if str(value or "").strip()
+            )
+            if allowed_roll_types and rt not in allowed_roll_types:
+                continue
+            try:
+                if getattr(root, "has_used_unit_once_per_battle", lambda _k: False)(key):
+                    continue
+            except Exception:
+                continue
+            spec_entry = dict(spec)
+            spec_entry["scope"] = "unit"
+            available.append(spec_entry)
 
         if not available:
             return roll_value, None
@@ -7892,6 +7923,7 @@ class WargearProfile:
             return (
                 str(item.get("key", "")),
                 str(item.get("source", "")),
+                str(item.get("scope", "")),
             )
 
         available = sorted(available, key=_spec_sort_key)
@@ -7962,7 +7994,7 @@ class WargearProfile:
                     except Exception:
                         model_id = ""
                     try:
-                        unit_id = get_entity_id(unit)
+                        unit_id = get_entity_id(root)
                     except Exception:
                         unit_id = ""
                     req_options = [DecisionOption.create("Don't Use", payload={"action": "skip"})]
@@ -8083,7 +8115,10 @@ class WargearProfile:
         try:
             ability_name = str(spec.get("source", "") or "Ability").strip()
             limit = str(spec.get("limit", "") or "battle").strip().lower()
-            if limit == "battle_round":
+            scope = str(spec.get("scope", "") or "model").strip().lower()
+            if scope == "unit":
+                root.mark_unit_once_per_battle_used(decision_key, ability_name=ability_name)
+            elif limit == "battle_round":
                 model.mark_used_once_per_battle_round(decision_key, ability_name=ability_name, source="datasheet")
             else:
                 model.mark_used_once_per_battle(decision_key, ability_name=ability_name, source="datasheet")
@@ -8101,13 +8136,16 @@ class WargearProfile:
                 label = "Save roll"
             append_dice(player, f"{label} made {int(roll_value)}, ability used to change value to 6")
             source = str(spec.get("source", "") or "Ability")
+            actor_name = getattr(model, "name", "Model")
+            if str(spec.get("scope", "") or "").strip().lower() == "unit":
+                actor_name = getattr(root, "name", actor_name)
             if yp_cost > 0:
                 append_action(
                     player,
-                    f"{getattr(model, 'name', 'Model')}: {source} spent {int(yp_cost)} YP to change {label} {int(roll_value)} to 6",
+                    f"{actor_name}: {source} spent {int(yp_cost)} YP to change {label} {int(roll_value)} to 6",
                 )
             else:
-                append_action(player, f"{getattr(model, 'name', 'Model')}: {source} used to change {label} {int(roll_value)} to 6")
+                append_action(player, f"{actor_name}: {source} used to change {label} {int(roll_value)} to 6")
         except Exception:
             pass
 

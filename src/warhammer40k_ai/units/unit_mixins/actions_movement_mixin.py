@@ -3316,6 +3316,79 @@ class ActionsMovementMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_once_per_battle_unmodified_six_specs(self) -> List[dict]:
+        """
+        Unit rule: once per battle, after making a roll for a model in this unit,
+        change it to an unmodified 6.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - key: usage tracking key
+            - limit: "battle"
+            - allowed_roll_types: tuple[str, ...]
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_once_per_battle_unmodified_six_specs"
+        cache = getattr(root, "_ability_cache", {})
+        if cache_key in cache:
+            return list(cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+        roll_type_map = {
+            "hit": ("hit",),
+            "wound": ("wound",),
+            "saving throw": ("save",),
+            "save": ("save",),
+        }
+        pattern = re.compile(
+            r"once per battle after making (?:a|one) "
+            r"(?P<roll_type>hit|wound|saving throw|save) roll "
+            r"for a model in this unit you can change (?:that roll|the result of that roll|it) "
+            r"to an unmodified 6(?: designer(?:s| s)? note .+)?"
+        )
+
+        for name, desc in root._iter_ability_entries_for_rules(model=None):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = root._strip_eligibility_prefix(text_src)
+            normalized = root._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            match = pattern.fullmatch(normalized)
+            if not match:
+                continue
+            roll_type = str(match.group("roll_type") or "").strip().lower()
+            allowed_roll_types = tuple(roll_type_map.get(roll_type, ()))
+            if not allowed_roll_types:
+                continue
+            source = str(name or "Unmodified 6").strip() or "Unmodified 6"
+            key_seed = root._normalize_keyword_phrase(source) or "unit_unmodified_six"
+            key = f"unit_unmodified_six:{key_seed}:battle"
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "key": key,
+                    "limit": "battle",
+                    "allowed_roll_types": allowed_roll_types,
+                }
+            )
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = list(specs)
+        root._ability_cache = cache
+        return list(specs)
+
     def model_allocated_damage_zero_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: when an attack is allocated to this model, change Damage to 0.
