@@ -128,8 +128,9 @@ Movement actions are `MovementAction` values applied through `Unit._execute_acti
 - `ADVANCE`
 - `FALL_BACK`
 
-The action handler also gates movement due to transport disembark restrictions and
-publishes movement-start/finish events for reaction windows.
+The action handler also gates movement due to transport disembark restrictions,
+including immediate disembarks after a reserves transport is set up, and publishes
+movement-start/finish events for reaction windows.
 
 ```6614:6726:src/warhammer40k_ai/units/unit.py
     def get_available_move_actions(self, state: int) -> List[int]:

@@ -14,6 +14,7 @@ class DatasheetWargearMixin:
             dict with keys:
               - allow_after_advance (bool): can disembark after transport Advanced
               - allow_charge_after_normal_move (bool): can charge after disembarking from a Normal move
+              - allow_charge_after_setup (bool): can charge after disembarking from a transport just set up
         """
         cache_key = "transport_disembark_rules"
         if cache_key in getattr(self, "_ability_cache", {}):
@@ -22,6 +23,7 @@ class DatasheetWargearMixin:
         rules = {
             "allow_after_advance": False,
             "allow_charge_after_normal_move": False,
+            "allow_charge_after_setup": False,
         }
 
         for name, desc in self._iter_ability_entries_for_rules(model=None):
@@ -37,6 +39,14 @@ class DatasheetWargearMixin:
                 and ("eligible to declare a charge" in low or "can declare a charge" in low)
             ):
                 rules["allow_charge_after_normal_move"] = True
+
+            # Drop Pod-style setup disembark: immediate disembark after setup can still charge.
+            if (
+                "disembark" in low
+                and "after it has been set up on the battlefield" in low
+                and ("eligible to declare a charge" in low or "can declare a charge" in low)
+            ):
+                rules["allow_charge_after_setup"] = True
 
             # Assault Vehicle: disembark after Advance, counts as Normal move, cannot charge.
             if (

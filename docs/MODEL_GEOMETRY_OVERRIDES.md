@@ -57,6 +57,7 @@ placement/movement legality.
 `data/model_geometry_overrides.json` currently seeds:
 
 - `Aegis Defence Line` (compound hull footprint)
+- `Drop Pod` (manual central-hull footprint; open fins/ramps excluded from collision footprint)
 - `Khorne Lord of Skulls` (manual hull rectangle)
 - `Wave Serpent` (compound support-base + hull proxy footprint for closest-of-base-or-hull measurement)
 

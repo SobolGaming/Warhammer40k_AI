@@ -26,6 +26,21 @@ def test_resolve_khorne_lord_of_skulls_hull_override():
     assert resolved.height_source == "override"
 
 
+def test_resolve_drop_pod_uses_manual_hull_override():
+    resolved = resolve_model_geometry(
+        datasheet_id="000000087",
+        datasheet_name="Drop Pod",
+        model_name="Drop Pod",
+        unit_keywords=["Vehicle", "Transport"],
+        parsed_base_type=BaseType.HULL,
+        parsed_radius=(1.0, 1.0),
+    )
+    assert resolved.base_type == BaseType.HULL
+    assert resolved.radius[0] == pytest.approx(convert_mm_to_inches(80.0) / 2.0, abs=1e-4)
+    assert resolved.radius[1] == pytest.approx(convert_mm_to_inches(40.0) / 2.0, abs=1e-4)
+    assert resolved.geometry_source == "geometry_override:drop_pod"
+
+
 def test_resolve_aegis_compound_override():
     resolved = resolve_model_geometry(
         datasheet_id="000002619",

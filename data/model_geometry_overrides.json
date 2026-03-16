@@ -29,6 +29,11 @@
         "classification": "hull",
         "requires_manual_geometry": true,
         "geometry_key": "khorne_lord_of_skulls"
+      },
+      "000000087": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "drop_pod"
       }
     }
   },
@@ -48,7 +53,11 @@
 
     "000000599": "wave_serpent",
     "wave_serpent": "wave_serpent",
-    "wave serpent": "wave_serpent"
+    "wave serpent": "wave_serpent",
+
+    "000000087": "drop_pod",
+    "drop_pod": "drop_pod",
+    "drop pod": "drop_pod"
   },
   "units": {
     "aegis_defence_line": {
@@ -198,6 +207,14 @@
       "width_mm": 127.0,
       "height_mm": 178.0,
       "notes": "Bounding rectangle proxy to keep hull handling deterministic."
+    },
+    "drop_pod": {
+      "display_name": "Drop Pod",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 80.0,
+      "width_mm": 40.0,
+      "notes": "Central hull proxy only; open fins and ramps are excluded from the collision footprint so other models can move or end on them."
     },
     "wave_serpent": {
       "display_name": "Wave Serpent",

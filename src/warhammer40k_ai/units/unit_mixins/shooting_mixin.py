@@ -4356,8 +4356,9 @@ class ShootingMixin:
         transport_rules = transport_unit._transport_disembark_rules()
         allow_after_advance = bool(transport_rules.get("allow_after_advance", False))
         allow_charge_after_normal_move = bool(transport_rules.get("allow_charge_after_normal_move", False))
-        sr = getattr(transport_unit, "special_rules", None)
-        if isinstance(sr, dict) and sr.get("pain_rapid_deployment_active"):
+        allow_charge_after_setup = bool(transport_rules.get("allow_charge_after_setup", False))
+        transport_sr = getattr(transport_unit, "special_rules", None)
+        if isinstance(transport_sr, dict) and transport_sr.get("pain_rapid_deployment_active"):
             allow_after_advance = True
         game = None
         try:
@@ -4578,6 +4579,9 @@ class ShootingMixin:
             remained_stationary = bool(getattr(transport_unit.round_state, "remained_stationary_this_round", False))
             advanced = bool(getattr(transport_unit.round_state, "advanced_this_round", False))
             fell_back = bool(getattr(transport_unit.round_state, "fell_back_this_round", False))
+            transport_set_up_this_turn = bool(
+                isinstance(transport_sr, dict) and transport_sr.get("drop_pod_assault_set_up", False)
+            )
 
             if advanced and allow_after_advance:
                 # Assault Vehicle: counts as Normal move, cannot charge this turn.
@@ -4585,6 +4589,25 @@ class ShootingMixin:
                 self.round_state.disembarked_cannot_charge = True
                 self.round_state.moved_this_round = True
                 self.round_state.remained_stationary_this_round = False
+            elif transport_set_up_this_turn:
+                # Immediate disembark after a reserves transport is set up still counts as a Normal move.
+                self.round_state.disembarked_from_moved_transport = True
+                self.round_state.moved_this_round = True
+                self.round_state.remained_stationary_this_round = False
+                self.round_state.reinforced_this_round = True
+                self.arrived_from_reserves_this_turn = True
+                self.deployed = True
+                try:
+                    self.reserve_turn_deployed = int(current_turn or 0)
+                except Exception:
+                    self.reserve_turn_deployed = 0
+                if hasattr(self, "set_reserve_status"):
+                    try:
+                        self.set_reserve_status("deployed")
+                    except Exception:
+                        pass
+                if not allow_charge_after_setup:
+                    self.round_state.disembarked_cannot_charge = True
             elif moved_this_round and not remained_stationary and not advanced and not fell_back:
                 # Normal moved transport disembark: counts as Normal move, no further move; charge depends on Assault Ramp.
                 self.round_state.disembarked_from_moved_transport = True
@@ -4761,8 +4784,9 @@ class ShootingMixin:
         transport_rules = transport_unit._transport_disembark_rules()
         allow_after_advance = bool(transport_rules.get("allow_after_advance", False))
         allow_charge_after_normal_move = bool(transport_rules.get("allow_charge_after_normal_move", False))
-        sr = getattr(transport_unit, "special_rules", None)
-        if isinstance(sr, dict) and sr.get("pain_rapid_deployment_active"):
+        allow_charge_after_setup = bool(transport_rules.get("allow_charge_after_setup", False))
+        transport_sr = getattr(transport_unit, "special_rules", None)
+        if isinstance(transport_sr, dict) and transport_sr.get("pain_rapid_deployment_active"):
             allow_after_advance = True
         game = None
         try:
@@ -4837,12 +4861,33 @@ class ShootingMixin:
             remained_stationary = bool(getattr(transport_unit.round_state, "remained_stationary_this_round", False))
             advanced = bool(getattr(transport_unit.round_state, "advanced_this_round", False))
             fell_back = bool(getattr(transport_unit.round_state, "fell_back_this_round", False))
+            transport_set_up_this_turn = bool(
+                isinstance(transport_sr, dict) and transport_sr.get("drop_pod_assault_set_up", False)
+            )
 
             if advanced and allow_after_advance:
                 self.round_state.disembarked_from_moved_transport = True
                 self.round_state.disembarked_cannot_charge = True
                 self.round_state.moved_this_round = True
                 self.round_state.remained_stationary_this_round = False
+            elif transport_set_up_this_turn:
+                self.round_state.disembarked_from_moved_transport = True
+                self.round_state.moved_this_round = True
+                self.round_state.remained_stationary_this_round = False
+                self.round_state.reinforced_this_round = True
+                self.arrived_from_reserves_this_turn = True
+                self.deployed = True
+                try:
+                    self.reserve_turn_deployed = int(current_turn or 0)
+                except Exception:
+                    self.reserve_turn_deployed = 0
+                if hasattr(self, "set_reserve_status"):
+                    try:
+                        self.set_reserve_status("deployed")
+                    except Exception:
+                        pass
+                if not allow_charge_after_setup:
+                    self.round_state.disembarked_cannot_charge = True
             elif moved_this_round and not remained_stationary and not advanced and not fell_back:
                 self.round_state.disembarked_from_moved_transport = True
                 self.round_state.moved_this_round = True

@@ -6347,6 +6347,7 @@ def _classify_ability_base(
     datasheet_command_reroll_cherub_support = _datasheet_command_reroll_cherub_support(description)
     unit_once_per_battle_unmodified_six_support = _unit_once_per_battle_unmodified_six_support(description)
     armorium_cherub_token_reminder_support = _armorium_cherub_token_reminder_support(description)
+    drop_pod_designer_note_support = _drop_pod_designer_note_support(description)
     shieldbreaker_support = _shieldbreaker_support(description)
     act_of_faith_cherub_support = _act_of_faith_cherub_support(description)
     auto_tapestry_support = _auto_tapestry_of_the_emperors_judgement_support(description)
@@ -6951,6 +6952,8 @@ def _classify_ability_base(
         return unit_once_per_battle_unmodified_six_support
     if armorium_cherub_token_reminder_support:
         return armorium_cherub_token_reminder_support
+    if drop_pod_designer_note_support:
+        return drop_pod_designer_note_support
     if shieldbreaker_support:
         return shieldbreaker_support
     if act_of_faith_cherub_support:
@@ -11937,9 +11940,12 @@ def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:
         return None
     notes: List[str] = []
     normal_move = r".*disembark.*after it has made a normal move.*(?:eligible to declare a charge|can declare a charge).*"
+    after_setup = r".*disembark.*after it has been set up on the battlefield.*(?:eligible to declare a charge|can declare a charge).*"
     after_advance = r".*disembark.*after it has advanced.*cannot declare a charge.*"
     if re.fullmatch(normal_move, norm):
         notes.append("Disembark after Normal move and still eligible to charge.")
+    if re.fullmatch(after_setup, norm):
+        notes.append("Disembark after transport setup; counts as a Normal move and still eligible to charge.")
     if re.fullmatch(after_advance, norm):
         notes.append("Disembark after Advance; counts as Normal move; cannot charge.")
     if notes:
@@ -16652,6 +16658,22 @@ def _armorium_cherub_token_reminder_support(description: str) -> Optional[Tuple[
     return (
         "Supported",
         "Reminder token only; Armorium Cherub once-per-battle usage is tracked by the engine.",
+    )
+
+
+def _drop_pod_designer_note_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "only parts that are considered to make up its hull" not in norm:
+        return None
+    if "models can be set up or end a move on any part of this model that is not highlighted in red" not in norm:
+        return None
+    return (
+        "Supported",
+        "Drop Pod uses an explicit hull-only geometry override; non-hull fins and ramps are ignored for placement and collision handling.",
     )
 
 

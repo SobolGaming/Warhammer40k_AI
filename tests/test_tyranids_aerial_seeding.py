@@ -5,7 +5,7 @@ from warhammer40k_ai.engine.decision_kinds import DECISION_DISEMBARK
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
-from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.unit import MovementAction, Unit
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
@@ -79,12 +79,12 @@ def _make_tyrannocyte() -> Unit:
     )
 
 
-def _make_infantry(name: str) -> Unit:
+def _make_infantry(name: str, *, faction_keywords=None) -> Unit:
     return Unit(
         _MockDatasheet(
             name,
             keywords=["INFANTRY"],
-            faction_keywords=["TYRANIDS"],
+            faction_keywords=faction_keywords or ["TYRANIDS"],
             abilities=[],
             base_size="32mm",
         )
@@ -210,6 +210,59 @@ class TestTyranidsAerialSeeding(unittest.TestCase):
         self.assertTrue(bool(transport_sr.get("drop_pod_embark_locked", False)))
         self.assertEqual(str(transport_sr.get("drop_pod_embark_lock_source", "") or ""), "Aerial Seeding")
         self.assertFalse(bool(tyrannocyte.can_transport(extra_unit)))
+
+    def test_aerial_seeding_disembark_counts_as_normal_move_and_blocks_charge(self):
+        game, tyr_player, _enemy_player, tyr_army, enemy_army = _build_game()
+        tyrannocyte = _make_tyrannocyte()
+        passenger = _make_infantry("Tyranid Warriors")
+        enemy = _make_infantry("Enemy Unit", faction_keywords=["ENEMY"])
+        tyr_army.add_unit(tyrannocyte)
+        tyr_army.add_unit(passenger)
+        enemy_army.add_unit(enemy)
+        enemy.deployed = True
+        enemy.models[0].set_location(35.0, 20.0, 0.0, 0.0)
+        game.map.units = [enemy]
+        game.rebuild_entity_registry()
+
+        self.assertTrue(bool(tyrannocyte.add_passenger(passenger, game_map=game.map)))
+        passenger.round_state.embarked_this_round = False
+        tyrannocyte.deployed = False
+        tyrannocyte.reserve_status = "reserves"
+        tyrannocyte._started_in_reserves = True
+
+        tyrannocyte_model_id = str(get_entity_id(tyrannocyte.models[0]) or "")
+        _finalize_reserves_arrival_move(
+            game,
+            tyrannocyte,
+            [{"model_id": tyrannocyte_model_id, "position": [20.0, 20.0, 0.0], "facing": 0.0}],
+        )
+        requests = _aerial_disembark_requests(game)
+        self.assertEqual(len(requests), 1)
+        req = requests[0]
+        opt = list(getattr(req, "options", []) or [])[0]
+        passenger_model_id = str(get_entity_id(passenger.models[0]) or "")
+        resolved = resolve_decision_command(
+            game,
+            req,
+            opt.option_id,
+            result_payload={"model_positions": [{"model_id": passenger_model_id, "position": [23.0, 20.0, 0.0]}]},
+            player_id=tyr_player.id,
+        )
+
+        self.assertTrue(bool(getattr(resolved, "ok", False)))
+        self.assertTrue(bool(passenger.round_state.disembarked_from_moved_transport))
+        self.assertTrue(bool(passenger.round_state.disembarked_cannot_charge))
+        self.assertTrue(bool(passenger.round_state.reinforced_this_round))
+        self.assertTrue(bool(passenger.arrived_from_reserves_this_turn))
+        self.assertEqual(int(getattr(passenger, "reserve_turn_deployed", 0) or 0), int(game.turn))
+        self.assertFalse(passenger.can_declare_charge_against(enemy, game))
+        self.assertFalse(
+            passenger._execute_action(
+                MovementAction.MOVE.value,
+                (24.0, 20.0, 0.0),
+                game.map,
+            )
+        )
 
 
 if __name__ == "__main__":

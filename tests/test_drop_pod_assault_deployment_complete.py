@@ -1,3 +1,4 @@
+import os
 import unittest
 
 from warhammer40k_ai.engine.decision_handlers.movement import _finalize_reserves_arrival_move
@@ -5,7 +6,7 @@ from warhammer40k_ai.engine.decision_kinds import DECISION_DISEMBARK
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
-from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.unit import MovementAction, Unit
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
@@ -27,6 +28,28 @@ DEPLOYMENT_COMPLETE_ABILITY = {
     "description": (
         "Once this unit is set up on the battlefield and all units within it have disembarked, until the end of the "
         "battle, units cannot embark within this TRANSPORT."
+    ),
+    "type": "Datasheet",
+    "parameter": "",
+}
+
+COMBAT_DISEMBARKATION_ABILITY = {
+    "name": "Combat Disembarkation",
+    "description": (
+        "Each time a unit disembarks from this model after it has been set up on the battlefield, that unit is still "
+        "eligible to declare a charge this turn."
+    ),
+    "type": "Datasheet",
+    "parameter": "",
+}
+
+DESIGNER_NOTE_ABILITY = {
+    "name": "Designer's Note",
+    "description": (
+        "The highlighted portions of this model are the only parts that are considered to make up its hull. Models "
+        "can be set up or end a move on any part of this model that is not highlighted in red. If any models are on "
+        "non-highlighted sections of this model when it is destroyed, place those models as close to their original "
+        "position as possible, on the battlefield, after removing this model."
     ),
     "type": "Datasheet",
     "parameter": "",
@@ -75,7 +98,7 @@ class _MockDatasheet:
 
 
 def _make_drop_pod(*, with_deployment_complete: bool = True) -> Unit:
-    abilities = [DROP_POD_ASSAULT_ABILITY]
+    abilities = [DROP_POD_ASSAULT_ABILITY, COMBAT_DISEMBARKATION_ABILITY, DESIGNER_NOTE_ABILITY]
     if with_deployment_complete:
         abilities.append(DEPLOYMENT_COMPLETE_ABILITY)
     return Unit(
@@ -136,6 +159,20 @@ def _drop_pod_disembark_requests(game: Game):
             continue
         requests.append(req)
     return requests
+
+
+def _seed_support_maps():
+    import scripts.generate_ability_support_matrix as gsm
+
+    abilities = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Abilities.json"))
+    detachment_abilities = gsm._read_json(os.path.join(gsm.WAHA_DIR, "Detachment_abilities.json"))
+    gsm.DETACHMENT_ABILITY_IDS = {
+        str(row.get("id", "") or "").strip()
+        for row in detachment_abilities
+        if str(row.get("id", "") or "").strip()
+    }
+    gsm._seed_ability_support_maps(abilities, detachment_abilities)
+    return gsm
 
 
 class TestDropPodAssaultAndDeploymentComplete(unittest.TestCase):
@@ -229,6 +266,79 @@ class TestDropPodAssaultAndDeploymentComplete(unittest.TestCase):
         )
         self.assertFalse(bool(getattr(invalid, "ok", False)))
         self.assertTrue(any("too close" in str(err).lower() for err in list(getattr(invalid, "errors", []) or [])))
+
+    def test_drop_pod_combat_disembarkation_counts_as_normal_move_but_still_allows_charge(self):
+        game, sm_player, _enemy_player, sm_army, enemy_army = _build_game()
+        pod = _make_drop_pod(with_deployment_complete=True)
+        passenger = _make_infantry("Assault Intercessors")
+        enemy = _make_infantry("Enemy Unit", faction_keywords=["ENEMY"])
+        sm_army.add_unit(pod)
+        sm_army.add_unit(passenger)
+        enemy_army.add_unit(enemy)
+        _place_unit(enemy, 35.0, 20.0)
+        game.map.units = [enemy]
+        game.rebuild_entity_registry()
+
+        self.assertTrue(bool(pod.add_passenger(passenger, game_map=game.map)))
+        passenger.round_state.embarked_this_round = False
+        pod.deployed = False
+        pod.reserve_status = "reserves"
+        pod._started_in_reserves = True
+
+        pod_model_id = str(get_entity_id(pod.models[0]) or "")
+        _finalize_reserves_arrival_move(
+            game,
+            pod,
+            [{"model_id": pod_model_id, "position": [20.0, 20.0, 0.0], "facing": 0.0}],
+        )
+        requests = _drop_pod_disembark_requests(game)
+        self.assertEqual(len(requests), 1)
+        req = requests[0]
+        opt = list(getattr(req, "options", []) or [])[0]
+        passenger_model_id = str(get_entity_id(passenger.models[0]) or "")
+        resolved = resolve_decision_command(
+            game,
+            req,
+            opt.option_id,
+            result_payload={"model_positions": [{"model_id": passenger_model_id, "position": [23.0, 20.0, 0.0]}]},
+            player_id=sm_player.id,
+        )
+
+        self.assertTrue(bool(getattr(resolved, "ok", False)))
+        self.assertTrue(bool(passenger.round_state.disembarked_this_round))
+        self.assertTrue(bool(passenger.round_state.disembarked_from_moved_transport))
+        self.assertFalse(bool(passenger.round_state.disembarked_cannot_charge))
+        self.assertTrue(bool(passenger.round_state.reinforced_this_round))
+        self.assertTrue(bool(passenger.arrived_from_reserves_this_turn))
+        self.assertEqual(int(getattr(passenger, "reserve_turn_deployed", 0) or 0), int(game.turn))
+        self.assertTrue(passenger.can_declare_charge_against(enemy, game))
+        self.assertFalse(
+            passenger._execute_action(
+                MovementAction.MOVE.value,
+                (24.0, 20.0, 0.0),
+                game.map,
+            )
+        )
+
+
+def test_support_matrix_classifies_drop_pod_abilities_as_supported():
+    gsm = _seed_support_maps()
+
+    status, notes = gsm._classify_ability(
+        "Combat Disembarkation",
+        COMBAT_DISEMBARKATION_ABILITY["description"],
+        faction_id="SM",
+    )
+    assert status == "Supported"
+    assert "transport setup" in str(notes or "").lower()
+
+    status, notes = gsm._classify_ability(
+        "Designer's Note",
+        DESIGNER_NOTE_ABILITY["description"],
+        faction_id="SM",
+    )
+    assert status == "Supported"
+    assert "hull-only" in str(notes or "").lower()
 
 
 if __name__ == "__main__":
