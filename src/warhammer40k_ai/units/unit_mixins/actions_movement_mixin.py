@@ -5725,6 +5725,15 @@ class ActionsMovementMixin:
             reroll_hit_values.add(1)
             reroll_hit_reasons.append("Adaptive Instincts (Aggression Imperative): re-roll Hit rolls of 1")
 
+        # Space Marines: Black Rage (model-specific melee full hit re-rolls).
+        if atype in ("any", "melee") and attacker_model is not None:
+            black_rage_source_fn = getattr(root, "black_rage_melee_hit_reroll_source", None)
+            if callable(black_rage_source_fn):
+                source = str(black_rage_source_fn(attacker_model) or "").strip()
+                if source:
+                    mods["reroll_hit_full"] = True
+                    reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll (melee)")
+
         # Angelic Inheritors: Carmine Wrath (character units) re-roll Hit rolls of 1.
         try:
             army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
@@ -14438,11 +14447,26 @@ class ActionsMovementMixin:
             else:
                 logger.info(f"{self.name} cannot Fall Back (Stasis Bomb)")
             return False
-        logger.info(f"{self.name} falls back from combat")
         root_getter = getattr(self, "get_attached_unit_root", None)
         self_root = root_getter() if callable(root_getter) else self
         if self_root is None:
             self_root = self
+        black_rage_lock_fn = getattr(self_root, "black_rage_fall_back_lock_source", None)
+        if callable(black_rage_lock_fn):
+            black_rage_source = str(black_rage_lock_fn(game_map=game_map) or "").strip()
+            if black_rage_source:
+                logger.info(f"{self.name} cannot Fall Back ({black_rage_source})")
+                try:
+                    from ...utility.event_bus import append_action
+                    pn = self.get_parent_army().player
+                    append_action(
+                        pn,
+                        f"{self.name} cannot Fall Back ({black_rage_source}).",
+                    )
+                except Exception:
+                    pass
+                return False
+        logger.info(f"{self.name} falls back from combat")
         self_root_id = str(getattr(self_root, "id", "") or getattr(self_root, "_id", "") or "")
         self_unit_id = str(getattr(self, "id", "") or getattr(self, "_id", "") or "")
 

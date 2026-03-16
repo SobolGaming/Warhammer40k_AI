@@ -6235,6 +6235,7 @@ def _classify_ability_base(
     lion_helm_support = _lion_helm_support(name, description)
     unbreakable_duty_support = _unbreakable_duty_support(name, description, faction_id=faction_id)
     no_hiding_from_watchers_support = _no_hiding_from_the_watchers_support(name, description, faction_id=faction_id)
+    black_rage_support = _black_rage_support(name, description, faction_id=faction_id)
     curse_of_the_wulfen_support = _curse_of_the_wulfen_support(description)
     command_phase_psychic_veil_support = _command_phase_psychic_veil_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
@@ -6451,6 +6452,8 @@ def _classify_ability_base(
         return unbreakable_duty_support
     if no_hiding_from_watchers_support:
         return no_hiding_from_watchers_support
+    if black_rage_support:
+        return black_rage_support
     if curse_of_the_wulfen_support:
         return curse_of_the_wulfen_support
     prey_selection_support = _prey_selection_support(description)
@@ -14003,6 +14006,49 @@ def _curse_of_the_wulfen_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         f"While non-Battle-shocked, models in this unit gain +{int(infantry_bonus)} Objective Control if they are {infantry_keyword} while within {int(char_range)}\" of friendly {char_keyword} models excluding {char_exclude}, or within {int(priest_range)}\" of friendly {priest_keyword} models; {vehicle_keyword} models in this unit gain +{int(vehicle_bonus)} Objective Control instead.",
+    )
+
+
+def _black_rage_support(
+    name: str,
+    description: str,
+    *,
+    faction_id: str = "",
+) -> Optional[Tuple[str, str]]:
+    if _norm(name) != "black rage":
+        return None
+    fid = str(faction_id or "").strip().upper()
+    if fid and fid != "SM":
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time this model makes a melee attack you can reroll the hit roll "
+        r"while this models unit is not within (?P<char_range>\d+) of one or more friendly "
+        r"(?P<char_keyword>[a-z0-9 ]+?) models or (?P<chaplain_range>\d+) of one or more friendly "
+        r"(?P<chaplain_keyword>[a-z0-9 ]+?) models it cannot be selected to fall back "
+        r"and its objective control characteristic is (?P<objective_control>\d+)"
+    )
+    match = re.fullmatch(pattern, norm)
+    if not match:
+        return None
+    try:
+        char_range = int(match.group("char_range") or 0)
+        chaplain_range = int(match.group("chaplain_range") or 0)
+        objective_control = int(match.group("objective_control") or 0)
+    except (TypeError, ValueError):
+        return None
+    char_keyword = re.sub(r"\s+", " ", str(match.group("char_keyword") or "").strip()).upper()
+    chaplain_keyword = re.sub(r"\s+", " ", str(match.group("chaplain_keyword") or "").strip()).upper()
+    if char_range <= 0 or chaplain_range <= 0 or objective_control < 0:
+        return None
+    if not char_keyword or not chaplain_keyword:
+        return None
+    oc_note = f"Objective Control {int(objective_control)}" if int(objective_control) != 0 else "Objective Control 0"
+    return (
+        "Supported",
+        f"Black Rage models can re-roll melee Hit rolls. While their unit is not within {int(char_range)}\" of friendly {char_keyword} models or {int(chaplain_range)}\" of friendly {chaplain_keyword} models, those models have {oc_note} and their unit cannot be selected to Fall Back.",
     )
 
 

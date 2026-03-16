@@ -1129,6 +1129,21 @@ class Unit(
             except Exception:
                 pass
 
+            # Black Rage (Space Marines): affected models set Objective Control to 0 unless
+            # their attached unit is within range of a qualifying friendly Blood Angels Character
+            # or Chaplain model.
+            try:
+                black_rage_override_fn = getattr(root, "black_rage_objective_control_override", None)
+                if callable(black_rage_override_fn):
+                    oc_value, oc_source = black_rage_override_fn(model, game_map=game_map)
+                else:
+                    oc_value, oc_source = (None, "")
+                if oc_value is not None:
+                    source_name = str(oc_source or "Black Rage").strip() or "Black Rage"
+                    mods.append(Modifier(ModifierOp.SET, int(max(0, int(oc_value))), source=f"ability:{source_name}"))
+            except Exception:
+                pass
+
             # Kill-reward persistent Objective Control bonuses (e.g. Trophy Takers).
             try:
                 sr_root = getattr(root, "special_rules", None)

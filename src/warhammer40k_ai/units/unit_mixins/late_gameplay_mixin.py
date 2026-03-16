@@ -1124,6 +1124,276 @@ class LateGameplayMixin:
                 best_bonus = int(model_bonus)
                 best_source = str(spec.get("source_ability", "") or "Curse of the Wulfen").strip() or "Curse of the Wulfen"
         return int(best_bonus), best_source
+
+    def _parse_black_rage_specs_from_text(
+        self,
+        ability_name: str,
+        ability_desc: str,
+    ) -> List[dict]:
+        normalized_name = self._normalize_keyword_phrase(ability_name)
+        normalized = self._normalize_ability_text_for_matching(self._normalize_rules_text(ability_desc))
+        if normalized_name != "black rage" or not normalized:
+            return []
+        pattern = (
+            r"each time this model makes a melee attack you can re roll the hit roll "
+            r"while this model s unit is not within (?P<char_range>\d+) of one or more friendly "
+            r"(?P<char_keyword>[a-z0-9 ]+?) models or (?P<chaplain_range>\d+) of one or more friendly "
+            r"(?P<chaplain_keyword>[a-z0-9 ]+?) models it cannot be selected to fall back "
+            r"and its objective control characteristic is (?P<objective_control>\d+)"
+        )
+        match = re.fullmatch(pattern, normalized)
+        if not match:
+            return []
+        try:
+            char_range = int(match.group("char_range") or 0)
+            chaplain_range = int(match.group("chaplain_range") or 0)
+            objective_control = int(match.group("objective_control") or 0)
+        except (TypeError, ValueError):
+            return []
+        char_keyword = str(match.group("char_keyword") or "").strip()
+        chaplain_keyword = str(match.group("chaplain_keyword") or "").strip()
+        if char_range <= 0 or chaplain_range <= 0 or objective_control < 0:
+            return []
+        if not char_keyword or not chaplain_keyword:
+            return []
+        return [
+            {
+                "source_ability": str(ability_name or "Black Rage").strip() or "Black Rage",
+                "source_clauses": (
+                    {"range": int(char_range), "keyword": char_keyword},
+                    {"range": int(chaplain_range), "keyword": chaplain_keyword},
+                ),
+                "objective_control": int(objective_control),
+                "melee_hit_reroll_full": True,
+            }
+        ]
+
+    @staticmethod
+    def _black_rage_entity_key(entity) -> str:
+        key = str(getattr(entity, "id", "") or getattr(entity, "_id", "") or "").strip()
+        if key:
+            return key
+        return f"obj:{id(entity)}"
+
+    def get_black_rage_specs(self) -> List[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "black_rage_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: List[dict] = []
+        seen: set[tuple[str, str, tuple[tuple[int, str], ...], int]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            source_unit_key = self._black_rage_entity_key(unit)
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                parsed_specs = unit._parse_black_rage_specs_from_text(name, desc or "")
+                for spec in parsed_specs:
+                    clause_key = tuple(
+                        (
+                            int(clause.get("range", 0) or 0),
+                            str(clause.get("keyword", "") or "").strip().lower(),
+                        )
+                        for clause in tuple(spec.get("source_clauses", ()) or ())
+                    )
+                    dedupe_key = (
+                        source_unit_key,
+                        str(spec.get("source_ability", "") or "").strip().lower(),
+                        clause_key,
+                        int(spec.get("objective_control", 0) or 0),
+                    )
+                    if dedupe_key in seen:
+                        continue
+                    seen.add(dedupe_key)
+                    spec_copy = dict(spec)
+                    spec_copy["source_unit"] = unit
+                    spec_copy["source_unit_key"] = source_unit_key
+                    specs.append(spec_copy)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def _black_rage_source_unit_has_alive_models(self, source_unit) -> bool:
+        if source_unit is None:
+            return False
+        models = list(getattr(source_unit, "models", []) or [])
+        return any(bool(getattr(model, "is_alive", False)) for model in models)
+
+    def _black_rage_source_clause_satisfied(self, root, clause: dict, *, game_map) -> bool:
+        if root is None or clause is None:
+            return False
+        try:
+            range_inches = float(clause.get("range", 0) or 0)
+        except (TypeError, ValueError):
+            return False
+        if range_inches < 0:
+            return False
+        keyword_phrase = str(clause.get("keyword", "") or "").strip()
+        if not keyword_phrase:
+            return False
+
+        try:
+            root_models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            root_models = list(getattr(root, "models", []) or [])
+        for source_model in root_models:
+            if source_model is None or not bool(getattr(source_model, "is_alive", False)):
+                continue
+            if self._model_matches_keyword_phrase(source_model, keyword_phrase):
+                return True
+
+        if game_map is None:
+            return False
+        get_friendly_units = getattr(game_map, "get_friendly_units", None)
+        if not callable(get_friendly_units):
+            return False
+
+        try:
+            from ...utility.aura_utils import model_within_range_of_unit
+        except Exception:
+            return False
+
+        seen_roots: set[str] = {self._black_rage_entity_key(root)}
+        for source_unit in list(get_friendly_units(root) or []):
+            if source_unit is None:
+                continue
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            if source_root is None:
+                continue
+            source_root_key = self._black_rage_entity_key(source_root)
+            if source_root_key in seen_roots:
+                continue
+            seen_roots.add(source_root_key)
+            try:
+                source_models = list(source_root.get_attached_unit_models() or [])
+            except Exception:
+                source_models = list(getattr(source_root, "models", []) or [])
+            for source_model in source_models:
+                if source_model is None or not bool(getattr(source_model, "is_alive", False)):
+                    continue
+                if not self._model_matches_keyword_phrase(source_model, keyword_phrase):
+                    continue
+                if model_within_range_of_unit(source_model, root, range_inches, use_attached_aggregate=True):
+                    return True
+        return False
+
+    def _black_rage_support_satisfied(self, *, game_map=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        active_specs = [
+            spec
+            for spec in list(root.get_black_rage_specs() or [])
+            if root._black_rage_source_unit_has_alive_models(spec.get("source_unit"))
+        ]
+        if not active_specs:
+            return False
+        seen_clause_keys: set[tuple[int, str]] = set()
+        for spec in active_specs:
+            for clause in tuple(spec.get("source_clauses", ()) or ()):
+                clause_key = (
+                    int(clause.get("range", 0) or 0),
+                    str(clause.get("keyword", "") or "").strip().lower(),
+                )
+                if clause_key in seen_clause_keys:
+                    continue
+                seen_clause_keys.add(clause_key)
+                if root._black_rage_source_clause_satisfied(root, clause, game_map=game_map):
+                    return True
+        return False
+
+    def _black_rage_spec_for_model(self, model: Optional['Model']) -> Optional[dict]:
+        if model is None:
+            return None
+        source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return None
+        source_unit_key = self._black_rage_entity_key(source_unit)
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        for spec in list(root.get_black_rage_specs() or []):
+            if spec.get("source_unit_key") != source_unit_key:
+                continue
+            if not root._black_rage_source_unit_has_alive_models(spec.get("source_unit")):
+                continue
+            return spec
+        return None
+
+    def black_rage_melee_hit_reroll_source(self, model: Optional['Model']) -> str:
+        spec = self._black_rage_spec_for_model(model)
+        if spec is None:
+            return ""
+        if not bool(spec.get("melee_hit_reroll_full", False)):
+            return ""
+        return str(spec.get("source_ability", "") or "Black Rage").strip() or "Black Rage"
+
+    def black_rage_objective_control_override(
+        self,
+        model: Optional['Model'],
+        *,
+        game_map=None,
+    ) -> tuple[Optional[int], str]:
+        if model is None or not bool(getattr(model, "is_alive", False)):
+            return None, ""
+        spec = self._black_rage_spec_for_model(model)
+        if spec is None:
+            return None, ""
+        if game_map is None:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root._black_rage_support_satisfied(game_map=game_map):
+            return None, ""
+        try:
+            objective_control = int(spec.get("objective_control", 0) or 0)
+        except (TypeError, ValueError):
+            objective_control = 0
+        source = str(spec.get("source_ability", "") or "Black Rage").strip() or "Black Rage"
+        return int(objective_control), source
+
+    def black_rage_fall_back_lock_source(self, *, game_map=None) -> str:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        active_specs = [
+            spec
+            for spec in list(root.get_black_rage_specs() or [])
+            if root._black_rage_source_unit_has_alive_models(spec.get("source_unit"))
+        ]
+        if not active_specs:
+            return ""
+        if game_map is None:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+        if root._black_rage_support_satisfied(game_map=game_map):
+            return ""
+        first_source = str(active_specs[0].get("source_ability", "") or "Black Rage").strip() or "Black Rage"
+        return first_source
     
 
     def is_eligible_to_fight(self, game_map: 'Map') -> bool:
