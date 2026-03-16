@@ -235,6 +235,303 @@ class DamageDeathMixin:
             return True
         return False
 
+    @staticmethod
+    def _unit_contains_warlord(unit: Optional['Unit']) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        warlord = getattr(army, "warlord", None) if army is not None else None
+        if warlord is not None:
+            try:
+                warlord_root = warlord.get_attached_unit_root()
+            except Exception:
+                warlord_root = warlord
+            if warlord_root is root:
+                return True
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            if bool(getattr(member, "is_warlord", False)) or member is warlord:
+                return True
+        return False
+
+    @staticmethod
+    def _resolve_roll_expression(expression: str) -> int:
+        expr = str(expression or "").strip().upper().replace(" ", "")
+        if not expr:
+            return 0
+        if expr.isdigit():
+            return int(expr)
+        return int(get_roll(expr) or 0)
+
+    def _prompt_use_death_vision_of_sanguinius(
+        self,
+        *,
+        source_unit: Optional['Unit'],
+        source_model: Optional[Model],
+        attacker_unit: Optional['Unit'],
+        rule: dict,
+        game_map: Optional['Map'],
+        attacker_contains_warlord: bool,
+    ) -> bool:
+        if source_unit is None or not isinstance(rule, dict):
+            return False
+        try:
+            army = source_unit.get_parent_army()
+        except Exception:
+            army = None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None:
+            return False
+        game = getattr(player, "game", None)
+
+        ability_name = str(rule.get("source", "") or "Death Vision of Sanguinius").strip() or "Death Vision of Sanguinius"
+        warlord_bonus = int(rule.get("warlord_bonus", 0) or 0)
+        source_label = str(
+            getattr(source_model, "name", "") or getattr(source_unit, "name", "") or "Model"
+        ).strip() or "Model"
+        attacker_label = str(getattr(attacker_unit, "name", "") or "Attacking Unit").strip() or "Attacking Unit"
+        message = (
+            f"{source_label} can use {ability_name} after being destroyed by {attacker_label}. "
+            f"Roll now to deal mortal wounds back to {attacker_label}"
+        )
+        if attacker_contains_warlord and warlord_bonus > 0:
+            message = f"{message} (+{int(warlord_bonus)} because it contains the enemy WARLORD)?"
+        else:
+            message = f"{message}?"
+
+        source_unit_id = ""
+        source_model_id = ""
+        attacker_unit_id = ""
+        try:
+            source_unit_id = str(get_entity_id(source_unit) or "")
+        except Exception:
+            source_unit_id = ""
+        try:
+            source_model_id = str(get_entity_id(source_model) or "")
+        except Exception:
+            source_model_id = ""
+        try:
+            attacker_unit_id = str(get_entity_id(attacker_unit) or "")
+        except Exception:
+            attacker_unit_id = ""
+
+        provider = getattr(game_map, "death_vision_of_sanguinius_provider", None) if game_map is not None else None
+        if self._player_has_local_control(player) and callable(provider):
+            decision = provider(
+                player=player,
+                source_unit=source_unit,
+                source_model=source_model,
+                attacker_unit=attacker_unit,
+                ability_name=ability_name,
+                message=message,
+                attacker_contains_enemy_warlord=bool(attacker_contains_warlord),
+                warlord_bonus=int(warlord_bonus),
+                low_expr=str(rule.get("low_expr", "") or ""),
+                mid_expr=str(rule.get("mid_expr", "") or ""),
+                high_expr=str(rule.get("high_expr", "") or ""),
+            )
+            return str(decision or "").strip().lower() in ("use", "yes", "true")
+
+        if game is None:
+            return False
+
+        from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
+        from ...engine.decisions import DecisionOption, DecisionRequest
+        from ...utility.decision_utils import resolve_decision_value
+
+        context = {
+            "ability": "death_vision_of_sanguinius",
+            "ability_name": ability_name,
+            "message": message,
+            "source_unit_id": source_unit_id,
+            "source_model_id": source_model_id,
+            "attacker_unit_id": attacker_unit_id,
+            "attacker_contains_enemy_warlord": bool(attacker_contains_warlord),
+            "warlord_bonus": int(warlord_bonus),
+        }
+        request = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            ability_name,
+            player_id=getattr(player, "id", None),
+            options=[
+                DecisionOption.create("Use", payload={"choice": True}),
+                DecisionOption.create("Skip", payload={"choice": False}),
+            ],
+            context=context,
+        )
+        request_fn = getattr(game, "request_decision", None)
+        if callable(request_fn):
+            request_fn(request)
+
+        should_use_fn = getattr(player, "_should_use_optional_ability", None)
+        use_now = bool(should_use_fn("DEATH_VISION_OF_SANGUINIUS", context)) if callable(should_use_fn) else False
+
+        option_id = None
+        for option in list(getattr(request, "options", []) or []):
+            payload = dict(getattr(option, "payload", {}) or {})
+            if bool(payload.get("choice", False)) == use_now:
+                option_id = option.option_id
+                break
+        if not option_id:
+            return False
+        _value, apply_result = resolve_decision_value(
+            game,
+            request,
+            option_id,
+            player_id=getattr(player, "id", None),
+        )
+        return bool(apply_result is not None and getattr(apply_result, "ok", False) and use_now)
+
+    def _queue_death_vision_of_sanguinius(
+        self,
+        *,
+        model: Optional[Model],
+        attacker_unit: Optional['Unit'],
+        rule: dict,
+    ) -> None:
+        if model is None or attacker_unit is None or not isinstance(rule, dict):
+            return
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return
+        pending = getattr(root, "_death_vision_of_sanguinius_pending", None)
+        if not isinstance(pending, list):
+            pending = []
+        model_id = str(get_entity_id(model) or "")
+        for entry in pending:
+            if str(entry.get("source_model_id", "") or "") == model_id:
+                return
+        pending.append(
+            {
+                "source_unit": self,
+                "source_model": model,
+                "source_model_id": model_id,
+                "attacker_unit": attacker_unit,
+                "rule": dict(rule),
+            }
+        )
+        root._death_vision_of_sanguinius_pending = pending
+
+    def _resolve_death_vision_of_sanguinius_queue(self, game_map: Optional['Map'] = None) -> None:
+        pending = getattr(self, "_death_vision_of_sanguinius_pending", None)
+        if not pending:
+            return
+        if not isinstance(pending, list):
+            self._death_vision_of_sanguinius_pending = []
+            return
+        self._death_vision_of_sanguinius_pending = []
+
+        from ...utility.damage_allocation import DamageAllocationCtx
+        from ...utility.event_bus import append_action, append_dice
+
+        for entry in list(pending):
+            source_unit = entry.get("source_unit")
+            source_model = entry.get("source_model")
+            attacker_unit = entry.get("attacker_unit")
+            rule = entry.get("rule")
+            if source_unit is None or attacker_unit is None or not isinstance(rule, dict):
+                continue
+            try:
+                attacker_root = attacker_unit.get_attached_unit_root()
+            except Exception:
+                attacker_root = attacker_unit
+            if attacker_root is None or not bool(getattr(attacker_root, "is_alive", lambda: False)()):
+                continue
+            try:
+                if source_unit.get_parent_army() is attacker_root.get_parent_army():
+                    continue
+            except Exception:
+                pass
+
+            attacker_contains_warlord = self._unit_contains_warlord(attacker_root)
+            use_now = self._prompt_use_death_vision_of_sanguinius(
+                source_unit=source_unit,
+                source_model=source_model,
+                attacker_unit=attacker_root,
+                rule=rule,
+                game_map=game_map,
+                attacker_contains_warlord=attacker_contains_warlord,
+            )
+            if not use_now:
+                continue
+
+            ability_name = str(rule.get("source", "") or "Death Vision of Sanguinius").strip() or "Death Vision of Sanguinius"
+            source_label = str(
+                getattr(source_model, "name", "") or getattr(source_unit, "name", "") or "Model"
+            ).strip() or "Model"
+            attacker_label = str(getattr(attacker_root, "name", "") or "Attacking Unit").strip() or "Attacking Unit"
+            warlord_bonus = int(rule.get("warlord_bonus", 0) or 0) if attacker_contains_warlord else 0
+            roll = int(get_roll("D6") or 0)
+            total = int(roll) + int(warlord_bonus)
+
+            result_expr = ""
+            if int(rule.get("low_min", 0) or 0) <= total <= int(rule.get("low_max", 0) or 0):
+                result_expr = str(rule.get("low_expr", "") or "")
+            elif int(rule.get("mid_min", 0) or 0) <= total <= int(rule.get("mid_max", 0) or 0):
+                result_expr = str(rule.get("mid_expr", "") or "")
+            elif total >= int(rule.get("high_threshold", 7) or 7):
+                result_expr = str(rule.get("high_expr", "") or "")
+
+            mortal_wounds = self._resolve_roll_expression(result_expr)
+
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+            if player is not None:
+                if warlord_bonus:
+                    append_dice(
+                        player,
+                        f"{ability_name} roll: {int(roll)}+{int(warlord_bonus)}={int(total)} for {source_label}",
+                    )
+                else:
+                    append_dice(player, f"{ability_name} roll: {int(roll)} for {source_label}")
+                if result_expr and not str(result_expr).isdigit():
+                    append_dice(
+                        player,
+                        f"{ability_name} damage: {str(result_expr).upper()} = {int(mortal_wounds)} mortal wounds to {attacker_label}",
+                    )
+                append_action(
+                    player,
+                    f"{ability_name}: {source_label} dealt {int(mortal_wounds)} mortal wounds to {attacker_label}.",
+                )
+
+            if mortal_wounds <= 0:
+                continue
+            allocation_ctx = DamageAllocationCtx(
+                reason=f"{ability_name}: allocate mortal wound",
+                damage_source=ability_name,
+                attacker_name=source_label,
+            )
+            source_unit._apply_mortal_wounds_to_unit(
+                attacker_root,
+                int(mortal_wounds),
+                game_map=game_map,
+                attacker_unit=source_unit,
+                attacker_model=source_model,
+                allocation_ctx=allocation_ctx,
+                damage_source=ability_name,
+            )
+
     def remove_model(self, model: Model, fleed: bool = False, game_map: Optional['Map'] = None) -> None:
         assert model in self.models
 
@@ -794,6 +1091,23 @@ class DamageDeathMixin:
         # Crewed Platform: destroy platform models when the last crew model is destroyed.
         self._maybe_handle_crewed_platform(model, game_map=game_map)
         self._maybe_handle_triarchal_menhirs(model, game_map=game_map)
+
+        death_vision_rule = self.get_death_vision_of_sanguinius_rule(model=model)
+        if death_vision_rule is not None:
+            wp = getattr(self, "_last_destroyed_by_weapon_profile", None)
+            attacker_unit = getattr(self, "_last_destroyed_by_unit", None)
+            is_melee = False
+            try:
+                parent_wargear = getattr(wp, "parent_wargear", None)
+                is_melee = bool(parent_wargear is not None and parent_wargear.is_melee())
+            except Exception:
+                is_melee = False
+            if is_melee and attacker_unit is not None:
+                self._queue_death_vision_of_sanguinius(
+                    model=model,
+                    attacker_unit=attacker_unit,
+                    rule=death_vision_rule,
+                )
 
         # WORLD EATERS: Total Carnage (Blessings of Khorne) - deferred "fight on death" after attacker finishes attacks.
         # Trigger: a model is destroyed by a MELEE attack, model's unit benefits from Total Carnage, and unit has not fought this phase.

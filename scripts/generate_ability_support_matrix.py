@@ -6214,6 +6214,7 @@ def _classify_ability_base(
     command_phase_model_repair_fnp_support = _command_phase_model_repair_fnp_support(description)
     wholly_within_friendly_battleline_ranged_invuln_support = _wholly_within_friendly_battleline_ranged_invuln_support(description)
     repulsor_grid_support = _repulsor_grid_support(description)
+    death_vision_of_sanguinius_support = _death_vision_of_sanguinius_support(name, description)
     battle_protocols_support = _battle_protocols_support(description)
     start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
     start_shooting_phase_visible_keyword_hit_reroll_ones_support = _start_shooting_phase_visible_keyword_hit_reroll_ones_support(description)
@@ -6715,6 +6716,8 @@ def _classify_ability_base(
         return wholly_within_friendly_battleline_ranged_invuln_support
     if repulsor_grid_support:
         return repulsor_grid_support
+    if death_vision_of_sanguinius_support:
+        return death_vision_of_sanguinius_support
     if start_shooting_phase_visible_battleshock_support:
         return start_shooting_phase_visible_battleshock_support
     if start_shooting_phase_visible_keyword_hit_reroll_ones_support:
@@ -12921,6 +12924,49 @@ def _repulsor_grid_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         f"Ranged attacks allocated to {model_keyword} models: on unmodified save roll {threshold}, attacking unit suffers {mortal} mortal wound(s) after resolving attacks.",
+    )
+
+
+def _death_vision_of_sanguinius_support(name: str, description: str) -> Optional[Tuple[str, str]]:
+    if _norm(name) != _norm("Death Vision of Sanguinius"):
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"if this model is destroyed by a melee attack after the attacking unit has finished making its attacks "
+        r"you can roll one d6(?: adding (?P<bonus>\d+) to the result if the attacking unit contains the enemy warlord)? "
+        r"on a (?P<low_min>\d+)\s+(?P<low_max>\d+) that enemy unit suffers (?P<low>\d+\s*d\d+(?:\s+\d+)?|d\d+(?:\s+\d+)?|\d+) mortal wounds "
+        r"on a (?P<mid_min>\d+)\s+(?P<mid_max>\d+) that enemy unit suffers (?P<mid>\d+\s*d\d+(?:\s+\d+)?|d\d+(?:\s+\d+)?|\d+) mortal wounds "
+        r"on a (?P<high_threshold>\d+)\+? that enemy unit suffers (?P<high>\d+\s*d\d+(?:\s+\d+)?|d\d+(?:\s+\d+)?|\d+) mortal wounds"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+
+    def _expr(token: str) -> str:
+        raw = re.sub(r"\s+", "", str(token or "").upper())
+        if not raw:
+            return ""
+        dice_match = re.fullmatch(r"(?:(?P<count>\d+))?D(?P<faces>\d+)(?P<modifier>\d+)?", raw)
+        if not dice_match:
+            return raw
+        count = int(dice_match.group("count") or 1)
+        faces = int(dice_match.group("faces") or 0)
+        modifier = int(dice_match.group("modifier") or 0)
+        label = f"{count}D{faces}" if count != 1 else f"D{faces}"
+        if modifier > 0:
+            label = f"{label}+{modifier}"
+        return label
+
+    warlord_bonus = int(m.group("bonus") or 0)
+    bonus_note = f", +{int(warlord_bonus)} if the attacking unit contains the enemy WARLORD" if warlord_bonus > 0 else ""
+    return (
+        "Supported",
+        "Destroyed by a melee attack: after the attacker finishes its attacks, optional D6 roll"
+        f"{bonus_note}; {m.group('low_min')}-{m.group('low_max')} deals {_expr(m.group('low'))}, "
+        f"{m.group('mid_min')}-{m.group('mid_max')} deals {_expr(m.group('mid'))}, "
+        f"{m.group('high_threshold')}+ deals {_expr(m.group('high'))} mortal wounds to the attacking unit.",
     )
 
 

@@ -184,6 +184,10 @@ class PositioningMixin:
                 root._resolve_melee_fight_on_death_queue(game_map=game_map)
             except Exception:
                 pass
+            try:
+                root._resolve_death_vision_of_sanguinius_queue(game_map=game_map)
+            except Exception:
+                pass
             root._resolve_pending_horrors_split(game_map=game_map)
 
     def _resolve_deferred_fight_on_death_queue(self, attr_name: str, game_map: Optional['Map'] = None) -> None:

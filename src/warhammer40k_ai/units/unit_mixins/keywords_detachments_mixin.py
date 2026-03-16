@@ -8392,6 +8392,89 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_death_vision_of_sanguinius_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for Death Vision of Sanguinius:
+        "If this model is destroyed by a melee attack, after the attacking unit has finished making its attacks,
+        you can roll one D6, adding 2 to the result if the attacking unit contains the enemy WARLORD ..."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = f"death_vision_of_sanguinius_rule:{get_entity_id(model) if model is not None else 'unit'}"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        model_parent = getattr(model, "parent_unit", None) if model is not None else None
+        candidate_units = []
+        for candidate in (model_parent, self):
+            if candidate is not None and candidate not in candidate_units:
+                candidate_units.append(candidate)
+        try:
+            for member in list(root.get_attached_unit_members() or []):
+                if member is not None and member not in candidate_units:
+                    candidate_units.append(member)
+        except Exception:
+            if root is not None and root not in candidate_units:
+                candidate_units.append(root)
+
+        rule = None
+        pattern = re.compile(
+            r"if this model is destroyed by a melee attack, after the attacking unit has finished making its attacks, "
+            r"you can roll one d6(?:, adding (?P<bonus>\d+) to the result if the attacking unit contains the enemy warlord)?: "
+            r"on a (?P<low_min>\d+)-(?P<low_max>\d+), that enemy unit suffers (?P<low>(?:\d*d\d+(?:\+\d+)?|\d+)) mortal wounds; "
+            r"on a (?P<mid_min>\d+)-(?P<mid_max>\d+), that enemy unit suffers (?P<mid>(?:\d*d\d+(?:\+\d+)?|\d+)) mortal wounds; "
+            r"on a (?P<high_threshold>\d+)\+, that enemy unit suffers (?P<high>(?:\d*d\d+(?:\+\d+)?|\d+)) mortal wounds\.?"
+        )
+
+        for unit in candidate_units:
+            if unit is None:
+                continue
+            iter_model = model if unit is model_parent else None
+            try:
+                entries = list(unit._iter_ability_entries_for_rules(model=iter_model))
+            except Exception:
+                entries = []
+            for name, desc in entries:
+                if self._normalize_keyword_phrase(str(name or "")) != "death vision of sanguinius":
+                    continue
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                match = pattern.fullmatch(normalized.lower())
+                if not match:
+                    continue
+                try:
+                    low_min = int(match.group("low_min") or 2)
+                    low_max = int(match.group("low_max") or low_min)
+                    mid_min = int(match.group("mid_min") or (low_max + 1))
+                    mid_max = int(match.group("mid_max") or mid_min)
+                    high_threshold = int(match.group("high_threshold") or (mid_max + 1))
+                    warlord_bonus = int(match.group("bonus") or 0)
+                except (TypeError, ValueError):
+                    continue
+                rule = {
+                    "source": str(name or "Death Vision of Sanguinius").strip() or "Death Vision of Sanguinius",
+                    "warlord_bonus": max(0, int(warlord_bonus)),
+                    "low_min": int(low_min),
+                    "low_max": int(low_max),
+                    "low_expr": str(match.group("low") or "").strip().upper().replace(" ", ""),
+                    "mid_min": int(mid_min),
+                    "mid_max": int(mid_max),
+                    "mid_expr": str(match.group("mid") or "").strip().upper().replace(" ", ""),
+                    "high_threshold": int(high_threshold),
+                    "high_expr": str(match.group("high") or "").strip().upper().replace(" ", ""),
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def get_selfless_protector_rule(self) -> Optional[dict]:
         """
         Return rule info for model-obscuring cover abilities such as Selfless Protector and Rolling Fortress.

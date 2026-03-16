@@ -3000,6 +3000,7 @@ class GameView:
                 self.game.map.model_unmodified_six_provider = self._model_unmodified_six_provider
                 self.game.map.model_allocated_damage_zero_provider = self._model_allocated_damage_zero_provider
                 self.game.map.unit_mortal_wound_fnp_provider = self._unit_mortal_wound_fnp_provider
+                self.game.map.death_vision_of_sanguinius_provider = self._death_vision_of_sanguinius_provider
                 self.game.map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
                 self.game.map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
                 self.game.map.move_modifier_choice_provider = self._move_modifier_choice_provider
@@ -3021,6 +3022,7 @@ class GameView:
                 self.game_map.model_unmodified_six_provider = self._model_unmodified_six_provider
                 self.game_map.model_allocated_damage_zero_provider = self._model_allocated_damage_zero_provider
                 self.game_map.unit_mortal_wound_fnp_provider = self._unit_mortal_wound_fnp_provider
+                self.game_map.death_vision_of_sanguinius_provider = self._death_vision_of_sanguinius_provider
                 self.game_map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
                 self.game_map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
                 self.game_map.move_modifier_choice_provider = self._move_modifier_choice_provider
@@ -14829,6 +14831,138 @@ class GameView:
             choice_holder["done"] = True
 
         self.yes_no_dialog.show(title, message, _on_choice, decision_request=req)
+        try:
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            pass
+
+        clock = pygame.time.Clock()
+        while self.yes_no_dialog.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return "skip"
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    self.yes_no_dialog.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        return str(choice_holder["choice"] or "skip")
+
+    def _death_vision_of_sanguinius_provider(
+        self,
+        *,
+        player=None,
+        source_unit=None,
+        source_model=None,
+        attacker_unit=None,
+        ability_name: str = "",
+        message: str = "",
+        attacker_contains_enemy_warlord: bool = False,
+        warlord_bonus: int = 0,
+        low_expr: str = "",
+        mid_expr: str = "",
+        high_expr: str = "",
+    ) -> str:
+        try:
+            if player is None or not getattr(player, "has_control", lambda: False)():
+                return "skip"
+        except Exception:
+            return "skip"
+
+        if getattr(self, "yes_no_dialog", None) is None:
+            return "skip"
+
+        from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+        from ..engine.decisions import DecisionOption
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        ability_label = str(ability_name or "Death Vision of Sanguinius").strip() or "Death Vision of Sanguinius"
+        source_label = str(
+            getattr(source_model, "name", "") or getattr(source_unit, "name", "") or "Model"
+        ).strip() or "Model"
+        attacker_label = str(getattr(attacker_unit, "name", "") or "Attacking Unit").strip() or "Attacking Unit"
+        title = ability_label
+        prompt_message = str(message or "").strip()
+        if not prompt_message:
+            prompt_message = (
+                f"{source_label} can use {ability_label} after being destroyed by {attacker_label}. "
+                f"Use it now to roll against {attacker_label}?"
+            )
+            if attacker_contains_enemy_warlord and int(warlord_bonus or 0) > 0:
+                prompt_message = (
+                    f"{prompt_message[:-1]} (+{int(warlord_bonus)} because that unit contains the enemy WARLORD)?"
+                )
+        tables = []
+        if low_expr:
+            tables.append(f"2-3: {str(low_expr).upper()}")
+        if mid_expr:
+            tables.append(f"4-5: {str(mid_expr).upper()}")
+        if high_expr:
+            tables.append(f"6+: {str(high_expr).upper()}")
+        if tables:
+            prompt_message = f"{prompt_message} Results: {', '.join(tables)} mortal wounds."
+
+        source_unit_id = ""
+        source_model_id = ""
+        attacker_unit_id = ""
+        try:
+            source_unit_id = get_entity_id(source_unit)
+        except Exception:
+            source_unit_id = ""
+        try:
+            source_model_id = get_entity_id(source_model)
+        except Exception:
+            source_model_id = ""
+        try:
+            attacker_unit_id = get_entity_id(attacker_unit)
+        except Exception:
+            attacker_unit_id = ""
+
+        req = _require_pending_decision_request(self.game if self.game is not None else None,
+            DECISION_CONFIRM_YES_NO,
+            title,
+            player_id=getattr(player, "id", None),
+            options=[
+                DecisionOption.create("Use", payload={"choice": True}),
+                DecisionOption.create("Skip", payload={"choice": False}),
+            ],
+            context={
+                "ability": "death_vision_of_sanguinius",
+                "ability_name": ability_label,
+                "message": prompt_message,
+                "source_unit_id": source_unit_id,
+                "source_model_id": source_model_id,
+                "attacker_unit_id": attacker_unit_id,
+                "attacker_contains_enemy_warlord": bool(attacker_contains_enemy_warlord),
+                "warlord_bonus": int(warlord_bonus or 0),
+            },
+
+        )
+
+        choice_holder = {"choice": "skip", "done": False}
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                value = None
+            if isinstance(value, dict) and bool(value.get("choice")):
+                choice_holder["choice"] = "use"
+            else:
+                choice_holder["choice"] = "skip"
+            choice_holder["done"] = True
+
+        self.yes_no_dialog.show(title, prompt_message, _on_choice, decision_request=req)
         try:
             self.dialog_manager.open(self.yes_no_dialog, modal=True)
         except Exception:
