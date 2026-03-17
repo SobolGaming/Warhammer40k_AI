@@ -402,6 +402,135 @@ def test_command_phase_unit_return_parses_bearers_unit_excluding_characters_vari
     assert not bool(spec.get("requires_bearer_unit_below_starting_strength", False))
 
 
+def test_command_phase_unit_return_parses_unit_contains_source_model_and_named_exclusion():
+    ability = {
+        "name": "Narthecium",
+        "description": (
+            "While this unit contains a Ravenwing Apothecary, in your Command phase, you can return 1 destroyed model "
+            "(excluding Character and Invader ATV models) to this unit."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    unit = _make_unit(name="Ravenwing Command Squad", datasheet_id="rw_cmd_parse", model_count=3, abilities=[ability])
+    unit.models[0].name = "Ravenwing Champion"
+    unit.models[1].name = "Ravenwing Apothecary"
+    unit.models[2].name = "Ravenwing Ancient"
+
+    spec = unit.get_command_phase_unit_return_ability()
+    assert spec is not None
+    assert int(spec.get("amount", 0) or 0) == 1
+    assert bool(spec.get("exclude_character", False))
+    assert str(spec.get("requires_source_model_name", "") or "").strip().lower() == "ravenwing apothecary"
+    assert [str(name or "").strip().lower() for name in list(spec.get("excluded_model_names", []) or [])] == [
+        "invader atv"
+    ]
+    assert str(spec.get("excluded_model_name", "") or "").strip().lower() == "invader atv"
+
+
+def test_command_phase_unit_return_attached_leader_excludes_invader_atv_models():
+    from warhammer40k_ai.engine.game import BattleRoundPhases
+    from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+    from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+    ability = {
+        "name": "Narthecium",
+        "description": (
+            "While this unit contains a Ravenwing Apothecary, in your Command phase, you can return 1 destroyed model "
+            "(excluding Character and Invader ATV models) to this unit."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    leader = _make_unit(name="Ravenwing Command Squad", datasheet_id="rw_cmd_attached", model_count=3, abilities=[ability])
+    leader.models[0].name = "Ravenwing Champion"
+    leader.models[1].name = "Ravenwing Apothecary"
+    leader.models[2].name = "Ravenwing Ancient"
+
+    bodyguard = _make_unit(name="Outrider Squad", datasheet_id="rw_outriders", model_count=4, abilities=[])
+    bodyguard.models[0].name = "Outrider Sergeant"
+    bodyguard.models[1].name = "Outrider"
+    bodyguard.models[2].name = "Outrider"
+    bodyguard.models[3].name = "Invader ATV"
+
+    removed_outrider = bodyguard.models[1]
+    removed_outrider_id = str(get_entity_id(removed_outrider) or "")
+    removed_atv = bodyguard.models[3]
+    bodyguard.remove_model(removed_outrider)
+    bodyguard.remove_model(removed_atv)
+
+    leader.can_be_attached_to = [bodyguard.get_datasheet_id()]
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
+
+    game, player = _build_game_with_units([bodyguard, leader])
+    game.map.units = [bodyguard, leader]
+    game.rebuild_entity_registry()
+
+    game.event_system.publish("phase_start", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    pending = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_ALLOCATE_DAMAGE
+        and str((req.context or {}).get("selection_kind", "") or "") == "bodyguard_return"
+    ]
+    assert len(pending) == 1
+    request = pending[0]
+    option_model_ids = [
+        str((opt.payload or {}).get("model_id", "") or "")
+        for opt in list(request.options or [])
+        if (opt.payload or {}).get("model_id") not in (None, "")
+    ]
+    assert option_model_ids == [removed_outrider_id]
+
+
+def test_command_phase_unit_return_attached_leader_requires_named_source_model():
+    from warhammer40k_ai.engine.game import BattleRoundPhases
+    from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+
+    ability = {
+        "name": "Narthecium",
+        "description": (
+            "While this unit contains a Ravenwing Apothecary, in your Command phase, you can return 1 destroyed model "
+            "(excluding Character and Invader ATV models) to this unit."
+        ),
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    leader = _make_unit(name="Ravenwing Command Squad", datasheet_id="rw_cmd_no_apoth", model_count=3, abilities=[ability])
+    leader.models[0].name = "Ravenwing Champion"
+    leader.models[1].name = "Ravenwing Apothecary"
+    leader.models[2].name = "Ravenwing Ancient"
+
+    bodyguard = _make_unit(name="Outrider Squad", datasheet_id="rw_outriders_2", model_count=3, abilities=[])
+    bodyguard.models[0].name = "Outrider Sergeant"
+    bodyguard.models[1].name = "Outrider"
+    bodyguard.models[2].name = "Outrider"
+    bodyguard.remove_model(bodyguard.models[1])
+
+    apothecary = leader.models[1]
+    leader.remove_model(apothecary)
+
+    leader.can_be_attached_to = [bodyguard.get_datasheet_id()]
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
+
+    game, player = _build_game_with_units([bodyguard, leader])
+    game.map.units = [bodyguard, leader]
+    game.rebuild_entity_registry()
+
+    game.event_system.publish("phase_start", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    pending = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_ALLOCATE_DAMAGE
+        and str((req.context or {}).get("selection_kind", "") or "") == "bodyguard_return"
+    ]
+    assert pending == []
+
+
 def test_command_phase_unit_return_bearers_unit_below_starting_strength_queues_d3_return():
     from warhammer40k_ai.engine.game import BattleRoundPhases
     from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE

@@ -608,6 +608,15 @@ class RulesParsingMixin:
             if "select one friendly" in low:
                 continue
             plain = re.sub(r"[^a-z0-9+]+", " ", low).strip()
+            source_model_name = ""
+            source_model_match = re.search(
+                r"while\s+this\s+unit\s+contains\s+(?:one\s+or\s+more\s+)?(?:an?\s+)?"
+                r"(?P<source>[a-z0-9' -]+?)(?:\s+models?)?\s+"
+                r"(?:in\s+your\s+command\s+phase|at\s+the\s+(?:start|end)\s+of\s+your\s+command\s+phase)",
+                plain,
+            )
+            if source_model_match is not None:
+                source_model_name = str(source_model_match.group("source") or "").strip()
             target_unit_re = r"(?:the\s+bearer(?:\s+s|s)?\s+unit|this\s+unit|that\s+unit)"
             if not re.search(r"to\s+" + target_unit_re + r"\b", plain):
                 continue
@@ -689,6 +698,39 @@ class RulesParsingMixin:
                 continue
             required_keyword = ""
             required_model_name = ""
+            exclusion_phrase_match = re.search(
+                r"\bexcluding\s+(?P<excluded>[a-z0-9' -]+?)\s+models?\s+to\s+" + target_unit_re + r"\b",
+                primary_plain,
+            )
+            if exclusion_phrase_match is None:
+                exclusion_phrase_match = re.search(
+                    r"\bexcluding\s+(?P<excluded>[a-z0-9' -]+?)\s+models?$",
+                    primary_plain,
+                )
+            exclusion_phrase = str(exclusion_phrase_match.group("excluded") or "").strip() if exclusion_phrase_match else ""
+            exclude_character = bool(
+                ("excluding character" in low)
+                or bool(re.search(r"cannot be used to return destroyed character models? in attached units?", plain))
+                or bool(re.search(r"\bcharacters?\b", exclusion_phrase))
+            )
+            excluded_model_names: list[str] = []
+            if exclusion_phrase:
+                for exclusion_part in re.split(r"\s*,\s*|\s+and\s+", exclusion_phrase):
+                    exclusion_name = str(exclusion_part or "").strip()
+                    if not exclusion_name:
+                        continue
+                    exclusion_name = re.sub(r"^(?:an?|the)\s+", "", exclusion_name).strip()
+                    if not exclusion_name or re.fullmatch(r"characters?", exclusion_name):
+                        continue
+                    excluded_model_names.append(exclusion_name)
+            deduped_excluded_model_names: list[str] = []
+            seen_excluded_names: set[str] = set()
+            for exclusion_name in excluded_model_names:
+                exclusion_key = re.sub(r"\s+", " ", str(exclusion_name or "").strip().lower())
+                if not exclusion_key or exclusion_key in seen_excluded_names:
+                    continue
+                seen_excluded_names.add(exclusion_key)
+                deduped_excluded_model_names.append(str(exclusion_name or "").strip())
             named_models_match = re.search(
                 r"return(?:\s+up\s+to)?\s+"
                 + amount_token_re
@@ -709,7 +751,7 @@ class RulesParsingMixin:
             if not named_phrase and named_to_unit_match is not None:
                 named_phrase = str(named_to_unit_match.group("name") or "").strip()
             if named_phrase:
-                named_phrase = re.sub(r"\s+excluding\s+character\s+models?$", "", named_phrase).strip()
+                named_phrase = re.sub(r"\s+excluding\s+[a-z0-9' -]+?\s+models?$", "", named_phrase).strip()
                 named_phrase = re.sub(r"^(?:a|an)\s+", "", named_phrase).strip()
                 if named_phrase and not re.match(r"^models?\b", named_phrase):
                     parts = [part for part in named_phrase.split() if part]
@@ -745,10 +787,7 @@ class RulesParsingMixin:
                 "amount_roll": amount_roll,
                 "name": name or "Command phase model return",
                 "description": desc or "",
-                "exclude_character": (
-                    ("excluding character" in low)
-                    or bool(re.search(r"cannot be used to return destroyed character models? in attached units?", plain))
-                ),
+                "exclude_character": bool(exclude_character),
                 "requires_bearer_on_battlefield": bool(
                     re.search(r"if\s+(?:the\s+)?bearer\s+is\s+on\s+the\s+battlefield", plain)
                     or re.search(r"if\s+(?:the\s+)?bearer\s+is\s+not\s+destroyed", plain)
@@ -788,6 +827,12 @@ class RulesParsingMixin:
                 parsed["required_keyword"] = required_keyword
             if required_model_name:
                 parsed["required_model_name"] = required_model_name
+            if source_model_name:
+                parsed["requires_source_model_name"] = source_model_name
+            if deduped_excluded_model_names:
+                parsed["excluded_model_names"] = list(deduped_excluded_model_names)
+                if len(deduped_excluded_model_names) == 1:
+                    parsed["excluded_model_name"] = str(deduped_excluded_model_names[0] or "")
             if (
                 alternate_wargear_name
                 and alternate_wargear_model_count > 0

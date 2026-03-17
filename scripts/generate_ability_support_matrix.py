@@ -13349,6 +13349,18 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    source_model_name = ""
+    source_model_match = re.match(
+        r"while this unit contains (?:one or more )?(?:a|an) (?P<source>[a-z0-9 ]+?)(?: models?)? "
+        r"(?=(?:in your command phase|at the (?:start|end) of your command phase))",
+        norm,
+    )
+    if source_model_match:
+        source_model_name = str(source_model_match.group("source") or "").strip()
+        norm = str(norm[source_model_match.end() :] or "").strip()
+        if not norm:
+            return None
+    norm_with_context = norm
     amount_token = r"(one|a|\d+|(?:\d+)?d\d+(?:\s+\d+)?)"
     leading_clause = r"(?:while (?:this model|this unit|the bearer) is leading a unit )?"
 
@@ -13448,7 +13460,7 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
     elif "end of your command phase" in base_norm:
         timing_label = "End of Command phase"
     leading_note = bool(
-        re.search(r"while (?:this model|this unit|the bearer) is leading a unit", base_norm, flags=re.IGNORECASE)
+        re.search(r"while (?:this model|this unit|the bearer) is leading a unit", norm_with_context, flags=re.IGNORECASE)
     )
     amount_label = _amount_label(str(m.group("amt") or ""))
     up_to_prefix = "up to " if m.group("up_to") else ""
@@ -13457,12 +13469,44 @@ def _command_phase_unit_return_support(description: str) -> Optional[Tuple[str, 
         note = f"{timing_label} while leading: return {up_to_prefix}{amount_label} destroyed model(s) to this/bearer's unit."
     else:
         note = f"{timing_label}: return {up_to_prefix}{amount_label} destroyed model(s) to this/bearer's unit."
-    if "excluding character" in returned_phrase or "excluding character" in norm:
-        note = f"{note} Excludes CHARACTER models."
-    returned_clean = re.sub(r"\s+excluding\s+characters?(?:\s+models?)?", "", returned_phrase).strip()
+    exclusion_phrase_match = re.search(
+        r"\bexcluding\s+(?P<excluded>[a-z0-9 ]+?)\s+models?$",
+        returned_phrase,
+    )
+    exclusion_phrase = str(exclusion_phrase_match.group("excluded") or "").strip() if exclusion_phrase_match else ""
+    exclusion_labels: list[str] = []
+    if "excluding character" in returned_phrase or "excluding character" in norm or re.search(r"\bcharacters?\b", exclusion_phrase):
+        exclusion_labels.append("CHARACTER")
+    if exclusion_phrase:
+        for exclusion_part in re.split(r"\s*,\s*|\s+and\s+", exclusion_phrase):
+            exclusion_name = str(exclusion_part or "").strip()
+            if not exclusion_name:
+                continue
+            exclusion_name = re.sub(r"^(?:an?|the)\s+", "", exclusion_name).strip()
+            if not exclusion_name or re.fullmatch(r"characters?", exclusion_name):
+                continue
+            exclusion_labels.append(exclusion_name.upper())
+    if exclusion_labels:
+        deduped_exclusion_labels: list[str] = []
+        seen_exclusion_labels: set[str] = set()
+        for exclusion_label in exclusion_labels:
+            if exclusion_label in seen_exclusion_labels:
+                continue
+            seen_exclusion_labels.add(exclusion_label)
+            deduped_exclusion_labels.append(exclusion_label)
+        if len(deduped_exclusion_labels) == 1:
+            exclusion_summary = deduped_exclusion_labels[0]
+        elif len(deduped_exclusion_labels) == 2:
+            exclusion_summary = f"{deduped_exclusion_labels[0]} and {deduped_exclusion_labels[1]}"
+        else:
+            exclusion_summary = f"{', '.join(deduped_exclusion_labels[:-1])}, and {deduped_exclusion_labels[-1]}"
+        note = f"{note} Excludes {exclusion_summary} models."
+    returned_clean = re.sub(r"\s+excluding\s+[a-z0-9 ]+?\s+models?$", "", returned_phrase).strip()
     named_return = re.sub(r"\s+models?$", "", returned_clean).strip()
     if named_return and named_return not in {"model", "models"}:
         note = f"{note} Restricted to destroyed {named_return.upper()}."
+    if source_model_name:
+        note = f"{note} Requires the unit to contain {source_model_name.upper()}."
     condition = str(m.group("condition") or "").strip()
     if "bearer is on the battlefield" in condition or "bearer is not destroyed" in condition:
         note = f"{note} Requires the bearer to be on the battlefield."

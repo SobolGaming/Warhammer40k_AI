@@ -2567,8 +2567,16 @@ class GamePhaseHandlersMixin:
             exclude_character = bool(ability_spec.get("exclude_character", False))
             required_keyword = str(ability_spec.get("required_keyword", "") or "").strip().upper()
             required_model_name = str(ability_spec.get("required_model_name", "") or "").strip()
+            excluded_model_names: list[str] = []
             excluded_model_name = str(ability_spec.get("excluded_model_name", "") or "").strip()
-            if not exclude_character and not required_keyword and not required_model_name and not excluded_model_name:
+            if excluded_model_name:
+                excluded_model_names.append(excluded_model_name)
+            for excluded_name in list(ability_spec.get("excluded_model_names", []) or []):
+                excluded_name = str(excluded_name or "").strip()
+                if not excluded_name or excluded_name in excluded_model_names:
+                    continue
+                excluded_model_names.append(excluded_name)
+            if not exclude_character and not required_keyword and not required_model_name and not excluded_model_names:
                 return None
             allowed_ids: list[str] = []
             for model in list(getattr(bodyguard_unit, "models_lost", []) or []):
@@ -2580,7 +2588,12 @@ class GamePhaseHandlersMixin:
                     continue
                 if required_model_name and not _bodyguard_return_model_matches_name(bodyguard_unit, model, required_model_name):
                     continue
-                if excluded_model_name and _bodyguard_return_model_matches_name(bodyguard_unit, model, excluded_model_name):
+                excluded_by_name = any(
+                    _bodyguard_return_model_matches_name(bodyguard_unit, model, excluded_name)
+                    for excluded_name in excluded_model_names
+                    if excluded_name
+                )
+                if excluded_by_name:
                     continue
                 model_id = str(get_entity_id(model) or "")
                 if model_id:
@@ -2768,7 +2781,7 @@ class GamePhaseHandlersMixin:
             ability = unit.get_command_phase_bodyguard_return_ability()
             if not ability:
                 unit_return = unit.get_command_phase_unit_return_ability()
-                if not unit_return or not bool(unit_return.get("requires_source_leading_unit", False)):
+                if not unit_return:
                     continue
                 ability = dict(unit_return)
             bodyguard = unit.get_attached_unit_root()

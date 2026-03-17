@@ -31,6 +31,24 @@ def test_support_matrix_classifies_healing_serum_style_below_starting_strength_r
     assert "below starting strength" in note_l
 
 
+def test_support_matrix_classifies_ravenwing_narthecium_as_supported():
+    import scripts.generate_ability_support_matrix as support_matrix
+
+    status, notes = support_matrix._classify_ability(
+        "Narthecium",
+        (
+            "While this unit contains a Ravenwing Apothecary, in your Command phase, you can return 1 destroyed "
+            "model (excluding Character and Invader ATV models) to this unit."
+        ),
+        faction_id="SM",
+    )
+    assert status == "Supported"
+    note_l = str(notes or "").lower()
+    assert "return 1 destroyed model(s)" in note_l
+    assert "requires the unit to contain ravenwing apothecary" in note_l
+    assert "excludes character and invader atv models" in note_l
+
+
 def test_support_matrix_classifies_grot_orderly_bodyguard_return_as_supported():
     import scripts.generate_ability_support_matrix as support_matrix
 
