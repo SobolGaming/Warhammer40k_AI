@@ -6406,6 +6406,7 @@ def _classify_ability_base(
     tau_droneport_support = _tau_droneport_support(description)
     tau_tidewall_defence_platform_support = _tau_tidewall_defence_platform_support(description)
     tau_hunting_hounds_support = _tau_hunting_hounds_support(description)
+    space_marines_hunting_hounds_support = _space_marines_hunting_hounds_support(description)
     tau_rites_of_feasting_support = _tau_rites_of_feasting_support(description)
     tau_nova_charge_support = _tau_nova_charge_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
@@ -6646,6 +6647,8 @@ def _classify_ability_base(
         return tau_nova_charge_support
     if tau_hunting_hounds_support:
         return tau_hunting_hounds_support
+    if space_marines_hunting_hounds_support:
+        return space_marines_hunting_hounds_support
     if closest_m_veh_support:
         return closest_m_veh_support
     if monster_vehicle_reroll_support:
@@ -7019,6 +7022,8 @@ def _classify_ability_base(
         return tau_droneport_support
     if tau_hunting_hounds_support:
         return tau_hunting_hounds_support
+    if space_marines_hunting_hounds_support:
+        return space_marines_hunting_hounds_support
     if tau_rites_of_feasting_support:
         return tau_rites_of_feasting_support
     if tau_nova_charge_support:
@@ -10437,6 +10442,41 @@ def _tau_hunting_hounds_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         f"While this unit is within {range_value}\" of one or more friendly KROOT CHARACTER models, its models' Objective Control is set to {oc_value}.",
+    )
+
+
+def _space_marines_hunting_hounds_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    match = re.fullmatch(
+        r"while this unit is within (?P<range>\d+) of one or more friendly space wolves character models "
+        r"excluding wulfen models if this unit is not battle shocked "
+        r"(?P<target>(?:[a-z0-9 ]+ models in (?:it|this unit)|models in (?:it|this unit))) "
+        r"have an objective control characteristic of (?P<value>\d+)",
+        norm,
+    )
+    if not match:
+        return None
+
+    range_value = str(match.group("range") or "6").strip()
+    oc_value = str(match.group("value") or "1").strip()
+    target_text = str(match.group("target") or "").strip()
+    if target_text in {"models in it", "models in this unit"}:
+        target_note = "all models in this unit"
+    else:
+        target_match = re.fullmatch(r"(?P<keyword>[a-z0-9 ]+?) models in (?:it|this unit)", target_text)
+        if not target_match:
+            return None
+        target_keyword = str(target_match.group("keyword") or "").strip().upper()
+        if not target_keyword:
+            return None
+        target_note = f"only {target_keyword} models in this unit"
+    return (
+        "Supported",
+        f"While this unit is within {range_value}\" of one or more friendly SPACE WOLVES CHARACTER models (excluding WULFEN models) and not Battle-shocked, {target_note} have Objective Control {oc_value}.",
     )
 
 

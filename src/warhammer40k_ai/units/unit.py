@@ -1143,6 +1143,17 @@ class Unit(
                     mods.append(Modifier(ModifierOp.SET, int(max(0, int(oc_value))), source=f"ability:{source_name}"))
             except Exception:
                 pass
+            try:
+                hunting_hounds_override_fn = getattr(root, "hunting_hounds_objective_control_override", None)
+                if callable(hunting_hounds_override_fn):
+                    oc_value, oc_source = hunting_hounds_override_fn(model, game_map=game_map)
+                else:
+                    oc_value, oc_source = (None, "")
+                if oc_value is not None:
+                    source_name = str(oc_source or "Hunting Hounds").strip() or "Hunting Hounds"
+                    mods.append(Modifier(ModifierOp.SET, int(max(0, int(oc_value))), source=f"ability:{source_name}"))
+            except Exception:
+                pass
 
             # Kill-reward persistent Objective Control bonuses (e.g. Trophy Takers).
             try:

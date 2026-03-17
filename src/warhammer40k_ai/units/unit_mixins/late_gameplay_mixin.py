@@ -1011,11 +1011,8 @@ class LateGameplayMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
-    def _curse_of_the_wulfen_source_clause_satisfied(self, root, clause: dict, *, game_map) -> bool:
-        if root is None or clause is None or game_map is None:
-            return False
-        get_friendly_units = getattr(game_map, "get_friendly_units", None)
-        if not callable(get_friendly_units):
+    def _friendly_model_source_clause_satisfied(self, root, clause: dict, *, game_map) -> bool:
+        if root is None or clause is None:
             return False
 
         try:
@@ -1035,6 +1032,31 @@ class LateGameplayMixin:
         except Exception:
             return False
 
+        def _model_matches_clause(source_model) -> bool:
+            if source_model is None or not getattr(source_model, "is_alive", False):
+                return False
+            if not self._model_matches_keyword_phrase(source_model, keyword_phrase):
+                return False
+            return not any(
+                self._model_matches_keyword_phrase(source_model, excluded_keyword)
+                for excluded_keyword in excluded_keywords
+            )
+
+        try:
+            root_models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            root_models = list(getattr(root, "models", []) or [])
+        for source_model in root_models:
+            if _model_matches_clause(source_model):
+                return True
+
+        if game_map is None:
+            return False
+        get_friendly_units = getattr(game_map, "get_friendly_units", None)
+        if not callable(get_friendly_units):
+            return False
+
+        root_key = str(get_entity_id(root) or "") or f"obj:{id(root)}"
         seen_roots: set[str] = set()
         for source_unit in list(get_friendly_units(root) or []):
             if source_unit is None:
@@ -1051,6 +1073,8 @@ class LateGameplayMixin:
                 continue
 
             source_key = str(get_entity_id(source_root) or "") or f"obj:{id(source_root)}"
+            if source_key == root_key:
+                continue
             if source_key in seen_roots:
                 continue
             seen_roots.add(source_key)
@@ -1060,18 +1084,14 @@ class LateGameplayMixin:
             except Exception:
                 source_models = list(getattr(source_root, "models", []) or [])
             for source_model in source_models:
-                if source_model is None or not getattr(source_model, "is_alive", False):
-                    continue
-                if not self._model_matches_keyword_phrase(source_model, keyword_phrase):
-                    continue
-                if excluded_keywords and any(
-                    self._model_matches_keyword_phrase(source_model, excluded_keyword)
-                    for excluded_keyword in excluded_keywords
-                ):
+                if not _model_matches_clause(source_model):
                     continue
                 if model_within_range_of_unit(source_model, root, range_inches, use_attached_aggregate=True):
                     return True
         return False
+
+    def _curse_of_the_wulfen_source_clause_satisfied(self, root, clause: dict, *, game_map) -> bool:
+        return self._friendly_model_source_clause_satisfied(root, clause, game_map=game_map)
 
     def curse_of_the_wulfen_objective_control_bonus(
         self,
@@ -1138,6 +1158,183 @@ class LateGameplayMixin:
                 best_bonus = int(model_bonus)
                 best_source = str(spec.get("source_ability", "") or "Curse of the Wulfen").strip() or "Curse of the Wulfen"
         return int(best_bonus), best_source
+
+    def _parse_hunting_hounds_oc_set_specs_from_text(
+        self,
+        ability_name: str,
+        ability_desc: str,
+    ) -> List[dict]:
+        normalized_name = self._normalize_keyword_phrase(ability_name)
+        normalized = self._normalize_ability_text_for_matching(self._normalize_rules_text(ability_desc))
+        if normalized_name != "hunting hounds" or not normalized:
+            return []
+
+        match = re.fullmatch(
+            r"while this unit is within (?P<range>\d+) of one or more friendly "
+            r"(?P<keyword>[a-z0-9 ]+?) models(?: excluding (?P<exclude>[a-z0-9 ]+?) models?)? "
+            r"if this unit is not battle shocked "
+            r"(?P<target>(?:[a-z0-9 ]+ models in (?:it|this unit)|models in (?:it|this unit))) "
+            r"have an objective control characteristic of (?P<objective_control>\d+)",
+            normalized,
+        )
+        if not match:
+            return []
+
+        try:
+            range_inches = int(match.group("range") or 0)
+            objective_control = int(match.group("objective_control") or 0)
+        except (TypeError, ValueError):
+            return []
+        if range_inches <= 0 or objective_control < 0:
+            return []
+
+        source_keyword = str(match.group("keyword") or "").strip()
+        if not source_keyword:
+            return []
+
+        target_text = str(match.group("target") or "").strip()
+        if not target_text:
+            return []
+
+        target_keyword = ""
+        if target_text not in {"models in it", "models in this unit"}:
+            target_match = re.fullmatch(
+                r"(?P<keyword>[a-z0-9 ]+?) models in (?:it|this unit)",
+                target_text,
+            )
+            if not target_match:
+                return []
+            target_keyword = str(target_match.group("keyword") or "").strip()
+            if not target_keyword:
+                return []
+
+        excluded_phrase = str(match.group("exclude") or "").strip()
+        excluded_keywords = (excluded_phrase,) if excluded_phrase else ()
+
+        return [
+            {
+                "source_ability": str(ability_name or "Hunting Hounds").strip() or "Hunting Hounds",
+                "source_clauses": (
+                    {
+                        "range": int(range_inches),
+                        "keyword": source_keyword,
+                        "excluded_keywords": excluded_keywords,
+                    },
+                ),
+                "target_keyword": target_keyword,
+                "objective_control": int(objective_control),
+            }
+        ]
+
+    @classmethod
+    def _normalize_hunting_hounds_target_phrase(cls, value: str) -> str:
+        normalized = cls._normalize_keyword_phrase(value)
+        normalized = re.sub(r"\bwolves\b", "wolf", normalized)
+        normalized = re.sub(r"\bwolve\b", "wolf", normalized)
+        return normalized
+
+    @classmethod
+    def _hunting_hounds_target_matches_model(cls, model, target_keyword: str) -> bool:
+        if not target_keyword:
+            return True
+        if cls._model_matches_keyword_phrase(model, target_keyword):
+            return True
+        normalized_target = cls._normalize_hunting_hounds_target_phrase(target_keyword)
+        if not normalized_target:
+            return False
+        normalized_model_name = cls._normalize_hunting_hounds_target_phrase(getattr(model, "name", ""))
+        return normalized_model_name == normalized_target
+
+    def get_hunting_hounds_objective_control_specs(self) -> List[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "hunting_hounds_objective_control_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: List[dict] = []
+        seen: set[tuple[str, tuple[tuple[int, str, tuple[str, ...]], ...], str, int]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                for spec in unit._parse_hunting_hounds_oc_set_specs_from_text(name, desc):
+                    clause_key = tuple(
+                        (
+                            int(clause.get("range", 0) or 0),
+                            str(clause.get("keyword", "") or "").strip().lower(),
+                            tuple(
+                                str(v or "").strip().lower()
+                                for v in tuple(clause.get("excluded_keywords", ()) or ())
+                            ),
+                        )
+                        for clause in tuple(spec.get("source_clauses", ()) or ())
+                    )
+                    dedupe_key = (
+                        str(spec.get("source_ability", "") or "").strip().lower(),
+                        clause_key,
+                        str(spec.get("target_keyword", "") or "").strip().lower(),
+                        int(spec.get("objective_control", 0) or 0),
+                    )
+                    if dedupe_key in seen:
+                        continue
+                    seen.add(dedupe_key)
+                    specs.append(spec)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def hunting_hounds_objective_control_override(
+        self,
+        model: Optional['Model'],
+        *,
+        game_map=None,
+    ) -> tuple[Optional[int], str]:
+        if model is None or not getattr(model, "is_alive", False):
+            return None, ""
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None or root.is_battle_shocked():
+            return None, ""
+
+        best_value: Optional[int] = None
+        best_source = ""
+        for spec in list(root.get_hunting_hounds_objective_control_specs() or []):
+            source_clauses = tuple(spec.get("source_clauses", ()) or ())
+            if not source_clauses:
+                continue
+            if not any(
+                root._friendly_model_source_clause_satisfied(root, clause, game_map=game_map)
+                for clause in source_clauses
+            ):
+                continue
+
+            target_keyword = str(spec.get("target_keyword", "") or "").strip()
+            if target_keyword and not root._hunting_hounds_target_matches_model(model, target_keyword):
+                continue
+
+            try:
+                objective_control = int(spec.get("objective_control", 0) or 0)
+            except (TypeError, ValueError):
+                objective_control = 0
+            if best_value is None or objective_control > best_value:
+                best_value = int(objective_control)
+                best_source = str(spec.get("source_ability", "") or "Hunting Hounds").strip() or "Hunting Hounds"
+        return best_value, best_source
 
     def _parse_black_rage_specs_from_text(
         self,
