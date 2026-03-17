@@ -3287,6 +3287,10 @@ class Unit(
         r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
         re.IGNORECASE,
     )
+    _COMMAND_PHASE_BONUS_CP_WARLORD_RE = re.compile(
+        r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bif\b.*?\byour\s+warlord\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
+        re.IGNORECASE,
+    )
     _COMMAND_PHASE_CP_ROLL_RE = re.compile(
         r"in\s+your\s+command\s+phase\s+if\s+this\s+(?:model|unit)\s+is\s+on\s+the\s+battlefield\s+roll\s+(?P<dice>\d+)d6\s+"
         r"on\s+a\s+(?P<threshold>\d+)\+?\s+you\s+gain\s+(?P<cp>\d+)\s*(?:cp|command\s+points?)",
@@ -3333,7 +3337,7 @@ class Unit(
         r"once\s+per\s+(?:turn|battle|battle\s+round),?\s+when\s+an\s+enemy\s+unit\s+ends\s+a\s+normal(?:,)?\s+advance\s+or\s+fall\s+back\s+move\s+"
         r"within\s+(?P<range>\d+)\s*\"?\s+of\s+(?:this\s+(?:model(?: s)? unit|unit|model)|the\s+bearer'?s\s+unit|that\s+unit)"
         r"(?:\s+if\s+(?:this\s+unit|the\s+bearer'?s\s+unit|that\s+unit)\s+is\s+not\s+within\s+engagement\s+range\s+of\s+(?:one\s+or\s+more|any)\s+enemy\s+units?)?"
-        r".*?make\s+a\s+normal\s+move\s+of\s+up\s+to\s+(?P<move>d\d+(?:\+\d+)?|\d+)",
+        r".*?make\s+a\s+normal\s+move(?:\s+of\s+up\s+to\s+(?P<move>d\d+(?:\+\d+)?|\d+))?",
         re.IGNORECASE,
     )
     _SETUP_REACTIVE_SHOOT_CHARGE_RE = re.compile(

@@ -5716,6 +5716,18 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
             "Supported",
             "Command phase: if Chaplain Grimaldus's attached unit contains one or more Cenobyte Servitor models, queue a deterministic choice of Banner of the Emperor Victorious, Column from the Major Altar, or Water from the Stoup of Elucidation until your next Command phase; only the selected relic ability is active.",
         ),
+        ("SM", "Deadly Terror", "000001345"): (
+            "Supported",
+            "While leading a unit with Terror Troops (Aura), increase that aura's range by 3\".",
+        ),
+        ("SM", "Priority Objective Identified", "000000076"): (
+            "Supported",
+            "Start of the first battle round: select one objective marker; while one or more models with this ability remain on the battlefield, friendly ADEPTUS ASTARTES attacks against enemy units within that objective's range re-roll Wound rolls of 1.",
+        ),
+        ("SM", "Inspiring Leader", "000002199"): (
+            "Supported",
+            "Leading: the attached unit is eligible to shoot and declare a charge after it Advances or Falls Back.",
+        ),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
     for (fid, name, dsid), val in raw.items():
@@ -12649,15 +12661,18 @@ def _enemy_move_reactive_d6_support(description: str) -> Optional[Tuple[str, str
     pattern = (
         r"once per turn when an enemy unit ends a normal advance or fall back move within (?P<range>\d+) of this "
         r"(?:model(?: s)? unit|unit|model)(?: if (?:this (?:model(?: s)? unit|unit)|the bearer(?: s)? unit) is not within engagement range of "
-        r"(?:one or more|any) enemy units?)? (?:this unit |this model |it )?can make a normal move of up to (?P<move>d6|\d+)"
+        r"(?:one or more|any) enemy units?)? (?:this unit |this model |it )?can make a normal move(?: of up to (?P<move>d6|\d+))?"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
     rng = m.group("range")
     move = str(m.group("move") or "").strip().lower()
-    move_label = "D6" if move == "d6" else move
-    note = f"Enemy unit ends move within {rng}\": optional {move_label}\" Normal move"
+    if move:
+        move_label = "D6" if move == "d6" else move
+        note = f"Enemy unit ends move within {rng}\": optional {move_label}\" Normal move"
+    else:
+        note = f"Enemy unit ends move within {rng}\": optional full Normal move up to the unit's Move characteristic"
     if "not within engagement range" in norm:
         note += " if not in Engagement Range."
     else:
@@ -13230,6 +13245,19 @@ def _strategic_reserves_early_arrival_support(description: str) -> Optional[Tupl
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    selected_friendly_pattern = (
+        r"once per battle round in your movement phase you can select one friendly (?P<keyword>[a-z0-9 ]+) unit that is in reserves "
+        r"if you do until the end of the phase for the purpose of setting up that unit on the battlefield treat the current battle round number "
+        r"as being one higher than it actually is"
+    )
+    m_selected = re.fullmatch(selected_friendly_pattern, norm)
+    if m_selected:
+        keyword_phrase = str(m_selected.group("keyword") or "").strip().upper()
+        return (
+            "Supported",
+            f"Movement phase: once per battle round select one friendly {keyword_phrase} unit in Reserves; until end of phase treat the battle round as +1 for its setup.",
+        )
+
     round_bonus_pattern = (
         r"if this (?:unit|model) starts the game in strategic reserves it can be set up in the reinforcements step of your first "
         r"second or third movement phase(?: regardless of any mission rules)? if this (?:unit|model) is in strategic reserves "
@@ -13396,6 +13424,16 @@ def _command_phase_bonus_cp_support(description: str) -> Optional[Tuple[str, str
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    warlord_pattern = (
+        r"(?:at the )?start of (?:each of )?your command phases? if .* your warlord and is on the battlefield "
+        r"you gain (?P<cp>\d+) ?(?:cp|command points?)"
+    )
+    m_warlord = re.fullmatch(warlord_pattern, norm)
+    if m_warlord:
+        return (
+            "Supported",
+            f"Start of Command phase: gain {m_warlord.group('cp')} CP while this unit's named model is your WARLORD and on the battlefield.",
+        )
     pattern = (
         r"(?:at the )?start of (?:each of )?your command phases? if (?:this model|this unit|the bearer) is on the battlefield "
         r"you gain (?P<cp>\d+) ?(?:cp|command points?)"

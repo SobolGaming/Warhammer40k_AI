@@ -1466,6 +1466,8 @@ class RulesParsingMixin:
         try:
             if "command_phase_bonus_cp" in sr:
                 del sr["command_phase_bonus_cp"]
+            if "command_phase_bonus_cp_specs" in sr:
+                del sr["command_phase_bonus_cp_specs"]
             if "command_phase_bonus_cp_roll_specs" in sr:
                 del sr["command_phase_bonus_cp_roll_specs"]
             if "command_phase_end_bonus_cp_roll_specs" in sr:
@@ -1484,8 +1486,10 @@ class RulesParsingMixin:
             pass
 
         bonus_cp = 0
+        cp_bonus_specs: list[dict] = []
         cp_roll_specs: list[dict] = []
         cp_end_roll_specs: list[dict] = []
+        seen_bonus_specs: set[tuple[str, int, bool]] = set()
         seen_roll_specs: set[tuple[str, int, int, int]] = set()
         seen_end_roll_specs: set[tuple[str, int, int, int]] = set()
 
@@ -1512,12 +1516,43 @@ class RulesParsingMixin:
             text = self._normalize_rules_text(desc or "")
             if not text:
                 continue
+            source = str(name or "Command phase CP gain").strip() or "Command phase CP gain"
+            m_warlord = self._COMMAND_PHASE_BONUS_CP_WARLORD_RE.search(text)
+            if m_warlord:
+                try:
+                    cp_gain = int(m_warlord.group(1))
+                except Exception:
+                    cp_gain = 0
+                if cp_gain > 0:
+                    key = (source.lower(), int(cp_gain), True)
+                    if key not in seen_bonus_specs:
+                        seen_bonus_specs.add(key)
+                        cp_bonus_specs.append(
+                            {
+                                "source": source,
+                                "cp": int(cp_gain),
+                                "requires_warlord": True,
+                            }
+                        )
+                continue
             m = self._COMMAND_PHASE_BONUS_CP_RE.search(text)
             if m:
                 try:
-                    bonus_cp += int(m.group(1))
+                    cp_gain = int(m.group(1))
                 except Exception:
                     continue
+                if cp_gain > 0:
+                    bonus_cp += int(cp_gain)
+                    key = (source.lower(), int(cp_gain), False)
+                    if key not in seen_bonus_specs:
+                        seen_bonus_specs.add(key)
+                        cp_bonus_specs.append(
+                            {
+                                "source": source,
+                                "cp": int(cp_gain),
+                                "requires_warlord": False,
+                            }
+                        )
             norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
             norm = re.sub(r"'s\b", "s", norm)
             norm = re.sub(r"[^a-z0-9+]+", " ", norm)
@@ -1583,6 +1618,8 @@ class RulesParsingMixin:
 
         if bonus_cp > 0:
             sr["command_phase_bonus_cp"] = int(bonus_cp)
+        if cp_bonus_specs:
+            sr["command_phase_bonus_cp_specs"] = list(cp_bonus_specs)
         if cp_roll_specs:
             sr["command_phase_bonus_cp_roll_specs"] = list(cp_roll_specs)
         if cp_end_roll_specs:

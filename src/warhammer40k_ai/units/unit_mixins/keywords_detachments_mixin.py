@@ -4289,6 +4289,73 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_priority_objective_identified_rule(self) -> Optional[dict]:
+        """
+        Detect abilities like:
+        "At the start of the first battle round ... select one objective marker ... each time a friendly
+        ADEPTUS ASTARTES model makes an attack that targets an enemy unit that is within range of that
+        objective marker, re-roll a Wound roll of 1."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "priority_objective_identified_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                key = (str(name or "").strip().lower(), normalized)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if "start of the first battle round" not in normalized:
+                    continue
+                if "select one objective marker on the battlefield" not in normalized:
+                    continue
+                if "while one or more models with this ability are on the battlefield" not in normalized:
+                    continue
+                if "friendly adeptus astartes model makes an attack" not in normalized:
+                    continue
+                if "within range of that objective marker" not in normalized:
+                    continue
+                if "re roll a wound roll of 1" not in normalized and "reroll a wound roll of 1" not in normalized:
+                    continue
+                rule = {
+                    "source": str(name or "Priority Objective Identified").strip() or "Priority Objective Identified",
+                    "friendly_keyword": "ADEPTUS ASTARTES",
+                    "reroll_wound_values": (1,),
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def get_exemplar_of_the_code_rule(self) -> Optional[dict]:
         """
         Detect abilities with text like:
@@ -4465,6 +4532,25 @@ class KeywordsDetachmentsMixin:
         if cache_key in getattr(root, "_ability_cache", {}):
             return root._ability_cache[cache_key]
 
+        def _root_normal_move_distance() -> int:
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            for model in list(models or []):
+                if model is None or not bool(getattr(model, "is_alive", True)):
+                    continue
+                try:
+                    distance = int(root.get_effective_model_characteristic(model, "movement") or 0)
+                except Exception:
+                    distance = 0
+                if distance > 0:
+                    return int(distance)
+            try:
+                return int(float(getattr(root, "movement", 0) or 0))
+            except Exception:
+                return 0
+
         def _single_model_matches_equipped_prefix(prefix_text: str) -> bool:
             low_prefix = str(prefix_text or "").strip().lower()
             if "if this model is equipped with" not in low_prefix:
@@ -4556,6 +4642,10 @@ class KeywordsDetachmentsMixin:
                             rule["max_distance"] = int(move_value)
                     else:
                         rule["distance_roll"] = move_token.upper()
+                else:
+                    normal_move = int(_root_normal_move_distance() or 0)
+                    if normal_move > 0:
+                        rule["max_distance"] = int(normal_move)
                 low_text = str(text or "").lower()
                 if "wholly within" in low_text and "battleline" in low_text and "adeptus mechanicus" in low_text:
                     alt_match = re.search(
@@ -9767,6 +9857,119 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_high_king_of_fenris_rule(self) -> Optional[dict]:
+        """
+        Detect abilities like:
+        "Once per battle round, in your Movement phase, you can select one friendly Space Wolves unit
+        that is in Reserves. ... treat the current battle round number as being one higher..."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "high_king_of_fenris_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                key = (str(name or "").strip().lower(), normalized)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if "once per battle round" not in normalized:
+                    continue
+                if "in your movement phase" not in normalized:
+                    continue
+                match = re.search(
+                    r"select one friendly (?P<keyword>[a-z0-9 ]+?) unit that is in reserves",
+                    normalized,
+                )
+                if match is None:
+                    continue
+                if "treat the current battle round number as being one higher than it actually is" not in normalized:
+                    continue
+                keyword_phrase = str(match.group("keyword") or "").strip().upper()
+                if not keyword_phrase:
+                    continue
+                rule = {
+                    "source": str(name or "High King of Fenris").strip() or "High King of Fenris",
+                    "friendly_keyword": keyword_phrase,
+                    "round_bonus": 1,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def high_king_of_fenris_used_this_battle_round(self, *, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if game is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        try:
+            current_round = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_round = 0
+        try:
+            used_round = int(sr.get("high_king_of_fenris_used_battle_round", 0) or 0)
+        except Exception:
+            used_round = 0
+        return bool(current_round > 0 and used_round == current_round)
+
+    def mark_high_king_of_fenris_used(self, *, game=None) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if game is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        try:
+            sr["high_king_of_fenris_used_battle_round"] = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            sr["high_king_of_fenris_used_battle_round"] = 0
+        root.special_rules = sr
+
     def get_strategic_reserves_round_bonus_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:
@@ -10018,6 +10221,42 @@ class KeywordsDetachmentsMixin:
                         total_bonus += int(sr.get("enhancement_transponder_lock_module_round_bonus", 1) or 0)
                     except Exception:
                         pass
+        if isinstance(sr, dict) and bool(sr.get("high_king_of_fenris_selected", False)):
+            active = True
+            try:
+                in_reserves = bool(getattr(root, "is_in_reserves", lambda: False)())
+            except Exception:
+                in_reserves = False
+            if not in_reserves:
+                active = False
+            if active and game is not None:
+                try:
+                    current_player = getattr(game, "get_current_player", lambda: None)()
+                except Exception:
+                    current_player = None
+                current_owner = str(getattr(current_player, "id", "") or "")
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                effect_owner = str(sr.get("high_king_of_fenris_turn_owner", "") or "")
+                effect_phase = str(sr.get("high_king_of_fenris_expires_phase", "") or "").strip().upper()
+                try:
+                    effect_turn = int(sr.get("high_king_of_fenris_turn", 0) or 0)
+                except Exception:
+                    effect_turn = 0
+                if effect_owner and current_owner and effect_owner != current_owner:
+                    active = False
+                if active and effect_turn and current_turn and effect_turn != current_turn:
+                    active = False
+                if active and effect_phase and current_phase and effect_phase != current_phase:
+                    active = False
+            if active:
+                try:
+                    total_bonus += int(sr.get("high_king_of_fenris_round_bonus", 1) or 0)
+                except Exception:
+                    pass
 
         try:
             rule = root.get_strategic_reserves_round_bonus_rule()

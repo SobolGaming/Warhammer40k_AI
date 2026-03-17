@@ -7158,6 +7158,23 @@ class ActionsMovementMixin:
         if callable(get_parent_army):
             army = get_parent_army()
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if army is not None and target is not None:
+            has_active_priority = getattr(army, "has_active_priority_objective_identified_model", None)
+            get_objective = getattr(army, "get_priority_objective_identified_selected_objective", None)
+            if callable(has_active_priority) and callable(get_objective):
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                selected_objective = get_objective(game=game)
+                objective_location = getattr(selected_objective, "location", None) if selected_objective is not None else None
+                if (
+                    target_root is not None
+                    and objective_location is not None
+                    and not bool(getattr(objective_location, "removed", False))
+                    and bool(has_active_priority())
+                    and bool(getattr(root, "has_any_keyword", lambda *_a, **_k: False)("ADEPTUS ASTARTES"))
+                    and bool(getattr(target_root, "is_within_objective_range", lambda _location: False)(objective_location))
+                ):
+                    reroll_wound_values.add(1)
+                    reroll_wound_reasons.append("Priority Objective Identified: re-roll Wound rolls of 1")
         mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
         dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
         arch_fn = getattr(dg_mgr, "arch_contaminator_reroll_wounds", None) if dg_mgr is not None else None

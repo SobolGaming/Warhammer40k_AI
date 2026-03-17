@@ -8631,6 +8631,70 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if get_objective(game, objective_id) is None:
             return ("Singular Purpose selected objective marker was not found.",)
         return ()
+    if ability == "priority_objective_identified":
+        if is_skip_choice(request, result):
+            return ("Priority Objective Identified selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Priority Objective Identified army not found.",)
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return ("Priority Objective Identified requires objective_id.",)
+        objective = get_objective(game, objective_id)
+        if objective is None:
+            return ("Priority Objective Identified selected objective marker was not found.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_objective_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and objective_id not in candidate_ids:
+            return ("Priority Objective Identified selected objective marker is not an eligible candidate.",)
+        return ()
+    if ability == "high_king_of_fenris_selection":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("High King of Fenris source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("High King of Fenris source unit was not found.",)
+        get_rule = getattr(source_root, "get_high_king_of_fenris_rule", None)
+        if not callable(get_rule):
+            return ("High King of Fenris source rule is unavailable.",)
+        rule = get_rule()
+        if not isinstance(rule, dict):
+            return ("High King of Fenris source rule is unavailable.",)
+        used_this_round = getattr(source_root, "high_king_of_fenris_used_this_battle_round", None)
+        if callable(used_this_round) and bool(used_this_round(game=game)):
+            return ("High King of Fenris has already been used this battle round.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("High King of Fenris requires a valid reserve unit target.",)
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None:
+            return ("High King of Fenris target unit was not found.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        target_root_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_root_id not in candidate_ids:
+            return ("High King of Fenris target is not an eligible reserve unit.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is not target_army:
+            return ("High King of Fenris target must be a friendly unit.",)
+        friendly_keyword = str(ctx.get("friendly_keyword", "") or rule.get("friendly_keyword", "") or "").strip()
+        if friendly_keyword and not bool(getattr(target_root, "has_any_keyword", lambda *_a, **_k: False)(friendly_keyword)):
+            return ("High King of Fenris target must match the required faction keyword.",)
+        if not bool(getattr(target_root, "is_in_reserves", lambda: False)()):
+            return ("High King of Fenris target must currently be in Reserves.",)
+        return ()
     if ability == "here_be_loot":
         if is_skip_choice(request, result):
             return ("Here Be Loot selection cannot be skipped.",)
@@ -15549,6 +15613,91 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "mode": "objective_marker",
             "objective_id": str(objective_id),
             "source_model_id": str(source_model_id),
+        }
+    if ability == "priority_objective_identified":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return None
+        objective = get_objective(game, objective_id)
+        if objective is None:
+            return None
+        setattr(army, "priority_objective_identified_objective_id", objective_id)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Priority Objective Identified").strip() or "Priority Objective Identified"
+        objective_name = str(getattr(objective, "name", "") or "Objective marker")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: selected {objective_name}.",
+        )
+        return {
+            "objective_id": objective_id,
+            "objective_name": objective_name,
+            "source": ability_name,
+        }
+    if ability == "high_king_of_fenris_selection":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = getattr(source_root.get_parent_army(), "player", None)
+            except Exception:
+                player = None
+        mark_used = getattr(source_root, "mark_high_king_of_fenris_used", None)
+        ability_name = str(ctx.get("ability_name", "") or "High King of Fenris").strip() or "High King of Fenris"
+        if is_skip_choice(request, result):
+            if callable(mark_used):
+                mark_used(game=game)
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: selected none.",
+            )
+            return {"skipped": True}
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return None
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None:
+            return None
+        if callable(mark_used):
+            mark_used(game=game)
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr = dict(sr)
+        sr["high_king_of_fenris_selected"] = True
+        sr["high_king_of_fenris_round_bonus"] = int(ctx.get("round_bonus", 1) or 1)
+        sr["high_king_of_fenris_source_unit_id"] = str(get_entity_id(source_root) or "")
+        sr["high_king_of_fenris_source"] = ability_name
+        sr["high_king_of_fenris_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["high_king_of_fenris_turn_owner"] = str(getattr(player, "id", "") or "")
+        sr["high_king_of_fenris_expires_phase"] = "MOVEMENT_PHASE"
+        target_root.special_rules = sr
+        target_name = str(getattr(target_root, "name", "Reserve unit") or "Reserve unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: selected {target_name}.",
+        )
+        return {
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "target_unit_name": target_name,
+            "source": ability_name,
         }
     if ability == "traitoris_tyrants_shadow_objective":
         if is_skip_choice(request, result):

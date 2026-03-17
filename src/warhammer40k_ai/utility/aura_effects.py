@@ -365,6 +365,40 @@ def _chosen_of_blood_god_aura_range_bonus(source_unit, ability) -> float:
         return 3.0
 
 
+def _deadly_terror_aura_range_bonus(source_unit, ability) -> float:
+    """
+    Lieutenant in Reiver Armour: Deadly Terror.
+    While leading, increase the range of the unit's Terror Troops ability by 3".
+    """
+    if source_unit is None or ability is None:
+        return 0.0
+    try:
+        ability_name = str(getattr(ability, "name", ability) or "")
+    except Exception:
+        ability_name = ""
+    if "terror troops" not in _norm(ability_name) or "(aura" not in _norm(ability_name):
+        return 0.0
+    try:
+        root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+    except Exception:
+        root = source_unit
+    if root is None:
+        return 0.0
+    try:
+        leaders = list(getattr(root, "attached_leaders", []) or [])
+    except Exception:
+        leaders = []
+    for leader in leaders:
+        for leader_ability in _iter_possible_abilities(leader):
+            desc = str(getattr(leader_ability, "description", "") or getattr(leader_ability, "name", "") or "")
+            if not desc:
+                continue
+            normalized = _normalize_keyword_phrase(_normalize_desc(desc))
+            if "increase the range of that unit s terror troops ability by 3" in normalized:
+                return 3.0
+    return 0.0
+
+
 def _aura_anchor_model_for_ability(source_unit, ability):
     if source_unit is None or ability is None:
         return None
@@ -418,6 +452,7 @@ def _unit_within_aura_range(source_unit, target_unit, base_range: float, *, abil
     except Exception:
         return False
     rng += float(_chosen_of_blood_god_aura_range_bonus(source_unit, ability))
+    rng += float(_deadly_terror_aura_range_bonus(source_unit, ability))
     anchor_model = _aura_anchor_model_for_ability(source_unit, ability)
     if anchor_model is not None:
         try:

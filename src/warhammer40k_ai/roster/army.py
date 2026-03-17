@@ -634,6 +634,23 @@ class Army:
             sr = getattr(u, "special_rules", {}) or {}
             if not isinstance(sr, dict):
                 raise TypeError("special_rules must be a dict for CP gain parsing.")
+            specs = list(sr.get("command_phase_bonus_cp_specs", []) or [])
+            if specs:
+                for spec in specs:
+                    if not isinstance(spec, dict):
+                        continue
+                    try:
+                        cp_gain = int(spec.get("cp", 0) or 0)
+                    except Exception:
+                        cp_gain = 0
+                    if cp_gain <= 0:
+                        continue
+                    if bool(spec.get("requires_warlord", False)):
+                        is_warlord = bool(getattr(u, "is_warlord", False)) or getattr(self, "warlord", None) is u
+                        if not is_warlord:
+                            continue
+                    bonus += int(cp_gain)
+                continue
             # Accept either key spelling; keep it simple.
             b = int(sr.get("command_phase_bonus_cp", sr.get("command_phase_cp_bonus", 0)) or 0)
             if b > 0:
@@ -2999,6 +3016,7 @@ class Army:
         self._queue_prey_selection(game=game, battle_round=int(battle_round))
         self._queue_singular_purpose(game=game, battle_round=int(battle_round))
         self._queue_archons_will(game=game, battle_round=int(battle_round))
+        self._queue_priority_objective_identified(game=game, battle_round=int(battle_round))
         self._assigned_agents_destroy_empty_transports(int(battle_round), game=game)
 
     def _eligible_quarry_units(self, enemy_units: list, *, exclude_embarked: bool = False) -> list:
@@ -3220,6 +3238,159 @@ class Army:
             )
             if hasattr(game, "request_decision"):
                 game.request_decision(request)
+
+    def has_active_priority_objective_identified_model(self) -> bool:
+        seen_roots: set[str] = set()
+        for unit in list(getattr(self, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if not getattr(root, "deployed", False):
+                continue
+            if not getattr(root, "is_alive", lambda: False)():
+                continue
+            if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                continue
+            if str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower() != "deployed":
+                continue
+            get_rule = getattr(root, "get_priority_objective_identified_rule", None)
+            if callable(get_rule) and isinstance(get_rule(), dict):
+                return True
+        return False
+
+    def get_priority_objective_identified_selected_objective(self, *, game=None):
+        objective_id = str(getattr(self, "priority_objective_identified_objective_id", "") or "").strip()
+        if not objective_id:
+            return None
+        objective_pool = []
+        if game is not None:
+            objective_pool = list(getattr(game, "objectives", []) or [])
+            if not objective_pool:
+                objective_pool = list(getattr(getattr(game, "map", None), "objectives", []) or [])
+        for objective in list(objective_pool or []):
+            if str(get_entity_id(objective) or "") == objective_id:
+                return objective
+        return None
+
+    def _queue_priority_objective_identified(self, *, game, battle_round: int) -> None:
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if int(battle_round or 0) != 1:
+            return
+        if str(getattr(self, "priority_objective_identified_objective_id", "") or "").strip():
+            return
+        player = getattr(self, "player", None)
+        if player is None:
+            return
+
+        objective_pool = list(getattr(game, "objectives", []) or [])
+        if not objective_pool:
+            objective_pool = list(getattr(getattr(game, "map", None), "objectives", []) or [])
+        objectives = []
+        for objective in objective_pool:
+            objective_id = str(get_entity_id(objective) or "")
+            if not objective_id:
+                continue
+            objective_point = getattr(objective, "location", None)
+            if objective_point is None or bool(getattr(objective_point, "removed", False)):
+                continue
+            objectives.append((objective_id, objective))
+        objectives.sort(key=lambda item: str(item[0]))
+        if not objectives:
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(game, "decision_queue", None)
+        army_id = str(get_entity_id(self) or "")
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if str(getattr(pending, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                pending_ctx = dict(getattr(pending, "context", {}) or {})
+                if str(pending_ctx.get("ability", "") or "") != "priority_objective_identified":
+                    continue
+                if str(pending_ctx.get("army_id", "") or "") != army_id:
+                    continue
+                return
+
+        source_root = None
+        source_rule = None
+        seen_roots: set[str] = set()
+        for unit in list(getattr(self, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if not getattr(root, "is_alive", lambda: False)():
+                continue
+            get_rule = getattr(root, "get_priority_objective_identified_rule", None)
+            if not callable(get_rule):
+                continue
+            rule = get_rule()
+            if not isinstance(rule, dict):
+                continue
+            source_root = root
+            source_rule = rule
+            break
+        if source_root is None or not isinstance(source_rule, dict):
+            return
+
+        options = []
+        candidate_objective_ids = []
+        for idx, (objective_id, objective) in enumerate(objectives):
+            label = str(getattr(objective, "name", "") or f"Objective {idx + 1}")
+            objective_point = getattr(objective, "location", None)
+            if objective_point is not None:
+                label = (
+                    f"{label} "
+                    f"({float(getattr(objective_point, 'x', 0.0)):.1f}, "
+                    f"{float(getattr(objective_point, 'y', 0.0)):.1f})"
+                )
+            options.append(DecisionOption.create(label, payload={"objective_id": objective_id}))
+            candidate_objective_ids.append(objective_id)
+        if not options:
+            return
+
+        ability_name = str(source_rule.get("source", "") or "Priority Objective Identified").strip()
+        if not ability_name:
+            ability_name = "Priority Objective Identified"
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select one objective marker on the battlefield.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "priority_objective_identified",
+                "ability_name": ability_name,
+                "army_id": army_id,
+                "source_unit_id": str(get_entity_id(source_root) or ""),
+                "unit_id": str(get_entity_id(source_root) or ""),
+                "battle_round": int(battle_round or 0),
+                "candidate_objective_ids": list(candidate_objective_ids),
+                "optional": False,
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
 
     def _queue_monarch_of_the_hunt(self, *, game, battle_round: int) -> None:
         if game is None or not bool(getattr(game, "is_authoritative", True)):

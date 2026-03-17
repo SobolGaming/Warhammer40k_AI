@@ -736,6 +736,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_necrons_detachment_rules(player=player, phase=phase)
         self._on_phase_start_custodes_detachment_rules(player=player, phase=phase)
         self._on_phase_start_vowed_target(player=player, phase=phase)
+        self._on_phase_start_high_king_of_fenris(player=player, phase=phase)
         self._on_phase_start_master_of_wolves(player=player, phase=phase)
         self._on_phase_start_saga_of_the_hunter_enhancements(player=player, phase=phase)
         self._on_phase_start_ironstorm_spearhead_enhancements(player=player, phase=phase)
@@ -17994,6 +17995,136 @@ class GamePhaseHandlersMixin:
             },
         )
         self.request_decision(request)
+
+    def _on_phase_start_high_king_of_fenris(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase start: High King of Fenris reserve-unit selection."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        battle_round = int(getattr(self, "turn", 0) or 0)
+        queue = getattr(self, "decision_queue", None)
+
+        reserve_roots: list = []
+        reserve_ids: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in reserve_ids:
+                continue
+            reserve_ids.add(root_id)
+            if not getattr(root, "is_alive", lambda: False)():
+                continue
+            if not getattr(root, "is_in_reserves", lambda: False)():
+                continue
+            reserve_roots.append(root)
+        reserve_roots.sort(key=lambda unit_obj: str(get_entity_id(unit_obj) or ""))
+        if not reserve_roots:
+            return
+
+        seen_sources: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_sources:
+                continue
+            seen_sources.add(root_id)
+            if not getattr(root, "deployed", False):
+                continue
+            if not getattr(root, "is_alive", lambda: False)():
+                continue
+            if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                continue
+            if str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower() != "deployed":
+                continue
+            get_rule = getattr(root, "get_high_king_of_fenris_rule", None)
+            if not callable(get_rule):
+                continue
+            rule = get_rule()
+            if not isinstance(rule, dict):
+                continue
+            used_this_round = getattr(root, "high_king_of_fenris_used_this_battle_round", None)
+            if callable(used_this_round) and bool(used_this_round(game=self)):
+                continue
+
+            if queue is not None and hasattr(queue, "list"):
+                duplicate = False
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "high_king_of_fenris_selection":
+                        continue
+                    if str(ctx.get("source_unit_id", "") or "") != root_id:
+                        continue
+                    if int(ctx.get("battle_round", battle_round) or battle_round) != battle_round:
+                        continue
+                    duplicate = True
+                    break
+                if duplicate:
+                    continue
+
+            friendly_keyword = str(rule.get("friendly_keyword", "") or "").strip().upper()
+            options = [
+                DecisionOption.create(
+                    "None",
+                    payload={"action": "skip", "summary": "Do not select a reserve unit this Movement phase."},
+                )
+            ]
+            candidate_unit_ids: list[str] = []
+            for reserve_root in list(reserve_roots or []):
+                if reserve_root is None:
+                    continue
+                if friendly_keyword and not bool(getattr(reserve_root, "has_any_keyword", lambda *_a, **_k: False)(friendly_keyword)):
+                    continue
+                reserve_id = str(get_entity_id(reserve_root) or "")
+                if not reserve_id:
+                    continue
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(reserve_root, "name", "Reserve unit") or "Reserve unit"),
+                        payload={"target_unit_id": reserve_id},
+                    )
+                )
+                candidate_unit_ids.append(reserve_id)
+            if len(options) <= 1:
+                continue
+
+            ability_name = str(rule.get("source", "") or "High King of Fenris").strip() or "High King of Fenris"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select one friendly unit in Reserves (or None).",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "high_king_of_fenris_selection",
+                    "ability_name": ability_name,
+                    "phase": "Movement phase",
+                    "source_unit_id": root_id,
+                    "unit_id": root_id,
+                    "player_id": str(getattr(player, "id", "") or ""),
+                    "battle_round": battle_round,
+                    "friendly_keyword": friendly_keyword,
+                    "round_bonus": int(rule.get("round_bonus", 1) or 1),
+                    "candidate_unit_ids": list(candidate_unit_ids),
+                },
+            )
+            self.request_decision(request)
 
     def _on_phase_start_plague_legion_miasma(self, player=None, phase=None, **_kwargs) -> None:
         """Command phase start: Plague Legion selects one enemy unit in Shadow of Chaos for a Battle-shock test."""
