@@ -665,9 +665,17 @@ class LateGameplayMixin:
             return []
 
         weapon_name = ""
-        m_weapon = re.search(r"of\s+its\s+([a-z0-9 '\-]+?)\s+weapons?\b", txt, flags=re.IGNORECASE)
-        if m_weapon:
+        weapon_patterns = (
+            re.compile(r"of\s+its\s+([a-z0-9 '\-]+?)\s+weapons?\b", flags=re.IGNORECASE),
+            re.compile(r"of\s+its\s+([a-z0-9 '\-]+?)(?:[.,;:]|$)", flags=re.IGNORECASE),
+        )
+        for weapon_pattern in weapon_patterns:
+            m_weapon = weapon_pattern.search(txt)
+            if not m_weapon:
+                continue
             weapon_name = str(m_weapon.group(1) or "").strip()
+            if weapon_name:
+                break
         if not weapon_name:
             return []
 

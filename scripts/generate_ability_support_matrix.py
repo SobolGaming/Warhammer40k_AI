@@ -5354,6 +5354,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Blood Surge"): ("Supported", "Opponent Shooting phase: optional D6+2\" move toward closest non-AIRCRAFT enemy; blocked if Battle-shocked/engaged; once per phase."),
         ("WE", "Frenzy"): ("Supported", "After being targeted, Helbrute can shoot or fight vs the attacker (eligible target check)."),
         ("SM", "Shadowmaster"): ("Supported", "Leading: attached unit can only be targeted by ranged attacks within 12\"."),
+        ("SM", "Silent Fury"): ("Supported", "Enemy CHARACTER model kills grant +1 Attack to executioner relic blade until end of battle."),
         ("SM", "Shrouding (Psychic)"): (
             "Partial",
             "Leading: ranged targeting restriction within 12\" supported; Stealth grant not implemented.",
