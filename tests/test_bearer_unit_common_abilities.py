@@ -120,7 +120,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 
         ability = {
-            "name": "Banner of the Emperor Victorious",
+            "name": "War Banner",
             "description": "Add 1 to Advance and Charge rolls made for this unit.",
             "type": "Datasheet",
             "parameter": "",

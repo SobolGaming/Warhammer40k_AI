@@ -2308,6 +2308,61 @@ class PositioningMixin:
             return False
         return self.get_canticles_of_the_omnissiah_selected_mode() == mode
 
+    def get_temple_relics_source_unit(self):
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        try:
+            from ...rules.space_marines_temple_relics import unit_has_temple_relics_ability
+        except Exception:
+            return None
+
+        for member in sorted(list(members or []), key=lambda u: str(get_entity_id(u) or "")):
+            if member is None or not bool(unit_has_temple_relics_ability(member)):
+                continue
+            contains_named = getattr(member, "_unit_contains_model_named", None)
+            if callable(contains_named) and bool(contains_named("Grimaldus")):
+                return member
+        return None
+
+    def has_temple_relics(self) -> bool:
+        return self.get_temple_relics_source_unit() is not None
+
+    def temple_relics_can_select(self) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None or self.get_temple_relics_source_unit() is None:
+            return False
+        contains_named = getattr(root, "_attached_unit_contains_model_named", None)
+        return bool(callable(contains_named) and contains_named("Cenobyte Servitor"))
+
+    def get_temple_relics_selected_mode(self) -> str:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        return str(sr.get("space_marines_temple_relics_selected_mode", "") or "").strip().lower()
+
+    def temple_relics_mode_active(self, mode_key: str) -> bool:
+        mode = str(mode_key or "").strip().lower()
+        if not mode:
+            return False
+        return self.get_temple_relics_selected_mode() == mode
+
     def _unit_has_battle_protocols_ability_local(self) -> bool:
         for ability in list(getattr(self, "possible_abilities", []) or []):
             name = str(getattr(ability, "name", "") or "").replace("\u2019", "'").strip().lower()
@@ -6413,6 +6468,91 @@ class PositioningMixin:
         self._ability_cache[cache_key] = rule
         return rule
 
+    def get_unit_target_keywords_weapon_keyword_bonus_rules(self) -> list[dict]:
+        """
+        Return unit-scoped attack keyword bonus rules for patterns like:
+        "Melee weapons equipped by models in this unit have the [SUSTAINED HITS 2]
+         ability when targeting MONSTER, VEHICLE or FORTIFICATION units."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return []
+        cache_key = "unit_target_keywords_weapon_keyword_bonus_rules"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            cached = root._ability_cache.get(cache_key)
+            return list(cached) if isinstance(cached, list) else []
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        rules: list[dict] = []
+        seen: set[tuple[str, str, tuple[str, ...], str]] = set()
+
+        for member in list(members or []):
+            if member is None:
+                continue
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                normalized = text.lower().replace("\u2019", "'")
+                normalized = re.sub(r"[^a-z0-9,]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                match = re.fullmatch(
+                    r"(?:(?P<scope>melee|ranged) )?weapons equipped by models in "
+                    r"(?:this unit|that unit|the bearer s unit) (?:have|gain) "
+                    r"(?:the )?(?P<keyword>[a-z0-9 +\-]+?) ability when targeting "
+                    r"(?:an? )?(?:enemy )?(?P<targets>[a-z0-9, ]+?) units?",
+                    normalized,
+                )
+                if not match:
+                    continue
+                attack_type = str(match.group("scope") or "").strip().lower()
+                if attack_type not in ("melee", "ranged"):
+                    attack_type = "any"
+                keyword = str(match.group("keyword") or "").strip().upper()
+                raw_targets = str(match.group("targets") or "").strip().lower()
+                if not keyword or not raw_targets:
+                    continue
+                target_keywords: list[str] = []
+                for token in re.split(r"\s*(?:,|\band\b|\bor\b)\s*", raw_targets):
+                    token = str(token or "").strip()
+                    if not token:
+                        continue
+                    normalized_keyword = self._normalize_keyword_phrase(token) or token.strip().upper()
+                    normalized_keyword = str(normalized_keyword or "").strip().upper()
+                    if normalized_keyword.endswith("S") and len(normalized_keyword) > 1:
+                        normalized_keyword = normalized_keyword[:-1]
+                    if normalized_keyword and normalized_keyword not in target_keywords:
+                        target_keywords.append(normalized_keyword)
+                if not target_keywords:
+                    continue
+                source = str(name or "Unit keyword bonus").strip() or "Unit keyword bonus"
+                key = (attack_type, keyword, tuple(target_keywords), source.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                rules.append(
+                    {
+                        "attack_type": attack_type,
+                        "keyword": keyword,
+                        "target_keywords_any": tuple(target_keywords),
+                        "source": source,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(rules)
+        return rules
+
     def get_attack_keyword_bonuses(
         self,
         *,
@@ -6431,6 +6571,7 @@ class PositioningMixin:
         target_keyword_rule = self.get_weapon_target_keywords_keyword_bonus_rule(model)
         if isinstance(target_keyword_rule, dict):
             rules.append(target_keyword_rule)
+        rules.extend(list(self.get_unit_target_keywords_weapon_keyword_bonus_rules() or []))
         extra_rule = self.get_weapon_target_excluding_keywords_keyword_bonus_rule(model)
         if isinstance(extra_rule, dict):
             rules.append(extra_rule)

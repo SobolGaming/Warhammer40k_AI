@@ -1580,6 +1580,25 @@ class Unit(
             except Exception:
                 pass
             try:
+                bonus_fn = getattr(self, "get_unit_toughness_bonus_rules", None)
+                if callable(bonus_fn):
+                    for rule in list(bonus_fn() or []):
+                        try:
+                            bonus = int(rule.get("bonus", 0) or 0)
+                        except Exception:
+                            bonus = 0
+                        if bonus:
+                            source_name = str(rule.get("source", "") or "Unit Toughness bonus").strip() or "Unit Toughness bonus"
+                            mods.append(
+                                Modifier(
+                                    ModifierOp.ADD,
+                                    int(bonus),
+                                    source=f"ability:{source_name}",
+                                )
+                            )
+            except Exception:
+                pass
+            try:
                 sr = getattr(self, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("nurgles_rot_active"):
                     penalty = int(sr.get("nurgles_rot_penalty", 0) or 0)

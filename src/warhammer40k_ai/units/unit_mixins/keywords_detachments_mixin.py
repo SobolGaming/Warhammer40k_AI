@@ -11934,6 +11934,141 @@ class KeywordsDetachmentsMixin:
         self._ability_cache[cache_key] = rule
         return rule
 
+    def get_unit_melee_weapon_ap_bonus_rules(self) -> list[dict]:
+        """
+        Return unit-scoped melee AP bonus rules for patterns like:
+        "Improve the Armour Penetration characteristic of melee weapons equipped by models in this unit by 1."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return []
+        cache_key = "unit_melee_weapon_ap_bonus_rules"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            cached = root._ability_cache.get(cache_key)
+            return list(cached) if isinstance(cached, list) else []
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        rules: list[dict] = []
+        seen: set[tuple[int, str]] = set()
+        pattern = re.compile(
+            r"improve the armou?r penetration characteristic of melee weapons equipped by models in "
+            r"(?:this unit|that unit|the bearer s unit) by (?P<bonus>\d+)",
+            re.IGNORECASE,
+        )
+        for member in list(members or []):
+            if member is None:
+                continue
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                low = re.sub(r"'s\b", "s", low)
+                low = re.sub(r"[^a-z0-9]+", " ", low)
+                low = re.sub(r"\s+", " ", low).strip()
+                match = pattern.fullmatch(low)
+                if not match:
+                    continue
+                try:
+                    ap_bonus = int(match.group("bonus") or 0)
+                except Exception:
+                    ap_bonus = 0
+                if ap_bonus <= 0:
+                    continue
+                source = str(name or "Unit melee AP bonus").strip() or "Unit melee AP bonus"
+                key = (int(ap_bonus), source.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                rules.append(
+                    {
+                        "attack_type": "melee",
+                        "ap_bonus": int(ap_bonus),
+                        "source": source,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(rules)
+        return rules
+
+    def get_unit_toughness_bonus_rules(self) -> list[dict]:
+        """
+        Return unit-scoped Toughness bonus rules for patterns like:
+        "Add 1 to the Toughness characteristic of models in this unit."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return []
+        cache_key = "unit_toughness_bonus_rules"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            cached = root._ability_cache.get(cache_key)
+            return list(cached) if isinstance(cached, list) else []
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        rules: list[dict] = []
+        seen: set[tuple[int, str]] = set()
+        pattern = re.compile(
+            r"add (?P<bonus>\d+) to the toughness characteristic of models in "
+            r"(?:this unit|that unit|the bearer s unit)",
+            re.IGNORECASE,
+        )
+        for member in list(members or []):
+            if member is None:
+                continue
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                low = re.sub(r"'s\b", "s", low)
+                low = re.sub(r"[^a-z0-9]+", " ", low)
+                low = re.sub(r"\s+", " ", low).strip()
+                match = pattern.fullmatch(low)
+                if not match:
+                    continue
+                try:
+                    bonus = int(match.group("bonus") or 0)
+                except Exception:
+                    bonus = 0
+                if bonus <= 0:
+                    continue
+                source = str(name or "Unit Toughness bonus").strip() or "Unit Toughness bonus"
+                key = (int(bonus), source.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                rules.append(
+                    {
+                        "bonus": int(bonus),
+                        "source": source,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(rules)
+        return rules
+
     def get_d_cannon_damage_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return rule info for abilities like:

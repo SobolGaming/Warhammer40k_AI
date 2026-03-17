@@ -728,6 +728,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_paragon_of_sanctity(player=player, phase=phase)
         self._on_phase_start_decoy_targets(player=player, phase=phase)
         self._on_phase_start_vanguard_of_dark_city(player=player, phase=phase)
+        self._on_phase_start_space_marines_temple_relics(player=player, phase=phase)
         self._on_phase_start_canticles_of_the_omnissiah(player=player, phase=phase)
         self._on_phase_start_battle_protocols(player=player, phase=phase)
         self._on_phase_start_chaos_daemons_detachment_rules(player=player, phase=phase)
@@ -6890,6 +6891,132 @@ class GamePhaseHandlersMixin:
                     "phase": "Command phase",
                     "source_unit_id": root_id,
                     "unit_id": root_id,
+                    "optional": False,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_phase_start_space_marines_temple_relics(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase start: Chaplain Grimaldus selects one Temple Relic while a Cenobyte Servitor remains."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        from ...rules.space_marines_temple_relics import (
+            KEY_BANNER_OF_THE_EMPEROR_VICTORIOUS,
+            KEY_COLUMN_FROM_THE_MAJOR_ALTAR,
+            KEY_WATER_FROM_THE_STOUP_OF_ELUCIDATION,
+            clear_active_temple_relics,
+        )
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        queue = getattr(self, "decision_queue", None)
+        pending_sources: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "space_marines_temple_relics":
+                    continue
+                source_id = str(ctx.get("source_unit_id", "") or "")
+                if source_id:
+                    pending_sources.add(source_id)
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+
+            source_unit_fn = getattr(root, "get_temple_relics_source_unit", None)
+            source_unit = source_unit_fn() if callable(source_unit_fn) else None
+            if source_unit is None:
+                continue
+
+            clear_active_temple_relics(root)
+            refresh_modifiers = getattr(root, "_refresh_bearer_unit_common_modifiers", None)
+            if callable(refresh_modifiers):
+                refresh_modifiers()
+
+            if root_id in pending_sources:
+                continue
+            can_select_fn = getattr(root, "temple_relics_can_select", None)
+            if not callable(can_select_fn) or not bool(can_select_fn()):
+                continue
+
+            source_member_id = str(get_entity_id(source_unit) or "")
+            options = [
+                DecisionOption.create(
+                    "Banner of the Emperor Victorious",
+                    payload={
+                        "temple_relics_mode": "banner_of_the_emperor_victorious",
+                        "temple_relics_mode_key": str(KEY_BANNER_OF_THE_EMPEROR_VICTORIOUS),
+                    },
+                ),
+                DecisionOption.create(
+                    "Column from the Major Altar",
+                    payload={
+                        "temple_relics_mode": "column_from_the_major_altar",
+                        "temple_relics_mode_key": str(KEY_COLUMN_FROM_THE_MAJOR_ALTAR),
+                    },
+                ),
+                DecisionOption.create(
+                    "Water from the Stoup of Elucidation",
+                    payload={
+                        "temple_relics_mode": "water_from_the_stoup_of_elucidation",
+                        "temple_relics_mode_key": str(KEY_WATER_FROM_THE_STOUP_OF_ELUCIDATION),
+                    },
+                ),
+            ]
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Temple Relics: select one relic ability for Chaplain Grimaldus until your next Command phase.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "space_marines_temple_relics",
+                    "ability_name": "Temple Relics",
+                    "phase": "Command phase",
+                    "source_unit_id": root_id,
+                    "source_member_unit_id": source_member_id,
+                    "unit_id": root_id,
+                    "allowed_modes": [
+                        "banner_of_the_emperor_victorious",
+                        "column_from_the_major_altar",
+                        "water_from_the_stoup_of_elucidation",
+                    ],
                     "optional": False,
                 },
             )

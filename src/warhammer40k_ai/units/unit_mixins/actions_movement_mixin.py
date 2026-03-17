@@ -733,6 +733,18 @@ class ActionsMovementMixin:
                 return bool(unit_has_active_canticles(self, key))
         except Exception:
             pass
+        try:
+            from ...rules.space_marines_temple_relics import (
+                ability_name_to_key,
+                unit_has_active_temple_relics,
+                unit_has_temple_relics_sub_ability,
+            )
+            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+            key = ability_name_to_key(name)
+            if key and unit_has_temple_relics_sub_ability(self):
+                return bool(unit_has_active_temple_relics(self, key))
+        except Exception:
+            pass
 
         # Power from Pain: pain abilities only apply while the unit is Empowered.
         try:

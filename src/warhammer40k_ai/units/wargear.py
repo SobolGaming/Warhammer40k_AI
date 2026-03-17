@@ -3372,6 +3372,20 @@ class WargearProfile:
                 bonus = int(bonus or 0)
                 if bonus:
                     ap_val -= bonus
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                get_rules = getattr(unit, "get_unit_melee_weapon_ap_bonus_rules", None) if unit is not None else None
+                if callable(get_rules):
+                    for rule in list(get_rules() or []):
+                        try:
+                            bonus = int(rule.get("ap_bonus", 0) or 0)
+                        except Exception:
+                            bonus = 0
+                        if bonus > 0:
+                            ap_val -= int(bonus)
+        except Exception:
+            pass
         if self.parent_wargear and self.parent_wargear.is_melee():
             from ..utility.aura_effects import get_aura_melee_ap_bonus
             aura_ap, _ = get_aura_melee_ap_bonus(getattr(attacker, "parent_unit", None), self)

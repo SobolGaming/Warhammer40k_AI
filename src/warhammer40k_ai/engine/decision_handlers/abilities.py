@@ -8078,6 +8078,39 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if mode not in ("invocation_of_machine_vengeance", "mantra_of_discipline", "shroudpsalm"):
             return ("Canticles of the Omnissiah choice must be Invocation of Machine Vengeance, Mantra of Discipline, or Shroudpsalm.",)
         return ()
+    if ability == "space_marines_temple_relics":
+        if is_skip_choice(request, result):
+            return ("Temple Relics selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Temple Relics source unit was not found.",)
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        if source_root is None:
+            return ("Temple Relics source unit was not found.",)
+        source_unit_fn = getattr(source_root, "get_temple_relics_source_unit", None)
+        can_select_fn = getattr(source_root, "temple_relics_can_select", None)
+        if not callable(source_unit_fn) or source_unit_fn() is None:
+            return ("Temple Relics is not active on the selected source unit.",)
+        if not callable(can_select_fn) or not bool(can_select_fn()):
+            return ("Temple Relics requires one or more Cenobyte Servitor models in the unit.",)
+        mode = str(payload.get("temple_relics_mode", "") or "").strip().lower()
+        allowed_modes = {
+            "banner_of_the_emperor_victorious",
+            "column_from_the_major_altar",
+            "water_from_the_stoup_of_elucidation",
+        }
+        if mode not in allowed_modes:
+            return (
+                "Temple Relics choice must be Banner of the Emperor Victorious, Column from the Major Altar, or Water from the Stoup of Elucidation.",
+            )
+        candidate_modes = {str(val) for val in list(ctx.get("allowed_modes", []) or []) if str(val)}
+        if candidate_modes and mode not in candidate_modes:
+            return ("Temple Relics selected mode is not an eligible option.",)
+        return ()
     if ability == "canticles_machine_vengeance_target":
         if is_skip_choice(request, result):
             return ("Invocation of Machine Vengeance target selection cannot be skipped.",)
@@ -14938,6 +14971,48 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     },
                 )
                 game.request_decision(request_obj)
+        return {"mode": mode, "mode_key": mode_key}
+    if ability == "space_marines_temple_relics":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        mode = str(payload.get("temple_relics_mode", "") or "").strip().lower()
+        mode_to_key = {
+            "banner_of_the_emperor_victorious": "BANNER_OF_THE_EMPEROR_VICTORIOUS",
+            "column_from_the_major_altar": "COLUMN_FROM_THE_MAJOR_ALTAR",
+            "water_from_the_stoup_of_elucidation": "WATER_FROM_THE_STOUP_OF_ELUCIDATION",
+        }
+        mode_key = mode_to_key.get(mode)
+        if not mode_key:
+            return None
+
+        from ...rules.space_marines_temple_relics import set_active_temple_relics
+
+        set_active_temple_relics(source_root, mode_key)
+        refresh_modifiers = getattr(source_root, "_refresh_bearer_unit_common_modifiers", None)
+        if callable(refresh_modifiers):
+            refresh_modifiers()
+
+        try:
+            player = getattr(source_root.get_parent_army(), "player", None)
+        except Exception:
+            player = None
+        if player is None:
+            player = _resolve_player(game, request, payload)
+        ability_name = str(ctx.get("ability_name", "") or "Temple Relics").strip() or "Temple Relics"
+        source_name = str(getattr(source_root, "name", "Unit") or "Unit")
+        mode_label = mode.replace("_", " ").title()
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {source_name} selected {mode_label}.",
+        )
         return {"mode": mode, "mode_key": mode_key}
     if ability == "canticles_machine_vengeance_target":
         if is_skip_choice(request, result):

@@ -5650,6 +5650,10 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
             "Supported",
             "Destroyed by melee: on 2+ Captain Titus fights after the attacker finishes; if he destroys one or more enemy models, he regains D3 wounds and remains alive.",
         ),
+        ("SM", "Temple Relics", "000002792"): (
+            "Supported",
+            "Command phase: if Chaplain Grimaldus's attached unit contains one or more Cenobyte Servitor models, queue a deterministic choice of Banner of the Emperor Victorious, Column from the Major Altar, or Water from the Stoup of Elucidation until your next Command phase; only the selected relic ability is active.",
+        ),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
     for (fid, name, dsid), val in raw.items():
@@ -6408,6 +6412,7 @@ def _classify_ability_base(
     battlesuit_support_system_support = _battlesuit_support_system_support(name, description)
     attack_roll_rule_support = _attack_roll_rule_support(description)
     unit_contains_model_weapon_keyword_grant_support = _unit_contains_model_weapon_keyword_grant_support(description)
+    unit_target_keyword_weapon_keyword_grant_support = _unit_target_keyword_weapon_keyword_grant_support(description)
     objective_attack_keyword_support = _objective_attack_keyword_support(description)
     half_range_attack_keyword_support = _half_range_attack_keyword_support(description)
     target_counts_as_half_range_support = _target_counts_as_half_range_support(description)
@@ -6447,6 +6452,8 @@ def _classify_ability_base(
     model_attack_roll_bonus_support = _model_attack_roll_bonus_support(description)
     model_closest_target_ap_bonus_support = _model_closest_target_ap_bonus_support(description)
     model_target_keyword_ap_bonus_support = _model_target_keyword_ap_bonus_support(description)
+    unit_melee_weapon_ap_bonus_support = _unit_melee_weapon_ap_bonus_support(description)
+    unit_toughness_bonus_support = _unit_toughness_bonus_support(description)
     model_stationary_ranged_sustained_support = _model_stationary_ranged_sustained_hits_support(description)
     model_stationary_weapon_keyword_support = _model_stationary_weapon_keyword_support(description)
     unit_stationary_weapon_keyword_support = _unit_stationary_weapon_keyword_support(description)
@@ -7041,6 +7048,8 @@ def _classify_ability_base(
         return attack_roll_rule_support
     if unit_contains_model_weapon_keyword_grant_support:
         return unit_contains_model_weapon_keyword_grant_support
+    if unit_target_keyword_weapon_keyword_grant_support:
+        return unit_target_keyword_weapon_keyword_grant_support
     if objective_attack_keyword_support:
         return objective_attack_keyword_support
     if reactive_targeted_shooting_support:
@@ -7099,6 +7108,10 @@ def _classify_ability_base(
         return model_closest_target_ap_bonus_support
     if model_target_keyword_ap_bonus_support:
         return model_target_keyword_ap_bonus_support
+    if unit_melee_weapon_ap_bonus_support:
+        return unit_melee_weapon_ap_bonus_support
+    if unit_toughness_bonus_support:
+        return unit_toughness_bonus_support
     if model_stationary_ranged_sustained_support:
         return model_stationary_ranged_sustained_support
     if model_stationary_weapon_keyword_support:
@@ -8995,6 +9008,116 @@ def _unit_contains_model_weapon_keyword_grant_support(description: str) -> Optio
             return ("Partial", " ".join(dict.fromkeys(notes)) + " Some weapon keywords are not supported.")
         return ("Partial", "Conditional weapon keyword grants not supported for this keyword.")
     return ("Supported", " ".join(dict.fromkeys(notes)))
+
+
+def _unit_target_keyword_weapon_keyword_grant_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    sentences: List[str] = []
+    for part in re.split(r"[.;]\s*", _strip_html(description)):
+        text = str(part or "").replace("\u2019", "'").replace("\u0192?T", "'")
+        text = re.sub(r"'s\b", "s", text)
+        text = text.lower()
+        text = re.sub(r"[^a-z0-9, +\-]+", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        if text:
+            sentences.append(text)
+    if not sentences:
+        return None
+
+    pattern = re.compile(
+        r"(?:(?P<leading>while this model is leading a unit) )?"
+        r"(?:(?P<scope>melee|ranged) )?weapons equipped by models in "
+        r"(?:this unit|that unit|the bearer s unit) (?:have|gain) (?:the )?"
+        r"(?P<keyword>[a-z0-9 +\-]+?) ability when targeting "
+        r"(?:an? )?(?:enemy )?(?P<targets>[a-z0-9, ]+?) units?",
+        re.IGNORECASE,
+    )
+    notes: List[str] = []
+    unsupported = False
+    for sentence in sentences:
+        match = pattern.fullmatch(sentence)
+        if not match:
+            continue
+        keyword = _attack_keyword_label_from_text(str(match.group("keyword") or "").strip())
+        if not keyword:
+            unsupported = True
+            continue
+        target_labels: List[str] = []
+        for token in re.split(r"\s*(?:,|\band\b|\bor\b)\s*", str(match.group("targets") or "").strip(), flags=re.IGNORECASE):
+            label = str(token or "").strip().upper()
+            if not label:
+                continue
+            if label.endswith("S") and len(label) > 1:
+                label = label[:-1]
+            if label not in target_labels:
+                target_labels.append(label)
+        if not target_labels:
+            unsupported = True
+            continue
+        prefix = "Leading: " if str(match.group("leading") or "").strip() else ""
+        scope = str(match.group("scope") or "").strip().lower()
+        scope_text = "weapons"
+        if scope == "melee":
+            scope_text = "melee weapons"
+        elif scope == "ranged":
+            scope_text = "ranged weapons"
+        notes.append(f"{prefix}Unit {scope_text} gain {keyword} while targeting {'/'.join(target_labels)} units.")
+    if not notes and not unsupported:
+        return None
+    if unsupported:
+        if notes:
+            return ("Partial", " ".join(dict.fromkeys(notes)) + " Some weapon keywords are not supported.")
+        return ("Partial", "Conditional weapon keyword grants not supported for this keyword.")
+    return ("Supported", " ".join(dict.fromkeys(notes)))
+
+
+def _unit_melee_weapon_ap_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    match = re.fullmatch(
+        r"(?:(?P<leading>while this model is leading a unit) )?"
+        r"improve the armou?r penetration characteristic of melee weapons equipped by models in "
+        r"(?:this unit|that unit|the bearer s unit) by (?P<bonus>\d+)",
+        norm,
+    )
+    if not match:
+        return None
+    try:
+        bonus = int(match.group("bonus") or 0)
+    except (TypeError, ValueError):
+        bonus = 0
+    if bonus <= 0:
+        return None
+    prefix = "Leading: " if str(match.group("leading") or "").strip() else ""
+    return ("Supported", f"{prefix}Unit melee weapons improve AP by {bonus}.")
+
+
+def _unit_toughness_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    match = re.fullmatch(
+        r"(?:(?P<leading>while this model is leading a unit) )?"
+        r"add (?P<bonus>\d+) to the toughness characteristic of models in "
+        r"(?:this unit|that unit|the bearer s unit)",
+        norm,
+    )
+    if not match:
+        return None
+    try:
+        bonus = int(match.group("bonus") or 0)
+    except (TypeError, ValueError):
+        bonus = 0
+    if bonus <= 0:
+        return None
+    prefix = "Leading: " if str(match.group("leading") or "").strip() else ""
+    return ("Supported", f"{prefix}Unit models gain +{bonus} Toughness.")
 
 
 def _attack_roll_plus_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
@@ -11658,7 +11781,8 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         re.IGNORECASE,
     )
     objective_clause_re = re.compile(
-        r"^if (?:that attack targets|the target of that attack is|the target is) (?:a unit )?(?:that is )?"
+        r"^if (?:that attack targets|the target of that attack is|the target is) "
+        r"(?:(?:a|an) (?:enemy )?unit(?: that is)? )?"
         r"within range of (?:an|one or more) objective marker(?:s)?"
         r"(?: you do not control| your opponent controls)?"
         r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
