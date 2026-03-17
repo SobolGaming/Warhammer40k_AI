@@ -4888,6 +4888,12 @@ class Unit(
         r"and\s+improve\s+the\s+armou?r\s+penetration\s+characteristics?\s+of\s+those\s+weapons\s+by\s+(?P<ap>\d+)",
         re.IGNORECASE,
     )
+    _CHARGE_END_MODEL_WEAPON_ATTACKS_BONUS_RE = re.compile(
+        r"each\s+time\s+this\s+model\s+ends?\s+a\s+charge\s+move\s+until\s+the\s+end\s+of\s+the\s+turn\s+"
+        r"add\s+(?P<bonus>\d+)\s+to\s+the\s+attacks\s+characteristic\s+of\s+(?:this\s+model\s+s|this\s+models|its)\s+"
+        r"(?P<weapon>[a-z0-9 ]+?)\s+weapon",
+        re.IGNORECASE,
+    )
     _CHARGE_MOVE_MODEL_WEAPON_PROFILE_ATTACKS_BONUS_RE = re.compile(
         r"each\s+time\s+this\s+model\s+makes?\s+a\s+charge\s+move\s+until\s+the\s+end\s+of\s+the\s+turn\s+"
         r"add\s+(?P<strike>\d+)\s+to\s+the\s+attacks\s+characteristic\s+of\s+(?:this\s+model\s+s|this\s+models|its)\s+"

@@ -7856,6 +7856,128 @@ class GamePhaseHandlersMixin:
                             instance_key=f"{str(get_entity_id(model) or '')}:{ability_key}",
                         )
 
+    def _on_phase_start_oath_of_rynn(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase: Pedro Kantor can activate Oath of Rynn at the start of either player's Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        def _is_alive(entity):
+            alive_attr = getattr(entity, "is_alive", False)
+            return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+        def _unit_sort_key(unit):
+            try:
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            except Exception:
+                root = unit
+            return str(get_entity_id(root) or "")
+
+        def _model_sort_key(model):
+            try:
+                return str(get_entity_id(model) or "")
+            except Exception:
+                return str(getattr(model, "name", "") or "")
+
+        pending_model_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "").strip().lower() != "oath_of_rynn":
+                    continue
+                model_id = str(ctx.get("model_id", "") or "").strip()
+                if model_id:
+                    pending_model_ids.add(model_id)
+
+        for owner in sorted(list(getattr(self, "players", []) or []), key=lambda p: str(getattr(p, "id", "") or "")):
+            if owner is None:
+                continue
+            army = self._get_player_army(owner)
+            if army is None:
+                continue
+
+            seen_roots: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if not root_id or root_id in seen_roots:
+                    continue
+                seen_roots.add(root_id)
+                if not _is_alive(root):
+                    continue
+                if not bool(getattr(root, "deployed", False)):
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                alive_models = [m for m in list(models or []) if _is_alive(m)]
+                for model in sorted(alive_models, key=_model_sort_key):
+                    model_id = str(get_entity_id(model) or "")
+                    if not model_id or model_id in pending_model_ids:
+                        continue
+                    specs = root.model_start_either_command_phase_unit_weapon_attacks_bonus_specs(model) or []
+                    if not specs:
+                        continue
+                    for spec in list(specs or []):
+                        ability_key = str(spec.get("ability_key", "") or "oath_of_rynn").strip().lower() or "oath_of_rynn"
+                        if getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+                            continue
+                        try:
+                            attacks_bonus = int(spec.get("attacks_bonus", 0) or 0)
+                        except (TypeError, ValueError):
+                            attacks_bonus = 0
+                        if attacks_bonus <= 0:
+                            continue
+                        ability_name = str(spec.get("source", "") or "Oath of Rynn").strip() or "Oath of Rynn"
+                        expires_phase = str(spec.get("expires_phase", "") or "FIGHT_PHASE").strip().upper() or "FIGHT_PHASE"
+                        ctx = {
+                            "ability": "oath_of_rynn",
+                            "ability_key": ability_key,
+                            "ability_name": ability_name,
+                            "phase": "Command phase",
+                            "unit": getattr(root, "name", "") or "",
+                            "unit_id": root_id,
+                            "model": getattr(model, "name", "") or "",
+                            "model_id": model_id,
+                            "attacks_bonus": int(attacks_bonus),
+                            "expires_phase": expires_phase,
+                        }
+                        message = f"Activate {ability_name} for {getattr(model, 'name', 'Model')}?"
+                        self._queue_optional_ability_confirmation(
+                            player=owner,
+                            ability_key="oath_of_rynn",
+                            ability_name=ability_name,
+                            message=message,
+                            context=ctx,
+                            payload={
+                                "unit_id": root_id,
+                                "model_id": model_id,
+                                "ability_key": ability_key,
+                                "attacks_bonus": int(attacks_bonus),
+                                "expires_phase": expires_phase,
+                            },
+                            instance_key=f"{model_id}:{ability_key}",
+                        )
+
     def _on_phase_start_command_phase_enemy_no_cover(self, player=None, phase=None, **_kwargs) -> None:
         """Command phase: optionally select an enemy unit that cannot gain Benefit of Cover until next Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

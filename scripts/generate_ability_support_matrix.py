@@ -5740,6 +5740,22 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
             "Supported",
             "Start of the first battle round: select one objective marker; while one or more models with this ability remain on the battlefield, friendly ADEPTUS ASTARTES attacks against enemy units within that objective's range re-roll Wound rolls of 1.",
         ),
+        ("SM", "Oath of Rynn", "000002713"): (
+            "Supported",
+            "Once per battle at the start of either player's Command phase: optional activation grants +1 Attacks to weapons equipped by models in Pedro Kantor's unit until end of turn.",
+        ),
+        ("SM", "Battle-lust", "000000285"): (
+            "Supported",
+            "Each time Ragnar Blackmane ends a Charge move, Frostfang gains +2 Attacks until end of turn.",
+        ),
+        ("SM", "War Howl", "000000285"): (
+            "Supported",
+            "Leading Blood Claws: attached unit melee attacks can re-roll the Wound roll. Leading Wolf Guard Headtakers: charge-after-Advance eligibility.",
+        ),
+        ("SM", "Destructor", "000002715"): (
+            "Supported",
+            "Model-level ranged AP improvement vs enemy INFANTRY targets.",
+        ),
         ("SM", "Inspiring Leader", "000002199"): (
             "Supported",
             "Leading: the attached unit is eligible to shoot and declare a charge after it Advances or Falls Back.",

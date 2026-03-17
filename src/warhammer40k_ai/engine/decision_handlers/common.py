@@ -14,12 +14,17 @@ def _validate_confirm(game: object, request: DecisionRequest, result: DecisionRe
 def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResult) -> None:
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "").strip().lower()
+    def _is_alive(entity: object) -> bool:
+        alive_attr = getattr(entity, "is_alive", False)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
     if ability not in (
         "hover_mode",
         "patrol_squad",
         "flickering_reality_reroll",
         "pyrogenesis_flux",
         "extremis_level_threat",
+        "oath_of_rynn",
     ):
         return None
 
@@ -79,6 +84,93 @@ def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResul
         if choice and mgr is not None and hasattr(mgr, "activate_extremis_level_threat"):
             player = getattr(army, "player", None)
             mgr.activate_extremis_level_threat(game=game, player=player)
+        return None
+
+    if ability == "oath_of_rynn":
+        model_id = str(
+            ctx.get("model_id", "")
+            or selected_payload.get("model_id", "")
+            or result.payload.get("model_id", "")
+            or ""
+        )
+        if not unit_id or not model_id or choice is None:
+            return None
+        unit = None
+        resolver = getattr(game, "_resolve_unit_by_id", None)
+        if callable(resolver):
+            unit = resolver(unit_id)
+        if unit is None:
+            return None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not _is_alive(root):
+            return None
+        if not bool(choice):
+            return None
+        model = None
+        model_resolver = getattr(game, "_resolve_model_by_id", None)
+        if callable(model_resolver):
+            model = model_resolver(model_id)
+        if model is None:
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            for candidate in list(models or []):
+                if str(getattr(candidate, "_id", "") or "") == model_id:
+                    model = candidate
+                    break
+        if model is None or not _is_alive(model):
+            return None
+        ability_key = str(
+            ctx.get("ability_key", "")
+            or selected_payload.get("ability_key", "")
+            or result.payload.get("ability_key", "")
+            or "oath_of_rynn"
+        ).strip().lower() or "oath_of_rynn"
+        if getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+            return None
+        try:
+            attacks_bonus = int(
+                ctx.get("attacks_bonus", 0)
+                or selected_payload.get("attacks_bonus", 0)
+                or result.payload.get("attacks_bonus", 0)
+                or 0
+            )
+        except Exception:
+            attacks_bonus = 0
+        if attacks_bonus <= 0:
+            return None
+        expires_phase = str(
+            ctx.get("expires_phase", "")
+            or selected_payload.get("expires_phase", "")
+            or result.payload.get("expires_phase", "")
+            or "FIGHT_PHASE"
+        ).strip().upper() or "FIGHT_PHASE"
+        ability_name = str(ctx.get("ability_name", "") or "Oath of Rynn").strip() or "Oath of Rynn"
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for target_model in list(models or []):
+            if target_model is None or not _is_alive(target_model):
+                continue
+            for weapon_index, wargear in enumerate(list(getattr(target_model, "wargear", []) or [])):
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name or not hasattr(target_model, "set_temporary_weapon_bonus"):
+                    continue
+                target_model.set_temporary_weapon_bonus(
+                    key=f"oath_of_rynn:{ability_key}:{getattr(target_model, '_id', '')}:{weapon_index}",
+                    weapon_name=weapon_name,
+                    attacks_bonus=int(attacks_bonus),
+                    source=ability_name,
+                    expires_phase=expires_phase,
+                )
+        mark_used = getattr(model, "mark_used_once_per_battle", None)
+        if callable(mark_used):
+            mark_used(ability_key, ability_name=ability_name, source="datasheet")
         return None
 
     if not unit_id:

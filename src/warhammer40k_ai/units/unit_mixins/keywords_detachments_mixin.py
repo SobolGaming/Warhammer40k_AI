@@ -15486,6 +15486,47 @@ class KeywordsDetachmentsMixin:
             "reroll_hit_full_reasons": tuple(deduped_full_reasons),
         }
 
+    def _get_ragnar_war_howl_blood_claws_wound_reroll_source(self) -> str:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return ""
+        bodyguard_name = self._normalize_attached_unit_name(getattr(root, "name", ""))
+        if bodyguard_name != self._normalize_attached_unit_name("Blood Claws"):
+            return ""
+
+        cache_key = f"ragnar_war_howl_blood_claws_wound_reroll_source:{get_entity_id(root)}"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return str(cache.get(cache_key) or "")
+
+        source = ""
+        for ability, leader in root._iter_attached_leader_leading_abilities():
+            if leader is None:
+                continue
+            leader_name = self._normalize_attached_unit_name(getattr(leader, "name", ""))
+            ability_name = ""
+            try:
+                ability_name = str(
+                    ability if isinstance(ability, str) else (getattr(ability, "name", "") or "")
+                ).strip()
+            except Exception:
+                ability_name = ""
+            if leader_name != self._normalize_attached_unit_name("Ragnar Blackmane"):
+                if self._normalize_attached_unit_name(ability_name) != self._normalize_attached_unit_name("War Howl"):
+                    continue
+            if self._normalize_attached_unit_name(ability_name) == self._normalize_attached_unit_name("War Howl") or leader_name == self._normalize_attached_unit_name("Ragnar Blackmane"):
+                source = str(ability_name or "War Howl").strip() or "War Howl"
+                break
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = str(source or "")
+        root._ability_cache = cache
+        return str(source or "")
+
     def _get_model_engagement_vehicle_wound_reroll_source(self, model: Optional['Model'] = None) -> str:
         if model is None:
             return ""
@@ -15688,6 +15729,10 @@ class KeywordsDetachmentsMixin:
             if atype not in ("melee", "ranged"):
                 atype = "any"
             if model is not None and atype in ("any", "melee"):
+                war_howl_source = self._get_ragnar_war_howl_blood_claws_wound_reroll_source()
+                if war_howl_source:
+                    reroll_full = True
+                    reroll_full_reasons.append(f"{war_howl_source}: re-roll Wound roll")
                 root = self.get_attached_unit_root()
                 sr = getattr(root, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("enhancement_morbid_might"):

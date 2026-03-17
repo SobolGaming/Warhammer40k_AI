@@ -261,6 +261,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_tocsin_of_misery"),
                 ("phase_start", "_on_phase_start_imperial_agents_psychic_veil_cleanup"),
                 ("phase_start", "_on_phase_start_soulless_horror"),
+                ("phase_start", "_on_phase_start_oath_of_rynn"),
                 ("phase_start", "_on_phase_start_neuroloids"),
                 ("phase_start", "_on_phase_start_command_phase_enemy_no_cover"),
                 ("phase_start", "_on_phase_start_imperial_agents_psychic_veil"),

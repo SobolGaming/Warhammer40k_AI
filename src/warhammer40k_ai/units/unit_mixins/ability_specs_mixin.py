@@ -2715,6 +2715,76 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_either_command_phase_unit_weapon_attacks_bonus_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: once per battle, at the start of either player's Command
+        phase, optionally grant all weapons equipped by models in this model's unit
+        a temporary Attacks bonus until the end of the turn.
+
+        Returns specs with keys:
+            - source: ability name
+            - attacks_bonus: int
+            - ability_key: str
+            - expires_phase: str
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_either_command_phase_unit_weapon_attacks_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, str]] = set()
+        pattern = re.compile(
+            r"once per battle at the start of either player s command phase this model can use this ability "
+            r"when it does until the end of the turn add (?P<bonus>\d+) to the attacks characteristic of weapons "
+            r"equipped by models in this model s unit",
+            re.IGNORECASE,
+        )
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            match = pattern.fullmatch(normalized)
+            if match is None:
+                continue
+            try:
+                attacks_bonus = int(match.group("bonus") or 0)
+            except (TypeError, ValueError):
+                attacks_bonus = 0
+            if attacks_bonus <= 0:
+                continue
+            source = str(name or "Start either Command phase unit weapon attacks bonus").strip()
+            source = source or "Start either Command phase unit weapon attacks bonus"
+            ability_key = self._normalize_keyword_phrase(source) or "start_either_command_phase_unit_weapon_attacks_bonus"
+            dedupe_key = (source.lower(), int(attacks_bonus), ability_key)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "attacks_bonus": int(attacks_bonus),
+                    "ability_key": str(ability_key).strip().lower(),
+                    "expires_phase": "FIGHT_PHASE",
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_any_command_phase_objective_battleshock_specs(
         self,
         model: Optional['Model'] = None,

@@ -14850,6 +14850,70 @@ class ActionsMovementMixin:
                         applied = True
         return applied
 
+    def _apply_charge_end_model_weapon_attacks_bonuses(self) -> bool:
+        """
+        Apply temporary model-only weapon Attacks bonuses when the unit completes a charge move.
+
+        Supports rules like:
+          "Each time this model ends a Charge move, until the end of the turn, add 2 to the
+           Attacks characteristic of this model's Frostfang weapon."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        applied = False
+        for unit in members:
+            if unit is None:
+                continue
+            for model in list(getattr(unit, "models", []) or []):
+                if model is None:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    continue
+                for name, desc in unit._iter_model_specific_ability_entries(model):
+                    text_src = desc or name or ""
+                    if not text_src:
+                        continue
+                    text_src = unit._strip_eligibility_prefix(text_src)
+                    normalized = unit._normalize_rules_text(text_src)
+                    normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                    normalized = normalized.lower()
+                    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                    normalized = re.sub(r"\s+", " ", normalized).strip()
+                    match = self._CHARGE_END_MODEL_WEAPON_ATTACKS_BONUS_RE.fullmatch(normalized)
+                    if match is None:
+                        continue
+                    try:
+                        attacks_bonus = int(match.group("bonus") or 0)
+                    except Exception:
+                        attacks_bonus = 0
+                    if attacks_bonus <= 0:
+                        continue
+                    weapon_name = str(match.group("weapon") or "").strip()
+                    if not weapon_name:
+                        continue
+                    source = str(name or "Charge move ability").strip() or "Charge move ability"
+                    source_key = unit._normalize_keyword_phrase(source) or source.lower()
+                    model_id = str(get_entity_id(model) or "")
+                    model.set_temporary_weapon_bonus(
+                        key=f"charge_move_weapon_attacks:{model_id}:{source_key}:{weapon_name}",
+                        weapon_name=weapon_name,
+                        attacks_bonus=int(attacks_bonus),
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                    )
+                    applied = True
+        return applied
+
     def _apply_charge_move_model_weapon_profile_attacks_bonuses(self) -> bool:
         """
         Apply temporary model-only weapon-profile Attacks bonuses when the unit completes a charge move.
