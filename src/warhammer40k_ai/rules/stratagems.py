@@ -2657,6 +2657,14 @@ class StratagemManager(
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
 
+    def _unit_can_use_visions_of_heresy_stratagem_discount(self, unit, *, stratagem_name: str = "") -> bool:
+        if unit is None:
+            return False
+        fn = getattr(unit, "can_use_visions_of_heresy_stratagem_discount", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
     def _unit_can_use_protector_of_paths_overwatch(self, unit, *, stratagem_name: str = "") -> bool:
         if unit is None:
             return False
@@ -2855,6 +2863,10 @@ class StratagemManager(
                     target_unit,
                     stratagem_name="OVERWATCH",
                 )
+                or self._unit_can_use_visions_of_heresy_stratagem_discount(
+                    target_unit,
+                    stratagem_name="OVERWATCH",
+                )
                 or self._unit_can_use_datasheet_overwatch_stratagem_discount(
                     target_unit,
                     stratagem_name="OVERWATCH",
@@ -2879,6 +2891,11 @@ class StratagemManager(
             ):
                 return True
             if self._unit_can_use_eye_of_the_augurium_stratagem_discount(
+                cand,
+                stratagem_name="OVERWATCH",
+            ):
+                return True
+            if self._unit_can_use_visions_of_heresy_stratagem_discount(
                 cand,
                 stratagem_name="OVERWATCH",
             ):
@@ -9681,6 +9698,10 @@ class StratagemManager(
                         unit,
                         stratagem_name="HEROIC INTERVENTION",
                     )
+                    or self._unit_can_use_visions_of_heresy_stratagem_discount(
+                        unit,
+                        stratagem_name="HEROIC INTERVENTION",
+                    )
                     or self._unit_has_snarling_protector_heroic_intervention(unit)
                     or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
                         unit,
@@ -14208,6 +14229,7 @@ class StratagemManager(
             eye_overwatch = bool(apply_info.get("eye_of_the_augurium_use", False))
             protector_overwatch = bool(apply_info.get("protector_of_paths_overwatch_use", False))
             shriekworm_overwatch = bool(apply_info.get("shriekworm_familiar_overwatch_use", False))
+            visions_overwatch = bool(apply_info.get("visions_of_heresy_use", False))
             datasheet_overwatch = bool(apply_info.get("datasheet_overwatch_discount_use", False))
             if self._used_this_turn.get("OVERWATCH", False) and not traitor_overwatch and not eye_overwatch and not datasheet_overwatch:
                 logger.error("ERROR: Overwatch already used this turn")
@@ -14264,6 +14286,14 @@ class StratagemManager(
             try:
                 setattr(shooter, '_overwatch_sixes_only', True)
                 setattr(shooter, '_overwatch_hit_threshold', int(overwatch_threshold))
+                if visions_overwatch:
+                    activate_visions = getattr(shooter, "activate_visions_of_heresy_overwatch_hit_reroll", None)
+                    if callable(activate_visions):
+                        activate_visions(
+                            self.game,
+                            source=str(apply_info.get("visions_of_heresy_source", "") or ""),
+                            stratagem_name=str(getattr(s, "name", "") or ""),
+                        )
                 logger.info(f"INFO: Overwatch: {shooter.name} firing at {enemy_unit.name} ({len(declarations)} weapons)")
                 ok = shooter.execute_shooting_declarations(declarations, self.game.map, out_of_phase=out_of_phase)
             finally:
@@ -14275,6 +14305,10 @@ class StratagemManager(
                     delattr(shooter, "_overwatch_hit_threshold")
                 except Exception:
                     pass
+                if visions_overwatch:
+                    clear_visions = getattr(shooter, "clear_visions_of_heresy_overwatch_hit_reroll", None)
+                    if callable(clear_visions):
+                        clear_visions()
                 # If execution failed, ensure we do not mark the unit as having shot
                 if (not ok) and (not out_of_phase) and getattr(shooter, 'round_state', None):
                     shooter.round_state.shot_this_round = False
@@ -15771,19 +15805,37 @@ class StratagemManager(
             except Exception:
                 raise
             eff_cost = s.cp_cost
+            apply_info = {}
             try:
                 if hasattr(self.player, "apply_stratagem_cp_cost"):
-                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+                    apply_info = self.player.apply_stratagem_cp_cost(s, target_unit=unit) or {}
+                    eff_cost = int(apply_info.get("cost", s.cp_cost))
             except Exception:
                 raise
+            if apply_info.get("denied"):
+                logger.error(f"ERROR: Heroic Intervention: {apply_info.get('reason', 'not allowed')}")
+                return False
             if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
 
             ok = False
             try:
+                if bool(apply_info.get("visions_of_heresy_use", False)):
+                    activate_visions = getattr(unit, "activate_visions_of_heresy_heroic_intervention_charge_reroll", None)
+                    if callable(activate_visions):
+                        activate_visions(
+                            self.game,
+                            source=str(apply_info.get("visions_of_heresy_source", "") or ""),
+                            stratagem_name=str(getattr(s, "name", "") or ""),
+                        )
                 ok = bool(self.game.attempt_charge(unit, enemy, out_of_turn=True, count_as_charged=False))
             except Exception:
                 raise
+            finally:
+                if bool(apply_info.get("visions_of_heresy_use", False)):
+                    clear_visions = getattr(unit, "clear_visions_of_heresy_heroic_intervention_charge_reroll", None)
+                    if callable(clear_visions):
+                        clear_visions()
             if kwargs.get("dequeue") is True:
                 self._dequeue_reaction_by_name(s.name)
             try:

@@ -1169,20 +1169,23 @@ class ActionsMovementMixin:
         if removed:
             self.special_rules = sr
 
-    def _ability_leading_bodyguard_scouts(self, ability) -> int:
-        """Return Scouts distance for leading abilities that grant Scouts to the attached unit."""
+    def _ability_leading_bodyguard_scouts(self, ability) -> Optional[dict]:
+        """Return Scouts info for leading abilities that grant Scouts to the attached unit."""
         desc = ""
+        name = ""
         try:
             if isinstance(ability, str):
                 desc = ability
             else:
+                name = str(getattr(ability, "name", "") or "")
                 desc = str(getattr(ability, "description", "") or "")
         except Exception:
             desc = ""
-        text = self._normalize_rules_text(desc)
+        text = self._normalize_rules_text(f"{name} {desc}")
         if not text:
-            return 0
+            return None
         low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+        requires_bodyguard_not_embarked = "unless that unit starts the battle embarked within a transport" in low
         low = re.sub(r"'s\b", "s", low)
         low = re.sub(r"[^a-z0-9]+", " ", low)
         low = re.sub(r"\s+", " ", low).strip()
@@ -1191,12 +1194,17 @@ class ActionsMovementMixin:
             low,
         )
         if not match:
-            return 0
+            return None
         try:
             distance = int(match.group("distance") or 0)
         except Exception:
             distance = 0
-        return max(0, int(distance))
+        if distance <= 0:
+            return None
+        return {
+            "scout_distance": int(distance),
+            "requires_bodyguard_not_embarked": bool(requires_bodyguard_not_embarked),
+        }
 
     def _clear_leading_bodyguard_scouts(self, bodyguard: Optional['Unit'] = None) -> None:
         units_to_clear = [self]
@@ -1211,6 +1219,7 @@ class ActionsMovementMixin:
             for key in (
                 "leading_bodyguard_scouts",
                 "leading_bodyguard_scout_distance",
+                "leading_bodyguard_scout_distance_requires_bodyguard_not_embarked",
             ):
                 if key in sr:
                     del sr[key]
@@ -1224,16 +1233,37 @@ class ActionsMovementMixin:
         if bodyguard is None:
             return
         max_distance = 0
+        max_distance_requires_bodyguard_not_embarked = 0
         for ab in list(getattr(self, "possible_abilities", []) or []):
-            max_distance = max(int(max_distance), int(self._ability_leading_bodyguard_scouts(ab) or 0))
-        if max_distance <= 0:
+            rule = self._ability_leading_bodyguard_scouts(ab)
+            if not isinstance(rule, dict):
+                continue
+            try:
+                scout_distance = int(rule.get("scout_distance", 0) or 0)
+            except Exception:
+                scout_distance = 0
+            if scout_distance <= 0:
+                continue
+            if bool(rule.get("requires_bodyguard_not_embarked", False)):
+                max_distance_requires_bodyguard_not_embarked = max(
+                    int(max_distance_requires_bodyguard_not_embarked),
+                    int(scout_distance),
+                )
+            else:
+                max_distance = max(int(max_distance), int(scout_distance))
+        if max_distance <= 0 and max_distance_requires_bodyguard_not_embarked <= 0:
             return
         for unit in (self, bodyguard):
             sr = getattr(unit, "special_rules", None)
             if not isinstance(sr, dict):
                 sr = {}
             sr["leading_bodyguard_scouts"] = True
-            sr["leading_bodyguard_scout_distance"] = int(max_distance)
+            if max_distance > 0:
+                sr["leading_bodyguard_scout_distance"] = int(max_distance)
+            if max_distance_requires_bodyguard_not_embarked > 0:
+                sr["leading_bodyguard_scout_distance_requires_bodyguard_not_embarked"] = int(
+                    max_distance_requires_bodyguard_not_embarked
+                )
             unit.special_rules = sr
 
     def _clear_attached_unit_bodyguard_leader_deep_strike(self) -> None:
@@ -10579,6 +10609,16 @@ class ActionsMovementMixin:
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("pain_reroll_charge"):
+                return True
+        except Exception:
+            pass
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("visions_of_heresy_heroic_intervention_charge_reroll_active"):
                 return True
         except Exception:
             pass

@@ -15019,25 +15019,71 @@ class GameShootingFightHandlersMixin:
                     continue
             except Exception:
                 continue
+            trigger_on_hits = False
+            has_driven_by_fury = getattr(root, "has_driven_by_fury", None)
+            if callable(has_driven_by_fury):
+                try:
+                    trigger_on_hits = bool(has_driven_by_fury())
+                except Exception:
+                    trigger_on_hits = False
             count = self._alive_model_count(root)
-            if count <= 0:
+            if count <= 0 and not trigger_on_hits:
                 continue
-            snapshot[root] = count
+            snapshot[root] = {
+                "alive_models_before": int(count),
+                "trigger_on_hits": bool(trigger_on_hits),
+            }
         if snapshot:
             self._horde_move_shooting_snapshot[attacking_unit] = snapshot
 
-    def _on_unit_shooting_resolved_horde_move(self, attacker_unit=None, **_kwargs) -> None:
+    def _on_unit_shooting_resolved_horde_move(self, attacker_unit=None, hits_by_target=None, **_kwargs) -> None:
         if attacker_unit is None:
             return
         snapshot = self._horde_move_shooting_snapshot.pop(attacker_unit, {})
         if not snapshot:
             return
+        resolved_hits_by_target = {}
+        if isinstance(hits_by_target, dict):
+            for raw_target, hits in list(hits_by_target.items()):
+                if raw_target is None:
+                    continue
+                try:
+                    target_root = raw_target.get_attached_unit_root()
+                except Exception:
+                    target_root = raw_target
+                if target_root is None:
+                    continue
+                target_id = str(get_entity_id(target_root) or "")
+                if not target_id:
+                    continue
+                try:
+                    resolved_hits_by_target[target_id] = int(resolved_hits_by_target.get(target_id, 0) or 0) + int(hits or 0)
+                except Exception:
+                    continue
         for target, before in snapshot.items():
             if target is None:
                 continue
-            after = self._alive_model_count(target)
-            if after >= int(before or 0):
-                continue
+            target_id = str(get_entity_id(target) or "")
+            before_count = 0
+            trigger_on_hits = False
+            if isinstance(before, dict):
+                try:
+                    before_count = int(before.get("alive_models_before", 0) or 0)
+                except Exception:
+                    before_count = 0
+                trigger_on_hits = bool(before.get("trigger_on_hits", False))
+            else:
+                try:
+                    before_count = int(before or 0)
+                except Exception:
+                    before_count = 0
+            if trigger_on_hits:
+                if int(resolved_hits_by_target.get(target_id, 0) or 0) <= 0:
+                    continue
+            else:
+                after = self._alive_model_count(target)
+                if after >= int(before_count or 0):
+                    continue
             try:
                 if not target.has_horde_move():
                     continue
@@ -15106,6 +15152,12 @@ class GameShootingFightHandlersMixin:
                 msg = (
                     f"Brood Surge: Move {distance_text} as close as possible to the closest non-AIRCRAFT enemy unit.\n"
                     "This unit can move within Engagement Range of that enemy unit and cannot make this move while Battle-shocked."
+                )
+            elif source_name.lower() == "driven by fury":
+                msg = (
+                    "Driven by Fury: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                    "This model can move within Engagement Range of that enemy unit, and cannot make this move while "
+                    "Battle-shocked or within Engagement Range. It can only make one Driven by Fury move per phase."
                 )
             else:
                 msg = (

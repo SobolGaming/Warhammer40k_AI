@@ -9435,6 +9435,16 @@ class WargearProfile:
         attack_is_ranged = _parent_wargear_is_ranged()
         attack_is_melee = _parent_wargear_is_melee()
 
+        def _reroll_hit():
+            new_roll = get_roll("D6")
+            if log_roll:
+                try:
+                    weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Hit re-roll: {new_roll} for {attacker.name} with {weapon_name_for_log}")
+                except Exception:
+                    pass
+            return new_roll
+
         try:
             if attacker_unit is not None:
                 override_fn = getattr(attacker_unit, "get_model_attack_skill_override", None)
@@ -10479,6 +10489,100 @@ class WargearProfile:
                 if miracle_used:
                     hit_result['special_effects'].append("Miracle die")
                 return hit_result
+            visions_active = False
+            visions_source = ""
+            if int(dice_roll) < int(overwatch_threshold):
+                try:
+                    unit = getattr(attacker, "parent_unit", None)
+                    root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+                    sr = getattr(root, "special_rules", None) if root is not None else None
+                    visions_active = bool(isinstance(sr, dict) and sr.get("visions_of_heresy_overwatch_hit_reroll_active"))
+                    if visions_active:
+                        visions_source = str(
+                            sr.get("visions_of_heresy_overwatch_hit_reroll_source", "") or "Visions of Heresy"
+                        ).strip() or "Visions of Heresy"
+                except Exception:
+                    visions_active = False
+                    visions_source = ""
+            if visions_active:
+                do_reroll = False
+                try:
+                    unit = attacker.parent_unit
+                    army = unit.get_parent_army() if unit is not None else None
+                    player = getattr(army, "player", None) if army is not None else None
+                    game = getattr(player, "game", None) if player is not None else None
+                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                    is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+                    if is_human and callable(provider):
+                        do_reroll = bool(
+                            provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="hit",
+                                value=dice_roll,
+                                dice=None,
+                                needed=int(overwatch_threshold),
+                                success=False,
+                                reason=visions_source,
+                            )
+                        )
+                    else:
+                        do_reroll = True
+                except Exception:
+                    do_reroll = True
+                if do_reroll:
+                    rr = _reroll_hit()
+                    hit_result["reroll"] = rr
+                    dice_roll = rr
+                    hit_result['roll'] = dice_roll
+                    hit_result['special_effects'].append(f"{visions_source}: re-roll Hit roll")
+                    new_roll, decision = self._maybe_apply_leading_unmodified_six(
+                        attacker,
+                        target,
+                        roll_type="hit",
+                        roll_value=dice_roll,
+                        needed=int(overwatch_threshold),
+                    )
+                    if new_roll is not None and int(new_roll) != int(dice_roll):
+                        dice_roll = int(new_roll)
+                        hit_result['roll'] = dice_roll
+                        hit_result['special_effects'].append("Leading ability: set roll to 6")
+                    new_roll, decision = self._maybe_apply_model_unmodified_six(
+                        attacker,
+                        roll_type="hit",
+                        roll_value=dice_roll,
+                        needed=int(overwatch_threshold),
+                        attacker=attacker,
+                        target=target,
+                    )
+                    if new_roll is not None and int(new_roll) != int(dice_roll):
+                        dice_roll = int(new_roll)
+                        hit_result['roll'] = dice_roll
+                        hit_result['special_effects'].append("Ability: set roll to 6")
+                    new_roll, decision = self._maybe_apply_aspect_shrine_token(
+                        attacker,
+                        target,
+                        roll_type="hit",
+                        roll_value=dice_roll,
+                        needed=int(overwatch_threshold),
+                    )
+                    if new_roll is not None and int(new_roll) != int(dice_roll):
+                        dice_roll = int(new_roll)
+                        hit_result['roll'] = dice_roll
+                        hit_result['special_effects'].append("Aspect Shrine Token: set roll to 6")
+                    hit_result['unmodified_roll'] = dice_roll
+                    try:
+                        flicker_val = self._flickering_reality_value(target, attacker)
+                    except Exception:
+                        flicker_val = None
+                    if flicker_val is not None and int(dice_roll) == int(flicker_val):
+                        hit_result['hit'] = False
+                        hit_result['special_effects'].append(
+                            f"Flickering Reality: unmodified {int(flicker_val)} ends attack"
+                        )
+                        if miracle_used:
+                            hit_result['special_effects'].append("Miracle die")
+                        return hit_result
             if int(dice_roll) >= int(overwatch_threshold):
                 hit_result['hit'] = True
                 hit_result['special_effects'].append(f"Overwatch: {int(overwatch_threshold)}+ required to hit")
@@ -11915,16 +12019,6 @@ class WargearProfile:
         hit_result['needed'] = base_skill
         hit_result['final_needed'] = final_needed
 
-        # Provide reroll callback for hit
-        def _reroll_hit():
-            new_roll = get_roll("D6")
-            if log_roll:
-                try:
-                    weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
-                    append_dice(attacker.parent_unit.get_parent_army().player, f"Hit re-roll: {new_roll} for {attacker.name} with {weapon_name_for_log}")
-                except Exception:
-                    pass
-            return new_roll
         dice_roll = None
         miracle_used = False
         if roll_value is not None:

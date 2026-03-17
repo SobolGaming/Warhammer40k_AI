@@ -4349,6 +4349,11 @@ class PositioningMixin:
                             entry["requires_model_keyword"] = required_model_keyword
                         rules.append(entry)
             for match in self._ATTACK_ALWAYS_KEYWORD_BONUS_RE.finditer(text):
+                suffix = re.sub(r"^[\s,.;:]+", "", str(text[match.end():] or "").lower())
+                if suffix.startswith("y "):
+                    suffix = suffix[2:]
+                if suffix.startswith(("if ", "when ", "while ")):
+                    continue
                 atype = str(match.group("atype") or "").strip().lower()
                 if atype not in ("melee", "ranged"):
                     atype = "any"
@@ -6751,6 +6756,38 @@ class PositioningMixin:
                                 "source": source_name,
                             }
                         )
+        except Exception:
+            pass
+        try:
+            honourable_rule_fn = getattr(root, "get_an_honourable_death_in_combat_rule", None)
+            honourable_rule = honourable_rule_fn() if callable(honourable_rule_fn) else None
+            if isinstance(honourable_rule, dict):
+                source_name = str(
+                    honourable_rule.get("source", "") or "An Honourable Death in Combat"
+                ).strip() or "An Honourable Death in Combat"
+                sustained_value = 0
+                if bool(getattr(root, "is_below_half_strength", lambda: False)()):
+                    try:
+                        sustained_value = int(
+                            honourable_rule.get("below_half_strength_sustained_hits_value", 0) or 0
+                        )
+                    except Exception:
+                        sustained_value = 0
+                elif bool(getattr(root, "is_below_starting_strength", lambda: False)()):
+                    try:
+                        sustained_value = int(
+                            honourable_rule.get("below_starting_strength_sustained_hits_value", 0) or 0
+                        )
+                    except Exception:
+                        sustained_value = 0
+                if sustained_value > 0:
+                    rules.append(
+                        {
+                            "attack_type": "any",
+                            "keyword": f"SUSTAINED HITS {int(sustained_value)}",
+                            "source": source_name,
+                        }
+                    )
         except Exception:
             pass
         try:
@@ -10116,6 +10153,13 @@ class PositioningMixin:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
+        bodyguard_not_embarked = True
+        try:
+            bodyguard_not_embarked = not (
+                bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None))
+            )
+        except Exception:
+            bodyguard_not_embarked = True
         try:
             members = list(root.get_attached_unit_members() or [])
         except Exception:
@@ -10146,6 +10190,14 @@ class PositioningMixin:
                 val = max(val, float(sr.get("leading_bodyguard_scout_distance", 0) or 0))
             except Exception:
                 pass
+            if bodyguard_not_embarked:
+                try:
+                    val = max(
+                        val,
+                        float(sr.get("leading_bodyguard_scout_distance_requires_bodyguard_not_embarked", 0) or 0),
+                    )
+                except Exception:
+                    pass
             if val > max_dist:
                 max_dist = val
         return float(max_dist)

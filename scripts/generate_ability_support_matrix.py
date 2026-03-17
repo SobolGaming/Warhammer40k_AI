@@ -6443,6 +6443,7 @@ def _classify_ability_base(
     target_counts_as_half_range_support = _target_counts_as_half_range_support(description)
     target_keyword_attack_keyword_support = _target_keyword_attack_keyword_support(description)
     weapon_target_keyword_attack_keyword_support = _weapon_target_keyword_attack_keyword_support(description)
+    below_strength_attack_keyword_support = _below_strength_attack_keyword_support(description)
     weapon_keyword_grant_support = _weapon_keyword_grant_support(description)
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
     master_of_shadows_support = _master_of_shadows_support(description)
@@ -6485,6 +6486,7 @@ def _classify_ability_base(
     ordered_stationary_heavy_sustained_support = _ordered_stationary_heavy_sustained_hits_support(description)
     targeted_stratagem_refund_support = _targeted_stratagem_cp_refund_support(description)
     opponent_ability_cp_gain_reaction_support = _opponent_ability_cp_gain_reaction_support(description)
+    visions_of_heresy_support = _visions_of_heresy_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     rapid_ingress_heroic_intervention_zero_cp_repeat_support = (
         _rapid_ingress_heroic_intervention_zero_cp_repeat_support(description)
@@ -6718,6 +6720,8 @@ def _classify_ability_base(
         return target_keyword_attack_keyword_support
     if weapon_target_keyword_attack_keyword_support:
         return weapon_target_keyword_attack_keyword_support
+    if below_strength_attack_keyword_support:
+        return below_strength_attack_keyword_support
     if unit_contains_named_model_fnp_support:
         return unit_contains_named_model_fnp_support
     if unit_contains_character_fnp_support:
@@ -7151,6 +7155,8 @@ def _classify_ability_base(
         return targeted_stratagem_refund_support
     if opponent_ability_cp_gain_reaction_support:
         return opponent_ability_cp_gain_reaction_support
+    if visions_of_heresy_support:
+        return visions_of_heresy_support
     if targeted_stratagem_discount_support:
         return targeted_stratagem_discount_support
     if rapid_ingress_heroic_intervention_zero_cp_repeat_support:
@@ -9568,6 +9574,27 @@ def _weapon_target_keyword_attack_keyword_support(description: str) -> Optional[
     return ("Supported", f"{scope_text} with {weapon} vs {target_label} targets gain {label_text}.")
 
 
+def _below_strength_attack_keyword_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time a model in this unit makes an attack that attack has the sustained hits (?P<start>\d+) ability "
+        r"if this unit is below (?:its )?starting strength or the sustained hits (?P<half>\d+) ability if this unit "
+        r"is below half strength"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    return (
+        "Supported",
+        "Unit attacks gain Sustained Hits "
+        f"{m.group('start')} while below Starting Strength and Sustained Hits {m.group('half')} while below Half-strength.",
+    )
+
+
 def _attack_keyword_label_from_text(raw: str) -> Optional[str]:
     kw = re.sub(r"\s+", " ", str(raw or "")).strip().lower()
     if not kw:
@@ -11300,6 +11327,26 @@ def _datasheet_overwatch_discount_support(description: str) -> Optional[Tuple[st
     return None
 
 
+def _visions_of_heresy_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    required = (
+        "once per turn",
+        "target this unit with the fire overwatch or the heroic intervention stratagem for 0cp",
+        "while resolving that stratagem each time a model in this unit makes a ranged attack you can reroll the hit roll",
+        "or you can reroll the charge roll made for this unit whichever applies",
+    )
+    if not all(token in norm for token in required):
+        return None
+    return (
+        "Supported",
+        "Once per turn, this unit can be targeted with Fire Overwatch or Heroic Intervention for 0CP; while resolving that Stratagem it can re-roll Hit rolls for Overwatch or the Charge roll for Heroic Intervention.",
+    )
+
+
 def _datasheet_no_fire_overwatch_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -11444,7 +11491,12 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         flags=re.IGNORECASE,
     )
     if scout_match:
-        notes.append(f"Leading: unit gains Scouts {scout_match.group('rng')}\".")
+        if "unless that unit starts the battle embarked within a transport" in low:
+            notes.append(
+                f"Leading: attached unit gains Scouts {scout_match.group('rng')}\" unless it started the battle embarked in a TRANSPORT."
+            )
+        else:
+            notes.append(f"Leading: unit gains Scouts {scout_match.group('rng')}\".")
 
     invuln_psychic_daemon_match = re.search(
         r"models in that unit have (?:a|the)?\s*(\d)\+\s*invulnerable save,?\s*and\s*(?:a|the)?\s*(\d)\+\s*invulnerable save against psychic attacks and attacks made by daemon models",
@@ -11570,7 +11622,7 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}ranged weapons equipped by models in that unit have the lethal hits ability",
         rf"{lead_prefix}weapons equipped by models in that unit have the lethal hits ability",
         rf"{lead_prefix}(?:models in that unit|that unit) (?:has|have) (?:the )?fights? first ability",
-        rf"{lead_prefix}(?:models in that unit|that unit) (?:has|have) (?:the )?scouts? \d+ ability",
+        rf"{lead_prefix}(?:unless that unit starts the battle embarked within a transport )?(?:models in that unit|that unit) (?:has|have) (?:the )?scouts? \d+ ability",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack(?:s)? add \d+ to the hit roll if that unit is below (?:its )?starting strength and add \d+ to the wound roll(?: as well)? if that unit is below (?:its )?half strength",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the hit roll and add \d+ to the wound roll",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the hit roll",
@@ -12436,10 +12488,35 @@ def _horde_move_support(description: str) -> Optional[Tuple[str, str]]:
     if not norm:
         return None
     is_righteous_zeal = "righteous zeal move" in norm
-    if not is_righteous_zeal and "horde move" not in norm:
+    is_driven_by_fury = "driven by fury move" in norm
+    if not is_righteous_zeal and not is_driven_by_fury and "horde move" not in norm:
         return None
     if not re.search(r"each time an enemy unit has shot", norm):
         return None
+    if is_driven_by_fury:
+        if "if this model was hit by one or more of those attacks" not in norm:
+            return None
+        if not re.search(r"roll (?:one|a|1)? d6", norm):
+            return None
+        if "add 2 to the roll" not in norm and "add 2 to the result" not in norm:
+            return None
+        if "as close as possible to the closest enemy unit" not in norm:
+            return None
+        if "excluding aircraft" not in norm:
+            return None
+        if "within engagement range" not in norm:
+            return None
+        if "battle shocked" not in norm or "within engagement range of one or more enemy units" not in norm:
+            return None
+        if (
+            "can only make one driven by fury move per phase" not in norm
+            and "only make one driven by fury move per phase" not in norm
+        ):
+            return None
+        return (
+            "Supported",
+            "Opponent Shooting phase reaction: if this model is hit after enemy shooting, optional D6+2 reactive move toward the closest non-AIRCRAFT enemy unit, can end in Engagement Range, blocked while Battle-shocked or already engaged, once per phase.",
+        )
     if not re.search(
         r"if (?:one or more|any) models (?:from|in) this unit were destroyed as a result of those attacks",
         norm,

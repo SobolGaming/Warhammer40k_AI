@@ -3452,6 +3452,16 @@ class KeywordsDetachmentsMixin:
         self._ability_cache["righteous_zeal"] = bool(found)
         return bool(found)
 
+    def has_driven_by_fury(self) -> bool:
+        """Check if the unit has the Driven by Fury datasheet ability."""
+        if "driven_by_fury" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["driven_by_fury"])
+        found, _ = self._find_ability_with_patterns(["driven by fury"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["driven_by_fury"] = bool(found)
+        return bool(found)
+
     def get_icon_of_obstinacy_rule(self) -> Optional[dict]:
         cache_key = "icon_of_obstinacy_rule"
         try:
@@ -3643,6 +3653,15 @@ class KeywordsDetachmentsMixin:
             elif self.has_righteous_zeal():
                 rule = {
                     "source": "Righteous Zeal",
+                    "distance_bonus": 2,
+                    "distance_reroll": False,
+                    "requires_not_engaged": True,
+                    "use_once_per_phase": True,
+                    "closest_enemy_unit_exclude_keywords": ("AIRCRAFT",),
+                }
+            elif self.has_driven_by_fury():
+                rule = {
+                    "source": "Driven by Fury",
                     "distance_bonus": 2,
                     "distance_reroll": False,
                     "requires_not_engaged": True,
@@ -5639,6 +5658,230 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_visions_of_heresy_stratagem_discount_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Once per turn, you can target this unit with the Fire Overwatch or the Heroic Intervention Stratagem for 0CP..."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "visions_of_heresy_stratagem_discount_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "once per turn" not in normalized:
+                    continue
+                if (
+                    "you can target this unit with the fire overwatch or the heroic intervention stratagem for 0cp"
+                    not in normalized
+                ):
+                    continue
+                if (
+                    "while resolving that stratagem each time a model in this unit makes a ranged attack you can re roll the hit roll"
+                    not in normalized
+                ):
+                    continue
+                if "or you can re roll the charge roll made for this unit whichever applies" not in normalized:
+                    continue
+                source = str(name or "Visions of Heresy").strip() or "Visions of Heresy"
+                rule = {
+                    "source": source,
+                    "ability_key": "visions_of_heresy_stratagem_discount",
+                    "stratagems": ("OVERWATCH", "FIRE OVERWATCH", "HEROIC INTERVENTION"),
+                    "limit": "unit_turn",
+                    "overwatch_hit_reroll": True,
+                    "heroic_intervention_charge_reroll": True,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _visions_of_heresy_turn_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        owner = str(getattr(current_player, "id", "") or "") or str(getattr(current_player, "name", "") or "")
+        return f"{br}:{owner}"
+
+    def visions_of_heresy_used_this_turn(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._visions_of_heresy_turn_key(game)
+        return str(sr.get("visions_of_heresy_used_turn_key", "") or "") == key
+
+    def mark_visions_of_heresy_used(self, game=None, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["visions_of_heresy_used_turn_key"] = self._visions_of_heresy_turn_key(game)
+        if source:
+            sr["visions_of_heresy_used_source"] = str(source or "").strip()
+        if stratagem_name:
+            sr["visions_of_heresy_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+    def can_use_visions_of_heresy_stratagem_discount(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_visions_of_heresy_stratagem_discount_rule()
+        if not rule:
+            return False
+        if root.visions_of_heresy_used_this_turn(game):
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        return True
+
+    def activate_visions_of_heresy_overwatch_hit_reroll(self, game=None, *, source: str = "", stratagem_name: str = "") -> None:
+        del game
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["visions_of_heresy_overwatch_hit_reroll_active"] = True
+        if source:
+            sr["visions_of_heresy_overwatch_hit_reroll_source"] = str(source or "").strip()
+        if stratagem_name:
+            sr["visions_of_heresy_overwatch_hit_reroll_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+    def clear_visions_of_heresy_overwatch_hit_reroll(self) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        removed = False
+        for key in (
+            "visions_of_heresy_overwatch_hit_reroll_active",
+            "visions_of_heresy_overwatch_hit_reroll_source",
+            "visions_of_heresy_overwatch_hit_reroll_stratagem",
+        ):
+            if key in sr:
+                del sr[key]
+                removed = True
+        if removed:
+            root.special_rules = sr
+
+    def activate_visions_of_heresy_heroic_intervention_charge_reroll(
+        self,
+        game=None,
+        *,
+        source: str = "",
+        stratagem_name: str = "",
+    ) -> None:
+        del game
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["visions_of_heresy_heroic_intervention_charge_reroll_active"] = True
+        if source:
+            sr["visions_of_heresy_heroic_intervention_charge_reroll_source"] = str(source or "").strip()
+        if stratagem_name:
+            sr["visions_of_heresy_heroic_intervention_charge_reroll_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+    def clear_visions_of_heresy_heroic_intervention_charge_reroll(self) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        removed = False
+        for key in (
+            "visions_of_heresy_heroic_intervention_charge_reroll_active",
+            "visions_of_heresy_heroic_intervention_charge_reroll_source",
+            "visions_of_heresy_heroic_intervention_charge_reroll_stratagem",
+        ):
+            if key in sr:
+                del sr[key]
+                removed = True
+        if removed:
+            root.special_rules = sr
+
     def _prophetic_sentinels_battle_round_key(self, game=None) -> str:
         if game is None:
             try:
@@ -5711,6 +5954,80 @@ class KeywordsDetachmentsMixin:
         if name_u and allowed and name_u not in allowed:
             return False
         return True
+
+    def get_an_honourable_death_in_combat_rule(self) -> Optional[dict]:
+        """
+        Parse rules like:
+        "Each time a model in this unit makes an attack, that attack has the [SUSTAINED HITS 1] ability if this unit
+        is below its Starting Strength, or the [SUSTAINED HITS 2] ability if this unit is Below Half-strength."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "an_honourable_death_in_combat_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        pattern = re.compile(
+            r"each time a model in this unit makes an attack that attack has the sustained hits (?P<start>\d+) ability "
+            r"if this unit is below (?:its )?starting strength or the sustained hits (?P<half>\d+) ability if this unit "
+            r"is below half strength",
+            re.IGNORECASE,
+        )
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(unit._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                key = (str(name or "").strip().lower(), normalized)
+                if key in seen:
+                    continue
+                seen.add(key)
+                match = pattern.fullmatch(normalized)
+                if not match:
+                    continue
+                try:
+                    below_starting_strength_value = int(match.group("start") or 0)
+                except Exception:
+                    below_starting_strength_value = 0
+                try:
+                    below_half_strength_value = int(match.group("half") or 0)
+                except Exception:
+                    below_half_strength_value = 0
+                if below_starting_strength_value <= 0 and below_half_strength_value <= 0:
+                    continue
+                source = str(name or "An Honourable Death in Combat").strip() or "An Honourable Death in Combat"
+                rule = {
+                    "source": source,
+                    "below_starting_strength_sustained_hits_value": int(max(0, below_starting_strength_value)),
+                    "below_half_strength_sustained_hits_value": int(max(0, below_half_strength_value)),
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
 
     def get_master_of_prescience_stratagem_discount_rule(self) -> Optional[dict]:
         """
