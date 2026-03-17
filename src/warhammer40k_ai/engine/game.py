@@ -12258,6 +12258,11 @@ class Game(
         if mgr is not None:
             self._maybe_prompt_combat_doctrines()
 
+        # Space Marines: Lion El'Jonson selects two Primarch of the First Legion abilities in your Command phase.
+        mgr = getattr(army, "primarch_of_the_first_legion", None)
+        if mgr is not None:
+            mgr.on_command_phase_start(game=self, player=current_player)
+
         # Space Marines: Angelic Legacy selection at the start of the first battle round.
         sm_mgr = getattr(army, "space_marines_detachments", None)
         if sm_mgr is not None:

@@ -6262,6 +6262,68 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if key not in RELICS_OF_THE_MATRIARCHS_BY_KEY:
                 return ("Relics of the Matriarchs selected relic is not supported.",)
         return ()
+    if ability == "primarch_of_the_first_legion":
+        if is_skip_choice(request, result):
+            return ("Primarch of the First Legion selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Primarch of the First Legion source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Primarch of the First Legion source unit was not found.",)
+        if not _resurrection_orb_unit_on_battlefield(source_root):
+            return ("Primarch of the First Legion source unit must be on the battlefield.",)
+        from ...rules.space_marines_primarch_of_the_first_legion import (
+            PRIMARCH_OF_THE_FIRST_LEGION_BY_KEY,
+            unit_has_primarch_of_the_first_legion_ability,
+        )
+
+        if not bool(unit_has_primarch_of_the_first_legion_ability(source_root)):
+            return ("Primarch of the First Legion source unit does not have Primarch of the First Legion.",)
+
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            required_round = int(ctx.get("battle_round", 0) or 0)
+        except (TypeError, ValueError):
+            required_round = 0
+        if required_round > 0 and battle_round != required_round:
+            return ("Primarch of the First Legion selection is no longer valid for this battle round.",)
+
+        raw_selected = payload.get("choice_keys")
+        if not isinstance(raw_selected, list):
+            return ("Primarch of the First Legion selection requires choice_keys list.",)
+
+        selected_keys: list[str] = []
+        seen_keys: set[str] = set()
+        for item in list(raw_selected or []):
+            key = str(item or "").strip().upper()
+            if not key:
+                continue
+            if key in seen_keys:
+                return ("Primarch of the First Legion selection cannot include duplicate abilities.",)
+            seen_keys.add(key)
+            selected_keys.append(key)
+        if len(selected_keys) != 2:
+            return ("Primarch of the First Legion requires selecting exactly two abilities.",)
+
+        allowed_keys = {
+            str(val).strip().upper()
+            for val in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(val).strip()
+        }
+        for key in selected_keys:
+            if allowed_keys and key not in allowed_keys:
+                return ("Primarch of the First Legion selected ability is not an eligible choice.",)
+            if key not in PRIMARCH_OF_THE_FIRST_LEGION_BY_KEY:
+                return ("Primarch of the First Legion selected ability is not supported.",)
+        return ()
     if ability == "librarius_psychic_disciplines":
         if is_skip_choice(request, result):
             return ("Psychic Disciplines selection cannot be skipped.",)
@@ -16889,6 +16951,97 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 player,
                 f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected none.",
             )
+        return {
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "choice_keys": list(selected_keys),
+            "choice_names": list(choice_names),
+            "battle_round": int(start_round or 0),
+        }
+    if ability == "primarch_of_the_first_legion":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return None
+        from ...rules.space_marines_primarch_of_the_first_legion import (
+            PRIMARCH_OF_THE_FIRST_LEGION_BY_KEY,
+            queue_mist_wreathed_shadow_realms_prompt,
+            set_active_primarch_of_the_first_legion,
+            unit_has_primarch_of_the_first_legion_ability,
+        )
+
+        if not bool(unit_has_primarch_of_the_first_legion_ability(source_root)):
+            return None
+
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            start_round = int(ctx.get("battle_round", 0) or battle_round)
+        except (TypeError, ValueError):
+            start_round = int(battle_round)
+        if start_round > 0 and battle_round != start_round:
+            return None
+
+        raw_selected = payload.get("choice_keys")
+        if not isinstance(raw_selected, list):
+            return None
+
+        selected_keys: list[str] = []
+        seen_keys: set[str] = set()
+        for item in list(raw_selected or []):
+            key = str(item or "").strip().upper()
+            if not key or key in seen_keys:
+                continue
+            seen_keys.add(key)
+            selected_keys.append(key)
+        selected_key_set = set(selected_keys)
+        selected_keys = [
+            key for key in PRIMARCH_OF_THE_FIRST_LEGION_BY_KEY if key in selected_key_set
+        ]
+        if len(selected_keys) != 2:
+            return None
+
+        allowed_keys = {
+            str(val).strip().upper()
+            for val in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(val).strip()
+        }
+        if allowed_keys and any(key not in allowed_keys for key in selected_keys):
+            return None
+
+        try:
+            expires_round = int(ctx.get("expires_round", 0) or (start_round + 1))
+        except (TypeError, ValueError):
+            expires_round = int(start_round + 1)
+        player_id = str(ctx.get("player_id", "") or "")
+        if not player_id:
+            owner = getattr(source_root.get_parent_army(), "player", None) if hasattr(source_root, "get_parent_army") else None
+            player_id = str(getattr(owner, "id", "") or "")
+
+        set_active_primarch_of_the_first_legion(
+            source_root,
+            selected_keys,
+            start_round=int(start_round or 0),
+            expires_round=int(expires_round or 0),
+            player_id=player_id,
+        )
+
+        choice_names = [PRIMARCH_OF_THE_FIRST_LEGION_BY_KEY[key].name for key in selected_keys]
+        ability_name = str(ctx.get("ability_name", "") or "Primarch of the First Legion").strip() or "Primarch of the First Legion"
+        player = getattr(source_root.get_parent_army(), "player", None) if hasattr(source_root, "get_parent_army") else None
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected {' + '.join(choice_names)}.",
+        )
+        queue_mist_wreathed_shadow_realms_prompt(game, source_root)
         return {
             "source_unit_id": str(get_entity_id(source_root) or ""),
             "choice_keys": list(selected_keys),

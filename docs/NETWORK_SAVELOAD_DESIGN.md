@@ -221,6 +221,8 @@ Command phase:
 - warmaster_dialog: CHOOSE_WARMASTER_ABILITY {choice_key} (context `unit_id`, `battle_round`, `player_id`, `expires_round`)
 - voice_of_triarch_dialog: CHOOSE_QUARRY {choice_key} (context `ability="voice_of_triarch"`, `source_unit_id`, `battle_round`, `expires_round`, `player_id`, `allowed_choice_keys`)
 - relics_of_the_matriarchs_dialog: CHOOSE_QUARRY {choice_keys[0..2] | skip} (context `ability="relics_of_the_matriarchs"`, `source_unit_id`, `battle_round`, `expires_round`, `player_id`, `allowed_choice_keys`, `max_choices`, `optional=true`)
+- primarch_of_the_first_legion_dialog: CHOOSE_QUARRY {choice_keys[2]} (context `ability="primarch_of_the_first_legion"`, `ability_name="Primarch of the First Legion"`, `source_unit_id`, `battle_round`, `expires_round`, `player_id`, `allowed_choice_keys`, `max_choices=2`, `optional=false`)
+- mist_wreathed_shadow_realms_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="mist_wreathed_shadow_realms"`, `ability_name="Mist-wreathed Shadow Realms"`, `source_unit_id`, `unit_id`, `battle_round`, `phase="COMMAND_PHASE"`)
 - embodied_prophecy_dialog: CHOOSE_QUARRY {choice_key} (context `ability="embodied_prophecy"`, `ability_name`, `phase="Fight phase"`, `unit_id`, `source_unit_id`, `battle_round`, `turn_owner_id`, `candidate_choices[]`, `optional=false`)
 - blood_tithe_dialog: CHOOSE_BLOOD_TITHE {ability_key | skip} (context `army_id`, `timing`)
 - idols_of_khorne_dialog: CHOOSE_IDOL_OF_KHORNE {ability_key | skip} (context `army_id`, `timing`)

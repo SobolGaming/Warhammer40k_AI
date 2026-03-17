@@ -3548,6 +3548,22 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Repulsor Executioner ranged attacks can re-roll Hit rolls against enemy units within 12\" of one or more friendly ADEPTUS ASTARTES units, including the source unit itself.",
         ),
+        ("SM", "Primarch of the First Legion"): (
+            "Supported",
+            "Command phase: Lion El'Jonson queues a deterministic CHOOSE_QUARRY pair selection for exactly two Primarch abilities until your next Command phase; only the selected abilities are active.",
+        ),
+        ("SM", "Mist-wreathed Shadow Realms"): (
+            "Supported",
+            "If selected via Primarch of the First Legion, the Lion queues an optional CONFIRM_YES_NO in your Command phase and, if used while not within Engagement Range, enters Strategic Reserves.",
+        ),
+        ("SM", "Martial Exemplar (Aura)"): (
+            "Supported",
+            "If selected via Primarch of the First Legion, friendly ADEPTUS ASTARTES units within 6\" re-roll melee Hit rolls of 1 and Wound rolls of 1.",
+        ),
+        ("SM", "No Hiding From the Watchers (Aura)"): (
+            "Supported",
+            "If selected via Primarch of the First Legion, friendly ADEPTUS ASTARTES units within 6\" gain Feel No Pain 4+ against mortal wounds.",
+        ),
         ("AS", "The Emperor's Grace"): (
             "Supported",
             "Once per battle, start of any phase: optional CONFIRM_YES_NO grants the bearer a 2+ invulnerable save until phase end.",

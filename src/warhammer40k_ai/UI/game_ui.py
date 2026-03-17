@@ -7166,6 +7166,7 @@ class GameView:
                 "battle_protocols",
                 "canticles_of_the_omnissiah",
                 "canticles_machine_vengeance_target",
+                "primarch_of_the_first_legion",
                 "post_shoot_shocked",
                 "void_mine",
                 "start_shooting_phase_keyword_hit_reroll_ones",
@@ -15715,6 +15716,10 @@ class GameView:
             title = ability_name or "Invocation of Machine Vengeance"
             subtitle = "Select one enemy unit to be the Machine Vengeance target."
             header = f"{getattr(source_unit, 'name', 'Model')} selects a Machine Vengeance target."
+        elif str(ability_key) == "primarch_of_the_first_legion":
+            title = ability_name or "Primarch of the First Legion"
+            subtitle = "Select exactly two Primarch abilities. The chosen abilities remain active until your next Command phase."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects two Primarch abilities."
         elif str(ability_key) == "post_shoot_shocked":
             title = ability_name or "Electro-shock"
             subtitle = "Select one hit enemy non-MONSTER/non-VEHICLE unit to shock."
@@ -15742,7 +15747,7 @@ class GameView:
             on_confirm=_on_confirm,
             on_cancel=_on_cancel,
             decision_request=req,
-            show_cancel=True,
+            show_cancel=str(ability_key) != "primarch_of_the_first_legion",
         )
         try:
             self.dialog_manager.open(dlg, modal=True)

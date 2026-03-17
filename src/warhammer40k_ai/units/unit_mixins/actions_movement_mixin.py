@@ -722,6 +722,18 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            from ...rules.space_marines_primarch_of_the_first_legion import (
+                ability_name_to_key,
+                unit_has_active_primarch_of_the_first_legion,
+                unit_has_primarch_of_the_first_legion_ability,
+            )
+            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+            key = ability_name_to_key(name)
+            if key and unit_has_primarch_of_the_first_legion_ability(self):
+                return bool(unit_has_active_primarch_of_the_first_legion(self, key))
+        except Exception:
+            pass
+        try:
             from ...rules.adeptus_mechanicus_canticles import (
                 ability_name_to_key,
                 unit_has_active_canticles,

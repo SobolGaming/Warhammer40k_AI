@@ -5325,6 +5325,7 @@ class GameReactiveDecisionsMixin:
             "putrid_carapace",
             "leechbite_plate",
             "enhancement_charge_after_advance_once",
+            "mist_wreathed_shadow_realms",
         ):
             return
         selected = None
@@ -8934,6 +8935,31 @@ class GameReactiveDecisionsMixin:
                             member_cache.pop("deep_strike", None)
                 if per_battle and per_battle_key:
                     unit.mark_unit_once_per_battle_used(per_battle_key, ability_name=ability_name)
+            return
+
+        if ability_key == "mist_wreathed_shadow_realms":
+            if not bool(choice):
+                return
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            used = unit.enter_strategic_reserves_midgame(
+                game=self,
+                game_map=getattr(self, "map", None),
+                reason="Mist-wreathed Shadow Realms",
+            )
+            if used:
+                from ...utility.event_bus import append_action
+                player = getattr(unit.get_parent_army(), "player", None)
+                ability_name = str(ctx.get("ability_name", "") or "Mist-wreathed Shadow Realms")
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves.",
+                    )
             return
 
         if ability_key == "fight_phase_destroyed_strategic_reserves":
