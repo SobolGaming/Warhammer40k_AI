@@ -6356,6 +6356,7 @@ def _classify_ability_base(
     ranged_target_within_range_ap_bonus_support = _ranged_target_within_range_ap_bonus_support(description)
     aura_battleshock_leadership_penalty_support = _aura_battleshock_leadership_penalty_support(description)
     model_unit_destroyed_objective_control_set_support = _model_unit_destroyed_objective_control_set_support(description)
+    model_unit_destroyed_objective_control_bonus_support = _model_unit_destroyed_objective_control_bonus_support(description)
     failed_battleshock_aura_mortal_heal_support = _failed_battleshock_aura_mortal_heal_support(description)
     fight_phase_select_engagement_battleshock_support = _fight_phase_select_engagement_battleshock_support(description)
     fight_phase_select_enemy_melee_hit_penalty_support = _fight_phase_select_enemy_melee_hit_penalty_support(description)
@@ -6934,6 +6935,8 @@ def _classify_ability_base(
         return aura_battleshock_leadership_penalty_support
     if model_unit_destroyed_objective_control_set_support:
         return model_unit_destroyed_objective_control_set_support
+    if model_unit_destroyed_objective_control_bonus_support:
+        return model_unit_destroyed_objective_control_bonus_support
     if failed_battleshock_aura_mortal_heal_support:
         return failed_battleshock_aura_mortal_heal_support
     if fight_phase_visible_select_enemy_roll_self_mortal_attacks_penalty_support:
@@ -10069,10 +10072,10 @@ def _defensive_strength_gt_toughness_wound_penalty_support(description: str) -> 
         r"(?:while (?:(?:a|an|the) [a-z0-9 ]+|this)(?: model)? is leading (?:this|a) unit )?"
         r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
         r"(?:targets|target|is allocated to) "
-        r"(?P<scope>this model|this unit|this model s unit|a model in this unit) "
+        r"(?P<scope>this model|this unit|this models unit|a model in this unit) "
         r"if (?:the )?(?:strength characteristic of that attack|that attacks strength characteristic) "
-        r"is greater than "
-        r"(?:the toughness characteristic of (?:this model|this unit|that model)|(?:this model|this unit|that model)s toughness characteristic) "
+        r"is greater than(?P<inclusive> or equal to)? "
+        r"(?:the toughness characteristic of (?:this model|this unit|that model|that unit)|(?:this model|this unit|that model|that unit)s toughness characteristic) "
         r"subtract (?P<val>\d+) from (?:the|that|that attacks) wound roll(?:s)?"
     )
     m = re.fullmatch(pattern, norm)
@@ -10088,7 +10091,8 @@ def _defensive_strength_gt_toughness_wound_penalty_support(description: str) -> 
         attack_scope = "ranged"
     else:
         attack_scope = "all"
-    return ("Supported", f"{scope_text} targeted: -{val} to wound vs {attack_scope} attacks when S > T.")
+    comparator = "S >= T" if bool(m.group("inclusive")) else "S > T"
+    return ("Supported", f"{scope_text} targeted: -{val} to wound vs {attack_scope} attacks when {comparator}.")
 
 
 def _model_attack_roll_bonus_support(description: str) -> Optional[Tuple[str, str]]:
@@ -12429,12 +12433,15 @@ def _horde_move_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
     norm = _norm_rules_text(description)
-    if not norm or "horde move" not in norm:
+    if not norm:
+        return None
+    is_righteous_zeal = "righteous zeal move" in norm
+    if not is_righteous_zeal and "horde move" not in norm:
         return None
     if not re.search(r"each time an enemy unit has shot", norm):
         return None
     if not re.search(
-        r"if (?:one or more|any) models from this unit were destroyed as a result of those attacks",
+        r"if (?:one or more|any) models (?:from|in) this unit were destroyed as a result of those attacks",
         norm,
     ):
         return None
@@ -12448,6 +12455,17 @@ def _horde_move_support(description: str) -> Optional[Tuple[str, str]]:
         return None
     if "battle shocked" not in norm:
         return None
+    if is_righteous_zeal:
+        if "add 2 to the result" not in norm:
+            return None
+        if "only make one righteous zeal move per phase" not in norm:
+            return None
+        if "while it is battle shocked or within engagement range of one or more enemy units" not in norm:
+            return None
+        note = (
+            "Opponent Shooting phase reaction: if this unit loses models after enemy shooting, optional D6+2 reactive move toward the closest non-AIRCRAFT enemy unit, can end in Engagement Range, blocked while Battle-shocked or already engaged, once per phase."
+        )
+        return ("Supported", note)
     note = (
         "Reactive Horde Move after enemy shooting casualties: D6\" move must end closest enemy unit "
         "(excluding AIRCRAFT) and can enter Engagement Range; blocked while Battle-shocked."
@@ -12854,6 +12872,36 @@ def _model_unit_destroyed_objective_control_set_support(description: str) -> Opt
         "Supported",
         f"If this model's unit destroys an enemy unit with a melee attack, this model's Objective Control becomes {m.group('value')} until end of battle.",
     )
+
+
+def _model_unit_destroyed_objective_control_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    patterns = (
+        re.compile(
+            r"the first time this models unit destroys an enemy unit as (?:a|the) result of a melee attack until the end of the battle "
+            r"add (?P<value>\d+) to the objective control characteristic of this model"
+        ),
+        re.compile(
+            r"the first time a model in this models unit makes a melee attack that destroys one or more enemy units until the end of the battle "
+            r"(?P<requires_not_battle_shocked>while this models unit is not battle shocked )?"
+            r"add (?P<value>\d+) to this models objective control characteristic"
+        ),
+    )
+    for pattern in patterns:
+        m = pattern.fullmatch(norm)
+        if not m:
+            continue
+        note = (
+            f"The first time this model's unit destroys an enemy unit with a melee attack, this model gains +{m.group('value')} Objective Control until end of battle."
+        )
+        if m.groupdict().get("requires_not_battle_shocked"):
+            note += " The bonus is suppressed while that unit is Battle-shocked."
+        return ("Supported", note)
+    return None
 
 
 def _charge_phase_bodyguard_loss_support(description: str) -> Optional[Tuple[str, str]]:

@@ -9547,6 +9547,26 @@ class Game(
                         attacker_unit=attacker_root,
                         spec=enriched_spec,
                     )
+                model_bonus_specs_fn = getattr(member, "model_unit_destroyed_objective_control_bonus_specs", None)
+                model_bonus_specs = list(model_bonus_specs_fn(model) or []) if callable(model_bonus_specs_fn) else []
+                for model_spec in list(model_bonus_specs or []):
+                    if not isinstance(model_spec, dict):
+                        continue
+                    if bool(model_spec.get("requires_melee", False)):
+                        wp = destroyed_by_weapon_profile
+                        pw = getattr(wp, "parent_wargear", None)
+                        if wp is None or pw is None or not pw.is_melee():
+                            continue
+                    enriched_spec = dict(model_spec)
+                    enriched_spec["mode"] = "add"
+                    enriched_spec["objective_control_bonus"] = int(
+                        model_spec.get("objective_control_bonus", model_spec.get("bonus", 0)) or 0
+                    )
+                    enriched_spec["source_model_id"] = str(get_entity_id(model) or "")
+                    self._apply_kill_reward_objective_control_bonus(
+                        attacker_unit=attacker_root,
+                        spec=enriched_spec,
+                    )
 
         hunter_rule = None
         if destroyed_by_model is not None:

@@ -16857,6 +16857,24 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            penalty_fn = getattr(target_root, "icon_of_obstinacy_wound_roll_penalty", None)
+            if callable(penalty_fn):
+                penalty, source = penalty_fn(
+                    strength=strength,
+                    target_toughness=target_toughness,
+                )
+                source_name = str(source or "Icon of Obstinacy").strip() or "Icon of Obstinacy"
+                already_applied = any(source_name in str(mod or "") for mod in list(wound_result.get("modifiers", []) or []))
+                if penalty and not already_applied:
+                    dice_modifier -= int(penalty)
+                    wound_result["modifiers"].append(f"-{int(penalty)} to wound from {source_name}")
+        except Exception:
+            pass
+        try:
             unit = getattr(attacker, "parent_unit", None)
             sr = getattr(unit, "special_rules", None) if unit is not None else None
             if isinstance(sr, dict) and sr.get("shooting_phase_wound_penalty_active"):
@@ -17312,7 +17330,15 @@ class WargearProfile:
                     entry.get("requires_strength_gt_toughness_or_unit_contains_keyword", "") or ""
                 ).strip()
                 try:
-                    if entry.get("requires_strength_gt_toughness"):
+                    if entry.get("requires_strength_gte_toughness"):
+                        apply_entry = bool(
+                            isinstance(strength, int)
+                            and isinstance(target_toughness, int)
+                            and strength >= target_toughness
+                        )
+                        if (not apply_entry) and requires_or_keyword:
+                            apply_entry = bool(self._unit_contains_model_keyword(troot, requires_or_keyword))
+                    elif entry.get("requires_strength_gt_toughness"):
                         apply_entry = bool(
                             isinstance(strength, int)
                             and isinstance(target_toughness, int)

@@ -3452,6 +3452,81 @@ class KeywordsDetachmentsMixin:
         self._ability_cache["righteous_zeal"] = bool(found)
         return bool(found)
 
+    def get_icon_of_obstinacy_rule(self) -> Optional[dict]:
+        cache_key = "icon_of_obstinacy_rule"
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if cache_key in getattr(root, "_ability_cache", {}):
+            cached = root._ability_cache[cache_key]
+            if cached is None:
+                return None
+            return dict(cached)
+
+        pattern = re.compile(
+            r"each time an attack targets this model s unit if the strength characteristic of that attack is greater than or equal to "
+            r"the toughness characteristic of that unit subtract (?P<value>\d+) from the wound roll",
+            re.IGNORECASE,
+        )
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        rule = None
+        for member in members:
+            if member is None:
+                continue
+            iter_entries = getattr(member, "_iter_ability_entries_for_rules", None)
+            if not callable(iter_entries):
+                continue
+            for name, desc in iter_entries(model=None):
+                text_src = str(desc or name or "").replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                text_src = re.sub(r"[^a-z0-9]+", " ", text_src)
+                text_src = re.sub(r"\s+", " ", text_src).strip()
+                match = pattern.fullmatch(text_src)
+                if not match:
+                    continue
+                try:
+                    value = int(match.group("value") or 0)
+                except Exception:
+                    value = 0
+                if value <= 0:
+                    continue
+                source = str(name or "Icon of Obstinacy").strip() or "Icon of Obstinacy"
+                rule = {
+                    "value": int(value),
+                    "source": source,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = dict(rule) if rule is not None else None
+        return dict(rule) if rule is not None else None
+
+    def icon_of_obstinacy_wound_roll_penalty(self, *, strength=None, target_toughness=None) -> tuple[int, str]:
+        rule = self.get_icon_of_obstinacy_rule()
+        if not isinstance(rule, dict):
+            return 0, ""
+        if not isinstance(strength, int) or not isinstance(target_toughness, int):
+            return 0, ""
+        if strength < target_toughness:
+            return 0, ""
+        try:
+            value = int(rule.get("value", 0) or 0)
+        except Exception:
+            value = 0
+        if value <= 0:
+            return 0, ""
+        return int(value), str(rule.get("source", "") or "Icon of Obstinacy").strip() or "Icon of Obstinacy"
+
     def activate_go_get_em_horde_move(
         self,
         *,

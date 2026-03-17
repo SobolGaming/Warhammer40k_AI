@@ -2639,6 +2639,32 @@ class Unit(
             except Exception:
                 continue
             entries.append((name, desc or name))
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        for member in members:
+            if member is None or member is root:
+                continue
+            if getattr(member, "attached_to", None) is not root:
+                continue
+            iter_entries = getattr(member, "_iter_ability_entries_for_rules", None)
+            if not callable(iter_entries):
+                continue
+            for name, desc in iter_entries(model=None):
+                raw_text = str(desc or name or "")
+                if not raw_text:
+                    continue
+                norm_text = raw_text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                norm_text = re.sub(r"[^a-z0-9]+", " ", norm_text)
+                norm_text = re.sub(r"\s+", " ", norm_text).strip()
+                if "this model s unit" not in norm_text:
+                    continue
+                entries.append((str(name or ""), raw_text))
 
         def _normalize_leading_keyword(raw_kw: str) -> str:
             kw = str(raw_kw or "").strip()
@@ -2808,8 +2834,8 @@ class Unit(
                     r"(?:targets|target|is allocated to) "
                     r"(?:this model|this unit|this model s unit|a model in this unit|the bearer) "
                     r"if (?:the )?(?:strength characteristic of that attack|that attacks strength characteristic) "
-                    r"is greater than "
-                    r"(?:the toughness characteristic of (?:this model|this unit|that model)|(?:this model|this unit|that model)s toughness characteristic) "
+                    r"is greater than(?P<inclusive> or equal to)? "
+                    r"(?:the toughness characteristic of (?:this model|this unit|that model|that unit)|(?:this model|this unit|that model|that unit)s toughness characteristic) "
                     r"subtract (?P<val>\d+) from (?:the|that|that attacks) wound roll(?:s)?"
                 )
                 m = re.fullmatch(pattern, norm)
@@ -2824,7 +2850,8 @@ class Unit(
                 atype = (m.group("atype") or "any").strip().lower()
                 leader_kw = _normalize_leading_keyword(m.group("lemma"))
                 label = (name or "Defensive ability").strip() or "Defensive ability"
-                key = (label.lower(), atype, int(val), leader_kw or "")
+                inclusive = bool(m.group("inclusive"))
+                key = (label.lower(), atype, int(val), leader_kw or "", bool(inclusive))
                 if key in seen_wound_mods:
                     continue
                 seen_wound_mods.add(key)
@@ -2834,7 +2861,7 @@ class Unit(
                     "value": int(val),
                     "attack_type": atype,
                     "source": label,
-                    "requires_strength_gt_toughness": True,
+                    "requires_strength_gte_toughness" if inclusive else "requires_strength_gt_toughness": True,
                     "tag": "ability:strength_gt_toughness_wound_penalty",
                 }
                 if leader_kw:

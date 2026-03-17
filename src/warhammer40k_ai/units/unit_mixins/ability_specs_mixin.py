@@ -4982,6 +4982,73 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_unit_destroyed_objective_control_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """Model-specific rule: when this model's unit destroys an enemy unit, this model gains an OC bonus."""
+        if model is None:
+            return []
+        cache_key = f"model_unit_destroyed_objective_control_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        patterns = (
+            re.compile(
+                r"the first time this model s unit destroys an enemy unit as (?:a|the) result of a melee attack until the end of the battle "
+                r"add (?P<value>\d+) to the objective control characteristic of this model",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                r"the first time a model in this model s unit makes a melee attack that destroys one or more enemy units until the end of the battle "
+                r"(?:while this model s unit is not battle shocked )?add (?P<value>\d+) to this model s objective control characteristic",
+                re.IGNORECASE,
+            ),
+        )
+
+        specs: List[dict] = []
+        seen: set[tuple[str, int, bool]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+
+            match = None
+            for pattern in patterns:
+                match = pattern.fullmatch(normalized)
+                if match:
+                    break
+            if not match:
+                continue
+            try:
+                value = int(match.group("value") or 0)
+            except Exception:
+                continue
+            if value <= 0:
+                continue
+            requires_not_battle_shocked = "while this model s unit is not battle shocked" in normalized
+            source = str(name or "Objective Control on destroy").strip() or "Objective Control on destroy"
+            key = (source.lower(), int(value), bool(requires_not_battle_shocked))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "objective_control_bonus": int(value),
+                    "requires_melee": True,
+                    "requires_not_battle_shocked": bool(requires_not_battle_shocked),
+                    "first_time": True,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def _append_prefixed_model_start_fight_phase_select_engagement_battleshock_spec(
         self,
         *,
