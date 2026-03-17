@@ -3325,30 +3325,34 @@ def _parse_benefit_of_cover_aura(ability) -> Optional[dict]:
     desc = _normalize_desc(getattr(ability, "description", ""))
     if not desc:
         return None
+    aura_prefix = (
+        r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" '
+        r'of this (?:model|unit|the bearer), '
+        r'(?:(?:models in that unit|that unit) (?:has|have) (?:the )?Stealth ability and )?'
+    )
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:model|unit|the bearer), '
-        r"that .*? has the Benefit of Cover",
+        rf"{aura_prefix}that .*? has the Benefit of Cover",
         desc,
         flags=re.IGNORECASE,
     )
     if not m:
         m = re.search(
-            r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:model|unit|the bearer), '
-            r"each time a ranged attack is allocated to a model in that unit, that model has the Benefit of Cover",
+            rf"{aura_prefix}each time a ranged attack is allocated to a model in that unit, "
+            r"that model has the Benefit of Cover",
             desc,
             flags=re.IGNORECASE,
         )
     if not m:
         m = re.search(
-            r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:model|unit|the bearer), '
-            r"each time a ranged attack targets that unit, models in that unit have the Benefit of Cover against that attack",
+            rf"{aura_prefix}each time a ranged attack targets that unit, "
+            r"(?:models in that unit have|that unit has) the Benefit of Cover against that attack",
             desc,
             flags=re.IGNORECASE,
         )
     if not m:
         m = re.search(
-            r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:model|unit|the bearer), '
-            r"each time a ranged attack targets that model, (?:it|that model) has the Benefit of Cover(?: against that attack)?",
+            rf"{aura_prefix}each time a ranged attack targets that model, "
+            r"(?:it|that model) has the Benefit of Cover(?: against that attack)?",
             desc,
             flags=re.IGNORECASE,
         )

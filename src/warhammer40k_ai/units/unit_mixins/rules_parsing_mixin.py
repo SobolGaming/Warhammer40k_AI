@@ -3332,20 +3332,44 @@ class RulesParsingMixin:
                     )
                     matched_advance_and_charge = False
                     if not is_battleline_instead_clause:
-                        m = self._BEARER_UNIT_ADVANCE_AND_CHARGE_BONUS_RE.search(sentence)
-                        if m:
+                        unit_contains_advance_charge_match = re.search(
+                            r"while\s+(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit|this\s+model'?s\s+unit)\s+contains\s+an?\s+"
+                            r"(?P<model>[a-z0-9' -]+?)\s*,\s*add\s+(?P<value>\d+)\s+to\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+"
+                            r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit|this\s+model'?s\s+unit)",
+                            sentence,
+                            flags=re.IGNORECASE,
+                        )
+                        if unit_contains_advance_charge_match:
                             try:
-                                val = int(m.group(1))
+                                val = int(unit_contains_advance_charge_match.group("value") or 0)
                             except Exception:
-                                val = None
-                            if val:
-                                matched_advance_and_charge = True
-                                advance_mods.append((val, source))
-                                charge_mods.append((val, source))
-                                source_key = source.lower()
-                                existing = int(advance_charge_base_bonus_by_source.get(source_key, 0) or 0)
-                                if int(val) > existing:
-                                    advance_charge_base_bonus_by_source[source_key] = int(val)
+                                val = 0
+                            required_model_name = str(unit_contains_advance_charge_match.group("model") or "").strip()
+                            contains_named = getattr(u, "_attached_unit_contains_model_named", None)
+                            if val and required_model_name and callable(contains_named):
+                                if bool(contains_named(required_model_name)):
+                                    matched_advance_and_charge = True
+                                    advance_mods.append((int(val), source))
+                                    charge_mods.append((int(val), source))
+                                    source_key = source.lower()
+                                    existing = int(advance_charge_base_bonus_by_source.get(source_key, 0) or 0)
+                                    if int(val) > existing:
+                                        advance_charge_base_bonus_by_source[source_key] = int(val)
+                        if not matched_advance_and_charge and not unit_contains_advance_charge_match:
+                            m = self._BEARER_UNIT_ADVANCE_AND_CHARGE_BONUS_RE.search(sentence)
+                            if m:
+                                try:
+                                    val = int(m.group(1))
+                                except Exception:
+                                    val = None
+                                if val:
+                                    matched_advance_and_charge = True
+                                    advance_mods.append((val, source))
+                                    charge_mods.append((val, source))
+                                    source_key = source.lower()
+                                    existing = int(advance_charge_base_bonus_by_source.get(source_key, 0) or 0)
+                                    if int(val) > existing:
+                                        advance_charge_base_bonus_by_source[source_key] = int(val)
                         if not matched_advance_and_charge:
                             m = self._BEARER_UNIT_ADVANCE_BONUS_RE.search(sentence)
                             if m:
@@ -5400,7 +5424,9 @@ class RulesParsingMixin:
         target_tokens = set(norm_target.split())
         for model in list(getattr(self, "models", []) or []):
             try:
-                if not getattr(model, "is_alive", True):
+                alive_attr = getattr(model, "is_alive", True)
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not is_alive:
                     continue
             except Exception:
                 pass

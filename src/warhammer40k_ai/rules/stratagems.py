@@ -2757,6 +2757,14 @@ class StratagemManager(
             return bool(fn(self.game))
         return False
 
+    def _unit_can_use_unit_contains_heroic_intervention(self, unit) -> bool:
+        if unit is None:
+            return False
+        can_use_fn = getattr(self.player, "_target_unit_can_use_unit_contains_heroic_intervention", None)
+        if callable(can_use_fn):
+            return bool(can_use_fn(unit))
+        return False
+
     def _unit_can_use_grimnars_mark_stratagem_discount(self, unit, *, stratagem_name: str = "") -> bool:
         if unit is None:
             return False
@@ -9703,6 +9711,7 @@ class StratagemManager(
                         stratagem_name="HEROIC INTERVENTION",
                     )
                     or self._unit_has_snarling_protector_heroic_intervention(unit)
+                    or self._unit_can_use_unit_contains_heroic_intervention(unit)
                     or self._unit_can_use_eye_of_the_augurium_stratagem_discount(
                         unit,
                         stratagem_name="HEROIC INTERVENTION",

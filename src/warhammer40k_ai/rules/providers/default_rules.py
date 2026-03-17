@@ -191,6 +191,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("fight_unit_selected", "_on_fight_unit_selected_deeds_of_heroism"),
                 ("fight_unit_selected", "_on_fight_unit_selected_alchemicus_familiar"),
                 ("fight_unit_selected", "_on_fight_unit_selected_target_keyword_melee_weapon_keyword"),
+                ("fight_unit_selected", "_on_fight_unit_selected_charged_melee_weapon_keywords"),
                 ("fight_unit_selected", "_on_fight_unit_selected_extremis_trigger_word"),
                 ("fight_unit_selected", "_on_fight_unit_selected_sacrificial_dagger"),
                 ("fight_unit_selected", "_on_fight_unit_selected_sacrificial_blessing"),

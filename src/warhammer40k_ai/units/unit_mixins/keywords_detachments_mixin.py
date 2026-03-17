@@ -7333,6 +7333,114 @@ class KeywordsDetachmentsMixin:
             pass
         return bool(root.get_snarling_protector_heroic_intervention_rule())
 
+    def get_unit_contains_heroic_intervention_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "While this unit contains a Ravenwing Champion... you can target this unit with the Heroic Intervention
+        Stratagem for 0CP."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_contains_heroic_intervention_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"'s\b", "s", normalized)
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "heroic intervention" not in normalized or "stratagem" not in normalized or "0cp" not in normalized:
+                    continue
+                if (
+                    "target this unit with the heroic intervention stratagem for 0cp" not in normalized
+                    and "target that unit with the heroic intervention stratagem for 0cp" not in normalized
+                    and "target this model unit with the heroic intervention stratagem for 0cp" not in normalized
+                    and "target the bearer unit with the heroic intervention stratagem for 0cp" not in normalized
+                ):
+                    continue
+                match = re.search(
+                    r"while\s+(?:the\s+bearer\s+unit|that\s+unit|this\s+unit|this\s+model\s+unit)\s+contains\s+an?\s+"
+                    r"(?P<model>[a-z0-9' -]+?)\s+(?:add|you)\b",
+                    normalized,
+                    flags=re.IGNORECASE,
+                )
+                if not match:
+                    continue
+                required_model_name = str(match.group("model") or "").strip()
+                if not required_model_name:
+                    continue
+                source = str(name or "Unit contains Heroic Intervention").strip() or "Unit contains Heroic Intervention"
+                rule = {
+                    "source": source,
+                    "required_model_name": required_model_name,
+                    "ability_key": "unit_contains_heroic_intervention",
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def can_use_unit_contains_heroic_intervention(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_unit_contains_heroic_intervention_rule()
+        if not rule:
+            return False
+        required_model_name = str(rule.get("required_model_name", "") or "").strip()
+        if not required_model_name:
+            return False
+        contains_named = getattr(root, "_attached_unit_contains_model_named", None)
+        if not callable(contains_named):
+            return False
+        return bool(contains_named(required_model_name))
+
     def _instinctive_defence_source_unit(self):
         try:
             root = self.get_attached_unit_root()

@@ -2156,6 +2156,14 @@ class Player:
             return bool(fn(self.game))
         return False
 
+    def _target_unit_can_use_unit_contains_heroic_intervention(self, target_unit) -> bool:
+        if target_unit is None:
+            return False
+        fn = getattr(target_unit, "can_use_unit_contains_heroic_intervention", None)
+        if callable(fn):
+            return bool(fn(self.game))
+        return False
+
     def _target_unit_can_use_intraneural_biotech_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
         if target_unit is None:
             return False
@@ -2717,6 +2725,17 @@ class Player:
         if name != "heroic intervention":
             return 0
         if not self._target_unit_can_use_snarling_protector_heroic_intervention(target_unit):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_unit_contains_heroic_intervention_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name = str(getattr(stratagem, "name", "") or "").strip().lower()
+        if name != "heroic intervention":
+            return 0
+        if not self._target_unit_can_use_unit_contains_heroic_intervention(target_unit):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -3556,6 +3575,34 @@ class Player:
             }
             if self._should_preview_optional_ability(
                 "SNARLING_PROTECTOR_HEROIC_INTERVENTION",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Heroic Intervention for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        unit_contains_heroic = self._preview_unit_contains_heroic_intervention_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if unit_contains_heroic:
+            ability_name = "Unit contains Heroic Intervention"
+            try:
+                get_rule = getattr(target_unit, "get_unit_contains_heroic_intervention_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "UNIT_CONTAINS_HEROIC_INTERVENTION",
                 ctx,
                 assume=assume_optional_discounts,
             ):
@@ -4713,6 +4760,55 @@ class Player:
                     "increase_reasons": increase_reasons,
                     "snarling_protector_heroic_intervention_use": True,
                     "snarling_protector_heroic_intervention_source": ability_name,
+                }
+        unit_contains_heroic = self._preview_unit_contains_heroic_intervention_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if unit_contains_heroic and target_unit is not None:
+            ability_name = "Unit contains Heroic Intervention"
+            try:
+                get_rule = getattr(target_unit, "get_unit_contains_heroic_intervention_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("UNIT_CONTAINS_HEROIC_INTERVENTION", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Heroic Intervention for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "unit_contains_heroic_intervention_use": True,
+                    "unit_contains_heroic_intervention_source": ability_name,
                 }
         intraneural = self._preview_intraneural_biotech_discount(
             stratagem=stratagem,

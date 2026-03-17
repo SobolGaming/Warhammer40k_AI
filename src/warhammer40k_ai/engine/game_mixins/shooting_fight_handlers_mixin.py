@@ -9108,6 +9108,88 @@ class GameShootingFightHandlersMixin:
                     )
                     pending_keys.add((model_id, buff_key))
 
+    def _on_fight_unit_selected_charged_melee_weapon_keywords(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        try:
+            if not bool(root.is_active_for_rules()):
+                return
+        except Exception:
+            if not root.is_alive() or not getattr(root, "deployed", True):
+                return
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        if not bool(getattr(getattr(root, "round_state", None), "charged_this_round", False)):
+            return
+
+        specs = list(getattr(root, "unit_fight_selected_charged_melee_weapon_keyword_specs", lambda: [])() or [])
+        if not specs:
+            return
+
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        if not models:
+            return
+
+        normalize_source = getattr(root, "_normalize_keyword_phrase", None)
+        for spec in list(specs or []):
+            keywords = [str(value or "").strip().upper() for value in list(spec.get("keywords") or []) if str(value or "").strip()]
+            if not keywords:
+                continue
+            source = str(spec.get("source", "") or "Fight-selected charged melee weapon keyword bonus").strip()
+            source = source or "Fight-selected charged melee weapon keyword bonus"
+            source_key = normalize_source(source) if callable(normalize_source) else ""
+            source_key = str(source_key or source).strip().lower()
+            for model in list(models or []):
+                if model is None:
+                    continue
+                alive_attr = getattr(model, "is_alive", False)
+                if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    continue
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if not callable(set_keywords):
+                    continue
+                model_id = str(get_entity_id(model) or "")
+                seen_weapon_keys: set[str] = set()
+                for wargear in list(getattr(model, "wargear", []) or []):
+                    if wargear is None:
+                        continue
+                    is_melee = getattr(wargear, "is_melee", None)
+                    if not callable(is_melee) or not bool(is_melee()):
+                        continue
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    weapon_key = Unit._norm_wargear_name(weapon_name)
+                    if not weapon_key or weapon_key in seen_weapon_keys:
+                        continue
+                    seen_weapon_keys.add(weapon_key)
+                    set_keywords(
+                        key=f"fight_selected_charge_melee_weapon_keyword:{source_key}:{model_id}:{weapon_key}",
+                        weapon_name=weapon_name,
+                        keywords=list(keywords),
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                        attack_type="melee",
+                    )
+
     def _on_fight_unit_selected_extremis_trigger_word(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None:
             return

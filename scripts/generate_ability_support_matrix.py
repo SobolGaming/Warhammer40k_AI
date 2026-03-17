@@ -4501,7 +4501,6 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Leading: Advance and Charge rolls for the unit gain +1, and attacks made by models in that unit gain +1 to hit.",
         ),
         ("SM", "For the Khan!"): ("Supported", "Leading: unit ranged weapons gain Assault and melee weapons gain Lance."),
-        ("SM", "Icon of Old Caliban (Aura)"): ("Partial", "Stealth aura within 6\" supported; Benefit of Cover aura not implemented."),
         ("TAU", "Coldstar Commander"): ("Supported", "Leading: Move characteristic set to 12\"; unit ranged weapons gain Assault."),
         ("AE", "Empyric Ambush"): ("Supported", "Leading: unit can declare a charge in a turn it used Flickerjump."),
         ("AE", "Cluster Caltrops"): ("Supported", "Re-roll move-over mortal wound dice (one per model with Cluster Caltrops)."),
@@ -6512,6 +6511,7 @@ def _classify_ability_base(
     fight_selected_weapon_attacks_damage_bonus_support = _fight_selected_weapon_attacks_damage_bonus_support(description)
     fight_selected_unit_target_keyword_wound_bonus_support = _fight_selected_unit_target_keyword_wound_bonus_support(description)
     fight_selected_target_keyword_melee_weapon_keyword_support = _fight_selected_target_keyword_melee_weapon_keyword_support(description)
+    fight_selected_charged_melee_weapon_keywords_support = _fight_selected_charged_melee_weapon_keywords_support(description)
     first_failed_save_damage_zero_support = _first_failed_save_damage_zero_support(description)
     shoot_on_death_after_attacks_support = _shoot_on_death_after_attacks_support(description)
     return_on_death_support = _return_on_death_support(description)
@@ -6563,6 +6563,7 @@ def _classify_ability_base(
     attack_roll_cp_support = _attack_roll_plus_cp_on_destroy_support(description)
     attack_roll_battleshock_support = _attack_roll_plus_on_kill_battleshock_support(description)
     on_kill_battleshock_support = _on_kill_battleshock_support(description)
+    stasis_bomb_support = _stasis_bomb_support(description)
     model_hit_vs_fly_support = _model_hit_bonus_vs_fly_support(description)
     model_target_strength_support = _model_target_strength_hit_wound_support(description)
     model_self_strength_support = _model_self_strength_hit_wound_support(description)
@@ -6583,6 +6584,9 @@ def _classify_ability_base(
         _rapid_ingress_heroic_intervention_zero_cp_repeat_support(description)
     )
     heroic_intervention_zero_cp_repeat_support = _heroic_intervention_zero_cp_repeat_support(description)
+    unit_contains_advance_charge_heroic_intervention_support = (
+        _unit_contains_advance_charge_heroic_intervention_zero_cp_support(description)
+    )
     targeted_stratagem_increase_support = _targeted_stratagem_cp_increase_support(description)
     datasheet_overwatch_discount_support = _datasheet_overwatch_discount_support(description)
     overwatch_hit_threshold_support = _overwatch_hit_threshold_support(description)
@@ -6825,6 +6829,8 @@ def _classify_ability_base(
         return orks_waaagh_conditional_support
     if orks_named_datasheet_support:
         return orks_named_datasheet_support
+    if unit_contains_advance_charge_heroic_intervention_support:
+        return unit_contains_advance_charge_heroic_intervention_support
     if early_charge_end_engagement_battleshock_support:
         return early_charge_end_engagement_battleshock_support
     if common_support and leading_support:
@@ -7166,6 +7172,8 @@ def _classify_ability_base(
         return fight_selected_unit_target_keyword_wound_bonus_support
     if fight_selected_target_keyword_melee_weapon_keyword_support:
         return fight_selected_target_keyword_melee_weapon_keyword_support
+    if fight_selected_charged_melee_weapon_keywords_support:
+        return fight_selected_charged_melee_weapon_keywords_support
     if first_failed_save_damage_zero_support:
         return first_failed_save_damage_zero_support
     if shoot_on_death_after_attacks_support:
@@ -7238,6 +7246,8 @@ def _classify_ability_base(
         return attack_roll_battleshock_support
     if on_kill_battleshock_support:
         return on_kill_battleshock_support
+    if stasis_bomb_support:
+        return stasis_bomb_support
     if model_hit_vs_fly_support:
         return model_hit_vs_fly_support
     if model_target_strength_support:
@@ -8320,11 +8330,14 @@ def _aura_benefit_of_cover_support(description: str) -> Optional[Tuple[str, str]
         return None
     patterns = (
         r"while a friendly (?P<target>.+?) (?:unit|model) is within (?P<rng>\d+) of this (?:model|unit|the bearer) "
+        r"(?P<stealth>(?:models in that unit|that unit) ha(?:s|ve) the stealth ability and )?"
         r"each time a ranged attack targets that model it has the benefit of cover(?: against that attack)?",
         r"while a friendly (?P<target>.+?) (?:unit|model) is within (?P<rng>\d+) of this (?:model|unit|the bearer) "
+        r"(?P<stealth>(?:models in that unit|that unit) ha(?:s|ve) the stealth ability and )?"
         r"each time a ranged attack is allocated to a model in that unit that model has the benefit of cover(?: against that attack)?",
         r"while a friendly (?P<target>.+?) (?:unit|model) is within (?P<rng>\d+) of this (?:model|unit|the bearer) "
-        r"each time a ranged attack targets that unit models in that unit have the benefit of cover(?: against that attack)?",
+        r"(?P<stealth>(?:models in that unit|that unit) ha(?:s|ve) the stealth ability and )?"
+        r"each time a ranged attack targets that unit (?:models in that unit have|that unit has) the benefit of cover(?: against that attack)?",
     )
     match = None
     for pattern in patterns:
@@ -8335,6 +8348,11 @@ def _aura_benefit_of_cover_support(description: str) -> Optional[Tuple[str, str]
         return None
     target = str(match.group("target") or "").strip()
     rng = str(match.group("rng") or "").strip()
+    if str(match.group("stealth") or "").strip():
+        return (
+            "Supported",
+            f"Aura: friendly {target} within {rng}\" gain Stealth and Benefit of Cover against ranged attacks.",
+        )
     return ("Supported", f"Aura: friendly {target} within {rng}\" gain Benefit of Cover against ranged attacks.")
 
 
@@ -11196,6 +11214,34 @@ def _heroic_intervention_zero_cp_repeat_support(description: str) -> Optional[Tu
     )
 
 
+def _unit_contains_advance_charge_heroic_intervention_zero_cp_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "heroic intervention" not in norm or "0cp" not in norm:
+        return None
+    match = re.search(
+        r"while\s+(?:the\s+bearer\s+unit|that\s+unit|this\s+unit|this\s+model\s+unit)\s+contains\s+an?\s+"
+        r"(?P<model>[a-z0-9' -]+?)\s*,?\s*add\s+(?P<value>\d+)\s+to\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+"
+        r"(?:the\s+bearer\s+unit|that\s+unit|this\s+unit|this\s+model\s+unit)\s+and\s+you\s+can\s+target\s+"
+        r"(?:the\s+bearer\s+unit|that\s+unit|this\s+unit|this\s+model\s+unit)\s+with\s+the\s+heroic\s+intervention\s+stratagem\s+for\s+0cp",
+        norm,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    model = re.sub(r"\s+", " ", str(match.group("model") or "").strip())
+    value = str(match.group("value") or "").strip()
+    if not model or not value:
+        return None
+    return (
+        "Supported",
+        f"While the attached unit contains {model}, Advance and Charge rolls for that unit get +{value} and Heroic Intervention can target that unit for 0CP.",
+    )
+
+
 def _targeted_stratagem_cp_refund_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -11264,6 +11310,30 @@ def _opponent_ability_cp_gain_reaction_support(description: str) -> Optional[Tup
     return (
         "Supported",
         f"When your opponent gains CP from an ability, roll D6 and gain {cp} CP on {roll}+ (CP gain guardrail respected).",
+    )
+
+
+def _stasis_bomb_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    required = (
+        "ends a normal move",
+        "moved over",
+        "suffers d3 mortal wounds",
+        "roll one d6",
+        "cannot advance or fall back",
+        "must remain stationary",
+        "once per turn",
+        "once per battle",
+    )
+    if any(token not in norm for token in required):
+        return None
+    return (
+        "Supported",
+        "After ending a Normal move, optionally select one moved-over non-AIRCRAFT enemy unit; it suffers D3 mortal wounds, then a D6 roll makes it either unable to Advance/Fall Back or forces it to Remain Stationary in its next Movement phase. Usage is limited to once per turn across your army and once per battle per model.",
     )
 
 
@@ -16515,6 +16585,31 @@ def _charge_target_keyword_and_fight_selected_model_melee_keyword_support(descri
     return (
         "Supported",
         f"{charge_support[1]} {fight_support[1]}",
+    )
+
+
+def _fight_selected_charged_melee_weapon_keywords_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time (?:(?:this|that) unit|this models unit) is selected to fight "
+        r"if (?:it|(?:this|that) unit|this models unit) made a charge move this turn "
+        r"until the end of the phase melee weapons equipped by models in (?:(?:this|that) unit) "
+        r"have the (?P<keywords>[a-z0-9 \-]+?(?: and [a-z0-9 \-]+)*) abilit(?:y|ies)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keywords = [str(part or "").strip().upper() for part in re.split(r"\s+and\s+", str(m.group("keywords") or "").strip()) if str(part or "").strip()]
+    if not keywords:
+        return None
+    keywords_text = " and ".join(f"[{keyword}]" for keyword in keywords)
+    return (
+        "Supported",
+        f"Fight phase selected-unit trigger after charging: melee weapons equipped by models in the unit gain {keywords_text} until end of phase.",
     )
 
 
