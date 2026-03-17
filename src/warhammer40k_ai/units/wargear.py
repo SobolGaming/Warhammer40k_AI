@@ -23619,6 +23619,10 @@ class WargearProfile:
                 model_entries = list(t_unit.get_model_allocated_damage_reduction_entries(target_model) or [])
                 if model_entries:
                     entries.extend(model_entries)
+            if t_unit is not None and hasattr(t_unit, "get_leading_allocated_damage_reduction_entries"):
+                leading_entries = list(t_unit.get_leading_allocated_damage_reduction_entries() or [])
+                if leading_entries:
+                    entries.extend(leading_entries)
             if entries:
                 attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
                 for entry in entries:

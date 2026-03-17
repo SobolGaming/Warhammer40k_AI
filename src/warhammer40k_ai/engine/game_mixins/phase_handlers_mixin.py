@@ -19156,6 +19156,8 @@ class GamePhaseHandlersMixin:
                         "post_shoot_disembark_wound_reroll_target_id",
                         "post_shoot_disembark_wound_reroll_owner",
                         "post_shoot_disembark_wound_reroll_turn",
+                        "post_shoot_disembark_wound_reroll_full",
+                        "post_shoot_disembark_wound_reroll_values",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("post_shoot_disembark_hit_reroll_expires_phase", "") or "").strip().upper()
@@ -19167,6 +19169,8 @@ class GamePhaseHandlersMixin:
                         "post_shoot_disembark_hit_reroll_target_id",
                         "post_shoot_disembark_hit_reroll_owner",
                         "post_shoot_disembark_hit_reroll_turn",
+                        "post_shoot_disembark_hit_reroll_full",
+                        "post_shoot_disembark_hit_reroll_values",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("post_shoot_disembark_psychic_hit_wound_bonus_expires_phase", "") or "").strip().upper()
@@ -19183,14 +19187,46 @@ class GamePhaseHandlersMixin:
                     ):
                         sr.pop(k, None)
                 try:
-                    marked_turn = int(sr.get("move_over_no_cover_turn", 0) or 0)
-                except Exception:
-                    marked_turn = 0
-                try:
                     current_turn = int(getattr(self, "turn", 0) or 0)
                 except Exception:
                     current_turn = 0
-                if marked_turn and current_turn and marked_turn != current_turn:
+                try:
+                    marked_turn = int(sr.get("post_shoot_disembark_wound_reroll_turn", 0) or 0)
+                except Exception:
+                    marked_turn = 0
+                if bool(sr.get("post_shoot_disembark_wound_reroll_active")) and marked_turn and current_turn and marked_turn != current_turn:
+                    for k in (
+                        "post_shoot_disembark_wound_reroll_active",
+                        "post_shoot_disembark_wound_reroll_expires_phase",
+                        "post_shoot_disembark_wound_reroll_source",
+                        "post_shoot_disembark_wound_reroll_target_id",
+                        "post_shoot_disembark_wound_reroll_owner",
+                        "post_shoot_disembark_wound_reroll_turn",
+                        "post_shoot_disembark_wound_reroll_full",
+                        "post_shoot_disembark_wound_reroll_values",
+                    ):
+                        sr.pop(k, None)
+                try:
+                    marked_turn = int(sr.get("post_shoot_disembark_hit_reroll_turn", 0) or 0)
+                except Exception:
+                    marked_turn = 0
+                if bool(sr.get("post_shoot_disembark_hit_reroll_active")) and marked_turn and current_turn and marked_turn != current_turn:
+                    for k in (
+                        "post_shoot_disembark_hit_reroll_active",
+                        "post_shoot_disembark_hit_reroll_expires_phase",
+                        "post_shoot_disembark_hit_reroll_source",
+                        "post_shoot_disembark_hit_reroll_target_id",
+                        "post_shoot_disembark_hit_reroll_owner",
+                        "post_shoot_disembark_hit_reroll_turn",
+                        "post_shoot_disembark_hit_reroll_full",
+                        "post_shoot_disembark_hit_reroll_values",
+                    ):
+                        sr.pop(k, None)
+                try:
+                    move_over_turn = int(sr.get("move_over_no_cover_turn", 0) or 0)
+                except Exception:
+                    move_over_turn = 0
+                if move_over_turn and current_turn and move_over_turn != current_turn:
                     for k in (
                         "move_over_no_cover_active",
                         "move_over_no_cover_owner",

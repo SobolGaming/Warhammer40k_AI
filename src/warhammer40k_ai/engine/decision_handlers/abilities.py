@@ -22952,15 +22952,23 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             if not isinstance(sr, dict):
                 sr = {}
             sr["post_shoot_disembark_wound_reroll_active"] = True
-            sr["post_shoot_disembark_wound_reroll_expires_phase"] = "SHOOTING_PHASE"
+            sr["post_shoot_disembark_wound_reroll_expires_phase"] = str(ctx.get("expires_phase", "SHOOTING_PHASE") or "")
             sr["post_shoot_disembark_wound_reroll_source"] = ability_name
             sr["post_shoot_disembark_wound_reroll_target_id"] = target_id
             sr["post_shoot_disembark_wound_reroll_owner"] = owner_id
             sr["post_shoot_disembark_wound_reroll_turn"] = int(turn or 0)
+            sr["post_shoot_disembark_wound_reroll_full"] = bool(ctx.get("reroll_full", True))
+            sr["post_shoot_disembark_wound_reroll_values"] = list(ctx.get("reroll_values", []) or [])
             attacker_unit.special_rules = sr
             try:
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
-                _log_action_for_players(game, player, f"{ability_name}: {tname} marked (disembarked units re-roll Wound rolls).")
+                values = [int(v) for v in list(ctx.get("reroll_values", []) or []) if str(v).strip()]
+                if values and not bool(ctx.get("reroll_full", True)):
+                    suffix = ", ".join(str(v) for v in values)
+                    msg = f"{ability_name}: {tname} marked (disembarked units re-roll Wound rolls of {suffix})."
+                else:
+                    msg = f"{ability_name}: {tname} marked (disembarked units re-roll Wound rolls)."
+                _log_action_for_players(game, player, msg)
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "post_shoot_disembark_hit_reroll":
@@ -22990,15 +22998,23 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             if not isinstance(sr, dict):
                 sr = {}
             sr["post_shoot_disembark_hit_reroll_active"] = True
-            sr["post_shoot_disembark_hit_reroll_expires_phase"] = "SHOOTING_PHASE"
+            sr["post_shoot_disembark_hit_reroll_expires_phase"] = str(ctx.get("expires_phase", "SHOOTING_PHASE") or "")
             sr["post_shoot_disembark_hit_reroll_source"] = ability_name
             sr["post_shoot_disembark_hit_reroll_target_id"] = target_id
             sr["post_shoot_disembark_hit_reroll_owner"] = owner_id
             sr["post_shoot_disembark_hit_reroll_turn"] = int(turn or 0)
+            sr["post_shoot_disembark_hit_reroll_full"] = bool(ctx.get("reroll_full", True))
+            sr["post_shoot_disembark_hit_reroll_values"] = list(ctx.get("reroll_values", []) or [])
             attacker_unit.special_rules = sr
             try:
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
-                _log_action_for_players(game, player, f"{ability_name}: {tname} marked (disembarked units re-roll Hit rolls).")
+                values = [int(v) for v in list(ctx.get("reroll_values", []) or []) if str(v).strip()]
+                if values and not bool(ctx.get("reroll_full", True)):
+                    suffix = ", ".join(str(v) for v in values)
+                    msg = f"{ability_name}: {tname} marked (disembarked units re-roll Hit rolls of {suffix})."
+                else:
+                    msg = f"{ability_name}: {tname} marked (disembarked units re-roll Hit rolls)."
+                _log_action_for_players(game, player, msg)
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "post_shoot_disembark_ap_bonus":

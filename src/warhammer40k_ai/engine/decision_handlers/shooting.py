@@ -393,6 +393,10 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
         mark_used = getattr(unit, "mark_guns_blazing_used", None)
         if callable(mark_used):
             mark_used(game)
+    if success and bool(request.context.get("storm_of_vengeance_flow", False)):
+        mark_used = getattr(unit, "mark_storm_of_vengeance_used", None)
+        if callable(mark_used):
+            mark_used(game)
     if success and hypersensory_flow:
         mark_used = getattr(unit, "mark_hypersensory_abilities_used", None)
         if callable(mark_used):

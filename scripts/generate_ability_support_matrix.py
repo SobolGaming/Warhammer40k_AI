@@ -5354,6 +5354,18 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Blood Surge"): ("Supported", "Opponent Shooting phase: optional D6+2\" move toward closest non-AIRCRAFT enemy; blocked if Battle-shocked/engaged; once per phase."),
         ("WE", "Frenzy"): ("Supported", "After being targeted, Helbrute can shoot or fight vs the attacker (eligible target check)."),
         ("SM", "Shadowmaster"): ("Supported", "Leading: attached unit can only be targeted by ranged attacks within 12\"."),
+        ("SM", "Legacy of Jerulas"): (
+            "Supported",
+            "After shooting: select a hit enemy unit; friendly models disembarked from this TRANSPORT this turn re-roll Hit and Wound rolls of 1 against it until end of turn.",
+        ),
+        ("SM", "Storm of Vengeance"): (
+            "Supported",
+            "Opponent Shooting phase: when a friendly ADEPTUS ASTARTES unit within 6\" is destroyed, this model can make a reactive shooting attack against the attacking unit only (if eligible), once per turn.",
+        ),
+        ("SM", "Guardian of the Lost"): (
+            "Supported",
+            "Leading: each time an attack is allocated to a model in that unit, subtract 1 from that attack's Damage characteristic.",
+        ),
         ("SM", "Silent Fury"): ("Supported", "Enemy CHARACTER model kills grant +1 Attack to executioner relic blade until end of battle."),
         ("SM", "Shrouding (Psychic)"): (
             "Partial",

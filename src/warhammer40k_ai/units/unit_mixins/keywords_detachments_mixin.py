@@ -3093,6 +3093,84 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_storm_of_vengeance_rule(self) -> Optional[dict]:
+        """Return rule info for Land Speeder Vengeance's Storm of Vengeance reactive shooting."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "storm_of_vengeance_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text = unit._normalize_rules_text(self._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+                norm = re.sub(r"\s+", " ", norm)
+                key = (str(name or "").strip().lower(), norm)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if "once per turn in your opponent s shooting phase" not in norm:
+                    continue
+                if "when a friendly " not in norm:
+                    continue
+                if " unit within " not in norm or " of this model is destroyed" not in norm:
+                    continue
+                if "after the attacking unit has finished making its attacks" not in norm:
+                    continue
+                if "shoot as if it were your shooting phase" not in norm:
+                    continue
+                if "can only target that enemy unit" not in norm:
+                    continue
+                if "only if it is an eligible target" not in norm:
+                    continue
+                match = re.search(
+                    r"when a friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of this model is destroyed",
+                    norm,
+                )
+                if not match:
+                    continue
+                keyword = str(match.group("keyword") or "").strip().upper()
+                if not keyword:
+                    continue
+                try:
+                    range_value = int(match.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    range_value = 6
+                source = str(name or "Storm of Vengeance").strip() or "Storm of Vengeance"
+                rule = {
+                    "source": source,
+                    "friendly_keyword": keyword,
+                    "range": int(range_value),
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def get_mechanical_augmentation_aura_rule(self) -> Optional[dict]:
         """
         Return rule info for Illuminor Szeras' Mechanical Augmentation (Aura):
@@ -13437,6 +13515,9 @@ class KeywordsDetachmentsMixin:
         owner = owner_id or owner_name
         return f"{br}:{owner}"
 
+    def _storm_of_vengeance_turn_key(self, game=None) -> str:
+        return self._guns_blazing_turn_key(game)
+
     def blood_surge_used_this_phase(self, game=None) -> bool:
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
@@ -13558,6 +13639,20 @@ class KeywordsDetachmentsMixin:
         if not isinstance(sr, dict):
             sr = {}
         sr["guns_blazing_used_turn_key"] = self._guns_blazing_turn_key(game)
+        self.special_rules = sr
+
+    def storm_of_vengeance_used_this_turn(self, game=None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._storm_of_vengeance_turn_key(game)
+        return str(sr.get("storm_of_vengeance_used_turn_key", "")) == key
+
+    def mark_storm_of_vengeance_used(self, game=None) -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["storm_of_vengeance_used_turn_key"] = self._storm_of_vengeance_turn_key(game)
         self.special_rules = sr
 
     def can_blood_surge(self, game=None, game_map=None) -> bool:
@@ -13763,6 +13858,53 @@ class KeywordsDetachmentsMixin:
         current_player = None
         if game is not None:
             current_player = getattr(game, "get_current_player", lambda: None)()
+        if owner_player is not None and current_player is owner_player:
+            return False
+
+        if enemy_unit is None:
+            return True
+        try:
+            enemy_root = enemy_unit.get_attached_unit_root()
+        except Exception:
+            enemy_root = enemy_unit
+        if enemy_root is None:
+            return False
+        try:
+            enemy_army = enemy_root.get_parent_army()
+        except Exception:
+            enemy_army = None
+        if enemy_army is None or enemy_army is owner_army:
+            return False
+        return bool(getattr(enemy_root, "is_alive", lambda: False)())
+
+    def can_use_storm_of_vengeance(self, game=None, game_map=None, *, enemy_unit=None) -> bool:
+        rule_fn = getattr(self, "get_storm_of_vengeance_rule", None)
+        rule = rule_fn() if callable(rule_fn) else None
+        if not isinstance(rule, dict):
+            return False
+        if not self.is_alive() or not getattr(self, "deployed", False):
+            return False
+        try:
+            if self.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(self, "is_embarked", False)) or bool(getattr(self, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        if self.storm_of_vengeance_used_this_turn(game):
+            return False
+
+        owner_army = self.get_parent_army()
+        owner_player = getattr(owner_army, "player", None) if owner_army is not None else None
+        current_player = None
+        if game is not None:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_name != "SHOOTING_PHASE":
+                return False
         if owner_player is not None and current_player is owner_player:
             return False
 
@@ -14773,9 +14915,18 @@ class KeywordsDetachmentsMixin:
                             if target_id and str(tsr.get("post_shoot_disembark_hit_reroll_target_id", "") or "") != target_id:
                                 apply_bonus = False
                         if apply_bonus:
-                            reroll_full = True
                             source = str(tsr.get("post_shoot_disembark_hit_reroll_source", "") or "Transport Support").strip() or "Transport Support"
-                            reroll_full_reasons.append(f"{source}: re-roll Hit roll")
+                            values = tuple(int(v) for v in list(tsr.get("post_shoot_disembark_hit_reroll_values", ()) or ()) if str(v).strip())
+                            reroll_full_active = bool(tsr.get("post_shoot_disembark_hit_reroll_full", not bool(values)))
+                            if reroll_full_active:
+                                reroll_full = True
+                                reroll_full_reasons.append(f"{source}: re-roll Hit roll")
+                            for value in values:
+                                reroll_values.add(int(value))
+                            if values:
+                                reroll_reasons.append(
+                                    f"{source}: re-roll Hit rolls of {', '.join(str(v) for v in sorted(values))}"
+                                )
         if model is not None:
             army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
             mgr = getattr(army, "drukhari_detachments", None) if army is not None else None

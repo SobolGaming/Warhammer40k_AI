@@ -1700,6 +1700,9 @@ class GameShootingFightHandlersMixin:
                     "model_id": get_entity_id(model),
                     "ability": "post_shoot_disembark_wound_reroll",
                     "ability_name": ability_name,
+                    "reroll_full": bool(spec.get("reroll_full", True)),
+                    "reroll_values": list(spec.get("reroll_values", ()) or []),
+                    "expires_phase": str(spec.get("expires_phase", "SHOOTING_PHASE") or ""),
                 },
             )
             self.request_decision(request)
@@ -1791,6 +1794,9 @@ class GameShootingFightHandlersMixin:
                     "model_id": get_entity_id(model),
                     "ability": "post_shoot_disembark_hit_reroll",
                     "ability_name": ability_name,
+                    "reroll_full": bool(spec.get("reroll_full", True)),
+                    "reroll_values": list(spec.get("reroll_values", ()) or []),
+                    "expires_phase": str(spec.get("expires_phase", "SHOOTING_PHASE") or ""),
                 },
             )
             self.request_decision(request)
@@ -15097,6 +15103,227 @@ class GameShootingFightHandlersMixin:
             request.context["guns_blazing_source"] = source_name
             request.context["guns_blazing_enemy_unit_id"] = str(get_entity_id(attacker_root) or "")
             request.context["guns_blazing_unit_id"] = source_id
+            pending_for_source.add(source_id)
+
+    def _on_unit_destroyed_storm_of_vengeance(
+        self,
+        unit=None,
+        last_model=None,
+        destroyed_by_unit=None,
+        game_map=None,
+        **_kwargs,
+    ) -> None:
+        if unit is None or destroyed_by_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        if game_map is None:
+            game_map = getattr(self, "map", None)
+
+        try:
+            destroyed_root = unit.get_attached_unit_root()
+        except Exception:
+            destroyed_root = unit
+        try:
+            attacker_root = destroyed_by_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = destroyed_by_unit
+        if destroyed_root is None or attacker_root is None or destroyed_root is attacker_root:
+            return
+
+        destroyed_army = destroyed_root.get_parent_army()
+        attacker_army = attacker_root.get_parent_army()
+        if destroyed_army is None or attacker_army is None or destroyed_army is attacker_army:
+            return
+        attacker_player = getattr(attacker_army, "player", None)
+        if attacker_player is None or attacker_player is not self.get_current_player():
+            return
+
+        try:
+            from ...utility.aura_utils import distance_between_models_bases_3d, unit_within_range_of_unit
+        except Exception:
+            return
+
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        if not attacker_id:
+            return
+
+        roots: dict[str, Any] = {}
+        for candidate in list(getattr(destroyed_army, "units", []) or []):
+            if candidate is None:
+                continue
+            try:
+                root = candidate.get_attached_unit_root()
+            except Exception:
+                root = candidate
+            if root is None:
+                continue
+            rid = str(get_entity_id(root) or "")
+            if rid:
+                roots[rid] = root
+
+        if not roots:
+            return
+
+        pending = getattr(self, "_storm_of_vengeance_pending", None)
+        if not isinstance(pending, dict):
+            pending = {}
+            self._storm_of_vengeance_pending = pending
+        bucket = list(pending.get(attacker_id, []) or [])
+        pending_ids = {
+            str(get_entity_id(existing) or "")
+            for existing in list(bucket or [])
+            if existing is not None and str(get_entity_id(existing) or "")
+        }
+
+        for rid in sorted(list(roots.keys())):
+            root = roots[rid]
+            if root is None or root is destroyed_root:
+                continue
+            if rid in pending_ids:
+                continue
+            if not self._unit_is_active_for_reactive_trigger(root):
+                continue
+            reactive_rule = getattr(root, "get_storm_of_vengeance_rule", lambda: None)()
+            if not isinstance(reactive_rule, dict):
+                continue
+            if not bool(getattr(root, "can_use_storm_of_vengeance", lambda **_k: False)(game=self, game_map=game_map, enemy_unit=attacker_root)):
+                continue
+
+            required_keyword = str(reactive_rule.get("friendly_keyword", "") or "").strip()
+            if required_keyword:
+                matches_keyword = False
+                matches_phrase_fn = getattr(root, "_unit_matches_keyword_phrase", None)
+                if callable(matches_phrase_fn):
+                    try:
+                        matches_keyword = bool(matches_phrase_fn(destroyed_root, required_keyword, use_effective=False))
+                    except Exception:
+                        matches_keyword = False
+                if not matches_keyword:
+                    has_kw = getattr(destroyed_root, "has_any_keyword", None)
+                    if callable(has_kw):
+                        try:
+                            matches_keyword = bool(has_kw(required_keyword))
+                        except Exception:
+                            matches_keyword = False
+                if not matches_keyword:
+                    continue
+
+            try:
+                range_value = float(reactive_rule.get("range", 6.0) or 6.0)
+            except Exception:
+                range_value = 6.0
+            if range_value <= 0.0:
+                range_value = 6.0
+
+            in_range = False
+            if last_model is not None and bool(getattr(last_model, "model_base", None) is not None):
+                for source_model in list(getattr(root, "models", []) or []):
+                    if not getattr(source_model, "is_alive", False):
+                        continue
+                    if getattr(source_model, "model_base", None) is None:
+                        continue
+                    try:
+                        if float(distance_between_models_bases_3d(source_model, last_model)) <= float(range_value) + 1e-6:
+                            in_range = True
+                            break
+                    except Exception:
+                        continue
+            if not in_range:
+                try:
+                    in_range = bool(unit_within_range_of_unit(root, destroyed_root, float(range_value), use_attached_aggregate=True))
+                except Exception:
+                    in_range = False
+            if not in_range:
+                continue
+
+            bucket.append(root)
+            pending_ids.add(rid)
+
+        if bucket:
+            pending[attacker_id] = list(bucket)
+
+    def _on_unit_shooting_resolved_storm_of_vengeance(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        pending = getattr(self, "_storm_of_vengeance_pending", None)
+        if not isinstance(pending, dict):
+            return
+
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return
+        attacker_army = attacker_root.get_parent_army()
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+        if attacker_player is None or attacker_player is not self.get_current_player():
+            return
+
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        if not attacker_id:
+            return
+        sources = list(pending.pop(attacker_id, []) or [])
+        if not sources:
+            return
+
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        pending_for_source: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_DECLARE_SHOTS:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if not bool(ctx.get("storm_of_vengeance_flow", False)):
+                    continue
+                uid = str(ctx.get("unit_id", "") or "")
+                if uid:
+                    pending_for_source.add(uid)
+
+        for source in list(sources):
+            if source is None:
+                continue
+            try:
+                root = source.get_attached_unit_root()
+            except Exception:
+                root = source
+            if root is None or not self._unit_is_active_for_reactive_trigger(root):
+                continue
+            source_id = str(get_entity_id(root) or "")
+            if not source_id or source_id in pending_for_source:
+                continue
+            if not bool(getattr(root, "can_use_storm_of_vengeance", lambda **_k: False)(game=self, game_map=game_map, enemy_unit=attacker_root)):
+                continue
+            if not self._setup_reactive_can_shoot_target(root, attacker_root):
+                continue
+
+            source_name = "Storm of Vengeance"
+            rule_fn = getattr(root, "get_storm_of_vengeance_rule", None)
+            reactive_rule = rule_fn() if callable(rule_fn) else None
+            if isinstance(reactive_rule, dict):
+                source_name = str(reactive_rule.get("source", "") or source_name).strip() or source_name
+            player = getattr(root.get_parent_army(), "player", None)
+            if player is None:
+                continue
+            request = self._queue_setup_reactive_shooting_decision(
+                player=player,
+                unit=root,
+                target_unit=attacker_root,
+                source=source_name,
+            )
+            if request is None:
+                continue
+            request.context["storm_of_vengeance_flow"] = True
+            request.context["storm_of_vengeance_source"] = source_name
+            request.context["storm_of_vengeance_enemy_unit_id"] = attacker_id
+            request.context["storm_of_vengeance_unit_id"] = source_id
             pending_for_source.add(source_id)
 
     def _on_unit_shooting_resolved_hypersensory_abilities(self, attacker_unit=None, **_kwargs) -> None:

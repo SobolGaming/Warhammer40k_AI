@@ -888,7 +888,24 @@ class AbilitySpecsMixin:
             if key in seen:
                 continue
             seen.add(key)
-            specs.append({"source": source})
+            duration = str((m.group("duration") if m else "") or "phase").strip().lower()
+            reroll_value = str(
+                ((m.group("value") if m else "") or (m.group("combo_value") if m else "") or "")
+            ).strip()
+            reroll_values = []
+            if reroll_value:
+                try:
+                    reroll_values.append(int(reroll_value))
+                except Exception:
+                    reroll_values = []
+            specs.append(
+                {
+                    "source": source,
+                    "reroll_full": not bool(reroll_values),
+                    "reroll_values": tuple(reroll_values),
+                    "expires_phase": "SHOOTING_PHASE" if duration == "phase" else "",
+                }
+            )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
@@ -930,7 +947,22 @@ class AbilitySpecsMixin:
             if key in seen:
                 continue
             seen.add(key)
-            specs.append({"source": source})
+            duration = str((m.group("duration") if m else "") or "phase").strip().lower()
+            reroll_value = str((m.group("value") if m else "") or "").strip()
+            reroll_values = []
+            if reroll_value:
+                try:
+                    reroll_values.append(int(reroll_value))
+                except Exception:
+                    reroll_values = []
+            specs.append(
+                {
+                    "source": source,
+                    "reroll_full": not bool(reroll_values),
+                    "reroll_values": tuple(reroll_values),
+                    "expires_phase": "SHOOTING_PHASE" if duration == "phase" else "",
+                }
+            )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

@@ -2651,6 +2651,79 @@ class ActionsMovementMixin:
         self._ability_cache[cache_key] = entries
         return entries
 
+    def get_leading_allocated_damage_reduction_entries(self) -> list[dict]:
+        """
+        Return allocated-damage modifier entries granted by attached leaders while they are leading this unit.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "leading_allocated_damage_reductions"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        entries: list[dict] = []
+        seen: set[tuple[str, str, int]] = set()
+        patterns = (
+            re.compile(
+                r"while this model is leading a unit each time an attack is allocated to a model in that unit "
+                r"subtract (?P<val>\d+) from the damage characteristic of that attack",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                r"while this model is leading a unit each time (?:an|a) (?P<atype>melee|ranged) attack is allocated to a model in that unit "
+                r"subtract (?P<val>\d+) from the damage characteristic of that attack",
+                re.IGNORECASE,
+            ),
+        )
+        for ab, _leader in root._iter_attached_leader_leading_abilities():
+            try:
+                name = str(getattr(ab, "name", "") or "Leading ability")
+                desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                name = "Leading ability"
+                desc = ""
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            normalized = self._normalize_rules_text(text_src)
+            if not normalized:
+                continue
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            match = None
+            for pattern in patterns:
+                match = pattern.fullmatch(normalized)
+                if match:
+                    break
+            if not match:
+                continue
+            try:
+                value = int(match.group("val") or 0)
+            except Exception:
+                value = 0
+            if value <= 0:
+                continue
+            attack_type = str(match.groupdict().get("atype", "") or "any").strip().lower() or "any"
+            source = str(name or "Leading damage reduction").strip() or "Leading damage reduction"
+            key = (source.lower(), attack_type, int(value))
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append(
+                {
+                    "value": int(value),
+                    "attack_type": attack_type,
+                    "source": source,
+                    "op": "sub",
+                }
+            )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(entries)
+        return list(entries)
+
     def _iter_active_possible_abilities(self):
         """Yield unit-level abilities that are currently active for this unit."""
         active_abilities = None
@@ -7444,9 +7517,24 @@ class ActionsMovementMixin:
                                         target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
                                         target_id = str(get_entity_id(target_root) or "")
                                         if target_id and str(tsr.get("post_shoot_disembark_wound_reroll_target_id", "") or "") == target_id:
-                                            mods["reroll_wound_full"] = True
                                             source = str(tsr.get("post_shoot_disembark_wound_reroll_source", "") or "Fire Support").strip() or "Fire Support"
-                                            reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll")
+                                            values = tuple(
+                                                int(v)
+                                                for v in list(tsr.get("post_shoot_disembark_wound_reroll_values", ()) or ())
+                                                if str(v).strip()
+                                            )
+                                            reroll_full_active = bool(
+                                                tsr.get("post_shoot_disembark_wound_reroll_full", not bool(values))
+                                            )
+                                            if reroll_full_active:
+                                                mods["reroll_wound_full"] = True
+                                                reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll")
+                                            for value in values:
+                                                reroll_wound_values.add(int(value))
+                                            if values:
+                                                reroll_wound_reasons.append(
+                                                    f"{source}: re-roll Wound rolls of {', '.join(str(v) for v in sorted(values))}"
+                                                )
         except Exception:
             pass
 

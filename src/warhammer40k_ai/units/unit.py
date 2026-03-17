@@ -3573,14 +3573,25 @@ class Unit(
     _POST_SHOOT_DISEMBARK_WOUND_REROLL_RE = re.compile(
         r"in your shooting phase after this model has shot select one enemy unit "
         r"(?:(?:that was )?hit by one or more of those attacks|it scored one or more hits against this phase) "
-        r"until the end of the phase each time a friendly model that disembarked from this transport this turn makes an attack "
-        r"that targets that enemy unit you can re ?roll the wound roll",
+        r"until the end of the (?P<duration>phase|turn) each time a friendly model that disembarked from this transport this turn makes an attack "
+        r"that targets that enemy unit "
+        r"(?:"
+        r"(?:you can )?re ?roll the wound roll"
+        r"|re ?roll a wound roll of (?P<value>\d+)"
+        r"|(?:(?:you can )?re ?roll the hit roll|re ?roll a hit roll of \d+) and "
+        r"(?:(?:you can )?re ?roll the wound roll|re ?roll a wound roll of (?P<combo_value>\d+))"
+        r")",
         re.IGNORECASE,
     )
     _POST_SHOOT_DISEMBARK_HIT_REROLL_RE = re.compile(
         r"in your shooting phase after this model has shot select one enemy unit hit by one or more of those attacks "
-        r"until the end of the phase each time a model that disembarked from this transport this turn makes an attack "
-        r"that targets that enemy unit you can re ?roll the hit roll",
+        r"until the end of the (?P<duration>phase|turn) each time a (?:friendly )?model that disembarked from this transport this turn makes an attack "
+        r"that targets that enemy unit "
+        r"(?:"
+        r"(?:you can )?re ?roll the hit roll"
+        r"|re ?roll a hit roll of (?P<value>\d+)"
+        r")"
+        r"(?: and (?:(?:you can )?re ?roll the wound roll|re ?roll a wound roll of \d+))?",
         re.IGNORECASE,
     )
     _POST_SHOOT_DISEMBARK_AP_BONUS_RE = re.compile(
