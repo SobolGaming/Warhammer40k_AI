@@ -13973,6 +13973,24 @@ class AbilitySpecsMixin:
         reasons: list[str] = []
         seen: set[str] = set()
 
+        def _root_has_leading_keyword(required_keyword: str) -> bool:
+            phrase = str(required_keyword or "").strip()
+            if not phrase:
+                return False
+            try:
+                leaders = list(getattr(root, "attached_leaders", []) or [])
+            except Exception:
+                leaders = []
+            for leader in leaders:
+                if leader is None:
+                    continue
+                try:
+                    if self._unit_matches_keyword_phrase(leader, phrase, use_effective=False):
+                        return True
+                except Exception:
+                    continue
+            return False
+
         sr = getattr(root, "special_rules", None)
         if isinstance(sr, dict):
             entries = sr.get("bearer_unit_target_hit_penalties")
@@ -14041,6 +14059,18 @@ class AbilitySpecsMixin:
                     text_norm = str(text_src or "").strip()
                 m = self._TARGET_HIT_ROLL_PENALTY_UNIT_RE.search(text_norm) or self._TARGET_HIT_ROLL_PENALTY_MODEL_RE.search(text_norm)
                 if not m:
+                    m = self._LEADING_KEYWORD_UNIT_TARGET_HIT_PENALTY_RE.search(text_norm)
+                    if not m:
+                        continue
+                    at = str(m.group("atype") or "any").strip().lower()
+                    if atype != "any" and at not in ("any", atype):
+                        continue
+                    required_keyword = str(m.group("keyword") or "").strip()
+                    if not _root_has_leading_keyword(required_keyword):
+                        continue
+                    seen.add(key)
+                    penalty += 1
+                    reasons.append(f"-1 to hit from {reason_name}")
                     continue
                 at = str(m.group("atype") or "any").strip().lower()
                 if atype != "any" and at not in ("any", atype):

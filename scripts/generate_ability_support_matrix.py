@@ -6292,6 +6292,8 @@ def _classify_ability_base(
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     unit_wound_reroll_support = _unit_wound_reroll_ones_support(description)
     model_attack_skill_override_support = _model_attack_skill_override_support(description)
+    controlled_objective_damage_one_save_support = _controlled_objective_damage_one_armor_save_support(description)
+    leading_keyword_target_hit_penalty_support = _leading_keyword_unit_target_hit_penalty_support(description)
     target_hit_penalty_support = _target_hit_roll_penalty_support(description)
     defensive_ap_worsen_support = _defensive_ap_worsen_support(description)
     defensive_wound_penalty_support = _defensive_wound_penalty_support(description)
@@ -6815,6 +6817,10 @@ def _classify_ability_base(
         return unit_wound_reroll_support
     if model_attack_skill_override_support:
         return model_attack_skill_override_support
+    if controlled_objective_damage_one_save_support:
+        return controlled_objective_damage_one_save_support
+    if leading_keyword_target_hit_penalty_support:
+        return leading_keyword_target_hit_penalty_support
     if target_hit_penalty_support:
         return target_hit_penalty_support
     if defensive_ap_worsen_support:
@@ -12170,6 +12176,61 @@ def _unit_wound_reroll_ones_support(description: str) -> Optional[Tuple[str, str
         return ("Partial", " ".join(notes))
 
     return ("Supported", " ".join(notes))
+
+
+def _controlled_objective_damage_one_armor_save_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    if not text:
+        return None
+    pattern = re.compile(
+        r"^while this unit is within range of an objective marker you control, each time an attack with a damage "
+        r"characteristic of (?P<damage>\d+) is allocated to a model in this unit, add (?P<bonus>\d+) to any armour "
+        r"saving throw made against that attack\.?$",
+        re.IGNORECASE,
+    )
+    match = pattern.match(text)
+    if not match:
+        return None
+    damage = int(match.group("damage"))
+    bonus = int(match.group("bonus"))
+    return (
+        "Supported",
+        f"While within range of an objective marker you control, the unit gains +{bonus} to armor saves against Damage {damage} attacks.",
+    )
+
+
+def _leading_keyword_unit_target_hit_penalty_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    if not text:
+        return None
+    pattern = re.compile(
+        r"^while an? (?P<keyword>[a-z0-9 ]+) model is leading this unit, each time (?:a|an) "
+        r"(?:(?P<atype>melee|ranged) )?attack(?:s)? (?:targets|is made against) this unit, subtract 1 from the hit roll\.?$",
+        re.IGNORECASE,
+    )
+    match = pattern.match(text)
+    if not match:
+        return None
+    attack_type = str(match.group("atype") or "").strip().lower()
+    keyword = str(match.group("keyword") or "").strip().upper()
+    if attack_type == "melee":
+        scope_text = "melee"
+    elif attack_type == "ranged":
+        scope_text = "ranged"
+    else:
+        scope_text = "all"
+    return (
+        "Supported",
+        f"Unit targeted: -1 to hit vs {scope_text} attacks while led by a {keyword} model.",
+    )
 
 
 def _target_hit_roll_penalty_support(description: str) -> Optional[Tuple[str, str]]:

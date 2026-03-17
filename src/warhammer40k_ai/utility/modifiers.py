@@ -234,6 +234,32 @@ def compute_save_roll_modifier(
         sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
         dmg_char = _resolve_damage_characteristic()
         if isinstance(sr, dict) and dmg_char is not None:
+            entries = sr.get("armor_save_bonus_vs_damage_characteristic_entries")
+            if isinstance(entries, list):
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    entry_dmg = _coerce_int(entry.get("damage_characteristic"))
+                    if entry_dmg is None or int(entry_dmg) != int(dmg_char):
+                        continue
+                    if bool(entry.get("requires_objective_controlled")):
+                        within_controlled = False
+                        checker = getattr(t_unit, "_within_controlled_objective_range", None) if t_unit is not None else None
+                        if callable(checker):
+                            within_controlled = bool(checker())
+                        if not within_controlled:
+                            continue
+                    bonus_val = _coerce_int(entry.get("value")) or 0
+                    if not bonus_val:
+                        continue
+                    dice_modifier += bonus_val
+                    source_name = str(entry.get("source", "") or "").strip()
+                    if source_name:
+                        effects.append(
+                            f"+{bonus_val} armor save vs Damage {int(dmg_char)} ({source_name})"
+                        )
+                    else:
+                        effects.append(f"+{bonus_val} armor save vs Damage {int(dmg_char)}")
             spec = sr.get("armor_save_bonus_vs_damage_characteristic")
             if isinstance(spec, dict):
                 bonus = spec.get(dmg_char)

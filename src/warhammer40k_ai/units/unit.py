@@ -2602,6 +2602,11 @@ class Unit(
         except Exception:
             pass
         try:
+            if "armor_save_bonus_vs_damage_characteristic_entries" in self.special_rules:
+                del self.special_rules["armor_save_bonus_vs_damage_characteristic_entries"]
+        except Exception:
+            pass
+        try:
             if "allocated_damage_reductions" in self.special_rules:
                 del self.special_rules["allocated_damage_reductions"]
         except Exception:
@@ -2695,12 +2700,37 @@ class Unit(
             # Save bonus vs allocated attacks with Damage characteristic of N.
             # Example: "Each time an attack with a Damage characteristic of 1 is allocated to a model in this unit,
             # add 1 to any armour saving throw made against that attack"
+            matched_conditional_damage_save_bonus = False
             m = re.search(
-                r"each\s+time\s+an\s+attack\s+with\s+a\s+damage\s+characteristic\s+of\s+(\d+)\s+is\s+allocated\s+to\s+a\s+model\s+in\s+this\s+unit,\s+add\s+(\d+)\s+to\s+any\s+armou?r\s+saving\s+throw\s+made\s+against\s+that\s+attack",
+                r"while\s+this\s+unit\s+is\s+within\s+range\s+of\s+an\s+objective\s+marker\s+you\s+control,\s+"
+                r"each\s+time\s+an\s+attack\s+with\s+a\s+damage\s+characteristic\s+of\s+(\d+)\s+is\s+allocated\s+to\s+a\s+model\s+in\s+this\s+unit,\s+"
+                r"add\s+(\d+)\s+to\s+any\s+armou?r\s+saving\s+throw\s+made\s+against\s+that\s+attack",
                 tl,
                 flags=re.IGNORECASE,
             )
             if m:
+                dmg = int(m.group(1))
+                bonus = int(m.group(2))
+                entries = self.special_rules.get("armor_save_bonus_vs_damage_characteristic_entries")
+                if not isinstance(entries, list):
+                    entries = []
+                entries.append(
+                    {
+                        "damage_characteristic": int(dmg),
+                        "value": int(bonus),
+                        "requires_objective_controlled": True,
+                        "source": str(name or "Ability").strip() or "Ability",
+                    }
+                )
+                self.special_rules["armor_save_bonus_vs_damage_characteristic_entries"] = entries
+                matched_conditional_damage_save_bonus = True
+            else:
+                m = re.search(
+                    r"each\s+time\s+an\s+attack\s+with\s+a\s+damage\s+characteristic\s+of\s+(\d+)\s+is\s+allocated\s+to\s+a\s+model\s+in\s+this\s+unit,\s+add\s+(\d+)\s+to\s+any\s+armou?r\s+saving\s+throw\s+made\s+against\s+that\s+attack",
+                    tl,
+                    flags=re.IGNORECASE,
+                )
+            if m and not matched_conditional_damage_save_bonus:
                 dmg = int(m.group(1))
                 bonus = int(m.group(2))
                 spec = self.special_rules.get("armor_save_bonus_vs_damage_characteristic")
@@ -5015,6 +5045,12 @@ class Unit(
     _TARGET_HIT_ROLL_PENALTY_MODEL_RE = re.compile(
         r"^each time (?:a model makes (?:a|an) )?(?:(?P<atype>melee|ranged) )?attack(?:s)?(?: that)? "
         r"(?:targets|is made against) this model, subtract 1 (?:from|form) the hit roll",
+        re.IGNORECASE,
+    )
+    _LEADING_KEYWORD_UNIT_TARGET_HIT_PENALTY_RE = re.compile(
+        r"^while an? (?P<keyword>[a-z0-9 ]+) model is leading this unit, each time "
+        r"(?:a model makes (?:a|an) )?(?:(?P<atype>melee|ranged) )?attack(?:s)?(?: that)? "
+        r"(?:targets|is made against) (?:this unit|that unit), subtract 1 (?:from|form) the hit roll",
         re.IGNORECASE,
     )
     _ENEMY_MELEE_HAZARDOUS_WHILE_TARGETING_RE = re.compile(
