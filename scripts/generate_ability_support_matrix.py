@@ -5584,6 +5584,22 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
             "Supported",
             "BR1 prey selection; attacks vs prey can re-roll Hit and Wound rolls (no re-pick on destruction).",
         ),
+        ("SM", "Pious Fervour", "000002796"): (
+            "Supported",
+            "Fight selection: Marshal model gains +1 Attack on its master-crafted power weapon for each enemy unit within 6\", to a maximum of +3, until end of phase.",
+        ),
+        ("SM", "Murder-maker (Aura)", "000000314"): (
+            "Supported",
+            "Friendly WULFEN units within 6\" gain a melee fight-on-death 4+ rule while the aura source remains active in the Fight phase.",
+        ),
+        ("SM", "Lightning-fast Manoeuvres", "000000239"): (
+            "Supported",
+            "Ranged attacks against this model already suffer -1 to hit; attacks made by models that can FLY also suffer -1 to wound.",
+        ),
+        ("SM", "Tempest's Wrath (Psychic)", "000000292"): (
+            "Supported",
+            "After shooting with Living Lightning, choose a hit enemy non-MONSTER/non-VEHICLE unit; it becomes stormwracked until your next turn and its ranged weapons lose 6\" range to a minimum of 12\".",
+        ),
         ("AOI", "Psychic Assassin", "000000873"): (
             "Supported",
             "When targeting a unit with the PSYKER keyword, this weapon's Attacks characteristic becomes 6.",

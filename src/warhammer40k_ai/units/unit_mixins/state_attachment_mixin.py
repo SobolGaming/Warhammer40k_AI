@@ -492,6 +492,57 @@ class StateAttachmentMixin:
             sr.pop(key, None)
         self.special_rules = sr
 
+    def apply_stormwracked(
+        self,
+        *,
+        owner_id: str,
+        turn: int,
+        source: str,
+        weapon_key: str,
+        weapon_name: str,
+        range_penalty: int,
+        range_minimum: int = 12,
+    ) -> None:
+        """Apply stormwracked state until the start of the owner's next Command phase."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["stormwracked_active"] = True
+        sr["stormwracked_owner"] = str(owner_id or "")
+        sr["stormwracked_turn"] = int(turn or 0)
+        sr["stormwracked_source"] = str(source or "Stormwracked").strip() or "Stormwracked"
+        sr["stormwracked_weapon_key"] = str(weapon_key or "").strip()
+        sr["stormwracked_weapon_name"] = str(weapon_name or "").strip()
+        sr["stormwracked_range_penalty"] = int(max(0, int(range_penalty or 0)))
+        sr["stormwracked_range_minimum"] = int(max(1, int(range_minimum or 1)))
+        root.special_rules = sr
+
+    def clear_stormwracked(self) -> None:
+        """Clear stormwracked state from this unit."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "stormwracked_active",
+            "stormwracked_owner",
+            "stormwracked_turn",
+            "stormwracked_source",
+            "stormwracked_weapon_key",
+            "stormwracked_weapon_name",
+            "stormwracked_range_penalty",
+            "stormwracked_range_minimum",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
     def apply_pinned(
         self,
         *,

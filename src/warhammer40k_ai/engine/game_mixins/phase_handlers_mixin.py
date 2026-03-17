@@ -5099,6 +5099,46 @@ class GamePhaseHandlersMixin:
                             sr.pop(key, None)
                         unit.special_rules = sr
 
+    def _on_phase_start_stormwracked_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear Stormwracked effects at the start of the owner's Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Stormwracked cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Stormwracked cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("stormwracked_owner", "") or "") != owner_id:
+                    continue
+                if sr.get("stormwracked_active"):
+                    clear_fn = getattr(unit, "clear_stormwracked", None)
+                    if callable(clear_fn):
+                        clear_fn()
+                    else:
+                        for key in (
+                            "stormwracked_active",
+                            "stormwracked_owner",
+                            "stormwracked_turn",
+                            "stormwracked_source",
+                            "stormwracked_weapon_key",
+                            "stormwracked_weapon_name",
+                            "stormwracked_range_penalty",
+                            "stormwracked_range_minimum",
+                        ):
+                            sr.pop(key, None)
+                        unit.special_rules = sr
+
     def _on_phase_start_post_shoot_suppression_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear post-shoot Suppressed effects at the start of the owner's Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

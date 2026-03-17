@@ -1375,6 +1375,55 @@ class KeywordsDetachmentsMixin:
         self._ability_cache['fight_on_death'] = found
         return found
 
+    def _murder_maker_aura_melee_fight_on_death_rule(self) -> Optional[dict]:
+        root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        if root is None:
+            return None
+        if not bool(root.has_keyword("WULFEN") or root.has_any_keyword("WULFEN")):
+            return None
+        if not bool(getattr(root, "deployed", False)) or root.is_in_reserves() or getattr(root, "is_embarked", False):
+            return None
+
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        if army is None:
+            return None
+        player = getattr(army, "player", None)
+        game = getattr(player, "game", None) if player is not None else None
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "FIGHT_PHASE":
+            return None
+
+        from ...utility.aura_utils import unit_within_range_of_unit
+
+        for candidate in sorted(list(getattr(army, "units", []) or []), key=lambda unit: str(get_entity_id(unit) or "")):
+            if candidate is None:
+                continue
+            candidate_root = (
+                candidate.get_attached_unit_root()
+                if hasattr(candidate, "get_attached_unit_root")
+                else candidate
+            )
+            if candidate_root is None or candidate_root is root:
+                continue
+            if not bool(getattr(candidate_root, "deployed", False)):
+                continue
+            if candidate_root.is_in_reserves() or getattr(candidate_root, "is_embarked", False):
+                continue
+            if not bool(getattr(candidate_root, "is_alive", lambda: False)()):
+                continue
+
+            source = ""
+            for name, _desc in candidate_root._iter_ability_entries_for_rules(model=None):
+                if self._normalize_keyword_phrase(name) == "murder maker aura":
+                    source = str(name or "Murder-maker (Aura)").strip() or "Murder-maker (Aura)"
+                    break
+            if not source:
+                continue
+            if not bool(unit_within_range_of_unit(candidate_root, root, 6.0, use_attached_aggregate=True)):
+                continue
+            return {"threshold": 4, "source": source}
+        return None
+
     def get_melee_fight_on_death_after_attacks_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return rule info for abilities like:
@@ -1541,10 +1590,13 @@ class KeywordsDetachmentsMixin:
 
         if cache_key in getattr(self, "_ability_cache", {}):
             cached_rule = self._ability_cache[cache_key]
-            return self._apply_vindication_warden_of_honour_to_fight_on_death_rule(
+            resolved_rule = self._apply_vindication_warden_of_honour_to_fight_on_death_rule(
                 cached_rule,
                 model=model,
             )
+            if resolved_rule is not None:
+                return resolved_rule
+            return self._murder_maker_aura_melee_fight_on_death_rule()
 
         rule = None
         def _parse_melee_fight_on_death_rule(name: str, desc: str) -> Optional[dict]:
@@ -1681,10 +1733,13 @@ class KeywordsDetachmentsMixin:
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = rule
-        return self._apply_vindication_warden_of_honour_to_fight_on_death_rule(
+        resolved_rule = self._apply_vindication_warden_of_honour_to_fight_on_death_rule(
             rule,
             model=model,
         )
+        if resolved_rule is not None:
+            return resolved_rule
+        return self._murder_maker_aura_melee_fight_on_death_rule()
 
     def get_shoot_on_death_after_attacks_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
@@ -3645,6 +3700,74 @@ class KeywordsDetachmentsMixin:
         if value <= 0:
             return 0, ""
         return int(value), str(rule.get("source", "") or "Icon of Obstinacy").strip() or "Icon of Obstinacy"
+
+    def get_lightning_fast_manoeuvres_rule(self) -> Optional[dict]:
+        root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        if root is None:
+            return None
+        cache_key = "lightning_fast_manoeuvres_rule"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            cached = cache.get(cache_key)
+            return dict(cached) if isinstance(cached, dict) else None
+
+        pattern = re.compile(
+            r"each time a ranged attack targets this model subtract (?P<hit>\d+) from the hit roll "
+            r"if that attack was made by a model that can fly subtract (?P<wound>\d+) from the wound roll as well",
+            re.IGNORECASE,
+        )
+        rule = None
+        for name, desc in root._iter_ability_entries_for_rules(model=None):
+            text_src = str(desc or name or "").replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            text_src = re.sub(r"[^a-z0-9]+", " ", text_src)
+            text_src = re.sub(r"\s+", " ", text_src).strip()
+            match = pattern.fullmatch(text_src)
+            if not match:
+                continue
+            try:
+                wound_penalty = int(match.group("wound") or 0)
+            except (TypeError, ValueError):
+                wound_penalty = 0
+            if wound_penalty <= 0:
+                continue
+            source = str(name or "Lightning-fast Manoeuvres").strip() or "Lightning-fast Manoeuvres"
+            rule = {"wound_penalty": int(wound_penalty), "source": source}
+            break
+
+        if not isinstance(cache, dict):
+            root._ability_cache = {}
+            cache = root._ability_cache
+        cache[cache_key] = dict(rule) if isinstance(rule, dict) else None
+        return dict(rule) if isinstance(rule, dict) else None
+
+    def lightning_fast_manoeuvres_wound_roll_penalty(self, *, attacker=None, attack_type: str = "") -> tuple[int, str]:
+        attack_kind = str(attack_type or "").strip().lower()
+        if attack_kind and attack_kind != "ranged":
+            return 0, ""
+        rule = self.get_lightning_fast_manoeuvres_rule()
+        if not isinstance(rule, dict):
+            return 0, ""
+        if attacker is None:
+            return 0, ""
+        attacker_can_fly = bool(getattr(attacker, "has_keyword", lambda _keyword: False)("FLY"))
+        if not attacker_can_fly:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_can_fly = bool(
+                attacker_unit is not None
+                and (
+                    attacker_unit.has_keyword("FLY")
+                    or attacker_unit.has_any_keyword("FLY")
+                )
+            )
+        if not attacker_can_fly:
+            return 0, ""
+        try:
+            value = int(rule.get("wound_penalty", 0) or 0)
+        except (TypeError, ValueError):
+            value = 0
+        if value <= 0:
+            return 0, ""
+        return int(value), str(rule.get("source", "") or "Lightning-fast Manoeuvres").strip() or "Lightning-fast Manoeuvres"
 
     def activate_go_get_em_horde_move(
         self,

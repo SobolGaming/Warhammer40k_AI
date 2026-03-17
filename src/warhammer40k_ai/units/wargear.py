@@ -1664,9 +1664,20 @@ class WargearProfile:
                         bonus += shadow_extra
         except Exception:
             pass
-        if bonus:
-            return base_max + bonus
-        return base_max
+        effective_max = int(base_max + bonus) if bonus else int(base_max)
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                unit = getattr(attacker, "parent_unit", None)
+                root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+                sr = getattr(root, "special_rules", None) if root is not None else None
+                if isinstance(sr, dict) and bool(sr.get("stormwracked_active")):
+                    penalty = int(sr.get("stormwracked_range_penalty", 0) or 0)
+                    minimum = int(sr.get("stormwracked_range_minimum", 12) or 12)
+                    if penalty > 0:
+                        effective_max = max(int(minimum), int(effective_max - penalty))
+        except Exception:
+            pass
+        return int(effective_max)
 
     def _plunging_fire_applies(self, attacker: 'Model', target: 'Unit') -> bool:
         """PLUNGING FIRE:
@@ -16963,6 +16974,22 @@ class WargearProfile:
                     target_toughness=target_toughness,
                 )
                 source_name = str(source or "Icon of Obstinacy").strip() or "Icon of Obstinacy"
+                already_applied = any(source_name in str(mod or "") for mod in list(wound_result.get("modifiers", []) or []))
+                if penalty and not already_applied:
+                    dice_modifier -= int(penalty)
+                    wound_result["modifiers"].append(f"-{int(penalty)} to wound from {source_name}")
+        except Exception:
+            pass
+        try:
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            penalty_fn = getattr(target_root, "lightning_fast_manoeuvres_wound_roll_penalty", None)
+            attack_type = "ranged" if bool(self.parent_wargear and self.parent_wargear.is_ranged()) else "melee"
+            if callable(penalty_fn):
+                penalty, source = penalty_fn(attacker=attacker, attack_type=attack_type)
+                source_name = str(source or "Lightning-fast Manoeuvres").strip() or "Lightning-fast Manoeuvres"
                 already_applied = any(source_name in str(mod or "") for mod in list(wound_result.get("modifiers", []) or []))
                 if penalty and not already_applied:
                     dice_modifier -= int(penalty)

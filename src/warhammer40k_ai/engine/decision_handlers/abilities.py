@@ -9147,6 +9147,30 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
                 if not bool(can_see_fn(model, target_root, game_map=getattr(game, "map", None))):
                     return ("Gravitic Pulse target must be visible to the source model.",)
         return ()
+    if ability == "post_shoot_stormwracked":
+        payload = _option_payload(request, result)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id") or ctx.get("unit_id"),
+        )
+        if target_unit is None:
+            return ("Stormwracked target was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Stormwracked target was not found.",)
+        excluded_keywords = [
+            str(value or "").strip().upper()
+            for value in list(ctx.get("exclude_keywords_any", []) or [])
+            if str(value or "").strip()
+        ]
+        for keyword in excluded_keywords:
+            if bool(target_root.has_keyword(keyword) or target_root.has_any_keyword(keyword)):
+                return (f"Stormwracked target cannot have keyword {keyword}.",)
+        return ()
     if ability in {
         "harbinger_of_despair_battleshock",
         "fight_phase_select_engagement_battleshock",
@@ -24033,6 +24057,62 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             try:
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
                 _log_action_for_players(game, player, f"{source}: {tname} is snared until your next turn.")
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "post_shoot_stormwracked":
+        if chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            source = str(ctx.get("ability_name", "") or "Tempest's Wrath (Psychic)").strip() or "Tempest's Wrath (Psychic)"
+            weapon_key = str(ctx.get("weapon_key", "") or "").strip()
+            weapon_name = str(ctx.get("weapon_name", "") or "").strip()
+            try:
+                range_penalty = int(ctx.get("range_penalty", 6) or 6)
+            except Exception:
+                range_penalty = 6
+            try:
+                range_minimum = int(ctx.get("range_minimum", 12) or 12)
+            except Exception:
+                range_minimum = 12
+            apply_fn = getattr(target_root, "apply_stormwracked", None)
+            if callable(apply_fn):
+                apply_fn(
+                    owner_id=owner_id,
+                    turn=turn,
+                    source=source,
+                    weapon_key=weapon_key,
+                    weapon_name=weapon_name,
+                    range_penalty=range_penalty,
+                    range_minimum=range_minimum,
+                )
+            else:
+                sr = getattr(target_root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["stormwracked_active"] = True
+                sr["stormwracked_owner"] = owner_id
+                sr["stormwracked_turn"] = int(turn or 0)
+                sr["stormwracked_source"] = source
+                sr["stormwracked_weapon_key"] = weapon_key
+                sr["stormwracked_weapon_name"] = weapon_name
+                sr["stormwracked_range_penalty"] = int(range_penalty)
+                sr["stormwracked_range_minimum"] = int(range_minimum)
+                target_root.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{source}: {tname} is stormwracked until your next turn.")
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "gravitic_pulse_target":

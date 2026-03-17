@@ -1728,6 +1728,78 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_post_shoot_stormwracked_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after this model's unit has shot, select a hit enemy non-MONSTER/VEHICLE unit hit by a named weapon;
+        until the start of your next turn, that unit's ranged weapons lose range.
+
+        Returns a list of specs with keys:
+            - weapon_key: str (normalized)
+            - weapon_name: str (display)
+            - range_penalty: int
+            - range_minimum: int
+            - exclude_keywords_any: tuple[str, ...]
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_post_shoot_stormwracked:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int]] = set()
+        entries = list(self._iter_model_specific_ability_entries(model) or [])
+        entries.extend(list(self._iter_ability_entries_for_rules(model=model) or []))
+
+        for name, desc in entries:
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._POST_SHOOT_STORMWRACKED_RE.fullmatch(normalized)
+            if not m:
+                continue
+            weapon_raw = str(m.group("weapon") or "").strip()
+            if not weapon_raw:
+                continue
+            weapon_key = self._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+            try:
+                range_penalty = int(m.group("penalty") or 0)
+            except Exception:
+                range_penalty = 0
+            try:
+                range_minimum = int(m.group("minimum") or 12)
+            except Exception:
+                range_minimum = 12
+            if range_penalty <= 0:
+                continue
+            source = str(name or "Stormwracked").strip() or "Stormwracked"
+            dedupe_key = (source.lower(), weapon_key, int(range_penalty), int(range_minimum))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "weapon_key": weapon_key,
+                    "weapon_name": weapon_raw,
+                    "range_penalty": int(range_penalty),
+                    "range_minimum": int(max(1, int(range_minimum))),
+                    "exclude_keywords_any": ("MONSTER", "VEHICLE"),
+                    "source": source,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_shieldbreaker_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: once per battle, when selecting targets, a named weapon gains +wound

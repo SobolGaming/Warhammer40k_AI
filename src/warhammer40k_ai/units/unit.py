@@ -4161,6 +4161,13 @@ class Unit(
         r"from charge rolls made for it",
         re.IGNORECASE,
     )
+    _POST_SHOOT_STORMWRACKED_RE = re.compile(
+        r"in your shooting phase after this model s unit has shot select one enemy unit excluding monsters and vehicles "
+        r"hit by one or more of those attacks made with this model s (?P<weapon>[a-z0-9 ]+) weapon until the start of your next turn "
+        r"that enemy unit is stormwracked while a unit is stormwracked subtract (?P<penalty>\d+) from the range characteristic of "
+        r"ranged weapons equipped by models in that unit to a minimum of (?P<minimum>\d+)",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_ENFEEBLED_RE = re.compile(
         r"in your shooting phase after this model has shot select one enemy infantry unit hit by one or more of those attacks "
         r"made with (?:its|this model s) (?P<weapon>[a-z0-9 ]+) until the end of your opponent s next turn that unit is enfeebled "

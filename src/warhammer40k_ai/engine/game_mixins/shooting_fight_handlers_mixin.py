@@ -2461,6 +2461,129 @@ class GameShootingFightHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_unit_shooting_resolved_post_shoot_stormwracked(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target_weapon=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Stormwracked requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _model_hit_target_with_weapon(model, target, weapon_key: str) -> bool:
+            if not isinstance(hit_models_by_target_weapon, dict):
+                return False
+            target_map = hit_models_by_target_weapon.get(target)
+            if not isinstance(target_map, dict):
+                return False
+            models = target_map.get(weapon_key)
+            if not models and weapon_key.endswith("s"):
+                models = target_map.get(weapon_key[:-1])
+            if not models:
+                return False
+            return model in models
+
+        def _is_excluded_target(unit, keywords: tuple[str, ...]) -> bool:
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            for keyword in list(keywords or ()):
+                if not keyword:
+                    continue
+                if bool(root.has_keyword(keyword) or root.has_any_keyword(keyword)):
+                    return True
+            return False
+
+        triggers: list[tuple[Any, dict, list[Any]]] = []
+        for model in list(attacker_unit.models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_post_shoot_stormwracked_specs(model) or []
+            if not specs:
+                continue
+            for spec in specs:
+                weapon_key = str(spec.get("weapon_key", "") or "")
+                if not weapon_key:
+                    continue
+                excluded = tuple(str(value or "").strip().upper() for value in tuple(spec.get("exclude_keywords_any", ()) or ()))
+                candidates: list[Any] = []
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    if int(hits or 0) <= 0:
+                        continue
+                    if not _is_enemy_unit(target_unit):
+                        continue
+                    if excluded and _is_excluded_target(target_unit, excluded):
+                        continue
+                    if not _model_hit_target_with_weapon(model, target_unit, weapon_key):
+                        continue
+                    candidates.append(target_unit)
+                if candidates:
+                    triggers.append((model, spec, candidates))
+
+        if not triggers:
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for model, spec, candidates in triggers:
+            if not candidates:
+                continue
+            ability_name = str(spec.get("source", "") or "Tempest's Wrath (Psychic)").strip() or "Tempest's Wrath (Psychic)"
+            excluded = tuple(
+                str(value or "").strip().upper()
+                for value in tuple(spec.get("exclude_keywords_any", ()) or ())
+                if str(value or "").strip()
+            )
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a stormwracked target.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "model_id": get_entity_id(model),
+                    "ability": "post_shoot_stormwracked",
+                    "ability_name": ability_name,
+                    "weapon_key": str(spec.get("weapon_key", "") or ""),
+                    "weapon_name": str(spec.get("weapon_name", "") or ""),
+                    "range_penalty": int(spec.get("range_penalty", 6) or 6),
+                    "range_minimum": int(spec.get("range_minimum", 12) or 12),
+                    "exclude_keywords_any": list(excluded),
+                },
+            )
+            self.request_decision(request)
+
     def _on_unit_shooting_resolved_post_shoot_pinned(
         self,
         attacker_unit=None,
@@ -9879,6 +10002,107 @@ class GameShootingFightHandlersMixin:
                 sr.pop("hypermorphic_fury_source", None)
                 sr.pop("hypermorphic_fury_expires_phase", None)
             member.special_rules = sr
+
+    def _on_fight_unit_selected_pious_fervour(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        from ...utility.aura_utils import distance_between_models_bases_3d
+
+        try:
+            enemy_units = list(game_map.get_enemy_units(root) or [])
+        except Exception:
+            enemy_units = []
+        if not enemy_units:
+            return
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        try:
+            members = sorted(members, key=lambda member: str(get_entity_id(member) or ""))
+        except Exception:
+            members = list(members)
+
+        for member in list(members or []):
+            if member is None:
+                continue
+            ability_name = ""
+            for name, _desc in member._iter_ability_entries_for_rules(model=None):
+                if str(name or "").strip().lower() == "pious fervour":
+                    ability_name = str(name or "Pious Fervour").strip() or "Pious Fervour"
+                    break
+            if not ability_name:
+                continue
+            models = sorted(
+                list(getattr(member, "models", []) or []),
+                key=lambda model: str(get_entity_id(model) or ""),
+            )
+            for model in list(models or []):
+                if not getattr(model, "is_alive", False):
+                    continue
+                seen_enemy_ids: set[str] = set()
+                for enemy in list(enemy_units or []):
+                    if enemy is None:
+                        continue
+                    try:
+                        enemy_root = enemy.get_attached_unit_root()
+                    except Exception:
+                        enemy_root = enemy
+                    if enemy_root is None:
+                        continue
+                    enemy_id = str(get_entity_id(enemy_root) or "")
+                    if not enemy_id or enemy_id in seen_enemy_ids:
+                        continue
+                    if not enemy_root.is_alive() or not getattr(enemy_root, "deployed", True):
+                        continue
+                    if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                        continue
+                    alive_enemy_models = [
+                        enemy_model
+                        for enemy_model in list(getattr(enemy_root, "models", []) or [])
+                        if getattr(enemy_model, "is_alive", False)
+                    ]
+                    if not alive_enemy_models:
+                        continue
+                    in_range = any(
+                        float(distance_between_models_bases_3d(model, enemy_model)) <= 6.0 + 1e-6
+                        for enemy_model in list(alive_enemy_models)
+                    )
+                    if in_range:
+                        seen_enemy_ids.add(enemy_id)
+                attacks_bonus = min(3, len(seen_enemy_ids))
+                model.set_temporary_weapon_bonus(
+                    key=f"pious_fervour:{get_entity_id(model)}",
+                    weapon_name="Master-crafted power weapon",
+                    attacks_bonus=int(attacks_bonus),
+                    source=ability_name,
+                    expires_phase="FIGHT_PHASE",
+                )
 
     def _on_fight_unit_selected_enemy_melee_hit_penalty(self, unit=None, **_kwargs) -> None:
         if unit is None:
