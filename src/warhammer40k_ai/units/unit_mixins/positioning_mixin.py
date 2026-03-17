@@ -215,17 +215,124 @@ class PositioningMixin:
             setattr(self, attr_name, [])
             return
         setattr(self, attr_name, [])
+        metadata_by_model_id = getattr(self, "_melee_fight_on_death_pending_metadata", None)
+        if not isinstance(metadata_by_model_id, dict):
+            metadata_by_model_id = {}
+
+        def _enemy_alive_model_count(source_unit) -> int:
+            if game_map is None or source_unit is None:
+                return 0
+            try:
+                enemies = list(game_map.get_enemy_units(source_unit) or [])
+            except Exception:
+                enemies = []
+            alive_count = 0
+            for enemy in list(enemies or []):
+                if enemy is None:
+                    continue
+                for enemy_model in list(getattr(enemy, "models", []) or []):
+                    if enemy_model is None:
+                        continue
+                    alive_attr = getattr(enemy_model, "is_alive", True)
+                    try:
+                        alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    except Exception:
+                        alive = False
+                    if alive:
+                        alive_count += 1
+            return int(alive_count)
+
         for model in list(pending):
             if model is None:
                 continue
             original_wounds = getattr(model, "_wounds", None)
+            model_id = str(get_entity_id(model) or "")
+            metadata = metadata_by_model_id.pop(model_id, None) if model_id else None
+            restore_original_wounds = True
             try:
+                source_unit = getattr(model, "parent_unit", None)
+                before_enemy_count = 0
+                if isinstance(metadata, dict) and bool(metadata.get("survive_if_enemy_models_destroyed", False)):
+                    before_enemy_count = _enemy_alive_model_count(source_unit or self)
                 if original_wounds is not None and original_wounds <= 0:
                     model._wounds = 1
                 self._try_fight_on_death(model=model, game_map=game_map)
+                if isinstance(metadata, dict) and bool(metadata.get("survive_if_enemy_models_destroyed", False)):
+                    after_enemy_count = _enemy_alive_model_count(source_unit or self)
+                    if after_enemy_count < before_enemy_count and source_unit is not None:
+                        if model not in list(getattr(source_unit, "models", []) or []):
+                            source_unit.models.append(model)
+                        try:
+                            source_unit.models_lost.remove(model)
+                        except Exception:
+                            pass
+                        try:
+                            round_state = getattr(source_unit, "round_state", None)
+                            if round_state is not None and hasattr(round_state, "num_lost_models_this_round"):
+                                round_state.num_lost_models_this_round = max(
+                                    0,
+                                    int(getattr(round_state, "num_lost_models_this_round", 0) or 0) - 1,
+                                )
+                        except Exception:
+                            pass
+                        try:
+                            source_unit._invalidate_ability_cache()
+                        except Exception:
+                            pass
+                        try:
+                            source_unit.update_coherency()
+                        except Exception:
+                            pass
+                        if original_wounds is not None:
+                            model._wounds = max(0, int(original_wounds))
+                        heal_expr = str(metadata.get("heal_expr", "") or "").strip().upper()
+                        heal_amount = int(get_roll(heal_expr or "D3"))
+                        model.heal(heal_amount)
+                        try:
+                            army = source_unit.get_parent_army()
+                        except Exception:
+                            army = None
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                        if game is not None:
+                            try:
+                                game.event_system.publish(
+                                    "model_healed",
+                                    model=model,
+                                    unit=source_unit,
+                                    amount=int(heal_amount),
+                                    reason=str(metadata.get("source", "") or "Fight on death").strip() or "Fight on death",
+                                )
+                            except Exception:
+                                pass
+                        restore_original_wounds = False
+                    elif bool(metadata.get("delay_unit_destroyed_event", False)) and source_unit is not None:
+                        try:
+                            if bool(getattr(source_unit, "is_leader", False)) and getattr(source_unit, "attached_to", None) is not None:
+                                source_unit.detach_from_unit()
+                        except Exception:
+                            pass
+                        try:
+                            army = source_unit.get_parent_army()
+                        except Exception:
+                            army = None
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                        if game is not None:
+                            try:
+                                game.event_system.publish(
+                                    "unit_destroyed",
+                                    unit=source_unit,
+                                    last_model=model,
+                                    destroyed_by_model=getattr(source_unit, "_last_destroyed_by_model", None),
+                                    destroyed_by_unit=getattr(source_unit, "_last_destroyed_by_unit", None),
+                                    destroyed_by_weapon_profile=getattr(source_unit, "_last_destroyed_by_weapon_profile", None),
+                                    game_map=game_map,
+                                )
+                            except Exception:
+                                pass
             finally:
-                if original_wounds is not None:
+                if restore_original_wounds and original_wounds is not None:
                     model._wounds = original_wounds
+        self._melee_fight_on_death_pending_metadata = metadata_by_model_id
 
     def _resolve_death_ecstasy_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Death Ecstasy fights after an attacker finishes its attacks."""

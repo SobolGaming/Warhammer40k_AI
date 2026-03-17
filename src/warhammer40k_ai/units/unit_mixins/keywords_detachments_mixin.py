@@ -1575,11 +1575,23 @@ class KeywordsDetachmentsMixin:
             fortify_bonus = 0
             if "adding 1 to the result if units from your army have fortify takeover" in low:
                 fortify_bonus = 1
-            return {
+            rule = {
                 "threshold": threshold,
                 "source": source,
                 "fortify_takeover_bonus": int(fortify_bonus),
             }
+            if (
+                "if one or more enemy models are destroyed as a result of those attacks" in low
+                and "is not destroyed" in low
+            ):
+                heal_expr = ""
+                heal_match = re.search(r"regains\s+(d\d+|\d+)\s+lost wounds", low)
+                if heal_match is not None:
+                    heal_expr = str(heal_match.group(1) or "").strip().upper()
+                rule["survive_if_enemy_models_destroyed"] = True
+                if heal_expr:
+                    rule["heal_expr"] = heal_expr
+            return rule
 
         try:
             for name, desc in self._iter_ability_entries_for_rules(model=model):

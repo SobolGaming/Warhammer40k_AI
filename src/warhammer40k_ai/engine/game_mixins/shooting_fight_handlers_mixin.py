@@ -9355,6 +9355,67 @@ class GameShootingFightHandlersMixin:
                 sr.pop("red_thirst_expires_phase", None)
             member.special_rules = sr
 
+    def _on_fight_unit_selected_vehement_aggression(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        source = ""
+        for member in list(members or []):
+            if member is None or getattr(member, "attached_to", None) is not root:
+                continue
+            for name, _desc in member._iter_ability_entries_for_rules(model=None):
+                if str(name or "").strip().lower() == "vehement aggression":
+                    source = str(name or "Vehement Aggression").strip() or "Vehement Aggression"
+                    break
+            if source:
+                break
+        if not source:
+            return
+
+        leadership_fn = getattr(root, "pass_leadership_check", None)
+        if not callable(leadership_fn):
+            return
+        reroll_mode = "full" if bool(leadership_fn()) else "ones"
+
+        for member in list(members or []):
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["vehement_aggression_active"] = True
+            sr["vehement_aggression_reroll_mode"] = reroll_mode
+            sr["vehement_aggression_source"] = source
+            sr["vehement_aggression_expires_phase"] = "FIGHT_PHASE"
+            member.special_rules = sr
+
     def _on_fight_unit_selected_hypermorphic_fury(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None:
             return

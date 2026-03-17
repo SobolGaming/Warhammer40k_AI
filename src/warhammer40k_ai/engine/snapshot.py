@@ -69,6 +69,7 @@ _UNIT_STATE_EXCLUDE = {
     "_blood_legion_wrath_undeniable_pending_models",
     "_shoot_on_death_pending_models",
     "_melee_fight_on_death_pending_models",
+    "_melee_fight_on_death_pending_metadata",
 }
 
 _MODEL_STATE_EXCLUDE = {

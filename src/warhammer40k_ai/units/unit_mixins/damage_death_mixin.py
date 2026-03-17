@@ -1520,6 +1520,23 @@ class DamageDeathMixin:
                         if model not in pending:
                             pending.append(model)
                         root._melee_fight_on_death_pending_models = pending
+                        if bool(rule.get("survive_if_enemy_models_destroyed", False)):
+                            metadata = getattr(root, "_melee_fight_on_death_pending_metadata", None)
+                            if not isinstance(metadata, dict):
+                                metadata = {}
+                            metadata[str(get_entity_id(model) or "")] = {
+                                "survive_if_enemy_models_destroyed": True,
+                                "heal_expr": str(rule.get("heal_expr", "") or "").strip().upper(),
+                                "source": str(rule.get("source", "") or "Fight on death").strip() or "Fight on death",
+                                "source_unit_id": str(get_entity_id(self) or ""),
+                                "delay_unit_destroyed_event": bool(len(getattr(self, "models", []) or []) <= 1),
+                            }
+                            root._melee_fight_on_death_pending_metadata = metadata
+                            if bool(len(getattr(self, "models", []) or []) <= 1):
+                                try:
+                                    setattr(self, "_skip_unit_destroyed_event_once", True)
+                                except Exception:
+                                    pass
                         return
                     roll = int(get_roll("D6"))
                     total = int(roll)
@@ -1555,6 +1572,23 @@ class DamageDeathMixin:
                         if model not in pending:
                             pending.append(model)
                         root._melee_fight_on_death_pending_models = pending
+                        if bool(rule.get("survive_if_enemy_models_destroyed", False)):
+                            metadata = getattr(root, "_melee_fight_on_death_pending_metadata", None)
+                            if not isinstance(metadata, dict):
+                                metadata = {}
+                            metadata[str(get_entity_id(model) or "")] = {
+                                "survive_if_enemy_models_destroyed": True,
+                                "heal_expr": str(rule.get("heal_expr", "") or "").strip().upper(),
+                                "source": str(rule.get("source", "") or "Fight on death").strip() or "Fight on death",
+                                "source_unit_id": str(get_entity_id(self) or ""),
+                                "delay_unit_destroyed_event": bool(len(getattr(self, "models", []) or []) <= 1),
+                            }
+                            root._melee_fight_on_death_pending_metadata = metadata
+                            if bool(len(getattr(self, "models", []) or []) <= 1):
+                                try:
+                                    setattr(self, "_skip_unit_destroyed_event_once", True)
+                                except Exception:
+                                    pass
                         return
 
         shoot_on_death_triggered_immediately = False

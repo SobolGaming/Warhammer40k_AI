@@ -5829,6 +5829,24 @@ class ActionsMovementMixin:
                     mods["reroll_hit_full"] = True
                     reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll (melee)")
 
+        if atype in ("any", "melee"):
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("vehement_aggression_active", False)):
+                expires_phase = str(sr.get("vehement_aggression_expires_phase", "") or "").strip().upper()
+                current_phase = self._current_phase_name_for_rules()
+                if not expires_phase or not current_phase or expires_phase == current_phase:
+                    source = (
+                        str(sr.get("vehement_aggression_source", "") or "Vehement Aggression").strip()
+                        or "Vehement Aggression"
+                    )
+                    mode = str(sr.get("vehement_aggression_reroll_mode", "") or "").strip().lower()
+                    if mode == "full":
+                        mods["reroll_hit_full"] = True
+                        reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll (melee)")
+                    elif mode == "ones":
+                        reroll_hit_values.add(1)
+                        reroll_hit_reasons.append(f"{source}: re-roll Hit rolls of 1")
+
         # Angelic Inheritors: Carmine Wrath (character units) re-roll Hit rolls of 1.
         try:
             army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
@@ -14461,6 +14479,79 @@ class ActionsMovementMixin:
                         model,
                         strength_bonus=int(strength_bonus),
                         ap_bonus=int(ap_bonus),
+                        source=source,
+                    ):
+                        applied = True
+        return applied
+
+    def _apply_charge_end_unit_melee_strength_bonuses(self) -> bool:
+        """
+        Apply temporary unit-wide melee Strength bonuses when an attached unit completes a charge move.
+
+        Supports rules like:
+          "While this model is leading a unit, each time that unit ends a Charge move, until the end of the turn,
+           add 1 to the Strength characteristic of melee weapons equipped by models in that unit."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        pattern = re.compile(
+            r"while this model is leading a unit each time that unit ends a charge move until the end of the turn "
+            r"add (?P<strength>\d+) to the strength characteristic of melee weapons equipped by models in that unit",
+            re.IGNORECASE,
+        )
+        try:
+            target_models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            target_models = list(getattr(root, "models", []) or [])
+
+        applied = False
+        for member in list(members or []):
+            if member is None:
+                continue
+            if getattr(member, "attached_to", None) is not root:
+                continue
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                normalized = member._normalize_rules_text(member._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                match = pattern.fullmatch(normalized)
+                if not match:
+                    continue
+                try:
+                    strength_bonus = int(match.group("strength") or 0)
+                except Exception:
+                    strength_bonus = 0
+                if strength_bonus <= 0:
+                    continue
+                source = str(name or "Charge move ability").strip() or "Charge move ability"
+                for model in list(target_models or []):
+                    if model is None:
+                        continue
+                    alive_attr = getattr(model, "is_alive", True)
+                    try:
+                        alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    except Exception:
+                        alive = False
+                    if not alive:
+                        continue
+                    if self._grant_charge_end_model_melee_strength_ap_bonus(
+                        model,
+                        strength_bonus=int(strength_bonus),
+                        ap_bonus=0,
                         source=source,
                     ):
                         applied = True

@@ -463,6 +463,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             subscriptions=[
                 ("fight_unit_selected", "_on_fight_unit_selected_maddened_ferocity"),
                 ("fight_unit_selected", "_on_fight_unit_selected_red_thirst"),
+                ("fight_unit_selected", "_on_fight_unit_selected_vehement_aggression"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_iron_resolve"),
                 ("fight_targets_selected", "_on_fight_targets_selected_iron_resolve"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_heroes_all"),

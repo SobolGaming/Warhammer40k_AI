@@ -506,11 +506,12 @@ class LateGameplayMixin:
         # Detect what is being destroyed: unit vs model (defaults to model_destroyed)
         trigger = "model_destroyed"
         try:
-            # If text explicitly says "... destroys an enemy <X> unit", use unit_destroyed
-            if re.search(r"destroys\s+an?\s+(?:enemy\s+)?\b.*\bunit\b", txt):
+            # If text explicitly says "... destroys an enemy unit" or
+            # "... destroys one or more enemy units", use unit_destroyed.
+            if re.search(r"destroys\s+(?:one or more\s+)?(?:an?\s+)?(?:enemy\s+)?\b.*\bunits?\b", txt):
                 trigger = "unit_destroyed"
             # If it explicitly says model, prefer model_destroyed
-            if re.search(r"destroys\s+an?\s+(?:enemy\s+)?\b.*\bmodel\b", txt):
+            if re.search(r"destroys\s+(?:one or more\s+)?(?:an?\s+)?(?:enemy\s+)?\b.*\bmodels?\b", txt):
                 trigger = "model_destroyed"
         except Exception:
             trigger = "model_destroyed"
@@ -524,6 +525,18 @@ class LateGameplayMixin:
         except Exception:
             requires_melee = False
         requires_fight_phase = "fight phase" in txt
+
+        cp_roll_threshold = 0
+        try:
+            roll_match = re.search(
+                r"roll\s+(?:one|a|1)\s*d6\s*.*?\bon a\s+(\d)\+",
+                txt,
+                flags=re.IGNORECASE,
+            )
+            if roll_match:
+                cp_roll_threshold = int(roll_match.group(1) or 0)
+        except Exception:
+            cp_roll_threshold = 0
 
         target_keywords = []
         for needle, kw in keyword_map.items():
@@ -548,6 +561,7 @@ class LateGameplayMixin:
             "target_keyword_mode": target_keyword_mode,
             "requires_melee": requires_melee,
             "requires_fight_phase": bool(requires_fight_phase),
+            "cp_roll_threshold": int(cp_roll_threshold),
             "source_ability": ability_name or "",
         }]
 

@@ -4442,7 +4442,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Declare Battle Formations: if Aethon Shaan and Kayvaan Shrike are both present, Kayvaan Shrike loses Lone Operative and replaces CHAPTER MASTER with CAPTAIN for the rest of the battle.",
         ),
-        ("SM", "Lead From the Front"): ("Partial", "Leading: unit ranged weapons gain Assault; Scouts 6\" not implemented."),
+        ("SM", "Lead From the Front"): (
+            "Supported",
+            "Leading: models in that attached unit gain Scouts 6\" and ranged weapons equipped by models in that unit gain [ASSAULT].",
+        ),
         ("SM", "Swift Assault"): ("Supported", "Leading: unit ranged weapons gain Assault."),
         ("SM", "Wind Walker (Psychic)"): (
             "Supported",
@@ -5622,6 +5625,30 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
         ("SM", "Master of Deceit", "000002701"): (
             "Supported",
             "After deployment, one Captain in Phobos Armour ability in your army can redeploy up to three friendly ADEPTUS ASTARTES INFANTRY units, including placement into Strategic Reserves regardless of current limits.",
+        ),
+        ("SM", "Lightning Assault", "000000081"): (
+            "Supported",
+            "Enemy unit ends move within 9\": optional 6\" reactive Normal move if Captain Sicarius's unit is not in Engagement Range.",
+        ),
+        ("SM", "Angel’s Wrath", "000000083"): (
+            "Supported",
+            "Leading: when the attached unit ends a Charge move, melee weapons equipped by models in that unit gain +1 Strength until end of turn.",
+        ),
+        ("SM", "Prioritised Eradication", "000002793"): (
+            "Supported",
+            "Each time a model in this unit destroys an enemy unit with a melee attack, roll one D6; on 4+ gain 1CP.",
+        ),
+        ("SM", "Vehement Aggression", "000002793"): (
+            "Supported",
+            "Leading: each time the unit is selected to fight, take a Leadership test; on pass melee attacks re-roll hits, on fail re-roll Hit rolls of 1 until end of phase.",
+        ),
+        ("SM", "Knight Champion of Macragge", "000004184"): (
+            "Supported",
+            "Enemy unit ends move within 9\": optional 6\" reactive Normal move if Cato Sicarius's unit is not in Engagement Range.",
+        ),
+        ("SM", "Honour of Ultramar", "000004187"): (
+            "Supported",
+            "Destroyed by melee: on 2+ Captain Titus fights after the attacker finishes; if he destroys one or more enemy models, he regains D3 wounds and remains alive.",
         ),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
@@ -12217,7 +12244,7 @@ def _enemy_move_reactive_d6_support(description: str) -> Optional[Tuple[str, str
         return None
     tactica_pattern = (
         r"once per turn when an enemy unit ends a normal advance or fall back move within (?P<range>\d+) of this "
-        r"(?:model(?: s)? unit|unit|model)(?: if this unit is not within engagement range of (?:one or more|any) enemy units?)? "
+        r"(?:model(?: s)? unit|unit|model)(?: if (?:this (?:model(?: s)? unit|unit)|the bearer(?: s)? unit) is not within engagement range of (?:one or more|any) enemy units?)? "
         r"it can do one of the following make a normal move of up to d6 make a normal move of up to (?P<move>\d+) "
         r"provided every model in this unit ends that move wholly within (?P<wholly>\d+) of one or more friendly "
         r"adeptus mechanicus battleline units"
@@ -12233,7 +12260,7 @@ def _enemy_move_reactive_d6_support(description: str) -> Optional[Tuple[str, str
         )
     pattern = (
         r"once per turn when an enemy unit ends a normal advance or fall back move within (?P<range>\d+) of this "
-        r"(?:model(?: s)? unit|unit|model)(?: if this unit is not within engagement range of "
+        r"(?:model(?: s)? unit|unit|model)(?: if (?:this (?:model(?: s)? unit|unit)|the bearer(?: s)? unit) is not within engagement range of "
         r"(?:one or more|any) enemy units?)? (?:this unit |this model |it )?can make a normal move of up to (?P<move>d6|\d+)"
     )
     m = re.fullmatch(pattern, norm)

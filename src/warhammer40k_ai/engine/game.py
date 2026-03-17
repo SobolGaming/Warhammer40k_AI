@@ -7941,6 +7941,56 @@ class Game(
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
         return phase_name == "FIGHT_PHASE"
 
+    def _resolve_kill_reward_cp_gain(
+        self,
+        *,
+        spec: Optional[dict] = None,
+        player=None,
+        attacker_unit=None,
+        target_unit=None,
+        attacker_model=None,
+        target_model=None,
+    ) -> int:
+        if not isinstance(spec, dict) or player is None:
+            return 0
+        try:
+            cp = int(spec.get("cp", 1) or 1)
+        except Exception:
+            cp = 1
+        if cp <= 0:
+            return 0
+
+        try:
+            threshold = int(spec.get("cp_roll_threshold", 0) or 0)
+        except Exception:
+            threshold = 0
+        if threshold > 0:
+            roll = int(get_roll("D6"))
+            try:
+                from ..utility.event_bus import append_dice
+
+                append_dice(
+                    player,
+                    f"{str(spec.get('source_ability', '') or 'Kill reward').strip() or 'Kill reward'} roll: {roll}",
+                )
+            except Exception:
+                pass
+            if roll < threshold:
+                return 0
+
+        gained = int(player.gain_command_points(cp, reason=spec.get("source_ability", "")) or 0)
+        self.event_system.publish(
+            "command_points_gained",
+            player=player,
+            amount=gained,
+            reason=spec.get("source_ability", ""),
+            attacker_unit=attacker_unit,
+            target_unit=target_unit,
+            attacker_model=attacker_model,
+            target_model=target_model,
+        )
+        return int(gained)
+
     def _apply_kill_reward_weapon_attacks_bonus(
         self,
         *,
@@ -8286,12 +8336,11 @@ class Game(
                     player = attacker_unit.get_parent_army().player
                     if player is None:
                         continue
-                    gained = int(player.gain_command_points(cp, reason=spec.get("source_ability", "")) or 0)
-                    self.event_system.publish(
-                        "command_points_gained",
+                    resolved_spec = dict(spec)
+                    resolved_spec["cp"] = int(cp)
+                    self._resolve_kill_reward_cp_gain(
+                        spec=resolved_spec,
                         player=player,
-                        amount=gained,
-                        reason=spec.get("source_ability", ""),
                         attacker_unit=attacker_unit,
                         target_unit=target_unit,
                         attacker_model=attacker_model,
@@ -9413,19 +9462,16 @@ class Game(
                     source_norm = _norm_ability_name(spec.get("source_ability", ""))
                     if source_norm in skip_cp_sources:
                         continue
-                    cp = int(spec.get("cp", 1) or 1)
                     player = destroyed_by_unit.get_parent_army().player
                     if player is None:
                         continue
-                    gained = int(player.gain_command_points(cp, reason=spec.get("source_ability", "")) or 0)
-                    self.event_system.publish(
-                        "command_points_gained",
+                    self._resolve_kill_reward_cp_gain(
+                        spec=spec,
                         player=player,
-                        amount=gained,
-                        reason=spec.get("source_ability", ""),
                         attacker_unit=destroyed_by_unit,
                         target_unit=unit,
                         attacker_model=destroyed_by_model,
+                        target_model=None,
                     )
 
                 if spec.get("type") == "heal_on_destroy":
@@ -13172,6 +13218,7 @@ class Game(
                         pass
                 charging_unit._apply_charge_move_devastating_wounds()
                 charging_unit._apply_charge_end_model_melee_strength_ap_bonuses()
+                charging_unit._apply_charge_end_unit_melee_strength_bonuses()
                 charging_unit._apply_charge_move_model_weapon_profile_attacks_bonuses()
                 charging_unit._apply_charge_move_weapon_keyword_bonuses()
                 logger.info(f"Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" "

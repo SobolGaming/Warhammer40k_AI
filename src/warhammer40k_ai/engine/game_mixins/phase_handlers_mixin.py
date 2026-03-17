@@ -18704,6 +18704,15 @@ class GamePhaseHandlersMixin:
                         "red_thirst_expires_phase",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("vehement_aggression_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "vehement_aggression_active",
+                        "vehement_aggression_reroll_mode",
+                        "vehement_aggression_source",
+                        "vehement_aggression_expires_phase",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("hypermorphic_fury_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (
