@@ -4483,7 +4483,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Leading: Advance and Charge rolls for the unit gain +1, and attacks made by models in that unit gain +1 to hit.",
         ),
-        ("SM", "For the Khan!"): ("Partial", "Leading: unit ranged weapons gain Assault; melee weapons gaining Lance not implemented."),
+        ("SM", "For the Khan!"): ("Supported", "Leading: unit ranged weapons gain Assault and melee weapons gain Lance."),
         ("SM", "Icon of Old Caliban (Aura)"): ("Partial", "Stealth aura within 6\" supported; Benefit of Cover aura not implemented."),
         ("TAU", "Coldstar Commander"): ("Supported", "Leading: Move characteristic set to 12\"; unit ranged weapons gain Assault."),
         ("AE", "Empyric Ambush"): ("Supported", "Leading: unit can declare a charge in a turn it used Flickerjump."),

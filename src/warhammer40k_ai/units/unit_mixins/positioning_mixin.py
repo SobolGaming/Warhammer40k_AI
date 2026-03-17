@@ -4424,6 +4424,16 @@ class PositioningMixin:
             r"that attack has (?P<kw_section>.+?) abilit(?:y|ies)(?:\s+and\b.*)?$",
             re.IGNORECASE,
         )
+        def _split_leading_keyword_clauses(sentence: str) -> list[str]:
+            text = str(sentence or "").strip()
+            if not text:
+                return []
+            parts = re.split(
+                r"\s+\band\b\s+(?=(?:each time a model in that unit makes|(?:(?:melee|ranged)\s+)?weapons equipped by models in that unit have))",
+                text,
+                flags=re.IGNORECASE,
+            )
+            return [str(part or "").strip(" ,") for part in parts if str(part or "").strip(" ,")]
         try:
             for ab, _leader in root._iter_attached_leader_leading_abilities():
                 try:
@@ -4444,8 +4454,34 @@ class PositioningMixin:
                     continue
                 sentences = [s.strip() for s in re.split(r"[.;]\s*", rest) if s.strip()]
                 for sentence in sentences:
-                    m = leading_weapon_keywords_re.fullmatch(sentence)
-                    if m:
+                    clauses = _split_leading_keyword_clauses(sentence)
+                    if not clauses:
+                        continue
+                    for clause in clauses:
+                        m = leading_weapon_keywords_re.fullmatch(clause)
+                        if m:
+                            atype = str(m.group("atype") or "").strip().lower()
+                            if atype not in ("melee", "ranged"):
+                                atype = "any"
+                            keywords = _parse_bonus_keywords(str(m.group("kw_section") or ""))
+                            if not keywords:
+                                continue
+                            for keyword in keywords:
+                                key = ("leading_unit_weapon_kw", atype, keyword.strip().lower(), source_name.lower())
+                                if key in seen:
+                                    continue
+                                seen.add(key)
+                                rules.append(
+                                    {
+                                        "attack_type": atype,
+                                        "keyword": keyword.strip(),
+                                        "source": source_name,
+                                    }
+                                )
+                            continue
+                        m = leading_attack_keywords_re.fullmatch(clause)
+                        if not m:
+                            continue
                         atype = str(m.group("atype") or "").strip().lower()
                         if atype not in ("melee", "ranged"):
                             atype = "any"
@@ -4453,7 +4489,7 @@ class PositioningMixin:
                         if not keywords:
                             continue
                         for keyword in keywords:
-                            key = ("leading_unit_weapon_kw", atype, keyword.strip().lower(), source_name.lower())
+                            key = ("always_kw", atype, keyword.strip().lower())
                             if key in seen:
                                 continue
                             seen.add(key)
@@ -4464,28 +4500,6 @@ class PositioningMixin:
                                     "source": source_name,
                                 }
                             )
-                        continue
-                    m = leading_attack_keywords_re.fullmatch(sentence)
-                    if not m:
-                        continue
-                    atype = str(m.group("atype") or "").strip().lower()
-                    if atype not in ("melee", "ranged"):
-                        atype = "any"
-                    keywords = _parse_bonus_keywords(str(m.group("kw_section") or ""))
-                    if not keywords:
-                        continue
-                    for keyword in keywords:
-                        key = ("always_kw", atype, keyword.strip().lower())
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        rules.append(
-                            {
-                                "attack_type": atype,
-                                "keyword": keyword.strip(),
-                                "source": source_name,
-                            }
-                        )
         except Exception:
             pass
 
