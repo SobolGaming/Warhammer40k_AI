@@ -10036,6 +10036,35 @@ class PositioningMixin:
                 return True
         except Exception:
             pass
+        # Attached leader abilities can grant Stealth to the bodyguard unit while leading.
+        try:
+            root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        except Exception:
+            root = self
+        if root is self:
+            try:
+                for ability, _leader in root._iter_attached_leader_leading_abilities():
+                    try:
+                        name = str(getattr(ability, "name", "") or "Leading ability")
+                        desc = str(getattr(ability, "description", "") or "") or name
+                    except Exception:
+                        name = "Leading ability"
+                        desc = ""
+                    text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                    if not text:
+                        continue
+                    low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+                    low = re.sub(r"[^a-z0-9]+", " ", low)
+                    low = re.sub(r"\s+", " ", low).strip()
+                    if "while this model is leading a unit" not in low:
+                        continue
+                    if re.search(
+                        r"(?:models in that unit|that unit) (?:have|has|gain|gains) (?:the )?stealth ability",
+                        low,
+                    ):
+                        return True
+            except Exception:
+                pass
         # Rad-Zone Corps: Malphonic Susurrus grants Stealth while the bearer is leading.
         if self._attached_unit_has_active_leading_enhancement(
             "enhancement_malphonic_susurrus",

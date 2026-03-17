@@ -5368,8 +5368,8 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("SM", "Silent Fury"): ("Supported", "Enemy CHARACTER model kills grant +1 Attack to executioner relic blade until end of battle."),
         ("SM", "Shrouding (Psychic)"): (
-            "Partial",
-            "Leading: ranged targeting restriction within 12\" supported; Stealth grant not implemented.",
+            "Supported",
+            "Leading: attached unit gains Stealth and cannot be targeted by ranged attacks unless the attacking model is within 12\".",
         ),
         ("SM", "Tempormortis"): ("Supported", "Fights First while leading a unit."),
         ("SM", "Pack Leader"): ("Supported", "Unit cannot be your Warlord or be given Enhancements."),
