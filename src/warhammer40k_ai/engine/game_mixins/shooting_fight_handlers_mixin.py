@@ -6446,6 +6446,86 @@ class GameShootingFightHandlersMixin:
                 instance_key=f"{model_id}:{ability_key}:shooting",
             )
 
+    def _on_shooting_targets_selected_selected_to_shoot_unit_named_ranged_bonus(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        specs_fn = getattr(root, "unit_selected_to_shoot_named_ranged_bonus_specs", None)
+        if not callable(specs_fn):
+            return
+        specs = sorted(
+            list(specs_fn() or []),
+            key=lambda spec: (
+                str(spec.get("ability_key", "") or ""),
+                str(spec.get("source", "") or "").strip().lower(),
+            ),
+        )
+        if not specs:
+            return
+        single_target = len(list(target_units or [])) == 1
+        target_unit = target_units[0] if single_target else None
+        try:
+            target_root = target_unit.get_attached_unit_root() if target_unit is not None else None
+        except Exception:
+            target_root = target_unit
+        target_unit_id = str(get_entity_id(target_root) or "") if target_root is not None else ""
+        for spec in list(specs or []):
+            if bool(spec.get("requires_single_target")) and not single_target:
+                continue
+            ability_name = str(spec.get("source", "") or "Selected to shoot").strip() or "Selected to shoot"
+            ability_key = str(spec.get("ability_key", "") or "selected_to_shoot").strip().lower() or "selected_to_shoot"
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="selected_to_shoot_unit_named_ranged_bonus",
+                ability_name=ability_name,
+                message=f"Use {ability_name} for {getattr(root, 'name', 'Unit')}?",
+                context={
+                    "ability": "selected_to_shoot_unit_named_ranged_bonus",
+                    "ability_key": ability_key,
+                    "ability_name": ability_name,
+                    "phase": "Shooting phase",
+                    "unit": getattr(root, "name", "") or "",
+                    "unit_id": unit_id,
+                    "target_unit_id": target_unit_id,
+                    "weapon_name_phrases": list(spec.get("weapon_name_phrases", []) or []),
+                    "attacks_bonus": int(spec.get("attacks_bonus", 0) or 0),
+                    "strength_bonus": int(spec.get("strength_bonus", 0) or 0),
+                    "ap_bonus": int(spec.get("ap_bonus", 0) or 0),
+                },
+                payload={
+                    "unit_id": unit_id,
+                    "target_unit_id": target_unit_id,
+                    "ability_key": ability_key,
+                    "ability_name": ability_name,
+                    "weapon_name_phrases": list(spec.get("weapon_name_phrases", []) or []),
+                    "attacks_bonus": int(spec.get("attacks_bonus", 0) or 0),
+                    "strength_bonus": int(spec.get("strength_bonus", 0) or 0),
+                    "ap_bonus": int(spec.get("ap_bonus", 0) or 0),
+                },
+                instance_key=f"{unit_id}:{ability_key}:shooting",
+            )
+
     def _on_shooting_targets_selected_selected_to_shoot_target_attack_keywords(
         self,
         attacking_unit=None,

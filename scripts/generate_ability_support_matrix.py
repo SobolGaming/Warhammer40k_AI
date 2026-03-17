@@ -4269,6 +4269,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("GK", "Apothecary's Narthecium"): ("Supported", "Command phase: return 1 destroyed non-CHARACTER model to the bearer's unit."),
         ("GK", "Attuned Onslaught (Psychic)"): ("Supported", "After charging, PALADIN SQUAD melee weapons gain +1 Damage until end of turn."),
         ("GK", "Blessing of the Omnissiah"): ("Supported", "Command phase: select friendly VEHICLE within 3\" to regain D3 wounds and gain +1 to hit until next Command phase."),
+        ("SM", "Master of the Forge"): ("Supported", "Command phase: select friendly VEHICLE within 3\" to regain 3 wounds and gain +1 to hit until next Command phase."),
         ("GK", "Champion of the Order of Purifiers (Psychic)"): ("Supported", "Leading: Purifying Flame weapons in the unit gain +1 Attack."),
         ("GK", "Eye of Judgement (Psychic)"): ("Supported", "Model attacks can re-roll the Wound roll."),
         ("GK", "Fire Focus"): ("Supported", "Post-shoot: mark a hit enemy; disembarked friendly models from this TRANSPORT gain +1 AP vs that target until end of turn."),
@@ -6292,6 +6293,7 @@ def _classify_ability_base(
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     unit_wound_reroll_support = _unit_wound_reroll_ones_support(description)
     model_attack_skill_override_support = _model_attack_skill_override_support(description)
+    selected_to_shoot_named_ranged_bonus_support = _selected_to_shoot_named_ranged_bonus_support(description)
     controlled_objective_damage_one_save_support = _controlled_objective_damage_one_armor_save_support(description)
     leading_keyword_target_hit_penalty_support = _leading_keyword_unit_target_hit_penalty_support(description)
     target_hit_penalty_support = _target_hit_roll_penalty_support(description)
@@ -6817,6 +6819,8 @@ def _classify_ability_base(
         return unit_wound_reroll_support
     if model_attack_skill_override_support:
         return model_attack_skill_override_support
+    if selected_to_shoot_named_ranged_bonus_support:
+        return selected_to_shoot_named_ranged_bonus_support
     if controlled_objective_damage_one_save_support:
         return controlled_objective_damage_one_save_support
     if leading_keyword_target_hit_penalty_support:
@@ -12178,6 +12182,31 @@ def _unit_wound_reroll_ones_support(description: str) -> Optional[Tuple[str, str
     return ("Supported", " ".join(notes))
 
 
+def _selected_to_shoot_named_ranged_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    if not text:
+        return None
+    pattern = re.compile(
+        r"^each time this unit is selected to shoot,? it can use this ability\.? if it does,? until the end of the phase,? "
+        r"add (?P<attacks>\d+) to the attacks characteristic of (?P<weapon>[a-z0-9 '’+\-]+?) equipped by models in this unit "
+        r"and you can only select one enemy unit as the target of all of this unit'?s attacks\.?$",
+        re.IGNORECASE,
+    )
+    match = pattern.match(text)
+    if not match:
+        return None
+    attacks = int(match.group("attacks"))
+    weapon = str(match.group("weapon") or "").strip()
+    return (
+        "Supported",
+        f"When selected to shoot, if exactly one enemy unit was selected as this unit's target, optional activation adds +{attacks} Attacks to {weapon} until end of phase.",
+    )
+
+
 def _controlled_objective_damage_one_armor_save_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -12794,10 +12823,21 @@ def _reactive_targeted_shooting_support(description: str) -> Optional[Tuple[str,
     )
     m = re.fullmatch(pattern, norm)
     if not m:
-        return None
+        selected_pattern = (
+            r"once per turn in your opponents shooting phase when (?:(?:another|a) )?friendly (?P<keyword>[a-z0-9 ]+?) unit within "
+            r"(?P<range>\d+) of this (?:model|unit) is selected as the target of an attack "
+            r"(?:one (?:model|unit) from your army with this ability can use it|this (?:model|unit) can use this ability) "
+            r"if it does after that enemy unit has finished making its attacks "
+            r"(?:that (?:model|unit)|the unit using this ability|this (?:model|unit)) can shoot as if it were your shooting phase "
+            r"but when resolving those attacks (?:it|that (?:model|unit)|the unit using this ability) can only target that enemy unit "
+            r"and only if it is an eligible target"
+        )
+        m = re.fullmatch(selected_pattern, norm)
+        if not m:
+            return None
     keyword = str(m.group("keyword") or "").strip().upper() or "FRIENDLY"
     range_value = str(m.group("range") or "").strip()
-    range_repeat = str(m.group("range_repeat") or "").strip()
+    range_repeat = str(m.groupdict().get("range_repeat", "") or "").strip()
     if range_repeat and range_repeat != range_value:
         return None
     return (

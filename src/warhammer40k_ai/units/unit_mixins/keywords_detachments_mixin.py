@@ -3032,7 +3032,10 @@ class KeywordsDetachmentsMixin:
                     continue
                 trigger_enemy_attack = "when an enemy unit makes a ranged attack that targets a friendly " in norm
                 trigger_friendly_targeted = (
-                    "when a friendly " in norm
+                    (
+                        "when a friendly " in norm
+                        or "when another friendly " in norm
+                    )
                     and "is selected as the target of an attack" in norm
                 )
                 if not (trigger_enemy_attack or trigger_friendly_targeted):
@@ -3060,7 +3063,8 @@ class KeywordsDetachmentsMixin:
                 )
                 if not m:
                     m = re.search(
-                        r"when a friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of this unit is selected as the target of an attack",
+                        r"when (?:(?:another|a) )?friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) "
+                        r"of (?:this model|this unit) is selected as the target of an attack",
                         norm,
                     )
                 if not m:

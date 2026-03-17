@@ -5271,6 +5271,7 @@ class GameReactiveDecisionsMixin:
             "shieldbreaker",
             "shooty_power_trip",
             "pulsa_rokkit",
+            "selected_to_shoot_unit_named_ranged_bonus",
             "soulless_horror",
             "lord_of_the_storm",
             "cat_unit",
@@ -7672,6 +7673,47 @@ class GameReactiveDecisionsMixin:
                 attacks_bonus=int(payload.get("attacks_bonus") or ctx.get("attacks_bonus") or 0),
                 strength_bonus=int(payload.get("strength_bonus") or ctx.get("strength_bonus") or 0),
                 ap_bonus=int(payload.get("ap_bonus") or ctx.get("ap_bonus") or 0),
+            )
+            return
+
+        if ability_key == "selected_to_shoot_unit_named_ranged_bonus":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            apply_fn = getattr(root, "apply_selected_to_shoot_named_ranged_weapon_bonuses", None)
+            if not callable(apply_fn):
+                return
+            ability_name = (
+                str(payload.get("ability_name") or ctx.get("ability_name") or "Selected to shoot").strip()
+                or "Selected to shoot"
+            )
+            ability_key_value = (
+                str(payload.get("ability_key") or ctx.get("ability_key") or "selected_to_shoot").strip().lower()
+                or "selected_to_shoot"
+            )
+            weapon_name_phrases = [
+                str(value or "").strip()
+                for value in list(payload.get("weapon_name_phrases") or ctx.get("weapon_name_phrases") or [])
+                if str(value or "").strip()
+            ]
+            apply_fn(
+                key_prefix=ability_key_value,
+                source=ability_name,
+                weapon_names=list(weapon_name_phrases),
+                attacks_bonus=int(payload.get("attacks_bonus") or ctx.get("attacks_bonus") or 0),
+                strength_bonus=int(payload.get("strength_bonus") or ctx.get("strength_bonus") or 0),
+                ap_bonus=int(payload.get("ap_bonus") or ctx.get("ap_bonus") or 0),
+                expires_phase="SHOOTING_PHASE",
+                target_root=root,
             )
             return
 

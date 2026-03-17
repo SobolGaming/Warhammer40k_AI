@@ -81,6 +81,20 @@ class SelectedToShootMixin:
         names.sort(key=self._norm_wargear_name)
         return names
 
+    def _selected_to_shoot_weapon_name_matches(self, weapon_name: str, required_names: list[str]) -> bool:
+        actual = self._norm_wargear_name(str(weapon_name or ""))
+        if not actual:
+            return False
+        actual_variants = {actual, actual.rstrip("s")}
+        for required_name in list(required_names or []):
+            required = self._norm_wargear_name(str(required_name or ""))
+            if not required:
+                continue
+            required_variants = {required, required.rstrip("s")}
+            if actual_variants & required_variants:
+                return True
+        return False
+
     def _selected_to_shoot_next_sequence(self, ability_key: str) -> int:
         root = self._selected_to_shoot_root()
         special_rules = getattr(root, "special_rules", None)
@@ -318,6 +332,68 @@ class SelectedToShootMixin:
         )
         return specs
 
+    def unit_selected_to_shoot_named_ranged_bonus_specs(self) -> list[dict]:
+        root = self._selected_to_shoot_root()
+        cache_key = "unit_selected_to_shoot_named_ranged_bonus_specs"
+        cached = getattr(root, "_ability_cache", {}).get(cache_key)
+        if isinstance(cached, list):
+            return list(cached)
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, str, int]] = set()
+        pattern = re.compile(
+            r"each time this unit is selected to shoot it can use this ability "
+            r"if it does until the end of the phase add (?P<attacks>\d+) to the attacks characteristic of "
+            r"(?P<weapon>[a-z0-9 '’+\-]+?) equipped by models in this unit and you can only select one enemy unit "
+            r"as the target of all of this unit s attacks"
+        )
+
+        for member in self._selected_to_shoot_member_units():
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text_src = member._strip_eligibility_prefix(desc or name or "")
+                normalized = member._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = pattern.fullmatch(normalized)
+                if not m:
+                    continue
+                source = str(name or "Selected to shoot").strip() or "Selected to shoot"
+                ability_key = str(member._normalize_keyword_phrase(source) or "selected_to_shoot").strip().lower()
+                weapon_name = str(m.group("weapon") or "").strip()
+                if not weapon_name:
+                    continue
+                try:
+                    attacks_bonus = int(m.group("attacks") or 0)
+                except (TypeError, ValueError):
+                    attacks_bonus = 0
+                if attacks_bonus <= 0:
+                    continue
+                dedupe_key = (source.lower(), ability_key, weapon_name.lower(), int(attacks_bonus))
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                specs.append(
+                    {
+                        "source": source,
+                        "ability_key": ability_key,
+                        "weapon_name_phrases": [weapon_name],
+                        "attacks_bonus": int(attacks_bonus),
+                        "requires_single_target": True,
+                    }
+                )
+
+        specs.sort(
+            key=lambda spec: (
+                str(spec.get("ability_key", "") or ""),
+                str(spec.get("source", "") or "").strip().lower(),
+            )
+        )
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def apply_selected_to_shoot_unit_ranged_weapon_bonuses(
         self,
         *,
@@ -349,6 +425,55 @@ class SelectedToShootMixin:
         for model in self._selected_to_shoot_models(root=root):
             model_id = str(get_entity_id(model) or "")
             for index, weapon_name in enumerate(self._selected_to_shoot_ranged_weapon_names_for_model(model)):
+                model.set_temporary_weapon_bonus(
+                    key=f"{str(key_prefix or '').strip().lower()}:{model_id}:{index}",
+                    weapon_name=weapon_name,
+                    attacks_bonus=int(attacks_bonus),
+                    strength_bonus=int(strength_bonus),
+                    ap_bonus=int(ap_bonus),
+                    source=source,
+                    expires_phase=expires_phase,
+                )
+                applied += 1
+        return int(applied)
+
+    def apply_selected_to_shoot_named_ranged_weapon_bonuses(
+        self,
+        *,
+        key_prefix: str,
+        source: str,
+        weapon_names: list[str],
+        attacks_bonus: int = 0,
+        strength_bonus: int = 0,
+        ap_bonus: int = 0,
+        expires_phase: str = "SHOOTING_PHASE",
+        target_root=None,
+    ) -> int:
+        root = target_root if target_root is not None else self._selected_to_shoot_root()
+        names = [str(name or "").strip() for name in list(weapon_names or []) if str(name or "").strip()]
+        if not names:
+            return 0
+        try:
+            attacks_bonus = int(attacks_bonus or 0)
+        except (TypeError, ValueError):
+            attacks_bonus = 0
+        try:
+            strength_bonus = int(strength_bonus or 0)
+        except (TypeError, ValueError):
+            strength_bonus = 0
+        try:
+            ap_bonus = int(ap_bonus or 0)
+        except (TypeError, ValueError):
+            ap_bonus = 0
+        if attacks_bonus <= 0 and strength_bonus <= 0 and ap_bonus <= 0:
+            return 0
+
+        applied = 0
+        for model in self._selected_to_shoot_models(root=root):
+            model_id = str(get_entity_id(model) or "")
+            for index, weapon_name in enumerate(self._selected_to_shoot_ranged_weapon_names_for_model(model)):
+                if not self._selected_to_shoot_weapon_name_matches(weapon_name, names):
+                    continue
                 model.set_temporary_weapon_bonus(
                     key=f"{str(key_prefix or '').strip().lower()}:{model_id}:{index}",
                     weapon_name=weapon_name,
