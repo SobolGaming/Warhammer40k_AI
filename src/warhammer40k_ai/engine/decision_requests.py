@@ -313,6 +313,18 @@ def _unit_declare_selected_leading_infiltrators_ability_name(unit: object) -> st
     return ""
 
 
+def _unit_declare_selected_units_gain_scouts_specs(unit: object) -> list[dict]:
+    if unit is None:
+        return []
+    get_specs = getattr(unit, "get_declare_battle_formations_selected_units_gain_scouts_specs", None)
+    if callable(get_specs):
+        try:
+            return [dict(spec or {}) for spec in list(get_specs() or []) if isinstance(spec, dict)]
+        except Exception:
+            return []
+    return []
+
+
 def _unit_alive_model_count(unit: object) -> int:
     models = [
         model
@@ -1890,6 +1902,149 @@ def build_army_selected_leading_infiltrators_requests(
             game.request_decision(request)
             if army_id:
                 pending_army_ids.add(army_id)
+
+    return requests
+
+
+def build_declare_selected_units_gain_scouts_requests(
+    game: object,
+    units: Iterable[object],
+    *,
+    queue_requests: bool = True,
+) -> List[DecisionRequest]:
+    all_units = _iter_units(units)
+    requests: List[DecisionRequest] = []
+    if not all_units:
+        return requests
+
+    pending_by_source: set[str] = set()
+    queue = getattr(game, "decision_queue", None)
+    if queue is not None and hasattr(queue, "list"):
+        for req in list(queue.list() or []):
+            if getattr(req, "decision_type", None) != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != "declare_selected_unit_gain_scouts":
+                continue
+            source_id = str(ctx.get("source_unit_id", "") or "")
+            if source_id:
+                pending_by_source.add(source_id)
+
+    units_by_army: dict[str, list[object]] = {}
+    army_by_key: dict[str, object] = {}
+    for unit in all_units:
+        army = _army_for_unit(unit)
+        if army is None:
+            continue
+        key = _army_key(army)
+        if not key:
+            continue
+        units_by_army.setdefault(key, []).append(unit)
+        army_by_key[key] = army
+
+    for key in sorted(units_by_army.keys()):
+        army = army_by_key[key]
+        roots = _unique_army_root_units(units_by_army[key])
+        roots.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        if not roots:
+            continue
+
+        for source_unit in roots:
+            source_id = str(get_entity_id(source_unit) or "")
+            if not source_id or source_id in pending_by_source:
+                continue
+
+            source_sr = getattr(source_unit, "special_rules", None)
+            if isinstance(source_sr, dict) and bool(
+                source_sr.get("declare_selected_unit_gain_scouts_resolved", False)
+            ):
+                continue
+
+            specs = _unit_declare_selected_units_gain_scouts_specs(source_unit)
+            if not specs:
+                continue
+
+            spec = dict(specs[0] or {})
+            keyword_phrase = str(spec.get("keywords", "") or "").strip().upper()
+            if not keyword_phrase:
+                continue
+            try:
+                scout_distance = int(spec.get("scout_distance", 0) or 0)
+            except (TypeError, ValueError):
+                scout_distance = 0
+            if scout_distance <= 0:
+                continue
+
+            matcher = getattr(source_unit, "_unit_matches_keyword_phrase", None)
+            candidate_roots: list[object] = []
+            for root in roots:
+                if root is None:
+                    continue
+                if not callable(matcher):
+                    continue
+                try:
+                    if not bool(matcher(root, keyword_phrase, use_effective=False)):
+                        continue
+                except Exception:
+                    continue
+                candidate_roots.append(root)
+
+            candidate_roots.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+            candidate_ids = [str(get_entity_id(unit) or "") for unit in list(candidate_roots or []) if str(get_entity_id(unit) or "")]
+            if not candidate_ids:
+                continue
+
+            ability_name = str(spec.get("ability_name", "") or "Declare Battle Formations Selection").strip()
+            options: List[DecisionOption] = [
+                DecisionOption.create(
+                    "None",
+                    payload={
+                        "action": "skip",
+                        "source_unit_id": source_id,
+                        "selected_unit_id": "",
+                        "selection_kind": "declare_selected_unit_gain_scouts_none",
+                    },
+                )
+            ]
+            for root in candidate_roots:
+                target_id = str(get_entity_id(root) or "")
+                if not target_id:
+                    continue
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(root, "name", "Unit") or "Unit"),
+                        payload={
+                            "source_unit_id": source_id,
+                            "selected_unit_id": target_id,
+                            "selection_kind": "declare_selected_unit_gain_scouts",
+                        },
+                    )
+                )
+
+            if len(options) <= 1:
+                continue
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select one {keyword_phrase} unit to gain Scouts {int(scout_distance)}\" (or None).",
+                player_id=_player_id_for_unit(source_unit),
+                options=options,
+                context={
+                    "ability": "declare_selected_unit_gain_scouts",
+                    "ability_name": ability_name,
+                    "phase": "Declare Battle Formations step",
+                    "source_unit_id": source_id,
+                    "candidate_unit_ids": list(candidate_ids),
+                    "unit_keyword_phrase": keyword_phrase,
+                    "scout_distance": int(scout_distance),
+                    "optional": True,
+                    "instruction": f"Select up to one {keyword_phrase} unit to gain Scouts {int(scout_distance)}\".",
+                },
+            )
+            requests.append(request)
+            if queue_requests and hasattr(game, "request_decision"):
+                game.request_decision(request)
+                pending_by_source.add(source_id)
 
     return requests
 

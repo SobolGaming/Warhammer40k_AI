@@ -5611,6 +5611,18 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
             "Supported",
             "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-3=D3, 4-5=3, 6=D3+3).",
         ),
+        ("SM", "Cold and Calculating", "000004166"): (
+            "Supported",
+            "While Caanok Var is leading, attacks by models in that unit gain [LETHAL HITS] against MONSTER/VEHICLE targets and [SUSTAINED HITS 1] against all other targets.",
+        ),
+        ("SM", "Cerebrex Logic Engine", "000004166"): (
+            "Supported",
+            "Declare Battle Formations: optional selection of one ADEPTUS ASTARTES INFANTRY unit grants Scouts 6\" for the battle, and after deployment Caanok Var can redeploy one ADEPTUS ASTARTES unit into Strategic Reserves regardless of current limits.",
+        ),
+        ("SM", "Master of Deceit", "000002701"): (
+            "Supported",
+            "After deployment, one Captain in Phobos Armour ability in your army can redeploy up to three friendly ADEPTUS ASTARTES INFANTRY units, including placement into Strategic Reserves regardless of current limits.",
+        ),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
     for (fid, name, dsid), val in raw.items():
@@ -12494,10 +12506,10 @@ def _post_deployment_redeploy_support(description: str) -> Optional[Tuple[str, s
     if not norm:
         return None
     pattern = (
-        r"(?:if your army includes this model |if your army (?:includes|contains) one or more units with this ability )?"
+        r"(?:if your army includes this model |if your army (?:includes|contains) one or more (?:units|models) with this ability )?"
         r"after both players have deployed their armies "
-        r"select up ?to (?P<count>\d+|one|two|three|four|five|six|d3(?: \+ \d+)?) "
-        r"(?P<filter>[a-z0-9 ']+?) units? from your army and redeploy them(?: (?P<tail>.*))?"
+        r"(?:you can )?select(?: up ?to)? (?P<count>\d+|one|two|three|four|five|six|d3(?: \+ \d+)?) "
+        r"(?P<filter>[a-z0-9 ']+?) units? from your army and redeploy(?: all of those units| them| it)?(?: (?P<tail>.*))?"
     )
     m = re.fullmatch(pattern, norm)
     if not m:

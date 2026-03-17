@@ -865,6 +865,72 @@ class ActionsMovementMixin:
                 return True
         return False
 
+    def _ability_declare_selected_units_gain_scouts(self, ability) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "At the start of the Declare Battle Formations step, you can select one
+        ADEPTUS ASTARTES INFANTRY unit from your army. Until the end of the
+        battle, that unit gains the Scouts 6\" ability."
+        """
+        name, desc = self._ability_name_and_description(ability)
+        text = self._normalize_rules_text(f"{name} {desc}".strip())
+        if not text:
+            return None
+        low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+        if "declare battle formations" not in low:
+            return None
+        if "select one" not in low or "scout" not in low:
+            return None
+        match = re.search(
+            r"at the start of the declare battle formations step\b.*?\byou can select one "
+            r"(?P<keywords>.+?) unit from your army\b.*?\bthat unit gains(?: the)? scouts?\s*(?P<distance>\d+)",
+            low,
+            flags=re.IGNORECASE,
+        )
+        if match is None:
+            return None
+        keyword_phrase = str(match.group("keywords") or "").strip()
+        if not keyword_phrase:
+            return None
+        keyword_phrase = re.sub(r"\bfriendly\b", " ", keyword_phrase, flags=re.IGNORECASE)
+        keyword_phrase = re.sub(r"\s+", " ", keyword_phrase).strip().upper()
+        if not keyword_phrase:
+            return None
+        try:
+            scout_distance = int(match.group("distance"))
+        except (TypeError, ValueError):
+            return None
+        if scout_distance <= 0:
+            return None
+        return {
+            "ability_name": str(name or "").strip() or "Declare Battle Formations Selection",
+            "keywords": keyword_phrase,
+            "max_units": 1,
+            "scout_distance": int(scout_distance),
+        }
+
+    def get_declare_battle_formations_selected_units_gain_scouts_specs(self) -> list[dict]:
+        """Return Declare Battle Formations unit-selection rules that grant Scouts to the selected unit."""
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int]] = set()
+        for ability in list(getattr(self, "possible_abilities", []) or []):
+            spec = self._ability_declare_selected_units_gain_scouts(ability)
+            if not isinstance(spec, dict):
+                continue
+            key = (
+                str(spec.get("ability_name", "") or "").strip().lower(),
+                str(spec.get("keywords", "") or "").strip().upper(),
+                int(spec.get("scout_distance", 0) or 0),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(dict(spec))
+        return specs
+
+    def has_declare_battle_formations_selected_units_gain_scouts_ability(self) -> bool:
+        return bool(self.get_declare_battle_formations_selected_units_gain_scouts_specs())
+
     def _apply_attached_possessed_formation_bonus(self, bodyguard: 'Unit') -> None:
         """Apply the WORLD EATERS POSSESSED formation bonus for Leaders like LORD OF THE EIGHTBOUND."""
         if bodyguard is None:
@@ -1208,6 +1274,7 @@ class ActionsMovementMixin:
         if isinstance(sr, dict):
             for key in (
                 "enhancement_scout_distance",
+                "declare_battle_formations_selected_scout_distance",
                 "iconoclast_pave_the_way_scout_distance",
             ):
                 try:

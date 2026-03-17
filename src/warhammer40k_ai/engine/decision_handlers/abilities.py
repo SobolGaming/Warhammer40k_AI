@@ -4791,6 +4791,73 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not callable(has_rule) or not bool(has_rule()):
             return ("Selected-unit Infiltrators unit does not have the required ability.",)
         return ()
+    if ability == "declare_selected_unit_gain_scouts":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Selected Scouts source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Selected Scouts source unit was not found.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if source_army is None:
+            return ("Selected Scouts source army was not found.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None)
+        owner = getattr(source_army, "player", None)
+        if owner is not None and player is not None and player is not owner:
+            return ("Selected Scouts must be resolved by the owning player.",)
+        get_specs = getattr(source_root, "get_declare_battle_formations_selected_units_gain_scouts_specs", None)
+        specs = list(get_specs() or []) if callable(get_specs) else []
+        if not specs:
+            return ("Selected Scouts source unit does not have the required ability.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("selected_unit_id")
+            or payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("selected_unit_id")
+            or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Selected Scouts target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Selected Scouts target unit was not found.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Selected Scouts target is not an eligible candidate.",)
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if target_army is not source_army:
+            return ("Selected Scouts target must be from your army.",)
+        keyword_phrase = str(ctx.get("unit_keyword_phrase", "") or "").strip()
+        matcher = getattr(source_root, "_unit_matches_keyword_phrase", None)
+        if keyword_phrase:
+            if not callable(matcher) or not bool(matcher(target_root, keyword_phrase, use_effective=False)):
+                return (f"Selected Scouts target must have {keyword_phrase}.",)
+        return ()
     if ability == "ordo_xenos_deathwatch_mission_tactics":
         payload = _option_payload(request, result)
         source_army = _resolve_army(game, request, payload)
@@ -11304,6 +11371,114 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             f"{ability_name}: selected {selected_name}; while it is leading, models in its attached unit have Infiltrators.",
         )
         return selected_root
+    if ability == "declare_selected_unit_gain_scouts":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if source_army is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Selected Scouts").strip() or "Selected Scouts"
+        source_sr = getattr(source_root, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        source_sr["declare_selected_unit_gain_scouts_resolved"] = True
+
+        if is_skip_choice(request, result):
+            source_sr["declare_selected_unit_gain_scouts_selected_unit_ids"] = []
+            source_root.special_rules = source_sr
+            invalidate_cache = getattr(source_root, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return {"selected_unit_ids": [], "source": ability_name}
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("selected_unit_id")
+            or payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("selected_unit_id")
+            or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+
+        try:
+            scout_distance = float(ctx.get("scout_distance", 0) or 0.0)
+        except (TypeError, ValueError):
+            scout_distance = 0.0
+        scout_distance = max(0.0, float(scout_distance))
+        if scout_distance <= 0.0:
+            return None
+
+        try:
+            members = list(target_root.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [target_root]
+        for member in list(members or []):
+            member_sr = getattr(member, "special_rules", None)
+            if not isinstance(member_sr, dict):
+                member_sr = {}
+            try:
+                current = float(member_sr.get("declare_battle_formations_selected_scout_distance", 0) or 0.0)
+            except (TypeError, ValueError):
+                current = 0.0
+            if scout_distance > current:
+                member_sr["declare_battle_formations_selected_scout_distance"] = float(scout_distance)
+            member_sr["declare_battle_formations_selected_scouts_source"] = ability_name
+            member.special_rules = member_sr
+            invalidate_member_cache = getattr(member, "_invalidate_ability_cache", None)
+            if callable(invalidate_member_cache):
+                invalidate_member_cache()
+        invalidate_target_cache = getattr(target_root, "_invalidate_ability_cache", None)
+        if callable(invalidate_target_cache):
+            invalidate_target_cache()
+
+        selected_id = str(get_entity_id(target_root) or "")
+        source_sr["declare_selected_unit_gain_scouts_selected_unit_ids"] = [selected_id] if selected_id else []
+        source_root.special_rules = source_sr
+        invalidate_source_cache = getattr(source_root, "_invalidate_ability_cache", None)
+        if callable(invalidate_source_cache):
+            invalidate_source_cache()
+
+        target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: selected {target_name}; that unit gains Scouts {int(scout_distance)}\".",
+        )
+        return {
+            "selected_unit_ids": [selected_id] if selected_id else [],
+            "source": ability_name,
+            "scout_distance": float(scout_distance),
+        }
     if ability == "ordo_xenos_deathwatch_mission_tactics":
         payload = _option_payload(request, result)
         source_army = _resolve_army(game, request, payload)

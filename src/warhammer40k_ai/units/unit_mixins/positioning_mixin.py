@@ -3848,6 +3848,28 @@ class PositioningMixin:
                 entries.append((aname, adesc))
         except Exception:
             pass
+        if root is not None:
+            try:
+                for leader in list(getattr(root, "attached_leaders", []) or []):
+                    if leader is None:
+                        continue
+                    for ab in list(getattr(leader, "possible_abilities", []) or []):
+                        try:
+                            if not leader._ability_is_active(ab):
+                                continue
+                        except Exception:
+                            continue
+                        aname = str(getattr(ab, "name", "") or "")
+                        adesc = str(getattr(ab, "description", "") or "")
+                        normalized = self._normalize_rules_text(adesc or "")
+                        if not normalized:
+                            continue
+                        normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                        if "this model's unit" not in normalized and "this models unit" not in normalized:
+                            continue
+                        entries.append((aname, adesc))
+            except Exception:
+                pass
 
         rules: list[dict] = []
         seen: set[tuple] = set()
@@ -3969,6 +3991,62 @@ class PositioningMixin:
                 if parsed:
                     specs.append(spec)
             return specs
+
+        def _parse_this_models_unit_target_keyword_rules(source_name: str, text: str) -> list[dict]:
+            normalized = str(text or "").replace("\u2019", "'").replace("\u0192?T", "'")
+            rules_out: list[dict] = []
+            target_keywords: tuple[str, ...] = ()
+            attack_type = "any"
+            sentences = [s.strip() for s in re.split(r"[.;]\s*", normalized) if s.strip()]
+            for sentence in sentences:
+                clause = str(sentence or "").strip()
+                if not clause:
+                    continue
+                first_clause = re.search(
+                    r"each time a model in this model'?s unit makes (?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack "
+                    r"that targets (?P<targets>.+?) unit(?:,\s*|\s+)that attack has (?:the\s+)?(?P<kw>.+?) abilit(?:y|ies)",
+                    clause,
+                    flags=re.IGNORECASE,
+                )
+                if first_clause and "any other unit" not in clause.lower():
+                    atype = str(first_clause.group("atype") or "").strip().lower()
+                    if atype in ("melee", "ranged"):
+                        attack_type = atype
+                    parsed_targets = _parse_target_keywords(str(first_clause.group("targets") or ""))
+                    if not parsed_targets:
+                        continue
+                    target_keywords = parsed_targets
+                    for keyword in _parse_bonus_keywords(str(first_clause.group("kw") or "")):
+                        rules_out.append(
+                            {
+                                "attack_type": attack_type,
+                                "keyword": keyword.strip(),
+                                "source": source_name,
+                                "target_keywords_any": target_keywords,
+                            }
+                        )
+                    continue
+                other_clause = re.search(
+                    r"each time a model in this model'?s unit makes (?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack "
+                    r"that targets any other unit(?:,\s*|\s+)that attack has (?:the\s+)?(?P<kw>.+?) abilit(?:y|ies)",
+                    clause,
+                    flags=re.IGNORECASE,
+                )
+                if other_clause is None or not target_keywords:
+                    continue
+                atype = str(other_clause.group("atype") or "").strip().lower()
+                if atype in ("melee", "ranged"):
+                    attack_type = atype
+                for keyword in _parse_bonus_keywords(str(other_clause.group("kw") or "")):
+                    rules_out.append(
+                        {
+                            "attack_type": attack_type,
+                            "keyword": keyword.strip(),
+                            "source": source_name,
+                            "target_exclude_keywords_any": target_keywords,
+                        }
+                    )
+            return rules_out
 
         for name, desc in entries:
             text = self._normalize_rules_text(desc or name or "")
@@ -4152,6 +4230,19 @@ class PositioningMixin:
                             "requires_unit_contains_keyword": required_model,
                         }
                     )
+            for entry in _parse_this_models_unit_target_keyword_rules(str(name or "Ability"), text):
+                key = (
+                    "this_models_unit_target_kw",
+                    str(entry.get("attack_type", "any") or "any").strip().lower(),
+                    str(entry.get("keyword", "") or "").strip().lower(),
+                    tuple(entry.get("target_keywords_any", ()) or ()),
+                    tuple(entry.get("target_exclude_keywords_any", ()) or ()),
+                    str(entry.get("source", "") or "").strip().lower(),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                rules.append(entry)
 
         try:
             root = self.get_attached_unit_root()
@@ -9731,6 +9822,10 @@ class PositioningMixin:
             except Exception:
                 pass
             try:
+                val = max(val, float(sr.get("declare_battle_formations_selected_scout_distance", 0) or 0))
+            except Exception:
+                pass
+            try:
                 val = max(val, float(sr.get("enhancement_warped_foresight_scout_distance", 0) or 0))
             except Exception:
                 pass
@@ -10300,6 +10395,38 @@ class PositioningMixin:
         require_exact_count = False
         army_once_per_ability = False
 
+        def _apply_redeploy_count_token(raw_value: str) -> None:
+            nonlocal count
+            val = str(raw_value or "").strip().lower()
+            if not val:
+                return
+            if val.startswith("d"):
+                try:
+                    expr = val.upper().replace(" ", "")
+                    d = DiceCollection.from_string(expr)
+                    total, rolls = d.roll_detailed()
+                    count = max(count, total)
+                    setattr(self, "_redeploy_d_roll", {"expr": expr, "total": total, "rolls": rolls})
+                    logger.info(f"{self.name} Redeploy {expr} roll: {total} (rolled {rolls})")
+                except Exception:
+                    count = max(count, 1)
+                return
+            word_counts = {
+                "one": 1,
+                "two": 2,
+                "three": 3,
+                "four": 4,
+                "five": 5,
+                "six": 6,
+            }
+            if val in word_counts:
+                count = max(count, int(word_counts[val]))
+                return
+            try:
+                count = max(count, int(val))
+            except Exception:
+                return
+
         for name, desc in abilities_to_check:
             text = html.unescape(str(desc or ""))
             text = re.sub(r"<[^>]+>", " ", text)
@@ -10314,6 +10441,8 @@ class PositioningMixin:
                 if (
                     "if your army includes one or more units with this ability" in text
                     or "if your army contains one or more units with this ability" in text
+                    or "if your army includes one or more models with this ability" in text
+                    or "if your army contains one or more models with this ability" in text
                 ):
                     army_once_per_ability = True
                 if ("if this unit is on the battlefield" in text) or ("if the bearer is on the battlefield" in text):
@@ -10332,89 +10461,60 @@ class PositioningMixin:
                         redeploy_filters = [other_filter]
                     must_include_source_unit = True
                     require_exact_count = True
-                # Support numeric or dice expressions like D3, D6, D10 (optionally with +N)
-                m = re.search(
-                    r"select\s+up\s*to\s+((?:\d+)|(?:d\d+(?:\s*\+\s*\d+)?)|one|two|three|four|five|six)",
+                count_match = re.search(
+                    r"after both players have deployed their armies.*?select\s+(?:up\s*to\s+)?"
+                    r"(?P<count>(?:\d+)|(?:d\d+(?:\s*\+\s*\d+)?)|one|two|three|four|five|six)"
+                    r"\s+(?P<filter>.+?)\s+units?\s+from\s+your\s+army\s+and\s+redeploy"
+                    r"(?:\s+all\s+of\s+those\s+units|\s+them|\s+it)?",
                     text,
+                    flags=re.IGNORECASE,
                 )
-                if m:
-                    val = m.group(1)
-                    if val.startswith('d'):
-                        # Roll the indicated die expression (e.g., D3, D6, D10), with optional +N
-                        try:
-                            expr = val.upper().replace(' ', '')
-                            d = DiceCollection.from_string(expr)
-                            total, rolls = d.roll_detailed()
-                            count = max(count, total)
-                            # Cache roll detail for UI/logging (generic cache)
-                            setattr(self, '_redeploy_d_roll', {'expr': expr, 'total': total, 'rolls': rolls})
-                            logger.info(f"{self.name} Redeploy {expr} roll: {total} (rolled {rolls})")
-                        except Exception:
-                            # Fallback to minimal 1 if dice utilities unavailable
-                            count = max(count, 1)
-                    else:
-                        word_counts = {
-                            "one": 1,
-                            "two": 2,
-                            "three": 3,
-                            "four": 4,
-                            "five": 5,
-                            "six": 6,
-                        }
-                        if val in word_counts:
-                            count = max(count, int(word_counts[val]))
-                        else:
-                            try:
-                                count = max(count, int(val))
-                            except Exception:
-                                pass
+                filter_text = text
+                if count_match:
+                    _apply_redeploy_count_token(str(count_match.group("count") or ""))
+                    filter_text = str(count_match.group("filter") or "").strip().lower()
                 elif not source_and_other_match:
                     count = max(count, 3)  # default to 3 if unspecified
                 if "strategic reserves" in text:
                     can_place_in_reserves = True
-                if re.search(r"\bimperium\s+batt(?:le)?line\s+units?\b", text):
+                if "imperium battleline" in filter_text:
                     redeploy_filters = ["IMPERIUM", "BATTLELINE"]
-                if (
-                    "agents of the imperium units" in text
-                    or "agents of the imperium unit" in text
-                ):
+                if "agents of the imperium" in filter_text:
                     redeploy_filters = ["AGENTS OF THE IMPERIUM"]
                 if (
-                    "emperor's children units" in text
-                    or "emperors children units" in text
-                    or "emperor's children unit" in text
-                    or "emperors children unit" in text
+                    "emperor's children" in filter_text
+                    or "emperors children" in filter_text
                 ):
                     redeploy_filters = ["EMPEROR'S CHILDREN"]
-                if "harlequins units" in text or "harlequins unit" in text:
+                if "harlequins" in filter_text:
                     redeploy_filters = ["HARLEQUINS"]
-                if "aeldari vehicle units" in text or "aeldari vehicle unit" in text:
+                if "adeptus astartes" in filter_text and "infantry" in filter_text:
+                    redeploy_filters = ["ADEPTUS ASTARTES", "INFANTRY"]
+                elif "adeptus astartes" in filter_text:
+                    redeploy_filters = ["ADEPTUS ASTARTES"]
+                if "aeldari" in filter_text and "vehicle" in filter_text:
                     redeploy_filters = ["AELDARI", "VEHICLE"]
-                elif "aeldari units" in text or "aeldari unit" in text:
+                elif "aeldari" in filter_text:
                     redeploy_filters = ["AELDARI"]
-                if "jakhals" in text and "goremongers" in text:
+                if "jakhals" in filter_text and "goremongers" in filter_text:
                     redeploy_filter_any_groups = [["JAKHALS"], ["GOREMONGERS"]]
                 if (
-                    "t'au empire units" in text
-                    or "tau empire units" in text
-                    or "t'au empire unit" in text
-                    or "tau empire unit" in text
+                    "t'au empire" in filter_text
+                    or "tau empire" in filter_text
                 ):
                     redeploy_filters = ["T'AU EMPIRE"]
-                if "thousand sons units" in text or "thousand sons unit" in text:
+                if "thousand sons" in filter_text:
                     redeploy_filters = ["THOUSAND SONS"]
-                if "tyranids units" in text or "tyranids unit" in text:
+                if "tyranids" in filter_text:
                     redeploy_filters = ["TYRANIDS"]
-                if "vanguard invader units" in text or "vanguard invader unit" in text:
+                if "vanguard invader" in filter_text:
                     redeploy_filters = ["VANGUARD INVADER"]
                 if (
-                    "heretic astartes units" in text
-                    or "heretic astartes unit" in text
-                    or "<heretic astartes> units" in text
-                    or "<heretic astartes> unit" in text
+                    "heretic astartes" in filter_text
+                    or "<heretic astartes>" in filter_text
                 ):
                     redeploy_filters = ["HERETIC ASTARTES"]
-                if "drukhari units" in text or "drukhari unit" in text:
+                if "drukhari" in filter_text:
                     redeploy_filters = ["DRUKHARI"]
 
         result = (has_redeploy, count, can_place_in_reserves)
