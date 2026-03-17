@@ -11996,11 +11996,18 @@ class GamePhaseHandlersMixin:
             has_hit_bonus = bool(sr.get("master_of_mechanisms_hit_bonus_active"))
             has_hit_reroll_ones = bool(sr.get("master_of_mechanisms_hit_reroll_ones_active"))
             has_fnp_bonus = bool(sr.get("master_of_mechanisms_fnp_active"))
+            has_weapon_keyword_bonus = bool(sr.get("master_of_mechanisms_weapon_keywords_active"))
             has_selection_marker = (
                 "master_of_mechanisms_selected_turn_owner" in sr
                 or "master_of_mechanisms_selected_turn" in sr
             )
-            if not has_hit_bonus and not has_hit_reroll_ones and not has_fnp_bonus and not has_selection_marker:
+            if (
+                not has_hit_bonus
+                and not has_hit_reroll_ones
+                and not has_fnp_bonus
+                and not has_weapon_keyword_bonus
+                and not has_selection_marker
+            ):
                 continue
             expires_phase = str(sr.get("master_of_mechanisms_expires_phase", "COMMAND_PHASE") or "COMMAND_PHASE").strip().upper()
             if expires_phase != pname:
@@ -12010,6 +12017,8 @@ class GamePhaseHandlersMixin:
                 effect_owner = str(sr.get("master_of_mechanisms_hit_reroll_ones_owner", "") or "")
             if not effect_owner:
                 effect_owner = str(sr.get("master_of_mechanisms_fnp_owner", "") or "")
+            if not effect_owner:
+                effect_owner = str(sr.get("master_of_mechanisms_weapon_keywords_owner", "") or "")
             if effect_owner != owner_id:
                 continue
             try:
@@ -12047,6 +12056,12 @@ class GamePhaseHandlersMixin:
                 "master_of_mechanisms_fnp_active",
                 "master_of_mechanisms_fnp_value",
                 "master_of_mechanisms_fnp_owner",
+                "master_of_mechanisms_weapon_keywords_active",
+                "master_of_mechanisms_weapon_keywords_owner",
+                "master_of_mechanisms_weapon_keyword_model_id",
+                "master_of_mechanisms_weapon_attack_type",
+                "master_of_mechanisms_weapon_name",
+                "master_of_mechanisms_weapon_keywords",
                 "master_of_mechanisms_source",
                 "master_of_mechanisms_selected_turn_owner",
                 "master_of_mechanisms_selected_turn",
@@ -12164,6 +12179,15 @@ class GamePhaseHandlersMixin:
             fnp_requires_vehicle = bool(rule.get("fnp_requires_vehicle", False))
             target_requires_vehicle = bool(rule.get("target_requires_vehicle", False))
             target_keyword = str(rule.get("target_keyword", "") or "").strip().upper()
+            weapon_choice_required = bool(rule.get("weapon_choice_required", False))
+            weapon_attack_type = str(rule.get("weapon_attack_type", "any") or "any").strip().lower()
+            if weapon_attack_type not in ("any", "melee", "ranged"):
+                weapon_attack_type = "any"
+            weapon_keywords = [
+                str(value or "").strip().upper()
+                for value in list(rule.get("weapon_keywords", []) or [])
+                if str(value or "").strip()
+            ]
             target_keywords = [
                 str(value or "").strip().upper()
                 for value in list(rule.get("target_keywords", []) or [])
@@ -12184,10 +12208,14 @@ class GamePhaseHandlersMixin:
             selection_kind = str(rule.get("selection_kind", "unit") or "unit").strip().lower()
             if selection_kind not in ("unit", "model"):
                 selection_kind = "unit"
+            if weapon_choice_required:
+                selection_kind = "model"
             limit_once_per_turn = bool(rule.get("limit_once_per_turn", False))
             limit_scope = str(rule.get("limit_scope", "unit") or "unit").strip().lower()
             if limit_scope not in ("unit", "model"):
                 limit_scope = "model" if selection_kind == "model" else "unit"
+            if weapon_choice_required:
+                limit_scope = "model"
             heal_roll = str(rule.get("heal_roll", "") or "").strip().upper()
             try:
                 heal_flat = int(rule.get("heal_flat", 0) or 0)
@@ -12238,6 +12266,29 @@ class GamePhaseHandlersMixin:
                     if not bool(getattr(unit_obj, "has_any_keyword", lambda _kw: False)(keyword)):
                         return False
                 return True
+
+            def _eligible_weapon_names(model_obj) -> list[str]:
+                if not weapon_choice_required:
+                    return [""]
+                names: list[str] = []
+                seen_weapon_names: set[str] = set()
+                for wargear in list(getattr(model_obj, "wargear", []) or []):
+                    if wargear is None:
+                        continue
+                    if weapon_attack_type == "ranged" and not bool(getattr(wargear, "is_ranged", lambda: False)()):
+                        continue
+                    if weapon_attack_type == "melee" and not bool(getattr(wargear, "is_melee", lambda: False)()):
+                        continue
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    if not weapon_name:
+                        continue
+                    weapon_key = weapon_name.lower()
+                    if weapon_key in seen_weapon_names:
+                        continue
+                    seen_weapon_names.add(weapon_key)
+                    names.append(weapon_name)
+                names.sort(key=lambda value: value.lower())
+                return names
 
             candidates_units = []
             candidates_models = []
@@ -12313,7 +12364,8 @@ class GamePhaseHandlersMixin:
                                     continue
                             except Exception:
                                 continue
-                        candidates_models.append((target_root, target_model))
+                        for weapon_name in _eligible_weapon_names(target_model):
+                            candidates_models.append((target_root, target_model, weapon_name))
                 else:
                     if not model_within_range_of_unit(bearer, target_root, selection_range):
                         continue
@@ -12354,15 +12406,28 @@ class GamePhaseHandlersMixin:
             if selection_kind == "model":
                 options.extend(
                     DecisionOption.create(
-                        f"{str(getattr(tm, 'name', 'Model') or 'Model')} ({str(getattr(tu, 'name', 'Unit') or 'Unit')})",
-                        payload={
-                            "target_unit_id": get_entity_id(tu),
-                            "target_model_id": get_entity_id(tm),
-                        },
+                        (
+                            f"{str(weapon_name or '').strip()} - {str(getattr(tm, 'name', 'Model') or 'Model')} "
+                            f"({str(getattr(tu, 'name', 'Unit') or 'Unit')})"
+                            if str(weapon_name or "").strip()
+                            else f"{str(getattr(tm, 'name', 'Model') or 'Model')} ({str(getattr(tu, 'name', 'Unit') or 'Unit')})"
+                        ),
+                        payload=(
+                            {
+                                "target_unit_id": get_entity_id(tu),
+                                "target_model_id": get_entity_id(tm),
+                                "weapon_name": str(weapon_name or "").strip(),
+                            }
+                            if str(weapon_name or "").strip()
+                            else {
+                                "target_unit_id": get_entity_id(tu),
+                                "target_model_id": get_entity_id(tm),
+                            }
+                        ),
                     )
-                    for tu, tm in sorted(
+                    for tu, tm, weapon_name in sorted(
                         list(candidates_models),
-                        key=lambda item: (_unit_sort_key(item[0]), _model_sort_key(item[1])),
+                        key=lambda item: (_unit_sort_key(item[0]), _model_sort_key(item[1]), str(item[2] or "").lower()),
                     )
                 )
             else:
@@ -12378,6 +12443,10 @@ class GamePhaseHandlersMixin:
             if selection_kind == "model":
                 if target_in_source_unit:
                     prompt_target = "model in this unit"
+                elif weapon_choice_required and weapon_attack_type == "ranged":
+                    prompt_target = "friendly VEHICLE model and one ranged weapon" if target_requires_vehicle else "friendly model and one ranged weapon"
+                elif weapon_choice_required and weapon_attack_type == "melee":
+                    prompt_target = "friendly VEHICLE model and one melee weapon" if target_requires_vehicle else "friendly model and one melee weapon"
                 elif target_keywords:
                     prompt_target = f"friendly {' '.join(target_keywords)} model"
                 else:
@@ -12422,6 +12491,9 @@ class GamePhaseHandlersMixin:
                     "requires_damaged_target": bool(requires_damaged_target),
                     "expires_phase": str(expires_phase),
                     "hit_bonus_model_only": bool(hit_bonus_model_only),
+                    "weapon_choice_required": bool(weapon_choice_required),
+                    "weapon_attack_type": str(weapon_attack_type),
+                    "weapon_keywords": list(weapon_keywords),
                     "heal_roll": heal_roll,
                     "heal_flat": int(heal_flat),
                     "turn_owner": owner_id,

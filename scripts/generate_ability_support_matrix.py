@@ -4455,9 +4455,17 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Selected to shoot: optionally select one visible enemy unit within 12\"; the chosen target is marked so this unit's ranged attacks against it gain [DEVASTATING WOUNDS] until phase end.",
         ),
+        ("SM", "Gift of the Iron Wolf"): (
+            "Supported",
+            "Command phase: optional CHOOSE_QUARRY selection (with None) of a friendly ADEPTUS ASTARTES VEHICLE model within 3\", heal D3, and select one ranged weapon on that model to gain [RAPID FIRE 1] until next Command phase.",
+        ),
         ("SM", "Exhortation of Rage"): (
             "Supported",
             "Selected to fight: optionally select one enemy unit in Engagement Range; roll D6 and inflict D3 mortal wounds on 4-5 or 3 mortal wounds on 6.",
+        ),
+        ("SM", "Judgement of the Omnissiah"): (
+            "Supported",
+            "Model attacks against enemy units within Engagement Range of friendly ADEPTUS ASTARTES VEHICLE units can re-roll the Wound roll.",
         ),
         ("SM", "Transfixing Gaze (Aura, Psychic)"): (
             "Supported",

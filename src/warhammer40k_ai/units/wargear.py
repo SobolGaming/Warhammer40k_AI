@@ -6246,6 +6246,7 @@ class WargearProfile:
                     target=target,
                     attack_type="ranged",
                     model=attacker,
+                    weapon_profile=self,
                     game_map=game_map,
                 )
                 if not isinstance(ranged_keyword_bonus, dict):

@@ -7570,6 +7570,11 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         selection_kind = str(ctx.get("selection_kind", "unit") or "unit").strip().lower()
         if selection_kind not in ("unit", "model"):
             selection_kind = "unit"
+        weapon_choice_required = bool(ctx.get("weapon_choice_required", False))
+        weapon_attack_type = str(ctx.get("weapon_attack_type", "any") or "any").strip().lower()
+        if weapon_attack_type not in ("any", "melee", "ranged"):
+            weapon_attack_type = "any"
+        chosen_weapon_name = str(payload.get("weapon_name") or ctx.get("weapon_name") or "").strip()
         target_model = None
         if selection_kind == "model":
             target_model = resolve_model(game, payload.get("target_model_id") or ctx.get("target_model_id"))
@@ -7659,6 +7664,30 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
                 return ("Master of Mechanisms target model was not found.",)
             if target_keywords and not _model_has_all_keywords(target_model, target_keywords):
                 return ("Master of Mechanisms target model does not satisfy required keywords.",)
+            if weapon_choice_required:
+                if not chosen_weapon_name:
+                    return ("Master of Mechanisms target weapon was not found.",)
+                has_matching_weapon = False
+                match_weapon = getattr(target_root, "_weapon_name_matches", None)
+                for wargear in list(getattr(target_model, "wargear", []) or []):
+                    if wargear is None:
+                        continue
+                    if weapon_attack_type == "ranged" and not bool(getattr(wargear, "is_ranged", lambda: False)()):
+                        continue
+                    if weapon_attack_type == "melee" and not bool(getattr(wargear, "is_melee", lambda: False)()):
+                        continue
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    if not weapon_name:
+                        continue
+                    if callable(match_weapon):
+                        if bool(match_weapon([chosen_weapon_name], weapon_name)):
+                            has_matching_weapon = True
+                            break
+                    elif weapon_name.lower() == chosen_weapon_name.lower():
+                        has_matching_weapon = True
+                        break
+                if not has_matching_weapon:
+                    return ("Master of Mechanisms selected weapon is not equipped by the target model.",)
         elif target_keywords and not _unit_has_all_keywords(target_root, target_keywords):
             return ("Master of Mechanisms target does not satisfy required keywords.",)
 
@@ -19950,6 +19979,16 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         once_per_battle_scope = str(ctx.get("once_per_battle_scope", "unit") or "unit").strip().lower()
         if once_per_battle_scope not in ("unit", "model"):
             once_per_battle_scope = "unit"
+        weapon_choice_required = bool(ctx.get("weapon_choice_required", False))
+        weapon_attack_type = str(ctx.get("weapon_attack_type", "any") or "any").strip().lower()
+        if weapon_attack_type not in ("any", "melee", "ranged"):
+            weapon_attack_type = "any"
+        weapon_keywords = [
+            str(value or "").strip().upper()
+            for value in list(ctx.get("weapon_keywords", []) or [])
+            if str(value or "").strip()
+        ]
+        chosen_weapon_name = str(payload.get("weapon_name") or ctx.get("weapon_name") or "").strip()
         get_target_root = getattr(target_unit, "get_attached_unit_root", None)
         target_root = get_target_root() if callable(get_target_root) else target_unit
         get_models = getattr(target_root, "get_attached_unit_models", None)
@@ -20079,6 +20118,20 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             tsr.pop("master_of_mechanisms_fnp_active", None)
             tsr.pop("master_of_mechanisms_fnp_value", None)
             tsr.pop("master_of_mechanisms_fnp_owner", None)
+        if weapon_choice_required and target_model is not None and chosen_weapon_name and weapon_keywords:
+            tsr["master_of_mechanisms_weapon_keywords_active"] = True
+            tsr["master_of_mechanisms_weapon_keywords_owner"] = owner_id
+            tsr["master_of_mechanisms_weapon_keyword_model_id"] = str(get_entity_id(target_model) or "")
+            tsr["master_of_mechanisms_weapon_attack_type"] = str(weapon_attack_type or "any")
+            tsr["master_of_mechanisms_weapon_name"] = str(chosen_weapon_name)
+            tsr["master_of_mechanisms_weapon_keywords"] = list(weapon_keywords)
+        else:
+            tsr.pop("master_of_mechanisms_weapon_keywords_active", None)
+            tsr.pop("master_of_mechanisms_weapon_keywords_owner", None)
+            tsr.pop("master_of_mechanisms_weapon_keyword_model_id", None)
+            tsr.pop("master_of_mechanisms_weapon_attack_type", None)
+            tsr.pop("master_of_mechanisms_weapon_name", None)
+            tsr.pop("master_of_mechanisms_weapon_keywords", None)
         tsr["master_of_mechanisms_source"] = ability_name
         tsr["master_of_mechanisms_expires_phase"] = str(expires_phase or "COMMAND_PHASE")
         target_root.special_rules = tsr
@@ -20102,6 +20155,10 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             summary_parts.append(f"re-rolls Hit rolls of 1 until next {duration_label}")
         if fnp_applies:
             summary_parts.append(f"gains Feel No Pain {int(fnp_value)}+ until next {duration_label}")
+        if weapon_choice_required and chosen_weapon_name and weapon_keywords:
+            summary_parts.append(
+                f"{chosen_weapon_name} gains [{', '.join(list(weapon_keywords))}] until next {duration_label}"
+            )
         _log_action_for_players(
             game,
             player,

@@ -2380,6 +2380,8 @@ class KeywordsDetachmentsMixin:
                 target_keyword = ""
                 if "adeptus mechanicus" in norm:
                     target_keyword = "ADEPTUS MECHANICUS"
+                elif "adeptus astartes" in norm:
+                    target_keyword = "ADEPTUS ASTARTES"
                 elif "grey knights" in norm:
                     target_keyword = "GREY KNIGHTS"
                 elif "heretic astartes" in norm:
@@ -2424,6 +2426,24 @@ class KeywordsDetachmentsMixin:
                     and "re roll a hit roll of 1" in norm
                 )
                 has_fnp_clause = bool(has_next_command_phase_duration and "feel no pain" in norm)
+                weapon_keywords: list[str] = []
+                weapon_attack_type = "any"
+                normalized_rules = normalized_text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                m_weapon_keyword = re.search(
+                    r"select one (?P<attack_type>ranged|melee) weapon equipped by that model to have the \[(?P<keyword>[^\]]+)\] ability",
+                    normalized_rules,
+                )
+                if m_weapon_keyword is None:
+                    m_weapon_keyword = re.search(
+                        r"select one (?P<attack_type>ranged|melee) weapon equipped by that model to have the (?P<keyword>[a-z0-9 +\-]+?) ability(?:\.|\s+each|\s*$)",
+                        norm,
+                    )
+                if m_weapon_keyword:
+                    weapon_attack_type = str(m_weapon_keyword.group("attack_type") or "any").strip().lower()
+                    weapon_keyword = str(m_weapon_keyword.group("keyword") or "").strip().upper()
+                    if weapon_keyword:
+                        weapon_keywords.append(weapon_keyword)
+                weapon_choice_required = bool(weapon_keywords)
                 is_technomancer_rule = bool(
                     "technomancer" in source_name_norm
                     and "end of your movement phase" in norm
@@ -2434,6 +2454,7 @@ class KeywordsDetachmentsMixin:
                         has_hit_bonus_clause,
                         has_hit_reroll_ones_clause,
                         has_fnp_clause,
+                        weapon_choice_required,
                         is_technomancer_rule,
                         is_grot_oiler_rule,
                         is_mekaniak_rule,
@@ -2503,6 +2524,8 @@ class KeywordsDetachmentsMixin:
                     allow_self_target = True
                 selection_kind = "unit"
                 if (
+                    weapon_choice_required
+                    or
                     is_technomancer_rule
                     or is_grot_oiler_rule
                     or is_mekaniak_rule
@@ -2511,13 +2534,14 @@ class KeywordsDetachmentsMixin:
                 ):
                     selection_kind = "model"
                 limit_once_per_turn = (
-                    "only be selected for this ability once per turn" in norm
+                    ("each model can only be selected for this ability" in norm and "once per turn" in norm)
+                    or "only be selected for this ability once per turn" in norm
                     or "only be selected for this ability once per command phase" in norm
                 )
                 if "each model can only be healed once per turn" in norm:
                     limit_once_per_turn = True
                 limit_scope = "unit"
-                if "each model can only be selected for this ability once per turn" in norm:
+                if ("each model can only be selected for this ability" in norm and "once per turn" in norm):
                     limit_scope = "model"
                 elif "each model can only be healed once per turn" in norm:
                     limit_scope = "model"
@@ -2563,6 +2587,9 @@ class KeywordsDetachmentsMixin:
                     "requires_damaged_target": bool(requires_damaged_target),
                     "expires_phase": str(expires_phase),
                     "hit_bonus_model_only": bool(selection_kind == "model"),
+                    "weapon_choice_required": bool(weapon_choice_required),
+                    "weapon_attack_type": str(weapon_attack_type),
+                    "weapon_keywords": list(weapon_keywords),
                 }
                 break
             if rule is not None:
@@ -14940,6 +14967,126 @@ class KeywordsDetachmentsMixin:
             "reroll_hit_full_reasons": tuple(deduped_full_reasons),
         }
 
+    def _get_model_engagement_vehicle_wound_reroll_source(self, model: Optional['Model'] = None) -> str:
+        if model is None:
+            return ""
+        cache_key = f"model_engagement_vehicle_wound_reroll_source:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return str(self._ability_cache[cache_key] or "")
+
+        source = ""
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            if not normalized:
+                continue
+            norm = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", "s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if (
+                "each time this model makes an attack that targets an enemy unit within engagement range of one or more friendly adeptus astartes vehicle units" in norm
+                and "you can re roll the wound roll" in norm
+            ):
+                source = str(name or "Judgement of the Omnissiah").strip() or "Judgement of the Omnissiah"
+                break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = str(source or "")
+        return str(source or "")
+
+    def _target_within_engagement_range_of_friendly_vehicle_units(
+        self,
+        target,
+        *,
+        required_keywords: Optional[list[str]] = None,
+    ) -> bool:
+        if target is None:
+            return False
+        try:
+            target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+        except Exception:
+            target_root = target
+        if target_root is None:
+            return False
+        try:
+            if not bool(getattr(target_root, "is_alive", lambda: False)()):
+                return False
+        except Exception:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        if army is None:
+            return False
+
+        needed = [
+            str(value or "").strip().upper()
+            for value in list(required_keywords or [])
+            if str(value or "").strip()
+        ]
+        from ...utility.aura_utils import model_within_engagement_range_of_unit
+
+        seen: set[str] = set()
+        units = sorted(
+            list(getattr(army, "units", []) or []),
+            key=lambda unit_obj: str(
+                get_entity_id(unit_obj.get_attached_unit_root() if hasattr(unit_obj, "get_attached_unit_root") else unit_obj) or ""
+            ),
+        )
+        for unit_obj in units:
+            if unit_obj is None:
+                continue
+            try:
+                candidate_root = unit_obj.get_attached_unit_root()
+            except Exception:
+                candidate_root = unit_obj
+            if candidate_root is None:
+                continue
+            candidate_id = str(get_entity_id(candidate_root) or "")
+            if candidate_id and candidate_id in seen:
+                continue
+            if candidate_id:
+                seen.add(candidate_id)
+            try:
+                if not bool(getattr(candidate_root, "is_alive", lambda: False)()):
+                    continue
+            except Exception:
+                continue
+            if not bool(getattr(candidate_root, "deployed", True)):
+                continue
+            try:
+                if candidate_root.is_in_reserves() or candidate_root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            if not bool(getattr(candidate_root, "has_any_keyword", lambda _kw: False)("VEHICLE")):
+                continue
+            if any(not bool(getattr(candidate_root, "has_any_keyword", lambda _kw: False)(keyword)) for keyword in needed):
+                continue
+            try:
+                candidate_models = (
+                    list(candidate_root.get_attached_unit_models() or [])
+                    if hasattr(candidate_root, "get_attached_unit_models")
+                    else list(getattr(candidate_root, "models", []) or [])
+                )
+            except Exception:
+                candidate_models = list(getattr(candidate_root, "models", []) or [])
+            for candidate_model in list(candidate_models or []):
+                if candidate_model is None:
+                    continue
+                alive_attr = getattr(candidate_model, "is_alive", False)
+                if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    continue
+                if model_within_engagement_range_of_unit(candidate_model, target_root):
+                    return True
+        return False
+
     def get_model_wound_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None) -> dict:
         mods = self._get_model_reroll_modifiers(model, attack_type=attack_type, target=target, roll="wound")
         reroll_values = set(mods.get("reroll_values", ()) or ())
@@ -15034,6 +15181,13 @@ class KeywordsDetachmentsMixin:
         except Exception:
             pass
         if model is not None and target is not None:
+            source = self._get_model_engagement_vehicle_wound_reroll_source(model)
+            if source and self._target_within_engagement_range_of_friendly_vehicle_units(
+                target,
+                required_keywords=["ADEPTUS ASTARTES"],
+            ):
+                reroll_full = True
+                reroll_full_reasons.append(f"{source}: re-roll Wound roll")
             target_root = (
                 target.get_attached_unit_root()
                 if hasattr(target, "get_attached_unit_root")

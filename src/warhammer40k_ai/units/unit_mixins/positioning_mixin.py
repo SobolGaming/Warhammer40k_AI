@@ -6640,6 +6640,44 @@ class PositioningMixin:
             if not source_name:
                 source_name = "Target Augury Web"
             rules.append({"attack_type": "any", "keyword": "LETHAL HITS", "source": source_name})
+        if isinstance(sr, dict) and bool(sr.get("master_of_mechanisms_weapon_keywords_active")) and model is not None:
+            apply_bonus = True
+            effect_attack_type = str(sr.get("master_of_mechanisms_weapon_attack_type", "any") or "any").strip().lower()
+            if effect_attack_type not in ("any", "melee", "ranged"):
+                effect_attack_type = "any"
+            attack_kind = str(attack_type or "").strip().lower()
+            if attack_kind and effect_attack_type not in ("any", attack_kind):
+                apply_bonus = False
+            target_model_id = str(sr.get("master_of_mechanisms_weapon_keyword_model_id", "") or "")
+            if apply_bonus and target_model_id and not self._model_matches_identifier(model, target_model_id):
+                apply_bonus = False
+            current_weapon_name = ""
+            if apply_bonus and weapon_profile is not None:
+                try:
+                    current_weapon_name = str(getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or "")
+                except Exception:
+                    current_weapon_name = ""
+                if not current_weapon_name:
+                    try:
+                        current_weapon_name = str(getattr(weapon_profile, "name", "") or "")
+                    except Exception:
+                        current_weapon_name = ""
+            selected_weapon_name = str(sr.get("master_of_mechanisms_weapon_name", "") or "").strip()
+            if apply_bonus and selected_weapon_name and not self._weapon_name_matches([selected_weapon_name], current_weapon_name):
+                apply_bonus = False
+            if apply_bonus:
+                source_name = str(sr.get("master_of_mechanisms_source", "") or "Master of Mechanisms").strip() or "Master of Mechanisms"
+                for keyword in list(sr.get("master_of_mechanisms_weapon_keywords", []) or []):
+                    keyword_text = str(keyword or "").strip().upper()
+                    if not keyword_text:
+                        continue
+                    rules.append(
+                        {
+                            "attack_type": effect_attack_type,
+                            "keyword": keyword_text,
+                            "source": source_name,
+                        }
+                    )
         try:
             target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
         except Exception:
