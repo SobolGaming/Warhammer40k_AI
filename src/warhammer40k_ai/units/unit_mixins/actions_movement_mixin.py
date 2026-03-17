@@ -14932,6 +14932,101 @@ class ActionsMovementMixin:
                     source_labels.append("No Escape (Aura)")
         except Exception:
             pass
+        try:
+            if game_map is not None:
+                try:
+                    from ...utility.aura_utils import model_within_range_of_unit
+                except Exception:
+                    model_within_range_of_unit = None
+                fallback_test_sources = []
+                seen_fallback_test_roots: set[str] = set()
+                try:
+                    enemy_units = list(game_map.get_enemy_units(self) or [])
+                except Exception:
+                    enemy_units = []
+                fallback_test_pattern = re.compile(
+                    r"while an enemy unit is within (?P<range>\d+) of this model each time that unit is selected to fall back "
+                    r"it must take a leadership test if that test is failed that unit must remain stationary this phase instead"
+                )
+                for enemy in list(enemy_units or []):
+                    if enemy is None:
+                        continue
+                    try:
+                        enemy_root = enemy.get_attached_unit_root()
+                    except Exception:
+                        enemy_root = enemy
+                    if enemy_root is None:
+                        continue
+                    try:
+                        enemy_root_id = str(get_entity_id(enemy_root) or "")
+                    except Exception:
+                        enemy_root_id = ""
+                    if enemy_root_id and enemy_root_id in seen_fallback_test_roots:
+                        continue
+                    if enemy_root_id:
+                        seen_fallback_test_roots.add(enemy_root_id)
+                    try:
+                        members = list(enemy_root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = [enemy_root]
+                    if not members:
+                        members = [enemy_root]
+                    matched = False
+                    for source_unit in list(members or []):
+                        if source_unit is None:
+                            continue
+                        models = [
+                            model
+                            for model in list(getattr(source_unit, "models", []) or [])
+                            if bool(getattr(model, "is_alive", False))
+                        ]
+                        models.sort(key=lambda model: str(get_entity_id(model) or ""))
+                        if len(models) != 1:
+                            continue
+                        source_model = models[0]
+                        iter_entries = getattr(source_unit, "_iter_ability_entries_for_rules", None)
+                        if not callable(iter_entries):
+                            continue
+                        for ability_name, ability_desc in list(iter_entries(model=None) or []):
+                            text_low = self._normalize_rules_text(
+                                f"{ability_name or ''} {ability_desc or ''}".strip()
+                            ).lower()
+                            text_low = re.sub(r"[^a-z0-9]+", " ", text_low)
+                            text_low = re.sub(r"\s+", " ", text_low).strip()
+                            m = fallback_test_pattern.fullmatch(text_low)
+                            if not m:
+                                continue
+                            try:
+                                range_value = float(m.group("range") or 0)
+                            except (TypeError, ValueError):
+                                range_value = 0.0
+                            if range_value <= 0:
+                                continue
+                            in_range = False
+                            if callable(model_within_range_of_unit):
+                                try:
+                                    in_range = bool(
+                                        model_within_range_of_unit(
+                                            source_model,
+                                            self,
+                                            float(range_value),
+                                            use_attached_aggregate=True,
+                                        )
+                                    )
+                                except Exception:
+                                    in_range = False
+                            if not in_range:
+                                continue
+                            fallback_test_sources.append(enemy_root)
+                            source_labels.append(str(ability_name or "Leadership suppression").strip() or "Leadership suppression")
+                            matched = True
+                            break
+                        if matched:
+                            break
+                if fallback_test_sources:
+                    sources.extend(fallback_test_sources)
+        except Exception:
+            pass
         if sources:
             try:
                 passed = bool(self.pass_leadership_check())

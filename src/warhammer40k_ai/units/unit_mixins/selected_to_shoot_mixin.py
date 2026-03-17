@@ -242,6 +242,82 @@ class SelectedToShootMixin:
         )
         return specs
 
+    def iter_selected_to_shoot_model_target_attack_keyword_specs(self) -> list[dict]:
+        root = self._selected_to_shoot_root()
+        specs: list[dict] = []
+        seen: set[tuple[str, str, str, int, tuple[str, ...], str]] = set()
+        pattern = re.compile(
+            r"each time this model s unit is selected to shoot you can select one enemy unit within (?P<range>\d+) "
+            r"of and visible to this model until the end of the phase ranged weapons equipped by models in this model s unit "
+            r"have the (?P<keyword>[a-z0-9 +\-]+) ability when targeting that enemy unit"
+        )
+
+        for member in self._selected_to_shoot_member_units():
+            models = [
+                model
+                for model in list(getattr(member, "models", []) or [])
+                if self._selected_to_shoot_model_is_alive(model)
+            ]
+            models.sort(key=lambda model: str(get_entity_id(model) or ""))
+            if len(models) != 1:
+                continue
+            bearer_model = models[0]
+            model_id = str(get_entity_id(bearer_model) or "")
+            if not model_id:
+                continue
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text_src = member._strip_eligibility_prefix(desc or name or "")
+                normalized = member._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = pattern.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except (TypeError, ValueError):
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                keyword_raw = str(m.group("keyword") or "").strip()
+                keyword = str(member._normalize_keyword_phrase(keyword_raw) or keyword_raw).strip().upper()
+                if not keyword:
+                    continue
+                source = str(name or "Selected to shoot").strip() or "Selected to shoot"
+                dedupe_key = (
+                    source.lower(),
+                    model_id,
+                    "selected_to_shoot_target_attack_keywords",
+                    int(range_value),
+                    (keyword,),
+                    "ranged",
+                )
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                specs.append(
+                    {
+                        "source": source,
+                        "ability_key": "selected_to_shoot_target_attack_keywords",
+                        "model": bearer_model,
+                        "model_id": model_id,
+                        "range": int(range_value),
+                        "requires_visibility": True,
+                        "keywords": [keyword],
+                        "attack_type": "ranged",
+                    }
+                )
+
+        specs.sort(
+            key=lambda spec: (
+                str(spec.get("model_id", "") or ""),
+                str(spec.get("ability_key", "") or ""),
+                str(spec.get("source", "") or "").strip().lower(),
+            )
+        )
+        return specs
+
     def apply_selected_to_shoot_unit_ranged_weapon_bonuses(
         self,
         *,

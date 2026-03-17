@@ -11763,6 +11763,10 @@ class AbilitySpecsMixin:
 
         specs: list[dict] = []
         seen: set[tuple] = set()
+        flat_high_pattern = re.compile(
+            r"each time this model s unit is selected to fight you can select one enemy unit within engagement range of this model s unit "
+            r"and roll one d6 on a 4 5 that enemy unit suffers d3 mortal wounds? on a 6 that enemy unit suffers 3 mortal wounds?"
+        )
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
             if not text_src:
@@ -11799,6 +11803,35 @@ class AbilitySpecsMixin:
                         "threshold_high": 6,
                         "mortal_high_roll": "D3",
                         "mortal_high_bonus": 3,
+                    }
+                )
+                continue
+            if flat_high_pattern.fullmatch(normalized):
+                key = (source.lower(), "exhortation_of_rage", "unit")
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "ability_key": "exhortation_of_rage",
+                        "engagement_scope": "unit",
+                        "is_psychic_attack": False,
+                        "results": [
+                            {"min": 4, "max": 5, "mortal": 0, "mortal_roll": "D3", "mortal_bonus": 0},
+                            {"min": 6, "max": 6, "mortal": 3, "mortal_roll": "", "mortal_bonus": 0},
+                        ],
+                        "threshold_low_min": 4,
+                        "threshold_low_max": 5,
+                        "mortal_low": 0,
+                        "mortal_low_roll": "D3",
+                        "threshold_mid_min": 0,
+                        "threshold_mid_max": 0,
+                        "mortal_mid_roll": "",
+                        "threshold_high": 6,
+                        "mortal_high": 3,
+                        "mortal_high_roll": "",
+                        "mortal_high_bonus": 0,
                     }
                 )
                 continue

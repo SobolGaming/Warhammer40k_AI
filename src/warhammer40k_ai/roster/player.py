@@ -2156,6 +2156,14 @@ class Player:
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
 
+    def _target_unit_can_use_master_of_prescience_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        fn = getattr(target_unit, "can_use_master_of_prescience_stratagem_discount", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
     def _target_unit_can_use_eye_of_the_augurium_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
         if target_unit is None:
             return False
@@ -2701,6 +2709,24 @@ class Player:
         if name_u not in ("HEROIC INTERVENTION", "COUNTER-OFFENSIVE", "COUNTER OFFENSIVE"):
             return 0
         if not self._target_unit_can_use_intraneural_biotech_stratagem_discount(target_unit, stratagem_name=name_u):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_master_of_prescience_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u not in (
+            "HEROIC INTERVENTION",
+            "COUNTER-OFFENSIVE",
+            "COUNTER OFFENSIVE",
+            "OVERWATCH",
+            "FIRE OVERWATCH",
+            "GO TO GROUND",
+        ):
+            return 0
+        if not self._target_unit_can_use_master_of_prescience_stratagem_discount(target_unit, stratagem_name=name_u):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -3509,6 +3535,54 @@ class Player:
                 else:
                     reasons.append(f"{ability_name}: Counter-offensive for 0CP.")
                 return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        master_of_prescience = self._preview_master_of_prescience_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if master_of_prescience:
+            if name_u in ("OVERWATCH", "FIRE OVERWATCH"):
+                mgr = getattr(self, "stratagems", None)
+                used_this_turn = getattr(mgr, "_used_this_turn", {}) if mgr is not None else {}
+                overwatch_used = bool(used_this_turn.get("OVERWATCH", False)) if isinstance(used_this_turn, dict) else False
+                if overwatch_used:
+                    master_of_prescience = 0
+            elif name_u in ("COUNTER-OFFENSIVE", "COUNTER OFFENSIVE"):
+                mgr = getattr(self, "stratagems", None)
+                used_this_phase = getattr(mgr, "_used_stratagems_this_phase", set()) if mgr is not None else set()
+                counter_used = "COUNTER-OFFENSIVE" in used_this_phase if isinstance(used_this_phase, set) else False
+                if counter_used:
+                    master_of_prescience = 0
+            if master_of_prescience:
+                ability_name = "Master of Prescience (Psychic)"
+                try:
+                    get_rule = getattr(target_unit, "get_master_of_prescience_stratagem_discount_rule", None)
+                    rule = get_rule() if callable(get_rule) else None
+                    if isinstance(rule, dict):
+                        ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+                except Exception:
+                    pass
+                ctx = {
+                    "ability_name": ability_name,
+                    "stratagem": getattr(stratagem, "name", None) or "",
+                    "target_unit": getattr(target_unit, "name", None) or "",
+                    "base_cp_cost": base,
+                }
+                if self._should_preview_optional_ability(
+                    "MASTER_OF_PRESCIENCE_STRATAGEM_DISCOUNT",
+                    ctx,
+                    assume=assume_optional_discounts,
+                ):
+                    discount = base
+                    if name_u in ("OVERWATCH", "FIRE OVERWATCH"):
+                        reasons.append(f"{ability_name}: Fire Overwatch for 0CP.")
+                    elif name_u in ("COUNTER-OFFENSIVE", "COUNTER OFFENSIVE"):
+                        reasons.append(f"{ability_name}: Counter-offensive for 0CP.")
+                    elif name_u == "GO TO GROUND":
+                        reasons.append(f"{ability_name}: Go to Ground for 0CP.")
+                    else:
+                        reasons.append(f"{ability_name}: Heroic Intervention for 0CP.")
+                    return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         eye = self._preview_eye_of_the_augurium_discount(
             stratagem=stratagem,
@@ -4584,6 +4658,73 @@ class Player:
                     "intraneural_biotech_use": True,
                     "intraneural_biotech_source": ability_name,
                 }
+        master_of_prescience = self._preview_master_of_prescience_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if (
+            master_of_prescience
+            and target_unit is not None
+            and name_u not in ("OVERWATCH", "FIRE OVERWATCH", "COUNTER-OFFENSIVE", "COUNTER OFFENSIVE")
+        ):
+            ability_name = "Master of Prescience (Psychic)"
+            try:
+                get_rule = getattr(target_unit, "get_master_of_prescience_stratagem_discount_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("MASTER_OF_PRESCIENCE_STRATAGEM_DISCOUNT", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                try:
+                    mark_used = getattr(target_unit, "mark_master_of_prescience_used", None)
+                    if callable(mark_used):
+                        mark_used(
+                            self.game,
+                            source=ability_name,
+                            stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                        )
+                except Exception:
+                    pass
+                if name_u == "GO TO GROUND":
+                    reason = f"{ability_name}: Go to Ground for 0CP."
+                else:
+                    reason = f"{ability_name}: Heroic Intervention for 0CP."
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [reason],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "master_of_prescience_use": True,
+                    "master_of_prescience_source": ability_name,
+                }
         eye = self._preview_eye_of_the_augurium_discount(
             stratagem=stratagem,
             target_unit=target_unit,
@@ -4657,6 +4798,12 @@ class Player:
             )
             can_prophetic = bool(
                 self._target_unit_can_use_prophetic_sentinels_stratagem_discount(
+                    target_unit,
+                    stratagem_name=name_u,
+                )
+            )
+            can_master_of_prescience = bool(
+                self._target_unit_can_use_master_of_prescience_stratagem_discount(
                     target_unit,
                     stratagem_name=name_u,
                 )
@@ -4807,6 +4954,64 @@ class Player:
                         "reasons": [f"{ability_name}: Fire Overwatch for 0CP (used)"],
                         "prophetic_sentinels_use": True,
                         "prophetic_sentinels_source": ability_name,
+                    }
+            if can_master_of_prescience:
+                ability_name = "Master of Prescience (Psychic)"
+                try:
+                    get_master_rule = getattr(target_unit, "get_master_of_prescience_stratagem_discount_rule", None)
+                    master_rule = get_master_rule() if callable(get_master_rule) else None
+                    if isinstance(master_rule, dict):
+                        ability_name = str(master_rule.get("source", "") or ability_name).strip() or ability_name
+                except Exception:
+                    pass
+                ctx = {
+                    "ability_name": ability_name,
+                    "stratagem": getattr(stratagem, "name", None) or "",
+                    "target_unit": getattr(target_unit, "name", None) or "",
+                    "base_cp_cost": base,
+                }
+                use_master = self._should_use_optional_ability("MASTER_OF_PRESCIENCE_STRATAGEM_DISCOUNT", ctx)
+                if use_master:
+                    applied_discount = base
+                    cost = max(0, base - applied_discount)
+                    increase = 0
+                    increase_reasons: list[str] = []
+                    opponent = self._get_opponent_player()
+                    if opponent is not None:
+                        inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                            target_unit=target_unit,
+                            stratagem=stratagem,
+                            current_cost=cost,
+                        )
+                        increase = int(inc_info.get("increase", 0) or 0)
+                        increase_reasons = list(inc_info.get("reasons", []) or [])
+                        if increase:
+                            cost = max(0, cost + increase)
+                    self._pending_stratagem_cp_increase = {
+                        "increase": int(increase or 0),
+                        "reasons": increase_reasons,
+                        "stratagem_name": getattr(stratagem, "name", None) or "",
+                    }
+                    try:
+                        mark_used = getattr(target_unit, "mark_master_of_prescience_used", None)
+                        if callable(mark_used):
+                            mark_used(
+                                self.game,
+                                source=ability_name,
+                                stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                            )
+                    except Exception:
+                        pass
+                    return {
+                        "base": base,
+                        "discount": applied_discount,
+                        "available_discount": applied_discount,
+                        "cost": cost,
+                        "increase": increase,
+                        "increase_reasons": increase_reasons,
+                        "reasons": [f"{ability_name}: Fire Overwatch for 0CP (used)"],
+                        "master_of_prescience_use": True,
+                        "master_of_prescience_source": ability_name,
                     }
             if can_protector:
                 ability_name = "Protector of the Paths"
@@ -5005,6 +5210,10 @@ class Player:
                 target_unit,
                 stratagem_name="COUNTER-OFFENSIVE",
             )
+            can_master_of_prescience = self._target_unit_can_use_master_of_prescience_stratagem_discount(
+                target_unit,
+                stratagem_name="COUNTER-OFFENSIVE",
+            )
             if counter_used and not can_daemonforge and not can_intraneural:
                 return {"denied": True, "reason": "Counter-offensive already used this phase"}
             if can_daemonforge and rule:
@@ -5049,6 +5258,63 @@ class Player:
                         "reasons": [f"{ability_name}: Counter-offensive for 0CP (used)"],
                         "daemonforge_counter_offensive_use": True,
                         "daemonforge_counter_offensive_source": ability_name,
+                    }
+            if can_master_of_prescience and not counter_used:
+                ability_name = "Master of Prescience (Psychic)"
+                try:
+                    get_master_rule = getattr(target_unit, "get_master_of_prescience_stratagem_discount_rule", None)
+                    master_rule = get_master_rule() if callable(get_master_rule) else None
+                    if isinstance(master_rule, dict):
+                        ability_name = str(master_rule.get("source", "") or ability_name).strip() or ability_name
+                except Exception:
+                    pass
+                ctx = {
+                    "ability_name": ability_name,
+                    "stratagem": getattr(stratagem, "name", None) or "",
+                    "target_unit": getattr(target_unit, "name", None) or "",
+                    "base_cp_cost": base,
+                }
+                if self._should_use_optional_ability("MASTER_OF_PRESCIENCE_STRATAGEM_DISCOUNT", ctx):
+                    applied_discount = base
+                    cost = max(0, base - applied_discount)
+                    increase = 0
+                    increase_reasons: list[str] = []
+                    opponent = self._get_opponent_player()
+                    if opponent is not None:
+                        inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                            target_unit=target_unit,
+                            stratagem=stratagem,
+                            current_cost=cost,
+                        )
+                        increase = int(inc_info.get("increase", 0) or 0)
+                        increase_reasons = list(inc_info.get("reasons", []) or [])
+                        if increase:
+                            cost = max(0, cost + increase)
+                    self._pending_stratagem_cp_increase = {
+                        "increase": int(increase or 0),
+                        "reasons": increase_reasons,
+                        "stratagem_name": getattr(stratagem, "name", None) or "",
+                    }
+                    try:
+                        mark_used = getattr(target_unit, "mark_master_of_prescience_used", None)
+                        if callable(mark_used):
+                            mark_used(
+                                self.game,
+                                source=ability_name,
+                                stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                            )
+                    except Exception:
+                        pass
+                    return {
+                        "base": base,
+                        "discount": applied_discount,
+                        "available_discount": applied_discount,
+                        "cost": cost,
+                        "increase": increase,
+                        "increase_reasons": increase_reasons,
+                        "reasons": [f"{ability_name}: Counter-offensive for 0CP (used)"],
+                        "master_of_prescience_use": True,
+                        "master_of_prescience_source": ability_name,
                     }
             if counter_used:
                 return {"denied": True, "reason": "Counter-offensive already used this phase"}

@@ -5637,6 +5637,147 @@ class KeywordsDetachmentsMixin:
             return False
         return True
 
+    def get_master_of_prescience_stratagem_discount_rule(self) -> Optional[dict]:
+        """
+        Return rule info for Tigurius-style leading abilities that grant one of a small set
+        of core Stratagems for 0CP once per battle round.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "master_of_prescience_stratagem_discount_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        try:
+            items = list(root._iter_attached_leader_leading_abilities())
+        except Exception:
+            items = []
+        for ability, leader in list(items or []):
+            if isinstance(ability, str):
+                name = str(ability or "")
+                desc = str(ability or "")
+            else:
+                name = str(getattr(ability, "name", "") or "")
+                desc = str(getattr(ability, "description", "") or "")
+            text_src = root._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = root._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if (
+                "once per battle round" not in normalized
+                or "target that unit with one of the following stratagems for 0cp" not in normalized
+                or "counter offensive" not in normalized
+                or "fire overwatch" not in normalized
+                or "go to ground" not in normalized
+                or "heroic intervention" not in normalized
+            ):
+                continue
+            source = str(name or "Master of Prescience (Psychic)").strip() or "Master of Prescience (Psychic)"
+            rule = {
+                "source": source,
+                "ability_key": "master_of_prescience_stratagem_discount",
+                "stratagems": (
+                    "OVERWATCH",
+                    "FIRE OVERWATCH",
+                    "COUNTER-OFFENSIVE",
+                    "COUNTER OFFENSIVE",
+                    "GO TO GROUND",
+                    "HEROIC INTERVENTION",
+                ),
+                "limit": "battle_round",
+            }
+            try:
+                leader_id = get_entity_id(leader)
+            except Exception:
+                leader_id = None
+            if leader_id:
+                rule["source_unit_id"] = str(leader_id)
+            break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _master_of_prescience_battle_round_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        return str(br)
+
+    def master_of_prescience_used_this_battle_round(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._master_of_prescience_battle_round_key(game)
+        if not key:
+            return False
+        return str(sr.get("master_of_prescience_used_battle_round", "") or "") == key
+
+    def mark_master_of_prescience_used(self, game=None, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["master_of_prescience_used_battle_round"] = self._master_of_prescience_battle_round_key(game)
+        if source:
+            sr["master_of_prescience_used_source"] = str(source or "").strip()
+        if stratagem_name:
+            sr["master_of_prescience_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+    def can_use_master_of_prescience_stratagem_discount(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_master_of_prescience_stratagem_discount_rule()
+        if not rule:
+            return False
+        if root.master_of_prescience_used_this_battle_round(game):
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        return True
+
     def get_hypersensory_array_stratagem_discount_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:

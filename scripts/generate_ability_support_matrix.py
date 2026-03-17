@@ -4451,6 +4451,30 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Leading: unit ranged weapons gain Assault; Advance roll replaced with +6\" Move this phase.",
         ),
+        ("SM", "Catechism of Fire"): (
+            "Supported",
+            "Selected to shoot: optionally select one visible enemy unit within 12\"; the chosen target is marked so this unit's ranged attacks against it gain [DEVASTATING WOUNDS] until phase end.",
+        ),
+        ("SM", "Exhortation of Rage"): (
+            "Supported",
+            "Selected to fight: optionally select one enemy unit in Engagement Range; roll D6 and inflict D3 mortal wounds on 4-5 or 3 mortal wounds on 6.",
+        ),
+        ("SM", "Transfixing Gaze (Aura, Psychic)"): (
+            "Supported",
+            "Enemy units within 6\" of this model must pass a Leadership test to Fall Back or remain stationary instead.",
+        ),
+        ("SM", "Master of Prescience (Psychic)"): (
+            "Supported",
+            "Leading: attacks targeting the unit suffer -1 to hit. Once per battle round, the attached unit can use Fire Overwatch, Counter-offensive, Go to Ground, or Heroic Intervention for 0CP.",
+        ),
+        ("SM", "Death Mask of Sanguinius"): (
+            "Supported",
+            "Start of Fight phase: enemy units within 6\" of this model take a Battle-shock test at -1.",
+        ),
+        ("SM", "Warden of the Imperium Nihilus"): (
+            "Supported",
+            "Leading: Advance and Charge rolls for the unit gain +1, and attacks made by models in that unit gain +1 to hit.",
+        ),
         ("SM", "For the Khan!"): ("Partial", "Leading: unit ranged weapons gain Assault; melee weapons gaining Lance not implemented."),
         ("SM", "Icon of Old Caliban (Aura)"): ("Partial", "Stealth aura within 6\" supported; Benefit of Cover aura not implemented."),
         ("TAU", "Coldstar Commander"): ("Supported", "Leading: Move characteristic set to 12\"; unit ranged weapons gain Assault."),

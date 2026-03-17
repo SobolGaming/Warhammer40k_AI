@@ -6636,6 +6636,67 @@ class PositioningMixin:
                 source_name = "Target Augury Web"
             rules.append({"attack_type": "any", "keyword": "LETHAL HITS", "source": source_name})
         try:
+            target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+        except Exception:
+            target_root = target
+        target_sr = getattr(target_root, "special_rules", None)
+        if isinstance(target_sr, dict):
+            effects = list(target_sr.get("selected_to_shoot_target_attack_keyword_effects", []) or [])
+            if effects:
+                source_unit_id = str(get_entity_id(root) or "")
+                try:
+                    source_player = getattr(root.get_parent_army(), "player", None)
+                except Exception:
+                    source_player = None
+                source_owner_id = str(getattr(source_player, "id", "") or "")
+                game = getattr(source_player, "game", None) if source_player is not None else None
+                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                seen_selected_to_shoot: set[tuple[str, str]] = set()
+                for effect in list(effects or []):
+                    if not isinstance(effect, dict):
+                        continue
+                    effect_source_unit_id = str(effect.get("source_unit_id", "") or "")
+                    if effect_source_unit_id and source_unit_id and effect_source_unit_id != source_unit_id:
+                        continue
+                    effect_owner_id = str(effect.get("owner_id", "") or effect.get("owner", "") or "")
+                    if effect_owner_id and source_owner_id and effect_owner_id != source_owner_id:
+                        continue
+                    try:
+                        effect_turn = int(effect.get("turn", 0) or 0)
+                    except (TypeError, ValueError):
+                        effect_turn = 0
+                    if effect_turn and current_turn and effect_turn != current_turn:
+                        continue
+                    expires_phase = str(effect.get("expires_phase", "") or "").strip().upper()
+                    if expires_phase and current_phase and expires_phase != current_phase:
+                        continue
+                    effect_attack_type = str(effect.get("attack_type", "") or "any").strip().lower()
+                    if effect_attack_type not in ("any", "melee", "ranged"):
+                        effect_attack_type = "any"
+                    attack_kind = str(attack_type or "").strip().lower()
+                    if attack_kind and effect_attack_type not in ("any", attack_kind):
+                        continue
+                    source_name = str(effect.get("source", "") or "Selected to shoot").strip() or "Selected to shoot"
+                    for keyword in list(effect.get("keywords", []) or []):
+                        keyword_text = str(keyword or "").strip().upper()
+                        if not keyword_text:
+                            continue
+                        dedupe_key = (effect_attack_type, keyword_text)
+                        if dedupe_key in seen_selected_to_shoot:
+                            continue
+                        seen_selected_to_shoot.add(dedupe_key)
+                        rules.append(
+                            {
+                                "attack_type": effect_attack_type,
+                                "keyword": keyword_text,
+                                "source": source_name,
+                            }
+                        )
+        try:
             if isinstance(sr, dict):
                 lethal_active = bool(sr.get("embodied_prophecy_lethal_hits_active", False))
                 try:

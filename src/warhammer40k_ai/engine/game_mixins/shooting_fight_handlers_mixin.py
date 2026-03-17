@@ -6413,6 +6413,164 @@ class GameShootingFightHandlersMixin:
                 instance_key=f"{model_id}:{ability_key}:shooting",
             )
 
+    def _on_shooting_targets_selected_selected_to_shoot_target_attack_keywords(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+
+        iter_specs = getattr(root, "iter_selected_to_shoot_model_target_attack_keyword_specs", None)
+        if not callable(iter_specs):
+            return
+
+        game_map = getattr(self, "map", None)
+        queue = getattr(self, "decision_queue", None)
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+
+        def _target_sort_key(unit):
+            try:
+                return str(get_entity_id(unit) or "")
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        def _has_pending_request(*, source_unit_id: str, model_id: str) -> bool:
+            if queue is None or not hasattr(queue, "list"):
+                return False
+            for request in list(queue.list() or []):
+                if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                context = dict(getattr(request, "context", {}) or {})
+                if str(context.get("ability", "") or "") != "selected_to_shoot_target_attack_keywords":
+                    continue
+                if str(context.get("source_unit_id", "") or "") != str(source_unit_id or ""):
+                    continue
+                if str(context.get("model_id", "") or "") != str(model_id or ""):
+                    continue
+                if int(context.get("turn", 0) or 0) != int(current_turn or 0):
+                    continue
+                if str(context.get("phase_name", "") or "").strip().upper() != phase_name:
+                    continue
+                return True
+            return False
+
+        source_unit_id = str(get_entity_id(root) or "")
+        for spec in list(iter_specs() or []):
+            model = spec.get("model")
+            if model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                continue
+            model_id = str(spec.get("model_id", "") or get_entity_id(model) or "")
+            if not model_id:
+                continue
+            if source_unit_id and _has_pending_request(source_unit_id=source_unit_id, model_id=model_id):
+                continue
+            try:
+                range_value = float(spec.get("range", 0) or 0)
+            except (TypeError, ValueError):
+                range_value = 0.0
+            if range_value <= 0:
+                continue
+            requires_visibility = bool(spec.get("requires_visibility", True))
+            candidates: list[Any] = []
+            seen_target_ids: set[str] = set()
+            for target_unit in list(target_units or []):
+                if target_unit is None:
+                    continue
+                try:
+                    target_root = target_unit.get_attached_unit_root()
+                except Exception:
+                    target_root = target_unit
+                if target_root is None:
+                    continue
+                target_id = str(get_entity_id(target_root) or "")
+                if not target_id or target_id in seen_target_ids:
+                    continue
+                seen_target_ids.add(target_id)
+                try:
+                    if not target_root.is_alive() or not getattr(target_root, "deployed", True):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if target_root.get_parent_army() is root.get_parent_army():
+                        continue
+                except Exception:
+                    continue
+                within_fn = getattr(root, "_model_within_range_of_unit", None)
+                if callable(within_fn):
+                    try:
+                        if not bool(within_fn(model, target_root, float(range_value))):
+                            continue
+                    except Exception:
+                        continue
+                if requires_visibility:
+                    can_see_fn = getattr(self, "_model_can_see_unit", None)
+                    if callable(can_see_fn):
+                        try:
+                            if not bool(can_see_fn(model, target_root, game_map=game_map)):
+                                continue
+                        except Exception:
+                            continue
+                candidates.append(target_root)
+            if not candidates:
+                continue
+            candidates = sorted(candidates, key=_target_sort_key)
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            for target_root in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(target_root, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(target_root)},
+                    )
+                )
+            ability_name = str(spec.get("source", "") or "Selected to shoot").strip() or "Selected to shoot"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select one enemy unit within {int(range_value)}\" (or None).",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "selected_to_shoot_target_attack_keywords",
+                    "ability_key": str(spec.get("ability_key", "") or "selected_to_shoot_target_attack_keywords"),
+                    "ability_name": ability_name,
+                    "source_unit_id": source_unit_id,
+                    "unit_id": source_unit_id,
+                    "model_id": model_id,
+                    "range": int(range_value),
+                    "requires_visibility": requires_visibility,
+                    "attack_type": str(spec.get("attack_type", "") or "ranged"),
+                    "keywords": list(spec.get("keywords", []) or []),
+                    "candidate_unit_ids": [str(get_entity_id(target) or "") for target in list(candidates)],
+                    "phase_name": phase_name,
+                    "turn": int(current_turn or 0),
+                    "optional": True,
+                },
+            )
+            self.request_decision(request)
+
     def _on_shooting_targets_selected_sacrificial_dagger(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None or not target_units:
             return

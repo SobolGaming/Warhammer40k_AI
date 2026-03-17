@@ -3515,6 +3515,91 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if mode_key not in {"creeping_barrage", "incendiary_bombardment", "smoke_shells"}:
             return ("Artillery Support mode must be Creeping Barrage, Incendiary Bombardment, or Smoke Shells.",)
         return ()
+    if ability == "selected_to_shoot_target_attack_keywords":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if model is None:
+            return ("Selected-to-shoot source model was not found.",)
+        if source_unit is None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return ("Selected-to-shoot source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Selected-to-shoot source unit was not found.",)
+        model_parent = getattr(model, "parent_unit", None)
+        model_parent_root = (
+            model_parent.get_attached_unit_root()
+            if model_parent is not None and hasattr(model_parent, "get_attached_unit_root")
+            else model_parent
+        )
+        if model_parent_root is not None and model_parent_root is not source_root:
+            return ("Selected-to-shoot source model does not belong to the source unit.",)
+        phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name and current_phase and phase_name != current_phase:
+            return ("Selected-to-shoot target choice can only be resolved in the queued phase.",)
+        try:
+            queued_turn = int(ctx.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            queued_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if queued_turn > 0 and current_turn > 0 and queued_turn != current_turn:
+            return ("Selected-to-shoot target choice is no longer valid this turn.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Selected-to-shoot target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Selected-to-shoot target unit was not found.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is target_army:
+            return ("Selected-to-shoot target must be an enemy unit.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Selected-to-shoot target is not an eligible candidate.",)
+        try:
+            range_value = float(ctx.get("range", payload.get("range", 0)) or 0)
+        except (TypeError, ValueError):
+            range_value = 0.0
+        if range_value <= 0:
+            return ("Selected-to-shoot range is invalid.",)
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        if callable(in_range_fn):
+            if not bool(in_range_fn(model, target_root, range_value=float(range_value))):
+                return ("Selected-to-shoot target is out of range.",)
+        if bool(ctx.get("requires_visibility", False)):
+            can_see_fn = getattr(game, "_model_can_see_unit", None)
+            if callable(can_see_fn):
+                if not bool(can_see_fn(model, target_root, game_map=getattr(game, "map", None))):
+                    return ("Selected-to-shoot target must be visible to the source model.",)
+        return ()
     if ability == "labyrinthine_cunning":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -9625,6 +9710,103 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 allow_skip=bool(return_allow_skip),
             )
         return target_root
+    if ability == "selected_to_shoot_target_attack_keywords":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if model is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_root.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Selected to shoot").strip() or "Selected to shoot"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return None
+        chosen = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if chosen is None:
+            return None
+        try:
+            target_root = chosen.get_attached_unit_root()
+        except Exception:
+            target_root = chosen
+        if target_root is None:
+            return None
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        owner_id = str(getattr(player, "id", "") or "")
+        attack_type = str(ctx.get("attack_type", "") or "ranged").strip().lower() or "ranged"
+        if attack_type not in ("any", "melee", "ranged"):
+            attack_type = "any"
+        keywords = [
+            str(keyword or "").strip().upper()
+            for keyword in list(ctx.get("keywords", payload.get("keywords", [])) or [])
+            if str(keyword or "").strip()
+        ]
+        if not keywords:
+            return None
+        source_unit_id = str(get_entity_id(source_root) or "")
+        source_model_id = str(get_entity_id(model) or "")
+        expires_phase = str(ctx.get("phase_name", "") or "SHOOTING_PHASE").strip().upper() or "SHOOTING_PHASE"
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        existing_effects = [
+            effect
+            for effect in list(sr.get("selected_to_shoot_target_attack_keyword_effects", []) or [])
+            if isinstance(effect, dict)
+        ]
+        filtered_effects = []
+        for effect in existing_effects:
+            if (
+                str(effect.get("source_unit_id", "") or "") == source_unit_id
+                and str(effect.get("source_model_id", "") or "") == source_model_id
+                and str(effect.get("source", "") or "").strip().lower() == ability_name.lower()
+            ):
+                continue
+            filtered_effects.append(effect)
+        filtered_effects.append(
+            {
+                "source": ability_name,
+                "source_unit_id": source_unit_id,
+                "source_model_id": source_model_id,
+                "owner_id": owner_id,
+                "turn": int(turn or 0),
+                "expires_phase": expires_phase,
+                "attack_type": attack_type,
+                "keywords": list(keywords),
+            }
+        )
+        sr["selected_to_shoot_target_attack_keyword_effects"] = filtered_effects
+        target_root.special_rules = sr
+        tname = str(getattr(target_root, "name", "Unit") or "Unit")
+        keyword_text = ", ".join(list(keywords))
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {tname} marked ({keyword_text} for ranged attacks from {getattr(source_root, 'name', 'Unit')}).",
+        )
+        return {"target_unit_id": get_entity_id(target_root), "keywords": list(keywords)}
     if ability == "prescient_redeployment":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -20328,7 +20510,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return 1
-    if str(ctx.get("ability", "") or "") in {"hammer_aflame", "thunderous_head_butt"}:
+    if str(ctx.get("ability", "") or "") in {"hammer_aflame", "thunderous_head_butt", "exhortation_of_rage"}:
         if is_skip_choice(request, result):
             return None
         payload = _option_payload(request, result)
