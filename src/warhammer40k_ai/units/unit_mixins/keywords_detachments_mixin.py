@@ -12209,12 +12209,14 @@ class KeywordsDetachmentsMixin:
                 if attack_type == "ranged":
                     model_attack_phrase = bool(
                         ("each time a model in this unit makes a ranged attack" in low)
+                        or ("each time a ranged attack made by a model in this unit" in low)
                         or ("each time this model makes a ranged attack" in low)
                         or ("each time a ranged attack made by this model" in low)
                     )
                 else:
                     model_attack_phrase = bool(
                         ("each time a model in this unit makes a melee attack" in low)
+                        or ("each time a melee attack made by a model in this unit" in low)
                         or ("each time this model makes a melee attack" in low)
                         or ("each time a melee attack made by this model" in low)
                     )

@@ -507,7 +507,40 @@ class GameShootingFightHandlersMixin:
         if not unit_specs:
             return
 
+        def _spec_requirements_met(spec: dict) -> bool:
+            required_model_name = str(spec.get("required_model_name", "") or "").strip()
+            required_wargear_name = str(spec.get("required_wargear_name", "") or "").strip()
+            if not required_model_name or not required_wargear_name:
+                return True
+            try:
+                root = attacker_unit.get_attached_unit_root()
+            except Exception:
+                root = attacker_unit
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in list(members or []):
+                if member is None:
+                    continue
+                find_model = getattr(member, "_find_model_named", None)
+                matched_model = find_model(required_model_name) if callable(find_model) else None
+                if matched_model is None:
+                    continue
+                has_wargear = getattr(member, "_model_has_wargear_named", None)
+                if callable(has_wargear):
+                    try:
+                        if bool(has_wargear(matched_model, required_wargear_name)):
+                            return True
+                    except Exception:
+                        continue
+            return False
+
         for spec in unit_specs:
+            if not _spec_requirements_met(spec):
+                continue
             if bool(spec.get("requires_not_engaged", False)) and engaged:
                 continue
             range_roll = str(spec.get("range_roll", "") or "").strip().upper()
@@ -8718,6 +8751,148 @@ class GameShootingFightHandlersMixin:
                             "target_keyword": target_keyword,
                             "wound_bonus": ctx["wound_bonus"],
                             "buff_key": buff_key,
+                            "ability_name": ability_name,
+                        },
+                        instance_key=f"{model_id}:{buff_key}:fight",
+                    )
+                    pending_keys.add((model_id, buff_key))
+
+    def _on_fight_unit_selected_target_keyword_melee_weapon_keyword(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        pname = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if pname and pname != "FIGHT_PHASE":
+            return
+        root_getter = getattr(unit, "get_attached_unit_root", None)
+        root = root_getter() if callable(root_getter) else unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        army_getter = getattr(root, "get_parent_army", None)
+        army = army_getter() if callable(army_getter) else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None:
+            return
+        if selecting_player is not None and selecting_player is not player:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        pending_keys: set[tuple[str, str]] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "fight_selected_target_keyword_melee_weapon_keyword":
+                    continue
+                model_id = str(ctx.get("model_id", "") or "")
+                buff_key = str(ctx.get("buff_key", "") or "")
+                if model_id and buff_key:
+                    pending_keys.add((model_id, buff_key))
+
+        def _engaged_with_keyword(keyword: str) -> bool:
+            keyword = str(keyword or "").strip().upper()
+            if not keyword:
+                return False
+            try:
+                enemies = list(game_map.get_enemy_units(root) or [])
+            except Exception:
+                enemies = []
+            for enemy in list(enemies or []):
+                if enemy is None or not enemy.is_alive():
+                    continue
+                try:
+                    if not bool(getattr(enemy, "deployed", True)):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None or not enemy_root.is_alive():
+                    continue
+                if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                    continue
+                try:
+                    if not bool(game_map.is_within_engagement_range(root, enemy_root)):
+                        continue
+                except Exception:
+                    continue
+                has_any_keyword = getattr(enemy_root, "has_any_keyword", None)
+                if callable(has_any_keyword):
+                    try:
+                        if bool(has_any_keyword(keyword)):
+                            return True
+                    except Exception:
+                        continue
+            return False
+
+        members_getter = getattr(root, "get_attached_unit_members", None)
+        members = list(members_getter() or []) if callable(members_getter) else [root]
+        if not members:
+            members = [root]
+        unit_id = get_entity_id(root)
+        if not unit_id:
+            return
+        for member in sorted(members, key=lambda entry: str(get_entity_id(entry) or "")):
+            if member is None:
+                continue
+            for model in sorted(list(getattr(member, "models", []) or []), key=lambda entry: str(get_entity_id(entry) or "")):
+                if model is None or not bool(getattr(model, "is_alive", False)):
+                    continue
+                model_id = str(get_entity_id(model) or "")
+                if not model_id:
+                    continue
+                specs = list(
+                    getattr(member, "model_fight_selected_target_keyword_melee_weapon_keyword_specs", lambda _m: [])(model)
+                    or []
+                )
+                for spec in specs:
+                    buff_key = str(spec.get("buff_key", "") or "").strip().lower()
+                    if not buff_key or (model_id, buff_key) in pending_keys:
+                        continue
+                    if bool(getattr(model, "has_used_once_per_battle", lambda _k: False)(buff_key)):
+                        continue
+                    target_keyword = str(spec.get("target_keyword", "") or "").strip().upper()
+                    if not _engaged_with_keyword(target_keyword):
+                        continue
+                    keywords = [str(v or "").strip().upper() for v in list(spec.get("keywords") or []) if str(v or "").strip()]
+                    if not keywords:
+                        continue
+                    ability_name = str(spec.get("source", "") or "Fight-selected melee weapon keyword bonus").strip()
+                    ability_name = ability_name or "Fight-selected melee weapon keyword bonus"
+                    message = f"Use {ability_name} for {getattr(model, 'name', 'Model')}?"
+                    ctx = {
+                        "ability": "fight_selected_target_keyword_melee_weapon_keyword",
+                        "ability_name": ability_name,
+                        "phase": "Fight phase",
+                        "unit": getattr(root, "name", "") or "",
+                        "unit_id": unit_id,
+                        "model": getattr(model, "name", "") or "",
+                        "model_id": model_id,
+                        "buff_key": buff_key,
+                        "target_keyword": target_keyword,
+                        "keywords": list(keywords),
+                    }
+                    self._queue_optional_ability_confirmation(
+                        player=player,
+                        ability_key="fight_selected_target_keyword_melee_weapon_keyword",
+                        ability_name=ability_name,
+                        message=message,
+                        context=ctx,
+                        payload={
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "buff_key": buff_key,
+                            "target_keyword": target_keyword,
+                            "keywords": list(keywords),
                             "ability_name": ability_name,
                         },
                         instance_key=f"{model_id}:{buff_key}:fight",

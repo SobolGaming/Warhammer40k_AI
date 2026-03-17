@@ -732,7 +732,7 @@ class AbilitySpecsMixin:
             return list(root._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, bool, int]] = set()
+        seen: set[tuple[str, bool, int, int, tuple[str, ...]]] = set()
         try:
             members = list(root.get_attached_unit_members() or [])
         except Exception:
@@ -751,19 +751,39 @@ class AbilitySpecsMixin:
                 normalized = normalized.lower()
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
-                full_enemy_match = self._CHARGE_END_ENGAGEMENT_BATTLESHOCK_RE.fullmatch(normalized)
-                single_enemy_match = self._CHARGE_END_ENGAGEMENT_SELECT_ONE_BATTLESHOCK_RE.fullmatch(normalized)
-                if not full_enemy_match and not single_enemy_match:
+                full_enemy_match = self._CHARGE_END_ENGAGEMENT_BATTLESHOCK_RE.search(normalized)
+                conditional_enemy_match = self._CHARGE_END_ENGAGEMENT_BATTLESHOCK_CONDITIONAL_PENALTY_RE.search(normalized)
+                single_enemy_match = self._CHARGE_END_ENGAGEMENT_SELECT_ONE_BATTLESHOCK_RE.search(normalized)
+                if not full_enemy_match and not single_enemy_match and not conditional_enemy_match:
                     continue
                 source = str(name or "Charge end Battle-shock").strip() or "Charge end Battle-shock"
                 select_one = bool(single_enemy_match)
                 penalty = 0
+                conditional_penalty = 0
+                conditional_keywords: list[str] = []
                 if single_enemy_match is not None:
                     try:
                         penalty = int(single_enemy_match.group("penalty") or 0)
                     except Exception:
                         penalty = 0
-                key = (source.lower(), bool(select_one), int(penalty))
+                elif conditional_enemy_match is not None:
+                    try:
+                        conditional_penalty = int(conditional_enemy_match.group("penalty") or 0)
+                    except Exception:
+                        conditional_penalty = 0
+                    raw_keywords = str(conditional_enemy_match.group("keywords") or "").strip()
+                    for keyword in re.split(r"\s+or\s+", raw_keywords):
+                        normalized_keyword = self._normalize_keyword_phrase(keyword) or str(keyword or "").strip().lower()
+                        normalized_keyword = normalized_keyword.strip().upper()
+                        if normalized_keyword and normalized_keyword not in conditional_keywords:
+                            conditional_keywords.append(normalized_keyword)
+                key = (
+                    source.lower(),
+                    bool(select_one),
+                    int(penalty),
+                    int(conditional_penalty),
+                    tuple(sorted(conditional_keywords)),
+                )
                 if key in seen:
                     continue
                 seen.add(key)
@@ -772,6 +792,9 @@ class AbilitySpecsMixin:
                     spec["select_one"] = True
                     if penalty:
                         spec["test_modifier"] = -int(penalty)
+                elif conditional_penalty and conditional_keywords:
+                    spec["test_modifier_if_missing_keywords"] = -int(conditional_penalty)
+                    spec["test_modifier_missing_keywords_any"] = list(conditional_keywords)
                 specs.append(spec)
 
         if not hasattr(root, "_ability_cache"):
@@ -11801,6 +11824,80 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_fight_selected_target_keyword_melee_weapon_keyword_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: once per battle, when selected to fight while engaged with a target keyword,
+        optionally grant keywords to this model's melee weapons until end of phase.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - buff_key: once-per-battle tracking key
+            - target_keyword: str
+            - keywords: list[str]
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_selected_target_keyword_melee_weapon_keyword:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, tuple[str, ...]]] = set()
+        pattern = re.compile(
+            r"once per battle when this model s unit is selected to fight if that unit is within engagement range of one or more enemy "
+            r"(?P<target_keyword>[a-z0-9 \-]+?) units this model can use this ability if it does until the end of the phase "
+            r"melee weapons equipped by this model have the (?P<keywords>[a-z0-9 \-]+?(?: and [a-z0-9 \-]+)*) ability",
+            re.IGNORECASE,
+        )
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            match = pattern.search(normalized)
+            if match is None:
+                continue
+            target_keyword_raw = str(match.group("target_keyword") or "").strip()
+            target_keyword = self._normalize_keyword_phrase(target_keyword_raw) or target_keyword_raw.lower()
+            target_keyword = target_keyword.strip().upper()
+            if not target_keyword:
+                continue
+            keywords_raw = str(match.group("keywords") or "").strip()
+            keywords = [
+                str(part or "").strip().upper()
+                for part in re.split(r"\s+and\s+", keywords_raw)
+                if str(part or "").strip()
+            ]
+            if not keywords:
+                continue
+            source = str(name or "Fight-selected melee weapon keyword bonus").strip() or "Fight-selected melee weapon keyword bonus"
+            dedupe_key = (source.lower(), target_keyword, tuple(sorted(keywords)))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            source_key = self._normalize_keyword_phrase(source) or "fight_selected_target_keyword_melee_weapon_keyword"
+            specs.append(
+                {
+                    "source": source,
+                    "buff_key": f"fight_selected_target_keyword_melee_weapon_keyword:{source_key}",
+                    "target_keyword": target_keyword,
+                    "keywords": list(keywords),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_fight_selected_mortal_table_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: each time this model's unit is selected to fight, optionally select an engaged enemy
@@ -13361,17 +13458,29 @@ class AbilitySpecsMixin:
         sources: list[dict] = []
         seen_local: set[str] = set()
 
-        def _matches(text: str) -> bool:
+        def _parse_source(text: str) -> Optional[dict]:
             if not text:
-                return False
+                return None
             norm = root._normalize_rules_text(text)
             if not norm:
-                return False
+                return None
             norm = norm.replace("\u2019", "'").replace("\u0192?T", "'").lower()
             norm = re.sub(r"'s\b", " s", norm)
             norm = re.sub(r"[^a-z0-9]+", " ", norm)
             norm = re.sub(r"\s+", " ", norm).strip()
-            return bool(root._FIRST_FAILED_SAVE_DAMAGE_ZERO_RE.fullmatch(norm))
+            if root._FIRST_FAILED_SAVE_DAMAGE_ZERO_RE.fullmatch(norm):
+                return {
+                    "usage_scope": "turn",
+                    "usage_key": "first_failed_save_damage_zero",
+                    "optional": False,
+                }
+            if root._FIRST_FAILED_SAVE_DAMAGE_ZERO_PHASE_RE.fullmatch(norm):
+                return {
+                    "usage_scope": "phase",
+                    "usage_key": "first_failed_save_damage_zero",
+                    "optional": True,
+                }
+            return None
 
         try:
             members = list(root.get_attached_unit_members() or [])
@@ -13381,19 +13490,22 @@ class AbilitySpecsMixin:
             members = [root]
         for unit in members:
             for name, desc in unit._iter_ability_entries_for_rules(model=None):
-                if _matches(desc or name or ""):
-                    src = str(name or "First failed save").strip() or "First failed save"
-                    key = src.lower()
-                    if key in seen_local:
-                        continue
-                    seen_local.add(key)
-                    sources.append(
-                        {
-                            "source": src,
-                            "usage_scope": "turn",
-                            "usage_key": "first_failed_save_damage_zero",
-                        }
-                    )
+                parsed = _parse_source(desc or name or "")
+                if parsed is None:
+                    continue
+                src = str(name or "First failed save").strip() or "First failed save"
+                key = f"{src.lower()}:{parsed['usage_scope']}:unit"
+                if key in seen_local:
+                    continue
+                seen_local.add(key)
+                sources.append(
+                    {
+                        "source": src,
+                        "usage_scope": parsed["usage_scope"],
+                        "usage_key": parsed["usage_key"],
+                        "optional": bool(parsed.get("optional", False)),
+                    }
+                )
 
         try:
             models = list(root.get_attached_unit_models() or [])
@@ -13401,19 +13513,24 @@ class AbilitySpecsMixin:
             models = list(getattr(root, "models", []) or [])
         for model in models:
             for name, desc in root._iter_model_specific_ability_entries(model):
-                if _matches(desc or name or ""):
-                    src = str(name or "First failed save").strip() or "First failed save"
-                    key = src.lower()
-                    if key in seen_local:
-                        continue
-                    seen_local.add(key)
-                    sources.append(
-                        {
-                            "source": src,
-                            "usage_scope": "turn",
-                            "usage_key": "first_failed_save_damage_zero",
-                        }
-                    )
+                parsed = _parse_source(desc or name or "")
+                if parsed is None:
+                    continue
+                src = str(name or "First failed save").strip() or "First failed save"
+                model_id = str(get_entity_id(model) or "")
+                key = f"{src.lower()}:{parsed['usage_scope']}:{model_id or 'model'}"
+                if key in seen_local:
+                    continue
+                seen_local.add(key)
+                source_entry = {
+                    "source": src,
+                    "usage_scope": parsed["usage_scope"],
+                    "usage_key": parsed["usage_key"],
+                    "optional": bool(parsed.get("optional", False)),
+                }
+                if model_id:
+                    source_entry["source_model_id"] = model_id
+                sources.append(source_entry)
 
         # Adeptus Custodes (Talons Of The Emperor): Aegis Projector.
         for member in members:

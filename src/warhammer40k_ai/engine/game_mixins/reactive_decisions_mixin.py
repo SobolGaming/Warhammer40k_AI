@@ -5280,6 +5280,7 @@ class GameReactiveDecisionsMixin:
             "biological_warfare",
             "deeds_of_heroism",
             "alchemicus_familiar",
+            "fight_selected_target_keyword_melee_weapon_keyword",
             "extremis_trigger_word",
             "flickerjump",
             "advance_redeploy",
@@ -8474,6 +8475,90 @@ class GameReactiveDecisionsMixin:
                     append_action(
                         player,
                         f"{ability_name}: {getattr(root, 'name', 'Unit')} gains +{int(wound_bonus)} to wound against {target_keyword.upper()} this phase.",
+                    )
+            except (ImportError, AttributeError, TypeError, ValueError):
+                pass
+            return
+
+        if ability_key == "fight_selected_target_keyword_melee_weapon_keyword":
+            if choice is False:
+                return
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not unit_id or not model_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            model = self._resolve_model_by_id(model_id)
+            if unit is None or model is None:
+                return
+            root_getter = getattr(unit, "get_attached_unit_root", None)
+            root = root_getter() if callable(root_getter) else unit
+            if root is None or not root.is_alive():
+                return
+            if not bool(getattr(model, "is_alive", False)):
+                return
+            members_getter = getattr(root, "get_attached_unit_members", None)
+            members = list(members_getter() or []) if callable(members_getter) else [root]
+            if getattr(model, "parent_unit", None) not in members:
+                return
+            buff_key = str(
+                payload.get("buff_key") or ctx.get("buff_key") or "fight_selected_target_keyword_melee_weapon_keyword"
+            ).strip().lower()
+            if not buff_key:
+                return
+            if bool(getattr(model, "has_used_once_per_battle", lambda _k: False)(buff_key)):
+                return
+            ability_name = str(
+                payload.get("ability_name") or ctx.get("ability_name") or "Fight-selected melee weapon keyword bonus"
+            ).strip()
+            ability_name = ability_name or "Fight-selected melee weapon keyword bonus"
+            keywords = [
+                str(value or "").strip().upper()
+                for value in list(payload.get("keywords") or ctx.get("keywords") or [])
+                if str(value or "").strip()
+            ]
+            if not keywords:
+                return
+
+            set_fn = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+            if not callable(set_fn):
+                return
+            weapon_names: list[str] = []
+            seen_weapon_keys: set[str] = set()
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                weapon_key = Unit._norm_wargear_name(weapon_name)
+                if not weapon_key or weapon_key in seen_weapon_keys:
+                    continue
+                seen_weapon_keys.add(weapon_key)
+                weapon_names.append(weapon_name)
+            if not weapon_names:
+                return
+            for idx, weapon_name in enumerate(weapon_names):
+                set_fn(
+                    key=f"{buff_key}:{get_entity_id(model)}:{idx}",
+                    weapon_name=weapon_name,
+                    keywords=list(keywords),
+                    source=ability_name,
+                    expires_phase="FIGHT_PHASE",
+                    attack_type="melee",
+                )
+            mark_used = getattr(model, "mark_used_once_per_battle", None)
+            if callable(mark_used):
+                mark_used(buff_key, ability_name=ability_name, source="datasheet")
+            try:
+                from ...utility.event_bus import append_action
+
+                player = getattr(root.get_parent_army(), "player", None)
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(model, 'name', 'Model')} gains [{'] ['.join(keywords)}] on melee weapons this phase.",
                     )
             except (ImportError, AttributeError, TypeError, ValueError):
                 pass

@@ -3421,6 +3421,11 @@ class Unit(
         r"the\s+targets?\s+of\s+that\s+charge\s+are\s+below\s+half\s+strength\s+add\s+(?P<half>\d+)\s+to\s+the\s+charge\s+roll\s+instead",
         re.IGNORECASE,
     )
+    _CHARGE_ROLL_TARGET_KEYWORD_BONUS_RE = re.compile(
+        r"each\s+time\s+this\s+(?:model\s+s\s+unit|model|unit)\s+declares\s+a\s+charge\s+if\s+one\s+or\s+more\s+targets?\s+of\s+that\s+charge\s+"
+        r"have\s+the\s+(?P<keywords>[a-z0-9 \-]+?(?:\s+or\s+[a-z0-9 \-]+)*)\s+keywords?\s+add\s+(?P<bonus>\d+)\s+to\s+the\s+charge\s+roll",
+        re.IGNORECASE,
+    )
     _DEFENSIVE_CHARGE_ROLL_PENALTY_RE = re.compile(
         r"(?:"
         r"each\s+time\s+an?\s+enemy\s+unit\s+declares\s+a\s+charge\s+if\s+one\s+or\s+more\s+units?\s+with\s+this\s+ability\s+are\s+"
@@ -3934,7 +3939,15 @@ class Unit(
         r"(?: if it is not within engagement range of (?:one or more|any) enemy units)? "
         r"(?:it|that unit|this unit|this model) can make a normal move(?: of up to (?P<range_expr>d6|\d+)\s*\"?\s*)?"
         r"(?: as if it were your movement phase)?"
-        r"\s*if it does until the end of the turn (?:that unit|this unit|this model) is not eligible to declare a charge",
+        r"\s*if it does(?: so)? until the end of the turn (?:that unit|this unit|this model) is not eligible to declare a charge",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_REQUIRES_MODEL_WARGEAR_RE = re.compile(
+        r"in your shooting phase after this (?:model(?: s)?(?: unit)?|unit) has shot "
+        r"if it contains an? (?P<model>[a-z0-9 \-]+?) equipped with an? (?P<wargear>[a-z0-9 \-]+?) "
+        r"(?:it|that unit|this unit|this model) can make a normal move(?: of up to (?P<range_expr>d6|\d+)\s*\"?\s*)?"
+        r"(?: as if it were your movement phase)? "
+        r"if it does(?: so)? until the end of the turn (?:that unit|this unit|this model) is not eligible to declare a charge",
         re.IGNORECASE,
     )
     _POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_BATTLELINE_ALT_RE = re.compile(
@@ -4215,6 +4228,12 @@ class Unit(
     )
     _CHARGE_END_ENGAGEMENT_BATTLESHOCK_RE = re.compile(
         r"each time this (?:model s )?unit ends a charge move each enemy unit within engagement range of (?:(?:that|this) unit|it) must take a battle shock test",
+        re.IGNORECASE,
+    )
+    _CHARGE_END_ENGAGEMENT_BATTLESHOCK_CONDITIONAL_PENALTY_RE = re.compile(
+        r"each time this (?:model s )?unit ends a charge move each enemy unit within engagement range of (?:(?:that|this) unit|it) "
+        r"must take a battle shock test if that enemy unit does not have the "
+        r"(?P<keywords>[a-z0-9 \-]+?(?: or [a-z0-9 \-]+)*) keywords? subtract (?P<penalty>\d+) from that test",
         re.IGNORECASE,
     )
     _CHARGE_END_ENGAGEMENT_SELECT_ONE_BATTLESHOCK_RE = re.compile(
@@ -4713,6 +4732,11 @@ class Unit(
     _FIRST_FAILED_SAVE_DAMAGE_ZERO_RE = re.compile(
         r"once per turn the first time a saving throw is failed for (?:the bearer s unit|this unit|this model s unit|this models unit) "
         r"change the damage characteristic of that attack to 0",
+        re.IGNORECASE,
+    )
+    _FIRST_FAILED_SAVE_DAMAGE_ZERO_PHASE_RE = re.compile(
+        r"once per phase when an attack is allocated to (?:the bearer|this model) and the saving throw is failed "
+        r"you can change the damage characteristic of that attack to 0",
         re.IGNORECASE,
     )
     _CRUEL_AMUSEMENT_RE = re.compile(

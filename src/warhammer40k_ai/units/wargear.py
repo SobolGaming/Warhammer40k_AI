@@ -21781,6 +21781,10 @@ class WargearProfile:
                         owner_id = ""
                         turn = 0
                         game = None
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                    current_player = game.get_current_player() if game is not None and hasattr(game, "get_current_player") else None
+                    phase_owner_id = str(getattr(current_player, "id", "") or owner_id or "")
+                    current_phase_key = f"{int(turn or 0)}:{phase_name}:{phase_owner_id}"
 
                     def _normalize_usage_key(value: str) -> str:
                         key = re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
@@ -21827,9 +21831,16 @@ class WargearProfile:
                         source_sr = getattr(source_root, "special_rules", None)
                         if not isinstance(source_sr, dict):
                             source_sr = {}
+                        source_model_id = str(source_entry.get("source_model_id", "") or "")
+                        if source_model_id and str(get_entity_id(target_model) or "") != source_model_id:
+                            continue
 
                         already_used = False
-                        if usage_scope == "battle_round":
+                        if usage_scope == "phase":
+                            used_phase_key = str(source_sr.get(f"{usage_key}_phase_key", "") or "")
+                            if used_phase_key and current_phase_key and used_phase_key == current_phase_key:
+                                already_used = True
+                        elif usage_scope == "battle_round":
                             try:
                                 used_round = int(source_sr.get(f"{usage_key}_battle_round", 0) or 0)
                             except Exception:
@@ -21922,7 +21933,9 @@ class WargearProfile:
                         if use_it:
                             attack_instance["force_damage_zero"] = True
                             attack_instance["force_damage_zero_source"] = source
-                            if usage_scope == "battle_round":
+                            if usage_scope == "phase":
+                                chosen_sr[f"{usage_key}_phase_key"] = current_phase_key
+                            elif usage_scope == "battle_round":
                                 chosen_sr[f"{usage_key}_battle_round"] = int(turn or 0)
                             else:
                                 chosen_sr[f"{usage_key}_turn"] = int(turn or 0)

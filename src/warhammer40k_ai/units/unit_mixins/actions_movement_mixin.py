@@ -4205,8 +4205,11 @@ class ActionsMovementMixin:
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
                 m = member._POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_RE.fullmatch(normalized)
+                m_required = None
                 m_battleline = None
                 if not m:
+                    m_required = member._POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_REQUIRES_MODEL_WARGEAR_RE.fullmatch(normalized)
+                if not m and not m_required:
                     m_battleline = member._POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_BATTLELINE_ALT_RE.fullmatch(normalized)
                     if not m_battleline:
                         continue
@@ -4251,7 +4254,8 @@ class ActionsMovementMixin:
                         }
                     )
                     continue
-                range_expr = str(m.group("range_expr") or "").strip().upper()
+                match = m_required or m
+                range_expr = str(match.group("range_expr") or "").strip().upper()
                 range_roll = ""
                 rng = 0
                 use_move_characteristic = False
@@ -4275,19 +4279,27 @@ class ActionsMovementMixin:
                     str(range_roll),
                     bool(requires_not_engaged),
                     bool(use_move_characteristic),
+                    str(m_required.group("model") or "").strip().lower() if m_required is not None else "",
+                    str(m_required.group("wargear") or "").strip().lower() if m_required is not None else "",
                 )
                 if key in seen:
                     continue
                 seen.add(key)
-                specs.append(
-                    {
-                        "source": source,
-                        "range": int(rng),
-                        "range_roll": str(range_roll),
-                        "requires_not_engaged": bool(requires_not_engaged),
-                        "use_move_characteristic": bool(use_move_characteristic),
-                    }
-                )
+                spec = {
+                    "source": source,
+                    "range": int(rng),
+                    "range_roll": str(range_roll),
+                    "requires_not_engaged": bool(requires_not_engaged),
+                    "use_move_characteristic": bool(use_move_characteristic),
+                }
+                if m_required is not None:
+                    required_model_name = str(m_required.group("model") or "").strip()
+                    required_wargear_name = str(m_required.group("wargear") or "").strip()
+                    if required_model_name:
+                        spec["required_model_name"] = required_model_name
+                    if required_wargear_name:
+                        spec["required_wargear_name"] = required_wargear_name
+                specs.append(spec)
 
         enhancement_sources = self._attached_unit_active_enhancement_sources(
             "enhancement_kult_of_speed_wazblasta",
@@ -11166,6 +11178,118 @@ class ActionsMovementMixin:
             bonus, source = csm_bonus_fn(root, target_units=targets, game=game)
             if int(bonus or 0):
                 modifiers.append((int(bonus or 0), str(source or "Empyric Symbiote")))
+        return modifiers
+
+    def _charge_roll_target_keyword_specs(self) -> list[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "charge_roll_target_keyword_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, tuple[str, ...]]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = self._strip_eligibility_prefix(text_src)
+                normalized = self._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                match = self._CHARGE_ROLL_TARGET_KEYWORD_BONUS_RE.search(normalized)
+                if not match:
+                    continue
+                try:
+                    bonus = int(match.group("bonus") or 0)
+                except Exception:
+                    bonus = 0
+                if bonus <= 0:
+                    continue
+                keywords: list[str] = []
+                for keyword in re.split(r"\s+or\s+", str(match.group("keywords") or "").strip()):
+                    normalized_keyword = self._normalize_keyword_phrase(keyword) or str(keyword or "").strip().lower()
+                    normalized_keyword = normalized_keyword.strip().upper()
+                    if normalized_keyword and normalized_keyword not in keywords:
+                        keywords.append(normalized_keyword)
+                if not keywords:
+                    continue
+                source = str(name or "Charge roll bonus").strip() or "Charge roll bonus"
+                key = (source.lower(), int(bonus), tuple(sorted(keywords)))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "bonus": int(bonus),
+                        "target_keywords_any": list(keywords),
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def get_charge_roll_target_keyword_modifiers(self, target_units=None) -> list[tuple[int, str]]:
+        specs = self._charge_roll_target_keyword_specs()
+        if target_units is None or not specs:
+            return []
+        targets = list(target_units) if isinstance(target_units, (list, tuple, set)) else [target_units]
+        if not targets:
+            return []
+
+        def _target_has_any_keyword(target, keywords: list[str]) -> bool:
+            if target is None:
+                return False
+            try:
+                root = target.get_attached_unit_root()
+            except Exception:
+                root = target
+            if root is None:
+                return False
+            has_any = getattr(root, "has_any_keyword", None)
+            if not callable(has_any):
+                return False
+            for keyword in list(keywords or []):
+                if not keyword:
+                    continue
+                try:
+                    if bool(has_any(keyword)):
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        modifiers: list[tuple[int, str]] = []
+        for spec in specs:
+            keywords = [
+                str(value or "").strip().upper()
+                for value in list(spec.get("target_keywords_any") or [])
+                if str(value or "").strip()
+            ]
+            if not keywords:
+                continue
+            if not any(_target_has_any_keyword(target, keywords) for target in targets):
+                continue
+            try:
+                bonus = int(spec.get("bonus", 0) or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            modifiers.append((int(bonus), str(spec.get("source", "") or "Charge roll bonus")))
         return modifiers
 
     def _defensive_charge_roll_penalty_specs(self) -> list[dict]:

@@ -6275,6 +6275,7 @@ def _classify_ability_base(
     orks_named_datasheet_support = _orks_named_datasheet_support(name, description, faction_id=faction_id)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
+    early_charge_end_engagement_battleshock_support = _charge_end_engagement_battleshock_support(description)
     leading_scaled_weapon_bonus_support = _leading_scaled_weapon_bonus_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
     bearer_wounds_support = _bearer_wounds_characteristic_support(description)
@@ -6449,12 +6450,16 @@ def _classify_ability_base(
     plasmacyte_support = _plasmacyte_support(description)
     fight_selected_weapon_attacks_damage_bonus_support = _fight_selected_weapon_attacks_damage_bonus_support(description)
     fight_selected_unit_target_keyword_wound_bonus_support = _fight_selected_unit_target_keyword_wound_bonus_support(description)
+    fight_selected_target_keyword_melee_weapon_keyword_support = _fight_selected_target_keyword_melee_weapon_keyword_support(description)
+    first_failed_save_damage_zero_support = _first_failed_save_damage_zero_support(description)
     shoot_on_death_after_attacks_support = _shoot_on_death_after_attacks_support(description)
     return_on_death_support = _return_on_death_support(description)
     crewed_platform_support = _crewed_platform_support(description)
     melee_fight_on_death_support = _melee_fight_on_death_after_attacks_support(description)
     conditional_lone_operative_support = _conditional_lone_operative_support(description)
     charge_target_strength_bonus_support = _charge_target_strength_bonus_support(description)
+    charge_target_keyword_bonus_support = _charge_target_keyword_bonus_support(description)
+    charge_target_keyword_and_fight_selected_model_melee_keyword_support = _charge_target_keyword_and_fight_selected_model_melee_keyword_support(description)
     daemonic_allegiance_support = _daemonic_allegiance_wargear_support(description)
     reinforcements_denial_support = _reinforcements_denial_support(description)
     cp_on_destroy_support = _gain_cp_on_destroy_support(description)
@@ -6759,6 +6764,8 @@ def _classify_ability_base(
         return orks_waaagh_conditional_support
     if orks_named_datasheet_support:
         return orks_named_datasheet_support
+    if early_charge_end_engagement_battleshock_support:
+        return early_charge_end_engagement_battleshock_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -7084,10 +7091,16 @@ def _classify_ability_base(
         return daemonic_patrons_support
     if plasmacyte_support:
         return plasmacyte_support
+    if charge_target_keyword_and_fight_selected_model_melee_keyword_support:
+        return charge_target_keyword_and_fight_selected_model_melee_keyword_support
     if fight_selected_weapon_attacks_damage_bonus_support:
         return fight_selected_weapon_attacks_damage_bonus_support
     if fight_selected_unit_target_keyword_wound_bonus_support:
         return fight_selected_unit_target_keyword_wound_bonus_support
+    if fight_selected_target_keyword_melee_weapon_keyword_support:
+        return fight_selected_target_keyword_melee_weapon_keyword_support
+    if first_failed_save_damage_zero_support:
+        return first_failed_save_damage_zero_support
     if shoot_on_death_after_attacks_support:
         return shoot_on_death_after_attacks_support
     if melee_fight_on_death_support:
@@ -7098,6 +7111,8 @@ def _classify_ability_base(
         return crewed_platform_support
     if charge_target_strength_bonus_support:
         return charge_target_strength_bonus_support
+    if charge_target_keyword_bonus_support:
+        return charge_target_keyword_bonus_support
     if daemonic_allegiance_support:
         return daemonic_allegiance_support
     if reinforcements_denial_support:
@@ -8164,6 +8179,7 @@ def _monster_vehicle_reroll_support(description: str) -> Optional[Tuple[str, str
         return None
     if not (
         "each time a model in this unit makes a ranged attack" in norm
+        or "each time a ranged attack made by a model in this unit" in norm
         or "each time this model makes a ranged attack" in norm
         or "each time a ranged attack made by this model" in norm
     ):
@@ -8469,15 +8485,16 @@ def _aura_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         return None
     m = re.fullmatch(
         r"while a friendly (?P<kw>.+) unit is within (?P<rng>\d+) of this (?:model|unit|bearer) "
-        r"each time a model in that unit makes a (?P<atype>melee|ranged) attack reroll a hit roll of 1",
+        r"each time a model in that unit makes an?(?: (?P<atype>melee|ranged))? attack reroll a hit roll of 1",
         norm,
     )
     if not m:
         return None
     faction_kw = m.group("kw").strip()
     rng = m.group("rng")
-    atype = m.group("atype").strip().lower()
-    return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" re-roll Hit rolls of 1 for {atype} attacks.")
+    atype = str(m.group("atype") or "").strip().lower()
+    attack_label = f"{atype} attacks" if atype else "attacks"
+    return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" re-roll Hit rolls of 1 for {attack_label}.")
 
 
 def _aura_ranged_weapon_keywords_support(description: str) -> Optional[Tuple[str, str]]:
@@ -14329,12 +14346,34 @@ def _post_shoot_reactive_move_no_charge_support(description: str) -> Optional[Tu
                 f"After shooting (if not in Engagement Range): choose one Normal move option ({base_move}\" base, or {battleline_move}\" while ending wholly within {battleline_range}\" of friendly ADEPTUS MECHANICUS BATTLELINE); cannot charge this turn.",
             )
 
+    required_pattern = (
+        r"in your shooting phase after this (?:model|model s unit|models unit|unit) has shot "
+        r"if it contains an? (?P<model>[a-z0-9 \-]+?) equipped with an? (?P<wargear>[a-z0-9 \-]+?) "
+        r"(?:it|that unit|this unit|this model) can make a normal move(?: of up to (?P<move>d6|\d+))?"
+        r"(?: as if it were your movement phase)? "
+        r"if it does(?: so)? until the end of the turn (?:that unit|this unit|this model|it) is not eligible to declare a charge"
+    )
+    required_match = re.fullmatch(required_pattern, norm)
+    if required_match:
+        move = str(required_match.group("move") or "").strip().upper()
+        move_label = "its Move characteristic" if not move else ("D6" if move == "D6" else move)
+        if not move:
+            move_note = "using its Move characteristic"
+        else:
+            move_note = f"of up to {move_label}\""
+        model_name = str(required_match.group("model") or "model").strip().upper()
+        wargear_name = str(required_match.group("wargear") or "wargear").strip().upper()
+        return (
+            "Supported",
+            f"After shooting, this unit can make a Normal move {move_note} and then cannot charge this turn, but only while it contains a {model_name} equipped with {wargear_name}.",
+        )
+
     pattern = (
         r"in your shooting phase after this (?:model|model s unit|models unit|unit) has shot"
         r"(?: if it is not within engagement range of (?:one or more|any) enemy units)? "
         r"(?:it|that unit|this unit|this model) can make a normal move(?: of up to (?P<move>d6|\d+))?"
         r"(?: as if it were your movement phase)? "
-        r"if it does until the end of the turn (?:that unit|this unit|this model|it) is not eligible to declare a charge"
+        r"if it does(?: so)? until the end of the turn (?:that unit|this unit|this model|it) is not eligible to declare a charge"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
@@ -15360,11 +15399,24 @@ def _charge_end_engagement_battleshock_support(description: str) -> Optional[Tup
     if not norm:
         return None
     pattern = (
-        r"each time this model s unit ends a charge move each enemy unit within engagement range of that unit must take a battle shock test"
+        r"each time this (?:model s )?unit ends a charge move each enemy unit within engagement range of (?:that|this) unit must take a battle shock test"
     )
-    if not re.fullmatch(pattern, norm):
+    match = re.search(pattern, norm)
+    if not match:
         return None
-    return ("Supported", "After this unit ends a Charge move, engaged enemy units take Battle-shock tests.")
+    note_parts = []
+    if "reroll charge rolls made for this unit" in norm:
+        note_parts.append("Charge rolls made for this unit can be re-rolled.")
+    note_parts.append("After this unit ends a Charge move, engaged enemy units take Battle-shock tests.")
+    conditional_match = re.search(
+        r"if that enemy unit does not have the (?P<keywords>[a-z0-9 \-]+?(?: or [a-z0-9 \-]+)*) keywords subtract (?P<penalty>\d+) from that test",
+        norm,
+    )
+    if conditional_match:
+        keywords = str(conditional_match.group("keywords") or "").strip().upper().replace(" OR ", "/")
+        penalty = str(conditional_match.group("penalty") or "0")
+        note_parts.append(f"Targets without {keywords} take the test at -{penalty}.")
+    return ("Supported", " ".join(note_parts))
 
 
 def _start_any_phase_tome_skull_support(description: str) -> Optional[Tuple[str, str]]:
@@ -16049,6 +16101,49 @@ def _fight_selected_unit_target_keyword_wound_bonus_support(description: str) ->
     )
 
 
+def _fight_selected_target_keyword_melee_weapon_keyword_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle when this models unit is selected to fight if that unit is within engagement range of one or more enemy "
+        r"(?P<target_keyword>[a-z0-9 \-]+?) units this model can use this ability if it does until the end of the phase "
+        r"melee weapons equipped by this model have the (?P<keywords>[a-z0-9 \-]+?(?: and [a-z0-9 \-]+)*) ability"
+    )
+    m = re.search(pattern, norm)
+    if not m:
+        return None
+    target_keyword = str(m.group("target_keyword") or "target").strip().upper()
+    keywords = str(m.group("keywords") or "keyword").strip().upper().replace(" AND ", " / ")
+    return (
+        "Supported",
+        f"Once per battle when selected to fight while engaged with {target_keyword}, this model's melee weapons gain [{keywords}] until end of phase.",
+    )
+
+
+def _first_failed_save_damage_zero_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    turn_pattern = (
+        r"once per turn the first time a saving throw is failed for (?:the bearer s unit|this unit|this model s unit|this models unit) "
+        r"change the damage characteristic of that attack to 0"
+    )
+    if re.fullmatch(turn_pattern, norm):
+        return ("Supported", "Once per turn, the first failed save sets that attack's Damage characteristic to 0.")
+    phase_pattern = (
+        r"once per phase when an attack is allocated to (?:the bearer|this model) and the saving throw is failed "
+        r"you can change the damage characteristic of that attack to 0"
+    )
+    if re.fullmatch(phase_pattern, norm):
+        return ("Supported", "Once per phase, after this model fails a save against an allocated attack, you can change that attack's Damage characteristic to 0.")
+    return None
+
+
 def _return_on_death_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -16204,6 +16299,38 @@ def _charge_target_strength_bonus_support(description: str) -> Optional[Tuple[st
         "Supported",
         f"Charge roll bonus vs reduced strength targets: +{m.group('base')} if any target is Below Starting Strength; "
         f"+{m.group('half')} instead if any target is Below Half-strength.",
+    )
+
+
+def _charge_target_keyword_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time this models unit declares a charge if one or more targets of that charge have the "
+        r"(?P<keywords>[a-z0-9 \-]+?(?: or [a-z0-9 \-]+)*) keywords? add (?P<bonus>\d+) to the charge roll"
+    )
+    m = re.search(pattern, norm)
+    if not m:
+        return None
+    keywords = str(m.group("keywords") or "target").strip().upper().replace(" OR ", "/")
+    bonus = str(m.group("bonus") or "0")
+    return (
+        "Supported",
+        f"Charge rolls gain +{bonus} when one or more declared targets have the {keywords} keyword.",
+    )
+
+
+def _charge_target_keyword_and_fight_selected_model_melee_keyword_support(description: str) -> Optional[Tuple[str, str]]:
+    charge_support = _charge_target_keyword_bonus_support(description)
+    fight_support = _fight_selected_target_keyword_melee_weapon_keyword_support(description)
+    if not charge_support or not fight_support:
+        return None
+    return (
+        "Supported",
+        f"{charge_support[1]} {fight_support[1]}",
     )
 
 

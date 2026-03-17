@@ -1794,8 +1794,15 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
             # Generic strict parser: reroll 1s (hit/wound), friendly within X.
             rr = _cached_parse_aura_spec("_parse_reroll_ones_aura", ab, _parse_reroll_ones_aura)
             if rr:
-                if rr["faction_keyword"] and not attacker_unit.has_any_keyword(rr["faction_keyword"]):
-                    continue
+                if rr["faction_keyword"]:
+                    matches = _unit_matches_keyword_phrase(attacker_unit, rr["faction_keyword"])
+                    if not matches:
+                        try:
+                            matches = bool(attacker_unit.has_any_keyword(rr["faction_keyword"]))
+                        except Exception:
+                            matches = False
+                    if not matches:
+                        continue
                 if rr.get("attack_type") == "melee" and not _weapon_is_melee(weapon_profile):
                     continue
                 if rr.get("attack_type") == "ranged" and _weapon_is_melee(weapon_profile):

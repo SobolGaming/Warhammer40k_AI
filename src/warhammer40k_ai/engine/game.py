@@ -5523,17 +5523,43 @@ class Game(
             unique_engaged.append(enemy_root)
         engaged = unique_engaged
 
+        def _effective_test_modifier(spec: dict, target_root) -> int:
+            try:
+                modifier = int(spec.get("test_modifier", 0) or 0)
+            except Exception:
+                modifier = 0
+            try:
+                conditional_modifier = int(spec.get("test_modifier_if_missing_keywords", 0) or 0)
+            except Exception:
+                conditional_modifier = 0
+            conditional_keywords = [
+                str(value or "").strip().upper()
+                for value in list(spec.get("test_modifier_missing_keywords_any") or [])
+                if str(value or "").strip()
+            ]
+            if conditional_modifier and conditional_keywords:
+                has_any = False
+                has_any_keyword = getattr(target_root, "has_any_keyword", None)
+                if callable(has_any_keyword):
+                    for keyword in conditional_keywords:
+                        try:
+                            if bool(has_any_keyword(keyword)):
+                                has_any = True
+                                break
+                        except Exception:
+                            continue
+                if not has_any:
+                    modifier += int(conditional_modifier)
+            return int(modifier)
+
         tested: set[tuple[str, str]] = set()
         for spec in specs:
             source = str(spec.get("source", "") or "Charge end Battle-shock").strip() or "Charge end Battle-shock"
-            try:
-                test_modifier = int(spec.get("test_modifier", 0) or 0)
-            except Exception:
-                test_modifier = 0
             if bool(spec.get("select_one", False)):
                 if len(engaged) == 1:
                     target = engaged[0]
                     if target is not None:
+                        test_modifier = _effective_test_modifier(spec, target)
                         if test_modifier:
                             target_sr = getattr(target, "special_rules", None)
                             if not isinstance(target_sr, dict):
@@ -5602,7 +5628,9 @@ class Game(
                         "ability": "charge_end_select_one_battleshock",
                         "ability_name": source,
                         "source_unit_id": root_id,
-                        "test_modifier": int(test_modifier),
+                        "test_modifier": int(spec.get("test_modifier", 0) or 0),
+                        "test_modifier_if_missing_keywords": int(spec.get("test_modifier_if_missing_keywords", 0) or 0),
+                        "test_modifier_missing_keywords_any": list(spec.get("test_modifier_missing_keywords_any") or []),
                     },
                 )
                 self.request_decision(request)
@@ -5613,6 +5641,17 @@ class Game(
                 if key in tested:
                     continue
                 tested.add(key)
+                test_modifier = _effective_test_modifier(spec, enemy_root)
+                if test_modifier:
+                    target_sr = getattr(enemy_root, "special_rules", None)
+                    if not isinstance(target_sr, dict):
+                        target_sr = {}
+                    current = int(target_sr.get("battle_shock_test_modifier", 0) or 0)
+                    target_sr["battle_shock_test_modifier"] = int(current + test_modifier)
+                    reasons = list(target_sr.get("battle_shock_test_modifier_reasons", []) or [])
+                    reasons.append(source)
+                    target_sr["battle_shock_test_modifier_reasons"] = reasons
+                    enemy_root.special_rules = target_sr
                 try:
                     enemy_root.take_battle_shock_test(int(getattr(self, "turn", 0) or 1))
                 except Exception:
@@ -13515,6 +13554,12 @@ class Game(
         get_mods = getattr(charging_unit, "get_charge_roll_target_strength_modifiers", None)
         if callable(get_mods):
             for val, source in get_mods(target_unit):
+                if val:
+                    modifiers.append((int(val), source))
+
+        get_keyword_mods = getattr(charging_unit, "get_charge_roll_target_keyword_modifiers", None)
+        if callable(get_keyword_mods):
+            for val, source in get_keyword_mods(target_unit):
                 if val:
                     modifiers.append((int(val), source))
 

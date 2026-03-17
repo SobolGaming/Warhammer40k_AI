@@ -16686,6 +16686,28 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             test_modifier = int(ctx.get("test_modifier", 0) or 0)
         except Exception:
             test_modifier = 0
+        try:
+            conditional_modifier = int(ctx.get("test_modifier_if_missing_keywords", 0) or 0)
+        except Exception:
+            conditional_modifier = 0
+        conditional_keywords = [
+            str(value or "").strip().upper()
+            for value in list(ctx.get("test_modifier_missing_keywords_any") or [])
+            if str(value or "").strip()
+        ]
+        if conditional_modifier and conditional_keywords:
+            has_any = False
+            has_any_keyword = getattr(target_root, "has_any_keyword", None)
+            if callable(has_any_keyword):
+                for keyword in conditional_keywords:
+                    try:
+                        if bool(has_any_keyword(keyword)):
+                            has_any = True
+                            break
+                    except Exception:
+                        continue
+            if not has_any:
+                test_modifier += int(conditional_modifier)
         if test_modifier:
             sr = getattr(target_root, "special_rules", None)
             if not isinstance(sr, dict):
