@@ -889,7 +889,7 @@ def _parse_battleshock_leadership_test_reroll_aura(ability) -> Optional[dict]:
         return None
     m = re.search(
         rf'While a friendly (?P<faction_kw>.+?) (?:unit|model)(?: \((?P<exclude_a>[^)]+)\))? is within (?P<rng>\d+)"(?: \((?P<exclude_b>[^)]+)\))? '
-        rf"of {_AURA_SOURCE_PATTERN}, you can re-?roll (?P<tests>.+?) tests? taken for that unit",
+        rf"of {_AURA_SOURCE_PATTERN}, .*?you can re-?roll (?P<tests>.+?) tests? taken for that unit",
         desc,
         flags=re.IGNORECASE,
     )

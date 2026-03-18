@@ -1715,7 +1715,13 @@ class RulesParsingMixin:
         direct_specs: list[dict] = []
         aura_specs: list[dict] = []
         entries: list[tuple[str, str, str]] = []
-        entries.extend((name, desc, "") for name, desc in self._iter_ability_entries_for_rules(model=None))
+        entries.extend(
+            (name, desc, "")
+            for name, desc in self._iter_ability_entries_for_rules(
+                model=None,
+                include_inactive_possible_abilities=True,
+            )
+        )
         for model in list(getattr(self, "models", []) or []):
             try:
                 model_id = str(get_entity_id(model) or "")
@@ -3330,8 +3336,17 @@ class RulesParsingMixin:
                             flags=re.IGNORECASE,
                         )
                     )
+                    is_conditional_existing_eligibility_bonus_clause = bool(
+                        re.search(
+                            r"already\s+eligible\s+to\s+shoot\s+and\s+declare\s+a\s+charge\s+in\s+a\s+turn\s+in\s+which\s+it\s+advanced.*"
+                            r"add\s+\d+\s+to\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+"
+                            r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit|this\s+model'?s\s+unit)\s+instead",
+                            sentence_lower,
+                            flags=re.IGNORECASE,
+                        )
+                    )
                     matched_advance_and_charge = False
-                    if not is_battleline_instead_clause:
+                    if not is_battleline_instead_clause and not is_conditional_existing_eligibility_bonus_clause:
                         unit_contains_advance_charge_match = re.search(
                             r"while\s+(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit|this\s+model'?s\s+unit)\s+contains\s+an?\s+"
                             r"(?P<model>[a-z0-9' -]+?)\s*,\s*add\s+(?P<value>\d+)\s+to\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+"

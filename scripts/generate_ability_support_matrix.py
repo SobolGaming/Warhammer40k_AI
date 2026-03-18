@@ -6369,6 +6369,12 @@ def _classify_ability_base(
     embarking_firing_deck_weight_support = _embarking_firing_deck_weight_support(description)
     end_of_fight_embark_support = _end_of_fight_embark_support(description)
     opponent_movement_embark_support = _opponent_movement_embark_support(description)
+    emergency_combat_embarkation_support = _emergency_combat_embarkation_support(description)
+    stabilised_disembarkation_support = _stabilised_disembarkation_support(description)
+    conditional_advance_shoot_charge_bonus_support = _conditional_advance_shoot_charge_bonus_support(description)
+    author_of_the_codex_support = _author_of_the_codex_support(description)
+    primarch_of_the_xiii_support = _primarch_of_the_xiii_support(description)
+    master_of_battle_support = _master_of_battle_support(description)
     enemy_move_reactive_d6_support = _enemy_move_reactive_d6_support(description)
     conniving_runts_support = _conniving_runts_support(description)
     horde_move_support = _horde_move_support(description)
@@ -6831,6 +6837,8 @@ def _classify_ability_base(
         return orks_named_datasheet_support
     if unit_contains_advance_charge_heroic_intervention_support:
         return unit_contains_advance_charge_heroic_intervention_support
+    if conditional_advance_shoot_charge_bonus_support:
+        return conditional_advance_shoot_charge_bonus_support
     if early_charge_end_engagement_battleshock_support:
         return early_charge_end_engagement_battleshock_support
     if common_support and leading_support:
@@ -6912,6 +6920,16 @@ def _classify_ability_base(
         return end_of_fight_embark_support
     if opponent_movement_embark_support:
         return opponent_movement_embark_support
+    if emergency_combat_embarkation_support:
+        return emergency_combat_embarkation_support
+    if stabilised_disembarkation_support:
+        return stabilised_disembarkation_support
+    if author_of_the_codex_support:
+        return author_of_the_codex_support
+    if primarch_of_the_xiii_support:
+        return primarch_of_the_xiii_support
+    if master_of_battle_support:
+        return master_of_battle_support
     if leading_bodyguard_embark_support:
         return leading_bodyguard_embark_support
     if model_embark_within_transports_support:
@@ -8792,6 +8810,10 @@ def _bearer_keyword_support(description: str) -> Optional[Tuple[str, str]]:
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    m_ability = re.fullmatch(r"(?:the )?bearer has the (?P<ability>deep strike|stealth|lone operative) ability", norm)
+    if m_ability:
+        ability = re.sub(r"\s+", " ", str(m_ability.group("ability") or "").strip()).title()
+        return ("Supported", f"Bearer gains the {ability} ability.")
     m_combo = re.fullmatch(
         r"(?:the )?bearer can (?P<keyword>[a-z0-9 ]+) and has a move characteristic of (?P<move>\d+)",
         norm,
@@ -12616,6 +12638,109 @@ def _opponent_movement_embark_support(description: str) -> Optional[Tuple[str, s
     return ("Supported", note)
 
 
+def _emergency_combat_embarkation_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per turn in your opponents charge phase after an enemy unit has selected targets for its charge but before it makes a charge move "
+        r"you can select one (?P<keyword>[a-z0-9 ]+) unit from your army that was selected as a target of that charge "
+        r"provided that unit is not within engagement range of one or more enemy units and every model in that unit is within (?P<range>\d+) of this transport "
+        r"it can embark within this transport the charging unit can then select new targets for its charge"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "friendly").strip().upper()
+    range_val = str(m.group("range") or "").strip()
+    note = (
+        f"Opponent Charge phase: a declared {keyword} target wholly within {range_val}\" can embark in this transport, "
+        f"then the charging unit reselects charge targets before the charge roll; if none remain, the charge is cancelled."
+    )
+    return ("Supported", note)
+
+
+def _stabilised_disembarkation_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your opponents shooting phase each time an enemy unit is selected to shoot after that unit has shot "
+        r"if any of those attacks targeted this transport it can use this ability if it does any units embarked within it can disembark "
+        r"when doing so models in those units can be set up anywhere on the battlefield wholly within (?P<range>\d+) of this transport "
+        r"and not within engagement range of one or more enemy units"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    range_val = str(m.group("range") or "").strip()
+    note = (
+        f"Opponent Shooting phase: if an enemy unit targeted this transport, embarked units can disembark wholly within {range_val}\" "
+        f"and not within Engagement Range after that enemy unit has finished shooting."
+    )
+    return ("Supported", note)
+
+
+def _author_of_the_codex_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of your command phase select two author of the codex abilities(?: see left)? "
+        r"until the start of your next command phase this model has those abilities"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Start of Command phase: select exactly two of Primarch of the XIII, Master of Battle, and Supreme Strategist until your next Command phase.",
+    )
+
+
+def _primarch_of_the_xiii_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while a friendly adeptus astartes unit is within (?P<range>\d+) of this model add (?P<oc>\d+) to the objective control "
+        r"characteristic of models in that unit and you can reroll battle shock and leadership tests taken for that unit"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    return (
+        "Supported",
+        f'Aura: friendly ADEPTUS ASTARTES units within {m.group("range")}" gain +{m.group("oc")} Objective Control and can re-roll Battle-shock and Leadership tests.',
+    )
+
+
+def _master_of_battle_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of your command phase after you have selected your oath of moment target select a second enemy unit "
+        r"until the start of your next command phase if your oath of moment target is destroyed that second enemy unit "
+        r"becomes your oath of moment target until you select a new one"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "After selecting your Oath of Moment target, select a second enemy unit; if the primary target is destroyed, that backup unit becomes the new Oath target until a new one is selected.",
+    )
+
+
 def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -13474,12 +13599,13 @@ def _enemy_fall_back_desperate_escape_support(description: str) -> Optional[Tupl
         return None
     base = (
         r"each time an enemy unit(?: excluding monsters and vehicles)?(?: that is)? within engagement range of "
-        r"(?:this unit|this model|this model s unit|one or more units from your army with this ability) "
+        r"(?:this unit|this model|this model s unit|this models unit|one or more units from your army with this ability) "
         r"(?:falls back|is selected to fall back) "
         r"(?:all )?(?:models in that enemy unit|that unit) must take (?:a )?desperate escape tests?"
+        r"(?: as if (?:their|that) unit was battle shocked)?"
     )
     penalty_clause = (
-        r"(?: (?:when doing so )?if that enemy unit is (?:also )?battle shocked subtract (?P<pen>\d+) from "
+        r"(?: (?:when doing so )?if that enemy unit is (?:also )?battle shocked(?: by other means)? subtract (?P<pen>\d+) from "
         r"(?:each of those desperate escape tests|each of those tests|that test))?"
     )
     m = re.fullmatch(base + penalty_clause, norm)
@@ -13489,12 +13615,55 @@ def _enemy_fall_back_desperate_escape_support(description: str) -> Optional[Tupl
     penalty = m.group("pen") if m.groupdict().get("pen") else None
     notes = []
     if exclude:
-        notes.append("Enemy non-MONSTER/VEHICLE units within Engagement Range that Fall Back take Desperate Escape tests.")
+        notes.append(
+            "Enemy non-MONSTER/VEHICLE units within Engagement Range that Fall Back take Desperate Escape tests as if Battle-shocked."
+        )
     else:
-        notes.append("Enemy units within Engagement Range that Fall Back take Desperate Escape tests.")
+        notes.append("Enemy units within Engagement Range that Fall Back take Desperate Escape tests as if Battle-shocked.")
     if penalty:
-        notes.append(f"Battle-shocked targets suffer -{penalty} to those tests.")
+        notes.append(f"If also Battle-shocked by other means, those tests suffer -{penalty}.")
     return ("Supported", " ".join(notes))
+
+
+def _conditional_advance_shoot_charge_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    base_eligibility = (
+        norm.count("eligible to shoot and declare a charge in a turn in which it advanced") >= 2
+        or "eligible to shoot and declare a charge in a turn in which it advanced or fell back" in norm
+        or "eligible to shoot and declare a charge in a turn in which it fell back or advanced" in norm
+    )
+    if not base_eligibility:
+        return None
+    m = re.search(
+        r"already eligible to shoot and declare a charge in a turn in which it advanced add (?P<value>\d+) "
+        r"to advance and charge rolls made for (?:this unit|that unit|this model s unit|the bearer s unit) instead",
+        norm,
+    )
+    if m is None:
+        return None
+    try:
+        value = int(m.group("value") or 0)
+    except Exception:
+        value = 0
+    if value <= 0:
+        return None
+    leading = norm.startswith("while this model is leading a unit")
+    prefix = "Leading: " if leading else ""
+    if (
+        "eligible to shoot and declare a charge in a turn in which it advanced or fell back" in norm
+        or "eligible to shoot and declare a charge in a turn in which it fell back or advanced" in norm
+    ):
+        eligibility_note = "Shoot-and-charge after Advance/Fall Back eligibility."
+    else:
+        eligibility_note = "Shoot-and-charge after Advance eligibility."
+    return (
+        "Supported",
+        f"{prefix}{eligibility_note} If already eligible from another source, +{value} to Advance and Charge rolls.",
+    )
 
 
 def _enemy_fall_back_selection_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
@@ -15325,12 +15494,14 @@ def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tu
         return None
     pattern_model = (
         r"(?:at the )?start of the fight phase each enemy unit within engagement range of this model must take a battle shock test"
-        r"(?: subtracting (?P<penalty>\d+) from (?:that test|the result) if that enemy unit is below half strength)?"
+        r"(?: subtracting (?P<penalty>\d+) from (?P<target>that test|the result)"
+        r"(?: (?P<condition>if that enemy unit is below half strength|when they do))?)?"
     )
     pattern_unit = (
         r"(?:at the )?start of the fight phase each enemy unit within engagement range of one or more units (?:from your army )?"
         r"with this ability must take a battle shock test"
-        r"(?: subtracting (?P<penalty>\d+) from the result if that enemy unit is below half strength)?"
+        r"(?: subtracting (?P<penalty>\d+) from (?P<target>that test|the result)"
+        r"(?: (?P<condition>if that enemy unit is below half strength|when they do))?)?"
     )
     m = re.fullmatch(pattern_model, norm)
     if not m:
@@ -15338,9 +15509,15 @@ def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tu
     if not m:
         return None
     if m.group("penalty"):
+        condition = str(m.group("condition") or "").strip().lower()
+        if condition == "if that enemy unit is below half strength":
+            return (
+                "Supported",
+                f"Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test; Below Half-strength suffers -{m.group('penalty')}.",
+            )
         return (
             "Supported",
-            f"Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test; Below Half-strength suffers -{m.group('penalty')}.",
+            f"Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test at -{m.group('penalty')}.",
         )
     return ("Supported", "Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test.")
 

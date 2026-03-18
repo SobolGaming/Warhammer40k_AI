@@ -2,6 +2,7 @@
 
 from ._common import *
 import logging
+from typing import Sequence
 logger = logging.getLogger(__name__)
 
 
@@ -341,6 +342,12 @@ class ActionsMovementMixin:
             str(getattr(ability, "name", "") or ""),
             str(getattr(ability, "description", "") or ""),
         )
+
+    @staticmethod
+    def _ability_source_key(value: str) -> str:
+        text = str(value or "").replace("\u2019", "'").replace("\u0192?T", "'").lower()
+        text = re.sub(r"[^a-z0-9]+", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
 
     @classmethod
     @lru_cache(maxsize=4096)
@@ -731,6 +738,18 @@ class ActionsMovementMixin:
             key = ability_name_to_key(name)
             if key and unit_has_primarch_of_the_first_legion_ability(self):
                 return bool(unit_has_active_primarch_of_the_first_legion(self, key))
+        except Exception:
+            pass
+        try:
+            from ...rules.space_marines_author_of_the_codex import (
+                ability_name_to_key,
+                unit_has_active_author_of_the_codex,
+                unit_has_author_of_the_codex_ability,
+            )
+            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+            key = ability_name_to_key(name)
+            if key and unit_has_author_of_the_codex_ability(self):
+                return bool(unit_has_active_author_of_the_codex(self, key))
         except Exception:
             pass
         try:
@@ -2724,8 +2743,8 @@ class ActionsMovementMixin:
         root._ability_cache[cache_key] = list(entries)
         return list(entries)
 
-    def _iter_active_possible_abilities(self):
-        """Yield unit-level abilities that are currently active for this unit."""
+    def _iter_possible_abilities(self, *, include_inactive: bool = False):
+        """Yield unit-level possible abilities, optionally including inactive entries."""
         active_abilities = None
         sr = getattr(self, "special_rules", None)
         if isinstance(sr, dict) and bool(sr.get("enhancement_soul_link_active", False)):
@@ -2740,12 +2759,17 @@ class ActionsMovementMixin:
             active_abilities = list(getattr(self, "possible_abilities", []) or [])
 
         for ab in active_abilities:
-            try:
-                if not self._ability_is_active(ab):
+            if not include_inactive:
+                try:
+                    if not self._ability_is_active(ab):
+                        continue
+                except Exception:
                     continue
-            except Exception:
-                continue
             yield ab
+
+    def _iter_active_possible_abilities(self):
+        """Yield unit-level abilities that are currently active for this unit."""
+        yield from self._iter_possible_abilities(include_inactive=False)
 
     def _iter_active_abilities(self):
         """Yield unit + model abilities that are currently active for this unit."""
@@ -9816,6 +9840,9 @@ class ActionsMovementMixin:
                         continue
                     if val:
                         mods.append((val, source))
+            for val, source in self._collect_conditional_advance_charge_roll_modifiers(kind="advance"):
+                if val:
+                    mods.append((int(val), source))
             battleline_specs = list(sr.get("admech_optimised_gait_battleline_bonus", []) or [])
             if battleline_specs:
                 game_map = None
@@ -16088,7 +16115,19 @@ class ActionsMovementMixin:
         t = f" {text} "
         return any(m in t for m in markers)
 
-    def _has_attached_leader_simple_eligibility_rule(self, patterns: List[str]) -> bool:
+    @staticmethod
+    def _iter_eligibility_text_clauses(text: str):
+        for clause in re.split(r"[.;]\s*", str(text or "")):
+            cleaned = str(clause or "").strip()
+            if cleaned:
+                yield cleaned
+
+    def _has_attached_leader_simple_eligibility_rule(
+        self,
+        patterns: List[str],
+        *,
+        excluded_sources: Optional[Sequence[str]] = None,
+    ) -> bool:
         """Check simple eligibility text on active attached-leader leading abilities."""
         if not patterns:
             return False
@@ -16110,11 +16149,18 @@ class ActionsMovementMixin:
             for pattern in patterns
             if str(pattern or "").strip()
         }
+        excluded_source_keys = {
+            self._ability_source_key(source)
+            for source in list(excluded_sources or [])
+            if str(source or "").strip()
+        }
         if not normalized_patterns:
             return False
 
         for ability, leader in root._iter_attached_leader_leading_abilities():
-            _name, desc = self._ability_name_and_description(ability)
+            source_name, desc = self._ability_name_and_description(ability)
+            if excluded_source_keys and self._ability_source_key(source_name) in excluded_source_keys:
+                continue
             text = leader._strip_eligibility_prefix(desc or "")
             text = leader._normalize_rules_text(text).lower()
             if not text:
@@ -16122,16 +16168,45 @@ class ActionsMovementMixin:
             stripped = leader._LEADING_ABILITY_PREFIX_RE.sub("", text, count=1).strip(" ,:;-")
             if not stripped or stripped == text:
                 continue
-            if _canon(stripped) in normalized_patterns:
+            for clause in self._iter_eligibility_text_clauses(stripped):
+                canon_clause = _canon(clause)
+                if not canon_clause:
+                    continue
+                if not any(pattern in canon_clause for pattern in normalized_patterns):
+                    continue
+                if self._eligibility_text_has_extra_clauses(canon_clause):
+                    continue
                 return True
         return False
 
-    def _has_simple_eligibility_rule(self, patterns: List[str]) -> bool:
+    def _has_simple_eligibility_rule(
+        self,
+        patterns: List[str],
+        *,
+        excluded_sources: Optional[Sequence[str]] = None,
+    ) -> bool:
+        def _canon(value: str) -> str:
+            normalized = self._normalize_rules_text(str(value or "")).lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            return re.sub(r"\s+", " ", normalized).strip()
+
         try:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
+        normalized_patterns = {
+            _canon(str(pattern or ""))
+            for pattern in patterns
+            if str(pattern or "").strip()
+        }
+        excluded_source_keys = {
+            self._ability_source_key(source)
+            for source in list(excluded_sources or [])
+            if str(source or "").strip()
+        }
         for name, desc in self._iter_ability_entries_for_rules():
+            if excluded_source_keys and self._ability_source_key(name) in excluded_source_keys:
+                continue
             name_key = str(name or "").strip().lower().replace("\u2019", "'").replace("\u0192?T", "'")
             if name_key == "feinting withdrawal":
                 army = root.get_parent_army() if root is not None else None
@@ -16143,16 +16218,104 @@ class ActionsMovementMixin:
                 )
                 if callable(apply_fn) and not bool(apply_fn(root)):
                     continue
-            text = self._normalize_rules_text(f"{name} {desc}").lower()
-            if not text:
-                continue
-            if any(p in text for p in patterns):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            for clause in self._iter_eligibility_text_clauses(text_src):
+                text = _canon(clause)
+                if not text:
+                    continue
+                if not any(pattern in text for pattern in normalized_patterns):
+                    continue
                 if self._eligibility_text_has_extra_clauses(text):
                     continue
                 return True
-        if self._has_attached_leader_simple_eligibility_rule(patterns):
+        if self._has_attached_leader_simple_eligibility_rule(patterns, excluded_sources=excluded_sources):
             return True
         return False
+
+    def _conditional_advance_charge_roll_bonus_specs(self) -> list[tuple[int, str]]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            root = self
+
+        cache = getattr(root, "_ability_cache", None)
+        cache_key = "conditional_advance_charge_roll_bonus_specs"
+        if isinstance(cache, dict) and cache_key in cache:
+            cached = cache.get(cache_key)
+            return list(cached or [])
+
+        specs: list[tuple[int, str]] = []
+        seen_specs: set[tuple[str, int]] = set()
+
+        def _parse_spec(source_name: str, text: str) -> None:
+            norm = self._normalize_rules_text(self._strip_eligibility_prefix(text or "")).lower()
+            scan = self._ability_source_key(norm)
+            if not scan:
+                return
+            if "already eligible to shoot and declare a charge in a turn in which it advanced" not in scan:
+                return
+            base_advance_eligibility = (
+                scan.count("eligible to shoot and declare a charge in a turn in which it advanced") >= 2
+                or "eligible to shoot and declare a charge in a turn in which it advanced or fell back" in scan
+                or "eligible to shoot and declare a charge in a turn in which it fell back or advanced" in scan
+            )
+            if not base_advance_eligibility:
+                return
+            match = re.search(
+                r"already eligible to shoot and declare a charge in a turn in which it advanced "
+                r"add (?P<value>\d+) to advance and charge rolls made for "
+                r"(?:the bearer s unit|this unit|that unit|this model s unit) instead",
+                scan,
+                flags=re.IGNORECASE,
+            )
+            if match is None:
+                return
+            try:
+                value = int(match.group("value") or 0)
+            except Exception:
+                value = 0
+            if value <= 0:
+                return
+            source = str(source_name or "Ability").strip() or "Ability"
+            spec_key = (self._ability_source_key(source), int(value))
+            if spec_key in seen_specs:
+                return
+            seen_specs.add(spec_key)
+            specs.append((int(value), source))
+
+        for name, desc in self._iter_ability_entries_for_rules():
+            _parse_spec(name, desc)
+
+        for ability, leader in root._iter_attached_leader_leading_abilities():
+            source_name, desc = self._ability_name_and_description(ability)
+            text = leader._strip_eligibility_prefix(desc or "")
+            text = leader._normalize_rules_text(text).lower()
+            stripped = leader._LEADING_ABILITY_PREFIX_RE.sub("", text, count=1).strip(" ,:;-")
+            if not stripped or stripped == text:
+                continue
+            _parse_spec(source_name, stripped)
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = list(specs)
+        root._ability_cache = cache
+        return list(specs)
+
+    def _collect_conditional_advance_charge_roll_modifiers(self, *, kind: str) -> list[tuple[int, str]]:
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in ("advance", "charge"):
+            return []
+        modifiers: list[tuple[int, str]] = []
+        for value, source in self._conditional_advance_charge_roll_bonus_specs():
+            excluded = {source}
+            if not self.has_advance_and_shoot(excluded_sources=excluded):
+                continue
+            if not self.has_advance_and_charge(excluded_sources=excluded):
+                continue
+            modifiers.append((int(value), str(source or "Ability")))
+        return modifiers
 
     def _get_fall_back_shoot_extended_rule_data(self) -> dict:
         """
@@ -16255,7 +16418,7 @@ class ActionsMovementMixin:
         data = self._get_fall_back_shoot_extended_rule_data()
         return bool(data.get("lose_smoke_keyword"))
 
-    def has_advance_and_shoot(self) -> bool:
+    def has_advance_and_shoot(self, *, excluded_sources: Optional[Sequence[str]] = None) -> bool:
         """Check if the unit has an ability that allows shooting after advancing.
         
         This checks for unit abilities that allow shooting after advancing,
@@ -16264,9 +16427,20 @@ class ActionsMovementMixin:
         Returns:
             bool: True if the unit has an ability that allows shooting after advancing
         """
+        excluded_source_keys = tuple(
+            sorted(
+                self._ability_source_key(source)
+                for source in list(excluded_sources or [])
+                if str(source or "").strip()
+            )
+        )
+        cache_key = "advance_and_shoot"
+        if excluded_source_keys:
+            cache_key = f"advance_and_shoot:{'|'.join(excluded_source_keys)}"
+
         # Use cached result if available
-        if 'advance_and_shoot' in getattr(self, '_ability_cache', {}):
-            return self._ability_cache['advance_and_shoot']
+        if cache_key in getattr(self, '_ability_cache', {}):
+            return self._ability_cache[cache_key]
         
         found = False
         if self.has_thrill_seekers():
@@ -16284,16 +16458,16 @@ class ActionsMovementMixin:
                 "that unit is eligible to shoot and declare a charge in a turn in which it advanced",
                 "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
                 "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced",
-            ])
+            ], excluded_sources=excluded_source_keys)
         
         # Cache the result
         if not hasattr(self, '_ability_cache'):
             self._ability_cache = {}
-        self._ability_cache['advance_and_shoot'] = found
-        
+        self._ability_cache[cache_key] = found
+
         return found
 
-    def has_advance_and_charge(self) -> bool:
+    def has_advance_and_charge(self, *, excluded_sources: Optional[Sequence[str]] = None) -> bool:
         """Check if the unit has an ability that allows charging after advancing.
 
         This checks for unit abilities that allow charging after advancing,
@@ -16316,9 +16490,20 @@ class ActionsMovementMixin:
                 return True
         except Exception:
             pass
+        excluded_source_keys = tuple(
+            sorted(
+                self._ability_source_key(source)
+                for source in list(excluded_sources or [])
+                if str(source or "").strip()
+            )
+        )
+        cache_key = "advance_and_charge"
+        if excluded_source_keys:
+            cache_key = f"advance_and_charge:{'|'.join(excluded_source_keys)}"
+
         # Use cached result if available
-        if 'advance_and_charge' in getattr(self, '_ability_cache', {}):
-            cached_result = self._ability_cache['advance_and_charge']
+        if cache_key in getattr(self, '_ability_cache', {}):
+            cached_result = self._ability_cache[cache_key]
             #print(f"{self.name} has_advance_and_charge (cached): {cached_result}")
             return cached_result
 
@@ -16343,12 +16528,12 @@ class ActionsMovementMixin:
                 "that unit is eligible to shoot and declare a charge in a turn in which it advanced",
                 "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
                 "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced",
-            ])
+            ], excluded_sources=excluded_source_keys)
 
         # Cache the result
         if not hasattr(self, '_ability_cache'):
             self._ability_cache = {}
-        self._ability_cache['advance_and_charge'] = found
+        self._ability_cache[cache_key] = found
 
         return found
 

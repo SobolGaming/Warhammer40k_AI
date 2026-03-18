@@ -4867,6 +4867,8 @@ class AbilitySpecsMixin:
 
         Returns a list of specs with keys:
             - source: ability name
+            - penalty: int
+            - penalty_applies_when_below_half: bool
         """
         if model is None:
             return []
@@ -4895,12 +4897,22 @@ class AbilitySpecsMixin:
                 penalty = int(m.group("penalty") or 0)
             except Exception:
                 penalty = 0
+            condition = str(m.group("condition") or "").strip().lower()
+            penalty_applies_when_below_half = condition == "if that enemy unit is below half strength"
+            if (not penalty_applies_when_below_half) and penalty > 0:
+                penalty = -int(penalty)
             source = str(name or "Fight phase Battle-shock").strip() or "Fight phase Battle-shock"
             key = source.lower()
             if key in seen:
                 continue
             seen.add(key)
-            specs.append({"source": source, "penalty": penalty})
+            specs.append(
+                {
+                    "source": source,
+                    "penalty": penalty,
+                    "penalty_applies_when_below_half": penalty_applies_when_below_half,
+                }
+            )
 
         try:
             root = self.get_attached_unit_root()
@@ -7937,6 +7949,117 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_emergency_combat_embarkation_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: in the opponent's Charge phase, a selected charge target wholly within range can embark,
+        then the charging unit reselects its charge targets before the charge roll proceeds.
+
+        Returns specs with keys:
+            - source: ability name
+            - keyword: str
+            - range: int
+            - allow_existing_passengers: bool
+        """
+        cache_key = "unit_emergency_combat_embarkation_specs"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int]] = set()
+
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._EMERGENCY_COMBAT_EMBARKATION_RE.fullmatch(normalized)
+            if not m:
+                continue
+            keyword = str(m.group("keyword") or "").strip()
+            if not keyword:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            source = str(name or "Emergency Combat Embarkation").strip() or "Emergency Combat Embarkation"
+            key = (source.lower(), keyword, int(range_value))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "keyword": keyword,
+                    "range": int(range_value),
+                    "allow_existing_passengers": True,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_stabilised_disembarkation_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: in the opponent's Shooting phase, after an enemy unit that targeted this transport has shot,
+        embarked units can disembark wholly within an extended distance and outside Engagement Range.
+
+        Returns specs with keys:
+            - source: ability name
+            - disembark_max_distance: int
+        """
+        cache_key = "unit_stabilised_disembarkation_specs"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._STABILISED_DISEMBARKATION_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                disembark_max_distance = int(m.group("range") or 0)
+            except Exception:
+                disembark_max_distance = 0
+            if disembark_max_distance <= 0:
+                continue
+            source = str(name or "Stabilised Disembarkation").strip() or "Stabilised Disembarkation"
+            key = (source.lower(), int(disembark_max_distance))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "disembark_max_distance": int(disembark_max_distance),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_end_of_fight_sweeping_advance_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: once per battle, end of Fight phase, after the unit has fought,
@@ -10925,7 +11048,8 @@ class AbilitySpecsMixin:
 
         Returns a list of specs with keys:
             - source: ability name
-            - penalty: int (optional, applied when enemy is Below Half-strength)
+            - penalty: int
+            - penalty_applies_when_below_half: bool
         """
         try:
             root = self.get_attached_unit_root()
@@ -10965,12 +11089,22 @@ class AbilitySpecsMixin:
                     penalty = int(m.group("penalty") or 0)
                 except Exception:
                     penalty = 0
+                condition = str(m.group("condition") or "").strip().lower()
+                penalty_applies_when_below_half = condition == "if that enemy unit is below half strength"
+                if (not penalty_applies_when_below_half) and penalty > 0:
+                    penalty = -int(penalty)
                 source = str(name or "Fight phase Battle-shock").strip() or "Fight phase Battle-shock"
                 key = source.lower()
                 if key in seen:
                     continue
                 seen.add(key)
-                specs.append({"source": source, "penalty": penalty})
+                specs.append(
+                    {
+                        "source": source,
+                        "penalty": penalty,
+                        "penalty_applies_when_below_half": penalty_applies_when_below_half,
+                    }
+                )
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}

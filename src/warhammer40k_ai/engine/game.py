@@ -12286,6 +12286,12 @@ class Game(
         self._maybe_prompt_csm_experimental_augmentations()
         self._refresh_csm_tyrannical_motivation_phase_state()
 
+        # Space Marines: Roboute Guilliman selects two Author of the Codex abilities first so
+        # immediately-following Command phase rules can use the newly active selections.
+        mgr = getattr(army, "author_of_the_codex", None)
+        if mgr is not None:
+            mgr.on_command_phase_start(game=self, player=current_player)
+
         # Space Marines: Oath of Moment target selection at the start of your Command phase.
         mgr = getattr(army, "oath_of_moment", None)
         if mgr is not None:
@@ -12600,90 +12606,260 @@ class Game(
 
         return load_game_snapshot(snapshot)
 
-    def declare_charge(
+    def _emergency_combat_embarkation_used_this_turn(self, transport) -> bool:
+        if transport is None:
+            return False
+        try:
+            root = transport.get_attached_unit_root()
+        except Exception:
+            root = transport
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        current_player = self.get_current_player()
+        owner_id = str(getattr(current_player, "id", "") or "")
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        used_owner = str(sr.get("emergency_combat_embarkation_used_turn_owner", "") or "")
+        try:
+            used_turn = int(sr.get("emergency_combat_embarkation_used_turn", 0) or 0)
+        except Exception:
+            used_turn = 0
+        return bool(owner_id and used_owner == owner_id and used_turn == current_turn)
+
+    def _mark_emergency_combat_embarkation_used_this_turn(
+        self,
+        transport,
+        *,
+        ability_name: str = "Emergency Combat Embarkation",
+    ) -> None:
+        if transport is None:
+            return
+        try:
+            root = transport.get_attached_unit_root()
+        except Exception:
+            root = transport
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current_player = self.get_current_player()
+        sr["emergency_combat_embarkation_used_turn_owner"] = str(getattr(current_player, "id", "") or "")
+        try:
+            sr["emergency_combat_embarkation_used_turn"] = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            sr["emergency_combat_embarkation_used_turn"] = 0
+        sr["emergency_combat_embarkation_source"] = str(ability_name or "Emergency Combat Embarkation").strip() or "Emergency Combat Embarkation"
+        root.special_rules = sr
+
+    def _charge_declaration_candidate_targets(
         self,
         charging_unit: 'Unit',
-        target_units: list['Unit'],
         *,
         out_of_turn: bool = False,
+    ) -> list['Unit']:
+        if charging_unit is None:
+            return []
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return []
+        try:
+            enemy_units = list(game_map.get_enemy_units(charging_unit) or [])
+        except Exception:
+            enemy_units = []
+        candidates: list[Unit] = []
+        seen: set[str] = set()
+        for enemy in list(enemy_units or []):
+            if enemy is None:
+                continue
+            try:
+                enemy_root = enemy.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy
+            enemy_id = str(get_entity_id(enemy_root) or "")
+            if enemy_root is None or not enemy_id or enemy_id in seen:
+                continue
+            seen.add(enemy_id)
+            if not getattr(enemy_root, "is_alive", lambda: False)():
+                continue
+            if not getattr(enemy_root, "deployed", True):
+                continue
+            try:
+                if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                if not charging_unit.can_declare_charge_against(enemy_root, self, out_of_turn=out_of_turn):
+                    continue
+            except Exception:
+                continue
+            candidates.append(enemy_root)
+        candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return candidates
+
+    def _queue_emergency_combat_embarkation_interrupt(
+        self,
+        charging_unit: 'Unit',
+        targets: list['Unit'],
+        *,
+        out_of_turn: bool = False,
+    ) -> bool:
+        if charging_unit is None or not targets:
+            return False
+        if not bool(getattr(self, "is_authoritative", True)):
+            return False
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "CHARGE_PHASE":
+            return False
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return False
+        current_player = self.get_current_player()
+        if current_player is None:
+            return False
+        charging_army = charging_unit.get_parent_army()
+        charging_player = getattr(charging_army, "player", None) if charging_army is not None else None
+        if charging_player is not current_player:
+            return False
+        opponent = self.get_opponent()
+        if opponent is None or opponent is current_player:
+            return False
+        army = self._get_player_army(opponent)
+        if army is None:
+            return False
+        try:
+            from ..utility.aura_utils import unit_wholly_within_range_of_unit
+        except Exception:
+            return False
+
+        declared_targets: list[Unit] = []
+        seen_targets: set[str] = set()
+        for target in list(targets or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            target_id = str(get_entity_id(target_root) or "")
+            if target_root is None or not target_id or target_id in seen_targets:
+                continue
+            seen_targets.add(target_id)
+            if target_root.get_parent_army() is not army:
+                continue
+            declared_targets.append(target_root)
+        if not declared_targets:
+            return False
+
+        candidates: list[dict] = []
+        seen_transports: set[str] = set()
+        for transport in list(getattr(army, "units", []) or []):
+            if transport is None:
+                continue
+            try:
+                transport = transport.get_attached_unit_root()
+            except Exception:
+                pass
+            transport_id = str(get_entity_id(transport) or "")
+            if transport is None or not transport_id or transport_id in seen_transports:
+                continue
+            seen_transports.add(transport_id)
+            if not transport.is_alive() or not getattr(transport, "deployed", True):
+                continue
+            try:
+                if transport.is_in_reserves() or transport.is_embarked:
+                    continue
+            except Exception:
+                pass
+            if self._emergency_combat_embarkation_used_this_turn(transport):
+                continue
+            try:
+                specs = list(transport.unit_emergency_combat_embarkation_specs() or [])
+            except Exception:
+                specs = []
+            if not specs:
+                continue
+            for spec in list(specs or []):
+                try:
+                    range_value = float(spec.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0.0
+                if range_value <= 0.0:
+                    continue
+                keyword = str(spec.get("keyword", "") or "").strip()
+                for target in list(declared_targets or []):
+                    if target is None or target is transport:
+                        continue
+                    if not target.is_alive() or not getattr(target, "deployed", True):
+                        continue
+                    try:
+                        if target.is_in_reserves() or target.is_embarked:
+                            continue
+                    except Exception:
+                        pass
+                    if keyword and not target.has_any_keyword(keyword):
+                        continue
+                    if getattr(target.round_state, "disembarked_this_round", False):
+                        continue
+                    try:
+                        if not transport.can_transport(target):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if not unit_wholly_within_range_of_unit(transport, target, range_value):
+                            continue
+                    except Exception:
+                        continue
+                    enemies = list(game_map.get_enemy_units(target) or [])
+                    engaged = False
+                    for enemy in enemies:
+                        if enemy is None or not getattr(enemy, "is_alive", lambda: False)():
+                            continue
+                        if game_map.is_within_engagement_range(target, enemy):
+                            engaged = True
+                            break
+                    if engaged:
+                        continue
+                    sr = getattr(target, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("fire_and_fade_no_embark_turn_owner"):
+                        owner = str(sr.get("fire_and_fade_no_embark_turn_owner") or "")
+                        turn = int(sr.get("fire_and_fade_no_embark_turn", 0) or 0)
+                        if owner and owner == str(getattr(opponent, "id", "") or "") and int(getattr(self, "turn", 0) or 0) == turn:
+                            continue
+                    candidates.append(
+                        {
+                            "transport_id": transport_id,
+                            "target_unit_id": str(get_entity_id(target) or ""),
+                            "label": f"{getattr(transport, 'name', 'Transport')}: {getattr(target, 'name', 'Unit')}",
+                            "spec": dict(spec or {}),
+                        }
+                    )
+        if not candidates:
+            return False
+        request = self._queue_emergency_combat_embarkation_decision(
+            player=opponent,
+            charging_unit=charging_unit,
+            target_units=targets,
+            candidates=candidates,
+            out_of_turn=out_of_turn,
+        )
+        return request is not None
+
+    def _complete_charge_declaration(
+        self,
+        charging_unit: 'Unit',
+        targets: list['Unit'],
+        *,
+        out_of_turn: bool = False,
+        publish_charge_declared: bool = True,
     ) -> dict | None:
-        """
-        Single source of truth for charge declaration bookkeeping + rolling:
-
-        - Validates eligibility (`Unit.can_declare_charge_against`)
-        - Marks `attempted_charge_this_round` immediately (a declared charge is an attempt)
-        - Rolls charge dice (default 2D6; supports non-additive mechanics like 3D6 drop lowest)
-        - Offers a rule-based re-roll prompt (e.g. "re-roll Charge rolls") via map.roll_reroll_provider (UI hook)
-        - Publishes `roll_made` for stratagem/telemetry consumers
-
-        out_of_turn: allow declaring a charge outside the active player's turn (no attempted_charge_this_round mark).
-
-        Returns a dict:
-          { "base_roll": int, "dice": list[int], "reroll_used": bool, "target_unit_ids": list[str] }
-        or None if the charge cannot be declared.
-        """
-        if target_units is None:
-            targets = []
-        elif isinstance(target_units, (list, tuple, set)):
-            targets = list(target_units)
-        else:
-            targets = [target_units]
         if not targets:
             return None
-        if not charging_unit._can_declare_charge_base(self, out_of_turn=out_of_turn):
-            return None
-        for tgt in targets:
-            if tgt is None:
-                return None
-            if not charging_unit.can_declare_charge_against(tgt, self, out_of_turn=True):
-                return None
-        master_of_shadows_fn = getattr(charging_unit, "get_master_of_shadows_required_charge_target_ids", None)
-        if callable(master_of_shadows_fn):
-            possible_targets: list[Unit] = []
-            try:
-                enemy_units = list(getattr(self.map, "get_enemy_units", lambda _u: [])(charging_unit) or [])
-            except Exception:
-                enemy_units = []
-            seen_possible: set[str] = set()
-            for enemy in list(enemy_units or []):
-                if enemy is None:
-                    continue
-                try:
-                    enemy_root = enemy.get_attached_unit_root()
-                except Exception:
-                    enemy_root = enemy
-                if enemy_root is None:
-                    continue
-                enemy_id = str(get_entity_id(enemy_root) or "")
-                if not enemy_id or enemy_id in seen_possible:
-                    continue
-                seen_possible.add(enemy_id)
-                try:
-                    if not charging_unit.can_declare_charge_against(enemy_root, self, out_of_turn=out_of_turn):
-                        continue
-                except Exception:
-                    continue
-                possible_targets.append(enemy_root)
-            required_targets = set(
-                master_of_shadows_fn(
-                    target_units=possible_targets,
-                    game_map=getattr(self, "map", None),
-                    game=self,
-                )
-                or set()
-            )
-            if required_targets:
-                selected_target_ids = {str(get_entity_id(tgt) or "") for tgt in list(targets or []) if tgt is not None}
-                if not required_targets.issubset(selected_target_ids):
-                    return None
-        sycophantic_active_fn = getattr(charging_unit, "_carnival_sycophantic_surge_active_for_charge", None)
-        sycophantic_target_fn = getattr(charging_unit, "_carnival_sycophantic_target_condition_met", None)
-        if callable(sycophantic_active_fn) and bool(sycophantic_active_fn(game=self)):
-            if not callable(sycophantic_target_fn):
-                return None
-            if not any(bool(sycophantic_target_fn(tgt, self)) for tgt in list(targets or [])):
-                return None
-
         if not out_of_turn and getattr(charging_unit.round_state, "advanced_this_round", False):
             try:
                 always_ok = charging_unit._advance_and_charge_always_available()
@@ -12701,9 +12877,10 @@ class Game(
                         ability_name = str(spec.get("source", "") or "Advance and Charge").strip() or "Advance and Charge"
                         charging_unit.mark_unit_once_per_battle_used(ability_key, ability_name=ability_name)
 
-        if not hasattr(self, "event_system") or not hasattr(self.event_system, "publish"):
-            raise RuntimeError("Event system missing for charge_declared event.")
-        self.event_system.publish("charge_declared", unit=charging_unit, target_units=list(targets))
+        if publish_charge_declared:
+            if not hasattr(self, "event_system") or not hasattr(self.event_system, "publish"):
+                raise RuntimeError("Event system missing for charge_declared event.")
+            self.event_system.publish("charge_declared", unit=charging_unit, target_units=list(targets))
         army = charging_unit.get_parent_army()
 
         try:
@@ -12748,7 +12925,6 @@ class Game(
 
         self._record_engaged_enemies_at_turn_start(self.get_current_player())
 
-        # Mark as attempted immediately (prevents multiple declarations).
         if not out_of_turn:
             charging_unit.round_state.attempted_charge_this_round = True
         charging_unit.round_state.charge_target_ids = {get_entity_id(t) for t in targets}
@@ -12940,6 +13116,202 @@ class Game(
             except Exception:
                 pass
         return result
+
+    def continue_charge_after_emergency_combat_embarkation(
+        self,
+        charging_unit: 'Unit',
+        target_unit_ids: list[str],
+        *,
+        out_of_turn: bool = False,
+    ) -> dict | None:
+        if charging_unit is None:
+            return None
+        valid_targets: list[Unit] = []
+        seen: set[str] = set()
+        registry = getattr(self, "entity_registry", None)
+        for target_id in list(target_unit_ids or []):
+            target_id = str(target_id or "")
+            if not target_id or target_id in seen:
+                continue
+            seen.add(target_id)
+            target = registry.get(target_id, kind="unit") if registry is not None else None
+            if target is None:
+                continue
+            try:
+                target = target.get_attached_unit_root()
+            except Exception:
+                pass
+            if target is None:
+                continue
+            try:
+                if not charging_unit.can_declare_charge_against(target, self, out_of_turn=out_of_turn):
+                    continue
+            except Exception:
+                continue
+            valid_targets.append(target)
+        if not valid_targets:
+            return {
+                "roll_id": None,
+                "target_unit_ids": [],
+                "miracle_used": False,
+                "charge_cancelled": True,
+            }
+        return self._complete_charge_declaration(
+            charging_unit,
+            valid_targets,
+            out_of_turn=out_of_turn,
+            publish_charge_declared=True,
+        )
+
+    def resolve_emergency_combat_embarkation(
+        self,
+        transport,
+        passenger,
+        spec,
+        *,
+        charging_unit: 'Unit',
+        original_target_unit_ids: list[str],
+        out_of_turn: bool = False,
+    ) -> dict | None:
+        if charging_unit is None:
+            return None
+        resolved = bool(self.resolve_end_of_fight_embark(transport, passenger, spec))
+        if not resolved:
+            return self.continue_charge_after_emergency_combat_embarkation(
+                charging_unit,
+                original_target_unit_ids,
+                out_of_turn=out_of_turn,
+            )
+        ability_name = str(spec.get("source", "") or "Emergency Combat Embarkation").strip() or "Emergency Combat Embarkation"
+        self._mark_emergency_combat_embarkation_used_this_turn(transport, ability_name=ability_name)
+        candidates = self._charge_declaration_candidate_targets(charging_unit, out_of_turn=out_of_turn)
+        if not candidates:
+            return {
+                "roll_id": None,
+                "target_unit_ids": [],
+                "miracle_used": False,
+                "charge_cancelled": True,
+                "embarked": True,
+            }
+        player = getattr(getattr(charging_unit, "get_parent_army", lambda: None)(), "player", None)
+        request = self._queue_charge_retarget_decision(
+            player=player,
+            charging_unit=charging_unit,
+            candidates=candidates,
+            out_of_turn=out_of_turn,
+            prompt="Emergency Combat Embarkation: select new targets for the charge.",
+            reason="emergency_combat_embarkation",
+        )
+        return {
+            "roll_id": None,
+            "target_unit_ids": [str(get_entity_id(target) or "") for target in list(candidates or []) if get_entity_id(target)],
+            "miracle_used": False,
+            "embarked": True,
+            "charge_pending": bool(request is not None),
+            "retarget_pending": bool(request is not None),
+        }
+
+    def declare_charge(
+        self,
+        charging_unit: 'Unit',
+        target_units: list['Unit'],
+        *,
+        out_of_turn: bool = False,
+    ) -> dict | None:
+        """
+        Single source of truth for charge declaration bookkeeping + rolling:
+
+        - Validates eligibility (`Unit.can_declare_charge_against`)
+        - Marks `attempted_charge_this_round` immediately (a declared charge is an attempt)
+        - Rolls charge dice (default 2D6; supports non-additive mechanics like 3D6 drop lowest)
+        - Offers a rule-based re-roll prompt (e.g. "re-roll Charge rolls") via map.roll_reroll_provider (UI hook)
+        - Publishes `roll_made` for stratagem/telemetry consumers
+
+        out_of_turn: allow declaring a charge outside the active player's turn (no attempted_charge_this_round mark).
+
+        Returns a dict:
+          { "base_roll": int, "dice": list[int], "reroll_used": bool, "target_unit_ids": list[str] }
+        or None if the charge cannot be declared.
+        """
+        if target_units is None:
+            targets = []
+        elif isinstance(target_units, (list, tuple, set)):
+            targets = list(target_units)
+        else:
+            targets = [target_units]
+        if not targets:
+            return None
+        if not charging_unit._can_declare_charge_base(self, out_of_turn=out_of_turn):
+            return None
+        for tgt in targets:
+            if tgt is None:
+                return None
+            if not charging_unit.can_declare_charge_against(tgt, self, out_of_turn=True):
+                return None
+        master_of_shadows_fn = getattr(charging_unit, "get_master_of_shadows_required_charge_target_ids", None)
+        if callable(master_of_shadows_fn):
+            possible_targets: list[Unit] = []
+            try:
+                enemy_units = list(getattr(self.map, "get_enemy_units", lambda _u: [])(charging_unit) or [])
+            except Exception:
+                enemy_units = []
+            seen_possible: set[str] = set()
+            for enemy in list(enemy_units or []):
+                if enemy is None:
+                    continue
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None:
+                    continue
+                enemy_id = str(get_entity_id(enemy_root) or "")
+                if not enemy_id or enemy_id in seen_possible:
+                    continue
+                seen_possible.add(enemy_id)
+                try:
+                    if not charging_unit.can_declare_charge_against(enemy_root, self, out_of_turn=out_of_turn):
+                        continue
+                except Exception:
+                    continue
+                possible_targets.append(enemy_root)
+            required_targets = set(
+                master_of_shadows_fn(
+                    target_units=possible_targets,
+                    game_map=getattr(self, "map", None),
+                    game=self,
+                )
+                or set()
+            )
+            if required_targets:
+                selected_target_ids = {str(get_entity_id(tgt) or "") for tgt in list(targets or []) if tgt is not None}
+                if not required_targets.issubset(selected_target_ids):
+                    return None
+        sycophantic_active_fn = getattr(charging_unit, "_carnival_sycophantic_surge_active_for_charge", None)
+        sycophantic_target_fn = getattr(charging_unit, "_carnival_sycophantic_target_condition_met", None)
+        if callable(sycophantic_active_fn) and bool(sycophantic_active_fn(game=self)):
+            if not callable(sycophantic_target_fn):
+                return None
+            if not any(bool(sycophantic_target_fn(tgt, self)) for tgt in list(targets or [])):
+                return None
+        if self._queue_emergency_combat_embarkation_interrupt(
+            charging_unit,
+            targets,
+            out_of_turn=out_of_turn,
+        ):
+            return {
+                "roll_id": None,
+                "target_unit_ids": [get_entity_id(t) for t in targets],
+                "miracle_used": False,
+                "charge_pending": True,
+            }
+
+        return self._complete_charge_declaration(
+            charging_unit,
+            targets,
+            out_of_turn=out_of_turn,
+            publish_charge_declared=True,
+        )
 
     def roll_blood_surge_distance(self, unit: 'Unit') -> int:
         """Roll Blood Surge distance (D6+2), optionally applying leader-provided rerolls."""
@@ -13435,6 +13807,11 @@ class Game(
                         continue
                     if val:
                         modifiers.append((val, source))
+            conditional_bonus_getter = getattr(charging_unit, "_collect_conditional_advance_charge_roll_modifiers", None)
+            if callable(conditional_bonus_getter):
+                for val, source in list(conditional_bonus_getter(kind="charge") or []):
+                    if val:
+                        modifiers.append((int(val), source))
 
             battleline_specs = list(sr.get("admech_optimised_gait_battleline_bonus", []) or [])
             if battleline_specs:

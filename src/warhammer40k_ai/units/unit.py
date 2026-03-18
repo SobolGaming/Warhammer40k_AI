@@ -4207,13 +4207,15 @@ class Unit(
     )
     _FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_RE = re.compile(
         r"at the start of the fight phase each enemy unit within engagement range of this model must take a battle shock test"
-        r"(?: subtracting (?P<penalty>\d+) from (?:that test|the result) if that enemy unit is below half strength)?",
+        r"(?: subtracting (?P<penalty>\d+) from (?P<target>that test|the result)"
+        r"(?: (?P<condition>if that enemy unit is below half strength|when they do))?)?",
         re.IGNORECASE,
     )
     _FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_UNIT_RE = re.compile(
         r"at the start of the fight phase each enemy unit within engagement range of one or more units "
         r"(?:from your army )?with this ability must take a battle shock test"
-        r"(?: subtracting (?P<penalty>\d+) from the result if that enemy unit is below half strength)?",
+        r"(?: subtracting (?P<penalty>\d+) from (?P<target>that test|the result)"
+        r"(?: (?P<condition>if that enemy unit is below half strength|when they do))?)?",
         re.IGNORECASE,
     )
     _FIGHT_PHASE_RANGE_BATTLESHOCK_RE = re.compile(
@@ -4730,6 +4732,22 @@ class Unit(
         r"you can select one friendly (?P<keyword>[a-z0-9 ]+) infantry unit "
         r"excluding (?P<exclude>[a-z0-9 ]+) units that is wholly within (?P<range>\d+) of this transport "
         r"unless that unit is within engagement range of one or more enemy units it can embark within this transport",
+        re.IGNORECASE,
+    )
+    _EMERGENCY_COMBAT_EMBARKATION_RE = re.compile(
+        r"once per turn in your opponent s charge phase after an enemy unit has selected targets for its charge "
+        r"but before it makes a charge move you can select one (?P<keyword>[a-z0-9 ]+) unit from your army "
+        r"that was selected as a target of that charge provided that unit is not within engagement range of one or more enemy units "
+        r"and every model in that unit is within (?P<range>\d+) of this transport it can embark within this transport "
+        r"the charging unit can then select new targets for its charge",
+        re.IGNORECASE,
+    )
+    _STABILISED_DISEMBARKATION_RE = re.compile(
+        r"in your opponent s shooting phase each time an enemy unit is selected to shoot after that unit has shot "
+        r"if any of those attacks targeted this transport it can use this ability "
+        r"if it does any units embarked within it can disembark "
+        r"when doing so models in those units can be set up anywhere on the battlefield wholly within (?P<range>\d+) of this transport "
+        r"and not within engagement range of one or more enemy units",
         re.IGNORECASE,
     )
     _SWEEPING_ADVANCE_RE = re.compile(

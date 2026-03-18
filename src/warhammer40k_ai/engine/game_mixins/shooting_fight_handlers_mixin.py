@@ -4,6 +4,199 @@ from ._shared import *  # noqa: F401,F403
 
 
 class GameShootingFightHandlersMixin:
+    def _on_shooting_targets_selected_stabilised_disembarkation(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        if attacker_root is None:
+            return
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        if not attacker_id:
+            return
+        attacker_army = attacker_root.get_parent_army() if attacker_root is not None else None
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            try:
+                if target_root.get_parent_army() is attacker_army:
+                    continue
+            except Exception:
+                continue
+            if not bool(getattr(target_root, "is_transport", False)):
+                continue
+            try:
+                if not bool(target_root.is_alive()) or not bool(getattr(target_root, "deployed", True)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if target_root.is_in_reserves() or bool(getattr(target_root, "is_embarked", False)):
+                    continue
+            except Exception:
+                pass
+            try:
+                specs = list(target_root.unit_stabilised_disembarkation_specs() or [])
+            except Exception:
+                specs = []
+            if not specs:
+                continue
+            if not list(getattr(target_root, "transport_passengers", []) or []):
+                continue
+            spec = next(
+                (
+                    s for s in list(specs or [])
+                    if isinstance(s, dict) and int(s.get("disembark_max_distance", 0) or 0) > 0
+                ),
+                None,
+            )
+            if spec is None:
+                continue
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            pending = sr.get("stabilised_disembarkation_pending_by_attacker")
+            if not isinstance(pending, dict):
+                pending = {}
+            pending[attacker_id] = {
+                "source": str(spec.get("source", "") or "Stabilised Disembarkation").strip() or "Stabilised Disembarkation",
+                "disembark_max_distance": int(spec.get("disembark_max_distance", 0) or 0),
+            }
+            sr["stabilised_disembarkation_pending_by_attacker"] = pending
+            target_root.special_rules = sr
+
+    def _on_unit_shooting_resolved_stabilised_disembarkation(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        if not attacker_id:
+            return
+        try:
+            attacker_army = attacker_root.get_parent_army()
+        except Exception:
+            attacker_army = None
+
+        enemy_roots: list[Any] = []
+        seen_enemy_ids: set[str] = set()
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(player, "army", None)
+            if army is None or army is attacker_army:
+                continue
+            for root in list(self._iter_unique_army_roots(army) or []):
+                if root is None:
+                    continue
+                rid = str(get_entity_id(root) or "")
+                if rid and rid in seen_enemy_ids:
+                    continue
+                if rid:
+                    seen_enemy_ids.add(rid)
+                enemy_roots.append(root)
+
+        for enemy_root in enemy_roots:
+            if enemy_root is None:
+                continue
+            sr = getattr(enemy_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            pending = sr.get("stabilised_disembarkation_pending_by_attacker")
+            if not isinstance(pending, dict):
+                continue
+            pending_spec = dict(pending.pop(attacker_id, {}) or {})
+            if pending:
+                sr["stabilised_disembarkation_pending_by_attacker"] = pending
+            else:
+                sr.pop("stabilised_disembarkation_pending_by_attacker", None)
+            enemy_root.special_rules = sr
+            if not pending_spec:
+                continue
+            if not bool(getattr(enemy_root, "is_transport", False)):
+                continue
+            try:
+                if not bool(enemy_root.is_alive()) or not bool(getattr(enemy_root, "deployed", True)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if enemy_root.is_in_reserves() or bool(getattr(enemy_root, "is_embarked", False)):
+                    continue
+            except Exception:
+                pass
+            if not list(getattr(enemy_root, "transport_passengers", []) or []):
+                continue
+            try:
+                disembark_max_distance = float(pending_spec.get("disembark_max_distance", 0) or 0)
+            except Exception:
+                disembark_max_distance = 0.0
+            if disembark_max_distance <= 0:
+                continue
+            try:
+                target_player = enemy_root.get_parent_army().player
+            except Exception:
+                target_player = None
+            if target_player is None:
+                continue
+
+            ability_name = (
+                str(pending_spec.get("source", "") or "Stabilised Disembarkation").strip()
+                or "Stabilised Disembarkation"
+            )
+            ability = {
+                "name": ability_name,
+                "description": "",
+                "disembark_max_distance": float(disembark_max_distance),
+            }
+            requests = self._queue_transport_reactive_disembark_decisions(
+                player=target_player,
+                transport=enemy_root,
+                enemy_unit=attacker_root,
+                ability=ability,
+                trigger="enemy_shooting_targeted_transport",
+                disembark_max_distance=float(disembark_max_distance),
+                disembark_require_not_in_engagement=True,
+            )
+            if not requests:
+                continue
+            es = getattr(self, "event_system", None)
+            subs = getattr(es, "subscribers", None) if es is not None else None
+            has_sub = bool(isinstance(subs, dict) and subs.get("transport_reactive_disembark_prompt"))
+            if has_sub and bool(getattr(target_player, "has_control", lambda: False)()):
+                es.publish(
+                    "transport_reactive_disembark_prompt",
+                    player=target_player,
+                    transport=enemy_root,
+                    enemy_unit=attacker_root,
+                    ability=ability,
+                    game=self,
+                )
+
     def _on_fight_unit_selected_battle_focus(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None or selecting_player is None:
             return

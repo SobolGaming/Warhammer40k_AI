@@ -4168,6 +4168,160 @@ class GameReactiveDecisionsMixin:
         self.request_decision(request)
         return request
 
+    def _queue_emergency_combat_embarkation_decision(
+        self,
+        *,
+        player,
+        charging_unit,
+        target_units: list,
+        candidates: list[dict],
+        out_of_turn: bool = False,
+    ) -> DecisionRequest | None:
+        if player is None or charging_unit is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        charging_unit_id = maybe_entity_id(charging_unit)
+        if not charging_unit_id:
+            return None
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "emergency_combat_embarkation":
+                    continue
+                if str(ctx.get("charging_unit_id", "")) == str(charging_unit_id):
+                    return None
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        sorted_candidates = [
+            dict(candidate or {})
+            for candidate in list(candidates or [])
+            if isinstance(candidate, dict)
+        ]
+        sorted_candidates.sort(
+            key=lambda candidate: (
+                str(candidate.get("transport_id", "") or ""),
+                str(candidate.get("target_unit_id", "") or ""),
+            )
+        )
+        for candidate in sorted_candidates:
+            transport_id = str(candidate.get("transport_id", "") or "")
+            target_unit_id = str(candidate.get("target_unit_id", "") or "")
+            if not transport_id or not target_unit_id:
+                continue
+            label = str(candidate.get("label", "") or "").strip()
+            if not label:
+                label = "Emergency embark"
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "transport_id": transport_id,
+                        "target_unit_id": target_unit_id,
+                        "spec": dict(candidate.get("spec", {}) or {}),
+                    },
+                )
+            )
+        if len(options) <= 1:
+            return None
+
+        ctx = {
+            "ability": "emergency_combat_embarkation",
+            "ability_name": "Emergency Combat Embarkation",
+            "phase": "Opponent Charge phase",
+            "charging_unit_id": charging_unit_id,
+            "target_unit_ids": [
+                str(maybe_entity_id(target) or "")
+                for target in list(target_units or [])
+                if maybe_entity_id(target)
+            ],
+            "out_of_turn": bool(out_of_turn),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Emergency Combat Embarkation: select a target unit to embark, or None.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_charge_retarget_decision(
+        self,
+        *,
+        player,
+        charging_unit,
+        candidates: list,
+        out_of_turn: bool = False,
+        prompt: str,
+        reason: str,
+    ) -> DecisionRequest | None:
+        if player is None or charging_unit is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        charging_unit_id = maybe_entity_id(charging_unit)
+        if not charging_unit_id:
+            return None
+        from ..decision_kinds import DECISION_DECLARE_CHARGE
+        from ..decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_DECLARE_CHARGE:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("charge_retarget_reason", "")) != str(reason):
+                    continue
+                if str(ctx.get("unit_id", "")) == str(charging_unit_id):
+                    return None
+
+        options = []
+        sorted_candidates = [candidate for candidate in list(candidates or []) if candidate is not None]
+        sorted_candidates.sort(key=lambda candidate: str(maybe_entity_id(candidate) or ""))
+        for target in sorted_candidates:
+            target_id = maybe_entity_id(target)
+            if not target_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(target, "name", "") or "Target"),
+                    payload={
+                        "unit_id": charging_unit_id,
+                        "target_unit_id": target_id,
+                        "valid": True,
+                    },
+                )
+            )
+        if not options:
+            return None
+
+        request = DecisionRequest.create(
+            DECISION_DECLARE_CHARGE,
+            prompt,
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "unit_id": charging_unit_id,
+                "out_of_turn": bool(out_of_turn),
+                "charge_retarget_reason": str(reason),
+            },
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_reactive_move_confirmation(
         self,
         *,
@@ -10357,6 +10511,9 @@ class GameReactiveDecisionsMixin:
         ability: dict | None = None,
         trigger: str | None = None,
         max_units: int | None = None,
+        disembark_max_distance: float | None = None,
+        disembark_require_not_in_engagement: bool | None = None,
+        disembark_min_enemy_horizontal_distance: float | None = None,
     ) -> list[DecisionRequest]:
         if player is None or transport is None:
             return []
@@ -10447,6 +10604,15 @@ class GameReactiveDecisionsMixin:
                 ctx["reactive_disembark_range"] = int(rng)
             if trigger:
                 ctx["reactive_disembark_trigger"] = str(trigger)
+            if disembark_max_distance is not None and float(disembark_max_distance) > 0:
+                ctx["disembark_max_distance"] = float(disembark_max_distance)
+            if disembark_require_not_in_engagement is not None:
+                ctx["disembark_require_not_in_engagement"] = bool(disembark_require_not_in_engagement)
+            if (
+                disembark_min_enemy_horizontal_distance is not None
+                and float(disembark_min_enemy_horizontal_distance) > 0
+            ):
+                ctx["disembark_min_enemy_horizontal_distance"] = float(disembark_min_enemy_horizontal_distance)
             request = DecisionRequest.create(
                 DECISION_DISEMBARK,
                 f"Select one unit to disembark from {getattr(transport, 'name', 'Transport')}",
@@ -10484,6 +10650,15 @@ class GameReactiveDecisionsMixin:
                 ctx["reactive_disembark_range"] = int(rng)
             if trigger:
                 ctx["reactive_disembark_trigger"] = str(trigger)
+            if disembark_max_distance is not None and float(disembark_max_distance) > 0:
+                ctx["disembark_max_distance"] = float(disembark_max_distance)
+            if disembark_require_not_in_engagement is not None:
+                ctx["disembark_require_not_in_engagement"] = bool(disembark_require_not_in_engagement)
+            if (
+                disembark_min_enemy_horizontal_distance is not None
+                and float(disembark_min_enemy_horizontal_distance) > 0
+            ):
+                ctx["disembark_min_enemy_horizontal_distance"] = float(disembark_min_enemy_horizontal_distance)
             request = DecisionRequest.create(
                 DECISION_DISEMBARK,
                 f"Disembark {getattr(passenger, 'name', 'Unit')}",

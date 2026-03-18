@@ -2913,6 +2913,13 @@ class BattlePhaseHandler(BasePhaseHandler):
 
             )
 
+        self._open_charge_declaration_request(unit, req)
+
+    def _open_charge_declaration_request(self, unit, req) -> None:
+        from ...engine.command_kinds import CMD_RESOLVE_DECISION
+        from ...engine.commands import GameCommand
+        from ...utility.entity_ids import get_entity_id
+
         def _option_id_for_target(target_unit) -> str:
             tid = get_entity_id(target_unit)
             for opt in list(getattr(req, "options", []) or []):
@@ -2942,7 +2949,10 @@ class BattlePhaseHandler(BasePhaseHandler):
                         declared = getattr(apply_result, "value", None)
                 if not declared:
                     return
-                self._queue_pending_charge(charging_unit, targets, suppress_charge_bonus=False)
+                pending_targets = targets
+                if bool(getattr(declared, "get", lambda *_args, **_kwargs: False)("charge_pending", False)):
+                    pending_targets = []
+                self._queue_pending_charge(charging_unit, pending_targets, suppress_charge_bonus=False)
                 # If the roll already resolved (headless), open movement now.
                 try:
                     if getattr(charging_unit.round_state, "charge_roll", 0):
@@ -2961,7 +2971,6 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.game_view,
             decision_request=req,
         )
-    
     def _handle_fight_phase_selection(self, unit) -> None:
         """Handle unit selection during fight phase"""
         current_player = self.game.get_current_player()

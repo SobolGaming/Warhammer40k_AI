@@ -14514,10 +14514,22 @@ class KeywordsDetachmentsMixin:
             types.add("charge")
         return types
 
-    def _iter_ability_entries_for_rules(self, model: Optional['Model'] = None):
+    def _iter_ability_entries_for_rules(
+        self,
+        model: Optional['Model'] = None,
+        *,
+        include_inactive_possible_abilities: bool = False,
+    ):
         """Yield (name, description) pairs for unit/model abilities."""
         # Unit-level abilities
-        for a in self._iter_active_possible_abilities():
+        iter_possible = getattr(self, "_iter_possible_abilities", None)
+        if callable(iter_possible):
+            unit_level_abilities = iter_possible(include_inactive=include_inactive_possible_abilities)
+        elif include_inactive_possible_abilities:
+            unit_level_abilities = list(getattr(self, "possible_abilities", []) or [])
+        else:
+            unit_level_abilities = self._iter_active_possible_abilities()
+        for a in unit_level_abilities:
             if isinstance(a, str):
                 yield a, a
             else:

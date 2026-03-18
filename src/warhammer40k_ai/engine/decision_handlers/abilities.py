@@ -6324,6 +6324,68 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if key not in PRIMARCH_OF_THE_FIRST_LEGION_BY_KEY:
                 return ("Primarch of the First Legion selected ability is not supported.",)
         return ()
+    if ability == "author_of_the_codex":
+        if is_skip_choice(request, result):
+            return ("Author of the Codex selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Author of the Codex source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Author of the Codex source unit was not found.",)
+        if not _resurrection_orb_unit_on_battlefield(source_root):
+            return ("Author of the Codex source unit must be on the battlefield.",)
+        from ...rules.space_marines_author_of_the_codex import (
+            AUTHOR_OF_THE_CODEX_BY_KEY,
+            unit_has_author_of_the_codex_ability,
+        )
+
+        if not bool(unit_has_author_of_the_codex_ability(source_root)):
+            return ("Author of the Codex source unit does not have Author of the Codex.",)
+
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            required_round = int(ctx.get("battle_round", 0) or 0)
+        except (TypeError, ValueError):
+            required_round = 0
+        if required_round > 0 and battle_round != required_round:
+            return ("Author of the Codex selection is no longer valid for this battle round.",)
+
+        raw_selected = payload.get("choice_keys")
+        if not isinstance(raw_selected, list):
+            return ("Author of the Codex selection requires choice_keys list.",)
+
+        selected_keys: list[str] = []
+        seen_keys: set[str] = set()
+        for item in list(raw_selected or []):
+            key = str(item or "").strip().upper()
+            if not key:
+                continue
+            if key in seen_keys:
+                return ("Author of the Codex selection cannot include duplicate abilities.",)
+            seen_keys.add(key)
+            selected_keys.append(key)
+        if len(selected_keys) != 2:
+            return ("Author of the Codex requires selecting exactly two abilities.",)
+
+        allowed_keys = {
+            str(val).strip().upper()
+            for val in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(val).strip()
+        }
+        for key in selected_keys:
+            if allowed_keys and key not in allowed_keys:
+                return ("Author of the Codex selected ability is not an eligible choice.",)
+            if key not in AUTHOR_OF_THE_CODEX_BY_KEY:
+                return ("Author of the Codex selected ability is not supported.",)
+        return ()
     if ability == "librarius_psychic_disciplines":
         if is_skip_choice(request, result):
             return ("Psychic Disciplines selection cannot be skipped.",)
@@ -17243,6 +17305,95 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "choice_names": list(choice_names),
             "battle_round": int(start_round or 0),
         }
+    if ability == "author_of_the_codex":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return None
+        from ...rules.space_marines_author_of_the_codex import (
+            AUTHOR_OF_THE_CODEX_BY_KEY,
+            set_active_author_of_the_codex,
+            unit_has_author_of_the_codex_ability,
+        )
+
+        if not bool(unit_has_author_of_the_codex_ability(source_root)):
+            return None
+
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            start_round = int(ctx.get("battle_round", 0) or battle_round)
+        except (TypeError, ValueError):
+            start_round = int(battle_round)
+        if start_round > 0 and battle_round != start_round:
+            return None
+
+        raw_selected = payload.get("choice_keys")
+        if not isinstance(raw_selected, list):
+            return None
+
+        selected_keys: list[str] = []
+        seen_keys: set[str] = set()
+        for item in list(raw_selected or []):
+            key = str(item or "").strip().upper()
+            if not key or key in seen_keys:
+                continue
+            seen_keys.add(key)
+            selected_keys.append(key)
+        selected_key_set = set(selected_keys)
+        selected_keys = [
+            key for key in AUTHOR_OF_THE_CODEX_BY_KEY if key in selected_key_set
+        ]
+        if len(selected_keys) != 2:
+            return None
+
+        allowed_keys = {
+            str(val).strip().upper()
+            for val in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(val).strip()
+        }
+        if allowed_keys and any(key not in allowed_keys for key in selected_keys):
+            return None
+
+        try:
+            expires_round = int(ctx.get("expires_round", 0) or (start_round + 1))
+        except (TypeError, ValueError):
+            expires_round = int(start_round + 1)
+        player_id = str(ctx.get("player_id", "") or "")
+        if not player_id:
+            owner = getattr(source_root.get_parent_army(), "player", None) if hasattr(source_root, "get_parent_army") else None
+            player_id = str(getattr(owner, "id", "") or "")
+
+        set_active_author_of_the_codex(
+            source_root,
+            selected_keys,
+            start_round=int(start_round or 0),
+            expires_round=int(expires_round or 0),
+            player_id=player_id,
+        )
+
+        choice_names = [AUTHOR_OF_THE_CODEX_BY_KEY[key].name for key in selected_keys]
+        ability_name = str(ctx.get("ability_name", "") or "Author of the Codex").strip() or "Author of the Codex"
+        player = getattr(source_root.get_parent_army(), "player", None) if hasattr(source_root, "get_parent_army") else None
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected {' + '.join(choice_names)}.",
+        )
+        return {
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "choice_keys": list(selected_keys),
+            "choice_names": list(choice_names),
+            "battle_round": int(start_round or 0),
+        }
     if ability == "librarius_psychic_disciplines":
         if is_skip_choice(request, result):
             return None
@@ -18911,6 +19062,20 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "unit_id": root_id,
         }
     if is_skip_choice(request, result):
+        if ability == "emergency_combat_embarkation":
+            charging_unit = resolve_unit(game, ctx.get("charging_unit_id"))
+            original_target_unit_ids = [
+                str(value or "")
+                for value in list(ctx.get("target_unit_ids", []) or [])
+                if str(value or "")
+            ]
+            continue_fn = getattr(game, "continue_charge_after_emergency_combat_embarkation", None)
+            if callable(continue_fn) and charging_unit is not None:
+                return continue_fn(
+                    charging_unit,
+                    original_target_unit_ids,
+                    out_of_turn=bool(ctx.get("out_of_turn", False)),
+                )
         if ability == "master_of_shadows":
             payload = _option_payload(request, result)
             source_unit = resolve_unit(
@@ -21709,6 +21874,66 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname}.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "emergency_combat_embarkation":
+        charging_unit = resolve_unit(game, ctx.get("charging_unit_id"))
+        original_target_unit_ids = [str(value or "") for value in list(ctx.get("target_unit_ids", []) or []) if str(value or "")]
+        out_of_turn = bool(ctx.get("out_of_turn", False))
+        ability_name = str(ctx.get("ability_name", "") or "Emergency Combat Embarkation").strip() or "Emergency Combat Embarkation"
+        selected_payload = {}
+        for option in list(getattr(request, "options", []) or []):
+            if str(getattr(option, "option_id", "") or "") != str(getattr(result, "option_id", "") or ""):
+                continue
+            selected_payload = dict(getattr(option, "payload", {}) or {})
+            break
+        skip_choice = bool(is_skip_choice(request, result) or str(selected_payload.get("action", "") or "") == "skip")
+        player = None
+        if charging_unit is not None:
+            try:
+                player = getattr(getattr(charging_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+        if skip_choice:
+            continue_fn = getattr(game, "continue_charge_after_emergency_combat_embarkation", None)
+            if callable(continue_fn) and charging_unit is not None:
+                return continue_fn(
+                    charging_unit,
+                    original_target_unit_ids,
+                    out_of_turn=out_of_turn,
+                )
+            try:
+                cname = str(getattr(charging_unit, "name", "Charging unit") or "Charging unit")
+                _log_action_for_players(game, player, f"{ability_name}: no unit embarked; {cname} continues its charge.")
+            except Exception:
+                pass
+        else:
+            transport = resolve_unit(game, selected_payload.get("transport_id") or ctx.get("transport_id"))
+            passenger = chosen if chosen is not None else resolve_unit(game, selected_payload.get("target_unit_id"))
+            spec = dict(selected_payload.get("spec", {}) or ctx.get("spec", {}) or {})
+            if "source" not in spec:
+                spec["source"] = ability_name
+            resolve_fn = getattr(game, "resolve_emergency_combat_embarkation", None)
+            outcome = None
+            if callable(resolve_fn):
+                outcome = resolve_fn(
+                    transport,
+                    passenger,
+                    spec,
+                    charging_unit=charging_unit,
+                    original_target_unit_ids=original_target_unit_ids,
+                    out_of_turn=out_of_turn,
+                )
+            try:
+                tname = str(getattr(passenger, "name", "Unit") or "Unit")
+                sname = str(getattr(transport, "name", "Transport") or "Transport")
+                if isinstance(outcome, dict) and bool(outcome.get("charge_cancelled", False)):
+                    _log_action_for_players(game, player, f"{ability_name}: {tname} embarked in {sname}; the charge is cancelled.")
+                elif isinstance(outcome, dict) and bool(outcome.get("retarget_pending", False)):
+                    _log_action_for_players(game, player, f"{ability_name}: {tname} embarked in {sname}; select new charge targets.")
+                else:
+                    _log_action_for_players(game, player, f"{ability_name}: {tname} embarked in {sname}.")
+            except Exception:
+                pass
+            return outcome
     if str(ctx.get("ability", "") or "") == "end_of_fight_embark":
         transport = resolve_unit(game, ctx.get("transport_id") or ctx.get("unit_id"))
         if transport is not None and chosen is not None:
@@ -24689,6 +24914,10 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     mark_used = getattr(mgr, "mark_tome_of_ectoclades_used", None)
                     if callable(mark_used):
                         mark_used()
+                elif target_slot == "backup":
+                    set_backup = getattr(mgr, "set_backup_target", None)
+                    if callable(set_backup):
+                        set_backup(chosen)
                 else:
                     set_target = getattr(mgr, "set_target", None)
                     if callable(set_target):
@@ -24700,6 +24929,8 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 tname = str(getattr(chosen, "name", "Unit") or "Unit")
                 if target_slot == "secondary":
                     _log_action_for_players(game, player, f"{source_name}: selected {tname} as secondary target.")
+                elif target_slot == "backup":
+                    _log_action_for_players(game, player, f"{source_name}: selected {tname} as backup target.")
                 else:
                     _log_action_for_players(game, player, f"{source_name}: selected {tname} as target.")
             except Exception:

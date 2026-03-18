@@ -988,6 +988,30 @@ class Player:
             return parent
         return getattr(target_unit, "army", None)
 
+    def _source_unit_ability_is_active(self, source_unit, ability_name: str) -> bool:
+        name = str(ability_name or "").strip()
+        if source_unit is None or not name:
+            return True
+        get_root = getattr(source_unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else source_unit
+        if root is None:
+            return False
+        checker = getattr(root, "_ability_is_active", None)
+        if not callable(checker):
+            return True
+        normalized_name = str(name).replace("\u2019", "'").strip().lower()
+        matched_abilities = []
+        for ability in list(getattr(root, "possible_abilities", []) or []):
+            ability_name_value = str(getattr(ability, "name", "") or "")
+            if ability_name_value.replace("\u2019", "'").strip().lower() == normalized_name:
+                matched_abilities.append(ability)
+        if not matched_abilities:
+            return bool(checker(name))
+        for ability in matched_abilities:
+            if bool(checker(ability)):
+                return True
+        return False
+
     def _unit_has_alive_model_id(self, unit, model_id: str) -> bool:
         key = str(model_id or "").strip()
         if unit is None or not key:
@@ -1167,6 +1191,8 @@ class Player:
                 if limit not in ("battle_round", "turn"):
                     limit = "battle_round"
                 resolved["limit"] = limit
+                if not self._source_unit_ability_is_active(u, name):
+                    continue
                 resolved["_effective_usage_key"] = self._targeted_stratagem_cp_discount_usage_key(resolved, source_unit=u)
                 source_model_id = str(resolved.get("source_model_id", "") or "").strip()
                 if source_model_id:
@@ -1244,6 +1270,8 @@ class Player:
                 if limit not in ("battle_round", "turn"):
                     limit = "battle_round"
                 resolved["limit"] = limit
+                if not self._source_unit_ability_is_active(u, name):
+                    continue
                 source_model_id = str(resolved.get("source_model_id", "") or "").strip()
                 if not self._source_model_within_range_for_ability(
                     u,

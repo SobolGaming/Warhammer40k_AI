@@ -330,6 +330,7 @@ class Army:
         self.acts_of_faith = None
         self.relics_of_the_matriarchs = None
         self.primarch_of_the_first_legion = None
+        self.author_of_the_codex = None
         self.doctrina_imperatives = None
         self.voice_of_command = None
         self.voice_of_triarch = None
@@ -368,10 +369,12 @@ class Army:
             from ..rules.templar_vows import TemplarVowsManager
             from ..rules.oath_of_moment import OathOfMomentManager
             from ..rules.combat_doctrines import CombatDoctrinesManager
+            from ..rules.space_marines_author_of_the_codex import AuthorOfTheCodexManager
             from ..rules.space_marines_primarch_of_the_first_legion import PrimarchOfTheFirstLegionManager
             self.templar_vows = TemplarVowsManager(self)
             self.oath_of_moment = OathOfMomentManager(self)
             self.combat_doctrines = CombatDoctrinesManager(self)
+            self.author_of_the_codex = AuthorOfTheCodexManager(self)
             self.primarch_of_the_first_legion = PrimarchOfTheFirstLegionManager(self)
 
         if fid == "DG":

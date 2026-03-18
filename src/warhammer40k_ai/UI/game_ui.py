@@ -3400,6 +3400,28 @@ class GameView:
             return
 
         try:
+            from ..engine.decision_kinds import DECISION_DECLARE_CHARGE
+        except Exception:
+            DECISION_DECLARE_CHARGE = ""
+
+        if decision_type == DECISION_DECLARE_CHARGE:
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("charge_retarget_reason", "") or "").strip().lower() == "emergency_combat_embarkation":
+                player = self._resolve_player_by_id(getattr(request, "player_id", None))
+                if player is None:
+                    return
+                try:
+                    if not player.has_control():
+                        return
+                except Exception:
+                    return
+                unit = self._resolve_unit_by_id(str(ctx.get("unit_id", "") or ""))
+                if unit is None or self.phase_manager is None:
+                    return
+                self.phase_manager._open_charge_declaration_request(unit, request)
+                return
+
+        try:
             from ..engine.decision_kinds import DECISION_SELECT_TARGET_MODEL
         except Exception:
             DECISION_SELECT_TARGET_MODEL = ""
@@ -5697,10 +5719,25 @@ class GameView:
                     except Exception:
                         pass
 
+                ability_name = str(ctx.get("ability_name", "") or "Oath of Moment").strip() or "Oath of Moment"
+                target_slot = str(ctx.get("target_slot", "") or "primary").strip().lower()
+                if target_slot == "secondary":
+                    title = f"{ability_name} - {getattr(player, 'name', 'Player')}"
+                    header = "Choose a second enemy unit for Oath of Moment."
+                    subtitle = "This secondary target lasts until your next Command phase."
+                elif target_slot == "backup":
+                    title = ability_name
+                    header = "Choose a backup Oath of Moment target."
+                    subtitle = "If your current Oath target is destroyed, this unit becomes the new target."
+                else:
+                    title = f"{ability_name} - {getattr(player, 'name', 'Player')}"
+                    header = "Choose an enemy unit to be your Oath of Moment target."
+                    subtitle = "Target lasts until your next Command phase."
+
                 dlg.show(
-                    title=f"Oath of Moment - {getattr(player, 'name', 'Player')}",
-                    header="Choose an enemy unit to be your Oath of Moment target.",
-                    subtitle="Target lasts until your next Command phase.",
+                    title=title,
+                    header=header,
+                    subtitle=subtitle,
                     on_confirm=_on_confirm,
                     on_cancel=_on_cancel,
                     decision_request=request,
@@ -6180,6 +6217,60 @@ class GameView:
                     title=ability_name,
                     header=header,
                     subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ability == "emergency_combat_embarkation":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import option_id_for_action, first_option_id
+
+                if not hasattr(self, "emergency_combat_embarkation_dialog") or self.emergency_combat_embarkation_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.emergency_combat_embarkation_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.emergency_combat_embarkation_dialog = None
+                dlg = self.emergency_combat_embarkation_dialog
+                if dlg is None:
+                    return
+
+                skip_id = option_id_for_action(request, "skip")
+                default_id = skip_id or first_option_id(request)
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    if default_id:
+                        resolve_decision_command(
+                            self.game,
+                            request,
+                            default_id,
+                            player_id=getattr(player, "id", None),
+                            result_payload={"skipped": True} if default_id == skip_id else {},
+                        )
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                ability_name = str(ctx.get("ability_name", "") or "Emergency Combat Embarkation").strip()
+                dlg.show(
+                    title=ability_name,
+                    header=ability_name,
+                    subtitle="Select one declared charge target to embark, or choose None.",
                     on_confirm=_on_confirm,
                     on_cancel=_on_cancel,
                     decision_request=request,
@@ -7166,6 +7257,7 @@ class GameView:
                 "battle_protocols",
                 "canticles_of_the_omnissiah",
                 "canticles_machine_vengeance_target",
+                "author_of_the_codex",
                 "primarch_of_the_first_legion",
                 "post_shoot_shocked",
                 "void_mine",
@@ -11282,6 +11374,10 @@ class GameView:
             ability_range = float((ability or {}).get("range", 0) or 0)
         except Exception:
             ability_range = 0.0
+        try:
+            ability_disembark_max_distance = float((ability or {}).get("disembark_max_distance", 0) or 0)
+        except Exception:
+            ability_disembark_max_distance = 0.0
         if ability_range > 0 and enemy_unit is not None:
             try:
                 from ..utility.aura_utils import unit_within_range_of_unit
@@ -11358,7 +11454,15 @@ class GameView:
                     f"Disembark {getattr(unit, 'name', 'Unit')}",
                     player_id=getattr(player, "id", None),
                     options=options,
-                    context={"unit_id": unit_id, "transport_id": transport_id},
+                    context={
+                        "unit_id": unit_id,
+                        "transport_id": transport_id,
+                        **(
+                            {"disembark_max_distance": float(ability_disembark_max_distance)}
+                            if ability_disembark_max_distance > 0
+                            else {}
+                        ),
+                    },
 
                 )
                 unit_requests[unit_id] = req
@@ -11432,6 +11536,27 @@ class GameView:
                 except Exception:
                     models = list(getattr(unit, "models", []) or [])
                 original_positions = {m: m.get_location() for m in models}
+                req = unit_requests.get(get_entity_id(unit))
+                req_ctx = dict(getattr(req, "context", {}) or {}) if req is not None else {}
+                try:
+                    max_distance = float(req_ctx.get("disembark_max_distance", 0) or 0)
+                except Exception:
+                    max_distance = 0.0
+                if max_distance <= 0:
+                    max_distance = 3.0
+                require_not_in_engagement = True
+                if "disembark_require_not_in_engagement" in req_ctx:
+                    require_not_in_engagement = bool(req_ctx.get("disembark_require_not_in_engagement", True))
+                min_enemy_horizontal_distance = None
+                if "disembark_min_enemy_horizontal_distance" in req_ctx:
+                    try:
+                        min_enemy_horizontal_distance = float(
+                            req_ctx.get("disembark_min_enemy_horizontal_distance", 0) or 0
+                        )
+                    except Exception:
+                        min_enemy_horizontal_distance = None
+                    if min_enemy_horizontal_distance is not None and min_enemy_horizontal_distance <= 0:
+                        min_enemy_horizontal_distance = None
 
                 def _placement_validator(model, x: float, y: float, z: float) -> dict:
                     try:
@@ -11442,8 +11567,9 @@ class GameView:
                             z,
                             transport_unit=transport,
                             game_map=self.game.map,
-                            max_distance=3.0,
-                            require_not_in_engagement=True,
+                            max_distance=float(max_distance),
+                            require_not_in_engagement=bool(require_not_in_engagement),
+                            min_enemy_horizontal_distance=min_enemy_horizontal_distance,
                         )
                     except Exception:
                         return {"valid": False, "reason": "Disembark validation failed"}
@@ -15716,6 +15842,10 @@ class GameView:
             title = ability_name or "Invocation of Machine Vengeance"
             subtitle = "Select one enemy unit to be the Machine Vengeance target."
             header = f"{getattr(source_unit, 'name', 'Model')} selects a Machine Vengeance target."
+        elif str(ability_key) == "author_of_the_codex":
+            title = ability_name or "Author of the Codex"
+            subtitle = "Select exactly two Author of the Codex abilities. The chosen abilities remain active until your next Command phase."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects two Author abilities."
         elif str(ability_key) == "primarch_of_the_first_legion":
             title = ability_name or "Primarch of the First Legion"
             subtitle = "Select exactly two Primarch abilities. The chosen abilities remain active until your next Command phase."
@@ -15747,7 +15877,7 @@ class GameView:
             on_confirm=_on_confirm,
             on_cancel=_on_cancel,
             decision_request=req,
-            show_cancel=str(ability_key) != "primarch_of_the_first_legion",
+            show_cancel=str(ability_key) not in {"primarch_of_the_first_legion", "author_of_the_codex"},
         )
         try:
             self.dialog_manager.open(dlg, modal=True)
