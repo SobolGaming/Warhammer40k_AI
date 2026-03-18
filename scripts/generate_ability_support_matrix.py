@@ -4794,6 +4794,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Demolisher Cannon attack exception implemented for Big Guns Never Tire/Blast own-engagement targeting interactions.",
         ),
+        ("SM", "Siege Shield"): (
+            "Supported",
+            "Demolisher Cannon attack exception implemented for Big Guns Never Tire/Blast own-engagement targeting interactions.",
+        ),
         ("CSM", "Soul Eater"): (
             "Supported",
             "End of Fight phase: after destroying an enemy unit this phase, gains cumulative +1 Attacks bonus for its weapons.",
@@ -6231,6 +6235,71 @@ def _tyranids_named_datasheet_support(name: str, description: str, *, faction_id
     return None
 
 
+def _space_marines_named_datasheet_support(name: str, description: str, *, faction_id: str = "") -> Optional[Tuple[str, str]]:
+    fid = str(faction_id or "").strip().upper()
+    if fid and fid != "SM":
+        return None
+    name_norm = _norm(name)
+    norm = _norm_rules_text(description)
+    if not name_norm or not norm:
+        return None
+    if name_norm == "glory of ultramar":
+        if (
+            "in your opponents shooting phase" in norm
+            and "each time an enemy unit has shot" in norm
+            and "if any models from this unit were destroyed as a result of those attacks" in norm
+            and "this unit can make a surge move" in norm
+            and ("roll one d6" in norm or "roll a d6" in norm)
+            and "as close as possible to the closest enemy unit" in norm
+            and "excluding aircraft" in norm
+            and "within engagement range" in norm
+            and "battle shocked" in norm
+            and "one surge move per phase" in norm
+        ):
+            return (
+                "Supported",
+                "Opponent Shooting phase reaction: if one or more models are destroyed by enemy shooting, this unit can make a D6\" Surge move toward the closest non-AIRCRAFT enemy (can end in Engagement Range), once per phase and blocked while Battle-shocked or already in Engagement Range.",
+            )
+    if name_norm == "forgefather":
+        if (
+            "in your shooting phase" in norm
+            and "select one enemy unit within 24" in norm
+            and "visible to this model" in norm
+            and "friendly adeptus astartes model makes a ranged attack" in norm
+            and "torrent or melta weapon" in norm
+            and ("reroll the wound roll" in norm or "re roll the wound roll" in norm)
+        ):
+            return (
+                "Supported",
+                "Start of Shooting phase: select one visible enemy unit within 24\"; friendly ADEPTUS ASTARTES ranged attacks with Torrent or Melta weapons against that target can re-roll the Wound roll until phase end.",
+            )
+    if name_norm == "seeker of lost relics":
+        if (
+            "the first time this model is set up on the battlefield" in norm
+            and "select one objective marker on the battlefield" in norm
+            and "while this model is within range of that objective marker" in norm
+            and "objective control characteristic of 10" in norm
+            and "leadership characteristic of 5" in norm
+            and "feel no pain 4" in norm
+        ):
+            return (
+                "Supported",
+                "First setup on battlefield: select one objective marker; while this model is within that marker's range it has Objective Control 10, Leadership 5+, and Feel No Pain 4+.",
+            )
+    if name_norm == "second company banner":
+        if (
+            "while this unit contains ancient gadriel" in norm
+            and "add 1 to the objective control characteristic of models in this unit" in norm
+            and "while this unit contains ancient gadriel and captain titus" in norm
+            and "improve the leadership characteristic of models in this unit by 1" in norm
+        ):
+            return (
+                "Supported",
+                "While the unit contains Ancient Gadriel, models in the unit gain +1 Objective Control; while it also contains Captain Titus, models in the unit improve Leadership by 1.",
+            )
+    return None
+
+
 def _classify_ability_base(
     name: str,
     description: str,
@@ -6272,6 +6341,9 @@ def _classify_ability_base(
     admech_named_support = _admech_named_datasheet_support(name, description, faction_id=faction_id)
     if admech_named_support:
         return admech_named_support
+    space_marines_named_support = _space_marines_named_datasheet_support(name, description, faction_id=faction_id)
+    if space_marines_named_support:
+        return space_marines_named_support
     necrons_named_support = _necrons_named_datasheet_support(name, description, faction_id=faction_id)
     if necrons_named_support:
         return necrons_named_support
@@ -13405,6 +13477,8 @@ def _post_deployment_redeploy_support(description: str) -> Optional[Tuple[str, s
     pattern = (
         r"(?:if your army includes this model |if your army (?:includes|contains) one or more (?:units|models) with this ability )?"
         r"after both players have deployed their armies "
+        r"(?:if (?:this unit|the bearer|this model) is on the battlefield "
+        r"(?:or any transport it is embarked within is on the battlefield )?)?"
         r"(?:you can )?select(?: up ?to)? (?P<count>\d+|one|two|three|four|five|six|d3(?: \+ \d+)?) "
         r"(?P<filter>[a-z0-9 ']+?) units? from your army and redeploy(?: all of those units| them| it)?(?: (?P<tail>.*))?"
     )
@@ -13419,6 +13493,15 @@ def _post_deployment_redeploy_support(description: str) -> Optional[Tuple[str, s
         unit_filter = "friendly"
     tail = str(m.group("tail") or "").strip()
     note = f"After deployment: redeploy up to {count} {unit_filter} unit(s)."
+    if (
+        "if this unit is on the battlefield" in norm
+        or "if the bearer is on the battlefield" in norm
+        or "if this model is on the battlefield" in norm
+    ):
+        note = (
+            f"After deployment: while the source is on the battlefield (or a Transport it is embarked within "
+            f"is on the battlefield), redeploy up to {count} {unit_filter} unit(s)."
+        )
     if "strategic reserves" in tail or "strategic reserves" in norm:
         note = f"{note} Selected units can be placed into Strategic Reserves regardless of normal limits."
     return ("Supported", note)
@@ -14980,6 +15063,35 @@ def _post_shoot_battleshock_support(description: str) -> Optional[Tuple[str, str
                 f"After shooting, each enemy unit hit by this model's Indirect Fire attacks takes a Battle-shock test; INFANTRY units hit by {weapon_name} take that test at -{int(penalty)}.",
             )
         return ("Supported", "After shooting, each enemy unit hit by this model's Indirect Fire attacks takes a Battle-shock test.")
+    weapon_pattern = (
+        r"in your shooting phase after this model has shot if one or more of those attacks made with "
+        r"(?:a|an|the|its) (?P<weapon>[a-z0-9 ]+) scored a hit against an enemy "
+        r"(?:(?P<infantry>infantry) )?unit that unit must take a battle shock test"
+        r"(?: subtracting (?P<pen>\d+) from (?:(?:the )?result|that test))?"
+    )
+    weapon_match = re.fullmatch(weapon_pattern, norm)
+    if weapon_match:
+        weapon_name = str(weapon_match.group("weapon") or "").strip() or "this weapon"
+        try:
+            penalty = int(weapon_match.group("pen") or 0)
+        except (TypeError, ValueError):
+            penalty = 0
+        if weapon_match.group("infantry"):
+            if penalty > 0:
+                return (
+                    "Supported",
+                    f"After shooting, an enemy INFANTRY unit hit by {weapon_name} must take a Battle-shock test at -{int(penalty)}.",
+                )
+            return (
+                "Supported",
+                f"After shooting, an enemy INFANTRY unit hit by {weapon_name} must take a Battle-shock test.",
+            )
+        if penalty > 0:
+            return (
+                "Supported",
+                f"After shooting, an enemy unit hit by {weapon_name} must take a Battle-shock test at -{int(penalty)}.",
+            )
+        return ("Supported", f"After shooting, an enemy unit hit by {weapon_name} must take a Battle-shock test.")
     pattern = (
         r"in your shooting phase after this (?:model|unit) has shot select one (?:enemy )?"
         r"(?:(?P<infantry>infantry) )?unit (?:that was )?hit by one or more of those attacks "
@@ -16424,17 +16536,32 @@ def _fight_phase_once_melee_attacks_strength_support(description: str) -> Option
         r")"
     )
     m = re.fullmatch(pattern, norm)
+    if m:
+        try:
+            bonus = int(m.group("add_val") or m.group("improve_val") or 0)
+        except (TypeError, ValueError):
+            bonus = 0
+        if bonus > 0:
+            return (
+                "Supported",
+                f"Once per battle in the Fight phase: bearer melee weapons gain +{bonus} Attacks and +{bonus} Strength until phase end.",
+            )
+    unit_pattern = (
+        r"once per battle at the start of the fight phase the bearer can use this ability if it does until the end of the phase "
+        r"add (?P<bonus>\d+) to the (?:attacks and strength|strength and attacks) characteristics of melee weapons equipped by models in the bearers unit"
+    )
+    m = re.fullmatch(unit_pattern, norm)
     if not m:
         return None
     try:
-        bonus = int(m.group("add_val") or m.group("improve_val") or 0)
+        bonus = int(m.group("bonus") or 0)
     except (TypeError, ValueError):
         bonus = 0
     if bonus <= 0:
         return None
     return (
         "Supported",
-        f"Once per battle in the Fight phase: bearer melee weapons gain +{bonus} Attacks and +{bonus} Strength until phase end.",
+        f"Once per battle in the Fight phase: melee weapons in the bearer's unit gain +{bonus} Attacks and +{bonus} Strength until phase end.",
     )
 
 

@@ -7327,6 +7327,8 @@ class GameView:
                 "post_shoot_shocked",
                 "void_mine",
                 "start_shooting_phase_keyword_hit_reroll_ones",
+                "forgefather",
+                "seeker_of_lost_relics",
                 "opponent_movement_embark",
             ):
                 return
@@ -15927,6 +15929,14 @@ class GameView:
             title = ability_name or "Daring Recon"
             subtitle = "Select one visible enemy unit to be marked for friendly Hit re-rolls of 1 this phase."
             header = f"{getattr(source_unit, 'name', 'Model')} selects a recon target."
+        elif str(ability_key) == "forgefather":
+            title = ability_name or "Forgefather"
+            subtitle = "Select one visible enemy unit to be marked for friendly Torrent and Melta wound re-rolls this phase."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a Forgefather target."
+        elif str(ability_key) == "seeker_of_lost_relics":
+            title = ability_name or "Seeker of Lost Relics"
+            subtitle = "Select one objective marker on the battlefield."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects an objective marker."
         elif str(ability_key) == "opponent_movement_embark":
             title = ability_name or "Mount Up!"
             subtitle = "Select one nearby friendly Infantry unit to embark, or None."

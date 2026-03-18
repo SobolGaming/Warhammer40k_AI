@@ -5036,6 +5036,7 @@ class GameReactiveDecisionsMixin:
                     return
                 attacker_unit_id = str(ctx.get("reactive_move_attacker_unit_id") or "")
                 attacker_unit = self._resolve_unit_by_id(attacker_unit_id)
+                allow_engagement_range = bool(ctx.get("reactive_move_allow_engagement_range", False))
                 self._queue_reactive_move_movement_decision(
                     player=player,
                     unit=unit,
@@ -5044,6 +5045,7 @@ class GameReactiveDecisionsMixin:
                     kind=kind,
                     movement_type=movement_type or "horde_move",
                     source=source,
+                    allow_engagement_range=allow_engagement_range,
                 )
                 return
             if kind == "aggressive_leader_beast":
@@ -5431,6 +5433,7 @@ class GameReactiveDecisionsMixin:
             "possessed_lord",
             "fight_phase_melee_ap_boost",
             "divine_deliverance",
+            "fight_phase_unit_melee_attacks_strength_boost",
             "might_of_titan",
             "stars_are_right",
             "thrilling_spectacle",
@@ -6873,6 +6876,60 @@ class GameReactiveDecisionsMixin:
                 attacks_bonus=int(attacks_bonus),
                 strength_bonus=int(strength_bonus),
             )
+            return
+
+        if ability_key == "fight_phase_unit_melee_attacks_strength_boost":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not unit_id or not model_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            model = self._resolve_model_by_id(model_id)
+            if unit is None or model is None:
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            key = str(
+                payload.get("buff_key")
+                or ctx.get("buff_key")
+                or "fight_phase_unit_melee_attacks_strength_boost"
+            ).strip().lower()
+            if not key:
+                key = "fight_phase_unit_melee_attacks_strength_boost"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            ability_name = str(ctx.get("ability_name", "") or "Fight phase unit melee attacks/strength boost").strip()
+            try:
+                attacks_bonus = int(payload.get("attacks_bonus") or ctx.get("attacks_bonus") or 0)
+            except Exception:
+                attacks_bonus = 0
+            try:
+                strength_bonus = int(payload.get("strength_bonus") or ctx.get("strength_bonus") or 0)
+            except Exception:
+                strength_bonus = 0
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            models = list(root.get_attached_unit_models() or []) if hasattr(root, "get_attached_unit_models") else list(getattr(root, "models", []) or [])
+            for target_model in list(models or []):
+                if target_model is None or not getattr(target_model, "is_alive", True):
+                    continue
+                for wargear in list(getattr(target_model, "wargear", []) or []):
+                    if wargear is None:
+                        continue
+                    is_melee = getattr(wargear, "is_melee", None)
+                    if not callable(is_melee) or not bool(is_melee()):
+                        continue
+                    weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                    if not weapon_name:
+                        continue
+                    target_model.set_temporary_weapon_bonus(
+                        key=f"{key}:{get_entity_id(target_model)}:{weapon_name}".lower(),
+                        weapon_name=weapon_name,
+                        attacks_bonus=int(attacks_bonus),
+                        strength_bonus=int(strength_bonus),
+                        source=ability_name,
+                        expires_phase="FIGHT_PHASE",
+                    )
+            model.mark_used_once_per_battle(key, ability_name=ability_name, source="datasheet")
             return
 
         if ability_key == "stars_are_right":

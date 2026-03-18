@@ -5461,6 +5461,15 @@ class RulesParsingMixin:
         required_model_name = str(target or "").strip()
         if not required_model_name:
             return False
+        norm_target = self._normalize_attached_unit_name(required_model_name)
+        if not norm_target:
+            return False
+        for article in ("an ", "a "):
+            if norm_target.startswith(article):
+                norm_target = norm_target[len(article):].strip()
+        if not norm_target:
+            return False
+        target_tokens = set(norm_target.split())
         try:
             root = self.get_attached_unit_root()
         except Exception:
@@ -5474,6 +5483,24 @@ class RulesParsingMixin:
         for member in members:
             if member is None:
                 continue
+            try:
+                is_alive_fn = getattr(member, "is_alive", None)
+                member_is_alive = bool(is_alive_fn() if callable(is_alive_fn) else is_alive_fn)
+            except Exception:
+                member_is_alive = bool(list(getattr(member, "models", []) or []))
+            if member_is_alive:
+                unit_names = [
+                    getattr(member, "name", ""),
+                    getattr(getattr(member, "_datasheet", None), "name", ""),
+                ]
+                for unit_name in unit_names:
+                    normalized_name = self._normalize_attached_unit_name(unit_name)
+                    if not normalized_name:
+                        continue
+                    if norm_target in normalized_name:
+                        return True
+                    if target_tokens and target_tokens.issubset(set(normalized_name.split())):
+                        return True
             contains_model_fn = getattr(member, "_unit_contains_model_named", None)
             if callable(contains_model_fn):
                 if bool(contains_model_fn(required_model_name)):

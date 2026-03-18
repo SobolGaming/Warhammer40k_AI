@@ -218,6 +218,44 @@ class AbilitySpecsMixin:
                         spec["test_modifier_if_infantry_hit_by_weapon_name"] = str(infantry_weapon_name)
                     specs.append(spec)
                 continue
+            weapon_auto_match = re.fullmatch(
+                r"in your shooting phase after this model has shot if one or more of those attacks made with "
+                r"(?:a|an|the|its) (?P<weapon>[a-z0-9 ]+) scored a hit against an enemy "
+                r"(?:(?P<infantry>infantry) )?unit that unit must take a battle shock test"
+                r"(?: subtracting (?P<pen>\d+) from (?:(?:the )?result|that test))?",
+                normalized,
+            )
+            if weapon_auto_match:
+                source = str(name or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
+                weapon_name = str(weapon_auto_match.group("weapon") or "").strip()
+                weapon_key = self._normalize_keyword_phrase(weapon_name) if weapon_name else ""
+                if not weapon_key and weapon_name:
+                    weapon_key = re.sub(r"[^a-z0-9]+", " ", weapon_name.lower()).strip()
+                infantry_only = bool(weapon_auto_match.group("infantry"))
+                try:
+                    penalty = int(weapon_auto_match.group("pen") or 0)
+                except Exception:
+                    penalty = 0
+                key = (
+                    source.lower(),
+                    "weapon_hit_auto_battleshock",
+                    bool(infantry_only),
+                    str(weapon_key or ""),
+                    -int(penalty) if penalty > 0 else 0,
+                )
+                if key not in seen:
+                    seen.add(key)
+                    spec = {
+                        "infantry_only": bool(infantry_only),
+                        "exclude_monster_vehicle": False,
+                        "require_weapon_key_hit": str(weapon_key or ""),
+                        "auto_each_target": True,
+                        "source": source,
+                    }
+                    if penalty > 0:
+                        spec["test_modifier"] = -int(penalty)
+                    specs.append(spec)
+                continue
             m_kill = self._POST_SHOOT_BATTLESHOCK_ON_KILL_RE.fullmatch(normalized)
             if m_kill:
                 if str(m_kill.group("subject") or "").strip().lower() != "model":
@@ -5999,6 +6037,91 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_fight_phase_unit_melee_attacks_strength_boost_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific bearer rule: once per battle, at the start of the Fight phase,
+        add Attacks and Strength to melee weapons equipped by models in the bearer's unit.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - key: once-per-battle tracking key
+            - attacks_bonus: int
+            - strength_bonus: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_phase_unit_melee_attacks_strength_boost:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+        optional_wargear_names = {
+            self._normalize_keyword_phrase(entry)
+            for entry in list(getattr(model, "optional_wargear", []) or [])
+            if self._normalize_keyword_phrase(entry)
+        }
+        model_ability_names = {
+            self._normalize_keyword_phrase(entry)
+            for entry in list(getattr(model, "abilities", {}) or [])
+            if self._normalize_keyword_phrase(entry)
+        }
+        pattern = re.compile(
+            r"once per battle at the start of the fight phase (?:the bearer|this model) can use this ability if it does until the end of the phase "
+            r"add (?P<bonus>\d+) to the (?:strength and attacks|attacks and strength) characteristics of melee weapons equipped by models in the "
+            r"(?:bearer s|this model s) unit",
+            re.IGNORECASE,
+        )
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = pattern.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                bonus = int(m.group("bonus") or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            source = str(name or "Fight phase unit melee attacks/strength boost").strip()
+            if not source:
+                source = "Fight phase unit melee attacks/strength boost"
+            source_key = self._normalize_keyword_phrase(source)
+            if not source_key:
+                source_key = "fight_phase_unit_melee_attacks_strength_boost"
+            if optional_wargear_names or model_ability_names:
+                if source_key not in optional_wargear_names and source_key not in model_ability_names:
+                    continue
+            key = f"fight_phase_unit_melee_attacks_strength_boost:{source_key}"
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "key": key,
+                    "attacks_bonus": int(bonus),
+                    "strength_bonus": int(bonus),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_fight_phase_weapon_triple_attacks_strength_crit_wound_specs(
         self,
         model: Optional['Model'] = None,
@@ -10359,6 +10482,87 @@ class AbilitySpecsMixin:
                     "source": source,
                     "range": 0,
                     "keyword": "heretic astartes",
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_shooting_phase_forgefather_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: in your Shooting phase, select one visible enemy unit in range;
+        friendly keyworded models using the listed weapon keywords can re-roll the Wound roll
+        against that target until phase end.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - keyword_phrase: str
+            - weapon_keywords: list[str]
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_shooting_phase_forgefather:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, str, tuple[str, ...]]] = set()
+        pattern = re.compile(
+            r"in your shooting phase select one enemy unit within (?P<range>\d+) of and visible to this model "
+            r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) model makes a ranged attack "
+            r"with a (?P<weapon_one>[a-z0-9 ]+?) or (?P<weapon_two>[a-z0-9 ]+?) weapon that targets that enemy unit "
+            r"you can re ?roll the wound roll",
+            re.IGNORECASE,
+        )
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = pattern.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            keyword_phrase = str(m.group("keyword") or "").strip()
+            if not keyword_phrase:
+                continue
+            weapon_keywords = []
+            for raw_keyword in (
+                str(m.group("weapon_one") or "").strip(),
+                str(m.group("weapon_two") or "").strip(),
+            ):
+                normalized_keyword = self._normalize_keyword_phrase(raw_keyword) if raw_keyword else ""
+                if not normalized_keyword:
+                    continue
+                weapon_keywords.append(str(normalized_keyword).upper())
+            weapon_keywords = sorted(set(weapon_keywords))
+            if not weapon_keywords:
+                continue
+            source = str(name or "Forgefather").strip() or "Forgefather"
+            key = (source.lower(), int(range_value), keyword_phrase.lower(), tuple(weapon_keywords))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "keyword_phrase": keyword_phrase,
+                    "weapon_keywords": list(weapon_keywords),
                 }
             )
 

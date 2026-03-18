@@ -7921,6 +7921,113 @@ class Game(
             )
         )
 
+    def _on_unit_set_up_seeker_of_lost_relics(self, unit=None, **_kwargs) -> None:
+        if unit is None or not bool(getattr(self, "is_authoritative", True)):
+            return
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        if root is None:
+            return
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", False)):
+            return
+        if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+            return
+        if bool(getattr(root, "is_in_reserves", lambda: False)()):
+            return
+
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        if army is None:
+            return
+        player = getattr(army, "player", None)
+        if player is None or player is not self.get_current_player():
+            return
+
+        get_rule = getattr(root, "get_seeker_of_lost_relics_rule", None)
+        rule = get_rule() if callable(get_rule) else None
+        if not isinstance(rule, dict):
+            return
+
+        try:
+            source_model_id = str(rule.get("source_model_id", "") or "").strip()
+        except Exception:
+            source_model_id = ""
+        if not source_model_id:
+            return
+
+        sr_root = getattr(root, "special_rules", None)
+        if isinstance(sr_root, dict) and str(sr_root.get("seeker_of_lost_relics_objective_id", "") or "").strip():
+            return
+
+        source_model = None
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if model is None:
+                continue
+            if str(get_entity_id(model) or "") != source_model_id:
+                continue
+            model_alive_attr = getattr(model, "is_alive", True)
+            if not bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr):
+                return
+            source_model = model
+            break
+        if source_model is None:
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if str(getattr(pending, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                pending_ctx = dict(getattr(pending, "context", {}) or {})
+                if str(pending_ctx.get("ability", "") or "") != "seeker_of_lost_relics":
+                    continue
+                if str(pending_ctx.get("model_id", "") or "") == source_model_id:
+                    return
+
+        objective_pool = list(getattr(self, "objectives", []) or [])
+        if not objective_pool:
+            objective_pool = list(getattr(getattr(self, "map", None), "objectives", []) or [])
+        options = []
+        candidate_objective_ids: list[str] = []
+        for idx, objective in enumerate(list(objective_pool or [])):
+            objective_id = str(get_entity_id(objective) or "")
+            if not objective_id:
+                continue
+            objective_location = getattr(objective, "location", None)
+            if objective_location is None or bool(getattr(objective_location, "removed", False)):
+                continue
+            label = str(getattr(objective, "name", "") or f"Objective {idx + 1}")
+            options.append(DecisionOption.create(label, payload={"objective_id": objective_id}))
+            candidate_objective_ids.append(objective_id)
+        if not options:
+            return
+
+        ability_name = str(rule.get("source", "") or "Seeker of Lost Relics").strip() or "Seeker of Lost Relics"
+        source_unit_id = str(get_entity_id(root) or "")
+        self.request_decision(
+            DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select one objective marker on the battlefield.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "seeker_of_lost_relics",
+                    "ability_name": ability_name,
+                    "source_unit_id": source_unit_id,
+                    "unit_id": source_unit_id,
+                    "model_id": source_model_id,
+                    "candidate_objective_ids": list(candidate_objective_ids),
+                    "optional": False,
+                },
+            )
+        )
+
     def _on_unit_set_up_drukhari_detachments(
         self,
         unit=None,

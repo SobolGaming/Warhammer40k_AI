@@ -1161,6 +1161,9 @@ class GameShootingFightHandlersMixin:
                         continue
                     if not _model_hit_target(model, target_unit):
                         continue
+                    required_weapon_key = str(spec.get("require_weapon_key_hit", "") or "").strip()
+                    if required_weapon_key and not _model_hit_target_with_weapon_key(model, target_unit, required_weapon_key):
+                        continue
                     if bool(spec.get("require_indirect_fire_hit", False)) and not _model_hit_target_with_any_indirect_weapon(
                         model, target_unit
                     ):
@@ -1182,6 +1185,9 @@ class GameShootingFightHandlersMixin:
                 if not _is_enemy_unit(target_unit):
                     continue
                 if not _spec_allows_target(spec, target_unit):
+                    continue
+                required_weapon_key = str(spec.get("require_weapon_key_hit", "") or "").strip()
+                if required_weapon_key and not _target_hit_with_weapon_key(target_unit, required_weapon_key):
                     continue
                 if bool(spec.get("require_indirect_fire_hit", False)) and not _target_hit_with_any_indirect_weapon(
                     target_unit
@@ -16231,6 +16237,12 @@ class GameShootingFightHandlersMixin:
                     "This unit can move within Engagement Range and cannot make this move while Battle-shocked."
                 )
                 source_name = "Insurmountable Odds"
+            elif source_name.lower() == "glory of ultramar":
+                msg = (
+                    "Glory of Ultramar: Roll D6 and make a Surge move up to that distance as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                    "This unit can move within Engagement Range of that enemy unit, and cannot make this move while Battle-shocked "
+                    "or within Engagement Range. It can only make one Glory of Ultramar move per phase."
+                )
             elif source_name.lower() == "brood surge":
                 distance_text = f"{int(fixed_distance)}\"" if fixed_distance > 0 else "D6\""
                 msg = (
@@ -16256,6 +16268,7 @@ class GameShootingFightHandlersMixin:
                 source=source_name,
                 message=msg,
                 attacker_unit=attacker_unit,
+                allow_engagement_range=bool(rule.get("allow_engagement_range", False)),
             )
 
     def _on_shooting_targets_selected_blistering_assault(self, attacking_unit=None, target_units=None, **_kwargs) -> None:

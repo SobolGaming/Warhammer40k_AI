@@ -2066,6 +2066,69 @@ class GamePhaseHandlersMixin:
                             payload={"unit_id": unit_id, "model_id": model_id, "buff_key": key},
                             instance_key=f"{model_id}:{key}",
                         )
+            # Once per battle: start of Fight phase -> add Attacks and Strength to melee weapons in the bearer's unit.
+            for unit in list(army.units):
+                if not unit.is_alive():
+                    continue
+                models = list(getattr(unit, "models", []) or [])
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                root_id = maybe_entity_id(root)
+                for m in models:
+                    if not getattr(m, "is_alive", True):
+                        continue
+                    get_specs = getattr(unit, "model_start_fight_phase_unit_melee_attacks_strength_boost_specs", None)
+                    specs = list(get_specs(m) or []) if callable(get_specs) else []
+                    if not specs:
+                        continue
+                    for spec in specs:
+                        key = str(spec.get("key") or "fight_phase_unit_melee_attacks_strength_boost").strip().lower()
+                        if not key:
+                            key = "fight_phase_unit_melee_attacks_strength_boost"
+                        if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
+                            continue
+                        unit_id = root_id or maybe_entity_id(unit)
+                        model_id = maybe_entity_id(m)
+                        ability_name = str(spec.get("source", "") or "Fight phase unit melee attacks/strength boost").strip()
+                        try:
+                            attacks_bonus = int(spec.get("attacks_bonus", 0) or 0)
+                        except Exception:
+                            attacks_bonus = 0
+                        try:
+                            strength_bonus = int(spec.get("strength_bonus", 0) or 0)
+                        except Exception:
+                            strength_bonus = 0
+                        if attacks_bonus <= 0 and strength_bonus <= 0:
+                            continue
+                        ctx = {
+                            "ability_name": ability_name,
+                            "unit": getattr(root, "name", "") or getattr(unit, "name", "") or "",
+                            "model": getattr(m, "name", "") or "",
+                            "phase": "Fight phase",
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "buff_key": key,
+                            "attacks_bonus": int(attacks_bonus),
+                            "strength_bonus": int(strength_bonus),
+                        }
+                        message = (
+                            f"Activate {ability_name} for {getattr(m, 'name', 'Model')} "
+                            f"({getattr(root, 'name', getattr(unit, 'name', 'Unit'))})?"
+                        )
+                        self._queue_optional_ability_confirmation(
+                            player=player,
+                            ability_key="fight_phase_unit_melee_attacks_strength_boost",
+                            ability_name=ability_name,
+                            message=message,
+                            context=ctx,
+                            payload={
+                                "unit_id": unit_id,
+                                "model_id": model_id,
+                                "buff_key": key,
+                                "attacks_bonus": int(attacks_bonus),
+                                "strength_bonus": int(strength_bonus),
+                            },
+                            instance_key=f"{model_id}:{key}",
+                        )
             # Once per battle: start of Fight phase -> triple named weapon Attacks/Strength and crit on successful wounds.
             for unit in list(army.units):
                 if not unit.is_alive():
@@ -11179,6 +11242,160 @@ class GamePhaseHandlersMixin:
                     spec=spec,
                 )
 
+    def _on_phase_start_forgefather(self, player=None, phase=None, **_kwargs) -> None:
+        """Start of Shooting phase: Vulkan He'stan marks one visible enemy for Torrent/Melta wound re-rolls."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ...utility.entity_ids import get_entity_id
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        pending_model_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "forgefather":
+                    continue
+                model_id = str(ctx.get("model_id", "") or "")
+                if model_id:
+                    pending_model_ids.add(model_id)
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(unit_obj):
+            try:
+                return str(get_entity_id(unit_obj) or "")
+            except Exception:
+                return str(getattr(unit_obj, "name", "") or "")
+
+        def _model_sort_key(model_obj):
+            try:
+                return str(get_entity_id(model_obj) or "")
+            except Exception:
+                return str(getattr(model_obj, "name", "") or "")
+
+        enemy_roots.sort(key=_unit_sort_key)
+        seen_root_ids: set[str] = set()
+
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            root_id = str(get_entity_id(root) or "")
+            if root is None or not root_id or root_id in seen_root_ids:
+                continue
+            seen_root_ids.add(root_id)
+            if not getattr(root, "is_alive", lambda: False)():
+                continue
+            if not getattr(root, "deployed", True):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            spec_fn = getattr(root, "model_start_shooting_phase_forgefather_specs", None)
+            if not callable(spec_fn):
+                continue
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            models = [model for model in list(models or []) if getattr(model, "is_alive", True)]
+            if not models:
+                continue
+
+            for model in sorted(list(models or []), key=_model_sort_key):
+                model_id = str(get_entity_id(model) or "")
+                if not model_id or model_id in pending_model_ids:
+                    continue
+                specs = list(spec_fn(model) or [])
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                queued = False
+                for spec in list(specs or []):
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    max_range = float(range_value) if range_value > 0 else 9999.0
+                    candidates = self._visible_enemy_candidates_for_model(
+                        source_unit=source_unit,
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=max_range,
+                        game_map=game_map,
+                    )
+                    if not candidates:
+                        continue
+                    options = []
+                    for candidate in sorted(list(candidates or []), key=_unit_sort_key):
+                        target_id = str(get_entity_id(candidate) or "")
+                        if not target_id:
+                            continue
+                        options.append(
+                            DecisionOption.create(
+                                str(getattr(candidate, "name", "Unit") or "Unit"),
+                                payload={
+                                    "target_unit_id": target_id,
+                                    "model_id": model_id,
+                                    "source_unit_id": str(get_entity_id(source_unit) or ""),
+                                },
+                            )
+                        )
+                    if not options:
+                        continue
+                    ability_name = str(spec.get("source", "") or "Forgefather").strip() or "Forgefather"
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select a visible enemy unit.",
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context={
+                            "ability": "forgefather",
+                            "ability_name": ability_name,
+                            "source_unit_id": str(get_entity_id(source_unit) or ""),
+                            "unit_id": str(get_entity_id(source_unit) or ""),
+                            "model_id": model_id,
+                            "range": int(range_value or 0),
+                            "keyword_phrase": str(spec.get("keyword_phrase", "") or "").strip(),
+                            "weapon_keywords": list(spec.get("weapon_keywords", []) or []),
+                            "candidate_unit_ids": [
+                                str(get_entity_id(candidate) or "")
+                                for candidate in list(candidates or [])
+                                if str(get_entity_id(candidate) or "")
+                            ],
+                            "phase": "Shooting phase",
+                        },
+                    )
+                    self.request_decision(request)
+                    pending_model_ids.add(model_id)
+                    queued = True
+                    break
+                if queued:
+                    continue
+
     def _on_phase_start_death_hex(self, player=None, phase=None, **_kwargs) -> None:
         """Start of Shooting phase: Death Hex selection and roll."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -19418,6 +19635,18 @@ class GamePhaseHandlersMixin:
                         "start_shooting_phase_keyword_hit_reroll_ones_source",
                         "start_shooting_phase_keyword_hit_reroll_ones_phrase",
                         "start_shooting_phase_keyword_hit_reroll_ones_expires_phase",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("forgefather_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "forgefather_active",
+                        "forgefather_owner",
+                        "forgefather_turn",
+                        "forgefather_source",
+                        "forgefather_keyword_phrase",
+                        "forgefather_weapon_keywords",
+                        "forgefather_expires_phase",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("start_shooting_phase_visible_hit_bonus_expires_phase", "") or "").strip().upper()

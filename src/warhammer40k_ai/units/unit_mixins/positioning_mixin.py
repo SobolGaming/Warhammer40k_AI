@@ -2644,11 +2644,15 @@ class PositioningMixin:
             return False
         return bool(self.is_within_objective_range(loc))
 
-    def singular_purpose_objective_effects_active(self, *, model=None, game=None, game_map=None) -> bool:
-        """
-        TYRANIDS: Singular Purpose (objective branch).
-        Active while the selected source model is within range of the selected objective marker.
-        """
+    def _selected_model_objective_effects_active(
+        self,
+        *,
+        objective_id_key: str,
+        source_model_id_key: str,
+        model=None,
+        game=None,
+        game_map=None,
+    ) -> bool:
         try:
             root = self.get_attached_unit_root()
         except Exception:
@@ -2656,14 +2660,11 @@ class PositioningMixin:
         sr = getattr(root, "special_rules", None)
         if not isinstance(sr, dict):
             return False
-        mode = str(sr.get("singular_purpose_mode", "") or "").strip().lower()
-        if mode != "objective_marker":
-            return False
-        objective_id = str(sr.get("singular_purpose_objective_id", "") or "").strip()
+        objective_id = str(sr.get(objective_id_key, "") or "").strip()
         if not objective_id:
             return False
 
-        source_model_id = str(sr.get("singular_purpose_source_model_id", "") or "").strip()
+        source_model_id = str(sr.get(source_model_id_key, "") or "").strip()
         if model is not None and source_model_id:
             model_id = str(get_entity_id(model) or "").strip()
             if model_id and model_id != source_model_id:
@@ -2757,6 +2758,42 @@ class PositioningMixin:
             return (dx * dx + dy * dy) ** 0.5 <= (radius + base_r)
         except Exception:
             return False
+
+    def singular_purpose_objective_effects_active(self, *, model=None, game=None, game_map=None) -> bool:
+        """
+        TYRANIDS: Singular Purpose (objective branch).
+        Active while the selected source model is within range of the selected objective marker.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        mode = str(sr.get("singular_purpose_mode", "") or "").strip().lower()
+        if mode != "objective_marker":
+            return False
+        return self._selected_model_objective_effects_active(
+            objective_id_key="singular_purpose_objective_id",
+            source_model_id_key="singular_purpose_source_model_id",
+            model=model,
+            game=game,
+            game_map=game_map,
+        )
+
+    def seeker_of_lost_relics_effects_active(self, *, model=None, game=None, game_map=None) -> bool:
+        """
+        Space Marines: Seeker of Lost Relics.
+        Active while the selected source model is within range of its chosen objective marker.
+        """
+        return self._selected_model_objective_effects_active(
+            objective_id_key="seeker_of_lost_relics_objective_id",
+            source_model_id_key="seeker_of_lost_relics_source_model_id",
+            model=model,
+            game=game,
+            game_map=game_map,
+        )
 
     def _has_aethersails(self) -> bool:
         try:

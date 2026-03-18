@@ -2802,6 +2802,23 @@ class LateGameplayMixin:
         except Exception:
             pass
         try:
+            # Seeker of Lost Relics: source model gains FNP while in range of the selected objective.
+            if target_model is not None:
+                sr = getattr(self, "special_rules", None)
+                active_fn = getattr(self, "seeker_of_lost_relics_effects_active", None)
+                if isinstance(sr, dict) and callable(active_fn) and bool(active_fn(model=target_model)):
+                    try:
+                        fnp_val = int(sr.get("seeker_of_lost_relics_fnp", 4) or 4)
+                    except Exception:
+                        fnp_val = 4
+                    fnp_val = max(2, int(fnp_val))
+                    key = (int(fnp_val), "")
+                    seen = set((int(v), (c or "")) for v, c in result)
+                    if key not in seen:
+                        result.append((int(fnp_val), None))
+        except Exception:
+            pass
+        try:
             root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
         except Exception:
             root = self

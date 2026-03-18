@@ -2762,6 +2762,12 @@ class KeywordsDetachmentsMixin:
             patterns=["aggressive leader-beast", "aggressive leader beast"],
         )
 
+    def has_glory_of_ultramar(self) -> bool:
+        return self._attached_unit_has_ability_patterns(
+            cache_key="glory_of_ultramar",
+            patterns=["glory of ultramar"],
+        )
+
     def get_resource_transmutation_model(self):
         models = list(self._iter_attached_models_with_ability_patterns(["resource transmutation"]) or [])
         if not models:
@@ -3882,6 +3888,16 @@ class KeywordsDetachmentsMixin:
                     "use_once_per_phase": False,
                     "closest_enemy_unit_exclude_keywords": ("AIRCRAFT",),
                 }
+            elif self.has_glory_of_ultramar():
+                rule = {
+                    "source": "Glory of Ultramar",
+                    "distance_bonus": 0,
+                    "distance_reroll": False,
+                    "requires_not_engaged": True,
+                    "use_once_per_phase": True,
+                    "closest_enemy_unit_exclude_keywords": ("AIRCRAFT",),
+                    "allow_engagement_range": True,
+                }
             elif self.has_righteous_zeal():
                 rule = {
                     "source": "Righteous Zeal",
@@ -4469,6 +4485,133 @@ class KeywordsDetachmentsMixin:
                     "source": str(name or "Priority Objective Identified").strip() or "Priority Objective Identified",
                     "friendly_keyword": "ADEPTUS ASTARTES",
                     "reroll_wound_values": (1,),
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def get_seeker_of_lost_relics_rule(self) -> Optional[dict]:
+        """
+        Detect rules like:
+        "The first time this model is set up on the battlefield, select one objective marker on the battlefield.
+        While this model is within range of that objective marker, this model has an Objective Control characteristic
+        of 10, a Leadership characteristic of 5+ and the Feel No Pain 4+ ability."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "seeker_of_lost_relics_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for model in list(getattr(unit, "models", []) or []):
+                if model is None:
+                    continue
+                source_model_id = str(get_entity_id(model) or "").strip()
+                if not source_model_id:
+                    continue
+                for name, desc in unit._iter_model_specific_ability_entries(model):
+                    text_src = unit._strip_eligibility_prefix(desc or name or "")
+                    if not text_src:
+                        continue
+                    normalized = unit._normalize_rules_text(text_src)
+                    if not normalized:
+                        continue
+                    normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                    normalized = re.sub(r"\s+", " ", normalized).strip()
+                    if "the first time this model is set up on the battlefield" not in normalized:
+                        continue
+                    if "select one objective marker on the battlefield" not in normalized:
+                        continue
+                    if "while this model is within range of that objective marker" not in normalized:
+                        continue
+                    if "objective control characteristic of 10" not in normalized:
+                        continue
+                    if "leadership characteristic of 5" not in normalized:
+                        continue
+                    if "feel no pain 4" not in normalized:
+                        continue
+                    rule = {
+                        "source": str(name or "Seeker of Lost Relics").strip() or "Seeker of Lost Relics",
+                        "source_model_id": source_model_id,
+                        "objective_control": 10,
+                        "leadership": 5,
+                        "feel_no_pain": 4,
+                    }
+                    break
+                if rule is not None:
+                    break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def get_second_company_banner_rule(self) -> Optional[dict]:
+        """Return parsed Second Company Banner bonuses for Wardens of Ultramar."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "second_company_banner_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "while this unit contains ancient gadriel" not in normalized:
+                    continue
+                if "objective control characteristic of models in this unit" not in normalized:
+                    continue
+                if "while this unit contains ancient gadriel and captain titus" not in normalized:
+                    continue
+                if "leadership characteristic of models in this unit by 1" not in normalized:
+                    continue
+                rule = {
+                    "source": str(name or "Second Company Banner").strip() or "Second Company Banner",
+                    "objective_control_bonus": 1,
+                    "objective_control_required_models": ["Ancient Gadriel"],
+                    "leadership_bonus": 1,
+                    "leadership_required_models": ["Ancient Gadriel", "Captain Titus"],
                 }
                 break
             if rule is not None:

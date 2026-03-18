@@ -8815,6 +8815,77 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if candidate_ids and objective_id not in candidate_ids:
             return ("Priority Objective Identified selected objective marker is not an eligible candidate.",)
         return ()
+    if ability == "seeker_of_lost_relics":
+        if is_skip_choice(request, result):
+            return ("Seeker of Lost Relics selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Seeker of Lost Relics source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Seeker of Lost Relics source unit was not found.",)
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return ("Seeker of Lost Relics requires objective_id.",)
+        objective = get_objective(game, objective_id)
+        if objective is None:
+            return ("Seeker of Lost Relics selected objective marker was not found.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_objective_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and objective_id not in candidate_ids:
+            return ("Seeker of Lost Relics selected objective marker is not an eligible candidate.",)
+        source_model_id = str(payload.get("model_id") or ctx.get("model_id") or "").strip()
+        if source_model_id:
+            source_model = resolve_model(game, source_model_id)
+            if source_model is None:
+                return ("Seeker of Lost Relics source model was not found.",)
+            alive_attr = getattr(source_model, "is_alive", False)
+            alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not alive:
+                return ("Seeker of Lost Relics source model must be alive.",)
+        return ()
+    if ability == "forgefather":
+        if is_skip_choice(request, result):
+            return ("Forgefather selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Forgefather source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Forgefather source unit was not found.",)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Forgefather target unit was not found.",)
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None:
+            return ("Forgefather target unit was not found.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is target_army:
+            return ("Forgefather target must be an enemy unit.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Forgefather selected target is not an eligible candidate.",)
+        source_model_id = str(payload.get("model_id") or ctx.get("model_id") or "").strip()
+        if source_model_id:
+            source_model = resolve_model(game, source_model_id)
+            if source_model is None:
+                return ("Forgefather source model was not found.",)
+            alive_attr = getattr(source_model, "is_alive", False)
+            alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not alive:
+                return ("Forgefather source model must be alive.",)
+        return ()
     if ability == "high_king_of_fenris_selection":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
@@ -15915,6 +15986,65 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "objective_name": objective_name,
             "source": ability_name,
         }
+    if ability == "seeker_of_lost_relics":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return None
+        objective = get_objective(game, objective_id)
+        if objective is None:
+            return None
+        source_model_id = str(payload.get("model_id") or ctx.get("model_id") or "").strip()
+        try:
+            members = list(source_root.get_attached_unit_members() or [])
+        except Exception:
+            members = [source_root]
+        if not members:
+            members = [source_root]
+        try:
+            rule = source_root.get_seeker_of_lost_relics_rule() if hasattr(source_root, "get_seeker_of_lost_relics_rule") else None
+        except Exception:
+            rule = None
+        objective_control = int(rule.get("objective_control", 10) or 10) if isinstance(rule, dict) else 10
+        leadership = int(rule.get("leadership", 5) or 5) if isinstance(rule, dict) else 5
+        feel_no_pain = int(rule.get("feel_no_pain", 4) or 4) if isinstance(rule, dict) else 4
+        ability_name = str(ctx.get("ability_name", "") or "Seeker of Lost Relics").strip() or "Seeker of Lost Relics"
+        for member in list(members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr = dict(sr)
+            sr["seeker_of_lost_relics_source"] = ability_name
+            sr["seeker_of_lost_relics_source_model_id"] = str(source_model_id)
+            sr["seeker_of_lost_relics_objective_id"] = objective_id
+            sr["seeker_of_lost_relics_objective_oc"] = int(objective_control)
+            sr["seeker_of_lost_relics_leadership"] = int(leadership)
+            sr["seeker_of_lost_relics_fnp"] = int(feel_no_pain)
+            member.special_rules = sr
+        try:
+            player = getattr(source_root.get_parent_army(), "player", None)
+        except Exception:
+            player = None
+        objective_name = str(getattr(objective, "name", "") or "Objective marker")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected {objective_name}.",
+        )
+        return {
+            "objective_id": objective_id,
+            "objective_name": objective_name,
+            "source_model_id": str(source_model_id),
+            "source": ability_name,
+        }
     if ability == "high_king_of_fenris_selection":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
@@ -22917,6 +23047,54 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 sname = str(getattr(source_unit, "name", "Unit") or "Unit")
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
                 _log_action_for_players(game, player, f"{ability_name}: {sname} marked {tname} for Hit re-rolls of 1 this phase.")
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "forgefather":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            try:
+                player = getattr(getattr(source_root, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Forgefather").strip() or "Forgefather"
+            keyword_phrase = str(ctx.get("keyword_phrase", "") or "").strip()
+            weapon_keywords = [
+                str(value or "").strip().upper()
+                for value in list(ctx.get("weapon_keywords", []) or [])
+                if str(value or "").strip()
+            ]
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["forgefather_active"] = True
+            sr["forgefather_owner"] = owner_id
+            sr["forgefather_turn"] = int(turn or 0)
+            sr["forgefather_source"] = ability_name
+            sr["forgefather_keyword_phrase"] = keyword_phrase
+            sr["forgefather_weapon_keywords"] = list(weapon_keywords)
+            sr["forgefather_expires_phase"] = "SHOOTING_PHASE"
+            target_root.special_rules = sr
+            try:
+                sname = str(getattr(source_root, "name", "Unit") or "Unit")
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {sname} marked {tname} for friendly Torrent/Melta wound re-rolls this phase.",
+                )
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "blight_bombardment":

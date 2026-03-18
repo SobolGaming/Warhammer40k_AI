@@ -7598,6 +7598,61 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # Forgefather: ranged attacks with Torrent or Melta weapons re-roll Wound rolls vs marked target.
+        try:
+            if atype in ("any", "ranged") and target is not None and weapon_profile is not None:
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                tsr = getattr(target_root, "special_rules", None)
+                if isinstance(tsr, dict) and tsr.get("forgefather_active"):
+                    applies = True
+                    exp_phase = str(tsr.get("forgefather_expires_phase", "") or "").strip().upper()
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if exp_phase and phase_name and exp_phase != phase_name:
+                        applies = False
+                    try:
+                        marked_turn = int(tsr.get("forgefather_turn", 0) or 0)
+                    except Exception:
+                        marked_turn = 0
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    if applies and marked_turn and current_turn and marked_turn != current_turn:
+                        applies = False
+                    owner_id = str(tsr.get("forgefather_owner", "") or "")
+                    try:
+                        attacker_owner = str(getattr(getattr(root.get_parent_army(), "player", None), "id", "") or "")
+                    except Exception:
+                        attacker_owner = ""
+                    if applies and owner_id and attacker_owner and owner_id != attacker_owner:
+                        applies = False
+                    keyword_phrase = str(tsr.get("forgefather_keyword_phrase", "") or "").strip()
+                    if applies and keyword_phrase:
+                        try:
+                            if not self._unit_matches_keyword_phrase(root, keyword_phrase, use_effective=True):
+                                applies = False
+                        except Exception:
+                            applies = False
+                    required_keywords = {
+                        str(value or "").strip().upper()
+                        for value in list(tsr.get("forgefather_weapon_keywords", ()) or ())
+                        if str(value or "").strip()
+                    }
+                    if applies:
+                        has_required_weapon = False
+                        if "TORRENT" in required_keywords and bool(getattr(weapon_profile, "is_torrent", lambda: False)()):
+                            has_required_weapon = True
+                        if "MELTA" in required_keywords and bool(getattr(weapon_profile, "is_melta", lambda: False)()):
+                            has_required_weapon = True
+                        if not has_required_weapon:
+                            applies = False
+                    if applies:
+                        source = str(tsr.get("forgefather_source", "") or "Forgefather").strip() or "Forgefather"
+                        mods["reroll_wound_full"] = True
+                        reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll")
+        except Exception:
+            pass
+
         # Bringers of Change: ranged attacks re-roll wound 1s, or full wound re-rolls
         # vs targets within objective range you do not control.
         has_bringers = bool(getattr(root, "has_bringers_of_change", lambda: False)())

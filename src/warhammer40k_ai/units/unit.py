@@ -558,6 +558,34 @@ class Unit(
                                 mods.append(Modifier(ModifierOp.ADD, 1, source="ability:leading_oc_add_1"))
                 except Exception:
                     continue
+            try:
+                root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+            except Exception:
+                root = self
+            try:
+                banner_rule_fn = getattr(root, "get_second_company_banner_rule", None)
+                banner_rule = banner_rule_fn() if callable(banner_rule_fn) else None
+            except Exception:
+                banner_rule = None
+            if isinstance(banner_rule, dict):
+                contains_required_models = True
+                contains_named_fn = getattr(root, "_attached_unit_contains_model_named", None)
+                required_models = list(banner_rule.get("objective_control_required_models", []) or [])
+                if callable(contains_named_fn):
+                    for required_model in required_models:
+                        if not bool(contains_named_fn(required_model)):
+                            contains_required_models = False
+                            break
+                elif required_models:
+                    contains_required_models = False
+                if contains_required_models:
+                    try:
+                        oc_bonus = int(banner_rule.get("objective_control_bonus", 0) or 0)
+                    except Exception:
+                        oc_bonus = 0
+                    if oc_bonus:
+                        source = str(banner_rule.get("source", "") or "Second Company Banner").strip() or "Second Company Banner"
+                        mods.append(Modifier(ModifierOp.ADD, int(oc_bonus), source=f"ability:{source}"))
 
             # Space Marines: Grim Resolve (Unforgiven Task Force).
             try:
@@ -1118,6 +1146,27 @@ class Unit(
                     except Exception:
                         oc_value = 15
                     mods.append(Modifier(ModifierOp.SET, int(max(0, oc_value)), source="ability:singular_purpose"))
+            except Exception:
+                pass
+            try:
+                seeker_active_fn = getattr(root, "seeker_of_lost_relics_effects_active", None)
+                if callable(seeker_active_fn) and bool(seeker_active_fn(model=model, game_map=game_map)):
+                    sr_root = getattr(root, "special_rules", None)
+                    try:
+                        oc_value = (
+                            int(sr_root.get("seeker_of_lost_relics_objective_oc", 10) or 10)
+                            if isinstance(sr_root, dict)
+                            else 10
+                        )
+                    except Exception:
+                        oc_value = 10
+                    mods.append(
+                        Modifier(
+                            ModifierOp.SET,
+                            int(max(0, oc_value)),
+                            source="ability:seeker_of_lost_relics",
+                        )
+                    )
             except Exception:
                 pass
 
@@ -2012,6 +2061,55 @@ class Unit(
             pg_value = psychic_guidance_leadership_value(model)
             if pg_value is not None:
                 mods.append(Modifier(ModifierOp.SET, int(pg_value), source="ability:psychic_guidance"))
+            try:
+                root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+            except Exception:
+                root = self
+            try:
+                banner_rule_fn = getattr(root, "get_second_company_banner_rule", None)
+                banner_rule = banner_rule_fn() if callable(banner_rule_fn) else None
+            except Exception:
+                banner_rule = None
+            if isinstance(banner_rule, dict):
+                contains_required_models = True
+                contains_named_fn = getattr(root, "_attached_unit_contains_model_named", None)
+                required_models = list(banner_rule.get("leadership_required_models", []) or [])
+                if callable(contains_named_fn):
+                    for required_model in required_models:
+                        if not bool(contains_named_fn(required_model)):
+                            contains_required_models = False
+                            break
+                elif required_models:
+                    contains_required_models = False
+                if contains_required_models:
+                    try:
+                        leadership_bonus = int(banner_rule.get("leadership_bonus", 0) or 0)
+                    except Exception:
+                        leadership_bonus = 0
+                    if leadership_bonus:
+                        source = str(banner_rule.get("source", "") or "Second Company Banner").strip() or "Second Company Banner"
+                        mods.append(Modifier(ModifierOp.ADD, -int(leadership_bonus), source=f"ability:{source}"))
+            try:
+                seeker_active_fn = getattr(root, "seeker_of_lost_relics_effects_active", None)
+                if callable(seeker_active_fn) and bool(seeker_active_fn(model=model, game_map=game_map)):
+                    sr_root = getattr(root, "special_rules", None)
+                    try:
+                        leadership_value = (
+                            int(sr_root.get("seeker_of_lost_relics_leadership", 5) or 5)
+                            if isinstance(sr_root, dict)
+                            else 5
+                        )
+                    except Exception:
+                        leadership_value = 5
+                    mods.append(
+                        Modifier(
+                            ModifierOp.SET,
+                            int(max(2, leadership_value)),
+                            source="ability:seeker_of_lost_relics",
+                        )
+                    )
+            except Exception:
+                pass
 
         return mods, int(max(0, objective_control_floor)), game_map
 
