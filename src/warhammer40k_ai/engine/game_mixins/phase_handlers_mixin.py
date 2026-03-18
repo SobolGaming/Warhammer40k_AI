@@ -5235,6 +5235,49 @@ class GamePhaseHandlersMixin:
                             sr.pop(key, None)
                     unit.special_rules = sr
 
+    def _on_phase_end_post_fight_suppression_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear post-fight Suppressed effects at the end of the stored next turn (end of Fight phase)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if player is None:
+            return
+        current_owner = str(getattr(player, "id", "") or "")
+        if not current_owner:
+            return
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Post-fight suppression cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Post-fight suppression cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("post_fight_suppressed_active")):
+                    continue
+                owner_id = str(sr.get("post_fight_suppressed_expires_turn_owner", "") or "")
+                if owner_id and owner_id != current_owner:
+                    continue
+                try:
+                    expires_turn = int(sr.get("post_fight_suppressed_expires_turn", 0) or 0)
+                except Exception:
+                    expires_turn = 0
+                if expires_turn > 0 and current_turn < expires_turn:
+                    continue
+                for key in (
+                    "post_fight_suppressed_active",
+                    "post_fight_suppressed_source",
+                    "post_fight_suppressed_attack_types",
+                    "post_fight_suppressed_expires_turn",
+                    "post_fight_suppressed_expires_turn_owner",
+                ):
+                    sr.pop(key, None)
+                unit.special_rules = sr
+
     def _on_phase_start_owner_command_phase_attack_hit_penalty_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear attack hit penalties that expire at the start of the source owner's Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

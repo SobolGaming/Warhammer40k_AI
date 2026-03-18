@@ -13699,6 +13699,19 @@ class Game(
             append_dice(player, f"Blistering Assault roll: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
         return int(max_distance)
 
+    def roll_bestial_rage_distance(self, unit: 'Unit') -> int:
+        """Roll Bestial Rage distance (D6+2)."""
+        if unit is None:
+            return 0
+        from ..utility.dice import get_roll
+        base_roll = int(get_roll("D6") or 0)
+        max_distance = int(base_roll + 2)
+        from ..utility.event_bus import append_dice
+        player = getattr(unit.get_parent_army(), "player", None)
+        if player is not None:
+            append_dice(player, f"Bestial Rage roll: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
+        return int(max_distance)
+
     def roll_aggressive_leader_beast_distance(self, unit: 'Unit') -> int:
         """Roll Aggressive Leader-beast distance (D6)."""
         if unit is None:

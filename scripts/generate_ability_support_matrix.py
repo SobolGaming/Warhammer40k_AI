@@ -6433,6 +6433,7 @@ def _classify_ability_base(
     melee_charge_strength_damage_support = _melee_charge_strength_damage_support(description)
     melee_charge_weapon_damage_support = _melee_charge_weapon_damage_support(description)
     two_melee_weapons_support = _two_melee_weapons_bonus_support(description)
+    two_melee_weapons_twin_linked_support = _two_melee_weapons_twin_linked_support(description)
     attached_possessed_support = _attached_possessed_formation_bonus_support(description)
     attached_battleline_infiltrators_support = _attached_battleline_infiltrators_scouts_support(description)
     transport_support = _transport_disembark_support(description)
@@ -6449,6 +6450,7 @@ def _classify_ability_base(
     oath_target_hit_bonus_support = _oath_target_hit_bonus_support(description)
     oath_target_wound_reroll_support = _oath_target_wound_reroll_support(description)
     closest_target_wound_reroll_support = _closest_target_wound_reroll_support(description)
+    headhunters_support = _headhunters_support(description)
     leading_melee_hit_selected_keyword_wound_bonus_support = _leading_melee_hit_selected_keyword_wound_bonus_support(
         description
     )
@@ -6461,6 +6463,7 @@ def _classify_ability_base(
     horde_move_support = _horde_move_support(description)
     brood_surge_support = _brood_surge_support(description)
     blistering_assault_support = _blistering_assault_support(description)
+    bestial_rage_support = _bestial_rage_support(description)
     setup_reactive_shoot_charge_support = _setup_reactive_shoot_or_charge_support(description)
     deep_strike_setup_range_no_charge_support = _deep_strike_setup_range_no_charge_support(description)
     deep_strike_setup_mortal_battleshock_support = _deep_strike_setup_enemy_range_mortal_wounds_battleshock_support(
@@ -6468,6 +6471,7 @@ def _classify_ability_base(
     )
     synapse_keyword_grant_support = _within_synapse_range_grants_synapse_keyword_support(description)
     friendly_count_as_synapse_support = _friendly_tyranids_within_range_count_as_synapse_support(description)
+    headtakers_split_support = _headtakers_split_support(description)
     two_five_model_split_support = _two_five_model_split_support(description)
     declare_battle_formations_select_unit_gain_deep_strike_support = (
         _declare_battle_formations_select_unit_gain_deep_strike_support(description)
@@ -6527,6 +6531,7 @@ def _classify_ability_base(
     post_shoot_infantry_mortal_support = _post_shoot_infantry_mortal_wounds_battleshock_support(description)
     post_shoot_wracking_agonies_support = _post_shoot_wracking_agonies_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
+    post_fight_suppression_support = _post_fight_suppression_support(description)
     post_shoot_reactive_move_no_charge_support = _post_shoot_reactive_move_no_charge_support(description)
     post_shoot_no_cover_support = _post_shoot_no_cover_support(description)
     post_shoot_friendly_attack_ignores_cover_support = _post_shoot_friendly_attack_ignores_cover_support(description)
@@ -6621,6 +6626,9 @@ def _classify_ability_base(
     cp_on_destroy_support = _gain_cp_on_destroy_support(description)
     friendly_destroyed_weapon_attacks_override_support = _friendly_destroyed_model_weapon_attacks_override_support(description)
     battlesuit_support_system_support = _battlesuit_support_system_support(name, description)
+    leading_weapon_keyword_plus_near_target_hit_reroll_support = _leading_weapon_keyword_plus_near_target_hit_reroll_support(
+        description
+    )
     attack_roll_rule_support = _attack_roll_rule_support(description)
     unit_contains_model_weapon_keyword_grant_support = _unit_contains_model_weapon_keyword_grant_support(description)
     unit_target_keyword_weapon_keyword_grant_support = _unit_target_keyword_weapon_keyword_grant_support(description)
@@ -6755,6 +6763,8 @@ def _classify_ability_base(
         return black_rage_support
     if curse_of_the_wulfen_support:
         return curse_of_the_wulfen_support
+    if headhunters_support:
+        return headhunters_support
     prey_selection_support = _prey_selection_support(description)
     if prey_selection_support:
         return prey_selection_support
@@ -6943,6 +6953,8 @@ def _classify_ability_base(
         return leading_melee_hit_selected_keyword_wound_bonus_support
     if start_of_battle_keyword_saga_completion_support:
         return start_of_battle_keyword_saga_completion_support
+    if leading_weapon_keyword_plus_near_target_hit_reroll_support:
+        return leading_weapon_keyword_plus_near_target_hit_reroll_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -7016,6 +7028,8 @@ def _classify_ability_base(
         return melee_charge_weapon_damage_support
     if two_melee_weapons_support:
         return two_melee_weapons_support
+    if two_melee_weapons_twin_linked_support:
+        return two_melee_weapons_twin_linked_support
     if attached_possessed_support:
         return attached_possessed_support
     if attached_battleline_infiltrators_support:
@@ -7052,6 +7066,8 @@ def _classify_ability_base(
         return brood_surge_support
     if blistering_assault_support:
         return blistering_assault_support
+    if bestial_rage_support:
+        return bestial_rage_support
     if setup_reactive_shoot_charge_support:
         return setup_reactive_shoot_charge_support
     if deep_strike_setup_range_no_charge_support:
@@ -7062,6 +7078,8 @@ def _classify_ability_base(
         return synapse_keyword_grant_support
     if friendly_count_as_synapse_support:
         return friendly_count_as_synapse_support
+    if headtakers_split_support:
+        return headtakers_split_support
     if two_five_model_split_support:
         return two_five_model_split_support
     if declare_battle_formations_select_unit_gain_deep_strike_support:
@@ -7162,6 +7180,8 @@ def _classify_ability_base(
         return post_shoot_wracking_agonies_support
     if post_shoot_suppression_support:
         return post_shoot_suppression_support
+    if post_fight_suppression_support:
+        return post_fight_suppression_support
     if post_shoot_reactive_move_no_charge_support:
         return post_shoot_reactive_move_no_charge_support
     if post_shoot_no_cover_support:
@@ -9587,6 +9607,49 @@ def _attack_roll_rule_support(description: str) -> Optional[Tuple[str, str]]:
     else:
         note = "Attack roll modifiers supported."
     return ("Supported", note)
+
+
+def _leading_weapon_keyword_plus_near_target_hit_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    match = re.fullmatch(
+        r"while this model is leading a unit "
+        r"(?:(?P<scope>melee|ranged) )?weapons equipped by models in that unit have the (?P<keyword>[a-z0-9 \-]+) ability "
+        r"and each time a model in that unit makes an attack that targets an enemy unit within (?P<range>\d+) "
+        r"re ?roll a hit roll of 1",
+        norm,
+    )
+    if not match:
+        return None
+    labels = _attack_keyword_labels_from_text(match.group("keyword") or "")
+    if not labels:
+        return None
+    if len(labels) == 1:
+        label_text = labels[0]
+    elif len(labels) == 2:
+        label_text = f"{labels[0]} and {labels[1]}"
+    else:
+        label_text = ", ".join(labels[:-1]) + f", and {labels[-1]}"
+    scope = str(match.group("scope") or "").strip().lower()
+    if scope == "melee":
+        scope_text = "Unit melee weapons"
+    elif scope == "ranged":
+        scope_text = "Unit ranged weapons"
+    else:
+        scope_text = "Unit weapons"
+    try:
+        range_value = int(match.group("range") or 0)
+    except Exception:
+        range_value = 0
+    if range_value <= 0:
+        return None
+    return (
+        "Supported",
+        f"Leading: {scope_text.lower()} gain {label_text}, and attacks vs targets within {range_value}\" re-roll Hit rolls of 1.",
+    )
 
 
 def _ranged_ignore_bs_hit_modifiers_support(description: str) -> Optional[Tuple[str, str]]:
@@ -13302,6 +13365,36 @@ def _blistering_assault_support(description: str) -> Optional[Tuple[str, str]]:
     )
 
 
+def _bestial_rage_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm or "bestial rage move" not in norm:
+        return None
+    if "enemy unit is selected to shoot" not in norm:
+        return None
+    if "after that unit has shot" not in norm:
+        return None
+    if "lost one or more wounds" not in norm:
+        return None
+    if "roll one d6" not in norm and "roll a d6" not in norm:
+        return None
+    if "adding 2" not in norm and "add 2 to the result" not in norm:
+        return None
+    if "as close as possible to the closest enemy unit" not in norm:
+        return None
+    if "excluding aircraft" not in norm:
+        return None
+    if "within engagement range of that enemy unit" not in norm:
+        return None
+    if "one bestial rage move per phase" not in norm:
+        return None
+    return (
+        "Supported",
+        "Opponent Shooting phase reaction: if this model loses one or more wounds after enemy shooting, optional D6+2 reactive move toward the closest non-AIRCRAFT enemy unit (can end in Engagement Range), once per phase.",
+    )
+
+
 def _setup_reactive_shoot_or_charge_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -14012,6 +14105,48 @@ def _closest_target_wound_reroll_support(description: str) -> Optional[Tuple[str
     if "re roll the wound roll" in norm or "reroll the wound roll" in norm:
         return ("Supported", "Attacks against the closest eligible target can re-roll the Wound roll.")
     return None
+
+
+def _headhunters_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "start of the battle" not in norm or "select one unit from your opponents army" not in norm:
+        return None
+    if "weapons equipped by headtakers models in this unit have the devastating wounds and precision abilities" not in norm:
+        return None
+    if "targeting its quarry" not in norm and "targets its quarry" not in norm:
+        return None
+    note = (
+        "Start of battle: after the Let Loose the Wolves split, the Headtakers unit selects one enemy quarry; "
+        "its attacks against that quarry gain [DEVASTATING WOUNDS] and [PRECISION]."
+    )
+    if "quarry is destroyed" in norm and "select one new enemy unit" in norm:
+        note += " Re-pick when quarry is destroyed."
+    if "even if this unit is embarked within a transport" in norm:
+        note += " Selection still works while embarked."
+    return ("Supported", note)
+
+
+def _headtakers_split_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of the declare battle formations step split this unit into two units "
+        r"one containing all of its headtakers models and one containing all of its hunting wolves models "
+        r"with new starting strengths accordingly"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Declare Battle Formations: automatically split this unit into separate Headtakers and Hunting Wolves units with new Starting Strengths.",
+    )
 
 
 def _two_five_model_split_support(description: str) -> Optional[Tuple[str, str]]:
@@ -15200,6 +15335,25 @@ def _post_shoot_suppression_support(description: str) -> Optional[Tuple[str, str
     return ("Supported", f"After shooting, suppress a hit enemy unit for {penalty_note} until your next turn.")
 
 
+def _post_fight_suppression_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in the fight phase after this unit has fought select one enemy monster or vehicle unit "
+        r"hit by one or more of those attacks until the end of the next turn that enemy unit is suppressed "
+        r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "After fighting, select a hit enemy MONSTER or VEHICLE unit; it is suppressed (-1 to hit) until the end of the next turn.",
+    )
+
+
 def _post_shoot_reactive_move_no_charge_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -16338,11 +16492,19 @@ def _post_fight_destroyed_aura_battleshock_support(description: str) -> Optional
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    pattern = (
+    model_pattern = (
         r"each time this model is selected to fight after resolving its attacks if one or more enemy units were destroyed by those attacks "
         r"each enemy unit within (?P<range>\d+) of this model must take a battle shock test"
     )
-    m = re.fullmatch(pattern, norm)
+    unit_pattern = (
+        r"each time this models unit has fought if one or more enemy units were destroyed as a result of those attacks "
+        r"each enemy unit within (?P<range>\d+) of this model must take a battle shock test"
+    )
+    m = re.fullmatch(model_pattern, norm)
+    unit_destroy_trigger = False
+    if not m:
+        m = re.fullmatch(unit_pattern, norm)
+        unit_destroy_trigger = m is not None
     if not m:
         return None
     try:
@@ -16353,7 +16515,11 @@ def _post_fight_destroyed_aura_battleshock_support(description: str) -> Optional
         return None
     return (
         "Supported",
-        f"After this model fights, if its attacks destroyed one or more enemy units, each enemy unit within {rng}\" takes a Battle-shock test.",
+        (
+            f"After this model's unit fights, if its attacks destroyed one or more enemy units, each enemy unit within {rng}\" of this model takes a Battle-shock test."
+            if unit_destroy_trigger
+            else f"After this model fights, if its attacks destroyed one or more enemy units, each enemy unit within {rng}\" takes a Battle-shock test."
+        ),
     )
 
 
@@ -18331,6 +18497,23 @@ def _two_melee_weapons_bonus_support(description: str) -> Optional[Tuple[str, st
     return (
         "Supported",
         f"If equipped with two melee weapons plus a close combat weapon, those two weapons gain +{m.group('amt')} Attacks.",
+    )
+
+
+def _two_melee_weapons_twin_linked_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if not re.fullmatch(
+        r"if this model is equipped with two melee weapons those weapon profiles have the twin linked ability",
+        norm,
+    ):
+        return None
+    return (
+        "Supported",
+        "If equipped with exactly two melee weapons, those weapon profiles gain [TWIN-LINKED].",
     )
 
 

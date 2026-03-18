@@ -435,21 +435,23 @@ def _add_disabled_ability_names(unit: Any, names: Iterable[str]) -> None:
     unit.special_rules = sr
 
 
-def _split_unit_into_two_five_model_units(
+def _split_unit_into_model_groups(
     unit: Any,
     *,
+    model_groups: Iterable[Iterable[Any]],
     declaration_flag: str,
     split_applied_flag: str,
     split_index_flag: str,
     split_origin_flag: str,
-    second_unit_disabled: Optional[list[str]] = None,
+    per_unit_disabled_names: Optional[Iterable[Iterable[str]]] = None,
     game: Optional[Any] = None,
     game_map: Optional[Any] = None,
 ) -> List[Any]:
     """
-    Split a 10-model unit into two 5-model units.
+    Split a unit into explicitly provided model groups.
 
-    - Uses current alive model order: first 5 models become split unit #1, next 5 become split unit #2.
+    - Each group becomes a new unit built from the same datasheet.
+    - Groups must partition the root unit's alive bodyguard models exactly once.
     - Persistent/expiring state is copied to both new units.
     """
     if unit is None:
@@ -463,12 +465,29 @@ def _split_unit_into_two_five_model_units(
     if leaders:
         return []
 
-    models = [m for m in list(getattr(root, "models", []) or []) if getattr(m, "is_alive", True)]
-    if len(models) != 10:
+    alive_models = [m for m in list(getattr(root, "models", []) or []) if getattr(m, "is_alive", True)]
+    if not alive_models:
         return []
 
-    split_groups = [models[:5], models[5:10]]
-    if any(len(group) != 5 for group in split_groups):
+    split_groups = [list(group) for group in list(model_groups or [])]
+    if len(split_groups) < 2 or any(not group for group in split_groups):
+        return []
+
+    grouped_model_ids: list[int] = []
+    seen_model_ids: set[int] = set()
+    for group in split_groups:
+        for model in group:
+            if model is None or not getattr(model, "is_alive", True):
+                return []
+            model_id = id(model)
+            if model_id in seen_model_ids:
+                return []
+            seen_model_ids.add(model_id)
+            grouped_model_ids.append(model_id)
+    alive_model_ids = [id(model) for model in alive_models]
+    if len(grouped_model_ids) != len(alive_model_ids):
+        return []
+    if set(grouped_model_ids) != set(alive_model_ids):
         return []
 
     snapshot = snapshot_persistent_unit_state(root)
@@ -485,7 +504,6 @@ def _split_unit_into_two_five_model_units(
 
     map_units = getattr(game_map, "units", None) if game_map is not None else None
     root_was_on_map = bool(map_units is not None and root in list(map_units or []))
-    disabled_names = list(second_unit_disabled or [])
 
     from ..units.unit import Unit as UnitClass
 
@@ -495,6 +513,7 @@ def _split_unit_into_two_five_model_units(
 
     root_id = str(get_entity_id(root) or "")
     resulting_units: List[Any] = []
+    disabled_groups = [list(group or []) for group in list(per_unit_disabled_names or [])]
 
     for index, group in enumerate(split_groups):
         new_unit = UnitClass(datasheet, quantity=len(group), enhancement=getattr(root, "enhancement", None))
@@ -524,8 +543,8 @@ def _split_unit_into_two_five_model_units(
         if root_id:
             sr[str(split_origin_flag or "split_origin_unit_id")] = root_id
         new_unit.special_rules = sr
-        if index == 1 and disabled_names:
-            _add_disabled_ability_names(new_unit, disabled_names)
+        if index < len(disabled_groups) and disabled_groups[index]:
+            _add_disabled_ability_names(new_unit, disabled_groups[index])
 
         resulting_units.append(new_unit)
 
@@ -556,6 +575,47 @@ def _split_unit_into_two_five_model_units(
         refresh_subscribers()
 
     return resulting_units
+
+
+def _split_unit_into_two_five_model_units(
+    unit: Any,
+    *,
+    declaration_flag: str,
+    split_applied_flag: str,
+    split_index_flag: str,
+    split_origin_flag: str,
+    second_unit_disabled: Optional[list[str]] = None,
+    game: Optional[Any] = None,
+    game_map: Optional[Any] = None,
+) -> List[Any]:
+    """
+    Split a 10-model unit into two 5-model units.
+
+    - Uses current alive model order: first 5 models become split unit #1, next 5 become split unit #2.
+    - Persistent/expiring state is copied to both new units.
+    """
+    if unit is None:
+        return []
+
+    root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+    if root is None:
+        return []
+
+    models = [m for m in list(getattr(root, "models", []) or []) if getattr(m, "is_alive", True)]
+    if len(models) != 10:
+        return []
+
+    return _split_unit_into_model_groups(
+        unit,
+        model_groups=[models[:5], models[5:10]],
+        declaration_flag=declaration_flag,
+        split_applied_flag=split_applied_flag,
+        split_index_flag=split_index_flag,
+        split_origin_flag=split_origin_flag,
+        per_unit_disabled_names=[[], list(second_unit_disabled or [])],
+        game=game,
+        game_map=game_map,
+    )
 
 
 def split_unit_into_patrol_squad_units(
@@ -607,6 +667,61 @@ def split_unit_into_combat_squad_units(
         split_index_flag="combat_squads_split_index",
         split_origin_flag="combat_squads_split_origin_unit_id",
         second_unit_disabled=[],
+        game=game,
+        game_map=game_map,
+    )
+
+
+def split_unit_into_wolf_guard_headtakers_units(
+    unit: Any,
+    *,
+    game: Optional[Any] = None,
+    game_map: Optional[Any] = None,
+) -> List[Any]:
+    """
+    Split a Wolf Guard Headtakers unit into separate HEADTAKERS and HUNTING WOLVES units.
+
+    - Uses current alive bodyguard models.
+    - The resulting Headtakers unit keeps Headhunters support; both resulting units have
+      Let Loose the Wolves disabled to prevent repeated splitting.
+    """
+    if unit is None:
+        return []
+
+    root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+    if root is None:
+        return []
+
+    alive_models = [m for m in list(getattr(root, "models", []) or []) if getattr(m, "is_alive", True)]
+    if not alive_models:
+        return []
+
+    headtakers: list[Any] = []
+    wolves: list[Any] = []
+    for model in alive_models:
+        normalized_name = _norm_ability_name(getattr(model, "name", ""))
+        if "hunting wolve" in normalized_name or "hunting wolf" in normalized_name or "hunting wolves" in normalized_name:
+            wolves.append(model)
+            continue
+        if "headtaker" in normalized_name:
+            headtakers.append(model)
+            continue
+        return []
+
+    if not headtakers or not wolves:
+        return []
+
+    return _split_unit_into_model_groups(
+        unit,
+        model_groups=[headtakers, wolves],
+        declaration_flag="let_loose_the_wolves_declared",
+        split_applied_flag="let_loose_the_wolves_split_applied",
+        split_index_flag="let_loose_the_wolves_split_index",
+        split_origin_flag="let_loose_the_wolves_split_origin_unit_id",
+        per_unit_disabled_names=[
+            ["Let Loose the Wolves"],
+            ["Let Loose the Wolves"],
+        ],
         game=game,
         game_map=game_map,
     )

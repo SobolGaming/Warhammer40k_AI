@@ -50,6 +50,28 @@ class AbilitySpecsMixin:
             "attack_types": tuple(sorted(set(attack_types))),
         }
 
+    def _parse_post_fight_suppression_spec(
+        self,
+        *,
+        normalized: str,
+        source: str,
+    ) -> Optional[dict]:
+        if not normalized:
+            return None
+        pattern = (
+            r"in the fight phase after this unit has fought select one enemy monster or vehicle unit "
+            r"hit by one or more of those attacks until the end of the next turn that enemy unit is suppressed "
+            r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll"
+        )
+        if not re.fullmatch(pattern, normalized):
+            return None
+        return {
+            "monster_vehicle_only": True,
+            "source": str(source or "Post-fight Suppression").strip() or "Post-fight Suppression",
+            "attack_types": ("melee", "ranged"),
+            "expires_timing": "end_of_next_turn",
+        }
+
     def unit_watcher_in_the_dark_specs(self) -> List[dict]:
         """
         Unit-specific rule: once per battle, after a mortal wound is allocated, optionally gain
@@ -2334,6 +2356,59 @@ class AbilitySpecsMixin:
                     )
         return list(specs)
 
+    def unit_post_fight_suppression_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: after this unit has fought, select a hit enemy MONSTER or VEHICLE unit to become suppressed.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_post_fight_suppression_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, bool, tuple[str, ...], str]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = self._normalize_ability_text_for_matching(normalized)
+                spec = self._parse_post_fight_suppression_spec(
+                    normalized=normalized,
+                    source=str(name or "Post-fight Suppression").strip() or "Post-fight Suppression",
+                )
+                if spec is None:
+                    continue
+                key = (
+                    str(spec.get("source", "") or "").strip().lower(),
+                    bool(spec.get("monster_vehicle_only", False)),
+                    tuple(str(v or "").strip().lower() for v in list(spec.get("attack_types") or ()) if str(v or "").strip()),
+                    str(spec.get("expires_timing", "") or "").strip().lower(),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(dict(spec))
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def get_pre_save_phase_invulnerable_sources(self) -> list[dict]:
         """Return optional pre-save phase invulnerable-save activations."""
         try:
@@ -2629,6 +2704,7 @@ class AbilitySpecsMixin:
         Returns a list of specs with keys:
             - source: ability name
             - range: int
+            - requires_unit_destroyed_enemy_unit: bool
         """
         if model is None:
             return []
@@ -2637,7 +2713,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int]] = set()
+        seen: set[tuple[str, int, bool]] = set()
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = self._strip_eligibility_prefix(desc or name or "")
             if not text_src:
@@ -2647,19 +2723,20 @@ class AbilitySpecsMixin:
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
-            required = (
-                "each time this model is selected to fight",
-                "after resolving its attacks",
-                "if one or more enemy units were destroyed by those attacks",
-                "each enemy unit within",
-                "of this model must take a battle shock test",
-            )
-            if not all(fragment in normalized for fragment in required):
-                continue
-            match = re.search(
+            match = re.fullmatch(
+                r"each time this model is selected to fight after resolving its attacks "
+                r"if one or more enemy units were destroyed by those attacks "
                 r"each enemy unit within (?P<range>\d+) of this model must take a battle shock test",
                 normalized,
             )
+            requires_unit_destroyed_enemy_unit = False
+            if match is None:
+                match = re.fullmatch(
+                    r"each time this model s unit has fought if one or more enemy units were destroyed as a result of those attacks "
+                    r"each enemy unit within (?P<range>\d+) of this model must take a battle shock test",
+                    normalized,
+                )
+                requires_unit_destroyed_enemy_unit = match is not None
             if match is None:
                 continue
             try:
@@ -2669,11 +2746,17 @@ class AbilitySpecsMixin:
             if range_value <= 0:
                 continue
             source = str(name or "Post-fight destroyed aura Battle-shock").strip() or "Post-fight destroyed aura Battle-shock"
-            key = (source.lower(), int(range_value))
+            key = (source.lower(), int(range_value), bool(requires_unit_destroyed_enemy_unit))
             if key in seen:
                 continue
             seen.add(key)
-            specs.append({"source": source, "range": int(range_value)})
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "requires_unit_destroyed_enemy_unit": bool(requires_unit_destroyed_enemy_unit),
+                }
+            )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

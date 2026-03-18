@@ -53,6 +53,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
     DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET,
     DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+    DECISION_CHOOSE_POST_FIGHT_SUPPRESSION_TARGET,
     DECISION_SELECT_UNLEASH_HELL_VEHICLE,
     DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
     DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
@@ -26448,7 +26449,7 @@ def _apply_post_shoot_aflame_target(game: object, request: DecisionRequest, resu
     return target_unit
 
 
-def _validate_post_shoot_suppression_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+def _validate_suppression_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
         return errors
@@ -26457,10 +26458,18 @@ def _validate_post_shoot_suppression_target(game: object, request: DecisionReque
     payload = _option_payload(request, result)
     target_val = payload.get("unit_id") or payload.get("target_unit_id")
     if not target_val:
-        return ("Post-shoot suppression requires target unit.",)
+        return ("Suppression requires target unit.",)
     if resolve_unit(game, target_val) is None:
-        return ("Post-shoot suppression target not found.",)
+        return ("Suppression target not found.",)
     return ()
+
+
+def _validate_post_shoot_suppression_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    return _validate_suppression_target(game, request, result)
+
+
+def _validate_post_fight_suppression_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    return _validate_suppression_target(game, request, result)
 
 
 def _validate_post_shoot_leadership_debuff_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -26478,13 +26487,13 @@ def _validate_post_shoot_leadership_debuff_target(game: object, request: Decisio
     return ()
 
 
-def _apply_post_shoot_suppression_target(game: object, request: DecisionRequest, result: DecisionResult):
+def _apply_suppression_target(game: object, request: DecisionRequest, result: DecisionResult, *, timing: str):
     if is_skip_choice(request, result):
         return None
     payload = _option_payload(request, result)
     target_unit = resolve_unit(game, payload.get("unit_id") or payload.get("target_unit_id"))
     if target_unit is None:
-        raise RuntimeError("Post-shoot suppression target not found.")
+        raise RuntimeError("Suppression target not found.")
     ctx = dict(getattr(request, "context", {}) or {})
     ability_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "Suppressed").strip()
     attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id") or payload.get("attacker_unit_id"))
@@ -26507,8 +26516,6 @@ def _apply_post_shoot_suppression_target(game: object, request: DecisionRequest,
     )
     if not attack_types:
         attack_types = ("melee", "ranged")
-    owner_id = str(getattr(player, "id", "") or "")
-    current_turn = int(getattr(game, "turn", 0) or 0)
 
     root = target_unit
     try:
@@ -26528,11 +26535,20 @@ def _apply_post_shoot_suppression_target(game: object, request: DecisionRequest,
         sr = getattr(unit, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
-        sr["post_shoot_suppressed_active"] = True
-        sr["post_shoot_suppressed_owner"] = owner_id
-        sr["post_shoot_suppressed_turn"] = int(current_turn)
-        sr["post_shoot_suppressed_source"] = ability_name
-        sr["post_shoot_suppressed_attack_types"] = list(dict.fromkeys(attack_types))
+        if timing == "post_fight":
+            sr["post_fight_suppressed_active"] = True
+            sr["post_fight_suppressed_source"] = ability_name
+            sr["post_fight_suppressed_attack_types"] = list(dict.fromkeys(attack_types))
+            sr["post_fight_suppressed_expires_turn"] = int(ctx.get("expires_turn", 0) or 0)
+            sr["post_fight_suppressed_expires_turn_owner"] = str(ctx.get("expires_turn_owner", "") or "")
+        else:
+            owner_id = str(getattr(player, "id", "") or "")
+            current_turn = int(getattr(game, "turn", 0) or 0)
+            sr["post_shoot_suppressed_active"] = True
+            sr["post_shoot_suppressed_owner"] = owner_id
+            sr["post_shoot_suppressed_turn"] = int(current_turn)
+            sr["post_shoot_suppressed_source"] = ability_name
+            sr["post_shoot_suppressed_attack_types"] = list(dict.fromkeys(attack_types))
         unit.special_rules = sr
 
     try:
@@ -26542,6 +26558,14 @@ def _apply_post_shoot_suppression_target(game: object, request: DecisionRequest,
     except Exception:
         pass
     return target_unit
+
+
+def _apply_post_shoot_suppression_target(game: object, request: DecisionRequest, result: DecisionResult):
+    return _apply_suppression_target(game, request, result, timing="post_shoot")
+
+
+def _apply_post_fight_suppression_target(game: object, request: DecisionRequest, result: DecisionResult):
+    return _apply_suppression_target(game, request, result, timing="post_fight")
 
 
 def _validate_choose_unleash_hell_vehicle(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -27950,6 +27974,11 @@ register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
     validate=_validate_post_shoot_suppression_target,
     apply=_apply_post_shoot_suppression_target,
+)
+register_decision_handler(
+    DECISION_CHOOSE_POST_FIGHT_SUPPRESSION_TARGET,
+    validate=_validate_post_fight_suppression_target,
+    apply=_apply_post_fight_suppression_target,
 )
 register_decision_handler(
     DECISION_SELECT_UNLEASH_HELL_VEHICLE,

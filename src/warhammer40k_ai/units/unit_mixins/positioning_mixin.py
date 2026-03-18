@@ -5182,6 +5182,42 @@ class PositioningMixin:
                             rules = list(rules or []) + [
                                 {"attack_type": "melee", "keyword": "TWIN-LINKED", "source": source}
                             ]
+                if current_weapon_name:
+                    melee_wargear = []
+                    for wargear in list(getattr(model, "wargear", []) or []):
+                        is_melee_fn = getattr(wargear, "is_melee", None)
+                        if not callable(is_melee_fn):
+                            continue
+                        if not bool(is_melee_fn()):
+                            continue
+                        melee_wargear.append(wargear)
+                    if len(melee_wargear) == 2 and any(
+                        self._weapon_name_matches([str(getattr(wg, "name", "") or "").strip()], current_weapon_name)
+                        for wg in melee_wargear
+                    ):
+                        has_rule = False
+                        source = "Two melee weapons"
+                        for name, desc in self._iter_model_specific_ability_entries(model):
+                            source_name = str(name or "").strip()
+                            text_src = desc or name or ""
+                            if not text_src:
+                                continue
+                            normalized = self._normalize_rules_text(self._strip_eligibility_prefix(text_src))
+                            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                            normalized = normalized.lower()
+                            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                            normalized = re.sub(r"\s+", " ", normalized).strip()
+                            if "equipped with two melee weapons" not in normalized:
+                                continue
+                            if "those weapon profiles have the twin linked ability" not in normalized:
+                                continue
+                            has_rule = True
+                            source = source_name or "Two melee weapons"
+                            break
+                        if has_rule:
+                            rules = list(rules or []) + [
+                                {"attack_type": "melee", "keyword": "TWIN-LINKED", "source": source}
+                            ]
         except Exception:
             pass
         try:

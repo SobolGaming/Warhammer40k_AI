@@ -1326,6 +1326,20 @@ class GameShootingFightHandlersMixin:
             return
         if not self.is_fight_phase():
             return
+        try:
+            attacker_members = list(attacker_unit.get_attached_unit_members() or [])
+        except Exception:
+            attacker_members = [attacker_unit]
+        if not attacker_members:
+            attacker_members = [attacker_unit]
+        attacker_model_count = 0
+        for member in list(attacker_members or []):
+            if member is None:
+                continue
+            try:
+                attacker_model_count += len(list(member.models or []))
+            except Exception:
+                continue
         attacker_player = attacker_unit.get_parent_army().player
         if attacker_player is None:
             raise RuntimeError("Post-fight Battle-shock requires an attacker player.")
@@ -1402,10 +1416,6 @@ class GameShootingFightHandlersMixin:
         def _model_destroyed_any_enemy_unit(model) -> bool:
             if isinstance(killing_models_by_target, dict):
                 model_id = str(get_entity_id(model) or "")
-                try:
-                    attacker_model_count = len(list(attacker_unit.models or []))
-                except Exception:
-                    attacker_model_count = 0
                 for target, killing_models in list((killing_models_by_target or {}).items()):
                     if target is None:
                         continue
@@ -1457,6 +1467,45 @@ class GameShootingFightHandlersMixin:
             except Exception:
                 return False
             return _model_hit_target(model, target_root) or _model_hit_target(model, target_unit)
+
+        def _unit_destroyed_any_enemy_unit() -> bool:
+            if isinstance(killing_models_by_target, dict):
+                for target in list((killing_models_by_target or {}).keys()):
+                    if target is None:
+                        continue
+                    try:
+                        target_root = target.get_attached_unit_root()
+                    except Exception:
+                        target_root = target
+                    if target_root is None:
+                        continue
+                    try:
+                        if target_root.get_parent_army() == attacker_unit.get_parent_army():
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if not bool(target_root.is_alive()):
+                            return True
+                    except Exception:
+                        continue
+            if target_unit is None:
+                return False
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            if target_root is None:
+                return False
+            try:
+                if target_root.get_parent_army() == attacker_unit.get_parent_army():
+                    return False
+            except Exception:
+                return False
+            try:
+                return not bool(target_root.is_alive())
+            except Exception:
+                return False
 
         def _collect_enemy_roots_for_aura() -> list[Any]:
             game_map = getattr(self, "map", None)
@@ -1566,6 +1615,7 @@ class GameShootingFightHandlersMixin:
             return False
 
         enemy_roots_for_aura = _collect_enemy_roots_for_aura()
+        unit_destroyed_any_enemy_unit = _unit_destroyed_any_enemy_unit()
         try:
             current_turn = int(getattr(self, "turn", 0) or 1)
         except Exception:
@@ -1573,125 +1623,134 @@ class GameShootingFightHandlersMixin:
 
         from ..decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
 
-        for model in list(attacker_unit.models or []):
-            if not getattr(model, "is_alive", False):
+        for member in list(attacker_members or []):
+            if member is None:
                 continue
-            aura_specs = attacker_unit.model_post_fight_destroyed_aura_battleshock_specs(model) or []
-            if aura_specs and enemy_roots_for_aura and _model_destroyed_any_enemy_unit(model):
-                already_tested_enemy_ids: set[str] = set()
-                for aura_spec in aura_specs:
-                    try:
-                        aura_range = float(aura_spec.get("range", 0) or 0.0)
-                    except Exception:
-                        aura_range = 0.0
-                    if aura_range <= 0:
-                        continue
-                    for enemy_root in enemy_roots_for_aura:
-                        enemy_id = str(get_entity_id(enemy_root) or "")
-                        if enemy_id and enemy_id in already_tested_enemy_ids:
+            for model in list(getattr(member, "models", []) or []):
+                if not getattr(model, "is_alive", False):
+                    continue
+                aura_specs = member.model_post_fight_destroyed_aura_battleshock_specs(model) or []
+                if aura_specs and enemy_roots_for_aura:
+                    already_tested_enemy_ids: set[str] = set()
+                    for aura_spec in aura_specs:
+                        trigger_from_unit_destroy = bool(aura_spec.get("requires_unit_destroyed_enemy_unit", False))
+                        if trigger_from_unit_destroy:
+                            if not unit_destroyed_any_enemy_unit:
+                                continue
+                        elif not _model_destroyed_any_enemy_unit(model):
                             continue
                         try:
-                            in_range = bool(
-                                self._unit_within_range_of_model(
-                                    model,
-                                    enemy_root,
-                                    range_value=aura_range,
+                            aura_range = float(aura_spec.get("range", 0) or 0.0)
+                        except Exception:
+                            aura_range = 0.0
+                        if aura_range <= 0:
+                            continue
+                        for enemy_root in enemy_roots_for_aura:
+                            enemy_id = str(get_entity_id(enemy_root) or "")
+                            if enemy_id and enemy_id in already_tested_enemy_ids:
+                                continue
+                            try:
+                                in_range = bool(
+                                    self._unit_within_range_of_model(
+                                        model,
+                                        enemy_root,
+                                        range_value=aura_range,
+                                    )
                                 )
-                            )
-                        except Exception:
-                            in_range = False
-                        if not in_range:
-                            continue
-                        enemy_root.take_battle_shock_test(current_turn)
-                        if enemy_id:
-                            already_tested_enemy_ids.add(enemy_id)
-            specs = attacker_unit.model_post_fight_battleshock_specs(model) or []
-            willbreaker_applies, willbreaker_source = _willbreaker_applies_for_model(model)
-            if willbreaker_applies:
-                if not any(
-                    str(spec.get("source", "") or "").strip().lower() == str(willbreaker_source).strip().lower()
-                    for spec in list(specs or [])
-                    if isinstance(spec, dict)
-                ):
-                    specs = list(specs)
-                    specs.append(
-                        {
-                            "infantry_only": False,
-                            "exclude_monster_vehicle": False,
-                            "exclude_vehicle_only": False,
-                            "test_modifier": 0,
-                            "test_modifier_on_kill": 0,
-                            "test_modifier_if_target_within_range": 0,
-                            "test_modifier_range": 0,
-                            "test_modifier_friendly_keyword_phrase": "",
-                            "applies_after_fight": True,
-                            "source": str(willbreaker_source),
-                        }
-                    )
-            if not specs:
-                continue
-            for spec in specs:
-                candidates = []
-                for cand, hits in list((hits_by_target or {}).items()):
-                    if cand is None:
-                        continue
-                    if int(hits or 0) <= 0:
-                        continue
-                    if not _is_enemy_unit(cand):
-                        continue
-                    if not _spec_allows_target(spec, cand):
-                        continue
-                    if not _model_hit_target(model, cand):
-                        continue
-                    candidates.append(cand)
-                if not candidates:
-                    continue
-                ability_name = str(spec.get("source", "") or "Post-fight Battle-shock").strip() or "Post-fight Battle-shock"
-                options = []
-                for cand in list(candidates):
-                    try:
-                        modifier = int(spec.get("test_modifier", 0) or 0)
-                    except Exception:
-                        modifier = 0
-                    try:
-                        conditional_mod = int(spec.get("test_modifier_if_target_within_range", 0) or 0)
-                    except Exception:
-                        conditional_mod = 0
-                    if conditional_mod:
-                        try:
-                            cond_range = float(spec.get("test_modifier_range", 0) or 0.0)
-                        except Exception:
-                            cond_range = 0.0
-                        phrase = str(spec.get("test_modifier_friendly_keyword_phrase", "") or "")
-                        if _target_within_friendly_keyword_phrase_range(
-                            cand,
-                            phrase=phrase,
-                            range_value=cond_range,
-                        ):
-                            modifier += int(conditional_mod)
-                    payload = {"unit_id": get_entity_id(cand)}
-                    if modifier:
-                        payload["battle_shock_test_modifier"] = int(modifier)
-                    options.append(
-                        DecisionOption.create(
-                            str(getattr(cand, "name", "Unit") or "Unit"),
-                            payload=payload,
+                            except Exception:
+                                in_range = False
+                            if not in_range:
+                                continue
+                            enemy_root.take_battle_shock_test(current_turn)
+                            if enemy_id:
+                                already_tested_enemy_ids.add(enemy_id)
+                specs = member.model_post_fight_battleshock_specs(model) or []
+                willbreaker_applies, willbreaker_source = _willbreaker_applies_for_model(model)
+                if willbreaker_applies:
+                    if not any(
+                        str(spec.get("source", "") or "").strip().lower() == str(willbreaker_source).strip().lower()
+                        for spec in list(specs or [])
+                        if isinstance(spec, dict)
+                    ):
+                        specs = list(specs)
+                        specs.append(
+                            {
+                                "infantry_only": False,
+                                "exclude_monster_vehicle": False,
+                                "exclude_vehicle_only": False,
+                                "test_modifier": 0,
+                                "test_modifier_on_kill": 0,
+                                "test_modifier_if_target_within_range": 0,
+                                "test_modifier_range": 0,
+                                "test_modifier_friendly_keyword_phrase": "",
+                                "applies_after_fight": True,
+                                "source": str(willbreaker_source),
+                            }
                         )
-                    )
-                if not options:
+                if not specs:
                     continue
-                request = DecisionRequest.create(
-                    DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
-                    f"{ability_name}: select a unit to take a Battle-shock test.",
-                    player_id=getattr(attacker_player, "id", None),
-                    options=options,
-                    context={
-                        "attacker_unit_id": get_entity_id(attacker_unit),
-                        "model_id": get_entity_id(model),
-                        "ability_name": ability_name,
-                    },
-                )
-                self.request_decision(request)
+                for spec in specs:
+                    candidates = []
+                    for cand, hits in list((hits_by_target or {}).items()):
+                        if cand is None:
+                            continue
+                        if int(hits or 0) <= 0:
+                            continue
+                        if not _is_enemy_unit(cand):
+                            continue
+                        if not _spec_allows_target(spec, cand):
+                            continue
+                        if not _model_hit_target(model, cand):
+                            continue
+                        candidates.append(cand)
+                    if not candidates:
+                        continue
+                    ability_name = str(spec.get("source", "") or "Post-fight Battle-shock").strip() or "Post-fight Battle-shock"
+                    options = []
+                    for cand in list(candidates):
+                        try:
+                            modifier = int(spec.get("test_modifier", 0) or 0)
+                        except Exception:
+                            modifier = 0
+                        try:
+                            conditional_mod = int(spec.get("test_modifier_if_target_within_range", 0) or 0)
+                        except Exception:
+                            conditional_mod = 0
+                        if conditional_mod:
+                            try:
+                                cond_range = float(spec.get("test_modifier_range", 0) or 0.0)
+                            except Exception:
+                                cond_range = 0.0
+                            phrase = str(spec.get("test_modifier_friendly_keyword_phrase", "") or "")
+                            if _target_within_friendly_keyword_phrase_range(
+                                cand,
+                                phrase=phrase,
+                                range_value=cond_range,
+                            ):
+                                modifier += int(conditional_mod)
+                        payload = {"unit_id": get_entity_id(cand)}
+                        if modifier:
+                            payload["battle_shock_test_modifier"] = int(modifier)
+                        options.append(
+                            DecisionOption.create(
+                                str(getattr(cand, "name", "Unit") or "Unit"),
+                                payload=payload,
+                            )
+                        )
+                    if not options:
+                        continue
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+                        f"{ability_name}: select a unit to take a Battle-shock test.",
+                        player_id=getattr(attacker_player, "id", None),
+                        options=options,
+                        context={
+                            "attacker_unit_id": get_entity_id(attacker_unit),
+                            "model_id": get_entity_id(model),
+                            "ability_name": ability_name,
+                        },
+                    )
+                    self.request_decision(request)
 
         unit_specs = attacker_unit.unit_post_fight_battleshock_specs() or []
         for spec in unit_specs:
@@ -1751,6 +1810,125 @@ class GameShootingFightHandlersMixin:
                     "attacker_unit_id": get_entity_id(attacker_unit),
                     "model_id": None,
                     "ability_name": ability_name,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_fight_attacks_resolved_post_fight_suppression(
+        self,
+        unit=None,
+        attacker_unit=None,
+        target_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ) -> None:
+        attacker_unit = attacker_unit if attacker_unit is not None else unit
+        if attacker_unit is None:
+            return
+        if not self.is_fight_phase():
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None or not attacker_root.is_alive():
+            return
+        attacker_army = attacker_root.get_parent_army()
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+        if attacker_player is None:
+            raise RuntimeError("Post-fight suppression requires an attacker player.")
+
+        if not hits_by_target:
+            if target_unit is None:
+                return
+            hits_by_target = {target_unit: 1}
+
+        specs = attacker_root.unit_post_fight_suppression_specs() or []
+        if not specs:
+            return
+
+        def _is_enemy_unit(candidate) -> bool:
+            if candidate is None:
+                return False
+            if candidate.get_parent_army() == attacker_root.get_parent_army():
+                return False
+            return bool(candidate.is_alive())
+
+        def _is_monster_or_vehicle(candidate) -> bool:
+            if candidate is None:
+                return False
+            try:
+                return bool(candidate.has_keyword("MONSTER") or candidate.has_keyword("VEHICLE"))
+            except Exception:
+                pass
+            try:
+                return bool(candidate.has_any_keyword("MONSTER") or candidate.has_any_keyword("VEHICLE"))
+            except Exception:
+                return False
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        players = list(getattr(self, "players", []) or [])
+        next_owner_id = ""
+        expires_turn = int(current_turn or 0)
+        if players:
+            try:
+                current_index = int(getattr(self, "current_player_index", 0) or 0)
+            except Exception:
+                current_index = 0
+            next_index = (current_index + 1) % len(players)
+            next_player = players[next_index]
+            next_owner_id = str(getattr(next_player, "id", "") or "")
+            starting_index = getattr(self, "battle_round_starting_player_index", None)
+            try:
+                wraps_battle_round = bool(next_index == int(starting_index)) if starting_index is not None else bool(next_index <= current_index)
+            except Exception:
+                wraps_battle_round = bool(next_index <= current_index)
+            if wraps_battle_round and current_turn > 0:
+                expires_turn = int(current_turn + 1)
+
+        from ..decision_kinds import DECISION_CHOOSE_POST_FIGHT_SUPPRESSION_TARGET
+
+        for spec in list(specs or []):
+            candidates = []
+            for candidate, hits in list((hits_by_target or {}).items()):
+                if candidate is None or int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(candidate):
+                    continue
+                if bool(spec.get("monster_vehicle_only", False)) and not _is_monster_or_vehicle(candidate):
+                    continue
+                candidates.append(candidate)
+            if not candidates:
+                continue
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = [
+                DecisionOption.create(
+                    str(getattr(candidate, "name", "Unit") or "Unit"),
+                    payload={"unit_id": get_entity_id(candidate)},
+                )
+                for candidate in list(candidates)
+            ]
+            if not options:
+                continue
+            ability_name = str(spec.get("source", "") or "Post-fight Suppression").strip() or "Post-fight Suppression"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_POST_FIGHT_SUPPRESSION_TARGET,
+                f"{ability_name}: select a MONSTER or VEHICLE unit to suppress.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_root),
+                    "ability_name": ability_name,
+                    "attack_types": list(spec.get("attack_types") or ("melee", "ranged")),
+                    "expires_timing": str(spec.get("expires_timing", "") or "end_of_next_turn"),
+                    "expires_turn": int(expires_turn or 0),
+                    "expires_turn_owner": next_owner_id,
                 },
             )
             self.request_decision(request)
@@ -16364,6 +16542,104 @@ class GameShootingFightHandlersMixin:
                 kind="blistering_assault",
                 movement_type="blistering_assault",
                 source="Blistering Assault",
+                message=msg,
+                attacker_unit=attacker_unit,
+                allow_engagement_range=True,
+            )
+
+    def _on_shooting_targets_selected_bestial_rage(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        attacker_army = attacker_root.get_parent_army() if attacker_root is not None else None
+        snapshot = dict(getattr(self, "_bestial_rage_shooting_snapshot", {}).get(attacking_unit, {}) or {})
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                root = target.get_attached_unit_root()
+            except Exception:
+                root = target
+            if root is None:
+                continue
+            if attacker_army is not None and root.get_parent_army() is attacker_army:
+                continue
+            try:
+                if not root.has_bestial_rage():
+                    continue
+            except Exception:
+                continue
+            before = int(self._alive_model_wounds_total(root) or 0)
+            if before <= 0:
+                continue
+            snapshot[root] = int(before)
+        if snapshot:
+            if not hasattr(self, "_bestial_rage_shooting_snapshot") or not isinstance(
+                getattr(self, "_bestial_rage_shooting_snapshot", None), dict
+            ):
+                self._bestial_rage_shooting_snapshot = {}
+            self._bestial_rage_shooting_snapshot[attacking_unit] = snapshot
+
+    def _on_unit_shooting_resolved_bestial_rage(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        snapshots = getattr(self, "_bestial_rage_shooting_snapshot", None)
+        if not isinstance(snapshots, dict):
+            return
+        snapshot = snapshots.pop(attacker_unit, {})
+        if not snapshot:
+            return
+        if not self.is_shooting_phase():
+            return
+        current_player = self.get_current_player()
+        for target, before in snapshot.items():
+            if target is None:
+                continue
+            try:
+                target_player = target.get_parent_army().player
+            except Exception:
+                target_player = None
+            if target_player is None or target_player is current_player:
+                continue
+            after = int(self._alive_model_wounds_total(target) or 0)
+            if after >= int(before or 0):
+                continue
+            can_fn = getattr(target, "can_bestial_rage", None)
+            if callable(can_fn):
+                if not can_fn(game=self, game_map=getattr(self, "map", None)):
+                    continue
+            player = target_player
+            is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+            es = getattr(self, "event_system", None)
+            subs = getattr(es, "subscribers", None) if es is not None else None
+            has_sub = bool(isinstance(subs, dict) and subs.get("bestial_rage_prompt"))
+            if is_human and es is not None:
+                es.publish(
+                    "bestial_rage_prompt",
+                    player=player,
+                    unit=target,
+                    attacker_unit=attacker_unit,
+                    game=self,
+                )
+                if has_sub:
+                    continue
+            msg = (
+                "Bestial Rage: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                "This model can end this move within Engagement Range of that enemy unit, and can only make one Bestial Rage move per phase."
+            )
+            self._queue_reactive_move_confirmation(
+                player=player,
+                unit=target,
+                kind="bestial_rage",
+                movement_type="bestial_rage",
+                source="Bestial Rage",
                 message=msg,
                 attacker_unit=attacker_unit,
                 allow_engagement_range=True,

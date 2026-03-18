@@ -3764,6 +3764,7 @@ class GameView:
                 DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+                DECISION_CHOOSE_POST_FIGHT_SUPPRESSION_TARGET,
                 DECISION_SELECT_UNLEASH_HELL_VEHICLE,
                 DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
                 DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
@@ -5169,6 +5170,7 @@ class GameView:
             DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
             DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET,
             DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+            DECISION_CHOOSE_POST_FIGHT_SUPPRESSION_TARGET,
             DECISION_SELECT_UNLEASH_HELL_VEHICLE,
             DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
             DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
@@ -5238,6 +5240,9 @@ class GameView:
             elif decision_type == DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET:
                 title = ability_name or "Aflame"
                 subtitle = f"{model_name or 'Model'} shot. Select a unit to set aflame."
+            elif decision_type == DECISION_CHOOSE_POST_FIGHT_SUPPRESSION_TARGET:
+                title = ability_name or "Post-fight Suppression"
+                subtitle = f"{model_name or 'Unit'} fought. Select a MONSTER or VEHICLE unit to suppress."
             elif decision_type == DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET:
                 title = ability_name or "Leadership Debuff"
                 subtitle = (
@@ -21556,6 +21561,7 @@ class GameView:
                             'horde_move': MovementType.HORDE_MOVE,
                             'unhinged_vengeance': MovementType.HORDE_MOVE,
                             'blistering_assault': MovementType.BLISTERING_ASSAULT,
+                            'bestial_rage': MovementType.BESTIAL_RAGE,
                             'aggressive_leader_beast': MovementType.HORDE_MOVE,
                             'scout': MovementType.SCOUT,
                             'pile_in': MovementType.PILE_IN,

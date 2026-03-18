@@ -78,6 +78,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET` — Choose post-shoot mortal wounds target.
 - `CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET` — Choose post-shoot Wracked Agonies target.
 - `CHOOSE_POST_SHOOT_SUPPRESSION_TARGET` — Choose post-shoot suppression target.
+- `CHOOSE_POST_FIGHT_SUPPRESSION_TARGET` — Choose post-fight suppression target.
 - `SELECT_UNLEASH_HELL_VEHICLE` — Choose Unleash Hell vehicle/transport.
 - `CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET` — Choose post-shoot leadership debuff target.
 - `CHOOSE_DAEMONIC_POISONS_TARGET` — Choose Daemonic Poisons target.

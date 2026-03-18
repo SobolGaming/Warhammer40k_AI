@@ -2538,6 +2538,62 @@ class GameSetupDeploymentReservesMixin:
                 if unit_id:
                     pending_unit_ids.add(unit_id)
 
+    def _apply_wolf_guard_headtakers_split_declarations(self) -> None:
+        """Apply mandatory Wolf Guard Headtakers model-group splits at the start of Declare Battle Formations."""
+        players = list(self.players or [])
+        if not players:
+            return
+
+        from ...utility.unit_split import split_unit_into_wolf_guard_headtakers_units
+
+        def _has_let_loose_the_wolves_rule(unit) -> bool:
+            iter_entries = getattr(unit, "_iter_ability_entries_for_rules", None)
+            if not callable(iter_entries):
+                return False
+            for ability_name, _desc in list(iter_entries(model=None) or []):
+                if str(ability_name or "").strip().lower() == "let loose the wolves":
+                    return True
+            return False
+
+        for player in players:
+            if player is None:
+                raise RuntimeError("Wolf Guard Headtakers split declarations require players.")
+            army = player.get_army()
+            if army is None:
+                raise RuntimeError(f"Wolf Guard Headtakers split declarations require an army for {player.name}.")
+            seen_root_ids: set[str] = set()
+            units = sorted(
+                [unit for unit in list(getattr(army, "units", []) or []) if unit is not None],
+                key=lambda unit: str(
+                    maybe_entity_id(
+                        unit.get_attached_unit_root()
+                        if callable(getattr(unit, "get_attached_unit_root", None))
+                        else unit
+                    )
+                    or ""
+                ),
+            )
+            for unit in units:
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                if root is None:
+                    continue
+                root_id = str(maybe_entity_id(root) or "")
+                if not root_id or root_id in seen_root_ids:
+                    continue
+                seen_root_ids.add(root_id)
+                if not bool(getattr(root, "is_alive", lambda: True)()):
+                    continue
+                special_rules = getattr(root, "special_rules", None)
+                if isinstance(special_rules, dict) and bool(special_rules.get("let_loose_the_wolves_split_applied", False)):
+                    continue
+                if not _has_let_loose_the_wolves_rule(root):
+                    continue
+                split_unit_into_wolf_guard_headtakers_units(
+                    root,
+                    game=self,
+                    game_map=getattr(self, "map", None),
+                )
+
     def _apply_shadow_assignment_declarations(self) -> None:
         """Queue SHADOW ASSIGNMENT choices for eligible Imperial Agents units."""
         players = list(self.players or [])
@@ -2943,6 +2999,7 @@ class GameSetupDeploymentReservesMixin:
 
         # Hover mode declarations must happen before any other formation steps.
         self._apply_hover_declarations()
+        self._apply_wolf_guard_headtakers_split_declarations()
         self._apply_patrol_squad_declarations()
         self._apply_shadow_assignment_declarations()
         self._apply_rapid_drop_deployment_declarations()

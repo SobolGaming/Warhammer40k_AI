@@ -4871,6 +4871,9 @@ class ActionsMovementMixin:
             if not any(k in sl for k in ("hit roll", "wound roll", "critical", "reroll", "re-roll", "subtract", "add")):
                 continue
             base_sentence = sentence
+            mixed_match = re.search(r"\band,?\s*(each time\b.+)$", base_sentence, flags=re.IGNORECASE)
+            if mixed_match:
+                base_sentence = str(mixed_match.group(1) or "").strip()
             if prefix and not base_sentence.lower().startswith(prefix_lower):
                 base_sentence = f"{prefix}, {base_sentence}"
             parts = [base_sentence]
@@ -4931,6 +4934,9 @@ class ActionsMovementMixin:
                 if name_key:
                     seen_names.add(name_key)
                 text_src = desc or name or ""
+                # Psychic Guidance has dedicated range-aware handling; skip generic hit-rule parsing here.
+                if name_key == "psychic guidance":
+                    continue
                 for rule in self._parse_attack_roll_rules_from_text(text_src):
                     if rule.scope != "unit":
                         continue

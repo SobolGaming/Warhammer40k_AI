@@ -1367,6 +1367,7 @@ class IndividualModelMovementDialog(BaseDialog):
             'horde_move': MovementType.HORDE_MOVE,
             'unhinged_vengeance': MovementType.HORDE_MOVE,
             'blistering_assault': MovementType.BLISTERING_ASSAULT,
+            'bestial_rage': MovementType.BESTIAL_RAGE,
             'aggressive_leader_beast': MovementType.HORDE_MOVE,
             'scout': MovementType.SCOUT,
             'pile_in': MovementType.PILE_IN,

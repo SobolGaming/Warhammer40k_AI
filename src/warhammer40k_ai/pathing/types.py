@@ -19,6 +19,7 @@ class MovementType(Enum):
     BRAZEN_FURY = "brazen_fury"
     HORDE_MOVE = "horde_move"
     BLISTERING_ASSAULT = "blistering_assault"
+    BESTIAL_RAGE = "bestial_rage"
     CAREEN = "careen"
     PILE_IN = "pile_in"
     CONSOLIDATE = "consolidate"

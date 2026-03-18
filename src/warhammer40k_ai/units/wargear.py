@@ -11115,6 +11115,15 @@ class WargearProfile:
                     current_attack_type = str(attack_type or "").strip().lower()
                     if not attack_types or current_attack_type in attack_types:
                         _add_hit_mod(-1, "-1 from Suppressed")
+                if sr.get("post_fight_suppressed_active"):
+                    attack_types = {
+                        str(value or "").strip().lower()
+                        for value in list(sr.get("post_fight_suppressed_attack_types", []) or [])
+                        if str(value or "").strip()
+                    }
+                    current_attack_type = str(attack_type or "").strip().lower()
+                    if not attack_types or current_attack_type in attack_types:
+                        _add_hit_mod(-1, "-1 from Suppressed")
                 get_owner_penalty = getattr(attacker.parent_unit, "get_owner_command_phase_attack_hit_penalty", None)
                 if callable(get_owner_penalty):
                     army = attacker.parent_unit.get_parent_army()

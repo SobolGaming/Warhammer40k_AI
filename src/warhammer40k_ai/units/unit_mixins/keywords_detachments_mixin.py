@@ -2756,6 +2756,12 @@ class KeywordsDetachmentsMixin:
             patterns=["blistering assault"],
         )
 
+    def has_bestial_rage(self) -> bool:
+        return self._attached_unit_has_ability_patterns(
+            cache_key="bestial_rage",
+            patterns=["bestial rage"],
+        )
+
     def has_aggressive_leader_beast(self) -> bool:
         return self._attached_unit_has_ability_patterns(
             cache_key="aggressive_leader_beast",
@@ -4034,6 +4040,7 @@ class KeywordsDetachmentsMixin:
         Also supports variants:
         - Hit + Wound re-rolls vs prey (no melee restriction).
         - Lethal Hits vs prey.
+        - Devastating Wounds + Precision vs quarry for Headtakers-only split units.
         - Start-of-battle selected enemy unit with unit-wide Hit re-rolls vs that unit.
 
         Returns a rule dict with:
@@ -4067,6 +4074,14 @@ class KeywordsDetachmentsMixin:
                 if phrase and phrase in text:
                     return True
             return False
+
+        def _is_headtaker_model(model) -> bool:
+            name = _norm(str(getattr(model, "name", "") or ""))
+            return bool(name) and "headtaker" in name and "hunting" not in name
+
+        def _root_has_only_headtaker_models() -> bool:
+            bodyguard_models = [m for m in list(getattr(root, "models", []) or []) if getattr(m, "is_alive", True)]
+            return bool(bodyguard_models) and all(_is_headtaker_model(model) for model in bodyguard_models)
 
         rule = None
         seen = set()
@@ -4108,7 +4123,10 @@ class KeywordsDetachmentsMixin:
                     continue
 
                 repick_on_destroyed = (
-                    "prey is destroyed" in normalized
+                    (
+                        "prey is destroyed" in normalized
+                        or "quarry is destroyed" in normalized
+                    )
                     and "select one new enemy unit" in normalized
                 )
 
@@ -4143,6 +4161,35 @@ class KeywordsDetachmentsMixin:
                         "reroll_wound": False,
                         "melee_only": False,
                         "keywords": ["LETHAL HITS", "PRECISION"],
+                        "repick_on_destroyed": bool(repick_on_destroyed),
+                    }
+                    break
+
+                # Pattern: Headtakers-only split unit gains [DEVASTATING WOUNDS] and [PRECISION] vs quarry.
+                if (
+                    start_of_battle_opponent_selector
+                    and _root_has_only_headtaker_models()
+                    and "devastating wounds" in normalized
+                    and "precision" in normalized
+                    and _has_phrase(
+                        normalized,
+                        "weapons equipped by headtakers models in this unit",
+                        "weapons equipped by models in this unit",
+                    )
+                    and _has_phrase(
+                        normalized,
+                        "while targeting its quarry",
+                        "targets its quarry",
+                        "targeting that quarry",
+                    )
+                ):
+                    source = str(name or "Prey selection").strip() or "Prey selection"
+                    rule = {
+                        "source": source,
+                        "reroll_hit": False,
+                        "reroll_wound": False,
+                        "melee_only": False,
+                        "keywords": ["DEVASTATING WOUNDS", "PRECISION"],
                         "repick_on_destroyed": bool(repick_on_destroyed),
                     }
                     break
@@ -14363,6 +14410,9 @@ class KeywordsDetachmentsMixin:
     def _blistering_assault_phase_key(self, game=None) -> str:
         return self._blood_surge_phase_key(game)
 
+    def _bestial_rage_phase_key(self, game=None) -> str:
+        return self._blood_surge_phase_key(game)
+
     def _aggressive_leader_beast_phase_key(self, game=None) -> str:
         return self._blood_surge_phase_key(game)
 
@@ -14456,6 +14506,20 @@ class KeywordsDetachmentsMixin:
         if not isinstance(sr, dict):
             sr = {}
         sr["blistering_assault_used_phase_key"] = self._blistering_assault_phase_key(game)
+        self.special_rules = sr
+
+    def bestial_rage_used_this_phase(self, game=None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._bestial_rage_phase_key(game)
+        return str(sr.get("bestial_rage_used_phase_key", "")) == key
+
+    def mark_bestial_rage_used(self, game=None) -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["bestial_rage_used_phase_key"] = self._bestial_rage_phase_key(game)
         self.special_rules = sr
 
     def aggressive_leader_beast_used_this_phase(self, game=None) -> bool:
@@ -14618,6 +14682,42 @@ class KeywordsDetachmentsMixin:
                 return False
         except Exception:
             pass
+        return True
+
+    def can_bestial_rage(self, game=None, game_map=None) -> bool:
+        if not self.has_bestial_rage():
+            return False
+        if not self.is_alive() or not getattr(self, "deployed", False):
+            return False
+        if self.bestial_rage_used_this_phase(game):
+            return False
+        try:
+            if self.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(self, "is_embarked", False)) or bool(getattr(self, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        if game_map is None:
+            try:
+                game_map = getattr(game, "map", None)
+            except Exception:
+                game_map = None
+        if game_map is not None:
+            try:
+                has_non_aircraft_enemy = any(
+                    enemy is not None
+                    and bool(getattr(enemy, "is_alive", lambda: False)())
+                    and not bool(getattr(enemy, "is_aircraft", False))
+                    for enemy in list(game_map.get_enemy_units(self) or [])
+                )
+            except Exception:
+                has_non_aircraft_enemy = True
+            if not has_non_aircraft_enemy:
+                return False
         return True
 
     def can_aggressive_leader_beast(self, game=None, game_map=None) -> bool:
@@ -16435,6 +16535,9 @@ class KeywordsDetachmentsMixin:
                 continue
             if name_key:
                 seen_names.add(name_key)
+            # Psychic Guidance has dedicated range-aware handling; skip generic hit-rule parsing here.
+            if name_key == "psychic guidance":
+                continue
             text_src = desc or name or ""
             for rule in self._parse_attack_roll_rules_from_text(text_src):
                 if rule.subject not in ("this_model", "model_in_this_unit"):
